@@ -352,7 +352,15 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return lines(' 渲染预览 ', target.split('\n').map(l => ` ${l}`));
   });
 
-  bus.register('/video', () => '视频分析：需外接 ffmpeg 与视觉模型（当前支持图像 /img 与屏幕 /capture）');
+  bus.register('/video', async (args) => {
+    const target = args.join(' ').replace(/^["']|["']$/g, '');
+    if (!target) return '用法：/video <视频路径>（ffmpeg 抽帧 + GLM-4V 逐帧分析）';
+    if (!existsSync(target)) return `视频不存在：${target}`;
+    const { analyzeVideo } = await import('../kernel/video.js');
+    const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
+    const out = await analyzeVideo(target, enc ?? null);
+    return out;
+  });
 
   // ── 连接类 ──────────────────────────────────
   bus.register('/mcp', (args) => {

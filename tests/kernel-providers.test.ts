@@ -85,3 +85,17 @@ describe('HTTP 错误中文映射', () => {
     expect(mapHttpError(500)).toContain('服务端');
   });
 });
+
+// ── 逐帧视频分析（video.ts）────
+describe('video 逐帧分析', () => {
+  it('不存在路径返回明确错误', async () => {
+    const { analyzeVideo } = await import('../src/kernel/video.js');
+    const r = await analyzeVideo('/no/such/video.mp4', null);
+    expect(r).toContain('GLM key');
+  });
+  it('无 key 时提示配置', async () => {
+    const { analyzeVideo } = await import('../src/kernel/video.js');
+    const r = await analyzeVideo('/no/such/video.mp4', 'enc1:aa:bb:cc');
+    expect(r.length).toBeGreaterThan(0);
+  });
+});

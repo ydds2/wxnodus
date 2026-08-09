@@ -121,8 +121,10 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
   const composerLines = inputLines + 2;
   const fixed = 1 + (startup ? STARTUP_LINES : 0) + composerLines + 1 + 1 + 1;
   const areaLines = Math.max(rows - fixed, 3);
+  // 小窗口容错：高度不足时隐藏启动卡片（避免状态条被挤出屏幕）
+  const showStartupCard = startup && rows >= 26;
   // 启动页垂直居中：剩余空白上下均分（ink justifyContent 在 flexGrow 组合下不稳，手动算 margin）
-  const padTop = startup ? Math.max(1, Math.floor((rows - 1 - STARTUP_LINES - composerLines - 2) / 2)) : 0;
+  const padTop = showStartupCard ? Math.max(1, Math.floor((rows - 1 - STARTUP_LINES - composerLines - 2) / 2)) : 0;
   const streamLines = turn.tools.length + (turn.streaming ? Math.ceil(turn.streaming.length / Math.max(width - 2, 10)) : 0);
   const { maxOffset } = scrollTail(history, scrollOffset, areaLines, width - 2, streamLines);
 
@@ -176,22 +178,24 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
   return (
     <Box flexDirection="column" height="100%">
       <Header version={version} model={model} busy={turn.busy} mode={u.mode} thinking={u.thinking} />
-      {startup ? (
+      {showStartupCard ? (
         <Box marginTop={padTop}>
           <StartupCard model={model} version={version} cwd={cwd} />
         </Box>
       ) : (
-        <MessageStream
-          history={history}
-          streaming={turn.streaming}
-          tools={turn.tools}
-          areaLines={areaLines}
-          width={width}
-          offset={scrollOffset}
-          reasoning={turn.reasoning}
-          showThinking={u.thinking}
-          notice={u.notice}
-        />
+        !startup && (
+          <MessageStream
+            history={history}
+            streaming={turn.streaming}
+            tools={turn.tools}
+            areaLines={areaLines}
+            width={width}
+            offset={scrollOffset}
+            reasoning={turn.reasoning}
+            showThinking={u.thinking}
+            notice={u.notice}
+          />
+        )
       )}
       {overlay.approval && <ApprovalPrompt onRespond={choice => bridge.emit('ui.approval', { choice })} />}
       {overlay.confirm && <ConfirmPrompt onConfirm={ok => bridge.emit('ui.confirm', { ok })} />}
@@ -203,7 +207,7 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
       }} />}
       {overlay.modelPicker && (
         <ModelPicker
-          currentModel={model}
+          currentModel={model || 'deepseek-v4-flash'} // 无 key（规则脑）时默认标记首个模型
           thinking={u.thinking}
           onPick={m => {
             setStartup(false);
