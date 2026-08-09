@@ -23,7 +23,7 @@ describe('parseMd 块模型', () => {
     expect(blocks[0].type).toBe('table');
   });
   it('数学块与引用', () => {
-    const blocks = parseMd('$$E=mc^2$$\n\n> 引用内容');
+    const blocks = parseMd('$$\nE=mc^2\n$$\n\n> 引用内容');
     expect(blocks.some(b => b.type === 'math')).toBe(true);
     expect(blocks.some(b => b.type === 'quote')).toBe(true);
   });
