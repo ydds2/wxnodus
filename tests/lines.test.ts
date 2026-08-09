@@ -1,6 +1,6 @@
 // tests/lines.test.ts — 行数估算 / 消息滚动裁剪（纯函数）
 import { describe, it, expect } from 'vitest';
-import { estimateLines, strWidth, trimTail } from '../src/ui/lib/lines.js';
+import { estimateLines, strWidth, trimTail, scrollTail } from '../src/ui/lib/lines.js';
 
 describe('strWidth / estimateLines', () => {
   it('ASCII 1 列 / 中文 2 列', () => {
@@ -48,5 +48,42 @@ describe('trimTail 尾部裁剪', () => {
   it('面积不足返回空', () => {
     const r = trimTail([mk('1', 'a')], 0, 80);
     expect(r.items).toEqual([]);
+  });
+});
+
+describe('scrollTail 应用内滚动', () => {
+  const mk = (id: string, text: string): { id: string; text: string } => ({ id, text });
+  const four = [mk('1', 'a'), mk('2', 'b'), mk('3', 'c'), mk('4', 'd')]; // 各 1 行
+
+  it('offset=0 显示尾部（与 trimTail 一致）', () => {
+    const r = scrollTail(four, 0, 2, 80);
+    expect(r.visible.map(i => i.id)).toEqual(['3', '4']);
+    expect(r.atBottom).toBe(true);
+    expect(r.overflow).toBe(2);
+  });
+  it('上滑后可见更早消息', () => {
+    const r = scrollTail(four, 2, 2, 80); // 上滑 2 行 → 看到全部
+    expect(r.visible.map(i => i.id)).toEqual(['1', '2', '3', '4']);
+    expect(r.atBottom).toBe(false);
+  });
+  it('offset 钳制到 maxOffset', () => {
+    const r = scrollTail(four, 99, 2, 80);
+    expect(r.maxOffset).toBe(2);
+    expect(r.visible.map(i => i.id)).toEqual(['1', '2', '3', '4']);
+  });
+  it('单条超高至少显示该条', () => {
+    const r = scrollTail([mk('1', 'a'), mk('2', 'b'.repeat(300))], 0, 2, 10);
+    expect(r.visible.map(i => i.id)).toEqual(['2']);
+  });
+  it('extraLines（流式区）计入总行数', () => {
+    const r = scrollTail(four, 0, 2, 80, 1); // 流式占 1 行 → 历史留 1 行
+    expect(r.visible.map(i => i.id)).toEqual(['4']);
+    expect(r.totalLines).toBe(5);
+  });
+  it('空列表', () => {
+    const r = scrollTail([], 0, 10, 80);
+    expect(r.visible).toEqual([]);
+    expect(r.totalLines).toBe(0);
+    expect(r.atBottom).toBe(true);
   });
 });

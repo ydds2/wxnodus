@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import { getUi } from '../../app/stores/uiStore.js';
+import { useOverlay, patchOverlay } from '../../app/stores/overlayStore.js';
 import { getTheme } from '../theme.js';
 import { initComposer, handleComposerKey } from '../lib/composerKeys.js';
 import type { ComposerState } from '../lib/composerKeys.js';
@@ -24,6 +25,7 @@ export function Composer({ onSubmit, onQuit, onLinesChange }: { onSubmit: (t: st
   const [cursorOn, setCursorOn] = useState(true);
   const u = getUi();
   const t = getTheme();
+  const overlay = useOverlay(s => s.s);
   const { stdout } = useStdout();
   const width = stdout.columns || 80;
   const borderColor = MODE_COLOR[u.mode] ?? t.border;
@@ -40,16 +42,21 @@ export function Composer({ onSubmit, onQuit, onLinesChange }: { onSubmit: (t: st
   }, [st.value, onLinesChange]);
 
   // 键位处理：Enter 提交 / Shift+Enter·Ctrl+J 换行 / ↑↓ 历史 / ←→ 移动 / 删除（纯函数）
-  // Ctrl+G 退出（与提示行一致；Ctrl+C 由 CLI 层 SIGINT 接管）
+  // 输入框为空时按 / 直接打开命令面板（Claude Code 风格）；Ctrl+G 退出
+  // （Ctrl+C 由 CLI 层 SIGINT 接管）；面板打开时本组件不接收按键
   useInput((inp, key) => {
     if (key.ctrl && (inp === '\x07' || inp.toLowerCase() === 'g')) {
       onQuit?.();
       return;
     }
+    if (inp === '/' && !st.value) {
+      patchOverlay({ panel: true });
+      return;
+    }
     const { next, action } = handleComposerKey(st, { ...key, input: inp });
     if (action.type === 'submit') onSubmit(action.text);
     if (next !== st) setSt(next);
-  });
+  }, { isActive: !overlay.panel });
 
   const lines = st.value.split('\n');
   const { line: curLine, col: curCol } = cursorLineCol(st.value, st.cursor);

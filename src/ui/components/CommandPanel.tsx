@@ -47,7 +47,7 @@ export function CommandPanel({ onPick }: { onPick: (cmd: string) => void }) {
   const bottomBorder = `╰${'─'.repeat(totalW - 1)}╯`;
 
   const hits = filterCommands(q, SLASH);
-  const groups = q ? [] : groupCommands(hits);
+  const groups = q ? [] : groupCommands(SLASH); // 分组用全量命令（filterCommands 空查询只取前 10）
   const flat = q ? hits : groups.flatMap(g => g.cmds);
 
   useInput((input, key) => {
@@ -57,6 +57,7 @@ export function CommandPanel({ onPick }: { onPick: (cmd: string) => void }) {
     if (key.downArrow) { setSel(s => Math.min(flat.length - 1, s + 1)); return; }
     if (key.backspace) { setQ(qq => qq.slice(0, -1)); setSel(0); return; }
     if (key.ctrl && input.toLowerCase() === 'g') { patchOverlay({ panel: false }); return; }
+    if (input === '/' && !q) return; // 首个 '/' 由 Composer 消费（打开面板），不进入搜索
     if (input && !key.ctrl) { setQ(qq => qq + input); setSel(0); }
   });
 

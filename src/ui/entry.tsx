@@ -1,10 +1,10 @@
 // src/ui/entry.tsx — 入口组件（全屏 TUI：Header + 启动页/消息流 + Composer + StatusBar）
 // 架构（参考 Kimi CLI / Claude Code / Codex 全屏布局）：
-//   alternateScreen 全屏模式；消息区自制滚动——用 estimateLines 估算每条消息
-//   占用的终端行数，从尾部裁剪到可视区（零测量循环，杜绝渲染抖动）；
+//   alternateScreen 全屏模式；消息区应用内滚动——scrollTail 按偏移行计算
+//   可见消息（零测量循环）；PgUp/PgDn/Ctrl+U/Ctrl+D/End 滚动；
 //   Composer 输入行数经 onLinesChange 上报以精确预算消息区高度。
 import React, { useState } from 'react';
-import { Box, Text, useStdout } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import { MessageLine } from './components/MessageLine.js';
 import { StreamingMarkdown } from './components/StreamingMarkdown.js';
 import { Composer } from './components/Composer.js';
@@ -15,7 +15,7 @@ import { ApprovalPrompt } from './components/ApprovalPrompt.js';
 import { useTurn } from '../app/stores/turnStore.js';
 import { useOverlay } from '../app/stores/overlayStore.js';
 import { getTheme } from './theme.js';
-import { trimTail, estimateLines } from './lib/lines.js';
+import { scrollTail } from './lib/lines.js';
 import type { UiMsg } from '../app/stores/types.js';
 import type { Bridge } from '../app/Bridge.js';
 
@@ -44,19 +44,22 @@ function Header({ version, model, busy }: { version: string; model: string; busy
   );
 }
 
-// 消息流：历史经 trimTail 裁剪到可视区（自制滚动）+ 流式区（工具行/流式文本）
-function MessageStream({ history, streaming, tools, areaLines, width }: {
+// 消息流：scrollTail 按滚动偏移裁剪 + 流式区（工具行/流式文本）+ 滚动状态提示
+function MessageStream({ history, streaming, tools, areaLines, width, offset }: {
   history: UiMsg[]; streaming: string;
   tools: Array<{ name: string; ctx: string; done?: boolean; ok?: boolean }>;
-  areaLines: number; width: number;
+  areaLines: number; width: number; offset: number;
 }) {
   const t = getTheme();
-  const streamLines = tools.length + (streaming ? estimateLines(streaming, width - 2) : 0);
-  const { items: visible, overflow } = trimTail(history, areaLines, width - 2, streamLines);
+  const streamLines = tools.length + (streaming ? Math.ceil(streaming.length / Math.max(width - 2, 10)) : 0);
+  const { visible, atBottom, overflow } = scrollTail(history, offset, areaLines, width - 2, streamLines);
   return (
     <Box flexDirection="column" flexGrow={1}>
-      {overflow > 0 && (
-        <Text color={t.muted}>…… ↑ 更早消息已滚动出可视区（↑ {overflow} 条）</Text>
+      {!atBottom && (
+        <Text color={t.muted}>↑ 已上滑 · PgUp/PgDn 或 Ctrl+U/D 滚动 · End 回底部</Text>
+      )}
+      {atBottom && overflow > 0 && (
+        <Text color={t.muted}>…… ↑ PgUp 上滑查看更早消息</Text>
       )}
       {visible.map(m => <MessageLine key={m.id} m={m} />)}
       {tools.map(tl => (
@@ -75,6 +78,7 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit }: AppDeps
   const [history, setHistory] = useState<UiMsg[]>([]);
   const [startup, setStartup] = useState(true);
   const [inputLines, setInputLines] = useState(1);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const turn = useTurn(s => s.s);
   const overlay = useOverlay(s => s.s);
   const t = getTheme();
@@ -86,6 +90,27 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit }: AppDeps
   const composerLines = inputLines + 2;
   const fixed = 1 + (startup ? STARTUP_LINES : 0) + composerLines + 1 + 1 + 1;
   const areaLines = Math.max(rows - fixed, 3);
+  // 启动页垂直居中：剩余空白上下均分（ink justifyContent 在 flexGrow 组合下不稳，手动算 margin）
+  const padTop = startup ? Math.max(1, Math.floor((rows - 1 - STARTUP_LINES - composerLines - 2) / 2)) : 0;
+  const streamLines = turn.tools.length + (turn.streaming ? Math.ceil(turn.streaming.length / Math.max(width - 2, 10)) : 0);
+  const { maxOffset } = scrollTail(history, scrollOffset, areaLines, width - 2, streamLines);
+
+  // 滚动键：PgUp/PgDn 半屏 · Ctrl+U/D 半屏 · End 回底部 · Home 顶部（面板打开时不生效）
+  useInput((_inp, key) => {
+    if (overlay.panel || startup) return;
+    const step = Math.max(3, Math.floor(areaLines / 2));
+    if (key.pageUp) setScrollOffset(o => Math.min(o + step, maxOffset));
+    if (key.pageDown) setScrollOffset(o => Math.max(0, o - step));
+    if (key.ctrl && _inp === 'u') setScrollOffset(o => Math.min(o + step, maxOffset));
+    if (key.ctrl && _inp === 'd') setScrollOffset(o => Math.max(0, o - step));
+    if (key.end) setScrollOffset(0);
+    if (key.home) setScrollOffset(maxOffset);
+  }, { isActive: !overlay.panel });
+
+  // 新消息/回合变化时自动回底部（offset=0 最新在底）
+  React.useEffect(() => {
+    setScrollOffset(0);
+  }, [history.length, turn.streamSegments.length]);
 
   const onSubmit = async (text: string) => {
     setStartup(false);
@@ -113,21 +138,31 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit }: AppDeps
   return (
     <Box flexDirection="column" height="100%">
       <Header version={version} model={model} busy={turn.busy} />
-      {startup && <StartupCard model={model} version={version} cwd={cwd} />}
-      {!startup && (
+      {startup ? (
+        <Box marginTop={padTop}>
+          <StartupCard model={model} version={version} cwd={cwd} />
+        </Box>
+      ) : (
         <MessageStream
           history={history}
           streaming={turn.streaming}
           tools={turn.tools}
           areaLines={areaLines}
           width={width}
+          offset={scrollOffset}
         />
       )}
       {overlay.approval && <ApprovalPrompt onRespond={choice => bridge.emit('ui.approval', { choice })} />}
-      {overlay.panel && <CommandPanel onPick={async cmd => { await runCommand(cmd); }} />}
+      {overlay.panel && (
+        <CommandPanel onPick={async cmd => {
+          setStartup(false);
+          setHistory(h => [...h, { id: `u${Date.now()}`, role: 'user', text: cmd }]);
+          await runCommand(cmd);
+        }} />
+      )}
       <Box flexDirection="column">
         <Composer onSubmit={onSubmit} onQuit={onQuit} onLinesChange={setInputLines} />
-        <Text color={t.muted}>Enter 发送 · Shift+Enter 换行 · ↑↓ 历史 · / 面板 · Ctrl+C 中断 · Ctrl+G 退出</Text>
+        <Text color={t.muted}>Enter 发送 · Shift+Enter 换行 · ↑↓ 历史 · / 面板 · PgUp 上滑 · Ctrl+C 中断 · Ctrl+G 退出</Text>
       </Box>
       <StatusBar version={version} />
     </Box>

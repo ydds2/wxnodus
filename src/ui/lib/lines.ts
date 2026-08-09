@@ -47,3 +47,38 @@ export function trimTail<T extends { text: string; ms?: number }>(
   }
   return { items: out, overflow: firstIdx };
 }
+
+// 应用内滚动视图：offsetLines 为从底部往上偏移的行数（0 = 最新在底）。
+// 全屏 TUI（alternateScreen）无终端滚动缓冲，历史回看靠这个纯函数
+// 计算「可见行区间 → 可见消息切片」——零测量循环。
+export interface ScrollViewport<T> {
+  visible: T[];       // 可见消息（从可见第一条到末尾）
+  totalLines: number; // 全部消息（含流式 extraLines）总行数
+  atBottom: boolean;  // offset 为 0（最新在底）
+  maxOffset: number;  // 可上滑的最大行数
+  overflow: number;   // 被裁掉的消息数（无上滑时从尾裁剪的条数）
+}
+
+export function scrollTail<T extends { text: string; ms?: number }>(
+  items: T[],
+  offsetLines: number,
+  areaLines: number,
+  width: number,
+  extraLines = 0,
+): ScrollViewport<T> {
+  const heights = items.map(m => estimateLines(m.text, width) + (m.ms !== undefined && m.ms > 0 ? 1 : 0));
+  const total = heights.reduce((a, b) => a + b, 0) + extraLines;
+  const maxOffset = Math.max(0, total - areaLines);
+  const off = Math.max(0, Math.min(offsetLines, maxOffset));
+  const viewTop = total - off - areaLines; // 可见区顶部行号（相对内容顶部，可负）
+  // 找第一条可见消息：行区间 (viewTop, viewTop + areaLines] 覆盖的消息
+  let acc = 0;
+  let start = items.length;
+  for (let i = 0; i < items.length; i++) {
+    if (start === items.length && acc + heights[i]! > viewTop) start = i;
+    acc += heights[i]!;
+    if (acc >= viewTop + areaLines) break;
+  }
+  const visible = start < items.length ? items.slice(start) : [];
+  return { visible, totalLines: total, atBottom: off === 0, maxOffset, overflow: start };
+}
