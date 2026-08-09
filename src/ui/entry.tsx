@@ -11,6 +11,10 @@ import { Composer } from './components/Composer.js';
 import { StatusBar } from './components/StatusBar.js';
 import { StartupCard } from './components/StartupCard.js';
 import { ApprovalPrompt } from './components/ApprovalPrompt.js';
+import { ConfirmPrompt } from './components/ConfirmPrompt.js';
+import { ClarifyPrompt } from './components/ClarifyPrompt.js';
+import { SessionsPicker } from './components/SessionsPicker.js';
+import type { SessionRow } from './components/SessionsPicker.js';
 import { useTurn } from '../app/stores/turnStore.js';
 import { useOverlay, patchOverlay } from '../app/stores/overlayStore.js';
 import { getUi } from '../app/stores/uiStore.js';
@@ -29,6 +33,7 @@ export interface AppDeps {
   onQuit?: () => void;
   setModel: (modelId: string, baseURL?: string) => void;
   onThinkingChange: (on: boolean) => void;
+  listSessions: () => SessionRow[];
 }
 
 const STARTUP_LINES = 15; // 启动页固定行数（含边框），与 StartupCard 保持一致
@@ -51,28 +56,44 @@ function Header({ version, model, busy, mode, thinking }: { version: string; mod
   );
 }
 
-// 消息流：scrollTail 按滚动偏移裁剪 + 流式区（工具行/流式文本）+ 滚动状态提示
-function MessageStream({ history, streaming, tools, areaLines, width, offset }: {
+// 消息流：scrollTail 按滚动偏移裁剪 + 推理折叠区 + 通知横幅 + 流式区（工具行/流式文本）
+function MessageStream({ history, streaming, tools, areaLines, width, offset, reasoning, showThinking, notice }: {
   history: UiMsg[]; streaming: string;
-  tools: Array<{ name: string; ctx: string; done?: boolean; ok?: boolean }>;
+  tools: Array<{ name: string; ctx: string; detail?: string; done?: boolean; ok?: boolean }>;
   areaLines: number; width: number; offset: number;
+  reasoning: string; showThinking: boolean; notice: string | null;
 }) {
   const t = getTheme();
-  const streamLines = tools.length + (streaming ? Math.ceil(streaming.length / Math.max(width - 2, 10)) : 0);
+  const streamLines = tools.length + (streaming ? Math.ceil(streaming.length / Math.max(width - 2, 10)) : 0)
+    + (showThinking && reasoning ? 2 + Math.ceil(reasoning.length / Math.max(width - 2, 10)) : 0)
+    + (notice ? 1 : 0);
   const { visible, atBottom, overflow } = scrollTail(history, offset, areaLines, width - 2, streamLines);
   return (
     <Box flexDirection="column" flexGrow={1}>
+      {notice && (
+        <Text wrap="truncate-end">
+          <Text color="#f59e0b" bold>{'◆ '}</Text>
+          <Text color={t.text}>{notice}</Text>
+        </Text>
+      )}
       {!atBottom && (
         <Text color={t.muted}>↑ 已上滑 · PgUp/PgDn 或 Ctrl+U/D 滚动 · End 回底部</Text>
       )}
       {atBottom && overflow > 0 && (
         <Text color={t.muted}>…… ↑ PgUp 上滑查看更早消息</Text>
       )}
+      {showThinking && reasoning && (
+        <Box flexDirection="column" marginLeft={1}>
+          <Text color={t.muted} dimColor>{'⤷ 推理中…'}</Text>
+          <Text color={t.muted} wrap="wrap">{reasoning.slice(0, 600)}</Text>
+        </Box>
+      )}
       {visible.map(m => <MessageLine key={m.id} m={m} />)}
       {tools.map(tl => (
         <Box key={tl.name + tl.ctx} flexDirection="row" marginLeft={1}>
           <Text color={tl.done ? (tl.ok ? t.ok : t.error) : '#f59e0b'}>
             {tl.done ? (tl.ok ? '✓ ' : '✗ ') : '⚡ '}{tl.name}{tl.ctx ? `("${tl.ctx}")` : ''}{tl.done ? '' : ' …'}
+            {tl.detail ? ` ${tl.detail.slice(0, 40)}` : ''}
           </Text>
         </Box>
       ))}
@@ -81,7 +102,7 @@ function MessageStream({ history, streaming, tools, areaLines, width, offset }: 
   );
 }
 
-export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel, onThinkingChange }: AppDeps) {
+export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel, onThinkingChange, listSessions }: AppDeps) {
   const [history, setHistory] = useState<UiMsg[]>([]);
   const [startup, setStartup] = useState(true);
   const [inputLines, setInputLines] = useState(1);
@@ -158,9 +179,19 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
           areaLines={areaLines}
           width={width}
           offset={scrollOffset}
+          reasoning={turn.reasoning}
+          showThinking={u.thinking}
+          notice={u.notice}
         />
       )}
       {overlay.approval && <ApprovalPrompt onRespond={choice => bridge.emit('ui.approval', { choice })} />}
+      {overlay.confirm && <ConfirmPrompt onConfirm={ok => bridge.emit('ui.confirm', { ok })} />}
+      {overlay.clarify && <ClarifyPrompt onPick={idx => bridge.emit('ui.clarify', { index: idx })} />}
+      {overlay.sessions && <SessionsPicker sessions={listSessions()} onPick={async id => {
+        setStartup(false);
+        setHistory(h => [...h, { id: `u${Date.now()}`, role: 'user', text: `恢复会话：${id}` }]);
+        await runCommand(`/resume ${id}`);
+      }} />}
       {overlay.modelPicker && (
         <ModelPicker
           currentModel={model}

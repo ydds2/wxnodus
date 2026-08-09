@@ -17,7 +17,7 @@ async function main() {
   const dataDir = join(cwd, 'data');
   mkdirSync(dataDir, { recursive: true });
 
-  const [{ createConfig }, { openDB }, { createEventBus }, { createMemory }, { createAgent }, { createBridge }, { createCommandBus }] = await Promise.all([
+  const [{ createConfig }, { openDB }, { createEventBus }, { createMemory }, { createAgent }, { createBridge }, { createCommandBus }, { patchUi }, { patchOverlay }] = await Promise.all([
     import('../store/config.js'),
     import('../store/db.js'),
     import('../kernel/events.js'),
@@ -25,6 +25,8 @@ async function main() {
     import('../kernel/agent.js'),
     import('../app/Bridge.js'),
     import('../app/CommandBus.js'),
+    import('../app/stores/uiStore.js'),
+    import('../app/stores/overlayStore.js'),
   ]);
 
   const config = createConfig(dataDir);
@@ -33,7 +35,26 @@ async function main() {
   const mem = createMemory(db);
   const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string };
   let model = settings.model ?? (settings.apiKeyEnc ? 'deepseek-v4-flash' : '');
-  const agent = createAgent({ db, bus, mem, sessionId: 'default', config: { settings }, mode: (config.get('settings') as any).mode ?? 'smart' });
+  // 权限审批：agent 工具执行需要确认时 → 打开 UI 弹窗并等待用户选择
+  let approvalResolve: ((ok: boolean) => void) | null = null;
+  const agent = createAgent({
+    db, bus, mem, sessionId: 'default', config: { settings },
+    mode: (config.get('settings') as any).mode ?? 'smart',
+    onApproval: async (name, args) => new Promise<boolean>(resolve => {
+      approvalResolve = resolve;
+      patchOverlay({ approval: { title: `执行工具：${name}`, detail: JSON.stringify(args).slice(0, 200), allowPermanent: false } });
+    }),
+  });
+  bus.on('ui.approval', (e) => {
+    const choice = (e.payload as any)?.choice as string | undefined;
+    if (approvalResolve) { approvalResolve(choice !== 'deny'); approvalResolve = null; }
+  });
+  bus.on('ui.confirm', (e) => {
+    if (approvalResolve) { approvalResolve(!!(e.payload as any)?.ok); approvalResolve = null; }
+  });
+  bus.on('ui.clarify', (e) => {
+    if (approvalResolve) { approvalResolve(true); approvalResolve = null; }
+  });
   const bridge = createBridge({ send: t => agent.run(t), abort: () => agent.abort() });
 
   // agent 事件 → Bridge
@@ -45,13 +66,12 @@ async function main() {
   let mode = (config.get('settings') as any).mode ?? 'smart';
   let themeName = (config.get('settings') as any).theme ?? 'kimi';
   let thinking = (config.get('settings') as any).thinking ?? true;
-  const { patchUi } = await import('../app/stores/uiStore.js');
-  const { patchOverlay } = await import('../app/stores/overlayStore.js');
   patchUi({ mode, themeName, model, sessionId: 'default', cwd, thinking });
 
   // 命令注册
   const commandBus = createCommandBus();
   const { registerCoreHandlers } = await import('../commands/handlers.js');
+  const { registerExtHandlers } = await import('../commands/handlersExt.js');
   let exitRequested = false;
   // 模型热切换：agent 持有 settings 对象引用——改内存字段即生效，再持久化
   const applyModel = (modelId: string, baseURL?: string) => {
@@ -62,19 +82,22 @@ async function main() {
     model = modelId;
     patchUi({ model: modelId });
   };
-  registerCoreHandlers(commandBus, {
+  const makeHandlerCtx = () => ({
     dataDir, cwd, db, mem, config, bus,
     getModel: () => model,
     getMode: () => mode,
-    setMode: m => { mode = m; config.setKey('settings', 'mode', m); patchUi({ mode: m as any }); },
-    setTheme: t => { themeName = t; config.setKey('settings', 'theme', t); patchUi({ themeName: t }); },
+    setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); patchUi({ mode: m as any }); },
+    setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); patchUi({ themeName: t }); },
     getThemeName: () => themeName,
     requestExit: () => { exitRequested = true; try { app?.unmount(); } catch {} setTimeout(() => process.exit(0), 50); },
     clearHistory: () => { /* UI 历史清理由 App 层处理（此处保留空实现） */ },
     setModel: applyModel,
     openModelPicker: () => patchOverlay({ modelPicker: true }),
-    setThinking: on => { thinking = on; config.setKey('settings', 'thinking', on); patchUi({ thinking: on }); },
+    openSessions: () => patchOverlay({ sessions: true }),
+    setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); patchUi({ thinking: on }); },
   });
+  registerCoreHandlers(commandBus, makeHandlerCtx());
+  registerExtHandlers(commandBus, makeHandlerCtx());
 
   // 非交互模式
   if (opts.prompt) {
@@ -137,6 +160,11 @@ async function main() {
         thinking = on;
         config.setKey('settings', 'thinking', on);
         patchUi({ thinking: on });
+      },
+      listSessions: () => {
+        try {
+          return (db.prepare(`SELECT s.id, s.title, s.created_at AS ts, (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS msgs FROM sessions s ORDER BY s.updated_at DESC`).all() as any[]).map(r => ({ id: String(r.id), title: String(r.title ?? ''), msgs: Number(r.msgs ?? 0), ts: Number(r.ts ?? 0) }));
+        } catch { return []; }
       },
     }),
     { alternateScreen: true, exitOnCtrlC: false }

@@ -44,7 +44,7 @@ const MAX_UNKNOWN_TOOL_ROUNDS = 3;
 export function createAgent(opts: AgentOptions) {
   const tools = coreTools();
   const bus = opts.bus;
-  const mode = opts.mode ?? 'smart';
+  let mode = opts.mode ?? 'smart'; // 可变：/perm 切换经 setMode 热更新
   let aborted = false;
   let interrupted = false;
   let abortResolve: () => void = () => {};
@@ -110,6 +110,7 @@ export function createAgent(opts: AgentOptions) {
       ? `\n[相关历史记忆]\n${recalled.map(r => r.content.slice(0, 300)).join('\n---\n')}`
       : '';
     msgs.push({ role: 'user', content: prompt + recallBlock });
+    try { opts.mem.append(sessionId, 'user', prompt); } catch { /* 记忆写入失败不阻断对话 */ }
     const toolList = opts2.subagent ? toolsToOpenAI(Object.fromEntries(Object.entries(tools).filter(([n]) => !['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate'].includes(n)))) : toolsToOpenAI(tools);
     let turns = 0;
     let consecutiveFail = 0;
@@ -143,6 +144,7 @@ export function createAgent(opts: AgentOptions) {
       if (res.type === 'text') {
         finalText = res.content;
         msgs.push({ role: 'assistant', content: res.content });
+        try { opts.mem.append(sessionId, 'assistant', res.content); } catch { /* 忽略 */ }
         for (let i = 0; i < res.content.length; i += 4) {
           if (aborted) break;
           bus.emit('agent.token', { text: res.content.slice(i, i + 4) });
@@ -171,6 +173,7 @@ export function createAgent(opts: AgentOptions) {
         }
         msgs.push({ role: 'assistant', content: JSON.stringify({ tool: res.name, args: res.args }) });
         msgs.push({ role: 'tool', content: out });
+        try { opts.mem.append(sessionId, 'tool', `${res.name}: ${out.slice(0, 300)}`); } catch { /* 忽略 */ }
       }
     }
     bus.emit('agent.end', { ok: finalText.length > 0, turns });
@@ -186,6 +189,8 @@ export function createAgent(opts: AgentOptions) {
       return { ok: r.ok, output: r.text, turns: r.turns };
     },
     abort() { aborted = true; abortResolve?.(); },
+    setMode(m: Mode) { mode = m; },
+    getMode(): Mode { return mode; },
   };
 }
 

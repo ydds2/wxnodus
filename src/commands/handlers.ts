@@ -33,6 +33,7 @@ export interface HandlerCtx {
   clearHistory: () => void;
   setModel: (modelId: string, baseURL?: string) => void;
   openModelPicker: () => void;
+  openSessions: () => void;
   setThinking: (on: boolean) => void;
 }
 
@@ -58,6 +59,14 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   bus.register('/clear', async () => { ctx.clearHistory(); return '已清空'; });
+
+  // 会话（交互模式打开选择器；-p 模式文本列表）
+  bus.register('/sessions', () => {
+    const rows = ctx.db.prepare(`SELECT s.id, s.title, s.created_at, (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS msgs FROM sessions s ORDER BY s.updated_at DESC`).all() as any[];
+    if (!rows.length) return '暂无会话';
+    ctx.openSessions();
+    return '';
+  });
 
   bus.register('/quit', async () => { ctx.requestExit(); return '再见'; });
 
@@ -197,7 +206,12 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   bus.register('/img', async (args) => {
-    return await (bus as any).execute ? '' : '';
+    const target = args[0];
+    if (!target) return '用法：/img <图片路径或URL>（GLM-4V 多模态分析，/vision 同义）';
+    const { describeImage } = await import('../kernel/vision.js');
+    const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
+    const out = await describeImage(target, enc ?? null);
+    return out ?? '视觉分析失败（需配置 GLM key：/key set <key>，或网络不可达）';
   });
 
   // 备份
