@@ -6,6 +6,7 @@
 //  - checkpoints 会话快照（差距补齐 #6：限 10 份）
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
 export type Db = InstanceType<typeof Database>;
@@ -39,7 +40,6 @@ export function bigramZh(text: string): string {
 
 // 审计哈希：SHA-256 链（prev_hash + event + payload + ts）
 export function auditHash(prev: string, event: string, payload: string, ts: number): string {
-  const { createHash } = require('node:crypto') as typeof import('node:crypto');
   return createHash('sha256').update(`${prev}|${event}|${payload}|${ts}`).digest('hex');
 }
 

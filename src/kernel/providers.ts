@@ -3,12 +3,12 @@
 //      + 规则脑兜底（无 key 诚实回答）+ 关键词路由降级链 + HTTP 错误中文映射
 // 参考：OpenAI API 规范、Claude Code 的 credential 安全实践、Gemini CLI 多 provider 模式
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
+import { hostname, platform, arch, userInfo } from 'node:os';
 
 // ── 密钥加密（AES-256-GCM，机器指纹派生 key）─────────────────
 // 格式：enc1:<iv hex>:<tag hex>:<cipher hex>——密钥来自机器指纹（不可移植，防拷贝泄露）
 function machineFingerprint(): string {
-  const os = require('node:os') as typeof import('node:os');
-  return os.hostname() + '::' + os.platform() + '::' + os.arch() + '::' + os.userInfo().username;
+  return hostname() + '::' + platform() + '::' + arch() + '::' + userInfo().username;
 }
 
 const encKey = (): Buffer => scryptSync(machineFingerprint(), 'wxnodus-v3', 32);

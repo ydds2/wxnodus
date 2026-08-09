@@ -42,9 +42,9 @@ export async function routeInput(text: string): Promise<{ kind: 'command' | 'too
   // ② 确定性工具直调（毫秒级）
   const toolResult = await deterministicRun(trimmed);
   if (toolResult !== null) return { kind: 'tool', value: toolResult };
-  // ③ NL 正则路由
+  // ③ NL 正则路由（原文作为命令参数传递）
   const cmd = routeNaturalLanguage(trimmed);
-  if (cmd) return { kind: 'command', cmd };
+  if (cmd) return { kind: 'command', cmd, value: trimmed };
   // ④ null → AI 意图层（agent 判断 command/tool/chat）
   return { kind: 'chat', value: text };
 }

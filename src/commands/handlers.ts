@@ -15,7 +15,7 @@ import { verifyProject } from '../build/verify.js';
 import { runGate } from '../build/gate.js';
 import { searchMessages } from '../store/db.js';
 import { join } from 'node:path';
-import { mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, existsSync, readdirSync, cpSync, writeFileSync } from 'node:fs';
 
 export interface HandlerCtx {
   dataDir: string;
@@ -175,7 +175,6 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/backup', () => {
     const dest = join(ctx.dataDir, 'backups', `backup-${Date.now().toString(36)}`);
     try {
-      const { cpSync } = require('node:fs') as typeof import('node:fs');
       mkdirSync(dest, { recursive: true });
       for (const f of readdirSync(ctx.dataDir)) {
         if (f === 'backups' || f === 'projects') continue;
@@ -193,7 +192,6 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const hits = searchMessages(ctx.db, q, { limit: 50 });
     if (!hits.length) return '无匹配';
     const out = join(ctx.dataDir, `export-${Date.now().toString(36)}.json`);
-    const { writeFileSync } = require('node:fs') as typeof import('node:fs');
     writeFileSync(out, JSON.stringify(hits, null, 2), 'utf8');
     return `已导出 ${hits.length} 条 → ${out}`;
   });

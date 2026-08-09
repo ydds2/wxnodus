@@ -3,7 +3,7 @@
 //       参考：Hermes createGatewayEventHandler 的事件映射思想（自有实现）
 import { turnController } from './TurnController.js';
 import { patchUi } from './stores/uiStore.js';
-import { patchTurn, pushSegment } from './stores/turnStore.js';
+import { pushSegment } from './stores/turnStore.js';
 import type { UiMsg } from './stores/types.js';
 
 export interface KernelHooks {
@@ -61,6 +61,5 @@ function getHasError(): boolean {
 
 function pushSystemMsg(text: string, error = false) {
   const m: UiMsg = { id: `sys${++seq}`, role: 'system', text, error };
-  const { pushSegment } = require('./stores/turnStore.js') as typeof import('./stores/turnStore.js');
   pushSegment(m);
 }
