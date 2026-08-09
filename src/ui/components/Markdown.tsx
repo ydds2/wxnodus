@@ -2,15 +2,21 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import Table from 'cli-table3';
-import { createRequire } from 'node:module';
 import { parseMd } from '../markdown/parse.js';
 import type { MdBlock } from '../markdown/blocks.js';
 import { getTheme } from '../theme.js';
 import { CodeBlock } from './CodeBlock.js';
 
-// latex2unicode 发布含 .ts 源码（NodeNext 类型解析冲突）——createRequire 绕开
-const require = createRequire(import.meta.url);
-const latex2unicode = require('latex2unicode') as (tex: string) => string;
+// 终端数学渲染：mini TeX→Unicode（希腊字母/上下标/分式；复杂公式降级原样）
+function texToUnicode(tex: string): string {
+  const GREEK: Record<string, string> = { alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', theta: 'θ', lambda: 'λ', mu: 'μ', pi: 'π', sigma: 'σ', phi: 'φ', omega: 'ω', Delta: 'Δ', Sigma: 'Σ', Omega: 'Ω' };
+  let out = tex
+    .replace(/\frac\{([^}]*)\}\{([^}]*)\}/g, '($1)/($2)')
+    .replace(/\^\{?([^} ]+)\}?/g, '^$1')
+    .replace(/_\{?([^} ]+)\}?/g, '_$1');
+  for (const [k, v] of Object.entries(GREEK)) out = out.replaceAll('\\' + k, v);
+  return out.replace(/[\\{}]/g, '');
+}
 
 export function Markdown({ text }: { text: string }) {
   const blocks = parseMd(text);
@@ -59,7 +65,7 @@ function Block({ b }: { b: MdBlock }) {
     case 'code': return <CodeBlock lang={b.lang} code={b.code} />;
     case 'table': return <TableBlock headers={b.headers} rows={b.rows} />;
     case 'quote': return <Text color={t.muted} wrap="wrap">{'  │ ' + b.text}</Text>;
-    case 'math': return <Text color={t.accent} wrap="wrap">{latex2unicode(b.tex)}</Text>;
+    case 'math': return <Text color={t.accent} wrap="wrap">{texToUnicode(b.tex)}</Text>;
     case 'thematicBreak': return <Text color={t.border}>{"─".repeat(30)}</Text>;
     default: return <Inline text={b.text ?? ''} />;
   }

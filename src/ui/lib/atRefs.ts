@@ -5,7 +5,8 @@ export interface AtRef { path: string; content: string }
 
 export function resolveAtRefs(input: string): { refs: AtRef[]; remainder: string } {
   const refs: AtRef[] = [];
-  const pattern = /@([A-Za-z]:\\[^\s]+|[^\\/\s]\S*)/g;
+  // 前导可选空白一并消费，避免残留双空格
+  const pattern = /\s*@([A-Za-z]:\\[^\s]+|[^\\/\s]\S*)/g;
   let remainder = input;
   let m: RegExpExecArray | null;
   while ((m = pattern.exec(input)) !== null) {
