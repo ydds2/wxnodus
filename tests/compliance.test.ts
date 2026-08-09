@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { ConsentLedger, scanLicenses, checkRobots, detectCaptcha, guardrail, exportAudit } from '../src/compliance/compliance.js';
+import { ConsentLedger, scanLicenses, checkRobots, detectCaptcha, guardrail, exportAudit, aiNotice, classifyLicense } from '../src/compliance/compliance.js';
 
 let dir: string;
 let db: Database.Database;
@@ -34,7 +34,7 @@ describe('① 授权存证（六元组，可撤销）', () => {
 
 describe('② AI 生成标注（深度合成办法）', () => {
   it('forge 产物含标注（在 L3-2 已测 server/SKILL）——此处验证标注工具函数', () => {
-    const { aiNotice } = require('../src/compliance/compliance.js');
+    
     const n = aiNotice('test-component');
     expect(n).toContain('AI 生成标注');
     expect(n).toContain('深度合成办法');
@@ -59,7 +59,7 @@ describe('④ 许可证扫描（AGPL/BUSL 强传染性拦截）', () => {
     expect(Array.isArray(hits)).toBe(true);
   });
   it('单个 LICENSE 文本识别', () => {
-    const { classifyLicense } = require('../src/compliance/compliance.js');
+    
     expect(classifyLicense('GNU AFFERO GENERAL PUBLIC LICENSE')).toBe('block');
     expect(classifyLicense('Business Source License')).toBe('block');
     expect(classifyLicense('Apache License Version 2.0')).toBe('ok');

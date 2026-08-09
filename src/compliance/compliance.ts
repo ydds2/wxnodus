@@ -38,7 +38,8 @@ export class ConsentLedger {
   isAuthorized(scope: string): { ok: boolean; reason?: string } {
     const rec = this.db.prepare(`SELECT * FROM consent WHERE scope=? AND revoked_at IS NULL ORDER BY id DESC LIMIT 1`).get(scope) as ConsentRecord | undefined;
     if (!rec) return { ok: false, reason: '无授权记录' };
-    if (rec.expiresAt > 0 && rec.expiresAt < Date.now()) return { ok: false, reason: '授权已到期' };
+    // 表列名为 expires_at（snake_case）
+    if ((rec as any).expires_at > 0 && (rec as any).expires_at < Date.now()) return { ok: false, reason: '授权已到期' };
     return { ok: true };
   }
   revoke(id: number): void {
@@ -57,7 +58,7 @@ export function aiNotice(component: string): string {
 // ── ③ 审计导出 ──────────────────────────────────────────
 export function exportAudit(outDir: string, ledger: ConsentLedger): string {
   const p = join(outDir, 'audit-consent.json');
-  writeFileSync(p, JSON.stringify({ exportedAt: Date.now(), records: ledger.export() }, null, 2), 'utf8');
+  writeFileSync(p, JSON.stringify({ type: 'consent-ledger', exportedAt: Date.now(), records: ledger.export() }, null, 2), 'utf8');
   return p;
 }
 
