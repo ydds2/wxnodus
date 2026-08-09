@@ -1,0 +1,132 @@
+// src/commands/registry.ts — L4 命令注册表（单一事实来源）
+// 设计：核心命令面（说人话主线）+ 分类符号 + 全量描述 + 别名表
+export const SLASH: string[] = [
+  // 对话
+  '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/context',
+  // 模型
+  '/key', '/model', '/status', '/doctor', '/version',
+  // 记忆（黑洞引擎）
+  '/memory', '/hole', '/compact', '/digest', '/curator',
+  // 构建（概念编译器）
+  '/build', '/deploy', '/forge', '/skill', '/gate', '/fdr', '/evidence',
+  // 安全（合规红线）
+  '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt',
+  // 系统
+  '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench',
+  // 视觉与媒体（可视化 AI 技能）
+  '/vision', '/img', '/video', '/render', '/capture',
+  // 网络与集成
+  '/claw', '/mcp', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
+  // 协作
+  '/swarm', '/duo', '/cron', '/jobs', '/delegate', '/goal',
+  // 工具（确定性）
+  '/calc', '/hash', '/base64', '/uuid', '/rand', '/json', '/timer', '/sql', '/fs', '/units', '/csv',
+];
+
+export const COMMAND_CAT: Record<string, string> = {
+  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/context': '◈',
+  '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙',
+  '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
+  '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆',
+  '/perm': '🛡', '/sandbox': '🛡', '/compliance': '🛡', '/consent': '🛡', '/audit': '🛡', '/encrypt': '🛡',
+  '/backup': '⚙', '/export': '⚙', '/theme': '⚙', '/lang': '⚙', '/config': '⚙', '/logs': '⚙', '/bench': '⚙',
+  '/vision': '👁', '/img': '👁', '/video': '👁', '/render': '👁', '/capture': '👁',
+  '/claw': '⛭', '/mcp': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
+  '/swarm': '◈', '/duo': '◈', '/cron': '◈', '/jobs': '◈', '/delegate': '◈', '/goal': '◈',
+  '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
+};
+
+export const COMMAND_DESC: Record<string, string> = {
+  '/help': '查看帮助（/help <命令> 展开单个）',
+  '/clear': '清空会话视图',
+  '/undo': '撤销上一轮回复',
+  '/usage': '用量统计（token/成本）',
+  '/quit': '退出',
+  '/sessions': '会话列表',
+  '/resume': '恢复会话',
+  '/context': '上下文占用可视化',
+  '/key': '配置/查看模型密钥（加密存储）',
+  '/model': '切换模型',
+  '/status': '系统状态',
+  '/doctor': '健康体检',
+  '/version': '版本信息',
+  '/memory': '记忆概览（三层）',
+  '/hole': '黑洞引擎检索（说人话即触发）',
+  '/compact': '压缩上下文',
+  '/digest': '融化吸收外来产物入记忆',
+  '/curator': '内容策展',
+  '/build': '概念编译：说一句话交付可运行系统',
+  '/deploy': '业务落地（FDE 五段）',
+  '/forge': '组件锻造（MCP Server/Skill 打包）',
+  '/skill': '技能管理',
+  '/gate': '统一质量门（四门）',
+  '/fdr': '部署后保障（五回路）',
+  '/evidence': '证据链查看',
+  '/perm': '权限模式（smart/auto/manual/plan/yolo）',
+  '/sandbox': '分层沙盒（L0-L3）',
+  '/compliance': '合规五项',
+  '/consent': '授权存证',
+  '/audit': '审计导出',
+  '/encrypt': '加密工具',
+  '/backup': '备份',
+  '/export': '导出',
+  '/theme': '主题切换',
+  '/lang': '语言切换',
+  '/config': '配置中心',
+  '/logs': '日志查看',
+  '/bench': '基准测试',
+  '/vision': 'GLM 视觉理解（/vision <图片>）',
+  '/img': '图片分析（GLM-4V 多模态）',
+  '/video': '视频人工视觉分析（不下载）',
+  '/render': '脱敏实时渲染',
+  '/capture': '录制回放',
+  '/claw': '网页抓取（SSRF 防护）',
+  '/mcp': 'MCP 服务器管理',
+  '/gateway': 'HTTP 网关',
+  '/proxy': '代理转发',
+  '/webhook': 'Webhook 配置',
+  '/a2a': 'A2A 跨 agent 协议',
+  '/acp': 'ACP server',
+  '/swarm': '同种子代理多开',
+  '/duo': '双脑协作',
+  '/cron': '定时任务',
+  '/jobs': '后台任务中心',
+  '/delegate': '派生子代理',
+  '/goal': '循环目标执行',
+  '/calc': '计算器（说人话即触发）',
+  '/hash': '哈希（md5/sha256）',
+  '/base64': 'Base64 编解码',
+  '/uuid': '生成 UUID',
+  '/rand': '随机数',
+  '/json': 'JSON 格式化',
+  '/timer': '计时器',
+  '/sql': 'SQL 查询（只读）',
+  '/fs': '文件操作',
+  '/units': '单位换算',
+  '/csv': 'CSV 摘要',
+};
+
+// 别名表（中文说人话）
+const ALIASES: Record<string, string> = {
+  '/帮助': '/help', '/退出': '/quit', '/清空': '/clear', '/会话': '/sessions', '/恢复': '/resume',
+  '/体检': '/doctor', '/状态': '/status', '/模型': '/model', '/密钥': '/key', '/版本': '/version',
+  '/记忆': '/memory', '/黑洞': '/hole', '/压缩': '/compact', '/构建': '/build', '/部署': '/deploy',
+  '/锻造': '/forge', '/技能': '/skill', '/权限': '/perm', '/沙盒': '/sandbox', '/合规': '/compliance',
+  '/授权': '/consent', '/备份': '/backup', '/导出': '/export', '/主题': '/theme', '/语言': '/lang',
+  '/视觉': '/vision', '/图片': '/img', '/视频': '/video', '/抓取': '/claw', '/定时': '/cron',
+  '/计算': '/calc', '/哈希': '/hash', '/换算': '/units',
+};
+
+export function isSlash(text: string): boolean {
+  return /^\/[^\s/]*(?:\s|$)/.test(text);
+}
+
+export function resolveAlias(cmd: string): string {
+  return ALIASES[cmd] ?? cmd;
+}
+
+// 前缀补全（输入 /hel → /help）
+export function completeCommand(input: string): string | null {
+  const matches = SLASH.filter(c => c.startsWith(input));
+  return matches.length === 1 ? matches[0] : null;
+}
