@@ -1,7 +1,6 @@
-// src/ui/components/CommandPanel.tsx — L6-2 命令面板（fuzzysort 模糊匹配 + ink-virtual-list）
+// src/ui/components/CommandPanel.tsx — L6-2 命令面板（fuzzysort 模糊匹配）
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { VirtualList } from 'ink-virtual-list';
 import fuzzysort from 'fuzzysort';
 import { SLASH, COMMAND_DESC, COMMAND_CAT } from '../../commands/registry.js';
 import { patchOverlay } from '../../app/stores/overlayStore.js';

@@ -85,16 +85,13 @@ async function main() {
     process.exit(0);
   }
 
-  // 输入诊断（临时）
-  process.stdin.on('data', (b) => {
-    try { require('node:fs').appendFileSync('C:/Users/20164/data/stdin-debug.log', JSON.stringify({ raw: b.toString('hex'), s: b.toString() }) + '\n'); } catch {}
-  });
-
   // 交互 TUI
   const React = (await import('react')).default;
   const { render } = await import('ink');
   const { App } = await import('../ui/entry.js');
   let app: any;
+  // 主屏幕滚动模式（非 alternateScreen）：历史消息经 <Static> 自然滚动，
+  // 无 alt-buffer 叠加闪烁，Composer/StatusBar 固定底部
   app = render(
     React.createElement(App, {
       bridge,
@@ -103,13 +100,17 @@ async function main() {
       cwd,
       runCommand: async (input: string) => {
         const r = await commandBus.execute(input);
-        const { patchTurn } = await import('../app/stores/turnStore.js');
         const { pushSegment } = await import('../app/stores/turnStore.js');
         if (r.output) pushSegment({ id: `cmd${Date.now()}`, role: 'system', kind: 'panel', text: r.output });
         if (r.error) pushSegment({ id: `cmd${Date.now()}`, role: 'system', text: r.error, error: true });
       },
+      onQuit: () => {
+        exitRequested = true;
+        try { app?.unmount(); } catch {}
+        setTimeout(() => process.exit(0), 50);
+      },
     }),
-    { alternateScreen: true, exitOnCtrlC: false }
+    { exitOnCtrlC: false }
   );
 
   // Ctrl+C：运行中中断 / 空闲退出

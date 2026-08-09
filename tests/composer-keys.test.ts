@@ -1,4 +1,4 @@
-// tests/composer-keys.test.ts — L6-2 Composer 键位纯函数（Enter 提交/换行/历史）
+// tests/composer-keys.test.ts — Composer 键位纯函数（提交/换行/历史/光标/编辑）
 import { describe, it, expect } from 'vitest';
 import { initComposer, handleComposerKey } from '../src/ui/lib/composerKeys.js';
 
@@ -14,10 +14,11 @@ describe('handleComposerKey', () => {
     const r = handleComposerKey(initComposer(), { return: true });
     expect(r.action.type).toBe('none');
   });
-  it('Shift+Enter 换行不提交', () => {
+  it('Shift+Enter 换行不提交（光标处插入）', () => {
     const s = initComposer();
-    const r = handleComposerKey({ ...s, value: '第一行' }, { return: true, shift: true });
-    expect(r.next.value).toBe('第一行\n');
+    const r = handleComposerKey({ ...s, value: '第一行', cursor: 2 }, { return: true, shift: true });
+    expect(r.next.value).toBe('第一\n行');
+    expect(r.next.cursor).toBe(3);
     expect(r.action.type).toBe('newline');
   });
   it('历史去重 + 上限 1000', () => {
@@ -40,5 +41,47 @@ describe('handleComposerKey', () => {
     expect(up2.next.value).toBe('a');
     const down = handleComposerKey(up2.next, { downArrow: true });
     expect(down.next.value).toBe('b');
+  });
+  it('字符输入：插入光标处', () => {
+    const r = handleComposerKey({ value: 'ac', cursor: 1, history: [], hIndex: -1 }, { input: 'b' });
+    expect(r.next.value).toBe('abc');
+    expect(r.next.cursor).toBe(2);
+  });
+  it('粘贴多字符整体插入（ink 一次性回调）', () => {
+    const r = handleComposerKey({ value: 'a', cursor: 1, history: [], hIndex: -1 }, { input: 'hello 世界' });
+    expect(r.next.value).toBe('ahello 世界');
+    expect(r.next.cursor).toBe(9); // 1 + 'hello 世界'.length(8)
+  });
+  it('控制组合键（Ctrl+C 等）不输入', () => {
+    const r = handleComposerKey({ value: 'a', cursor: 1, history: [], hIndex: -1 }, { input: 'c', ctrl: true });
+    expect(r.next.value).toBe('a');
+    expect(r.action.type).toBe('none');
+  });
+  it('Backspace 删除光标前字符', () => {
+    const r = handleComposerKey({ value: 'abc', cursor: 2, history: [], hIndex: -1 }, { backspace: true });
+    expect(r.next.value).toBe('ac');
+    expect(r.next.cursor).toBe(1);
+  });
+  it('Backspace 在行首不删除', () => {
+    const r = handleComposerKey({ value: 'abc', cursor: 0, history: [], hIndex: -1 }, { backspace: true });
+    expect(r.next.value).toBe('abc');
+    expect(r.action.type).toBe('none');
+  });
+  it('Delete 删除光标处字符', () => {
+    const r = handleComposerKey({ value: 'abc', cursor: 1, history: [], hIndex: -1 }, { delete: true });
+    expect(r.next.value).toBe('ac');
+    expect(r.next.cursor).toBe(1);
+  });
+  it('←→ 光标移动（边界钳制）', () => {
+    const s = { value: 'ab', cursor: 1, history: [], hIndex: -1 };
+    expect(handleComposerKey(s, { leftArrow: true }).next.cursor).toBe(0);
+    expect(handleComposerKey({ ...s, cursor: 0 }, { leftArrow: true }).next.cursor).toBe(0);
+    expect(handleComposerKey(s, { rightArrow: true }).next.cursor).toBe(2);
+    expect(handleComposerKey({ ...s, cursor: 2 }, { rightArrow: true }).next.cursor).toBe(2);
+  });
+  it('Home/End 跳行首/行尾', () => {
+    const s = { value: 'abc', cursor: 2, history: [], hIndex: -1 };
+    expect(handleComposerKey(s, { home: true }).next.cursor).toBe(0);
+    expect(handleComposerKey(s, { end: true }).next.cursor).toBe(3);
   });
 });

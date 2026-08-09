@@ -33,9 +33,9 @@ describe('消息行渲染', () => {
     expect(lastFrame()).toContain('❯');
     expect(lastFrame()).toContain('你好');
   });
-  it('助手消息 ┊ gutter', () => {
+  it('助手消息 ✦ gutter', () => {
     const { lastFrame } = render(<MessageLine m={{ id: '2', role: 'assistant', text: '收到', ms: 1200 }} />);
-    expect(lastFrame()).toContain('┊');
+    expect(lastFrame()).toContain('✦');
     expect(lastFrame()).toContain('收到');
   });
   it('错误消息红边框', () => {

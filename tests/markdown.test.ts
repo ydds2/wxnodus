@@ -30,6 +30,19 @@ describe('parseMd 块模型', () => {
   it('空输入不崩', () => {
     expect(parseMd('')).toEqual([]);
   });
+  it('行内标记内容不丢：加粗/斜体/链接/代码/删除线', () => {
+    const blocks = parseMd('**加粗**、*斜体*、`code`、[链接](https://a.b)、~~删除~~ 与普通文本');
+    expect(blocks[0].type).toBe('paragraph');
+    expect((blocks[0] as any).text).toBe('**加粗**、*斜体*、`code`、[链接](https://a.b)、~~删除~~ 与普通文本');
+  });
+  it('列表项内加粗内容保留', () => {
+    const blocks = parseMd('- **要点** 说明');
+    expect((blocks[0] as any).items[0]).toBe('**要点** 说明');
+  });
+  it('链接 alt 优先于子文本', () => {
+    const blocks = parseMd('[点我](https://x)');
+    expect((blocks[0] as any).text).toBe('[点我](https://x)');
+  });
 });
 
 describe('splitStablePrefix 流式增量', () => {

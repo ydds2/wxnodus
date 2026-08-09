@@ -44,7 +44,22 @@ function toBlock(n: Content): MdBlock {
   }
 }
 
+// 递归提取行内文本并保留标记语法（strong/emphasis/link 等容器节点文本在子孙，
+// 只取直接子节点的 value 会丢内容；同时还原 `**`/`[...](...)` 等标记，
+// 供渲染层 Inline 正则二次识别着色）
 function inline(n: any): string {
-  if (!n.children) return String(n.value ?? n.alt ?? '');
-  return n.children.map((c: any) => (c.value ?? c.alt ?? '')).join('');
+  switch (n.type) {
+    case 'text': return String(n.value ?? '');
+    case 'inlineCode': return '`' + (n.value ?? '') + '`';
+    case 'inlineMath': return '$' + (n.value ?? '') + '$';
+    case 'strong': return '**' + (n.children ? n.children.map(inline).join('') : '') + '**';
+    case 'emphasis': return '*' + (n.children ? n.children.map(inline).join('') : '') + '*';
+    case 'delete': return '~~' + (n.children ? n.children.map(inline).join('') : '') + '~~';
+    case 'link': return '[' + (n.alt ?? (n.children ? n.children.map(inline).join('') : '')) + '](' + (n.url ?? '') + ')';
+    case 'image': return '![' + (n.alt ?? '') + '](' + (n.url ?? '') + ')';
+    case 'break': return '  \n';
+    case 'html': return String(n.value ?? '');
+    default:
+      return n.children ? n.children.map(inline).join('') : String(n.value ?? n.alt ?? '');
+  }
 }
