@@ -28,18 +28,18 @@ export function videoDuration(path: string): number | null {
   } catch { return null; }
 }
 
-// 抽帧：每 intervalSec 秒 1 帧，最多 maxFrames 帧（jpg）
+// 抽帧：每 intervalSec 秒 1 帧，最多 maxFrames 帧（png——mjpeg 编码在部分环境报 YUV 错误）
 export function extractFrames(path: string, outDir: string, opts: { intervalSec?: number; maxFrames?: number } = {}): string[] {
   const interval = opts.intervalSec ?? 1;
   const max = opts.maxFrames ?? 24;
   rmSync(outDir, { recursive: true, force: true });
   try { mkdirSync(outDir, { recursive: true }); } catch { return []; }
   try {
-    const r = spawnSync('ffmpeg', ['-y', '-i', path, '-vf', `fps=1/${interval}`, '-frames:v', String(max), join(outDir, 'f_%03d.jpg')], { stdio: 'pipe', timeout: 120000 });
+    const r = spawnSync('ffmpeg', ['-y', '-i', path, '-vf', `fps=1/${interval}`, '-frames:v', String(max), join(outDir, 'f_%03d.png')], { stdio: 'pipe', timeout: 120000 });
     if (r.status !== 0) return [];
   } catch { return []; }
   try {
-    return readdirSync(outDir).filter(f => f.endsWith('.jpg')).sort().map(f => join(outDir, f));
+    return readdirSync(outDir).filter(f => f.endsWith('.png')).sort().map(f => join(outDir, f));
   } catch { return []; }
 }
 
@@ -62,7 +62,7 @@ export interface FrameNote { tSec: number; desc: string }
 export async function describeFrames(frames: string[], dur: number | null, apiKeyEnc: string): Promise<FrameNote[]> {
   const { describeImage } = await import('./vision.js');
   const notes: FrameNote[] = [];
-  const prompt = '你是软件项目观察员。请用一句话描述这一帧：当前界面/界面布局、正在进行的操作、界面状态变化（如果与典型状态不同请指出）。关注软件项目相关因素（UI、交互、数据、代码表现）。';
+  const prompt = '这是一个命令行终端（CLI）界面截图。请识别并简要描述：1) 界面区域类型（启动欢迎页/对话消息流/命令建议列表/模型选择器/会话列表/输入框/底部状态栏/输出面板）；2) 可见的关键文字原样转述（标题、命令如 /status、模型名、路径、数字）；3) 正在进行的操作或状态（输入中/执行命令/显示结果/思考中）。只描述终端界面本身，不要猜测业务应用。';
   for (let i = 0; i < frames.length; i++) {
     const tSec = dur !== null ? Math.round((i / Math.max(frames.length - 1, 1)) * dur) : i;
     const desc = await describeImage(frames[i]!, apiKeyEnc, prompt);
@@ -72,11 +72,16 @@ export async function describeFrames(frames: string[], dur: number | null, apiKe
 }
 
 // 场景分段：相邻帧相似度低于阈值 → 新场景
-export function segmentScenes(notes: FrameNote[], threshold = 0.18): Array<{ startSec: number; endSec: number; frames: FrameNote[] }> {
+// 归一化：GLM-4V 描述常带模板前缀（「这是一个命令行界面的截图」），
+// 去前缀+标点后再算相似度，避免模板化导致全片 1 段
+const stripTemplate = (s: string) =>
+  s.replace(/^(这是(一(个|张|种))?(命令行|终端|软件|程序|截图|界面)[^，。]*[，。])?/g, '').replace(/[，。；：、！？·「」"'（）()]/g, '').trim();
+
+export function segmentScenes(notes: FrameNote[], threshold = 0.12): Array<{ startSec: number; endSec: number; frames: FrameNote[] }> {
   if (!notes.length) return [];
   const scenes: Array<{ startSec: number; endSec: number; frames: FrameNote[] }> = [{ startSec: notes[0]!.tSec, endSec: notes[0]!.tSec, frames: [notes[0]!] }];
   for (let i = 1; i < notes.length; i++) {
-    const sim = textSimilarity(notes[i - 1]!.desc, notes[i]!.desc);
+    const sim = textSimilarity(stripTemplate(notes[i - 1]!.desc), stripTemplate(notes[i]!.desc));
     if (sim < threshold) {
       scenes.push({ startSec: notes[i]!.tSec, endSec: notes[i]!.tSec, frames: [notes[i]!] });
     } else {

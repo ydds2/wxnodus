@@ -36,6 +36,7 @@ export async function describeImage(target: string, apiKeyEnc: string | null, pr
 }
 
 // 文本模型综合（视频帧描述序列 → 项目级分析报告）
+// 用 glm-4-flash（免费）——glm-4.5 需付费额度（429 余额不足）
 export async function analyzeText(prompt: string, apiKeyEnc: string | null): Promise<string | null> {
   if (!apiKeyEnc) return null;
   try {
@@ -46,7 +47,7 @@ export async function analyzeText(prompt: string, apiKeyEnc: string | null): Pro
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
       body: JSON.stringify({
-        model: 'glm-4.5',
+        model: 'glm-4-flash',
         messages: [{ role: 'user', content: prompt }],
         stream: false,
         temperature: 0.4,
