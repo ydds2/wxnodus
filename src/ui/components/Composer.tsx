@@ -56,7 +56,7 @@ export function Composer({ onSubmit, onQuit, onLinesChange }: { onSubmit: (t: st
     const { next, action } = handleComposerKey(st, { ...key, input: inp });
     if (action.type === 'submit') onSubmit(action.text);
     if (next !== st) setSt(next);
-  }, { isActive: !overlay.panel });
+  }, { isActive: !overlay.panel && !overlay.modelPicker });
 
   const lines = st.value.split('\n');
   const { line: curLine, col: curCol } = cursorLineCol(st.value, st.cursor);

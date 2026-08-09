@@ -32,6 +32,36 @@ export function decryptKey(stored: string): string | null {
   }
 }
 
+// ── 模型目录（/model 选择器与直接切换共用）────────────────
+export interface ModelEntry {
+  name: string;      // 显示名（如 DeepSeek V4 Flash）
+  provider: string;  // 提供商（deepseek / kimi / zhipu）
+  modelId: string;   // API model 字段
+  baseURL: string;   // OpenAI 兼容端点
+}
+
+export const MODEL_CATALOG: ModelEntry[] = [
+  { name: 'DeepSeek Reasoner', provider: 'deepseek', modelId: 'deepseek-reasoner', baseURL: 'https://api.deepseek.com/v1' },
+  { name: 'DeepSeek Chat', provider: 'deepseek', modelId: 'deepseek-chat', baseURL: 'https://api.deepseek.com/v1' },
+  { name: 'DeepSeek V4 Flash', provider: 'deepseek', modelId: 'deepseek-v4-flash', baseURL: 'https://api.deepseek.com/v1' },
+  { name: 'DeepSeek V4 Pro', provider: 'deepseek', modelId: 'deepseek-v4-pro', baseURL: 'https://api.deepseek.com/v1' },
+  { name: 'K2.7 Coding', provider: 'kimi', modelId: 'kimi-k2.7', baseURL: 'https://api.moonshot.cn/v1' },
+  { name: 'K2.7 Coding Highspeed', provider: 'kimi', modelId: 'kimi-k2.7-highspeed', baseURL: 'https://api.moonshot.cn/v1' },
+  { name: 'K3', provider: 'kimi', modelId: 'kimi-k3', baseURL: 'https://api.moonshot.cn/v1' },
+  { name: 'K3-256k', provider: 'kimi', modelId: 'kimi-k3-256k', baseURL: 'https://api.moonshot.cn/v1' },
+  { name: 'GLM-4.5', provider: 'zhipu', modelId: 'glm-4.5', baseURL: 'https://open.bigmodel.cn/api/paas/v4' },
+  { name: 'GLM-4V Flash', provider: 'zhipu', modelId: 'glm-4v-flash', baseURL: 'https://open.bigmodel.cn/api/paas/v4' },
+];
+
+// 模糊过滤模型（名称/提供商/ID 子串，不区分大小写）
+export function filterModels(q: string, catalog: ModelEntry[] = MODEL_CATALOG): ModelEntry[] {
+  if (!q) return catalog;
+  const s = q.toLowerCase().trim();
+  return catalog.filter(m =>
+    m.name.toLowerCase().includes(s) || m.provider.toLowerCase().includes(s) || m.modelId.toLowerCase().includes(s),
+  );
+}
+
 // ── 规则脑（无 key 兜底：确定性诚实回答，绝不假装智能）─────────
 // 能力边界：打招呼 / 简单计算 / 说明状态；其余诚实告知未配置
 export function ruleBrain(input: string): string {

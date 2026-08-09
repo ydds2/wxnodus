@@ -6,7 +6,7 @@ import type { Memory } from '../kernel/memory.js';
 import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, resolveAlias } from './registry.js';
-import { encryptKey, maskKey } from '../kernel/providers.js';
+import { encryptKey, maskKey, MODEL_CATALOG } from '../kernel/providers.js';
 import { makeSpec } from '../build/spec.js';
 import { makePlan, topoSort } from '../build/plan.js';
 import { instantiate, checkLeftover } from '../build/scaffold.js';
@@ -31,6 +31,9 @@ export interface HandlerCtx {
   getThemeName: () => string;
   requestExit: () => void;
   clearHistory: () => void;
+  setModel: (modelId: string, baseURL?: string) => void;
+  openModelPicker: () => void;
+  setThinking: (on: boolean) => void;
 }
 
 const lines = (title: string, body: string[]): string => {
@@ -103,6 +106,32 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       return `模式已切换：${mode}`;
     }
     return `当前模式：${ctx.getMode()}（可选：smart/auto/manual/plan/yolo）`;
+  });
+
+  // 模型选择（无参 → 打开交互选择器；有参 → 目录查找直接切换）
+  bus.register('/model', (args) => {
+    const q = args.join(' ');
+    if (q) {
+      const s = q.toLowerCase();
+      const hit = MODEL_CATALOG.find(m => m.name.toLowerCase() === s || m.modelId.toLowerCase() === s);
+      if (!hit) {
+        return lines(' 模型目录 ', [`未找到「${q}」，可用模型：`, ...MODEL_CATALOG.map(m => ` ${m.name}（${m.provider}）`)]);
+      }
+      ctx.setModel(hit.modelId, hit.baseURL);
+      return `已切换模型：${hit.name}（${hit.provider}）`;
+    }
+    ctx.openModelPicker();
+    return '';
+  });
+
+  bus.register('/thinking', (args) => {
+    const v = args[0];
+    if (v === 'on' || v === 'off' || v === '1' || v === '0' || v === 'true' || v === 'false') {
+      const on = v === 'on' || v === '1' || v === 'true';
+      ctx.setThinking(on);
+      return `推理显示：${on ? '开' : '关'}`;
+    }
+    return '用法：/thinking on|off（模型选择器中 [←→] 也可切换）';
   });
 
   bus.register('/theme', (args) => {

@@ -22,7 +22,7 @@ export function MessageLine({ m }: { m: UiMsg }) {
     return (
       <Box flexDirection="row" marginLeft={1}>
         <Text color={t.error} bold>✗ </Text>
-        <Text color={t.error} wrap="wrap">{m.text.slice(0, 500)}</Text>
+        <Text color={t.error} wrap="wrap">{m.text}</Text>
       </Box>
     );
   }

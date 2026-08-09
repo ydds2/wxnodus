@@ -4,7 +4,7 @@ export const SLASH: string[] = [
   // 对话
   '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/context',
   // 模型
-  '/key', '/model', '/status', '/doctor', '/version',
+  '/key', '/model', '/status', '/doctor', '/version', '/thinking',
   // 记忆（黑洞引擎）
   '/memory', '/hole', '/compact', '/digest', '/curator',
   // 构建（概念编译器）
@@ -25,7 +25,7 @@ export const SLASH: string[] = [
 
 export const COMMAND_CAT: Record<string, string> = {
   '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/context': '◈',
-  '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙',
+  '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆',
   '/perm': '🛡', '/sandbox': '🛡', '/compliance': '🛡', '/consent': '🛡', '/audit': '🛡', '/encrypt': '🛡',
@@ -46,7 +46,8 @@ export const COMMAND_DESC: Record<string, string> = {
   '/resume': '恢复会话',
   '/context': '上下文占用可视化',
   '/key': '配置/查看模型密钥（加密存储）',
-  '/model': '切换模型',
+  '/model': '切换模型（打开选择器或 /model <名称>）',
+  '/thinking': '推理显示开关（on/off）',
   '/status': '系统状态',
   '/doctor': '健康体检',
   '/version': '版本信息',

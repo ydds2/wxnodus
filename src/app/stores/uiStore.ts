@@ -4,7 +4,7 @@ import type { UiState } from './types.js';
 
 const initial: UiState = {
   busy: false, mode: 'auto', model: '', sessionId: null, cwd: process.cwd(),
-  contextPct: 0, clock: '', stage: 'idle', themeName: 'kimi', notice: null,
+  contextPct: 0, clock: '', stage: 'idle', themeName: 'kimi', notice: null, thinking: true,
 };
 
 export const useUi = create<{ s: UiState }>(() => ({ s: initial }));

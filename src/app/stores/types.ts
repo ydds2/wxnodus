@@ -45,6 +45,7 @@ export interface UiState {
   stage: string;
   themeName: string;
   notice: string | null;
+  thinking: boolean; // 推理（Thinking）显示开关
 }
 
 export interface OverlayState {
@@ -53,5 +54,6 @@ export interface OverlayState {
   confirm: { text: string; danger: boolean } | null;
   panel: boolean;
   sessions: boolean;
+  modelPicker: boolean;
   pager: { title: string; lines: string[] } | null;
 }

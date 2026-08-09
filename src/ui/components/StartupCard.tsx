@@ -46,6 +46,11 @@ export function StartupCard({ model, version, cwd }: { model: string; version: s
           <Text color={t.text}>{'  能力   '}</Text>
           <Text color={t.muted}>{'黑洞记忆 · 概念编译 · 组件锻造 · GLM 视觉 · Computer Use'}</Text>
         </Text>
+        <Text wrap="truncate-end">
+          <Text color={t.ok}>{'●'}</Text>
+          <Text color={t.text}>{'  环境   '}</Text>
+          <Text color={t.muted}>{process.version + ' · ' + process.platform + ' · ' + process.arch}</Text>
+        </Text>
         <Text color={t.muted}>{'│'}</Text>
         <Text wrap="truncate-end">
           <Text color={t.ok}>{'❯'}</Text>
@@ -53,10 +58,7 @@ export function StartupCard({ model, version, cwd }: { model: string; version: s
           <Text color={t.muted}>{'「做个待办系统」「体检一下」「翻译这个文档」'}</Text>
         </Text>
         <Text wrap="truncate-end">
-          <Text color={t.muted}>{'  / 打开命令面板（67 条）· /help 查看全部命令'}</Text>
-        </Text>
-        <Text wrap="truncate-end">
-          <Text color={t.muted}>{'  Ctrl+G 退出 · Ctrl+C 中断任务'}</Text>
+          <Text color={t.muted}>{'  / 打开命令面板 · /help 全部命令 · Ctrl+G 退出 · Ctrl+C 中断'}</Text>
         </Text>
         <Text color={t.muted}>{'│'}</Text>
         <Text color={t.border}>{bottomBorder}</Text>

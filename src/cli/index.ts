@@ -32,7 +32,7 @@ async function main() {
   const bus = createEventBus(dataDir);
   const mem = createMemory(db);
   const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string };
-  const model = settings.model ?? (settings.apiKeyEnc ? 'deepseek-v4-flash' : '');
+  let model = settings.model ?? (settings.apiKeyEnc ? 'deepseek-v4-flash' : '');
   const agent = createAgent({ db, bus, mem, sessionId: 'default', config: { settings }, mode: (config.get('settings') as any).mode ?? 'smart' });
   const bridge = createBridge({ send: t => agent.run(t), abort: () => agent.abort() });
 
@@ -44,14 +44,24 @@ async function main() {
   // 模式/主题状态
   let mode = (config.get('settings') as any).mode ?? 'smart';
   let themeName = (config.get('settings') as any).theme ?? 'kimi';
+  let thinking = (config.get('settings') as any).thinking ?? true;
   const { patchUi } = await import('../app/stores/uiStore.js');
   const { patchOverlay } = await import('../app/stores/overlayStore.js');
-  patchUi({ mode, themeName, model, sessionId: 'default', cwd });
+  patchUi({ mode, themeName, model, sessionId: 'default', cwd, thinking });
 
   // 命令注册
   const commandBus = createCommandBus();
   const { registerCoreHandlers } = await import('../commands/handlers.js');
   let exitRequested = false;
+  // 模型热切换：agent 持有 settings 对象引用——改内存字段即生效，再持久化
+  const applyModel = (modelId: string, baseURL?: string) => {
+    settings.model = modelId;
+    if (baseURL) settings.baseURL = baseURL;
+    config.setKey('settings', 'model', modelId);
+    if (baseURL) config.setKey('settings', 'baseURL', baseURL);
+    model = modelId;
+    patchUi({ model: modelId });
+  };
   registerCoreHandlers(commandBus, {
     dataDir, cwd, db, mem, config, bus,
     getModel: () => model,
@@ -61,6 +71,9 @@ async function main() {
     getThemeName: () => themeName,
     requestExit: () => { exitRequested = true; try { app?.unmount(); } catch {} setTimeout(() => process.exit(0), 50); },
     clearHistory: () => { /* UI 历史清理由 App 层处理（此处保留空实现） */ },
+    setModel: applyModel,
+    openModelPicker: () => patchOverlay({ modelPicker: true }),
+    setThinking: on => { thinking = on; config.setKey('settings', 'thinking', on); patchUi({ thinking: on }); },
   });
 
   // 非交互模式
@@ -118,6 +131,12 @@ async function main() {
         exitRequested = true;
         try { app?.unmount(); } catch {}
         setTimeout(() => process.exit(0), 50);
+      },
+      setModel: applyModel,
+      onThinkingChange: on => {
+        thinking = on;
+        config.setKey('settings', 'thinking', on);
+        patchUi({ thinking: on });
       },
     }),
     { alternateScreen: true, exitOnCtrlC: false }

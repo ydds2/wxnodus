@@ -13,9 +13,11 @@ import { StartupCard } from './components/StartupCard.js';
 import { CommandPanel } from './components/CommandPanel.js';
 import { ApprovalPrompt } from './components/ApprovalPrompt.js';
 import { useTurn } from '../app/stores/turnStore.js';
-import { useOverlay } from '../app/stores/overlayStore.js';
+import { useOverlay, patchOverlay } from '../app/stores/overlayStore.js';
+import { getUi } from '../app/stores/uiStore.js';
 import { getTheme } from './theme.js';
 import { scrollTail } from './lib/lines.js';
+import { ModelPicker } from './components/ModelPicker.js';
 import type { UiMsg } from '../app/stores/types.js';
 import type { Bridge } from '../app/Bridge.js';
 
@@ -26,12 +28,14 @@ export interface AppDeps {
   cwd: string;
   runCommand: (input: string) => Promise<void>;
   onQuit?: () => void;
+  setModel: (modelId: string, baseURL?: string) => void;
+  onThinkingChange: (on: boolean) => void;
 }
 
 const STARTUP_LINES = 15; // 启动页固定行数（含边框），与 StartupCard 保持一致
 
-// 顶部品牌栏（Kimi 风格：单行深底、状态点 + 品牌 + 模型 + 模式）
-function Header({ version, model, busy }: { version: string; model: string; busy: boolean }) {
+// 顶部品牌栏（Kimi 风格：单行深底、状态点 + 品牌 + 模式徽章 + 模型 + 思考状态）
+function Header({ version, model, busy, mode, thinking }: { version: string; model: string; busy: boolean; mode: string; thinking: boolean }) {
   const t = getTheme();
   return (
     <Text backgroundColor={t.statusBg}>
@@ -39,7 +43,11 @@ function Header({ version, model, busy }: { version: string; model: string; busy
       <Text bold color={t.text} backgroundColor={t.statusBg}>WxNodus v{version}</Text>
       <Text color={t.muted} backgroundColor={t.statusBg}> · 概念编译器</Text>
       <Text color={t.muted} backgroundColor={t.statusBg}> │ </Text>
+      <Text color={t.ok} backgroundColor={t.statusBg}>{mode}</Text>
+      <Text color={t.muted} backgroundColor={t.statusBg}> │ </Text>
       <Text color={t.text} backgroundColor={t.statusBg}>{model || '规则脑'}</Text>
+      <Text color={t.muted} backgroundColor={t.statusBg}> · </Text>
+      <Text color={thinking ? t.text : t.muted} backgroundColor={t.statusBg}>{thinking ? 'thinking' : '–'}</Text>
     </Text>
   );
 }
@@ -74,13 +82,14 @@ function MessageStream({ history, streaming, tools, areaLines, width, offset }: 
   );
 }
 
-export function App({ bridge, version, model, cwd, runCommand, onQuit }: AppDeps) {
+export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel, onThinkingChange }: AppDeps) {
   const [history, setHistory] = useState<UiMsg[]>([]);
   const [startup, setStartup] = useState(true);
   const [inputLines, setInputLines] = useState(1);
   const [scrollOffset, setScrollOffset] = useState(0);
   const turn = useTurn(s => s.s);
   const overlay = useOverlay(s => s.s);
+  const u = getUi();
   const t = getTheme();
   const { stdout } = useStdout();
   const rows = stdout.rows || 24;
@@ -95,9 +104,9 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit }: AppDeps
   const streamLines = turn.tools.length + (turn.streaming ? Math.ceil(turn.streaming.length / Math.max(width - 2, 10)) : 0);
   const { maxOffset } = scrollTail(history, scrollOffset, areaLines, width - 2, streamLines);
 
-  // 滚动键：PgUp/PgDn 半屏 · Ctrl+U/D 半屏 · End 回底部 · Home 顶部（面板打开时不生效）
+  // 滚动键：PgUp/PgDn 半屏 · Ctrl+U/D 半屏 · End 回底部 · Home 顶部（面板/选择器打开时不生效）
   useInput((_inp, key) => {
-    if (overlay.panel || startup) return;
+    if (overlay.panel || overlay.modelPicker || startup) return;
     const step = Math.max(3, Math.floor(areaLines / 2));
     if (key.pageUp) setScrollOffset(o => Math.min(o + step, maxOffset));
     if (key.pageDown) setScrollOffset(o => Math.max(0, o - step));
@@ -105,7 +114,7 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit }: AppDeps
     if (key.ctrl && _inp === 'd') setScrollOffset(o => Math.max(0, o - step));
     if (key.end) setScrollOffset(0);
     if (key.home) setScrollOffset(maxOffset);
-  }, { isActive: !overlay.panel });
+  }, { isActive: !overlay.panel && !overlay.modelPicker });
 
   // 新消息/回合变化时自动回底部（offset=0 最新在底）
   React.useEffect(() => {
@@ -137,7 +146,7 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit }: AppDeps
 
   return (
     <Box flexDirection="column" height="100%">
-      <Header version={version} model={model} busy={turn.busy} />
+      <Header version={version} model={model} busy={turn.busy} mode={u.mode} thinking={u.thinking} />
       {startup ? (
         <Box marginTop={padTop}>
           <StartupCard model={model} version={version} cwd={cwd} />
@@ -159,6 +168,20 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit }: AppDeps
           setHistory(h => [...h, { id: `u${Date.now()}`, role: 'user', text: cmd }]);
           await runCommand(cmd);
         }} />
+      )}
+      {overlay.modelPicker && (
+        <ModelPicker
+          currentModel={model}
+          thinking={u.thinking}
+          onPick={m => {
+            setStartup(false);
+            setHistory(h => [...h, { id: `u${Date.now()}`, role: 'user', text: `选择模型：${m.name}` }]);
+            setModel(m.modelId, m.baseURL);
+            patchOverlay({ modelPicker: false });
+          }}
+          onCancel={() => patchOverlay({ modelPicker: false })}
+          onThinkingChange={onThinkingChange}
+        />
       )}
       <Box flexDirection="column">
         <Composer onSubmit={onSubmit} onQuit={onQuit} onLinesChange={setInputLines} />

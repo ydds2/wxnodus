@@ -1,5 +1,6 @@
-// src/ui/components/StatusBar.tsx — Kimi 式单行状态条（模型+上下文条 │ 阶段 │ 模式+时钟）
-// 设计（参考 shots-kimi）：整条深底背景色块，三栏竖线分隔；时钟每秒刷新（仅本组件 state）。
+// src/ui/components/StatusBar.tsx — Kimi 式单行状态条（模式+模型+思考 │ 上下文条+阶段 │ 目录 │ 时钟）
+// 设计（参考 DeepSeek CLI 底部状态 `yolo model thinking C:\path`）：深底背景色块，
+// 左段模式+模型+thinking，中段上下文条+阶段，右段工作目录（截断）+时钟+版本。
 import React, { useEffect, useState } from 'react';
 import { Text, useStdout } from 'ink';
 import { getUi } from '../../app/stores/uiStore.js';
@@ -25,27 +26,32 @@ export function StatusBar({ version }: { version?: string }) {
   }, []);
   const clock = u.clock || new Date().toTimeString().slice(0, 8);
   const pct = Math.round(u.contextPct * 100);
-  const barLen = 12;
+  const barLen = 10;
   const filled = Math.round(pct / (100 / barLen));
   const bar = '█'.repeat(filled) + '░'.repeat(Math.max(0, barLen - filled));
   const badge = MODE_BADGE[u.mode] ?? MODE_BADGE.smart;
   const bg = t.statusBg;
 
-  const left = `${u.model || '未配置模型'}${u.busy ? ' ⏳' : ''}`;
-  const mid = ` ${bar} ${pct}%`;
-  const right = ` ${u.stage || 'idle'} `;
-  const far = ` ${badge.label} ${clock}${version ? ` v${version}` : ''} `;
+  // 目录截断显示（保留尾部，如 C:\Users\…\WxNodusV3CLI）
+  const cwd = u.cwd || '';
+  const shortCwd = cwd.length > 26 ? '…' + cwd.slice(-25) : cwd;
+  const thinking = u.thinking ? ' · thinking' : '';
+
+  const left = `${badge.label} ${u.model || '规则脑'}${thinking}`;
+  const mid = ` ${bar} ${pct}% ${u.stage || 'idle'}`;
+  const right = ` ${shortCwd} `;
+  const far = ` ${clock}${version ? ` v${version}` : ''} `;
 
   return (
     <Text backgroundColor={bg}>
-      <Text color={t.text} backgroundColor={bg}>{left}</Text>
+      <Text color={badge.color} backgroundColor={bg}>{left}</Text>
       <Text color={t.muted} backgroundColor={bg}> │</Text>
       <Text color={pct >= 80 ? t.warn : t.text} backgroundColor={bg}>{mid}</Text>
       <Text color={t.muted} backgroundColor={bg}> │</Text>
-      <Text color={u.busy ? t.ok : t.muted} backgroundColor={bg}>{right}</Text>
+      <Text color={t.muted} backgroundColor={bg}>{right}</Text>
       <Text color={t.muted} backgroundColor={bg}> │</Text>
-      <Text color={badge.color} backgroundColor={bg}>{far}</Text>
-      <Text color={t.muted} backgroundColor={bg}>{' '.repeat(Math.max(width - 8 - left.length - mid.length - right.length - far.length, 2))}</Text>
+      <Text color={t.text} backgroundColor={bg}>{far}</Text>
+      <Text color={t.muted} backgroundColor={bg}>{' '.repeat(Math.max(width - 10 - left.length - mid.length - right.length - far.length, 2))}</Text>
     </Text>
   );
 }
