@@ -131,3 +131,23 @@ describe('类型约束', () => {
     ).toThrow();
   });
 });
+
+describe('旧版库迁移（用户在任意目录运行的兼容性）', () => {
+  it('V2 遗留库（settings 为 id/data 结构）→ 自动备份重建', () => {
+    const { mkdtempSync, rmSync, readdirSync } = require('node:fs') as typeof import('node:fs');
+    const d2 = mkdtempSync(join(tmpdir(), 'wxn-legacy-'));
+    // 构造旧版库
+    const old = new (require('better-sqlite3'))(join(d2, 'nodus.db'));
+    old.exec(`CREATE TABLE settings (id INTEGER PRIMARY KEY, data TEXT); CREATE TABLE recall (id INTEGER PRIMARY KEY, content TEXT);`);
+    old.prepare(`INSERT INTO settings (id, data) VALUES (1, 'legacy')`).run();
+    old.close();
+    // 打开 → 应重建
+    const ndb = openDB(d2);
+    const v = ndb.prepare(`SELECT value FROM settings WHERE key='schema_version'`).get() as any;
+    expect(Number(v.value)).toBeGreaterThanOrEqual(1);
+    // 旧库被备份（数据未破坏）
+    expect(readdirSync(d2).some(f => f.startsWith('nodus-legacy-'))).toBe(true);
+    closeDB(ndb);
+    rmSync(d2, { recursive: true, force: true });
+  });
+});

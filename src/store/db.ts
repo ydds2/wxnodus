@@ -5,7 +5,7 @@
 //  - audit 审计哈希链（合规红线：prev_hash 连续，可校验篡改）
 //  - checkpoints 会话快照（差距补齐 #6：限 10 份）
 import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
@@ -45,7 +45,19 @@ export function auditHash(prev: string, event: string, payload: string, ts: numb
 
 export function openDB(dataDir: string): Db {
   mkdirSync(dataDir, { recursive: true });
-  const db = new Database(join(dataDir, 'nodus.db'));
+  const dbFile = join(dataDir, 'nodus.db');
+  const db = new Database(dbFile);
+
+  // 旧版库检测：settings 表存在但结构非 V3（key/value）→ 旧版本遗留库
+  // 处理：备份为 nodus-legacy-<ts>.db 后重建（绝不破坏用户数据，仅移出活动路径）
+  const settingsCols = db.prepare(`PRAGMA table_info(settings)`).all() as Array<{ name: string }>;
+  if (settingsCols.length > 0 && !settingsCols.some(c => c.name === 'value')) {
+    try { db.close(); } catch { /* 忽略 */ }
+    const legacy = join(dataDir, `nodus-legacy-${Date.now()}.db`);
+    try { renameSync(dbFile, legacy); } catch { /* 备份失败仍继续 */ }
+    return openDB(dataDir); // 重建
+  }
+
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
