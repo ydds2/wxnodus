@@ -62,6 +62,7 @@ export function openDB(dataDir: string): Db {
       role TEXT NOT NULL CHECK (role IN ('user','assistant','system','tool')),
       content TEXT NOT NULL,
       tool_call_id TEXT,
+      archived INTEGER NOT NULL DEFAULT 0,
       ts INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
