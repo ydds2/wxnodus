@@ -131,30 +131,14 @@ async function main() {
   }
   try { process.stdout.write('\x1b]0;WxNodus — 概念编译器\x07'); } catch {}
 
-  // SGR 鼠标滚轮支持（Windows Terminal）：启用 1000+1006，解析滚轮序列 → ui.scroll 事件
-  try { process.stdout.write('\x1b[?1000h\x1b[?1006h'); } catch {}
-  let mouseBuf = '';
-  process.stdin.on('data', (d) => {
-    try {
-      mouseBuf += String(d);
-      const re = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
-      let m;
-      while ((m = re.exec(mouseBuf))) {
-        const btn = parseInt(m[1]!, 10);
-        if (btn === 64) bus.emit('ui.scroll', { delta: 3 });  // 滚轮上 → 上滑
-        if (btn === 65) bus.emit('ui.scroll', { delta: -3 }); // 滚轮下 → 下滑
-      }
-      mouseBuf = mouseBuf.slice(-64);
-    } catch { /* 解析失败静默 */ }
-  });
-
   // 交互 TUI
   const React = (await import('react')).default;
   const { render } = await import('ink');
   const { App } = await import('../ui/entry.js');
   let app: any;
-  // 全屏 TUI（alternateScreen）：主流 AI CLI（Kimi/Claude Code/Codex）同款——
-  // 消息区自制滚动裁剪，无测量循环，不再有帧叠加残留
+  // 主屏幕模式（非 alternateScreen，无固定全屏）：历史消息经 <Static> 提交到
+  // 终端滚动缓冲自然上滚（滚轮/PgUp 由终端处理），输入框固定底部——
+  // 用户要求：取消固定全屏、对话栏不锁死
   app = render(
     React.createElement(App, {
       bridge,
@@ -183,12 +167,8 @@ async function main() {
           return (db.prepare(`SELECT s.id, s.title, s.created_at AS ts, (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS msgs FROM sessions s ORDER BY s.updated_at DESC`).all() as any[]).map(r => ({ id: String(r.id), title: String(r.title ?? ''), msgs: Number(r.msgs ?? 0), ts: Number(r.ts ?? 0) }));
         } catch { return []; }
       },
-      subscribeScroll: (cb) => {
-        bus.on('ui.scroll', e => cb(Number((e.payload as any)?.delta ?? 0)));
-        return () => {};
-      },
     }),
-    { alternateScreen: true, exitOnCtrlC: false }
+    { exitOnCtrlC: false }
   );
 
   // Ctrl+C：运行中中断 / 空闲退出

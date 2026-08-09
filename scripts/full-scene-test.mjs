@@ -70,7 +70,12 @@ async function main() {
   check('建议:过滤生效', last().includes('/calc'));
   p.write('\x1b'); // Esc 清空
   await sleep(400);
-  check('建议:Esc 清空', !last().includes('│ ❯ /'));
+  p.write('x'); // 清空后应正常输入（无 '/' 残留）
+  await sleep(400);
+  const tailEsc = strip(out).split('\n').slice(-20).join('\n');
+  check('建议:Esc 清空后正常输入', tailEsc.includes('│ ❯ x') && !tailEsc.includes('│ ❯ /x'));
+  p.write('\x1b'); // 再清空，避免影响后续
+  await sleep(300);
 
   // ── 4. 命令执行 ──────────────────────────
   await typeKeys('/status\r');
@@ -105,16 +110,13 @@ async function main() {
   await sleep(400);
 
   // ── 7. 滚动 ─────────────────────────────
-  // 制造多条消息溢出（小窗口已触发）
+  // 制造多条消息
   for (let i = 0; i < 4; i++) { await typeKeys('测试' + i + '\r'); await sleep(700); }
   const f5 = last();
-  check('滚动:溢出提示', f5.includes('PgUp 上滑') || f5.includes('位置'));
-  p.write('\x1b[A'); // 空输入 ↑ 上滑
-  await sleep(500);
-  check('滚动:↑ 上滑生效', last().includes('位置'));
-  p.write('\x1b[F'); // End 回底
-  await sleep(500);
-  check('滚动:End 回底', !last().includes('位置'));
+  check('主屏幕:无固定全屏(无 [?1049h)', !out.includes('\x1b[?1049h'));
+  check('主屏幕:历史消息持续输出', out.includes('测试3'));
+  check('主屏幕:输入框固定底部', f5.includes('╭─') && f5.includes('Enter 发送'));
+  check('主屏幕:状态条在底部', f5.includes('v3.0.0'));
 
   // ── 8. 退出 ─────────────────────────────
   p.write('\x07'); // Ctrl+G
