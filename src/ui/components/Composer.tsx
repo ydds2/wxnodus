@@ -19,7 +19,7 @@ function cursorLineCol(value: string, cursor: number): { line: number; col: numb
   return { line: lines.length - 1, col: lines[lines.length - 1]!.length };
 }
 
-export function Composer({ onSubmit, onQuit }: { onSubmit: (t: string) => void; onQuit?: () => void }) {
+export function Composer({ onSubmit, onQuit, onLinesChange }: { onSubmit: (t: string) => void; onQuit?: () => void; onLinesChange?: (n: number) => void }) {
   const [st, setSt] = useState<ComposerState>(() => initComposer());
   const [cursorOn, setCursorOn] = useState(true);
   const u = getUi();
@@ -33,6 +33,11 @@ export function Composer({ onSubmit, onQuit }: { onSubmit: (t: string) => void; 
     const iv = setInterval(() => setCursorOn(c => !c), 530);
     return () => clearInterval(iv);
   }, []);
+
+  // 输入行数上报（消息区高度预算用；纯计算，无测量）
+  useEffect(() => {
+    onLinesChange?.(Math.max(1, st.value.split('\n').length));
+  }, [st.value, onLinesChange]);
 
   // 键位处理：Enter 提交 / Shift+Enter·Ctrl+J 换行 / ↑↓ 历史 / ←→ 移动 / 删除（纯函数）
   // Ctrl+G 退出（与提示行一致；Ctrl+C 由 CLI 层 SIGINT 接管）
@@ -84,7 +89,6 @@ export function Composer({ onSubmit, onQuit }: { onSubmit: (t: string) => void; 
         })}
         <Text color={borderColor}>{bottomBorder}</Text>
       </Box>
-      <Text color={t.muted}>Enter 发送 · Shift+Enter 换行 · ↑↓ 历史 · / 面板 · Ctrl+C 中断 · Ctrl+G 退出</Text>
     </Box>
   );
 }

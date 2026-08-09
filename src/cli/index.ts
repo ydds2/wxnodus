@@ -85,13 +85,23 @@ async function main() {
     process.exit(0);
   }
 
+  // Windows cmd 编码修复：默认代码页 936(GBK) 下 UTF-8 边框/中文会乱码——
+  // 交互启动时切换到 UTF-8(65001) 并设置终端标题（Kimi/Claude Code 同款处理）
+  if (process.platform === 'win32') {
+    try {
+      const { execSync } = await import('node:child_process');
+      execSync('chcp 65001 >nul', { stdio: 'ignore' });
+    } catch { /* 无权限/非 cmd 时静默 */ }
+  }
+  try { process.stdout.write('\x1b]0;WxNodus — 概念编译器\x07'); } catch {}
+
   // 交互 TUI
   const React = (await import('react')).default;
   const { render } = await import('ink');
   const { App } = await import('../ui/entry.js');
   let app: any;
-  // 主屏幕滚动模式（非 alternateScreen）：历史消息经 <Static> 自然滚动，
-  // 无 alt-buffer 叠加闪烁，Composer/StatusBar 固定底部
+  // 全屏 TUI（alternateScreen）：主流 AI CLI（Kimi/Claude Code/Codex）同款——
+  // 消息区自制滚动裁剪，无测量循环，不再有帧叠加残留
   app = render(
     React.createElement(App, {
       bridge,
@@ -110,7 +120,7 @@ async function main() {
         setTimeout(() => process.exit(0), 50);
       },
     }),
-    { exitOnCtrlC: false }
+    { alternateScreen: true, exitOnCtrlC: false }
   );
 
   // Ctrl+C：运行中中断 / 空闲退出
