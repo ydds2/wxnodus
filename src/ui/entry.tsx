@@ -1,10 +1,11 @@
-// src/ui/entry.tsx — 入口组件（主屏幕模式：布局稳定 + 消息区应用内滚动）
-// 架构（参考 Hermes / 普通终端 CLI）：
-//   非 alternateScreen（无固定全屏）；启动横幅由 CLI 层输出到滚动缓冲；
-//   消息区用 scrollTail 按终端行数裁剪渲染尾部 N 条（固定高度），
-//   应用内滚动回看（PgUp/PgDn/Ctrl+U/D/Home/End/空输入 ↑↓）；
-//   不用 <Static>——主屏幕模式下 Static 与 ink diff 冲突导致整树追加重绘
-//   （Header/输入框在屏幕重复堆叠、被「强制拉高」）。
+// src/ui/entry.tsx — 入口组件（主屏幕模式：消息区应用内滚动 + 输入框固定底部）
+// 架构（参考 Hermes / Kimi CLI）：
+//   非 alternateScreen（无固定全屏）；启动欢迎消息在消息区顶部；
+//   消息区 scrollTail 按终端行数裁剪渲染尾部（固定高度），应用内滚动回看
+//   （PgUp/PgDn/Ctrl+U/D/Home/End/空输入 ↑↓）——cmd 下唯一可靠的
+//   历史回看方式（终端滚动区被 ink 渲染区占用，滚轮/PgUp 由终端处理失效）；
+//   不用 <Static>——ink 7.1.1 主屏幕模式下 Static 输出与绝对定位重绘混合
+//   必然堆叠（架构限制）。
 import React, { useState } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import { MessageLine } from './components/MessageLine.js';
@@ -102,8 +103,7 @@ function MessageStream({ history, streaming, tools, areaLines, width, offset, re
 }
 
 export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel, onThinkingChange, listSessions }: AppDeps) {
-  // 欢迎消息作为首条历史（替代预输出横幅——预输出会使 ink 进入滚动追加模式，
-  // 导致 UI 整树重复堆叠；欢迎消息在消息区内，提交后自然上滚）
+  // 欢迎消息作为首条历史（消息区顶部，滚动后可回看）
   const [history, setHistory] = useState<UiMsg[]>([{
     id: 'welcome', role: 'system', kind: 'intro',
     text: `WxNodus v${version} · 概念编译器 — 说一句话，交付可运行系统（/ 打开命令面板 · /help 全部命令 · Ctrl+G 退出）`,
