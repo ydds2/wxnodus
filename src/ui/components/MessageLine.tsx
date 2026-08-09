@@ -1,8 +1,9 @@
-// src/ui/components/MessageLine.tsx — L6-2 单条消息渲染（角色 gutter + 错误红框 + Cooked）
+// src/ui/components/MessageLine.tsx — L6-2 单条消息渲染（角色 gutter + 错误红框 + Markdown + Cooked）
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { UiMsg } from '../../app/stores/types.js';
 import { getTheme } from '../theme.js';
+import { Markdown } from './Markdown.js';
 
 const GUTTER: Record<string, { glyph: string; color: string }> = {
   user: { glyph: '❯', color: '#10b981' },
@@ -28,7 +29,7 @@ export function MessageLine({ m }: { m: UiMsg }) {
         <Text color={g.color} bold>{g.glyph} </Text>
         {m.role === 'assistant' ? (
           <Box borderStyle="round" borderColor={t.border} paddingX={1} flexGrow={1}>
-            <Text color={t.text} wrap="wrap">{m.text}</Text>
+            <Markdown text={m.text} />
           </Box>
         ) : (
           <Text color={m.role === 'user' ? t.text : t.muted} bold={m.role === 'user'} wrap="wrap">{m.text}</Text>

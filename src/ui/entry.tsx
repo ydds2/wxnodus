@@ -1,8 +1,8 @@
 // src/ui/entry.tsx — L6-2 入口组件（消息流 + 输入 + 弹层 + 状态条组装）
 import React, { useState } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, Static } from 'ink';
+import { ScrollView } from 'ink-scroll-view';
 import { MessageLine } from './components/MessageLine.js';
-import { Markdown } from './components/Markdown.js';
 import { StreamingMarkdown } from './components/StreamingMarkdown.js';
 import { Composer } from './components/Composer.js';
 import { StatusBar } from './components/StatusBar.js';
@@ -10,7 +10,7 @@ import { StartupCard } from './components/StartupCard.js';
 import { CommandPanel } from './components/CommandPanel.js';
 import { ApprovalPrompt } from './components/ApprovalPrompt.js';
 import { useTurn } from '../app/stores/turnStore.js';
-import { useOverlay, patchOverlay } from '../app/stores/overlayStore.js';
+import { useOverlay } from '../app/stores/overlayStore.js';
 import type { UiMsg } from '../app/stores/types.js';
 import type { Bridge } from '../app/Bridge.js';
 import { getTheme } from './theme.js';
@@ -23,17 +23,21 @@ export interface AppDeps {
   runCommand: (input: string) => Promise<void>;
 }
 
-// 消息流（已提交历史 + 实时区：流式文本/工具/段）
+// 消息流（参考 hermes appLayout：Static 提交历史 + ScrollView 实时区）
+// 历史消息经 <Static> 一次性提交（只渲染新增，防 OOM/防清滚动回滚）；
+// 实时区（流式文本/工具）在 ScrollView 内滚动
 function MessageStream({ history, streaming, tools }: { history: UiMsg[]; streaming: string; tools: Array<{ name: string; ctx: string; done?: boolean; ok?: boolean }> }) {
   return (
     <Box flexDirection="column" flexGrow={1}>
-      {history.map(m => <MessageLine key={m.id} m={m} />)}
-      {tools.map(t => (
-        <Box key={t.name + t.ctx} flexDirection="row">
-          <Text color="#f59e0b">● {t.name}{t.ctx ? `("${t.ctx}")` : ''} {t.done ? (t.ok ? '✓' : '✗') : '…'}</Text>
-        </Box>
-      ))}
-      {streaming && <StreamingMarkdown text={streaming} />}
+      <Static items={history}>{m => <MessageLine key={m.id} m={m} />}</Static>
+      <ScrollView flexGrow={1}>
+        {tools.map(t => (
+          <Box key={t.name + t.ctx} flexDirection="row">
+            <Text color="#f59e0b">● {t.name}{t.ctx ? `("${t.ctx}")` : ''} {t.done ? (t.ok ? '✓' : '✗') : '…'}</Text>
+          </Box>
+        ))}
+        {streaming && <StreamingMarkdown text={streaming} />}
+      </ScrollView>
     </Box>
   );
 }
@@ -58,11 +62,13 @@ export function App({ bridge, version, model, cwd, runCommand }: AppDeps) {
     await bridge.submit(text);
   };
 
-  // 回合结束时归档段进历史
+  // 回合段归档：按 id 去重（防重复归档/时序丢失）
+  const archivedIds = React.useRef(new Set<string>());
   React.useEffect(() => {
-    if (turn.streamSegments.length) {
-      setHistory(h => [...h, ...turn.streamSegments]);
-      // 清空已归档段（由 TurnController recordMessageComplete 已清空 streamSegments）
+    const fresh = turn.streamSegments.filter(m => !archivedIds.current.has(m.id));
+    if (fresh.length) {
+      archivedIds.current = new Set([...archivedIds.current, ...fresh.map(m => m.id)]);
+      setHistory(h => [...h, ...fresh]);
     }
   }, [turn.streamSegments]);
 

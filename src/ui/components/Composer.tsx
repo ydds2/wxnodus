@@ -40,7 +40,7 @@ export function Composer({ onSubmit }: { onSubmit: (t: string) => void }) {
           placeholder={u.busy ? '任务进行中（Ctrl+C 中断）…' : '说人话，或 / 查看命令'}
         />
       </Box>
-      <Text color={t.muted}>Enter 发送 · Shift+Enter 换行 · ↑↓ 历史 · / 面板 · Ctrl+R 搜索 · Ctrl+G 编辑器</Text>
+      <Text color={t.muted}>Enter 发送 · Shift+Enter 换行 · ↑↓ 历史 · / 面板</Text>
     </Box>
   );
 }
