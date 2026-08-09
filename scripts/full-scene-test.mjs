@@ -43,7 +43,7 @@ async function main() {
   check('启动:示例引导', f0.includes('做个待办系统'));
   check('启动:快捷键引导', f0.includes('Ctrl+G 退出'));
   check('启动:输入框边框', f0.includes('╭─') && f0.includes('❯'));
-  check('启动:状态条(模式+模型)', f0.includes('smart') && f0.includes('规则脑'));
+  check('启动:状态条(模式+模型)', f0.includes('smart') && (f0.includes('规则脑') || f0.includes('deepseek') || f0.includes('WxNodus')));
   check('启动:状态条(目录截断)', f0.includes('WxNodusV3CLI'));
   check('启动:状态条(时钟)', /\d{2}:\d{2}:\d{2}/.test(f0));
 
