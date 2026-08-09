@@ -354,11 +354,11 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/video', async (args) => {
     const target = args.join(' ').replace(/^["']|["']$/g, '');
-    if (!target) return '用法：/video <视频路径>（ffmpeg 抽帧 + GLM-4V 逐帧分析）';
+    if (!target) return '用法：/video <视频路径>（全帧抽帧 → 项目级分析：概述/功能/操作流程/场景变化/coding 因素）';
     if (!existsSync(target)) return `视频不存在：${target}`;
-    const { analyzeVideo } = await import('../kernel/video.js');
+    const { analyzeVideoAsProject } = await import('../kernel/video.js');
     const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
-    const out = await analyzeVideo(target, enc ?? null);
+    const out = await analyzeVideoAsProject(target, enc ?? null);
     return out;
   });
 

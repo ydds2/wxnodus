@@ -1,6 +1,12 @@
-// src/kernel/video.ts — 逐帧（视频流）分析
-// 流程：ffprobe 取时长 → ffmpeg 按采样间隔抽帧 → GLM-4V 逐帧描述 → 时间线汇总
-// 参考：Claude 视频分析 / 多模态视频摘要的「抽帧 + 逐帧描述 + 时间线拼接」方案
+// src/kernel/video.ts — 逐帧（视频流）软件项目级分析
+// 设计（参考 Claude 视频理解 / 多模态项目复盘）：
+//   视频 = 一个软件项目的运行时间线。流程：
+//   1) ffprobe 时长 → ffmpeg 密集抽帧（1 秒 1 帧，≤24 帧）
+//   2) 每帧 GLM-4V 项目导向描述（界面/操作/状态/变化）
+//   3) 场景变化检测（相邻帧描述文本相似度低于阈值 → 场景切换点）
+//   4) GLM-4.5 文本模型综合：项目概述/功能界面/操作流程/场景时间线/
+//      coding 因素（UI 结构、交互、数据流、实现要点）/改进建议
+//   无 key / 无 ffmpeg 时降级为「抽帧 + 时间线描述」并给出指引
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,8 +30,8 @@ export function videoDuration(path: string): number | null {
 
 // 抽帧：每 intervalSec 秒 1 帧，最多 maxFrames 帧（jpg）
 export function extractFrames(path: string, outDir: string, opts: { intervalSec?: number; maxFrames?: number } = {}): string[] {
-  const interval = opts.intervalSec ?? 2;
-  const max = opts.maxFrames ?? 12;
+  const interval = opts.intervalSec ?? 1;
+  const max = opts.maxFrames ?? 24;
   rmSync(outDir, { recursive: true, force: true });
   try { mkdirSync(outDir, { recursive: true }); } catch { return []; }
   try {
@@ -37,20 +43,119 @@ export function extractFrames(path: string, outDir: string, opts: { intervalSec?
   } catch { return []; }
 }
 
-export interface VideoAnalysisResult { frames: number; analyzed: number; timeline: string[]; summary: string }
+// 文本相似度（字符二元组重叠率）——用于场景变化检测
+export function textSimilarity(a: string, b: string): number {
+  const norm = (s: string) => [...s.replace(/\s+/g, '')];
+  const ca = norm(a), cb = norm(b);
+  if (!ca.length || !cb.length) return 0;
+  const set = (arr: string[]) => { const m = new Map<string, number>(); for (const c of arr) m.set(c, (m.get(c) ?? 0) + 1); return m; };
+  const ma = set(ca), mb = set(cb);
+  let inter = 0, total = 0;
+  for (const [c, n] of ma) { inter += Math.min(n, mb.get(c) ?? 0); total += n; }
+  for (const [c, n] of mb) total += n;
+  return total ? (inter * 2) / total : 0;
+}
 
-// 逐帧分析：采样最多 6 帧送 GLM-4V，输出时间线描述
+export interface FrameNote { tSec: number; desc: string }
+
+// 逐帧描述（项目导向 prompt：界面/操作/状态/变化）
+export async function describeFrames(frames: string[], dur: number | null, apiKeyEnc: string): Promise<FrameNote[]> {
+  const { describeImage } = await import('./vision.js');
+  const notes: FrameNote[] = [];
+  const prompt = '你是软件项目观察员。请用一句话描述这一帧：当前界面/界面布局、正在进行的操作、界面状态变化（如果与典型状态不同请指出）。关注软件项目相关因素（UI、交互、数据、代码表现）。';
+  for (let i = 0; i < frames.length; i++) {
+    const tSec = dur !== null ? Math.round((i / Math.max(frames.length - 1, 1)) * dur) : i;
+    const desc = await describeImage(frames[i]!, apiKeyEnc, prompt);
+    notes.push({ tSec, desc: desc ?? '（帧分析失败）' });
+  }
+  return notes;
+}
+
+// 场景分段：相邻帧相似度低于阈值 → 新场景
+export function segmentScenes(notes: FrameNote[], threshold = 0.18): Array<{ startSec: number; endSec: number; frames: FrameNote[] }> {
+  if (!notes.length) return [];
+  const scenes: Array<{ startSec: number; endSec: number; frames: FrameNote[] }> = [{ startSec: notes[0]!.tSec, endSec: notes[0]!.tSec, frames: [notes[0]!] }];
+  for (let i = 1; i < notes.length; i++) {
+    const sim = textSimilarity(notes[i - 1]!.desc, notes[i]!.desc);
+    if (sim < threshold) {
+      scenes.push({ startSec: notes[i]!.tSec, endSec: notes[i]!.tSec, frames: [notes[i]!] });
+    } else {
+      const cur = scenes[scenes.length - 1]!;
+      cur.frames.push(notes[i]!);
+      cur.endSec = notes[i]!.tSec;
+    }
+  }
+  return scenes;
+}
+
+// 项目级综合分析报告（GLM-4.5 文本模型）
+export async function synthesizeProjectReport(notes: FrameNote[], scenes: Array<{ startSec: number; endSec: number; frames: FrameNote[] }>, apiKeyEnc: string): Promise<string | null> {
+  const { analyzeText } = await import('./vision.js');
+  const timeline = notes.map(n => `[${n.tSec}s] ${n.desc}`).join('\n');
+  const sceneLines = scenes.map((s, i) => `场景${i + 1}（${s.startSec}s-${s.endSec}s，${s.frames.length} 帧）：${s.frames.map(f => f.desc).join('；')}`).join('\n');
+  const prompt = [
+    '你是一名资深软件项目分析专家。下面是一段软件「使用过程视频」的逐帧观察记录（时间线）和自动分段的场景信息。',
+    '请把这段视频当作「一个软件项目的完整运行演示」进行项目级分析，输出结构化报告：',
+    '',
+    '## 1. 项目概述',
+    '这是什么软件/项目？核心定位？',
+    '## 2. 功能与界面',
+    '展示了哪些功能？界面布局（导航/内容区/状态区）？',
+    '## 3. 动态操作流程',
+    '用户的操作序列：进入 → 操作 → 结果 → 反馈，逐步描述',
+    '## 4. 场景变化时间线',
+    '按场景分段列出各阶段发生的事（使用前/使用中/使用后场景变化）',
+    '## 5. Coding 因素分析',
+    '从开发者视角：UI 结构、交互设计、状态管理、数据流、潜在实现要点、可复用模式',
+    '## 6. 问题与改进建议',
+    '观察到的问题（布局/交互/反馈缺失等）与改进建议',
+    '',
+    '【逐帧时间线】',
+    timeline,
+    '',
+    '【场景分段】',
+    sceneLines,
+  ].join('\n');
+  return analyzeText(prompt, apiKeyEnc);
+}
+
+// 完整项目级分析入口（/video 调用）
+export async function analyzeVideoAsProject(target: string, apiKeyEnc: string | null, opts?: { intervalSec?: number; maxFrames?: number }): Promise<string> {
+  if (!apiKeyEnc) return '视频项目级分析需要 GLM key（/key set <key> 配置后使用）';
+  if (!hasFfmpeg()) return '未检测到 ffmpeg——请先安装（winget install ffmpeg 或 choco install ffmpeg）后重试';
+  const dur = videoDuration(target);
+  const outDir = join(tmpdir(), `wxnodus-frames-${Date.now().toString(36)}`);
+  const frames = extractFrames(target, outDir, opts ?? { intervalSec: 1, maxFrames: 24 });
+  if (!frames.length) {
+    rmSync(outDir, { recursive: true, force: true });
+    return '帧提取失败（文件不是视频、ffmpeg 解码出错或路径无效）';
+  }
+  // 逐帧描述
+  const notes = await describeFrames(frames, dur, apiKeyEnc);
+  // 场景分段
+  const scenes = segmentScenes(notes);
+  // 项目级综合报告
+  const report = await synthesizeProjectReport(notes, scenes, apiKeyEnc);
+  rmSync(outDir, { recursive: true, force: true });
+  if (report) return report;
+  // 降级：时间线 + 场景
+  return [
+    `逐帧分析（${frames.length} 帧${dur !== null ? ` / ${Math.round(dur)}s` : ''}），场景 ${scenes.length} 段，综合报告生成失败——输出原始时间线：`,
+    ...notes.map(n => ` [${n.tSec}s] ${n.desc}`),
+  ].join('\n');
+}
+
+// 兼容旧接口：基础逐帧分析（时间线描述）
 export async function analyzeVideo(target: string, apiKeyEnc: string | null, opts?: { intervalSec?: number; maxFrames?: number }): Promise<string> {
   if (!apiKeyEnc) return '视频分析需要 GLM key（/key set <key> 配置后使用）';
   if (!hasFfmpeg()) return '未检测到 ffmpeg——请先安装（winget install ffmpeg 或 choco install ffmpeg）后重试';
   const dur = videoDuration(target);
   const outDir = join(tmpdir(), `wxnodus-frames-${Date.now().toString(36)}`);
-  const frames = extractFrames(target, outDir, opts ?? {});
+  const frames = extractFrames(target, outDir, opts ?? { intervalSec: 2, maxFrames: 12 });
   if (!frames.length) {
     rmSync(outDir, { recursive: true, force: true });
     return '帧提取失败（文件不是视频、ffmpeg 解码出错或路径无效）';
   }
-  // 时间线采样：均匀取 ≤6 帧（含首尾）
   const want = Math.min(frames.length, 6);
   const idxs: number[] = [];
   for (let i = 0; i < want; i++) idxs.push(Math.round((i / Math.max(want - 1, 1)) * (frames.length - 1)));

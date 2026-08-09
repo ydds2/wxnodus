@@ -1,6 +1,6 @@
-// src/kernel/vision.ts — L6-2 GLM-4V 视觉理解（/vision /img 共用）
+// src/kernel/vision.ts — L6-2 GLM-4V 视觉理解（/vision /img /video 共用）
 // 设计：本地图片 base64 直传 / URL 透传 → glm-4v-flash（免费多模态）
-export async function describeImage(target: string, apiKeyEnc: string | null): Promise<string | null> {
+export async function describeImage(target: string, apiKeyEnc: string | null, prompt?: string): Promise<string | null> {
   if (!apiKeyEnc) return null;
   try {
     const { decryptKey } = await import('./providers.js');
@@ -21,10 +21,37 @@ export async function describeImage(target: string, apiKeyEnc: string | null): P
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
       body: JSON.stringify({
         model: 'glm-4v-flash',
-        messages: [{ role: 'user', content: [{ type: 'text', text: '描述这张图片的内容，包括文字、布局与视觉特征' }, { type: 'image_url', image_url: { url: imageUrl } }] }],
+        messages: [{ role: 'user', content: [{ type: 'text', text: prompt ?? '描述这张图片的内容，包括文字、布局与视觉特征' }, { type: 'image_url', image_url: { url: imageUrl } }] }],
         stream: false,
       }),
       signal: AbortSignal.timeout(45000),
+    });
+    if (!resp.ok) return null;
+    const j = await resp.json() as any;
+    const text = j?.choices?.[0]?.message?.content;
+    return typeof text === 'string' && text.trim() ? text.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+// 文本模型综合（视频帧描述序列 → 项目级分析报告）
+export async function analyzeText(prompt: string, apiKeyEnc: string | null): Promise<string | null> {
+  if (!apiKeyEnc) return null;
+  try {
+    const { decryptKey } = await import('./providers.js');
+    const key = decryptKey(apiKeyEnc);
+    if (!key) return null;
+    const resp = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+      body: JSON.stringify({
+        model: 'glm-4.5',
+        messages: [{ role: 'user', content: prompt }],
+        stream: false,
+        temperature: 0.4,
+      }),
+      signal: AbortSignal.timeout(60000),
     });
     if (!resp.ok) return null;
     const j = await resp.json() as any;
