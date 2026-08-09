@@ -24,7 +24,7 @@ function cursorLineCol(value: string, cursor: number): { line: number; col: numb
   return { line: lines.length - 1, col: lines[lines.length - 1]!.length };
 }
 
-export function Composer({ onSubmit, onQuit, onLinesChange }: { onSubmit: (t: string) => void; onQuit?: () => void; onLinesChange?: (n: number) => void }) {
+export function Composer({ onSubmit, onQuit, onLinesChange, onEmptyChange }: { onSubmit: (t: string) => void; onQuit?: () => void; onLinesChange?: (n: number) => void; onEmptyChange?: (empty: boolean) => void }) {
   const [st, setSt] = useState<ComposerState>(() => initComposer());
   const [cursorOn, setCursorOn] = useState(true);
   const u = getUi();
@@ -43,10 +43,13 @@ export function Composer({ onSubmit, onQuit, onLinesChange }: { onSubmit: (t: st
     return () => clearInterval(iv);
   }, []);
 
-  // 输入行数上报（消息区高度预算用；纯计算，无测量）
+  // 输入行数/空状态上报（消息区高度预算 + ↑↓ 滚动判定用；纯计算，无测量）
   useEffect(() => {
     onLinesChange?.(Math.max(1, st.value.split('\n').length));
   }, [st.value, onLinesChange]);
+  useEffect(() => {
+    onEmptyChange?.(!st.value.trim());
+  }, [st.value, onEmptyChange]);
 
   // 键位处理：Enter 提交/执行建议 · Shift+Enter 换行 · ↑↓ 建议或历史 · Tab 补全 ·
   // Esc 清空 · ←→ 移动 · 删除；Ctrl+G 退出（Ctrl+C 由 CLI 层 SIGINT 接管）

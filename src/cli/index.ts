@@ -131,6 +131,23 @@ async function main() {
   }
   try { process.stdout.write('\x1b]0;WxNodus — 概念编译器\x07'); } catch {}
 
+  // SGR 鼠标滚轮支持（Windows Terminal）：启用 1000+1006，解析滚轮序列 → ui.scroll 事件
+  try { process.stdout.write('\x1b[?1000h\x1b[?1006h'); } catch {}
+  let mouseBuf = '';
+  process.stdin.on('data', (d) => {
+    try {
+      mouseBuf += String(d);
+      const re = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
+      let m;
+      while ((m = re.exec(mouseBuf))) {
+        const btn = parseInt(m[1]!, 10);
+        if (btn === 64) bus.emit('ui.scroll', { delta: 3 });  // 滚轮上 → 上滑
+        if (btn === 65) bus.emit('ui.scroll', { delta: -3 }); // 滚轮下 → 下滑
+      }
+      mouseBuf = mouseBuf.slice(-64);
+    } catch { /* 解析失败静默 */ }
+  });
+
   // 交互 TUI
   const React = (await import('react')).default;
   const { render } = await import('ink');
@@ -165,6 +182,10 @@ async function main() {
         try {
           return (db.prepare(`SELECT s.id, s.title, s.created_at AS ts, (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS msgs FROM sessions s ORDER BY s.updated_at DESC`).all() as any[]).map(r => ({ id: String(r.id), title: String(r.title ?? ''), msgs: Number(r.msgs ?? 0), ts: Number(r.ts ?? 0) }));
         } catch { return []; }
+      },
+      subscribeScroll: (cb) => {
+        bus.on('ui.scroll', e => cb(Number((e.payload as any)?.delta ?? 0)));
+        return () => {};
       },
     }),
     { alternateScreen: true, exitOnCtrlC: false }

@@ -34,6 +34,7 @@ export interface AppDeps {
   setModel: (modelId: string, baseURL?: string) => void;
   onThinkingChange: (on: boolean) => void;
   listSessions: () => SessionRow[];
+  subscribeScroll?: (cb: (delta: number) => void) => () => void;
 }
 
 const STARTUP_LINES = 15; // 启动页固定行数（含边框），与 StartupCard 保持一致
@@ -67,7 +68,7 @@ function MessageStream({ history, streaming, tools, areaLines, width, offset, re
   const streamLines = tools.length + (streaming ? Math.ceil(streaming.length / Math.max(width - 2, 10)) : 0)
     + (showThinking && reasoning ? 2 + Math.ceil(reasoning.length / Math.max(width - 2, 10)) : 0)
     + (notice ? 1 : 0);
-  const { visible, atBottom, overflow } = scrollTail(history, offset, areaLines, width - 2, streamLines);
+  const { visible, atBottom, overflow, maxOffset } = scrollTail(history, offset, areaLines, width - 2, streamLines);
   return (
     <Box flexDirection="column" flexGrow={1}>
       {notice && (
@@ -77,10 +78,10 @@ function MessageStream({ history, streaming, tools, areaLines, width, offset, re
         </Text>
       )}
       {!atBottom && (
-        <Text color={t.muted}>↑ 已上滑 · PgUp/PgDn 或 Ctrl+U/D 滚动 · End 回底部</Text>
+        <Text color={t.muted}>↑ 位置 {offset}/{maxOffset} 行 · PgUp/PgDn 或 Ctrl+U/D 滚动 · End 回底部</Text>
       )}
-      {atBottom && overflow > 0 && (
-        <Text color={t.muted}>…… ↑ PgUp 上滑查看更早消息</Text>
+      {atBottom && maxOffset > 0 && (
+        <Text color={t.muted}>…… ↑ PgUp 上滑查看更早消息（共 {history.length} 条）</Text>
       )}
       {showThinking && reasoning && (
         <Box flexDirection="column" marginLeft={1}>
@@ -102,10 +103,11 @@ function MessageStream({ history, streaming, tools, areaLines, width, offset, re
   );
 }
 
-export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel, onThinkingChange, listSessions }: AppDeps) {
+export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel, onThinkingChange, listSessions, subscribeScroll }: AppDeps) {
   const [history, setHistory] = useState<UiMsg[]>([]);
   const [startup, setStartup] = useState(true);
   const [inputLines, setInputLines] = useState(1);
+  const [composerEmpty, setComposerEmpty] = useState(true);
   const [scrollOffset, setScrollOffset] = useState(0);
   const turn = useTurn(s => s.s);
   const overlay = useOverlay(s => s.s);
@@ -124,22 +126,29 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
   const streamLines = turn.tools.length + (turn.streaming ? Math.ceil(turn.streaming.length / Math.max(width - 2, 10)) : 0);
   const { maxOffset } = scrollTail(history, scrollOffset, areaLines, width - 2, streamLines);
 
-  // 滚动键：PgUp/PgDn 半屏 · Ctrl+U/D 半屏 · End 回底部 · Home 顶部（选择器打开时不生效）
+  // 滚动键：PgUp/PgDn 半屏 · Ctrl+U/D 半屏 · Alt+↑↓ 半屏 · End 回底部 · Home 顶部
+  // 输入框为空时 ↑↓ 逐行滚动（cmd 下最可靠的回看方式；选择器打开时不生效）
   useInput((_inp, key) => {
     if (overlay.modelPicker || startup) return;
     const step = Math.max(3, Math.floor(areaLines / 2));
-    if (key.pageUp) setScrollOffset(o => Math.min(o + step, maxOffset));
-    if (key.pageDown) setScrollOffset(o => Math.max(0, o - step));
+    if (key.pageUp || (key.meta && key.upArrow)) setScrollOffset(o => Math.min(o + step, maxOffset));
+    if (key.pageDown || (key.meta && key.downArrow)) setScrollOffset(o => Math.max(0, o - step));
     if (key.ctrl && _inp === 'u') setScrollOffset(o => Math.min(o + step, maxOffset));
     if (key.ctrl && _inp === 'd') setScrollOffset(o => Math.max(0, o - step));
+    if (composerEmpty && key.upArrow && !key.ctrl) setScrollOffset(o => Math.min(o + 1, maxOffset));
+    if (composerEmpty && key.downArrow && !key.ctrl) setScrollOffset(o => Math.max(0, o - 1));
     if (key.end) setScrollOffset(0);
     if (key.home) setScrollOffset(maxOffset);
   }, { isActive: !overlay.modelPicker });
 
-  // 新消息/回合变化时自动回底部（offset=0 最新在底）
+  // 鼠标滚轮（SGR 协议，Windows Terminal）：上滚 +3 行 / 下滚 -3 行
   React.useEffect(() => {
-    setScrollOffset(0);
-  }, [history.length, turn.streamSegments.length]);
+    if (!subscribeScroll) return;
+    return subscribeScroll(delta => setScrollOffset(o => Math.max(0, Math.min(o + delta, maxOffset))));
+  }, [subscribeScroll]);
+
+  // 注意：不自动回底——用户上滑查看历史时新消息不打断滚动位置；
+  // offset=0 时新消息自然显示在可见区尾部（scrollTail 从尾部裁剪）
 
   const onSubmit = async (text: string) => {
     setStartup(false);
@@ -207,7 +216,7 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
         />
       )}
       <Box flexDirection="column">
-        <Composer onSubmit={onSubmit} onQuit={onQuit} onLinesChange={setInputLines} />
+        <Composer onSubmit={onSubmit} onQuit={onQuit} onLinesChange={setInputLines} onEmptyChange={setComposerEmpty} />
         <Text color={t.muted}>Enter 发送 · Shift+Enter 换行 · ↑↓ 历史/建议 · / 命令建议 · PgUp 上滑 · Ctrl+C 中断 · Ctrl+G 退出</Text>
       </Box>
       <StatusBar version={version} />
