@@ -8,7 +8,7 @@ import type { UiMsg } from './stores/types.js';
 
 export interface KernelHooks {
   send(text: string): Promise<unknown>;
-  abort(): Promise<unknown>;
+  abort(): void | Promise<unknown>;
 }
 
 export interface Bridge {
@@ -61,5 +61,6 @@ function getHasError(): boolean {
 
 function pushSystemMsg(text: string, error = false) {
   const m: UiMsg = { id: `sys${++seq}`, role: 'system', text, error };
-  patchTurn(s => ({ streamSegments: [...s.streamSegments, m] }));
+  const { pushSegment } = require('./stores/turnStore.js') as typeof import('./stores/turnStore.js');
+  pushSegment(m);
 }

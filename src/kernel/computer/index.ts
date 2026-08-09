@@ -21,8 +21,11 @@ export async function captureScreen(): Promise<ScreenShot | null> {
     const monitors = await Monitor.all();
     if (!monitors.length) return null;
     const m = monitors[0];
-    const img = await m.captureImageSync();
-    return { png: Buffer.from(img.toPng()), width: m.width, height: m.height, scale: m.scaleFactor() };
+    const img = m.captureImageSync();
+    const png = await img.toPng();
+    const buf = Buffer.from(png);
+    const scale = m.scaleFactor();
+    return { png: buf, width: (m as any).width, height: (m as any).height, scale: Number(scale) || 1 };
   } catch { return null; } // 原生模块不可用（CI/无桌面）→ null
 }
 

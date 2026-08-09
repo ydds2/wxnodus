@@ -1,6 +1,6 @@
 // src/commands/intent.ts — L4 意图路由（说人话不记命令）
 // 四层：① 别名（registry）② 确定性工具直调 ③ NL 正则路由 ④ AI 意图（agent 层）
-import { resolveAlias, isSlash, completeCommand } from './registry.js';
+import { resolveAlias, isSlash, completeCommand, SLASH } from './registry.js';
 import { deterministicRun } from './deterministic.js';
 
 export interface NlTrigger { re: RegExp; cmd: string }
@@ -36,7 +36,7 @@ export async function routeInput(text: string): Promise<{ kind: 'command' | 'too
     const [head, ...rest] = trimmed.split(/\s+/);
     const cmd = resolveAlias(head);
     const full = completeCommand(cmd) ?? cmd;
-    if (SLASH_CONTAINS(full)) return { kind: 'command', cmd: full, value: rest.join(' ') };
+    if (SLASH.includes(full)) return { kind: 'command', cmd: full, value: rest.join(' ') };
     return { kind: 'chat', value: text };
   }
   // ② 确定性工具直调（毫秒级）
@@ -49,7 +49,3 @@ export async function routeInput(text: string): Promise<{ kind: 'command' | 'too
   return { kind: 'chat', value: text };
 }
 
-function SLASH_CONTAINS(cmd: string): boolean {
-  const { SLASH } = require('./registry.js') as { SLASH: string[] };
-  return SLASH.includes(cmd);
-}

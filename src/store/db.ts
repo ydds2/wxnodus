@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import Database from 'better-sqlite3';
 
-export type Db = Database.Database;
+export type Db = InstanceType<typeof Database>;
 
 const SCHEMA_VERSION = 1;
 
@@ -106,7 +106,7 @@ export function openDB(dataDir: string): Db {
 
   // sqlite-vec 向量扩展（容错：加载失败仅无向量检索，纯 FTS5 兜底）
   try {
-    const vec = require('sqlite-vec') as { load(db: Database): void };
+    const vec = require('sqlite-vec') as { load(db: InstanceType<typeof Database>): void };
     vec.load(db);
     db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS archival_vec USING vec0(

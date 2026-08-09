@@ -2,7 +2,7 @@
 // 设计：处理器注册表 + 别名解析 + 参数拆分 + 异常捕获（输出经消息流呈现）
 import { resolveAlias, isSlash } from '../commands/registry.js';
 
-export type CommandHandler = (args: string[], raw: string) => Promise<string | void>;
+export type CommandHandler = (args: string[], raw: string) => string | void | Promise<string | void>;
 
 export interface ExecResult { ok: boolean; output?: string; error?: string }
 

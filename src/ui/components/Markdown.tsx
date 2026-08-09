@@ -2,11 +2,15 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import Table from 'cli-table3';
-import { latex2unicode } from 'latex2unicode';
+import { createRequire } from 'node:module';
 import { parseMd } from '../markdown/parse.js';
 import type { MdBlock } from '../markdown/blocks.js';
 import { getTheme } from '../theme.js';
 import { CodeBlock } from './CodeBlock.js';
+
+// latex2unicode 发布含 .ts 源码（NodeNext 类型解析冲突）——createRequire 绕开
+const require = createRequire(import.meta.url);
+const latex2unicode = require('latex2unicode') as (tex: string) => string;
 
 export function Markdown({ text }: { text: string }) {
   const blocks = parseMd(text);
