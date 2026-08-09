@@ -34,14 +34,8 @@ async function main() {
   check('启动:Header 品牌+版本', f0.includes('WxNodus v3.0.0'));
   check('启动:Header 模式徽章', f0.includes('smart') || f0.includes('auto'));
   check('启动:Header thinking 状态', f0.includes('thinking'));
-  check('启动:品牌卡片 logo', f0.includes('◆  WxNodus'));
-  check('启动:口号', f0.includes('说一句话，交付可运行系统'));
-  check('启动:模型状态行', f0.includes('模型'));
-  check('启动:目录行', f0.includes('目录'));
-  check('启动:能力行', f0.includes('能力'));
-  check('启动:环境行', f0.includes('环境') && f0.includes('win32'));
-  check('启动:示例引导', f0.includes('做个待办系统'));
-  check('启动:快捷键引导', f0.includes('Ctrl+G 退出'));
+  check('启动:欢迎消息', f0.includes('说一句话，交付可运行系统'));
+  check('启动:欢迎消息引导', f0.includes('/help 全部命令') && f0.includes('Ctrl+G 退出'));
   check('启动:输入框边框', f0.includes('╭─') && f0.includes('❯'));
   check('启动:状态条(模式+模型)', f0.includes('smart') && (f0.includes('规则脑') || f0.includes('deepseek') || f0.includes('WxNodus')));
   check('启动:状态条(目录截断)', f0.includes('WxNodusV3CLI'));

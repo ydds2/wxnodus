@@ -6,7 +6,6 @@ import { getTheme, THEMES } from '../src/ui/theme.js';
 import { MessageLine } from '../src/ui/components/MessageLine.js';
 import { Markdown } from '../src/ui/components/Markdown.js';
 import { StatusBar } from '../src/ui/components/StatusBar.js';
-import { StartupCard } from '../src/ui/components/StartupCard.js';
 import { patchUi } from '../src/app/stores/uiStore.js';
 import { patchOverlay } from '../src/app/stores/overlayStore.js';
 import { ApprovalPrompt } from '../src/ui/components/ApprovalPrompt.js';
@@ -84,14 +83,6 @@ describe('状态条（Kimi 三栏）', () => {
     expect(lastFrame()).toContain('23%');
     expect(lastFrame()).toContain('12:00');
     expect(lastFrame()).toContain('auto');
-  });
-});
-
-describe('首屏', () => {
-  it('品牌 + 口号 + 引导', () => {
-    const { lastFrame } = render(<StartupCard model="test" version="3.0.0" cwd="C:\\" />);
-    expect(lastFrame()).toContain('WxNodus');
-    expect(lastFrame()).toContain('概念进');
   });
 });
 

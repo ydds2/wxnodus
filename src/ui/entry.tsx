@@ -1,15 +1,16 @@
-// src/ui/entry.tsx — 入口组件（主屏幕模式：历史自然滚动 + 输入框固定底部）
-// 架构（参考 Hermes / 普通终端 CLI）：非 alternateScreen——
-//   <Static> 把已提交历史输出到终端滚动缓冲（滚轮/PgUp 由终端处理，自然上滚），
-//   实时区（推理/工具/流式文本）与输入框、状态条固定在底部；
-//   启动卡片居中展示后随第一条消息自然滚出。
+// src/ui/entry.tsx — 入口组件（主屏幕模式：布局稳定 + 消息区应用内滚动）
+// 架构（参考 Hermes / 普通终端 CLI）：
+//   非 alternateScreen（无固定全屏）；启动横幅由 CLI 层输出到滚动缓冲；
+//   消息区用 scrollTail 按终端行数裁剪渲染尾部 N 条（固定高度），
+//   应用内滚动回看（PgUp/PgDn/Ctrl+U/D/Home/End/空输入 ↑↓）；
+//   不用 <Static>——主屏幕模式下 Static 与 ink diff 冲突导致整树追加重绘
+//   （Header/输入框在屏幕重复堆叠、被「强制拉高」）。
 import React, { useState } from 'react';
-import { Box, Text, Static, useStdout } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import { MessageLine } from './components/MessageLine.js';
 import { StreamingMarkdown } from './components/StreamingMarkdown.js';
 import { Composer } from './components/Composer.js';
 import { StatusBar } from './components/StatusBar.js';
-import { StartupCard } from './components/StartupCard.js';
 import { ApprovalPrompt } from './components/ApprovalPrompt.js';
 import { ConfirmPrompt } from './components/ConfirmPrompt.js';
 import { ClarifyPrompt } from './components/ClarifyPrompt.js';
@@ -19,6 +20,7 @@ import { useTurn } from '../app/stores/turnStore.js';
 import { useOverlay, patchOverlay } from '../app/stores/overlayStore.js';
 import { getUi } from '../app/stores/uiStore.js';
 import { getTheme } from './theme.js';
+import { scrollTail } from './lib/lines.js';
 import type { SessionRow } from './components/SessionsPicker.js';
 import type { UiMsg } from '../app/stores/types.js';
 import type { Bridge } from '../app/Bridge.js';
@@ -53,20 +55,31 @@ function Header({ version, model, busy, mode, thinking }: { version: string; mod
   );
 }
 
-// 实时区（不占滚动缓冲）：通知横幅 + 推理 + 工具行 + 流式文本
-function LiveArea({ streaming, tools, reasoning, showThinking, notice }: {
-  streaming: string;
+// 消息区：scrollTail 裁剪尾部到可视高度 + 滚动状态提示 + 实时区（推理/工具/流式/通知）
+function MessageStream({ history, streaming, tools, areaLines, width, offset, reasoning, showThinking, notice }: {
+  history: UiMsg[]; streaming: string;
   tools: Array<{ name: string; ctx: string; detail?: string; done?: boolean; ok?: boolean }>;
+  areaLines: number; width: number; offset: number;
   reasoning: string; showThinking: boolean; notice: string | null;
 }) {
   const t = getTheme();
+  const streamLines = tools.length + (streaming ? Math.ceil(streaming.length / Math.max(width - 2, 10)) : 0)
+    + (showThinking && reasoning ? 2 + Math.ceil(reasoning.length / Math.max(width - 2, 10)) : 0)
+    + (notice ? 1 : 0);
+  const { visible, atBottom, maxOffset } = scrollTail(history, offset, areaLines, width - 2, streamLines);
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" height={areaLines}>
       {notice && (
         <Text wrap="truncate-end">
           <Text color="#f59e0b" bold>{'◆ '}</Text>
           <Text color={t.text}>{notice}</Text>
         </Text>
+      )}
+      {!atBottom && (
+        <Text color={t.muted}>↑ 位置 {offset}/{maxOffset} 行 · PgUp/PgDn 或 Ctrl+U/D 滚动 · End 回底部</Text>
+      )}
+      {atBottom && maxOffset > 0 && (
+        <Text color={t.muted}>…… ↑ PgUp 上滑查看更早消息（共 {history.length} 条）</Text>
       )}
       {showThinking && reasoning && (
         <Box flexDirection="column" marginLeft={1}>
@@ -74,6 +87,7 @@ function LiveArea({ streaming, tools, reasoning, showThinking, notice }: {
           <Text color={t.muted} wrap="wrap">{reasoning.slice(0, 600)}</Text>
         </Box>
       )}
+      {visible.map(m => <MessageLine key={m.id} m={m} />)}
       {tools.map(tl => (
         <Box key={tl.name + tl.ctx} flexDirection="row" marginLeft={1}>
           <Text color={tl.done ? (tl.ok ? t.ok : t.error) : '#f59e0b'}>
@@ -88,22 +102,49 @@ function LiveArea({ streaming, tools, reasoning, showThinking, notice }: {
 }
 
 export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel, onThinkingChange, listSessions }: AppDeps) {
-  const [history, setHistory] = useState<UiMsg[]>([]);
-  const [startup, setStartup] = useState(true);
+  // 欢迎消息作为首条历史（替代预输出横幅——预输出会使 ink 进入滚动追加模式，
+  // 导致 UI 整树重复堆叠；欢迎消息在消息区内，提交后自然上滚）
+  const [history, setHistory] = useState<UiMsg[]>([{
+    id: 'welcome', role: 'system', kind: 'intro',
+    text: `WxNodus v${version} · 概念编译器 — 说一句话，交付可运行系统（/ 打开命令面板 · /help 全部命令 · Ctrl+G 退出）`,
+  }]);
+  const [inputLines, setInputLines] = useState(1);
+  const [composerEmpty, setComposerEmpty] = useState(true);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const turn = useTurn(s => s.s);
   const overlay = useOverlay(s => s.s);
   const u = getUi();
   const t = getTheme();
   const { stdout } = useStdout();
   const rows = stdout.rows || 24;
-  // 小窗口容错：高度不足时隐藏启动卡片
-  const showStartupCard = startup && rows >= 26;
-  const padTop = showStartupCard ? Math.max(1, Math.floor((rows - 1 - 15 - 3 - 2) / 2)) : 0;
+  const width = stdout.columns || 80;
+
+  // 区域高度预算：header(1) + 消息区 + 输入框(行+边框) + 提示行(1) + 状态条(1)
+  const composerLines = inputLines + 2;
+  const areaLines = Math.max(rows - 1 - composerLines - 2, 3);
+  const streamLines = turn.tools.length + (turn.streaming ? Math.ceil(turn.streaming.length / Math.max(width - 2, 10)) : 0)
+    + (u.thinking && turn.reasoning ? 2 + Math.ceil(turn.reasoning.length / Math.max(width - 2, 10)) : 0)
+    + (u.notice ? 1 : 0);
+  const { maxOffset } = scrollTail(history, scrollOffset, areaLines, width - 2, streamLines);
+
+  // 滚动键：PgUp/PgDn 半屏 · Ctrl+U/D 半屏 · Alt+↑↓ · Home/End · 空输入 ↑↓ 逐行
+  useInput((inp, key) => {
+    if (overlay.modelPicker || overlay.sessions) return;
+    const step = Math.max(3, Math.floor(areaLines / 2));
+    if (key.pageUp || (key.meta && key.upArrow)) setScrollOffset(o => Math.min(o + step, maxOffset));
+    if (key.pageDown || (key.meta && key.downArrow)) setScrollOffset(o => Math.max(0, o - step));
+    if (key.ctrl && inp === 'u') setScrollOffset(o => Math.min(o + step, maxOffset));
+    if (key.ctrl && inp === 'd') setScrollOffset(o => Math.max(0, o - step));
+    if (composerEmpty && key.upArrow && !key.ctrl) setScrollOffset(o => Math.min(o + 1, maxOffset));
+    if (composerEmpty && key.downArrow && !key.ctrl) setScrollOffset(o => Math.max(0, o - 1));
+    if (key.end) setScrollOffset(0);
+    if (key.home) setScrollOffset(maxOffset);
+  }, { isActive: !overlay.modelPicker && !overlay.sessions });
 
   const onSubmit = async (text: string) => {
-    setStartup(false);
     const userMsg: UiMsg = { id: `u${Date.now()}`, role: 'user', text };
     setHistory(h => [...h, userMsg]);
+    setScrollOffset(0); // 新消息回底部
     if (text.trim().startsWith('/')) {
       const sysMsg: UiMsg = { id: `c${Date.now()}`, role: 'system', kind: 'slash', text: `> ${text.trim()}` };
       setHistory(h => [...h, sysMsg]);
@@ -120,22 +161,20 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
     if (fresh.length) {
       archivedIds.current = new Set([...archivedIds.current, ...fresh.map(m => m.id)]);
       setHistory(h => [...h, ...fresh]);
+      setScrollOffset(0);
     }
   }, [turn.streamSegments]);
 
   return (
     <Box flexDirection="column">
       <Header version={version} model={model} busy={turn.busy} mode={u.mode} thinking={u.thinking} />
-      {showStartupCard ? (
-        <Box marginTop={padTop}>
-          <StartupCard model={model} version={version} cwd={cwd} />
-        </Box>
-      ) : null}
-      {/* 历史消息经 Static 提交到终端滚动缓冲（自然上滚，不锁死） */}
-      <Static items={history}>{m => <MessageLine key={m.id} m={m} />}</Static>
-      <LiveArea
+      <MessageStream
+        history={history}
         streaming={turn.streaming}
         tools={turn.tools}
+        areaLines={areaLines}
+        width={width}
+        offset={scrollOffset}
         reasoning={turn.reasoning}
         showThinking={u.thinking}
         notice={u.notice}
@@ -144,7 +183,6 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
       {overlay.confirm && <ConfirmPrompt onConfirm={ok => bridge.emit('ui.confirm', { ok })} />}
       {overlay.clarify && <ClarifyPrompt onPick={idx => bridge.emit('ui.clarify', { index: idx })} />}
       {overlay.sessions && <SessionsPicker sessions={listSessions()} onPick={async id => {
-        setStartup(false);
         setHistory(h => [...h, { id: `u${Date.now()}`, role: 'user', text: `恢复会话：${id}` }]);
         await runCommand(`/resume ${id}`);
       }} />}
@@ -153,7 +191,6 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
           currentModel={model || 'deepseek-v4-flash'} // 无 key（规则脑）时默认标记首个模型
           thinking={u.thinking}
           onPick={m => {
-            setStartup(false);
             setHistory(h => [...h, { id: `u${Date.now()}`, role: 'user', text: `选择模型：${m.name}` }]);
             setModel(m.modelId, m.baseURL);
             patchOverlay({ modelPicker: false });
@@ -163,8 +200,8 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
         />
       )}
       <Box flexDirection="column">
-        <Composer onSubmit={onSubmit} onQuit={onQuit} />
-        <Text color={t.muted}>Enter 发送 · Shift+Enter 换行 · ↑↓ 历史/建议 · / 命令建议 · Ctrl+C 中断 · Ctrl+G 退出</Text>
+        <Composer onSubmit={onSubmit} onQuit={onQuit} onLinesChange={setInputLines} onEmptyChange={setComposerEmpty} />
+        <Text color={t.muted}>Enter 发送 · Shift+Enter 换行 · ↑↓ 历史/建议 · / 命令建议 · PgUp 上滑 · Ctrl+C 中断 · Ctrl+G 退出</Text>
       </Box>
       <StatusBar version={version} />
     </Box>

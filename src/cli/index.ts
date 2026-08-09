@@ -12,6 +12,7 @@ program.option('-p, --prompt <text>', '非交互单次执行');
 program.parse(process.argv);
 const opts = program.opts();
 
+
 async function main() {
   const cwd = process.cwd();
   const dataDir = join(cwd, 'data');

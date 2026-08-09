@@ -32,15 +32,19 @@ export function StatusBar({ version }: { version?: string }) {
   const badge = MODE_BADGE[u.mode] ?? MODE_BADGE.smart;
   const bg = t.statusBg;
 
-  // 目录截断显示（保留尾部，如 C:\Users\…\WxNodusV3CLI）
+  // 目录/右段截断，保证整条不换行
   const cwd = u.cwd || '';
-  const shortCwd = cwd.length > 26 ? '…' + cwd.slice(-25) : cwd;
+  const shortCwd = cwd.length > 20 ? '…' + cwd.slice(-19) : cwd;
   const thinking = u.thinking ? ' · thinking' : '';
 
-  const left = `${badge.label} ${u.model || '规则脑'}${thinking}`;
-  const mid = ` ${bar} ${pct}% ${u.stage || 'idle'}`;
+  const left = `${badge.label} ${u.model || '规则脑'}${thinking}`.slice(0, 42);
+  const mid = ` ${bar} ${pct}% ${u.stage || 'idle'}`.slice(0, 22);
   const right = ` ${shortCwd} `;
-  const far = ` ${clock}${version ? ` v${version}` : ''} `;
+  const far = ` ${clock}${version ? ` v${version}` : ''} `.slice(0, 18);
+  // 总长钳制：超出部分用截断的目录吸收
+  const total = left.length + 1 + mid.length + 1 + right.length + 1 + far.length;
+  const overflow = total - (width - 2);
+  const dir = overflow > 0 ? ` ${'…' + shortCwd.slice(2 + overflow)} ` : right;
 
   return (
     <Text backgroundColor={bg}>
@@ -48,10 +52,10 @@ export function StatusBar({ version }: { version?: string }) {
       <Text color={t.muted} backgroundColor={bg}> │</Text>
       <Text color={pct >= 80 ? t.warn : t.text} backgroundColor={bg}>{mid}</Text>
       <Text color={t.muted} backgroundColor={bg}> │</Text>
-      <Text color={t.muted} backgroundColor={bg}>{right}</Text>
+      <Text color={t.muted} backgroundColor={bg}>{dir}</Text>
       <Text color={t.muted} backgroundColor={bg}> │</Text>
       <Text color={t.text} backgroundColor={bg}>{far}</Text>
-      <Text color={t.muted} backgroundColor={bg}>{' '.repeat(Math.max(width - 10 - left.length - mid.length - right.length - far.length, 2))}</Text>
+      <Text color={t.muted} backgroundColor={bg}>{' '.repeat(Math.max(width - 8 - left.length - mid.length - dir.length - far.length, 2))}</Text>
     </Text>
   );
 }
