@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import type { OverlayState } from './types.js';
 
-const initial: OverlayState = { approval: null, clarify: null, confirm: null, panel: false, sessions: false, modelPicker: false, pager: null };
+const initial: OverlayState = { approval: null, clarify: null, confirm: null, sessions: false, modelPicker: false, pager: null };
 
 export const useOverlay = create<{ s: OverlayState }>(() => ({ s: initial }));
 export const getOverlay = () => useOverlay.getState().s;

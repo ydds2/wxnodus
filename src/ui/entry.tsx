@@ -10,7 +10,6 @@ import { StreamingMarkdown } from './components/StreamingMarkdown.js';
 import { Composer } from './components/Composer.js';
 import { StatusBar } from './components/StatusBar.js';
 import { StartupCard } from './components/StartupCard.js';
-import { CommandPanel } from './components/CommandPanel.js';
 import { ApprovalPrompt } from './components/ApprovalPrompt.js';
 import { useTurn } from '../app/stores/turnStore.js';
 import { useOverlay, patchOverlay } from '../app/stores/overlayStore.js';
@@ -104,9 +103,9 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
   const streamLines = turn.tools.length + (turn.streaming ? Math.ceil(turn.streaming.length / Math.max(width - 2, 10)) : 0);
   const { maxOffset } = scrollTail(history, scrollOffset, areaLines, width - 2, streamLines);
 
-  // 滚动键：PgUp/PgDn 半屏 · Ctrl+U/D 半屏 · End 回底部 · Home 顶部（面板/选择器打开时不生效）
+  // 滚动键：PgUp/PgDn 半屏 · Ctrl+U/D 半屏 · End 回底部 · Home 顶部（选择器打开时不生效）
   useInput((_inp, key) => {
-    if (overlay.panel || overlay.modelPicker || startup) return;
+    if (overlay.modelPicker || startup) return;
     const step = Math.max(3, Math.floor(areaLines / 2));
     if (key.pageUp) setScrollOffset(o => Math.min(o + step, maxOffset));
     if (key.pageDown) setScrollOffset(o => Math.max(0, o - step));
@@ -114,7 +113,7 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
     if (key.ctrl && _inp === 'd') setScrollOffset(o => Math.max(0, o - step));
     if (key.end) setScrollOffset(0);
     if (key.home) setScrollOffset(maxOffset);
-  }, { isActive: !overlay.panel && !overlay.modelPicker });
+  }, { isActive: !overlay.modelPicker });
 
   // 新消息/回合变化时自动回底部（offset=0 最新在底）
   React.useEffect(() => {
@@ -162,13 +161,6 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
         />
       )}
       {overlay.approval && <ApprovalPrompt onRespond={choice => bridge.emit('ui.approval', { choice })} />}
-      {overlay.panel && (
-        <CommandPanel onPick={async cmd => {
-          setStartup(false);
-          setHistory(h => [...h, { id: `u${Date.now()}`, role: 'user', text: cmd }]);
-          await runCommand(cmd);
-        }} />
-      )}
       {overlay.modelPicker && (
         <ModelPicker
           currentModel={model}
@@ -185,7 +177,7 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
       )}
       <Box flexDirection="column">
         <Composer onSubmit={onSubmit} onQuit={onQuit} onLinesChange={setInputLines} />
-        <Text color={t.muted}>Enter 发送 · Shift+Enter 换行 · ↑↓ 历史 · / 面板 · PgUp 上滑 · Ctrl+C 中断 · Ctrl+G 退出</Text>
+        <Text color={t.muted}>Enter 发送 · Shift+Enter 换行 · ↑↓ 历史/建议 · / 命令建议 · PgUp 上滑 · Ctrl+C 中断 · Ctrl+G 退出</Text>
       </Box>
       <StatusBar version={version} />
     </Box>

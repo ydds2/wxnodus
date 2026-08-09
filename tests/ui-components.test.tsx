@@ -1,16 +1,16 @@
-// tests/ui-components.test.tsx — L6-2 交互层组件：主题/消息流/Markdown/面板/确认
+// tests/ui-components.test.tsx — L6-2 交互层组件：主题/消息流/Markdown/确认
 import { describe, it, expect } from 'vitest';
 import { render } from 'ink-testing-library';
 import React from 'react';
 import { getTheme, THEMES } from '../src/ui/theme.js';
 import { MessageLine } from '../src/ui/components/MessageLine.js';
 import { Markdown } from '../src/ui/components/Markdown.js';
-import { CommandPanel, filterCommands } from '../src/ui/components/CommandPanel.js';
 import { StatusBar } from '../src/ui/components/StatusBar.js';
 import { StartupCard } from '../src/ui/components/StartupCard.js';
 import { patchUi } from '../src/app/stores/uiStore.js';
 import { patchOverlay } from '../src/app/stores/overlayStore.js';
 import { ApprovalPrompt } from '../src/ui/components/ApprovalPrompt.js';
+import { filterCommands, isSuggesting } from '../src/ui/lib/suggest.js';
 
 describe('主题（Kimi 风格多主题）', () => {
   it('THEMES 含 kimi/dark/light 且键齐全', () => {
@@ -57,27 +57,28 @@ describe('Markdown 渲染', () => {
   });
 });
 
-describe('命令面板（fuzzysort 模糊）', () => {
+describe('命令建议（suggest 纯函数）', () => {
   it('filterCommands 前缀+子序列', () => {
     const cmds = ['/help', '/history', '/home', '/build', '/backup'];
     expect(filterCommands('/h', cmds)).toEqual(['/help', '/history', '/home']);
     expect(filterCommands('/bu', cmds)).toEqual(['/build', '/backup']);
     expect(filterCommands('/hl', cmds)).toContain('/help');
   });
-  it('空查询返回前 10', () => {
+  it('空查询返回前 6', () => {
     const cmds = Array.from({ length: 20 }, (_, i) => `/cmd${i}`);
-    expect(filterCommands('', cmds).length).toBe(10);
+    expect(filterCommands('', cmds).length).toBe(6);
   });
-  it('面板渲染命令列表', () => {
-    patchOverlay({ panel: true });
-    const { lastFrame } = render(<CommandPanel onPick={() => {}} />);
-    expect(lastFrame()).toContain('/help');
+  it('isSuggesting 判定 / 开头且无空格', () => {
+    expect(isSuggesting('/hel')).toBe(true);
+    expect(isSuggesting('/help x')).toBe(false);
+    expect(isSuggesting('hello')).toBe(false);
+    expect(isSuggesting('')).toBe(false);
   });
 });
 
 describe('状态条（Kimi 三栏）', () => {
   it('模型/上下文条/时钟/模式徽章', () => {
-    patchUi({ model: 'deepseek-v4-flash', contextPct: 0.23, clock: '12:00', mode: 'auto', stage: 'work', busy: false, sessionId: null, cwd: 'C:\\', themeName: 'kimi', notice: null });
+    patchUi({ model: 'deepseek-v4-flash', contextPct: 0.23, clock: '12:00', mode: 'auto', stage: 'work', busy: false, sessionId: null, cwd: 'C:\\', themeName: 'kimi', notice: null, thinking: true });
     const { lastFrame } = render(<StatusBar />);
     expect(lastFrame()).toContain('deepseek');
     expect(lastFrame()).toContain('23%');

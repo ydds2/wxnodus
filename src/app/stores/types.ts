@@ -52,7 +52,6 @@ export interface OverlayState {
   approval: { title: string; detail: string; allowPermanent: boolean } | null;
   clarify: { question: string; options: string[] } | null;
   confirm: { text: string; danger: boolean } | null;
-  panel: boolean;
   sessions: boolean;
   modelPicker: boolean;
   pager: { title: string; lines: string[] } | null;

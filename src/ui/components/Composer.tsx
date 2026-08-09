@@ -1,13 +1,17 @@
-// src/ui/components/Composer.tsx — 自研输入框（零测量循环）
-// 设计（参考 Kimi CLI 标题栏输入框）：顶部边框嵌入模式徽章，❯ 前缀，多行渲染；
-// 键位全部走 handleComposerKey 纯函数（组件级 useInput 接管，终端无关）；
-// 光标闪烁仅切换 boolean state——不做任何 measureElement，从根上避免渲染抖动。
+// src/ui/components/Composer.tsx — 自研输入框（零测量循环 + 内联命令建议）
+// 设计（参考 Claude Code / DeepSeek CLI）：
+//   - 标题栏边框嵌模式徽章，❯ 前缀，多行渲染，光标闪烁
+//   - 输入 / 开头时在输入框上方内联显示命令建议（非模式切换——输入框始终活跃，
+//     可继续输入过滤、Backspace 删除 / 即返回普通输入、↑↓ 选择、Enter 执行、
+//     Tab 补全、Esc 清空）
+//   - 键位全部走 handleComposerKey 纯函数（组件级 useInput 接管，终端无关）
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import { getUi } from '../../app/stores/uiStore.js';
-import { useOverlay, patchOverlay } from '../../app/stores/overlayStore.js';
 import { getTheme } from '../theme.js';
 import { initComposer, handleComposerKey } from '../lib/composerKeys.js';
+import { filterCommands, isSuggesting } from '../lib/suggest.js';
+import { SLASH, COMMAND_DESC } from '../../commands/registry.js';
 import type { ComposerState } from '../lib/composerKeys.js';
 
 const MODE_COLOR: Record<string, string> = {
@@ -25,10 +29,13 @@ export function Composer({ onSubmit, onQuit, onLinesChange }: { onSubmit: (t: st
   const [cursorOn, setCursorOn] = useState(true);
   const u = getUi();
   const t = getTheme();
-  const overlay = useOverlay(s => s.s);
   const { stdout } = useStdout();
   const width = stdout.columns || 80;
   const borderColor = MODE_COLOR[u.mode] ?? t.border;
+
+  // 内联命令建议（/ 开头且未带空格参数时）
+  const suggest = isSuggesting(st.value) ? filterCommands(st.value, SLASH) : [];
+  const totalW = Math.max(width - 4, 10) + 3;
 
   // 光标闪烁（仅本组件 state，重渲染只影响输入行）
   useEffect(() => {
@@ -41,27 +48,21 @@ export function Composer({ onSubmit, onQuit, onLinesChange }: { onSubmit: (t: st
     onLinesChange?.(Math.max(1, st.value.split('\n').length));
   }, [st.value, onLinesChange]);
 
-  // 键位处理：Enter 提交 / Shift+Enter·Ctrl+J 换行 / ↑↓ 历史 / ←→ 移动 / 删除（纯函数）
-  // 输入框为空时按 / 直接打开命令面板（Claude Code 风格）；Ctrl+G 退出
-  // （Ctrl+C 由 CLI 层 SIGINT 接管）；面板打开时本组件不接收按键
+  // 键位处理：Enter 提交/执行建议 · Shift+Enter 换行 · ↑↓ 建议或历史 · Tab 补全 ·
+  // Esc 清空 · ←→ 移动 · 删除；Ctrl+G 退出（Ctrl+C 由 CLI 层 SIGINT 接管）
   useInput((inp, key) => {
     if (key.ctrl && (inp === '\x07' || inp.toLowerCase() === 'g')) {
       onQuit?.();
       return;
     }
-    if (inp === '/' && !st.value) {
-      patchOverlay({ panel: true });
-      return;
-    }
-    const { next, action } = handleComposerKey(st, { ...key, input: inp });
+    const { next, action } = handleComposerKey(st, { ...key, input: inp }, suggest);
     if (action.type === 'submit') onSubmit(action.text);
     if (next !== st) setSt(next);
-  }, { isActive: !overlay.panel && !overlay.modelPicker });
+  });
 
   const lines = st.value.split('\n');
   const { line: curLine, col: curCol } = cursorLineCol(st.value, st.cursor);
   const innerW = Math.max(width - 4, 10); // 内容区宽
-  const totalW = innerW + 3;              // 整框宽（含边框）
 
   // 顶部边框：╭─ 徽章 ───────╮ / 底部边框：╰────────╯（总长对齐 totalW）
   const title = u.busy ? 'working' : u.mode;
@@ -70,6 +71,18 @@ export function Composer({ onSubmit, onQuit, onLinesChange }: { onSubmit: (t: st
 
   return (
     <Box flexDirection="column">
+      {suggest.length > 0 && (
+        <Box width={totalW} flexDirection="column">
+          {suggest.map((c, i) => (
+            <Text key={c} wrap="truncate-end">
+              <Text color={i === st.suggestSel ? t.accent : t.muted}>{i === st.suggestSel ? '› ' : '  '}</Text>
+              <Text color={i === st.suggestSel ? t.accent : t.text}>{c}</Text>
+              <Text color={t.muted}>{'  '}{COMMAND_DESC[c]?.slice(0, 44) ?? ''}</Text>
+            </Text>
+          ))}
+          <Text color={t.muted}>{'↑↓ 选择 · Enter 执行 · Tab 补全 · Esc 取消'}</Text>
+        </Box>
+      )}
       <Box width={totalW} flexDirection="column">
         <Text color={borderColor}>{topBorder}</Text>
         {lines.map((ln, i) => {

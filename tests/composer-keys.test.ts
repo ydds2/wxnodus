@@ -80,8 +80,46 @@ describe('handleComposerKey', () => {
     expect(handleComposerKey({ ...s, cursor: 2 }, { rightArrow: true }).next.cursor).toBe(2);
   });
   it('Home/End 跳行首/行尾', () => {
-    const s = { value: 'abc', cursor: 2, history: [], hIndex: -1 };
+    const s = { value: 'abc', cursor: 2, history: [], hIndex: -1, suggestSel: 0 };
     expect(handleComposerKey(s, { home: true }).next.cursor).toBe(0);
     expect(handleComposerKey(s, { end: true }).next.cursor).toBe(3);
+  });
+  it('建议态 Enter 执行选中命令', () => {
+    const s = { value: '/he', cursor: 3, history: [], hIndex: -1, suggestSel: 0 };
+    const r = handleComposerKey(s, { return: true }, ['/help', '/hole']);
+    expect(r.action).toEqual({ type: 'submit', text: '/help' });
+    expect(r.next.value).toBe('');
+  });
+  it('建议态 ↑↓ 移动选择（替代历史导航）', () => {
+    const s = { value: '/he', cursor: 3, history: [], hIndex: -1, suggestSel: 0 };
+    const down = handleComposerKey(s, { downArrow: true }, ['/help', '/hole']);
+    expect(down.next.suggestSel).toBe(1);
+    const up = handleComposerKey(down.next, { upArrow: true }, ['/help', '/hole']);
+    expect(up.next.suggestSel).toBe(0);
+  });
+  it('Tab 补全选中命令', () => {
+    const s = { value: '/h', cursor: 2, history: [], hIndex: -1, suggestSel: 1 };
+    const r = handleComposerKey(s, { tab: true }, ['/help', '/hole']);
+    expect(r.next.value).toBe('/hole');
+    expect(r.next.cursor).toBe(5);
+    expect(r.action.type).toBe('setValue');
+  });
+  it('Esc 清空输入取消建议', () => {
+    const s = { value: '/he', cursor: 3, history: [], hIndex: -1, suggestSel: 0 };
+    const r = handleComposerKey(s, { escape: true }, ['/help']);
+    expect(r.next.value).toBe('');
+    expect(r.next.cursor).toBe(0);
+  });
+  it('无建议时 Enter 正常提交普通文本', () => {
+    const s = { value: '做个待办', cursor: 4, history: [], hIndex: -1, suggestSel: 0 };
+    const r = handleComposerKey(s, { return: true }, []);
+    expect(r.action).toEqual({ type: 'submit', text: '做个待办' });
+  });
+  it('建议态 Backspace 删除后返回普通输入', () => {
+    const s = { value: '/h', cursor: 2, history: [], hIndex: -1, suggestSel: 0 };
+    const r = handleComposerKey(s, { backspace: true }, ['/help']);
+    expect(r.next.value).toBe('/');
+    const r2 = handleComposerKey(r.next, { backspace: true }, []);
+    expect(r2.next.value).toBe('');
   });
 });

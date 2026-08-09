@@ -10,7 +10,7 @@ import { createCommandBus } from '../src/app/CommandBus.js';
 beforeEach(() => {
   resetTurn();
   patchUi({ busy: false, stage: 'idle', mode: 'auto', model: '', contextPct: 0, clock: '', sessionId: null, cwd: process.cwd(), themeName: 'kimi', notice: null });
-  patchOverlay({ approval: null, clarify: null, confirm: null, panel: false, sessions: false, pager: null });
+  patchOverlay({ approval: null, clarify: null, confirm: null, sessions: false, pager: null });
 });
 
 describe('zustand 状态层', () => {
