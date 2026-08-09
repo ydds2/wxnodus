@@ -1,34 +1,32 @@
-// src/ui/components/Composer.tsx — L6-2 输入框（react-ink-textarea + 历史 + 模式边框变色）
+// src/ui/components/Composer.tsx — L6-2 输入框（react-ink-textarea 编辑 + 纯函数键位处理）
+// 设计：Enter 提交由 handleComposerKey 纯函数处理（可单测、终端无关）；
+//       Shift+Enter/Ctrl+J 换行；↑↓ 历史；模式边框变色
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { TextArea as Textarea } from 'react-ink-textarea';
 import { getUi } from '../../app/stores/uiStore.js';
 import { getTheme } from '../theme.js';
-import { createHistory } from './inputHistory.js';
+import { initComposer, handleComposerKey } from '../lib/composerKeys.js';
 
 const MODE_COLOR: Record<string, string> = {
   smart: '#10b981', auto: '#10b981', manual: '#f59e0b', plan: '#a78bfa', yolo: '#f7768e',
 };
 
 export function Composer({ onSubmit }: { onSubmit: (t: string) => void }) {
-  const [value, setValue] = useState('');
-  const [hist] = useState(() => createHistory([]));
+  const [st, setSt] = useState(() => initComposer());
   const u = getUi();
   const t = getTheme();
   const borderColor = MODE_COLOR[u.mode] ?? t.border;
 
-  useInput((_in, key) => {
-    if (key.upArrow && !value.includes('\n')) { const v = hist.prev(); if (v !== undefined) setValue(v); }
-    if (key.downArrow && !value.includes('\n')) { const v = hist.next(); if (v !== undefined) setValue(v); }
+  // 键位处理：Enter 提交 / Shift+Enter·Ctrl+J 换行 / ↑↓ 历史（纯函数）
+  useInput((_inp, key) => {
+    const { next, action } = handleComposerKey(st, {
+      return: key.return, shift: key.shift, ctrl: key.ctrl,
+      upArrow: key.upArrow, downArrow: key.downArrow,
+    });
+    if (action.type === 'submit') onSubmit(action.text);
+    if (next !== st) setSt(next);
   });
-
-  const submit = () => {
-    const v = value.trim();
-    if (!v) return;
-    hist.push(v);
-    onSubmit(v);
-    setValue('');
-  };
 
   return (
     <Box flexDirection="column">
@@ -36,9 +34,9 @@ export function Composer({ onSubmit }: { onSubmit: (t: string) => void }) {
         <Text color={t.ok}>❯ </Text>
         <Textarea
           focus
-          value={value}
-          onChange={setValue}
-          onSubmit={submit}
+          value={st.value}
+          onChange={v => setSt(s => ({ ...s, value: v }))}
+          onSubmit={() => { /* 提交由组件级 useInput 接管（终端兼容） */ }}
           placeholder={u.busy ? '任务进行中（Ctrl+C 中断）…' : '说人话，或 / 查看命令'}
         />
       </Box>

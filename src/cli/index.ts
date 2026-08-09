@@ -85,6 +85,11 @@ async function main() {
     process.exit(0);
   }
 
+  // 输入诊断（临时）
+  process.stdin.on('data', (b) => {
+    try { require('node:fs').appendFileSync('C:/Users/20164/data/stdin-debug.log', JSON.stringify({ raw: b.toString('hex'), s: b.toString() }) + '\n'); } catch {}
+  });
+
   // 交互 TUI
   const React = (await import('react')).default;
   const { render } = await import('ink');
