@@ -183,9 +183,9 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return `已恢复会话 ${id}（${cp ? `检查点：${JSON.stringify(cp).slice(0, 60)}` : '无检查点'}）——完整恢复需重启后 /resume ${id}`;
   });
 
-  // /undo：撤销当前会话最后一条消息（CLI 单会话即 'default'；UI 走 session.undo RPC）
   // /undo：轮级回滚（机制补强）——撤销最近 N 轮（默认 1 轮），撤销前自动保存 checkpoint
-  //   轮次 = 按 user 消息切分；删除该轮起的所有 user/assistant/tool 消息
+  //   F20 修复：软撤销（UPDATE archived=1 而非 DELETE——recall 全量永不丢，黑洞可检索）；
+  //   快照含完整字段（id/archived/ts），restore 才能重建原始状态
   bus.register('/undo', (args) => {
     const n = parseInt(args[0] ?? '1', 10);
     const sid = 'default';
@@ -197,14 +197,15 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     msgs.forEach((m, i) => { if (m.role === 'user') userIdx.push(i); });
     if (!userIdx.length) return '没有可撤销的轮次';
     const target = userIdx[Math.max(0, userIdx.length - n)]!;
-    // 撤销前自动快照（机制补强）——完整消息字段，restore 才能重建
+    // 撤销前自动快照（F20：完整字段 id/archived/ts，restore 保留原始 id 与黑洞状态）
     try {
-      const full = ctx.db.prepare(`SELECT role, content, tool_call_id FROM messages WHERE session_id=? AND role!='system' ORDER BY id`).all(sid);
+      const full = ctx.db.prepare(`SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=? AND role!='system' ORDER BY id`).all(sid);
       saveCheckpoint(ctx.db, sid, { kind: 'undo-snapshot', messages: full, ts: Date.now() });
     } catch { /* 快照失败不阻断 */ }
     const dropIds = msgs.slice(target).map(m => m.id);
-    ctx.db.prepare(`DELETE FROM messages WHERE id IN (${dropIds.map(() => '?').join(',')})`).run(...dropIds);
-    return `已撤销 ${n} 轮（${dropIds.length} 条消息）——/checkpoint restore 可恢复`;
+    // F20：软撤销——归档而非删除（recall 全量仍可检索，working 窗口回退）
+    ctx.db.prepare(`UPDATE messages SET archived=1 WHERE id IN (${dropIds.map(() => '?').join(',')})`).run(...dropIds);
+    return `已撤销 ${n} 轮（${dropIds.length} 条消息归档）——/checkpoint restore 可恢复`;
   });
 
   // /fork：复制当前会话（含全部消息）为分支会话
@@ -239,7 +240,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       }));
     }
     if (sub === 'save') {
-      const msgs = ctx.db.prepare(`SELECT role, content, tool_call_id FROM messages WHERE session_id=? ORDER BY id`).all(sid);
+      // F20：快照含完整字段（id/archived/ts），restore 保留原始 id 与黑洞状态
+      const msgs = ctx.db.prepare(`SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=? ORDER BY id`).all(sid);
       const id = saveCheckpoint(ctx.db, sid, { kind: 'manual', messages: msgs, ts: Date.now() });
       return `已保存快照 #${id}（${(msgs as unknown[]).length} 条消息）`;
     }
@@ -249,14 +251,18 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         ? ctx.db.prepare(`SELECT data FROM checkpoints WHERE id=? AND session_id=?`).get(id, sid) as { data: string } | undefined
         : ctx.db.prepare(`SELECT data FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 1`).get(sid) as { data: string } | undefined;
       if (!row) return `未找到快照${id ? ` #${id}` : ''}`;
-      const d = JSON.parse(row.data) as { messages?: Array<{ role: string; content: string; tool_call_id?: string | null }> };
+      const d = JSON.parse(row.data) as { messages?: Array<{ id?: number; role: string; content: string; tool_call_id?: string | null; archived?: number; ts?: number }> };
       if (!Array.isArray(d.messages)) return '快照数据不完整';
-      // 恢复：清空当前消息 → 重插快照消息（保留原始顺序）
+      // 恢复：清空当前消息 → 重插快照消息（F20：保留原始 id/ts/archived——向量索引关联与黑洞状态不丢）
       ctx.db.prepare(`DELETE FROM messages WHERE session_id=?`).run(sid);
-      const ins = ctx.db.prepare(`INSERT INTO messages (session_id, role, content, tool_call_id, ts) VALUES (?,?,?,?,?)`);
+      const ins = ctx.db.prepare(`INSERT INTO messages (id, session_id, role, content, tool_call_id, archived, ts) VALUES (?,?,?,?,?,?,?)`);
       const now = Date.now();
-      d.messages.forEach((m, i) => ins.run(sid, m.role, String(m.content ?? ''), m.tool_call_id ?? null, now + i));
-      return `已从快照${id ? ` #${id}` : ''}恢复 ${d.messages.length} 条消息`;
+      d.messages.forEach((m, i) => {
+        const rawId = Number(m.id);
+        const mid = Number.isInteger(rawId) && rawId > 0 ? rawId : undefined;
+        ins.run(mid ?? null, sid, m.role, String(m.content ?? ''), m.tool_call_id ?? null, m.archived === 1 ? 1 : 0, Number(m.ts) || now + i);
+      });
+      return `已从快照${id ? ` #${id}` : ''}恢复 ${d.messages.length} 条消息（保留原始 id/archived）`;
     }
     if (sub === 'clear') {
       ctx.db.prepare(`DELETE FROM checkpoints WHERE session_id=?`).run(sid);

@@ -232,8 +232,8 @@ describe('流式与思考模式', () => {
     });
     const r = await agent.run('任务');
     expect(r.text).toContain('完成');
-    const second = seen; // 第一轮请求（仅 user）
-    expect(second.messages[0]!.role).toBe('user');
+    const second = seen; // 第一轮请求（AGENTS.md 存在时前置 system 引导，之后 user）
+    expect(second.messages.some((m: any) => m.role === 'user')).toBe(true);
     // 第二轮请求验证（通过执行结果确认无 400——消息构造正确性由真实 API 场景覆盖）
   });
   it('reasoning_content 回传：工具调用轮后携带推理链', async () => {
@@ -243,7 +243,7 @@ describe('流式与思考模式', () => {
       config: { settings: { apiKeyEnc: null as any } } as any,
       callModel: async (req) => {
         if (!secondReq) {
-          if (req.messages.length === 1) {
+          if (!req.messages.some((m: any) => m.role === 'assistant')) {
             return { type: 'tool_call', id: 'call_r1', name: 'ls', args: { path: '.' }, reasoning: '深度思考中' };
           }
           secondReq = req;
@@ -260,5 +260,34 @@ describe('流式与思考模式', () => {
     expect(assistant.tool_calls[0].function.name).toBe('ls');
     const toolMsg = secondReq!.messages.find((m: any) => m.role === 'tool');
     expect(toolMsg.tool_call_id).toBe('call_r1');
+  });
+  it('批量 tool_calls：同回合多个工具调用全执行并批量回填（对比轮 5 修复）', async () => {
+    let secondReq: any = null;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-batch',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      mode: 'yolo',
+      callModel: async (req) => {
+        if (!req.messages.some((m: any) => m.role === 'assistant')) {
+          return {
+            type: 'tool_call', id: 'c1', name: 'ls', args: { path: '.' },
+            calls: [
+              { id: 'c1', name: 'ls', args: { path: '.' } },
+              { id: 'c2', name: 'fs_read', args: { path: 'x.txt' } },
+            ],
+          } as ToolCallMsg;
+        }
+        secondReq = req;
+        return { type: 'text', content: '完成' };
+      },
+    });
+    const r = await agent.run('任务');
+    expect(r.text).toContain('完成');
+    const assistant = secondReq!.messages.find((m: any) => m.role === 'assistant');
+    expect(assistant.tool_calls.length).toBe(2); // 两个调用一次回填（不丢第二个）
+    const toolMsgs = secondReq!.messages.filter((m: any) => m.role === 'tool');
+    expect(toolMsgs.length).toBe(2); // 两个结果按 tool_call_id 回填
+    expect(toolMsgs[0].tool_call_id).toBe('c1');
+    expect(toolMsgs[1].tool_call_id).toBe('c2');
   });
 });

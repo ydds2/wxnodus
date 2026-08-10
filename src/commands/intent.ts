@@ -6,14 +6,16 @@ import { deterministicRun } from './deterministic.js';
 export interface NlTrigger { re: RegExp; cmd: string }
 
 // ③ NL 正则路由：说人话 → 命令（不占用 AI 意图层）
+// F16 修复：误劫持防御——长句必须祈使动词开头（"把代码备份到U盘" ✓ / "我之前备份过" ✗ 叙述），
+// 疑问/陈述式长句一律交 AI 对话层；触发正则排除完成态（备份过/部署后/上线了）
 export const NL_TRIGGERS: NlTrigger[] = [
   { re: /(?:做|建|造|写|开发|生成|制作).*(?:系统|应用|网站|工具|待办|记账|管理|页面)/i, cmd: '/build' },
   { re: /分析.*视频|视频.*分析|看.*视频|视频里/i, cmd: '/video' },
   { re: /(?:看|分析|识别).*图|图片.*(?:看|分析)|这张图|截图.*(?:看|分析)/i, cmd: '/vision' },
   { re: /(?:搜|找).*(?:记忆|黑洞|内容)|之前.*说|记得.*说|黑洞.*搜/i, cmd: '/hole' },
   { re: /体检|检查.*状态|看看.*健康/i, cmd: '/doctor' },
-  { re: /备份/i, cmd: '/backup' },
-  { re: /部署|上线|落地/i, cmd: '/deploy' },
+  { re: /备份(?!过|了|好|完)(?:一下|一份|数据|项目|代码|资料|文件|到|吧|$)/i, cmd: '/backup' },
+  { re: /(?:部署|上线|落地)(?!了|过|后|完|完成)/i, cmd: '/deploy' },
   { re: /(?:抓取|爬).*网页|网页.*(?:抓|爬)|打开.*网页.*分析/i, cmd: '/claw' },
   { re: /定时|每隔|每(?:天|周|小时)/i, cmd: '/cron' },
   { re: /沙盒|隔离.*运行/i, cmd: '/sandbox' },
@@ -21,9 +23,20 @@ export const NL_TRIGGERS: NlTrigger[] = [
   { re: /多开|并行.*代理|swarm/i, cmd: '/swarm' },
 ];
 
+// 祈使动词开头（"帮我/请/把/看/搜/分析/备份…"）——非此开头的长句视为叙述/提及，不劫持为命令
+const IMPERATIVE_OPEN = /^(?:请|帮|把|给|用|来|去|现在|立即|马上|先|可以|能|看|搜|找|分析|检查|抓|爬|读|写|建|做|定时|沙盒|部署|备份)/;
+// 疑问/语气特征——长句含此特征必为对话
+const QUESTION_MARK = /(?:请问|你觉得|怎么样|怎么办|好不好|能不能|是否|为什么|如何|天气|吗|呢|吧|？|\?)/;
+
 export function routeNaturalLanguage(text: string): string | null {
-  for (const t of NL_TRIGGERS) {
-    if (t.re.test(text)) return t.cmd;
+  const t = text.trim();
+  // F16：长句守卫——非祈使开头或疑问式一律交 AI 对话层（不劫持为命令）
+  if (t.length > 14) {
+    if (QUESTION_MARK.test(t)) return null;
+    if (!IMPERATIVE_OPEN.test(t)) return null;
+  }
+  for (const tr of NL_TRIGGERS) {
+    if (tr.re.test(t)) return tr.cmd;
   }
   return null;
 }

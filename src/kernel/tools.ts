@@ -2,7 +2,7 @@
 // 设计：工具 = { schema(OpenAI function calling 格式), danger, run(args, ctx) }
 //      危险工具结果包裹 <untrusted_tool_result>（防提示注入——模型把工具输出当指令）
 // 参考：Claude Code tools-reference（15 工具）、aider 工具集、Codex function call
-import { execSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -12,6 +12,8 @@ export interface ToolCtx {
   ask?: (q: string, opts?: { danger?: boolean }) => Promise<boolean>;
   /** 派生子代理（只读工具集，独立上下文）——delegate 工具真实执行入口 */
   spawnSubagent?: (goal: string) => Promise<{ ok: boolean; output: string; turns: number }>;
+  /** 当前轮次的中止信号（F15：bash 等长时工具可被用户 abort 真中断） */
+  signal?: AbortSignal;
 }
 
 export interface ToolDef {
@@ -23,7 +25,10 @@ export interface ToolDef {
   run(args: Record<string, any>, ctx: ToolCtx): Promise<string>;
 }
 
-const wrapDanger = (s: string) => `<untrusted_tool_result>\n${s.slice(0, 8000)}\n</untrusted_tool_result>`;
+export const wrapDanger = (s: string) =>
+  // 对比轮 5 修复：defang 内嵌闭标签（hermes 同款）——工具输出含 </untrusted_tool_result> 时
+  // 转义为 <\/...>，防止提前闭合包裹边界（提示注入防护）
+  `<untrusted_tool_result>\n${s.slice(0, 8000).replace(/<\/untrusted_tool_result>/g, '<\\/untrusted_tool_result>')}\n</untrusted_tool_result>`;
 
 export function coreTools(): Record<string, ToolDef> {
   const fsRead: ToolDef = {
@@ -60,8 +65,28 @@ export function coreTools(): Record<string, ToolDef> {
     schema: { type: 'function', function: { name: 'bash', description: '执行 shell 命令', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },
     danger: true,
     async run({ command }, ctx) {
+      // F15 修复：spawn 异步执行（非 execSync 阻塞）——abort 信号真中断（kill 子进程），60s 兜底超时
       try {
-        const out = execSync(String(command), { cwd: ctx.cwd, encoding: 'utf8', timeout: 60000, maxBuffer: 4 * 1024 * 1024, shell: process.platform === 'win32' ? 'powershell.exe -NoProfile -Command' : '/bin/bash' });
+        const cmd = String(command);
+        const timeout = AbortSignal.timeout(60000);
+        const signal = ctx.signal ? AbortSignal.any([timeout, ctx.signal]) : timeout;
+        const child = spawn(
+          process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
+          process.platform === 'win32' ? ['-NoProfile', '-Command', cmd] : ['-c', cmd],
+          { cwd: ctx.cwd, signal },
+        );
+        let out = '';
+        child.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
+        child.stderr?.on('data', (d: Buffer) => { out += d.toString(); });
+        await new Promise<void>((resolveP, rejectP) => {
+          child.on('error', rejectP);
+          child.on('close', (code) => {
+            if (ctx.signal?.aborted) return rejectP(new Error('已中断（用户中止）'));
+            if (code === 0) return resolveP();
+            // 非 0 退出码 → 视为失败（输出附在错误消息中——模型可见且可被失败计数识别）
+            return rejectP(new Error(`退出码 ${code}${out.trim() ? `：\n${out.slice(0, 2000)}` : ''}`));
+          });
+        });
         return wrapDanger(out.slice(0, 8000) || '（无输出）');
       } catch (e: any) {
         return wrapDanger(`命令失败：${e.message?.slice(0, 500)}`);
@@ -84,8 +109,9 @@ export function coreTools(): Record<string, ToolDef> {
     schema: { type: 'function', function: { name: 'grep', description: '在文件中搜索文本', parameters: { type: 'object', properties: { pattern: { type: 'string' }, path: { type: 'string' } }, required: ['pattern'] } } },
     danger: false,
     async run({ pattern, path = '.' }, ctx) {
+      // 修复 F14：execFileSync 参数数组（不经 shell），消除命令注入
       try {
-        const out = execSync(`grep -rn "${String(pattern).replace(/"/g, '\\"')}" "${resolve(ctx.cwd, path)}"`, { encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
+        const out = execFileSync('grep', ['-rn', String(pattern), resolve(ctx.cwd, path)], { encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
         return out.slice(0, 8000) || '（无匹配）';
       } catch { return '（无匹配）'; }
     },

@@ -22,13 +22,14 @@ export interface WxGatewayKernel {
   bus: EventBus
   db: any
   config: any
-  mem: { append(sessionId: string, role: string, content: string, toolCallId?: string): void; recallHybrid?(q: string, o?: { limit?: number }): any[] }
+  mem: { append(sessionId: string, role: string, content: string, toolCallId?: string): void; recallHybrid?(q: string, o?: { limit?: number }): Promise<Array<{ id: number; content: string; score: number }>> }
   agent: {
     run(prompt: string): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>
     abort(): void
     setMode(m: string): void
     getMode(): string
     setSessionId(id: string): void
+    steer(text: string): boolean
   }
   commandBus: CommandBus
   dataDir: string
@@ -173,11 +174,12 @@ export class GatewayClient extends EventEmitter {
       case 'session.resume': return this.sessionResume(params) as T
       case 'session.close': return this.sessionClose(params) as T
       case 'session.undo': return this.sessionUndo(params) as T
+      case 'session.delete': return this.sessionDelete(params) as T
       case 'session.fork': return this.sessionFork(params) as T
       case 'session.active_list': return this.sessionActiveList(params) as T
       case 'session.most_recent': return this.sessionMostRecent() as T
       case 'session.title': return this.sessionTitle(params) as T
-      case 'session.steer': return { status: 'rejected' } as T
+      case 'session.steer': return this.sessionSteer(params) as T
       case 'session.interrupt': return this.sessionInterrupt() as T
       case 'config.get': return this.configGet(params) as T
       case 'config.set': return this.configSet(params) as T
@@ -353,8 +355,39 @@ export class GatewayClient extends EventEmitter {
     return { ok: true }
   }
 
+  // F2 修复：session.delete 真实实现（级联删消息/checkpoints；当前会话则重置）
+  private async sessionDelete(params: Record<string, unknown>): Promise<unknown> {
+    const id = String(params.session_id ?? this.currentSessionId)
+    const exists = this.kernel.db.prepare(`SELECT id FROM sessions WHERE id=?`).get(id) as { id: string } | undefined
+    if (!exists) return { ok: false, message: `会话不存在：${id}` }
+
+    this.kernel.db.prepare(`DELETE FROM messages WHERE session_id=?`).run(id)
+    this.kernel.db.prepare(`DELETE FROM checkpoints WHERE session_id=?`).run(id)
+    this.kernel.db.prepare(`DELETE FROM sessions WHERE id=?`).run(id)
+
+    if (this.currentSessionId === id) {
+      this.currentSessionId = 'default'
+      this.kernel.agent.setSessionId('default')
+    }
+    this.publish({ type: 'status.update', payload: { kind: 'done', text: 'ready' } })
+
+    return { ok: true, deleted: id }
+  }
+
+  // F7 修复：session.steer 真实现（注入当前回合）
+  private async sessionSteer(params: Record<string, unknown>): Promise<unknown> {
+    const text = String(params.text ?? '').trim()
+    if (!text) return { status: 'rejected', reason: 'empty steer text' }
+    const ok = this.kernel.agent.steer(text)
+    return ok ? { status: 'queued' } : { status: 'rejected', reason: 'agent not running' }
+  }
+
   // session.undo：删除当前会话最后一条非 system 消息（真实实现，复活 UI 撤销/重试）
+  // 对比轮 5 修复：running 守卫（hermes 4009 拒绝）——运行中撤销会造成 DB/内存分叉
   private async sessionUndo(params: Record<string, unknown>): Promise<unknown> {
+    if (this.running) {
+      return { ok: false, code: 4009, message: 'agent 运行中不能撤销——请先中断' }
+    }
     const id = String(params.session_id ?? this.currentSessionId)
     const last = this.kernel.db.prepare(`SELECT id FROM messages WHERE session_id=? AND role!='system' ORDER BY id DESC LIMIT 1`).get(id) as { id: number } | undefined
 

@@ -126,6 +126,10 @@ export function useSubmission(opts: UseSubmissionOptions) {
         return sys('session not ready yet')
       }
 
+      // F8 修复：RPC 前同步置忙——detect_drop 往返窗口内二次回车读到 busy=true，
+      // 避免双发 prompt.submit（hermes markSubmitting 同款；否则 UI 卡 analyzing）
+      patchUiState({ busy: true, status: 'running…' })
+
       // Always ask the backend whether this looks like a file drop.
       // The backend's _detect_file_drop handles paths with spaces, quotes,
       // Windows drive letters, and escaped characters correctly.

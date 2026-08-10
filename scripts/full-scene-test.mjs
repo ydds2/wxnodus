@@ -18,7 +18,7 @@ let out = '';
 let p;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const strip = s => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
-const last = () => strip(out).split('\n').slice(-32).join('\n');
+const last = () => strip(out).split('\n').slice(-40).join('\n');
 const typeKeys = async s => { for (const ch of s) { p.write(ch); await sleep(40); } };
 const submit = async s => { await typeKeys(s); await sleep(150); p.write('\r'); await sleep(900); };
 
@@ -102,10 +102,13 @@ async function main() {
 
   // ── 7. 滚动（ScrollBox 应用内滚动） ───────
   for (let i = 0; i < 3; i++) { await submit('测试' + i); await sleep(400); }
+  // 中断 agent（有真实 key 时 AI 回复流式输出会持续刷新屏幕，与渲染断言竞争——先停再查）
+  p.write('\x03');
+  await sleep(1000);
   const f5 = last();
   check('主屏幕:历史消息累积', strip(out).includes('测试2'));
   check('主屏幕:输入框固定底部', f5.includes('❯'));
-  check('主屏幕:状态条在底部', f5.includes('deepseek') || f5.includes('Ctrl+C') || f5.includes('语音') || f5.includes('synthesizing') || f5.includes('ready'));
+  check('主屏幕:状态条在底部', f5.includes('deepseek') || f5.includes('Ctrl+C') || f5.includes('语音') || f5.includes('synthesizing') || f5.includes('ready') || f5.includes('running') || f5.includes('interrupted') || f5.includes('formulating'));
 
   // ── 8. 退出 ─────────────────────────────
   p.write('\x03'); // Ctrl+C

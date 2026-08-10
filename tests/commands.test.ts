@@ -68,6 +68,13 @@ describe('NL 路由（说人话 → 命令）', () => {
   it('无关输入返回 null（走 AI 意图或对话）', () => {
     expect(routeNaturalLanguage('今天天气怎么样')).toBeNull();
   });
+  it('F16：祈使备份触发，叙述式"备份过"不劫持', () => {
+    expect(routeNaturalLanguage('把代码备份到U盘')).toBe('/backup');
+    expect(routeNaturalLanguage('我之前备份过这个项目')).toBeNull();
+  });
+  it('F16：长句非祈使（叙述/提及）不劫持为命令', () => {
+    expect(routeNaturalLanguage('这个方案部署上线后要注意安全问题')).toBeNull();
+  });
 });
 
 describe('NL_TRIGGERS 结构', () => {

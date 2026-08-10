@@ -54,12 +54,12 @@ describe('三层记忆（working/archival/recall）', () => {
 });
 
 describe('混合召回（FTS5 中文）', () => {
-  it('中文关键词召回命中（吸附进 archival 的也能搜到）', () => {
-    const hits = mem.recallHybrid('黑洞引擎', { limit: 5 });
+  it('中文关键词召回命中（吸附进 archival 的也能搜到）', async () => {
+    const hits = await mem.recallHybrid('黑洞引擎', { limit: 5 });
     expect(hits.length).toBeGreaterThan(0);
   });
-  it('无关词零命中', () => {
-    expect(mem.recallHybrid('xyzzy不存在', { limit: 5 }).length).toBe(0);
+  it('无关词零命中', async () => {
+    expect((await mem.recallHybrid('xyzzy不存在', { limit: 5 })).length).toBe(0);
   });
 });
 
@@ -82,7 +82,7 @@ describe('embedding 降级', () => {
   it('无 embedding 模型时向量检索降级 FTS（不抛）', async () => {
     // WXN_NO_EMBED 时 recallHybrid 内部跳过向量只走 FTS
     process.env.WXN_NO_EMBED = '1';
-    const hits = mem.recallHybrid('第一句话', { limit: 5 });
+    const hits = await mem.recallHybrid('第一句话', { limit: 5 });
     expect(Array.isArray(hits)).toBe(true);
     delete process.env.WXN_NO_EMBED;
   });

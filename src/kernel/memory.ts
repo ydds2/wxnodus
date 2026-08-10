@@ -94,7 +94,7 @@ export interface Memory {
   append(sessionId: string, role: MemMsg['role'], content: string, toolCallId?: string): void;
   working(sessionId: string): Array<{ role: string; content: string }>;
   recall(sessionId: string): Array<{ id: number; role: string; content: string; ts: number }>;
-  recallHybrid(query: string, opts?: { limit?: number; sessionId?: string }): Array<{ id: number; content: string; score: number }>;
+  recallHybrid(query: string, opts?: { limit?: number; sessionId?: string }): Promise<Array<{ id: number; content: string; score: number }>>;
   absorbCount(sessionId: string): number;
   compactSmart(sessionId: string, summarize: (text: string) => Promise<string>): Promise<void>;
   /** 会话无标题时用给定标题命名（自动标题） */
@@ -111,11 +111,30 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
   const countStmt = db.prepare(`SELECT COUNT(*) c FROM messages WHERE session_id=? AND role!='system'`);
   const oldestStmt = db.prepare(`SELECT id FROM messages WHERE session_id=? AND role!='system' AND archived=0 ORDER BY id LIMIT 1`);
   const absorbCountStmt = db.prepare(`SELECT COUNT(*) c FROM messages WHERE session_id=? AND archived=1`);
+  // F5 修复：向量写入与 KNN 查询（vec 不可用时降级——prepare 抛错即禁用）
+  const insertVecStmt = (() => { try { return db.prepare(`INSERT OR IGNORE INTO archival_vec (id, embedding) VALUES (?, ?)`); } catch { return null; } })();
+  const knnStmt = (() => { try { return db.prepare(`SELECT id FROM archival_vec WHERE embedding MATCH ? ORDER BY distance LIMIT ?`); } catch { return null; } })();
+
+  // F5：异步向量写入（fire-and-forget，失败静默；embedding 不可用走冷却）
+  const embedAndStore = (messageId: number, content: string) => {
+    void (async () => {
+      try {
+        if (!insertVecStmt) return;
+        const v = await embed(content.slice(0, 2000));
+        if (!v) return;
+        insertVecStmt.run(messageId, JSON.stringify(v));
+      } catch { /* 向量写入失败静默（纯 FTS 兜底） */ }
+    })();
+  };
 
   return {
     append(sessionId, role, content, toolCallId) {
       ensureSession.run(sessionId, Date.now(), Date.now());
-      appendStmt.run(sessionId, role, content, toolCallId ?? null, Date.now());
+      const info = appendStmt.run(sessionId, role, content, toolCallId ?? null, Date.now());
+      // F5：消息异步写入向量索引（黑洞混合召回的数据源）
+      if (role === 'user' || role === 'assistant') {
+        embedAndStore(Number(info.lastInsertRowid), String(content));
+      }
       // 黑洞吸附：working 超压 → 最旧消息标记 archived（recall 全量保留，working 窗口受限）
       const cnt = (countStmt.get(sessionId) as any).c;
       if (cnt > workingLimit) {
@@ -129,16 +148,34 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
     recall(sessionId) {
       return recallStmt.all(sessionId) as any[];
     },
-    recallHybrid(query, opts = {}) {
+    async recallHybrid(query, opts = {}) {
       const limit = opts.limit ?? 10;
       const fts = searchMessages(db, query, { limit: limit * 2, sessionId: opts.sessionId })
         .map(r => ({ id: r.id, content: r.content, score: 1 }));
       const seen = new Set<number>();
-      return fts.filter(h => {
+      const out = fts.filter(h => {
         if (seen.has(h.id)) return false;
         seen.add(h.id);
         return true;
-      }).slice(0, limit);
+      });
+      // F5：向量融合——FTS 命中不足时用 KNN 补充语义近似命中（embedding 不可用/查询失败降级纯 FTS）
+      if (out.length < limit && knnStmt) {
+        const qv = await embed(query.slice(0, 2000)).catch(() => null);
+        if (qv) {
+          try {
+            const knn = knnStmt.all(JSON.stringify(qv), limit - out.length) as Array<{ id: number }>;
+            for (const k of knn) {
+              if (seen.has(k.id)) continue;
+              const row = db.prepare(`SELECT id, content FROM messages WHERE id=?`).get(k.id) as { id: number; content: string } | undefined;
+              if (!row) continue;
+              seen.add(row.id);
+              out.push({ id: row.id, content: row.content, score: 0.8 });
+              if (out.length >= limit) break;
+            }
+          } catch { /* 向量查询失败静默降级 */ }
+        }
+      }
+      return out.slice(0, limit);
     },
     absorbCount(sessionId) {
       return (absorbCountStmt.get(sessionId) as any).c;
@@ -149,14 +186,22 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
       const mid = rows.slice(3, -3);
       const summary = await summarize(mid.map((m: any) => `${m.role}: ${m.content}`).join('\n')).catch(() => '');
       if (summary) {
+        // F6 修复：不硬 DELETE——中部消息置 archived（recall 全量仍可检索），
+        // 摘要写入第一条中部消息原位（保持时间序），其余中部消息归档
         const midIds = mid.map((m: any) => m.id);
-        db.prepare(`DELETE FROM messages WHERE id IN (${midIds.map(() => '?').join(',')})`).run(...midIds);
-        appendStmt.run(sessionId, 'system', `（自动压缩摘要）${summary.slice(0, 500)}`, null, Date.now());
+        const [firstId, ...restIds] = midIds;
+        if (firstId !== undefined) {
+          db.prepare(`UPDATE messages SET content=?, role='system', archived=0 WHERE id=?`)
+            .run(`（自动压缩摘要）${summary.slice(0, 500)}`, firstId);
+          if (restIds.length) {
+            db.prepare(`UPDATE messages SET archived=1 WHERE id IN (${restIds.map(() => '?').join(',')})`).run(...restIds);
+          }
+        }
       } else {
         const ids = rows.map((r: any) => r.id);
         const keep = [...ids.slice(0, 3), ...ids.slice(-3)];
         const drop = ids.filter(id => !keep.includes(id));
-        db.prepare(`DELETE FROM messages WHERE id IN (${drop.map(() => '?').join(',')})`).run(...drop);
+        db.prepare(`UPDATE messages SET archived=1 WHERE id IN (${drop.map(() => '?').join(',')})`).run(...drop);
       }
     },
     setTitleIfEmpty(sessionId, title) {

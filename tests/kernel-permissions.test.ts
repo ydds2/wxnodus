@@ -46,8 +46,8 @@ describe('硬红线（任何模式不可绕过）', () => {
 });
 
 describe('模式语义', () => {
-  it('plan：只读研究 + 计划审批', () => {
-    expect(modeVerdict('plan', 'fs_read', { path: 'x' })).toBe('plan');
+  it('plan：只读研究 + 计划审批（F12：只读工具免审批，危险工具需计划审批）', () => {
+    expect(modeVerdict('plan', 'fs_read', { path: 'x' })).toBe('approve');
     expect(modeVerdict('plan', 'bash', { command: 'ls' })).toBe('plan');
   });
   it('auto：非危险直接 approve', () => {
