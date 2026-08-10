@@ -228,3 +228,23 @@ describe('pickResumeSession 自动恢复', () => {
     expect(pickResumeSession(db)).toBe('resume-s1');
   });
 });
+
+// ── B2：真实 token 用量统计表 ──
+describe('usage_stats 表', () => {
+  it('插入与聚合查询', () => {
+    db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`)
+      .run('usage-s1', 'deepseek-v4-flash', 1200, 300, 1);
+    db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`)
+      .run('usage-s1', 'glm-4.5', 800, 200, 2);
+    const agg = db.prepare(
+      `SELECT COUNT(*) AS c, COALESCE(SUM(input_tokens),0) AS it, COALESCE(SUM(output_tokens),0) AS ot, COUNT(DISTINCT model) AS models FROM usage_stats WHERE session_id=?`
+    ).get('usage-s1') as any;
+    expect(agg.c).toBe(2);
+    expect(agg.it).toBe(2000);
+    expect(agg.ot).toBe(500);
+    expect(agg.models).toBe(2);
+    // 会话隔离
+    const other = db.prepare(`SELECT COUNT(*) AS c FROM usage_stats WHERE session_id='usage-other'`).get() as any;
+    expect(other.c).toBe(0);
+  });
+});

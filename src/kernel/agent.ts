@@ -12,7 +12,7 @@ import type { Memory } from './memory.js';
 import { decryptKey, REASONING_FIELDS } from './providers.js';
 import { estimateMessagesTokens, compactMessages } from './memory.js';
 import { coreTools, isDangerous, toolsToOpenAI, wrapDanger, type ToolCtx } from './tools.js';
-import { modeVerdict, type Mode } from './permissions.js';
+import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
 import type { HookRunner } from './hooks.js';
 import { join } from 'node:path';
 import { readFileSync, statSync } from 'node:fs';
@@ -46,6 +46,8 @@ export interface AgentOptions {
   onSecretRequest?: (kind: 'sudo' | 'secret', prompt: string, name?: string) => Promise<string | null>;
   /** 简化人工操作（阶段 C）：smart 模式下工作区内文件编辑自动放行（默认开启） */
   lowRiskAutoApprove?: boolean;
+  /** 数据目录（P0-2 审批规则文件 data/permissions.json 读取位置） */
+  dataDir?: string;
 }
 
 export interface AgentResult {
@@ -157,6 +159,8 @@ export function createAgent(opts: AgentOptions) {
     let reasoningField: string | null = null;
     const toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
     let finished = false;
+    // B2 真实用量统计：OpenAI 兼容流最后一条数据携带 usage（prompt/completion tokens）
+    let usageData: { prompt_tokens?: number; completion_tokens?: number } | null = null;
 
     while (!finished) {
       const { done, value } = await reader.read();
@@ -177,6 +181,7 @@ export function createAgent(opts: AgentOptions) {
           const msg = j.error?.message ?? j.error?.code ?? 'SSE 流错误';
           throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg).slice(0, 300));
         }
+        if (j?.usage) usageData = j.usage;
         const delta = j?.choices?.[0]?.delta;
         const finishReason = j?.choices?.[0]?.finish_reason;
         if (delta?.content) {
@@ -212,6 +217,14 @@ export function createAgent(opts: AgentOptions) {
     // C2：正常结束但空内容（无 token 无工具调用）→ 错误而非静默空消息
     if (!full && !toolCalls.length) {
       throw new Error('模型返回空响应');
+    }
+
+    // B2 真实用量统计：异步写库（失败静默，不阻断对话）
+    if (usageData?.prompt_tokens || usageData?.completion_tokens) {
+      try {
+        opts.db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`)
+          .run(sessionId, model, usageData.prompt_tokens ?? 0, usageData.completion_tokens ?? 0, Date.now());
+      } catch { /* 统计失败不影响对话 */ }
     }
 
     // 批量 tool_calls 全量返回（修复对比轮 5 缺口：同回合多工具调用不得丢弃——
@@ -274,6 +287,9 @@ export function createAgent(opts: AgentOptions) {
 
   const onApproval = opts.onApproval ?? (async () => true);
 
+  // P0-2 审批规则文件：启动加载 data/permissions.json，工具执行前应用（deny>allow>ask）
+  const permRules = loadPermRules(opts.dataDir ?? join(process.cwd(), 'data'));
+
   // F7：steer 注入队列（运行中向当前回合注入用户消息）
   const steerQueue: string[] = [];
   const steer = (text: string): boolean => {
@@ -291,6 +307,9 @@ export function createAgent(opts: AgentOptions) {
       const tool = tools[name];
       if (!tool) return `未知工具：${name}（可用：${Object.keys(tools).slice(0, 12).join(', ')}）`;
       // F12：权限模型读 tool.danger（单一事实来源）
+      // P0-2：持久化规则优先裁决（deny 直接拒绝 / allow 跳过审批 / ask 强制确认）
+      const ruleHit = applyRules(name, args, permRules);
+      if (ruleHit === 'deny') return `工具被规则拒绝：${name}（/perm rule remove 可移除规则）`;
       const verdict = modeVerdict(mode, name, args, tool.danger);
       if (verdict === 'reject') return `工具被拒绝：权限红线（${name}）`;
       // 简化人工操作（阶段 C）：smart 模式 + 低危文件编辑（工作区内）→ 自动放行，
@@ -299,7 +318,12 @@ export function createAgent(opts: AgentOptions) {
         && (name === 'fs_write' || name === 'fs_edit')
         && typeof (args as any)?.path === 'string'
         && isPathWithinCwd(String((args as any).path));
-      if (verdict === 'confirm' && lowRiskFile) {
+      if (ruleHit === 'allow') {
+        bus.emit('system.notice', { text: `规则放行：${name}（/perm rule list 查看）` });
+      } else if (ruleHit === 'ask' && (verdict === 'approve' || verdict === 'confirm')) {
+        const ok = await onApproval(name, args);
+        if (!ok) return `用户拒绝执行 ${name}`;
+      } else if (verdict === 'confirm' && lowRiskFile) {
         bus.emit('system.notice', { text: `低危操作自动放行：${name}（工作区内文件编辑，${'/perm'} 可关闭）` });
       } else if (verdict === 'confirm' || verdict === 'plan') {
         const ok = await onApproval(name, args);

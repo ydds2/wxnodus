@@ -1,4 +1,4 @@
-// src/app/stores/overlayStore.ts — L5 弹层状态（zustand）
+// src/app/stores/overlayStore.ts — L5 弹层状态（自研引擎 engine.ts）
 import { createStore as create } from './engine.js';
 import type { OverlayState } from './types.js';
 

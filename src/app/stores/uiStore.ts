@@ -1,4 +1,4 @@
-// src/app/stores/uiStore.ts — L5 UI 状态（zustand）
+// src/app/stores/uiStore.ts — L5 UI 状态（自研引擎 engine.ts）
 import { createStore as create } from './engine.js';
 import type { UiState } from './types.js';
 

@@ -3,20 +3,30 @@
 // 装配：data/config/db/mem/bus/agent → wxGateway（进程内桥接）→ @wxnodus/ink render App
 import { Command } from 'commander';
 import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, appendFileSync } from 'node:fs';
 
 const VERSION = '3.0.0';
-// 调试：捕获未处理异常/拒绝（React 渲染错误会冒泡至此）
+// 调试：捕获未处理异常/拒绝 → dataDir/logs/error-<日期>.log（统一日志目录，不污染工作目录）
+// dataDir 在 main 内定义——日志初始化延迟到装配时调用（见 _initErrorLog）
+let _initErrorLog: (dir: string) => void = () => {};
 if (!process.env.WXNODUS_NO_DEBUG) {
-  import('node:fs').then(({ appendFileSync }) => {
-    process.on('uncaughtException', (e) => { try { appendFileSync('wxerr.log', `uncaught: ${(e as Error)?.stack ?? e}\n`); } catch {} });
-    process.on('unhandledRejection', (e: any) => { try { appendFileSync('wxerr.log', `unhandled: ${e?.stack ?? e}\n`); } catch {} });
-    const origErr = console.error;
-    console.error = (...args: any[]) => {
-      try { appendFileSync('wxerr.log', `console.error: ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a) ?? String(a)).join(' ')}\n`); } catch {}
-      origErr(...args);
-    };
-  });
+  _initErrorLog = (dir: string) => {
+    try {
+      const logDir = join(dir, 'logs');
+      mkdirSync(logDir, { recursive: true });
+      const logFile = () => join(logDir, `error-${new Date().toISOString().slice(0, 10)}.log`);
+      const write = (tag: string, e: unknown) => {
+        try { appendFileSync(logFile(), `[${new Date().toISOString()}] ${tag}: ${(e as Error)?.stack ?? String(e)}\n`); } catch {}
+      };
+      process.on('uncaughtException', (e) => write('uncaught', e));
+      process.on('unhandledRejection', (e: any) => write('unhandled', e));
+      const origErr = console.error;
+      console.error = (...args: any[]) => {
+        write('console.error', args.map(a => typeof a === 'string' ? a : JSON.stringify(a) ?? String(a)).join(' '));
+        origErr(...args);
+      };
+    } catch { /* 日志初始化失败不阻断启动 */ }
+  };
 }
 const program = new Command();
 program.name('wxnodus').version(VERSION).description('WxNodus V3 — 本地概念编译器 CLI');
@@ -30,9 +40,10 @@ const opts = program.opts();
 async function main() {
   const cwd = process.cwd();
   const dataDir = join(cwd, 'data');
+  _initErrorLog(dataDir);
   mkdirSync(dataDir, { recursive: true });
 
-  const [{ createConfig }, { openDB }, { createEventBus }, { createMemory }, { createAgent }, { createCommandBus }, { createHookRunner }, { GatewayClient }] = await Promise.all([
+  const [{ createConfig }, { openDB, closeDB }, { createEventBus }, { createMemory }, { createAgent }, { createCommandBus }, { createHookRunner }, { GatewayClient }] = await Promise.all([
     import('../store/config.js'),
     import('../store/db.js'),
     import('../kernel/events.js'),
@@ -114,6 +125,7 @@ async function main() {
     onSecretRequest: async (kind, prompt, name) => (gateway ? gateway.requestSecretInput(kind, prompt, name) : null),
     // 简化人工操作（阶段 C）：smart 模式工作区内文件编辑自动放行（默认开启，/perm 说明）
     lowRiskAutoApprove: (settings as any).lowRiskAutoApprove !== false,
+    dataDir,
     hooks: hookRunner,
     extraTools: { ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) },
   });
@@ -221,8 +233,8 @@ async function main() {
       if (out.startsWith('__KEEPALIVE__')) {
         console.log(out.slice(14).trim());
         await new Promise<void>(resolve => {
-          process.once('SIGINT', () => resolve());
-          process.once('SIGTERM', () => resolve());
+          process.once('SIGINT', () => { shutdown(); resolve(); });
+          process.once('SIGTERM', () => { shutdown(); resolve(); });
         });
       } else {
         console.log(out);
@@ -273,7 +285,7 @@ async function main() {
     setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
     setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },
     setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); },
-    requestExit: () => { exitRequested = true; setTimeout(() => process.exit(0), 50); },
+    requestExit: () => { exitRequested = true; shutdown(); setTimeout(() => process.exit(0), 50); },
   });
   gateway.start();
 
@@ -293,14 +305,24 @@ async function main() {
   }
 
   // Ctrl+C：运行中中断 / 空闲退出
+  // B1 统一退出清理：MCP 子进程 + DB + UI 全部回收（SIGINT/SIGTERM/requestExit 共用）
+  let shutdownDone = false;
+  const shutdown = () => {
+    if (shutdownDone) return;
+    shutdownDone = true;
+    try { closeAllMcp(mcpClients); } catch {}
+    try { closeDB(db); } catch {}
+    try { app?.unmount(); } catch {}
+  };
+
   process.on('SIGINT', () => {
-    if (exitRequested) { try { app?.unmount(); } catch {} process.exit(0); }
+    if (exitRequested) { shutdown(); process.exit(0); }
     exitRequested = true;
     gateway.kill('SIGINT');
     agent.abort();
-    setTimeout(() => { try { app?.unmount(); } catch {} process.exit(0); }, 300);
+    setTimeout(() => { shutdown(); process.exit(0); }, 300);
   });
-  process.on('SIGTERM', () => { try { app?.unmount(); } catch {} process.exit(0); });
+  process.on('SIGTERM', () => { shutdown(); process.exit(0); });
 }
 
 main().catch(e => { console.error('启动失败：', e?.message ?? e); process.exit(1); });

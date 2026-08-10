@@ -51,11 +51,11 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 
 ## 技术栈（成熟框架）
 
-Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器（React 19 自定义 reconciler + yoga 布局 + 行级差分 + DECSTBM 硬件滚动 + BSU/ESU 同步输出）· zustand · micromark+GFM+math（Markdown）· better-sqlite3+sqlite-vec+FTS5 · robotjs+playwright-core+node-screenshots（computer use）· @huggingface/transformers（本地 embedding）· vitest
+Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器（React 19 自定义 reconciler + yoga 布局 + 行级差分 + DECSTBM 硬件滚动 + BSU/ESU 同步输出）· 自研状态引擎 · micromark+GFM+math（Markdown）· better-sqlite3+sqlite-vec+FTS5 · robotjs+playwright-core+node-screenshots（computer use）· @huggingface/transformers（本地 embedding）· vitest
 
 ## 验收证据
 
-- ✅ 420 单元/契约/进程级测试全绿（30 测试文件）+ 类型检查零错误
+- ✅ 426 单元/契约/进程级测试全绿（30 测试文件）+ 类型检查零错误
 - ✅ TUI 冒烟（真实终端 node-pty）：首屏/输入/回复/命令面板/Esc/终止不挂死
 - ✅ 全命令扫描 105/105 可用（scripts/cmd-sweep.mjs 回归工具，112 命令注册表全覆盖）
 - ✅ 概念编译器端到端：「帮我做一个待办系统」→ todo 项目生成 → 启动 → API 增删查 → healthcheck 通过 → evidence.json
@@ -76,7 +76,7 @@ src/
   kernel/     领域层（agent/黑洞引擎/tools/权限/事件/providers/computer/vision/skills/hooks/mcp/projectScan/plugins/imageMeta）
   store/      基础设施（SQLite/配置中心/审计/checkpoint/fork）
   ui/         交互层（ink7 组件/Markdown 管线/Kimi 主题）
-tests/        四层测试（420 用例，30 文件）
+tests/        四层测试（426 用例，30 文件）
 scripts/      TUI 冒烟（node-pty 驱动）/ cmd-sweep 全命令扫描
 ```
 

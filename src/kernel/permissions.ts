@@ -8,6 +8,8 @@
 //    plan 计划模式：只读放行、非只读计划审批
 //    yolo 完全访问：除红线全放
 //  硬红线：任何模式不可绕过——扩展自 hermes 的 HARDLINE/DANGEROUS_PATTERNS 结构
+import { join } from 'node:path';
+
 export type Mode = 'smart' | 'auto' | 'manual' | 'plan' | 'yolo' | 'goal';
 export type Verdict = 'approve' | 'reject' | 'confirm' | 'plan';
 
@@ -42,6 +44,52 @@ function hitRedline(tool: string, args: Record<string, any>): Redline | null {
 // 敏感路径写保护（修复 F13）：fs_write/fs_edit 写入凭据/配置/密钥文件直接拒绝
 const SENSITIVE_WRITE = /(^|[\\/])(\.bashrc|\.zshrc|\.profile|\.bash_profile|\.ssh[\\/].*|\.env|\.env\.local|id_rsa|id_ed25519|authorized_keys|known_hosts|\.git[\\/]config|\.npmrc|\.pypirc)(\s|$)/i;
 
+// ── P0-2 审批规则文件（持久化 allow/deny/ask）──
+// data/permissions.json：[{ tool: 'fs_write', pattern: 'src/**', decision: 'allow' }]
+// 规则优先级：deny > allow > ask > 模式默认（与 Codex forbidden>prompt>allow 同构）
+export interface PermRule {
+  tool: string;
+  /** 路径 glob（仅对带 path 参数的工具生效；缺省匹配全部） */
+  pattern?: string;
+  decision: 'allow' | 'deny' | 'ask';
+}
+
+export function loadPermRules(dataDir: string): PermRule[] {
+  try {
+    const { readFileSync, existsSync } = require('node:fs') as typeof import('node:fs');
+    const f = join(dataDir, 'permissions.json');
+    if (!existsSync(f)) return [];
+    const raw = JSON.parse(readFileSync(f, 'utf8')) as PermRule[];
+    return Array.isArray(raw) ? raw.filter(r => r?.tool && ['allow', 'deny', 'ask'].includes(r.decision)) : [];
+  } catch { return []; }
+}
+
+export function savePermRules(dataDir: string, rules: PermRule[]): void {
+  const { writeFileSync, mkdirSync } = require('node:fs') as typeof import('node:fs');
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(join(dataDir, 'permissions.json'), JSON.stringify(rules, null, 2), 'utf8');
+}
+
+// 规则判定：返回 decision 或 null（无规则命中）
+export function applyRules(tool: string, args: Record<string, any>, rules: PermRule[]): 'allow' | 'deny' | 'ask' | null {
+  if (!rules?.length) return null;
+  const hit = rules.filter(r => r.tool === tool);
+  if (!hit.length) return null;
+  // 路径过滤：仅当规则带 pattern 且工具参数有 path 时校验 glob
+  const pathArg = String(args?.path ?? '');
+  for (const r of hit) {
+    if (r.pattern) {
+      if (!pathArg) continue;
+      const { minimatch } = {} as any; // 不用外部依赖：简单通配转正则
+      const re = new RegExp('^' + r.pattern.split('*').map(escapeRe).join('.*') + '$', 'i');
+      if (!re.test(pathArg)) continue;
+    }
+    return r.decision;
+  }
+  return null;
+}
+function escapeRe(s: string): string { return s.replace(/[.+?^${}()|[\]\\]/g, '\\$&'); }
+
 // 只读工具名单（危险语义修复 F12：与 tools.danger 单一事实来源——danger:false 且无副作用的工具）
 // 注意：memory_write/http_get 有副作用/外联，移出只读名单
 const READONLY_TOOLS = new Set(['fs_read', 'ls', 'grep', 'skill_search', 'skill_load', 'code_symbols', 'repo_map', 'rag_search', 'hole_recall']);
@@ -59,8 +107,29 @@ const BASH_WRITE = /^(mkdir|touch|cp|mv|ren|move|copy|setx|npm\s+(install|i|init
 const CATEGORY_LABEL: Record<BashCategory, string> = { readonly: '只读查询', write: '写入操作', network: '网络请求', danger: '危险操作' };
 const CATEGORY_ICON: Record<BashCategory, string> = { readonly: '📖', write: '✏️', network: '🌐', danger: '☠️' };
 
+// ── P0-1 危险检测升级：wrapper 解包 + operand 后置 flag 变体 ──
+// 解包链：sudo / env / trap / bash|sh|zsh -lc / powershell -Command|EncodedCommand / cmd /c
+// （参考 Codex wrapper 解包思路——自研实现；深度上限防解包爆炸）
+export function unwrapCommand(cmd: string, depth = 0): string {
+  if (depth > 8) return cmd;
+  const m = cmd.match(/^\s*(?:sudo\s+|env\s+\S+\s+|trap\s+.*?;\s*|(?:bash|sh|zsh|pwsh|powershell|cmd)\s+-(?:lc|c|Command|EncodedCommand)\s+)([\s\S]*)$/i);
+  if (m) return unwrapCommand(m[1]!, depth + 1);
+  return cmd;
+}
+
+// `rm build/ -rf`（GNU rm 选项置换绕过）→ 归一为递归强制删除语义
+const OPERAND_AFTER_FLAG = /^(rm|rmdir)\s+(?!-)(\S+)\s+(-[a-zA-Z]*[rR][a-zA-Z]*[fF][a-zA-Z]*)/;
+
+// 解包后分类（BASH_DANGEROUS 前缀 + operand 变体双通道）
 function classifyBashSingle(seg: string): BashCategory {
-  if (BASH_DANGEROUS.test(seg)) return 'danger';
+  const unwrapped = unwrapCommand(seg);
+  if (BASH_DANGEROUS.test(unwrapped)) return 'danger';
+  if (OPERAND_AFTER_FLAG.test(unwrapped)) return 'danger';
+  // 解包后重新按白名单/写/网络分类
+  if (BASH_WRITE.test(unwrapped)) return 'write';
+  if (BASH_NETWORK.test(unwrapped)) return 'network';
+  if (BASH_READONLY.test(unwrapped)) return 'readonly';
+  return 'danger';
   if (BASH_WRITE.test(seg)) return 'write';
   if (BASH_NETWORK.test(seg)) return 'network';
   if (BASH_READONLY.test(seg)) return 'readonly';

@@ -326,11 +326,21 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   bus.register('/usage', () => {
-    const rows = ctx.db.prepare(`SELECT role, content FROM messages WHERE session_id='default'`).all() as any[];
-    const tokens = rows.reduce((a, r) => a + estimateTokens(r.content), 0);
+    // B2 修复：定位当前活跃会话（不再硬编码 'default'）+ 真实 token 统计（usage_stats）
+    const sid = ctx.agent?.getSessionId?.() ?? 'default';
+    const real = ctx.db.prepare(
+      `SELECT COUNT(*) AS c, COALESCE(SUM(input_tokens),0) AS it, COALESCE(SUM(output_tokens),0) AS ot, COUNT(DISTINCT model) AS models FROM usage_stats WHERE session_id=?`
+    ).get(sid) as { c: number; it: number; ot: number; models: number };
+    const rows = ctx.db.prepare(`SELECT role, content FROM messages WHERE session_id=?`).all(sid) as any[];
+    const est = rows.reduce((a, r) => a + estimateTokens(r.content), 0);
+    const realTotal = real.it + real.ot;
+    const tokenLine = real.c > 0
+      ? ` 实际 Token：${realTotal.toLocaleString()}（输入 ${real.it.toLocaleString()} / 输出 ${real.ot.toLocaleString()}，${real.models} 个模型）`
+      : ` Token：约 ${est.toLocaleString()}（本地估算，尚无 API 用量记录）`;
     return lines(' 用量 ', [
+      ` 会话：${sid.slice(0, 12)}…`,
       ` 消息：${rows.length} 条`,
-      ` Token：约 ${tokens.toLocaleString()}`,
+      tokenLine,
       ` 成本：本地运行，无 API 计费`,
     ]);
   });
@@ -854,6 +864,39 @@ export const commands = {
       }
     }
     return '用法：/mcp list｜add <名称> <命令> [参数...]｜remove <名称>｜test <名称>';
+  });
+
+  // /perm rule：持久化审批规则（P0-2——deny>allow>ask，data/permissions.json）
+  bus.register('/perm rule', (args) => {
+    const { loadPermRules, savePermRules } = require('../kernel/permissions.js') as typeof import('../kernel/permissions.js');
+    const [sub, tool, decision, pattern] = args;
+    const rules = loadPermRules(ctx.dataDir);
+    if (sub === 'list') {
+      if (!rules.length) return '暂无规则（/perm rule add <工具> allow|deny|ask [路径glob]）';
+      return lines(' 审批规则 ', rules.map((r, i) =>
+        ` #${i + 1}  ${r.decision.toUpperCase().padEnd(5)}  ${r.tool}${r.pattern ? `  ${r.pattern}` : ''}`
+      ));
+    }
+    if (sub === 'add') {
+      if (!tool || !['allow', 'deny', 'ask'].includes(decision)) {
+        return '用法：/perm rule add <工具名> allow|deny|ask [路径glob，如 src/**]';
+      }
+      rules.push({ tool, decision: decision as any, pattern: pattern || undefined });
+      savePermRules(ctx.dataDir, rules);
+      return `已添加规则：${decision} ${tool}${pattern ? `（${pattern}）` : ''}——立即生效`;
+    }
+    if (sub === 'remove') {
+      const n = parseInt(tool, 10);
+      if (!Number.isFinite(n) || n < 1 || n > rules.length) return '用法：/perm rule remove <编号>（/perm rule list 查看编号）';
+      const [removed] = rules.splice(n - 1, 1);
+      savePermRules(ctx.dataDir, rules);
+      return `已移除规则：${removed.decision} ${removed.tool}`;
+    }
+    if (sub === 'clear') {
+      savePermRules(ctx.dataDir, []);
+      return '已清空全部审批规则';
+    }
+    return '用法：/perm rule list ｜ add <工具> allow|deny|ask [glob] ｜ remove <编号> ｜ clear';
   });
 
   // /security：安全注入通道管理（红线：关闭通道即同步清除内存敏感缓存）

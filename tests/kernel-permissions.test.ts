@@ -1,7 +1,10 @@
 // tests/kernel-permissions.test.ts — L2-3 工具表 + 权限模式（危险分级/硬红线）
 import { describe, it, expect } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { coreTools, isDangerous, type ToolDef } from '../src/kernel/tools.js';
-import { modeVerdict, HARD_REDLINES, classifyBashCommand, classifyToolAction, createApprovalCache, type Verdict } from '../src/kernel/permissions.js';
+import { modeVerdict, HARD_REDLINES, classifyBashCommand, classifyToolAction, createApprovalCache, unwrapCommand, loadPermRules, savePermRules, applyRules, type Verdict } from '../src/kernel/permissions.js';
 
 describe('工具表', () => {
   it('核心工具存在且带危险分级', () => {
@@ -132,6 +135,52 @@ describe('工具执行包装', () => {
     // 危险工具结果包裹 <untrusted_tool_result>
     if (isDangerous(coreTools(), 'bash')) {
       expect(String(result)).toContain('<untrusted_tool_result>');
+    }
+  });
+});
+
+// ── P0-1：危险检测升级（wrapper 解包 + operand 后置变体）──
+describe('wrapper 解包与变体检测', () => {
+  it('sudo/env/bash -lc 逐层解包', () => {
+    expect(unwrapCommand('sudo rm -rf /')).toBe('rm -rf /');
+    expect(unwrapCommand('env FOO=1 rm -rf /')).toBe('rm -rf /');
+    expect(unwrapCommand('bash -lc "rm -rf /"')).toContain('rm -rf /'); // 解包后引号保留，危险语义不变
+    expect(unwrapCommand('sh -c sudo rm -rf /')).toBe('rm -rf /');
+  });
+  it('深度上限（9 层嵌套不再解包，防爆炸）', () => {
+    let c = 'rm -rf /';
+    for (let i = 0; i < 12; i++) c = `sudo ${c}`;
+    expect(unwrapCommand(c)).not.toBe('rm -rf /');
+  });
+  it('operand 后置 flag 变体（rm build/ -rf）判为 danger', () => {
+    expect(classifyBashCommand('rm build/ -rf')).toBe('danger');
+    expect(classifyBashCommand('sudo rm build/ -rf')).toBe('danger');
+  });
+  it('解包后 danger 判定（sudo rm -rf /）', () => {
+    expect(classifyBashCommand('sudo rm -rf /')).toBe('danger');
+    expect(classifyBashCommand('bash -lc "rm -rf /tmp/x"')).toBe('danger');
+  });
+});
+
+// ── P0-2：审批规则文件 ──
+describe('审批规则文件', () => {
+  it('save→load 往返 + 非法规则过滤', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wx-perm-'));
+    try {
+      savePermRules(dir, [
+        { tool: 'fs_write', pattern: 'src/**', decision: 'allow' },
+        { tool: 'bash', decision: 'deny' },
+        { tool: '', decision: 'allow' as any },
+      ]);
+      const rules = loadPermRules(dir);
+      expect(rules.length).toBe(2);
+      // glob 命中/不命中
+      expect(applyRules('fs_write', { path: 'src/main.ts' }, rules)).toBe('allow');
+      expect(applyRules('fs_write', { path: 'dist/x.js' }, rules)).toBeNull();
+      // 无 pattern 规则全匹配
+      expect(applyRules('bash', {}, rules)).toBe('deny');
+    } finally {
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
     }
   });
 });

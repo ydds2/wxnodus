@@ -359,8 +359,17 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   bus.register('/export', async (args) => {
+    // --jsonl：完整会话导出（审计友好，一行一条消息——对齐 trace/rollout 格式）
+    if (args[0] === '--jsonl') {
+      const sid = args[1] ?? ctx.agent?.getSessionId?.() ?? 'default';
+      const rows = ctx.db.prepare(`SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=? ORDER BY id`).all(sid) as any[];
+      if (!rows.length) return '该会话无消息';
+      const out = join(ctx.dataDir, `session-${sid.replace(/[^\w-]/g, '').slice(0, 10)}-${Date.now().toString(36)}.jsonl`);
+      writeFileSync(out, rows.map(r => JSON.stringify({ ...r, session_id: sid })).join('\n') + '\n', 'utf8');
+      return `已导出会话 ${sid} 的 ${rows.length} 条消息（JSONL）→ ${out}`;
+    }
     const q = args.join(' ');
-    if (!q) return '用法：/export <关键词>（导出匹配的历史消息）';
+    if (!q) return '用法：/export <关键词>（导出匹配的历史消息） ｜ /export --jsonl [会话ID]（完整会话导出）';
     const hits = searchMessages(ctx.db, q, { limit: 50 });
     if (!hits.length) return '无匹配';
     const out = join(ctx.dataDir, `export-${Date.now().toString(36)}.json`);

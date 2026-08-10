@@ -1,4 +1,4 @@
-// src/app/stores/turnStore.ts — L5 回合状态（zustand）
+// src/app/stores/turnStore.ts — L5 回合状态（自研引擎 engine.ts）
 import { createStore as create } from './engine.js';
 import type { TurnState, UiMsg, ActiveTool } from './types.js';
 

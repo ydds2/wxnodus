@@ -106,6 +106,14 @@ export function openDB(dataDir: string): Db {
       created_at INTEGER NOT NULL,
       done_at INTEGER
     );
+    CREATE TABLE IF NOT EXISTS usage_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      model TEXT NOT NULL DEFAULT '',
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      ts INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS cron_jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       schedule TEXT NOT NULL,

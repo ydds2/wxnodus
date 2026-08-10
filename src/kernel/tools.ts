@@ -67,6 +67,26 @@ export function coreTools(): Record<string, ToolDef> {
       } catch (e: any) { return `编辑失败：${e.message}`; }
     },
   };
+  // ── P0-3 子进程环境净化：剥离含 KEY/SECRET/TOKEN/PASSWORD 的变量 ──
+  // 参考 Codex shell_environment_policy 思路（自研实现）：只传 core 环境 + 白名单，
+  // 防止密钥经子进程环境泄露（bash 工具/hooks/MCP stdio 均受益）
+  const CORE_ENV = new Set([
+    'PATH', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'SystemRoot', 'WINDIR',
+    'COMSPEC', 'PATHEXT', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'TERM', 'PWD', 'OLDPWD',
+    'SHELL', 'USER', 'LOGNAME', 'NODE_ENV', 'WXNODUS_', 'MSYS', 'TERM_PROGRAM',
+  ]);
+  const SECRET_ENV_RE = /(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|AUTH|SIGNATURE|PRIVATE_?KEY)/i;
+  function sanitizedEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+    const out: NodeJS.ProcessEnv = {};
+    for (const [k, v] of Object.entries(process.env)) {
+      if (v === undefined) continue;
+      if (CORE_ENV.has(k) || k.startsWith('WXNODUS_')) { out[k] = v; continue; }
+      if (SECRET_ENV_RE.test(k)) continue; // 密钥类变量不传子进程
+      if (k.startsWith('npm_') || k.startsWith('NODE_')) continue; // 噪声剔除
+    }
+    return { ...out, ...extra };
+  }
+
   const bash: ToolDef = {
     schema: { type: 'function', function: { name: 'bash', description: '执行 shell 命令', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },
     danger: true,
@@ -113,7 +133,7 @@ export function coreTools(): Record<string, ToolDef> {
         const child = spawn(
           process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
           process.platform === 'win32' ? ['-NoProfile', '-Command', cmd] : ['-c', cmd],
-          { cwd: ctx.cwd, signal, stdio: ['pipe', 'pipe', 'pipe'] },
+          { cwd: ctx.cwd, signal, stdio: ['pipe', 'pipe', 'pipe'], env: sanitizedEnv() },
         );
         if (stdinSecret) {
           child.stdin?.write(stdinSecret);

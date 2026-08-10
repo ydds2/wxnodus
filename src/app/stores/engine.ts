@@ -29,7 +29,9 @@ export function createStore<T>(initial: T | (() => T)): WxStore<T> {
   store.getState = () => state;
   store.setState = (patch) => {
     const prev = state;
-    const next = typeof patch === 'function' ? (patch as (s: T) => T)(prev) : { ...prev, ...patch };
+    // 函数形式与对象形式统一浅合并（zustand 语义对齐——函数返回值也做 { ...prev, ...next }）
+    const applied = typeof patch === 'function' ? (patch as (s: T) => T)(prev) : patch;
+    const next = { ...prev, ...applied };
     if (next === prev) return;
     state = next;
     for (const l of [...listeners]) l();
