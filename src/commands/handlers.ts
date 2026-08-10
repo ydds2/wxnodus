@@ -38,6 +38,8 @@ export interface HandlerCtx {
   openModelPicker: () => void;
   openSessions: () => void;
   setThinking: (on: boolean) => void;
+  /** MCP 热重载（/mcp add/remove 后自动接通，无需重启） */
+  reloadMcp?: () => Promise<{ ok: boolean; count: number; message: string }>;
 }
 
 const lines = (title: string, body: string[]): string => {

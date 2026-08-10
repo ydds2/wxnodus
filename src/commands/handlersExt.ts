@@ -823,7 +823,11 @@ export const commands = {
       if (servers.some(s => s.name === name)) return `server「${name}」已存在（/mcp remove ${name} 后重加）`;
       servers.push({ name, command, args: rest.slice(2) });
       saveMcpConfig(ctx.dataDir, servers);
-      return `已添加 MCP server「${name}」（重启后生效，或 /mcp test ${name} 验证连接）`;
+      // P3：热重载接通——/mcp add 后立即重连并热换工具表（无需重启）
+      try {
+        const r = await ctx.reloadMcp?.();
+        return r?.ok ? `已添加并热重载 MCP server「${name}」（${r.count} 个在线，工具已并入工具表）` : `已添加 MCP server「${name}」（重启后生效）`;
+      } catch { return `已添加 MCP server「${name}」（重启后生效）`; }
     }
     if (sub === 'remove') {
       const name = rest[0];
@@ -831,7 +835,10 @@ export const commands = {
       const next = servers.filter(s => s.name !== name);
       if (next.length === servers.length) return `未找到 server「${name}」`;
       saveMcpConfig(ctx.dataDir, next);
-      return `已移除 MCP server「${name}」`;
+      try {
+        const r = await ctx.reloadMcp?.();
+        return r?.ok ? `已移除并热重载 MCP server「${name}」（${r.count} 个在线）` : `已移除 MCP server「${name}」（重启后生效）`;
+      } catch { return `已移除 MCP server「${name}」（重启后生效）`; }
     }
     if (sub === 'test') {
       const name = rest[0];

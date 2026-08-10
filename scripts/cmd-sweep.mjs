@@ -19,10 +19,10 @@ const BROKEN = /不支持|未实现|unknown rpc|unsupported|not implemented|内�
 const groups = {
   '对话': ['/help', '/clear', '/undo', '/usage', '/quit', '/context', '/resume', '/new', '/title', '/undo list'],
   '模型': ['/key', '/login', '/logout', '/model', '/status', '/doctor', '/version', '/thinking on', '/thinking off'],
-  '记忆': ['/memory', '/hole 测试', '/compact', '/digest', '/curator'],
+  '记忆': ['/memory', '/hole 测试', '/compact', '/digest', '/curator', '/task show'],
   '计划': ['/plan', '/flow 用户注册流程', '/import'],
-  '构建': ['/build', '/deploy', '/forge', '/skill', '/skill list', '/skill inspect demo', '/skill new sweep-tmp', '/learn test-skill', '/gate', '/fdr', '/evidence'],
-  '会话': ['/fork', '/init'],
+  '构建': ['/build', '/deploy', '/forge', '/skill', '/skill list', '/skill inspect demo', '/skill new sweep-tmp', '/learn test-skill', '/gate', '/fdr', '/evidence', '/plugin', '/plugin list'],
+  '会话': ['/fork', '/init', '/checkpoint list', '/checkpoint'],
   '钩子': ['/hooks'],
   '安全': ['/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt'],
   '系统': ['/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench'],

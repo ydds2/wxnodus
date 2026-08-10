@@ -152,6 +152,7 @@ async function main() {
     openModelPicker: () => { /* WxNodus UI: /model 打开选择器 */ },
     openSessions: () => { /* WxNodus UI: /sessions 打开列表 */ },
     setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); },
+    reloadMcp,
   });
   registerCoreHandlers(commandBus, makeHandlerCtx());
   registerExtHandlers(commandBus, makeHandlerCtx());

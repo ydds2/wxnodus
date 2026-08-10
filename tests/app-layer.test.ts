@@ -192,3 +192,48 @@ describe('/undo 当前会话定位', () => {
     }
   });
 });
+
+// ── /mcp add/remove 热重载接通（P3：无需重启生效）──
+describe('/mcp 热重载', () => {
+  it('add 后调用 reloadMcp 并反馈在线数；list 不触发', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wx-mcp-'));
+    try {
+      const { openDB, closeDB } = await import('../src/store/db.js');
+      const { createMemory } = await import('../src/kernel/memory.js');
+      const { createEventBus } = await import('../src/kernel/events.js');
+      const { registerExtHandlers } = await import('../src/commands/handlersExt.js');
+      const db = openDB(dir);
+      const mem = createMemory(db);
+      const bus2 = createCommandBus();
+      let reloadCalls = 0;
+      const ctx: any = {
+        dataDir: dir, cwd: process.cwd(), db, mem,
+        config: { get: () => ({}), getKey: () => undefined },
+        bus: createEventBus(dir),
+        agent: { getSessionId: () => 'default' },
+        reloadMcp: async () => { reloadCalls++; return { ok: true, count: 1, message: 'ok' }; },
+        getModel: () => '', getMode: () => 'smart', setMode: () => {}, setTheme: () => {},
+        getThemeName: () => 'wxnodus', requestExit: () => {}, clearHistory: () => {},
+        setModel: () => {}, openModelPicker: () => {}, openSessions: () => {}, setThinking: () => {},
+      };
+      registerExtHandlers(bus2, ctx);
+      const r1 = await bus2.execute('/mcp list');
+      expect(r1.ok).toBe(true);
+      expect(reloadCalls).toBe(0); // 只读命令不触发
+      const r2 = await bus2.execute('/mcp add demo node -e x');
+      expect(r2.ok).toBe(true);
+      expect(r2.output).toContain('热重载');
+      expect(r2.output).toContain('1 个在线');
+      expect(reloadCalls).toBe(1);
+      const r3 = await bus2.execute('/mcp remove demo');
+      expect(r3.output).toContain('热重载');
+      expect(reloadCalls).toBe(2);
+      // 配置确实写盘
+      const { loadMcpConfig } = await import('../src/kernel/mcp.js');
+      expect(loadMcpConfig(dir)).toEqual([]);
+      closeDB(db);
+    } finally {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* Windows 延迟解锁 */ }
+    }
+  });
+});
