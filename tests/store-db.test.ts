@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDB, closeDB, appendAudit, saveCheckpoint, restoreCheckpoint, searchMessages, bigramZh, auditHash, forkSession } from '../src/store/db.js';
+import { openDB, closeDB, appendAudit, saveCheckpoint, restoreCheckpoint, searchMessages, bigramZh, auditHash, forkSession, pickResumeSession } from '../src/store/db.js';
 
 let dir: string;
 let db: ReturnType<typeof openDB>;
@@ -204,5 +204,27 @@ describe('forkSession', () => {
   it('fork 后可检索（FTS5 索引覆盖新会话）', () => {
     const r = searchMessages(db, '问题一', { sessionId: 'fork-copy' });
     expect(r.length).toBeGreaterThan(0);
+  });
+});
+
+// ── 简化人工操作：自动恢复候选 ──
+describe('pickResumeSession 自动恢复', () => {
+  it('最后消息是 user（回合未完成）→ 返回该会话', () => {
+    const sid = 'resume-s1';
+    const far = Date.now() + 100_000; // 未来时间戳：保证比同库其他会话（fork 等）新
+    db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`).run(sid, '未完成', 1, far);
+    db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES (?,?,?,?)`).run(sid, 'user', '进行中的问题', far);
+    expect(pickResumeSession(db)).toBe(sid);
+  });
+  it('会话以 assistant 收尾（回合完成）→ null', () => {
+    db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`).run('done-s1', '已完成', 1, 997);
+    db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES (?,?,?,?)`).run('done-s1', 'user', 'q', 1);
+    db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES (?,?,?,?)`).run('done-s1', 'assistant', 'a', 2);
+    expect(pickResumeSession(db)).toBe('resume-s1'); // 仍是最新的未完成
+  });
+  it('多会话取 updated_at 最新', () => {
+    db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`).run('old-unfin', '旧未完成', 1, 996);
+    db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES (?,?,?,?)`).run('old-unfin', 'user', '旧问题', 101);
+    expect(pickResumeSession(db)).toBe('resume-s1');
   });
 });

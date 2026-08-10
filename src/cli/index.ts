@@ -112,6 +112,8 @@ async function main() {
       vault: secrets,
     },
     onSecretRequest: async (kind, prompt, name) => (gateway ? gateway.requestSecretInput(kind, prompt, name) : null),
+    // 简化人工操作（阶段 C）：smart 模式工作区内文件编辑自动放行（默认开启，/perm 说明）
+    lowRiskAutoApprove: (settings as any).lowRiskAutoApprove !== false,
     hooks: hookRunner,
     extraTools: { ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) },
   });
@@ -252,6 +254,16 @@ async function main() {
     } catch { /* 无权限/非 cmd 时静默 */ }
   }
   try { process.stdout.write('\x1b]0;WxNodus — 概念编译器\x07'); } catch {}
+
+  // 简化人工操作（阶段 C）：启动自动恢复上次未完成会话（settings.autoResume=false 关闭）
+  if ((settings as any).autoResume !== false) {
+    const { pickResumeSession } = await import('../store/db.js');
+    const resumeId = pickResumeSession(db);
+    if (resumeId) {
+      agent.setSessionId(resumeId);
+      bus.emit('system.notice', { text: `已自动恢复上次未完成会话 ${resumeId.slice(0, 8)}…（/new 可开始新会话）` });
+    }
+  }
 
   // WxNodus UI 装配
   gateway = new GatewayClient({

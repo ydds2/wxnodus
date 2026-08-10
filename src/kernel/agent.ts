@@ -44,6 +44,8 @@ export interface AgentOptions {
   security?: { sudoInjection?: boolean; secretInjection?: boolean; vault?: import('./secrets.js').SecretVault | null };
   /** 敏感输入请求（用户亲手输入）：kind=sudo 返回密码；kind=secret 返回密钥值；不可用返回 null */
   onSecretRequest?: (kind: 'sudo' | 'secret', prompt: string, name?: string) => Promise<string | null>;
+  /** 简化人工操作（阶段 C）：smart 模式下工作区内文件编辑自动放行（默认开启） */
+  lowRiskAutoApprove?: boolean;
 }
 
 export interface AgentResult {
@@ -291,9 +293,15 @@ export function createAgent(opts: AgentOptions) {
       // F12：权限模型读 tool.danger（单一事实来源）
       const verdict = modeVerdict(mode, name, args, tool.danger);
       if (verdict === 'reject') return `工具被拒绝：权限红线（${name}）`;
-      // plan 模式语义是「只读研究 + 计划审批」：所有非只读动作都必须确认
-      // （与 confirm 同路径——审批桥弹出确认；拒绝则不执行）
-      if (verdict === 'confirm' || verdict === 'plan') {
+      // 简化人工操作（阶段 C）：smart 模式 + 低危文件编辑（工作区内）→ 自动放行，
+      // 不再逐次弹审批（acceptEdits 语义）；工作区外/危险操作/plan 模式不受影响
+      const lowRiskFile = opts.lowRiskAutoApprove !== false && mode === 'smart'
+        && (name === 'fs_write' || name === 'fs_edit')
+        && typeof (args as any)?.path === 'string'
+        && isPathWithinCwd(String((args as any).path));
+      if (verdict === 'confirm' && lowRiskFile) {
+        bus.emit('system.notice', { text: `低危操作自动放行：${name}（工作区内文件编辑，${'/perm'} 可关闭）` });
+      } else if (verdict === 'confirm' || verdict === 'plan') {
         const ok = await onApproval(name, args);
         if (!ok) return `用户拒绝执行 ${name}`;
       }
@@ -573,6 +581,15 @@ export function createAgent(opts: AgentOptions) {
     // M4：当前会话读取——命令层（/undo /fork 等）定位真实会话，不再硬编码 'default'
     getSessionId(): string { return sessionId; },
   };
+}
+
+// 路径是否在工作目录内（低危自动放行的安全边界）
+function isPathWithinCwd(p: string): boolean {
+  try {
+    const { resolve, relative, isAbsolute } = require('node:path') as typeof import('node:path');
+    const rel = relative(resolve(process.cwd()), resolve(p));
+    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  } catch { return false; }
 }
 
 function safeJson(s: string): Record<string, any> {

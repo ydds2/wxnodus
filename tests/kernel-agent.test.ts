@@ -522,3 +522,52 @@ describe('会话切换与定位（M4）', () => {
     agent.setSessionId('t');
   });
 });
+
+// ── 简化人工操作（阶段 C）：smart 模式低危文件编辑自动放行 ──
+describe('低危自动放行', () => {
+  function makeLowRiskAgent(over: any = {}, path: string = join(process.cwd(), 'lowrisk-target.txt')) {
+    let approvals = 0;
+    let called = 0;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-lowrisk',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any) => {
+        called++;
+        if (called === 1) {
+          // 模型先发起 fs_write 工具调用（验证审批路径真实触发）
+          return { type: 'tool_call', name: 'fs_write', args: { path, content: 'x' } } as any;
+        }
+        return { type: 'text', content: '完成' };
+      },
+      onApproval: async () => { approvals++; return true; },
+      ...over,
+    } as any);
+    return { agent, count: () => approvals };
+  }
+
+  it('smart 模式：工作区内 fs_write 不弹审批（自动放行）', async () => {
+    const { agent, count } = makeLowRiskAgent();
+    const r = await agent.run('把 hello 写入文件');
+    expect(r.ok).toBe(true);
+    expect(count()).toBe(0);
+  });
+
+  it('smart 模式：工作区外路径仍弹审批', async () => {
+    const outside = process.platform === 'win32' ? 'C:/Windows/temp/x.txt' : '/etc/x.txt';
+    const { agent, count } = makeLowRiskAgent({}, outside);
+    await agent.run(`把内容写入 ${outside}`);
+    expect(count()).toBeGreaterThan(0);
+  });
+
+  it('plan 模式：文件编辑仍走审批（plan 语义保持）', async () => {
+    const { agent, count } = makeLowRiskAgent({ mode: 'plan' as any });
+    await agent.run('把 hello 写入文件');
+    expect(count()).toBeGreaterThan(0);
+  });
+
+  it('lowRiskAutoApprove:false 时恢复逐次审批', async () => {
+    const { agent, count } = makeLowRiskAgent({ lowRiskAutoApprove: false });
+    await agent.run('把 hello 写入文件');
+    expect(count()).toBeGreaterThan(0);
+  });
+});

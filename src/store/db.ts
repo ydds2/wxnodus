@@ -192,6 +192,20 @@ export function restoreCheckpoint<T = unknown>(db: Db, sessionId: string): T | n
 }
 
 // 会话 fork：复制会话（含全部消息）到新会话——分支会话不回写源
+// 自动恢复候选：最后一条非 system 消息是 user（回合未完成）的最新会话——null 则无
+export function pickResumeSession(db: Db): string | null {
+  const row = db.prepare(`
+    SELECT s.id FROM sessions s
+    WHERE EXISTS (
+      SELECT 1 FROM messages m WHERE m.session_id = s.id
+        AND m.id = (SELECT MAX(id) FROM messages WHERE session_id = s.id AND role != 'system')
+        AND m.role = 'user'
+    )
+    ORDER BY s.updated_at DESC LIMIT 1
+  `).get() as { id: string } | undefined;
+  return row?.id ?? null;
+}
+
 export function forkSession(db: Db, srcId: string, newId: string, titleSuffix = ' (fork)'): number {
   const src = db.prepare(`SELECT title, created_at FROM sessions WHERE id=?`).get(srcId) as { title: string; created_at: number } | undefined;
   if (!src) return 0;
