@@ -499,23 +499,36 @@ export class GatewayClient extends EventEmitter {
     return ok ? { status: 'queued' } : { status: 'rejected', reason: 'agent not running' }
   }
 
-  // session.undo：删除当前会话最后一条非 system 消息（真实实现，复活 UI 撤销/重试）
+  // session.undo：软归档当前会话最近一轮（自最后一个 user 消息起），对齐 CLI /undo 语义
   // 对比轮 5 修复：running 守卫（hermes 4009 拒绝）——运行中撤销会造成 DB/内存分叉
+  // P3 修复：响应契约对齐 UI 消费端（core.ts 读 r.removed>0）——原死路径（永远 undefined）
   private async sessionUndo(params: Record<string, unknown>): Promise<unknown> {
     if (this.running) {
-      return { ok: false, code: 4009, message: 'agent 运行中不能撤销——请先中断' }
+      return { ok: false, removed: 0, code: 4009, message: 'agent 运行中不能撤销——请先中断' }
     }
     const id = String(params.session_id ?? this.currentSessionId)
-    const last = this.kernel.db.prepare(`SELECT id FROM messages WHERE session_id=? AND role!='system' ORDER BY id DESC LIMIT 1`).get(id) as { id: number } | undefined
-
-    if (!last) {
-      return { ok: false, message: '没有可撤销的消息' }
-    }
-
-    this.kernel.db.prepare(`DELETE FROM messages WHERE id=?`).run(last.id)
+    const nonSys = this.kernel.db.prepare(
+      `SELECT id, role FROM messages WHERE session_id=? AND role!='system' AND archived=0 ORDER BY id`
+    ).all(id) as Array<{ id: number; role: string }>
+    if (!nonSys.length) return { ok: false, removed: 0, message: '没有可撤销的消息' }
+    const userIdx = nonSys.map((m, i) => (m.role === 'user' ? i : -1)).filter(i => i >= 0)
+    if (!userIdx.length) return { ok: false, removed: 0, message: '没有可撤销的轮次' }
+    // 撤销前自动快照（/checkpoint restore 可恢复，与 CLI /undo 一致）
+    try {
+      const { saveCheckpoint } = await import('../store/db.js')
+      const full = this.kernel.db.prepare(
+        `SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=? AND role!='system' ORDER BY id`
+      ).all(id)
+      saveCheckpoint(this.kernel.db, id, { kind: 'undo-snapshot', messages: full, ts: Date.now() })
+    } catch { /* 快照失败不阻断 */ }
+    // 软撤销：归档而非删除（黑洞 recall 全量保留，working 窗口回退）
+    const start = userIdx[userIdx.length - 1]!
+    const dropIds = nonSys.slice(start).map(m => m.id)
+    this.kernel.db.prepare(
+      `UPDATE messages SET archived=1 WHERE id IN (${dropIds.map(() => '?').join(',')})`
+    ).run(...dropIds)
     this.publish({ type: 'status.update', payload: { kind: 'done', text: 'ready' } })
-
-    return { ok: true, deleted_id: last.id }
+    return { ok: true, removed: dropIds.length, deleted_id: dropIds[dropIds.length - 1] }
   }
 
   // session.fork：复制会话（含全部消息）为分支并激活
@@ -940,8 +953,9 @@ export class GatewayClient extends EventEmitter {
 
   private loadMessages(sessionId: string): Array<{ role: 'assistant' | 'system' | 'tool' | 'user'; text: string }> {
     try {
+      // P3：working 窗口对齐——归档消息（黑洞 recall 层）不进会话视图
       const rows = this.kernel.db.prepare(
-        `SELECT role, content FROM messages WHERE session_id = ? ORDER BY id`
+        `SELECT role, content FROM messages WHERE session_id = ? AND archived=0 ORDER BY id`
       ).all(sessionId) as Array<{ role: string; content: string }>
 
       const msgs = rows
