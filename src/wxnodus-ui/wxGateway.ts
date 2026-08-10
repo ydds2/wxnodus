@@ -32,6 +32,8 @@ export interface WxGatewayKernel {
     getMode(): string
     setSessionId(id: string): void
     steer(text: string): boolean
+    /** P1c：插件热重载（plugins.manage toggle 后更新工具表） */
+    updateTools?(extra: Record<string, any>): void
   }
   commandBus: CommandBus
   dataDir: string
@@ -227,6 +229,7 @@ export class GatewayClient extends EventEmitter {
       case 'spawn_tree.save': return {} as T
       case 'skills.manage': return this.skillsManage(params) as T
       case 'skills.reload': return { output: '技能缓存已清空（发现目录即时扫描）' } as T
+      case 'plugins.manage': return this.pluginsManage(params) as T
       case 'reload.mcp': return {} as T
       case 'voice.toggle': return { enabled: false, audio_available: false, message: '语音输入当前不可用' } as T
       case 'voice.record': return { ok: false, audio_available: false, message: '语音输入当前不可用' } as T
@@ -297,6 +300,45 @@ export class GatewayClient extends EventEmitter {
       return { type: 'skill', name: r.dispatch.name, message: r.dispatch.message }
     }
     return { type: 'exec', output: r.output ?? r.error ?? '' }
+  }
+
+  // P1c：plugins.manage RPC（激活 UI pluginsHub 面板——此前为死分支）
+  //   list：插件列表（名称/版本/描述/启用/工具数）
+  //   toggle：启停（修改 plugin.json + updateTools 热更新 agent 工具表）
+  private async pluginsManage(params: Record<string, unknown>): Promise<unknown> {
+    const { loadAllPlugins, pluginToolsToExtra, setPluginEnabled } = await import('../kernel/plugins.js')
+    const action = String(params.action ?? 'list')
+    const name = String(params.name ?? '')
+
+    if (action === 'list') {
+      const all = await loadAllPlugins(this.kernel.dataDir, this.kernel.cwd)
+      return {
+        plugins: all.map(p => ({
+          name: p.manifest.name,
+          version: p.manifest.version,
+          description: p.manifest.description ?? '',
+          // UI 期望 status 字段（'enabled' | 'not enabled'）；enabled 保留兼容
+          status: p.manifest.enabled !== false ? 'enabled' : 'not enabled',
+          enabled: p.manifest.enabled !== false,
+          source: 'user',
+        })),
+      }
+    }
+
+    if (action === 'toggle') {
+      const enable = Boolean(params.enable)
+      const dir = join(this.kernel.dataDir, 'plugins', name)
+      if (!existsSync(join(dir, 'plugin.json'))) return { plugin: null }
+      const ok = setPluginEnabled(dir, enable)
+      // 热更新 agent 工具表（不重启）
+      if (ok && this.kernel.agent?.updateTools) {
+        const all = await loadAllPlugins(this.kernel.dataDir, this.kernel.cwd)
+        this.kernel.agent.updateTools(pluginToolsToExtra(all))
+      }
+      return { plugin: { name, enabled: enable } }
+    }
+
+    return { plugins: [] }
   }
 
   private async skillsManage(params: Record<string, unknown>): Promise<unknown> {

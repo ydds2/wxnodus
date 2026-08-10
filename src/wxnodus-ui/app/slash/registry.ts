@@ -14,7 +14,9 @@ const KEEP_LOCAL = new Set<string>([
   // session.ts：config.set / session.active_list 已桥接
   'model', 'sessions', 'skin', 'indicator', 'reasoning', 'fast', 'busy', 'verbose',
   // setup.ts：setup.status/config.set 已桥接
-  'setup'
+  'setup',
+  // ops.ts：P1c 插件面板（无参开面板；子命令走 slash.exec 内核）
+  'plugins'
 ])
 
 export const SLASH_COMMANDS: SlashCommand[] = [
