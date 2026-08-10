@@ -116,6 +116,13 @@ async function main() {
   registerCoreHandlers(commandBus, makeHandlerCtx());
   registerExtHandlers(commandBus, makeHandlerCtx());
 
+  // 黑洞策展后台自动审查（机制补强）：启动 5s 后检查间隔，超期则后台执行一轮
+  setTimeout(() => {
+    import('../kernel/curator.js').then(({ maybeRunCurator }) => {
+      maybeRunCurator({ getSettings: () => config.get('settings') as Record<string, any>, mem, dataDir, cwd, bus });
+    }).catch(() => { /* 后台审查失败静默 */ });
+  }, 5000);
+
   // 非交互模式
   if (opts.prompt) {
     const text = String(opts.prompt);

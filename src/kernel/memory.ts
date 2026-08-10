@@ -29,6 +29,46 @@ export function compactKeepHeadTail(msgs: MemMsg[], opts: { head: number; tail: 
   return [...msgs.slice(0, opts.head), ...msgs.slice(-opts.tail)];
 }
 
+// ── 消息序列 token 估算（自动压缩触发阈值用）────────────────
+export function estimateMessagesTokens(msgs: Array<{ role: string; content: string | null }>): number {
+  let t = 0;
+  for (const m of msgs) {
+    t += estimateTokens(String(m.content ?? ''));
+    t += m.role === 'tool' ? 12 : 4; // 角色/工具调用开销
+  }
+  return t;
+}
+
+// ── 内存消息压缩（自动压缩用）：保头尾 + LLM 摘要中部，失败降级规则截断 ──
+// 与 compactSmart（db 层）对应——本函数操作 agent 的内存消息数组
+export async function compactMessages(
+  msgs: MemMsg[],
+  summarize: (text: string) => Promise<string>,
+  opts: { head?: number; tail?: number } = {},
+): Promise<MemMsg[]> {
+  const head = opts.head ?? 3;
+  const tail = opts.tail ?? 3;
+  if (msgs.length <= head + tail + 2) return msgs;
+  const keepHead = msgs.slice(0, head);
+  const keepTail = msgs.slice(-tail);
+  const mid = msgs.slice(head, -tail);
+  const summary = await summarize(mid.map(m => `${m.role}: ${String(m.content).slice(0, 300)}`).join('\n')).catch(() => '');
+  if (summary) {
+    return [...keepHead, { role: 'system', content: `（自动压缩摘要）${summary.slice(0, 500)}` }, ...keepTail];
+  }
+  // LLM 摘要失败：确定性降级——每轮只留首行
+  const condensed: MemMsg[] = [];
+  let lastRole = '';
+  for (const m of mid) {
+    if (m.role !== 'tool' && m.role !== lastRole) {
+      const firstLine = String(m.content).split('\n')[0]!.slice(0, 120);
+      condensed.push({ role: m.role, content: firstLine });
+    }
+    lastRole = m.role;
+  }
+  return [...keepHead, { role: 'system', content: `（压缩省略 ${mid.length} 条中间消息）` }, ...condensed.slice(-10), ...keepTail];
+}
+
 // ── embedding（transformers.js all-MiniLM-L6-v2，384 维；失败/冷却降级）──
 let embedder: any = null;
 let embedFailTs = 0;
@@ -57,6 +97,8 @@ export interface Memory {
   recallHybrid(query: string, opts?: { limit?: number; sessionId?: string }): Array<{ id: number; content: string; score: number }>;
   absorbCount(sessionId: string): number;
   compactSmart(sessionId: string, summarize: (text: string) => Promise<string>): Promise<void>;
+  /** 会话无标题时用给定标题命名（自动标题） */
+  setTitleIfEmpty(sessionId: string, title: string): void;
 }
 
 export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memory {
@@ -115,6 +157,12 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
         const keep = [...ids.slice(0, 3), ...ids.slice(-3)];
         const drop = ids.filter(id => !keep.includes(id));
         db.prepare(`DELETE FROM messages WHERE id IN (${drop.map(() => '?').join(',')})`).run(...drop);
+      }
+    },
+    setTitleIfEmpty(sessionId, title) {
+      const row = db.prepare(`SELECT title FROM sessions WHERE id=?`).get(sessionId) as { title: string } | undefined;
+      if (row && !row.title.trim()) {
+        db.prepare(`UPDATE sessions SET title=?, updated_at=? WHERE id=?`).run(title.trim().slice(0, 50), Date.now(), sessionId);
       }
     },
   };

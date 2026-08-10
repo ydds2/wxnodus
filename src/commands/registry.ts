@@ -2,7 +2,7 @@
 // 设计：核心命令面（说人话主线）+ 分类符号 + 全量描述 + 别名表
 export const SLASH: string[] = [
   // 对话
-  '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/context', '/fork',
+  '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/context', '/fork', '/checkpoint',
   // 模型
   '/key', '/model', '/status', '/doctor', '/version', '/thinking', '/hooks',
   // 记忆（黑洞引擎）
@@ -18,13 +18,13 @@ export const SLASH: string[] = [
   // 网络与集成
   '/claw', '/mcp', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
   // 协作
-  '/swarm', '/duo', '/cron', '/jobs', '/delegate', '/goal',
+  '/swarm', '/duo', '/cron', '/jobs', '/delegate', '/goal', '/btw',
   // 工具（确定性）
   '/calc', '/hash', '/base64', '/uuid', '/rand', '/json', '/timer', '/sql', '/fs', '/units', '/csv',
 ];
 
 export const COMMAND_CAT: Record<string, string> = {
-  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/context': '◈', '/fork': '◈',
+  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈',
   '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆',
@@ -32,7 +32,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/backup': '⚙', '/export': '⚙', '/theme': '⚙', '/lang': '⚙', '/config': '⚙', '/logs': '⚙', '/bench': '⚙', '/init': '⚙',
   '/vision': '👁', '/img': '👁', '/video': '👁', '/render': '👁', '/capture': '👁',
   '/claw': '⛭', '/mcp': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
-  '/swarm': '◈', '/duo': '◈', '/cron': '◈', '/jobs': '◈', '/delegate': '◈', '/goal': '◈',
+  '/swarm': '◈', '/duo': '◈', '/cron': '◈', '/jobs': '◈', '/delegate': '◈', '/goal': '◈', '/btw': '◈',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
 };
 
@@ -46,6 +46,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/resume': '恢复会话',
   '/context': '上下文占用可视化',
   '/fork': '分支会话（复制当前会话为副本）',
+  '/checkpoint': '会话快照（save/list/restore/clear，undo 前自动保存）',
   '/key': '配置/查看模型密钥（加密存储）',
   '/model': '切换模型（打开选择器或 /model <名称>）',
   '/thinking': '推理显示开关（on/off）',
@@ -57,7 +58,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/hole': '黑洞引擎检索（说人话即触发）',
   '/compact': '压缩上下文',
   '/digest': '融化吸收外来产物入记忆',
-  '/curator': '内容策展',
+  '/curator': '黑洞策展（即时审查 + 后台自动审查 on/off/interval）',
   '/build': '概念编译：说一句话交付可运行系统',
   '/deploy': '业务落地（FDE 五段）',
   '/forge': '组件锻造（MCP Server/Skill 打包）',
@@ -98,6 +99,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/jobs': '后台任务中心',
   '/delegate': '派生子代理',
   '/goal': '循环目标执行',
+  '/btw': '侧边提问（隔离只读上下文，不打断主对话）',
   '/calc': '计算器（说人话即触发）',
   '/hash': '哈希（md5/sha256）',
   '/base64': 'Base64 编解码',

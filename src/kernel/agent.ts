@@ -10,6 +10,7 @@ import type { Db } from '../store/db.js';
 import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
 import { decryptKey, REASONING_FIELDS } from './providers.js';
+import { estimateMessagesTokens, compactMessages } from './memory.js';
 import { coreTools, isDangerous, toolsToOpenAI, type ToolCtx } from './tools.js';
 import { modeVerdict, type Mode } from './permissions.js';
 import type { HookRunner } from './hooks.js';
@@ -32,6 +33,8 @@ export interface AgentOptions {
   hooks?: HookRunner | null;
   /** 附加工具（如 MCP 客户端工具表 mcp__<server>__<tool>） */
   extraTools?: Record<string, import('./tools.js').ToolDef>;
+  /** 上下文窗口上限（自动压缩触发阈值基准，默认 64k） */
+  maxContextTokens?: number;
 }
 
 export interface AgentResult {
@@ -250,6 +253,25 @@ export function createAgent(opts: AgentOptions) {
     while (turns < (opts.maxTurns ?? MAX_TURNS)) {
       if (aborted) { interrupted = true; break; }
       turns++;
+      // 自动压缩触发（机制补强）：每轮调用前估算上下文，超过模型窗口阈值
+      // （默认 max×0.85 或 +reserved>=max）→ 自动压缩内存消息后继续当前回合
+      const ctxLimit = opts2.subagent ? 64_000 : (opts.maxContextTokens ?? 64_000);
+      const used = estimateMessagesTokens(msgs);
+      if (used > ctxLimit * 0.85 && msgs.length > 10) {
+        bus.emit('system.notice', { text: `上下文已达 ${Math.round((used / ctxLimit) * 100)}%（${used} token）——自动压缩…` });
+        const condensed = await compactMessages(msgs as any, async (text) => {
+          const r = await callWithAbort({
+            messages: [
+              { role: 'system', content: '你是上下文压缩器。把对话片段压缩为保留关键信息的摘要（中文，≤300 字），只输出摘要。' },
+              { role: 'user', content: text },
+            ],
+            tools: [],
+          });
+          return r.type === 'text' ? r.content : '';
+        });
+        msgs.splice(0, msgs.length, ...condensed);
+        bus.emit('system.notice', { text: `自动压缩完成（${used} → ${estimateMessagesTokens(msgs)} token）` });
+      }
       let res: ModelCall | ToolCallMsg;
       try {
         res = await callWithAbort({ messages: msgs, tools: toolList });
@@ -318,6 +340,13 @@ export function createAgent(opts: AgentOptions) {
         msgs.push({ role: 'tool', tool_call_id: callId, content: out });
         try { opts.mem.append(sessionId, 'tool', `${res.name}: ${out.slice(0, 300)}`); } catch { /* 忽略 */ }
       }
+    }
+    // 自动标题（机制补强）：回合结束后若会话无标题，用首条用户消息前 20 字命名
+    if (!opts2.subagent && finalText.length > 0) {
+      try {
+        const title = prompt.split('\n')[0]!.trim().slice(0, 20) || '新会话';
+        opts.mem.setTitleIfEmpty(sessionId, title);
+      } catch { /* 标题写入失败不阻断 */ }
     }
     bus.emit('agent.end', { ok: finalText.length > 0, turns });
     return { ok: finalText.length > 0, text: finalText, turns, interrupted };

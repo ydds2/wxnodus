@@ -14,6 +14,7 @@ import { discoverSkills, loadSkill, installSkill, writeSkill, skillContentForMod
 import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
 import { decryptKey } from '../kernel/providers.js';
 import { HARD_REDLINES } from '../kernel/permissions.js';
+import { runCuratorReview, curatorConfigFrom, readCuratorState } from '../kernel/curator.js';
 import type { HandlerCtx } from './handlers.js';
 import type { CommandBus, StructuredCommand } from '../app/CommandBus.js';
 
@@ -183,11 +184,27 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // /undo：撤销当前会话最后一条消息（CLI 单会话即 'default'；UI 走 session.undo RPC）
-  bus.register('/undo', () => {
-    const last = ctx.db.prepare(`SELECT id FROM messages WHERE session_id='default' AND role!='system' ORDER BY id DESC LIMIT 1`).get() as any;
-    if (!last) return '没有可撤销的消息';
-    ctx.db.prepare(`DELETE FROM messages WHERE id=?`).run(last.id);
-    return '已撤销最后一条消息';
+  // /undo：轮级回滚（机制补强）——撤销最近 N 轮（默认 1 轮），撤销前自动保存 checkpoint
+  //   轮次 = 按 user 消息切分；删除该轮起的所有 user/assistant/tool 消息
+  bus.register('/undo', (args) => {
+    const n = parseInt(args[0] ?? '1', 10);
+    const sid = 'default';
+    if (!Number.isFinite(n) || n < 1 || n > 20) return '用法：/undo [轮次数 1-20]（撤销前自动保存 checkpoint，/checkpoint restore 可回退）';
+    const msgs = ctx.db.prepare(`SELECT id, role FROM messages WHERE session_id=? AND role!='system' ORDER BY id`).all(sid) as Array<{ id: number; role: string }>;
+    if (!msgs.length) return '没有可撤销的消息';
+    // 定位第 n 个 user 消息（从尾部数）
+    const userIdx: number[] = [];
+    msgs.forEach((m, i) => { if (m.role === 'user') userIdx.push(i); });
+    if (!userIdx.length) return '没有可撤销的轮次';
+    const target = userIdx[Math.max(0, userIdx.length - n)]!;
+    // 撤销前自动快照（机制补强）——完整消息字段，restore 才能重建
+    try {
+      const full = ctx.db.prepare(`SELECT role, content, tool_call_id FROM messages WHERE session_id=? AND role!='system' ORDER BY id`).all(sid);
+      saveCheckpoint(ctx.db, sid, { kind: 'undo-snapshot', messages: full, ts: Date.now() });
+    } catch { /* 快照失败不阻断 */ }
+    const dropIds = msgs.slice(target).map(m => m.id);
+    ctx.db.prepare(`DELETE FROM messages WHERE id IN (${dropIds.map(() => '?').join(',')})`).run(...dropIds);
+    return `已撤销 ${n} 轮（${dropIds.length} 条消息）——/checkpoint restore 可恢复`;
   });
 
   // /fork：复制当前会话（含全部消息）为分支会话
@@ -205,6 +222,47 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       SELECT ?, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=?
     `).run(newId, target);
     return `已分支会话 ${target} → ${newId}（${(ctx.db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(newId) as { c: number }).c} 条消息）`;
+  });
+
+  // /checkpoint：会话快照（机制补强——激活既有 checkpoints 表）
+  //   save 手动快照 ｜ list 列表 ｜ restore [id] 恢复消息 ｜ clear 清空
+  bus.register('/checkpoint', (args) => {
+    const [sub, ...rest] = args;
+    const sid = 'default';
+    if (!sub || sub === 'list') {
+      const rows = ctx.db.prepare(`SELECT id, data, ts FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 10`).all(sid) as Array<{ id: number; data: string; ts: number }>;
+      if (!rows.length) return '暂无快照——/checkpoint save 保存，/undo 撤销前自动保存';
+      return lines(' 快照 ', rows.map(r => {
+        const d = JSON.parse(r.data) as { kind?: string; messages?: unknown[] };
+        const n = Array.isArray(d.messages) ? d.messages.length : 0;
+        return ` #${r.id} ${d.kind ?? 'checkpoint'}（${n} 条消息）${new Date(r.ts).toLocaleString('zh-CN', { hour12: false })}`;
+      }));
+    }
+    if (sub === 'save') {
+      const msgs = ctx.db.prepare(`SELECT role, content, tool_call_id FROM messages WHERE session_id=? ORDER BY id`).all(sid);
+      const id = saveCheckpoint(ctx.db, sid, { kind: 'manual', messages: msgs, ts: Date.now() });
+      return `已保存快照 #${id}（${(msgs as unknown[]).length} 条消息）`;
+    }
+    if (sub === 'restore') {
+      const id = rest[0];
+      const row = id
+        ? ctx.db.prepare(`SELECT data FROM checkpoints WHERE id=? AND session_id=?`).get(id, sid) as { data: string } | undefined
+        : ctx.db.prepare(`SELECT data FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 1`).get(sid) as { data: string } | undefined;
+      if (!row) return `未找到快照${id ? ` #${id}` : ''}`;
+      const d = JSON.parse(row.data) as { messages?: Array<{ role: string; content: string; tool_call_id?: string | null }> };
+      if (!Array.isArray(d.messages)) return '快照数据不完整';
+      // 恢复：清空当前消息 → 重插快照消息（保留原始顺序）
+      ctx.db.prepare(`DELETE FROM messages WHERE session_id=?`).run(sid);
+      const ins = ctx.db.prepare(`INSERT INTO messages (session_id, role, content, tool_call_id, ts) VALUES (?,?,?,?,?)`);
+      const now = Date.now();
+      d.messages.forEach((m, i) => ins.run(sid, m.role, String(m.content ?? ''), m.tool_call_id ?? null, now + i));
+      return `已从快照${id ? ` #${id}` : ''}恢复 ${d.messages.length} 条消息`;
+    }
+    if (sub === 'clear') {
+      ctx.db.prepare(`DELETE FROM checkpoints WHERE session_id=?`).run(sid);
+      return '已清空全部快照';
+    }
+    return '用法：/checkpoint save｜list｜restore [id]｜clear';
   });
 
   // /init：本地扫描项目生成 AGENTS.md（确定性数据；--overwrite 覆盖）
@@ -261,14 +319,32 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     ]);
   });
 
-  bus.register('/curator', () => {
-    const rec = ctx.mem.recall('default');
-    return lines(' 黑洞策展 ', [
-      ` 全量 ${rec.length} 条（FTS 可检索）`,
-      ` 工作窗口 ${Math.min(rec.length, 20)}/20`,
-      ` 吸附 ${ctx.mem.absorbCount('default')} 条`,
-      ` 建议：/compact 压缩 · /hole <词> 检索 · /export <词> 导出`,
-    ]);
+  // /curator：黑洞策展（机制补强）——即时审查 + 后台自动审查控制
+  //   /curator         即时执行一轮审查
+  //   /curator on|off  启用/禁用后台自动审查
+  //   /curator interval <小时>  设置审查间隔
+  bus.register('/curator', (args) => {
+    const [sub, ...rest] = args;
+    if (sub === 'on' || sub === 'off') {
+      const cfg = curatorConfigFrom(ctx.config.get('settings'));
+      cfg.enabled = sub === 'on';
+      ctx.config.setKey('settings', 'curator', cfg);
+      return `后台自动审查：${sub === 'on' ? '已启用' : '已停用'}（每 ${cfg.intervalHours}h 检查）`;
+    }
+    if (sub === 'interval') {
+      const h = parseInt(rest[0] ?? '', 10);
+      if (!Number.isFinite(h) || h < 1 || h > 720) return '用法：/curator interval <小时 1-720>';
+      const cfg = curatorConfigFrom(ctx.config.get('settings'));
+      cfg.intervalHours = h;
+      ctx.config.setKey('settings', 'curator', cfg);
+      return `审查间隔已设为 ${h}h`;
+    }
+    // 即时审查（默认）
+    const report = runCuratorReview(ctx.mem, ctx.dataDir, ctx.cwd);
+    const cfg = curatorConfigFrom(ctx.config.get('settings'));
+    const state = readCuratorState(ctx.dataDir);
+    const last = state.lastRunAt ? new Date(state.lastRunAt).toLocaleString('zh-CN', { hour12: false }) : '从未';
+    return lines(` 黑洞策展（自动：${cfg.enabled ? '开' : '关'}@${cfg.intervalHours}h｜上次 ${last}） `, report.split('\n'));
   });
 
   // ── 构建类 ──────────────────────────────────
@@ -837,23 +913,45 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return lines(' 后台任务 ', rows.map(r => ` ${r.status === 'running' ? '⏳' : r.status === 'done' ? '✓' : '✗'} ${r.id} ${r.status === 'running' ? '' : `[${Math.round((r.done_at - r.created_at) / 1000)}s] `}${String(r.goal).slice(0, 50)}`));
   });
 
-  // /delegate：真实派发子代理（只读工具集、独立上下文），结果回显
+  // /delegate：真实派发子代理（只读工具集、独立上下文），结果回显并持久化到 tasks 表（可查可恢复）
   bus.register('/delegate', async (args) => {
     const task = args.join(' ');
     if (!task) return '用法：/delegate <任务>（派发只读子代理，结果返回当前会话）';
     if (!ctx.agent) return 'delegate 不可用：当前环境未提供子代理能力';
     ctx.bus.emit('system.notice', { text: `派发子代理：「${task.slice(0, 60)}」…` });
+    const id = `t${Date.now().toString(36)}`;
+    try {
+      ctx.db.prepare(`INSERT INTO tasks (id, goal, status, created_at) VALUES (?,?,?,?)`).run(id, `delegate: ${task.slice(0, 180)}`, 'running', Date.now());
+    } catch { /* 任务表未就绪时跳过持久化 */ }
     try {
       const r = await ctx.agent.spawnSubagent(task);
+      // 结果持久化（机制补强）：/jobs show <id> 可查看历史
+      try {
+        ctx.db.prepare(`UPDATE tasks SET status=?, output=?, done_at=? WHERE id=?`).run(r.ok ? 'done' : 'failed', String(r.output).slice(0, 4000), Date.now(), id);
+      } catch { /* 忽略 */ }
       return lines(` 子代理结果 `, [
         ` 任务：${task.slice(0, 80)}`,
-        ` 状态：${r.ok ? '完成' : '未完成'}（${r.turns} 轮）`,
+        ` 状态：${r.ok ? '完成' : '未完成'}（${r.turns} 轮）｜记录：/jobs show ${id}`,
         '',
         ...String(r.output ?? '').split('\n').slice(0, 30).map(l => ` ${l.slice(0, 110)}`),
       ]);
     } catch (e: any) {
+      try { ctx.db.prepare(`UPDATE tasks SET status='failed', done_at=? WHERE id=?`).run(Date.now(), id); } catch { /* 忽略 */ }
       return `子代理执行异常：${e?.message?.slice(0, 300) ?? e}`;
     }
+  });
+
+  // /btw：侧边提问（机制补强）——隔离只读上下文并行问答，不打断主对话
+  bus.register('/btw', async (args) => {
+    const q = args.join(' ');
+    if (!q) return '用法：/btw <问题>（隔离只读上下文侧边提问，不占用主对话）';
+    if (!ctx.agent) return 'btw 不可用：当前环境未提供子代理';
+    const r = await ctx.agent.spawnSubagent(`（侧边提问，请直接简要回答，不调用工具）${q}`);
+    return lines(` 侧边提问 `, [
+      ` Q：${q.slice(0, 80)}`,
+      ` A（${r.ok ? '完成' : '未完成'}，${r.turns} 轮）：`,
+      ...String(r.output ?? '').split('\n').slice(0, 15).map(l => `  ${l.slice(0, 108)}`),
+    ]);
   });
 
   // /goal：开放目标循环执行——逐轮推进直到完成或达到最大轮数（真实 agent 执行）
