@@ -62,10 +62,21 @@ export function createAgent(opts: AgentOptions) {
   // 默认模型调用：OpenAI 兼容流式（真实 fetch）——key 解密后请求
   const defaultCallModel = async (req: { messages: Array<{ role: string; content: string }>; tools?: unknown[] }): Promise<ModelCall | ToolCallMsg> => {
     const s = opts.config.settings;
-    const key = s.apiKeyEnc ? decryptKey(s.apiKeyEnc) : null;
+    let key: string | null = null;
+
+    if (s.apiKeyEnc) {
+      key = decryptKey(s.apiKeyEnc);
+      // 有 enc 但解密失败（机器指纹变化/数据损坏）——明确提示重新配置，
+      // 而不是误导性的「未配置」
+      if (!key) {
+        return { type: 'text', content: '密钥无法解密（机器环境变化或数据损坏？）——请用 /key set <密钥> 重新配置。' };
+      }
+    }
+
     if (!key) {
       return { type: 'text', content: ruleBrain(req.messages[req.messages.length - 1]?.content ?? '') };
     }
+
     const { buildChatRequest, mapHttpError, MODEL_CATALOG } = await import('./providers.js');
     // 有 key 即视为已配置：model/baseURL 缺失或非法（遗留命令串）时用默认，
     // 不降级规则脑——否则 /key 配置后仍提示「未配置」或 API 模型名非法

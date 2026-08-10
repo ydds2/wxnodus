@@ -6,7 +6,7 @@ import type { Memory } from '../kernel/memory.js';
 import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, resolveAlias } from './registry.js';
-import { encryptKey, maskKey, MODEL_CATALOG } from '../kernel/providers.js';
+import { decryptKey, encryptKey, maskKey, MODEL_CATALOG } from '../kernel/providers.js';
 import { makeSpec } from '../build/spec.js';
 import { makePlan, topoSort } from '../build/plan.js';
 import { instantiate, checkLeftover } from '../build/scaffold.js';
@@ -101,12 +101,24 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       if (!ctx.config.getKey('settings', 'baseURL')) ctx.config.setKey('settings', 'baseURL', 'https://api.deepseek.com/v1');
       return '密钥已配置（AES-256-GCM 加密存储，绝不回显）';
     }
+    // 兼容规则脑提示里的用法：/key <密钥> 直接配置（非已知子命令视为密钥）
+    if (!['status', 'set', 'off'].includes(sub) && args.length >= 1) {
+      ctx.config.setKey('settings', 'apiKeyEnc', encryptKey(args[0]));
+      if (!ctx.config.getKey('settings', 'model')) ctx.config.setKey('settings', 'model', 'deepseek-v4-flash');
+      if (!ctx.config.getKey('settings', 'baseURL')) ctx.config.setKey('settings', 'baseURL', 'https://api.deepseek.com/v1');
+      return '密钥已配置（AES-256-GCM 加密存储，绝不回显）';
+    }
     if (sub === 'off') {
       ctx.config.setKey('settings', 'apiKeyEnc', '');
       return '密钥已清除（退回规则脑）';
     }
     const enc = ctx.config.getKey('settings', 'apiKeyEnc');
-    return enc ? `密钥状态：已配置（${maskKey(enc.slice(0, 40))}）` : '密钥状态：未配置——/key set <密钥> 配置后获得完整能力';
+    if (!enc) return '密钥状态：未配置——/key set <密钥> 配置后获得完整能力';
+    // 验证可解密：enc 存在但机器指纹变化（hostname/用户名）会导致解密失败
+    const dec = decryptKey(enc);
+    return dec
+      ? `密钥状态：已配置（${maskKey(dec)}）`
+      : '密钥状态：已配置但无法解密（机器环境变化或数据损坏？）——请 /key set <密钥> 重新配置';
   });
 
   bus.register('/version', () => 'WxNodus 3.0.0 · 概念进·证据出');

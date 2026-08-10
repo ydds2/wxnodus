@@ -45,6 +45,18 @@ describe('规则脑兜底（无 key）', () => {
     expect(r.ok).toBe(true);
     expect(r.text.length).toBeGreaterThan(0);
   });
+
+  it('enc 存在但解密失败（机器指纹变化）→ 明确提示重新配置而非「未配置」', async () => {
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't2b',
+      config: { settings: { apiKeyEnc: 'enc1:deadbeef:deadbeef:deadbeef', baseURL: 'https://mock', model: 'mock' } } as any,
+      // 不传 callModel → 使用 defaultCallModel（真实 decryptKey）
+    });
+    const r = await agent.run('列出你能做什么');
+    expect(r.ok).toBe(true);
+    expect(r.text).toContain('无法解密');
+    expect(r.text).not.toContain('未配置模型密钥');
+  });
 });
 
 describe('流式与消息事件', () => {
