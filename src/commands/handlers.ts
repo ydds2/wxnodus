@@ -63,12 +63,22 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/clear', async () => { ctx.clearHistory(); return '已清空'; });
 
-  // 会话（交互模式打开选择器；-p 模式文本列表）
-  bus.register('/sessions', () => {
-    const rows = ctx.db.prepare(`SELECT s.id, s.title, s.created_at, (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS msgs FROM sessions s ORDER BY s.updated_at DESC`).all() as any[];
+  // 会话（交互模式打开选择器；-p 模式文本列表；P2b：支持标题/ID 关键词过滤）
+  bus.register('/sessions', (args) => {
+    const rows = ctx.db.prepare(`SELECT s.id, s.title, s.created_at, s.updated_at, (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS msgs FROM sessions s ORDER BY s.updated_at DESC`).all() as any[];
     if (!rows.length) return '暂无会话';
-    ctx.openSessions();
-    return '';
+    const q = args.join(' ').trim().toLowerCase();
+    const filtered = q ? rows.filter(r => (String(r.title ?? '') + ' ' + r.id).toLowerCase().includes(q)) : rows;
+    if (!filtered.length) return `无匹配会话：${q}`;
+    if (process.stdout.isTTY) {
+      ctx.openSessions();
+      return '';
+    }
+    // 非交互模式：文本列表（按最近更新排序）
+    return lines(' 会话 ', filtered.map(r => {
+      const t = new Date(r.updated_at).toLocaleString('zh-CN', { hour12: false });
+      return ` ${r.id}  ${r.title || '(无标题)'}（${r.msgs} 条）${t}`;
+    }));
   });
 
   bus.register('/quit', async () => { ctx.requestExit(); return '再见'; });

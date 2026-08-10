@@ -181,8 +181,11 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
       return (absorbCountStmt.get(sessionId) as any).c;
     },
     async compactSmart(sessionId, summarize) {
+      // P3b 修复（触发条件）：原 `workingLimit+4` 与黑洞吸附冲突——吸附后
+      // archived=0 恒 ≤ workingLimit，导致 /compact 显式调用也永不触发。
+      // 改为固定阈值（保头 3 尾 3 + 余量）：消息足够多即可压缩
       const rows = db.prepare(`SELECT id, role, content FROM messages WHERE session_id=? AND archived=0 ORDER BY id`).all(sessionId) as any[];
-      if (rows.length <= workingLimit + 4) return;
+      if (rows.length <= 8) return;
       const mid = rows.slice(3, -3);
       const summary = await summarize(mid.map((m: any) => `${m.role}: ${m.content}`).join('\n')).catch(() => '');
       if (summary) {

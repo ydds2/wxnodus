@@ -334,15 +334,38 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     ]);
   });
 
+  // /context：上下文占用可视化（P2b 增强——工作窗口真实 token 分布 + 预算占用条）
   bus.register('/context', () => {
     const rec = ctx.mem.recall('default');
     const working = ctx.mem.working('default');
-    return lines(' 上下文 ', [
-      ` 黑洞全量：${rec.length} 条`,
-      ` 工作窗口：${working.length}/20`,
-      ` 占用：约 ${Math.min(100, Math.round(working.length / 20 * 100))}%`,
-      ` 吸附归档：${ctx.mem.absorbCount('default')} 条（可 /hole 检索）`,
-    ]);
+    const BUDGET = 48000; // 默认上下文预算（与 agent maxContextTokens 默认一致）
+    const byRole: Record<string, number> = {};
+    let total = 0;
+    for (const m of working) {
+      const t = estimateTokens(String(m.content ?? ''));
+      byRole[m.role] = (byRole[m.role] ?? 0) + t;
+      total += t;
+    }
+    const pct = Math.min(1, total / BUDGET);
+    const barW = 20;
+    const filled = Math.round(pct * barW);
+    const bar = '█'.repeat(filled) + '░'.repeat(barW - filled);
+    const rows: string[] = [
+      ` 工作窗口：${working.length}/20 条 · ${total.toLocaleString()} token`,
+      ` 占用：${bar} ${Math.round(pct * 100)}%（预算 ${(BUDGET / 1000).toFixed(0)}k token）`,
+    ];
+    if (Object.keys(byRole).length) {
+      rows.push(' ── 角色分布 ──');
+      for (const [r, t] of Object.entries(byRole).sort((a, b) => b[1] - a[1])) {
+        const roleName = r === 'user' ? '用户' : r === 'assistant' ? '助手' : r === 'tool' ? '工具' : r;
+        rows.push(` ${roleName.padEnd(4)} ${t.toLocaleString()} token（${Math.round((t / total) * 100)}%）`);
+      }
+    }
+    rows.push(` 黑洞全量：${rec.length} 条 · 吸附归档 ${ctx.mem.absorbCount('default')} 条（/hole 可检索）`);
+    if (total > BUDGET * 0.85) {
+      rows.push(' ⚠ 接近预算上限——建议 /compact 压缩上下文');
+    }
+    return lines(' 上下文 ', rows);
   });
 
   // ── 记忆类 ──────────────────────────────────

@@ -166,3 +166,39 @@ describe('多 provider 适配层', () => {
     expect(detectProvider(undefined)).toBe('openai-compatible');
   });
 });
+
+// ── P3b：buildChatRequest 结构（多 provider 适配层）───
+describe('buildChatRequest 结构', () => {
+  it('构造 OpenAI 兼容请求：URL/headers/body 齐全', async () => {
+    const { buildChatRequest } = await import('../src/kernel/providers.js');
+    const req = buildChatRequest({
+      baseURL: 'https://api.deepseek.com/v1',
+      model: 'deepseek-v4-flash',
+      key: 'sk-test',
+      messages: [{ role: 'user', content: '你好' }],
+      stream: true,
+      tools: [{ type: 'function', function: { name: 'ls', description: 'x', parameters: { type: 'object', properties: {} } } }],
+    });
+    expect(req.url).toBe('https://api.deepseek.com/v1/chat/completions');
+    expect(req.headers['Content-Type']).toContain('application/json');
+    expect(req.headers['Authorization']).toBe('Bearer sk-test');
+    const body = JSON.parse(req.body as string);
+    expect(body.model).toBe('deepseek-v4-flash');
+    expect(body.stream).toBe(true);
+    expect(body.messages[0].content).toBe('你好');
+    expect(body.tools).toHaveLength(1);
+  });
+  it('MODEL_CATALOG 十模型三 provider 且能力标注完整', async () => {
+    const { MODEL_CATALOG } = await import('../src/kernel/providers.js');
+    expect(MODEL_CATALOG.length).toBe(10);
+    const providers = new Set(MODEL_CATALOG.map(m => m.provider));
+    expect(providers.size).toBeGreaterThanOrEqual(3);
+    for (const m of MODEL_CATALOG) {
+      expect(m.modelId).toBeTruthy();
+      expect(m.baseURL).toBeTruthy();
+    }
+    // 视觉模型有 imageIn 标注
+    const glm4v = MODEL_CATALOG.find(m => m.modelId.includes('glm-4v'));
+    expect(glm4v).toBeDefined();
+  });
+});

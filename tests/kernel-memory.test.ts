@@ -87,3 +87,29 @@ describe('embedding 降级', () => {
     delete process.env.WXN_NO_EMBED;
   });
 });
+
+// ── P3b：compactSmart 归档语义（F6 不硬删 + 摘要原位）───
+describe('compactSmart 归档', () => {
+  it('LLM 摘要成功后：中部消息归档（recall 全量保留）而非删除', async () => {
+    const m = createMemory(db, { workingLimit: 20 });
+    for (let i = 0; i < 12; i++) m.append('s-c1', i % 2 === 0 ? 'user' : 'assistant', `压缩消息${i} 测试`);
+    await m.compactSmart('s-c1', async () => '（摘要）关键信息保留');
+    // recall 全量仍在（不硬删）
+    const all = m.recall('s-c1');
+    expect(all.length).toBe(12 + 0); // 12 条（摘要写进原位，未新增未删除）
+    // 归档计数增加
+    expect(m.absorbCount('s-c1')).toBeGreaterThan(0);
+    // 摘要写入第一条中部消息原位（system 角色）
+    const systemRow = all.find(r => r.role === 'system');
+    expect(systemRow).toBeDefined();
+    expect(String(systemRow?.content ?? '')).toContain('摘要');
+  });
+  it('LLM 摘要失败时降级：归档中部（不删除）', async () => {
+    const m = createMemory(db, { workingLimit: 20 });
+    for (let i = 0; i < 12; i++) m.append('s-c2', i % 2 === 0 ? 'user' : 'assistant', `降级消息${i}`);
+    await m.compactSmart('s-c2', async () => { throw new Error('LLM 不可用'); });
+    const all = m.recall('s-c2');
+    expect(all.length).toBe(12); // 永不删
+    expect(m.absorbCount('s-c2')).toBeGreaterThan(0); // 中部归档
+  });
+});
