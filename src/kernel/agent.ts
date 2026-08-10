@@ -44,6 +44,7 @@ const MAX_UNKNOWN_TOOL_ROUNDS = 3;
 export function createAgent(opts: AgentOptions) {
   const tools = coreTools();
   const bus = opts.bus;
+  let sessionId = opts.sessionId; // 可变：setSessionId 热切换（Hermes 多会话）
   let mode = opts.mode ?? 'smart'; // 可变：/perm 切换经 setMode 热更新
   let aborted = false;
   let interrupted = false;
@@ -182,15 +183,17 @@ export function createAgent(opts: AgentOptions) {
 
   return {
     async run(prompt: string): Promise<AgentResult> {
-      return loop(opts.sessionId, prompt);
+      return loop(sessionId, prompt);
     },
     async spawnSubagent(goal: string): Promise<{ ok: boolean; output: string; turns: number }> {
-      const r = await loop(opts.sessionId + ':sub', goal, { subagent: true });
+      const r = await loop(sessionId + ':sub', goal, { subagent: true });
       return { ok: r.ok, output: r.text, turns: r.turns };
     },
     abort() { aborted = true; abortResolve?.(); },
     setMode(m: Mode) { mode = m; },
     getMode(): Mode { return mode; },
+    // 会话切换：Hermes 多会话 UI 复用同一 agent 实例（消息经 mem.append 落库到目标会话）
+    setSessionId(id: string) { sessionId = id; },
   };
 }
 

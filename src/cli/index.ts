@@ -1,11 +1,23 @@
 #!/usr/bin/env node
-// src/cli/index.ts — L6-2 CLI 入口（commander + 交互 TUI 装配）
-// 装配：data/config/db/mem/bus/agent → Bridge 接线 → 命令注册 → render App
+// src/cli/index.ts — L6-2 CLI 入口（commander + Hermes UI 装配）
+// 装配：data/config/db/mem/bus/agent → wxGateway（进程内桥接）→ @hermes/ink render App
 import { Command } from 'commander';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
 const VERSION = '3.0.0';
+// 调试：捕获未处理异常/拒绝（React 渲染错误会冒泡至此）
+if (!process.env.WXNODUS_NO_DEBUG) {
+  import('node:fs').then(({ appendFileSync }) => {
+    process.on('uncaughtException', (e) => { try { appendFileSync('wxerr.log', `uncaught: ${(e as Error)?.stack ?? e}\n`); } catch {} });
+    process.on('unhandledRejection', (e: any) => { try { appendFileSync('wxerr.log', `unhandled: ${e?.stack ?? e}\n`); } catch {} });
+    const origErr = console.error;
+    console.error = (...args: any[]) => {
+      try { appendFileSync('wxerr.log', `console.error: ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a) ?? String(a)).join(' ')}\n`); } catch {}
+      origErr(...args);
+    };
+  });
+}
 const program = new Command();
 program.name('wxnodus').version(VERSION).description('WxNodus V3 — 本地概念编译器 CLI');
 program.option('-p, --prompt <text>', '非交互单次执行');
@@ -18,62 +30,42 @@ async function main() {
   const dataDir = join(cwd, 'data');
   mkdirSync(dataDir, { recursive: true });
 
-  const [{ createConfig }, { openDB }, { createEventBus }, { createMemory }, { createAgent }, { createBridge }, { createCommandBus }, { patchUi }, { patchOverlay }] = await Promise.all([
+  const [{ createConfig }, { openDB }, { createEventBus }, { createMemory }, { createAgent }, { createCommandBus }, { GatewayClient }] = await Promise.all([
     import('../store/config.js'),
     import('../store/db.js'),
     import('../kernel/events.js'),
     import('../kernel/memory.js'),
     import('../kernel/agent.js'),
-    import('../app/Bridge.js'),
     import('../app/CommandBus.js'),
-    import('../app/stores/uiStore.js'),
-    import('../app/stores/overlayStore.js'),
+    import('../hermes-ui/wxGateway.js'),
   ]);
 
   const config = createConfig(dataDir);
   const db = openDB(dataDir);
   const bus = createEventBus(dataDir);
   const mem = createMemory(db);
-  const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string };
+  const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string; mode?: string; theme?: string; thinking?: boolean };
   let model = settings.model ?? (settings.apiKeyEnc ? 'deepseek-v4-flash' : '');
-  // 权限审批：agent 工具执行需要确认时 → 打开 UI 弹窗并等待用户选择
-  let approvalResolve: ((ok: boolean) => void) | null = null;
+
+  // 审批桥：agent 工具确认 → GatewayClient.requestApproval（Hermes approval overlay）
+  let gateway: any = null;
   const agent = createAgent({
     db, bus, mem, sessionId: 'default', config: { settings },
     mode: (config.get('settings') as any).mode ?? 'smart',
-    onApproval: async (name, args) => new Promise<boolean>(resolve => {
-      approvalResolve = resolve;
-      patchOverlay({ approval: { title: `执行工具：${name}`, detail: JSON.stringify(args).slice(0, 200), allowPermanent: false } });
-    }),
+    onApproval: async (name, args) => gateway ? gateway.requestApproval(name, args) : false,
   });
-  bus.on('ui.approval', (e) => {
-    const choice = (e.payload as any)?.choice as string | undefined;
-    if (approvalResolve) { approvalResolve(choice !== 'deny'); approvalResolve = null; }
-  });
-  bus.on('ui.confirm', (e) => {
-    if (approvalResolve) { approvalResolve(!!(e.payload as any)?.ok); approvalResolve = null; }
-  });
-  bus.on('ui.clarify', (e) => {
-    if (approvalResolve) { approvalResolve(true); approvalResolve = null; }
-  });
-  const bridge = createBridge({ send: t => agent.run(t), abort: () => agent.abort() });
-
-  // agent 事件 → Bridge
-  for (const type of ['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.stage', 'agent.error', 'agent.end']) {
-    bus.on(type, e => bridge.emit(type, e.payload));
-  }
 
   // 模式/主题状态
   let mode = (config.get('settings') as any).mode ?? 'smart';
   let themeName = (config.get('settings') as any).theme ?? 'kimi';
   let thinking = (config.get('settings') as any).thinking ?? true;
-  patchUi({ mode, themeName, model, sessionId: 'default', cwd, thinking });
+  let exitRequested = false;
 
   // 命令注册
   const commandBus = createCommandBus();
   const { registerCoreHandlers } = await import('../commands/handlers.js');
   const { registerExtHandlers } = await import('../commands/handlersExt.js');
-  let exitRequested = false;
+
   // 模型热切换：agent 持有 settings 对象引用——改内存字段即生效，再持久化
   const applyModel = (modelId: string, baseURL?: string) => {
     settings.model = modelId;
@@ -81,21 +73,20 @@ async function main() {
     config.setKey('settings', 'model', modelId);
     if (baseURL) config.setKey('settings', 'baseURL', baseURL);
     model = modelId;
-    patchUi({ model: modelId });
   };
   const makeHandlerCtx = () => ({
     dataDir, cwd, db, mem, config, bus,
     getModel: () => model,
     getMode: () => mode,
-    setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); patchUi({ mode: m as any }); },
-    setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); patchUi({ themeName: t }); },
+    setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
+    setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },
     getThemeName: () => themeName,
-    requestExit: () => { exitRequested = true; try { app?.unmount(); } catch {} setTimeout(() => process.exit(0), 50); },
-    clearHistory: () => { /* UI 历史清理由 App 层处理（此处保留空实现） */ },
+    requestExit: () => { exitRequested = true; setTimeout(() => process.exit(0), 50); },
+    clearHistory: () => { /* UI 历史清理由 App 层处理 */ },
     setModel: applyModel,
-    openModelPicker: () => patchOverlay({ modelPicker: true }),
-    openSessions: () => patchOverlay({ sessions: true }),
-    setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); patchUi({ thinking: on }); },
+    openModelPicker: () => { /* Hermes UI: /model 打开选择器 */ },
+    openSessions: () => { /* Hermes UI: /sessions 打开列表 */ },
+    setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); },
   });
   registerCoreHandlers(commandBus, makeHandlerCtx());
   registerExtHandlers(commandBus, makeHandlerCtx());
@@ -132,52 +123,29 @@ async function main() {
   }
   try { process.stdout.write('\x1b]0;WxNodus — 概念编译器\x07'); } catch {}
 
-  // 交互 TUI
+  // Hermes UI 装配
+  gateway = new GatewayClient({
+    bus, db, config, mem, agent, commandBus,
+    dataDir, cwd, settings,
+    applyModel,
+    setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
+    setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },
+    setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); },
+    requestExit: () => { exitRequested = true; setTimeout(() => process.exit(0), 50); },
+  });
+  gateway.start();
+
+  const { App } = await import('../hermes-ui/app.js');
+  const { render } = await import('@hermes/ink');
   const React = (await import('react')).default;
-  const { render } = await import('ink');
-  const { App } = await import('../ui/entry.js');
-  let app: any;
-  // 主屏幕模式（非 alternateScreen，无固定全屏）：历史消息经 <Static> 提交到
-  // 终端滚动缓冲自然上滚（滚轮/PgUp 由终端处理），输入框固定底部——
-  // 用户要求：取消固定全屏、对话栏不锁死
-  app = render(
-    React.createElement(App, {
-      bridge,
-      version: VERSION,
-      model,
-      cwd,
-      runCommand: async (input: string) => {
-        const r = await commandBus.execute(input);
-        const { pushSegment } = await import('../app/stores/turnStore.js');
-        if (r.output) pushSegment({ id: `cmd${Date.now()}`, role: 'system', kind: 'panel', text: r.output });
-        if (r.error) pushSegment({ id: `cmd${Date.now()}`, role: 'system', text: r.error, error: true });
-      },
-      onQuit: () => {
-        exitRequested = true;
-        try { app?.unmount(); } catch {}
-        setTimeout(() => process.exit(0), 50);
-      },
-      setModel: applyModel,
-      onThinkingChange: on => {
-        thinking = on;
-        config.setKey('settings', 'thinking', on);
-        patchUi({ thinking: on });
-      },
-      listSessions: () => {
-        try {
-          return (db.prepare(`SELECT s.id, s.title, s.created_at AS ts, (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS msgs FROM sessions s ORDER BY s.updated_at DESC`).all() as any[]).map(r => ({ id: String(r.id), title: String(r.title ?? ''), msgs: Number(r.msgs ?? 0), ts: Number(r.ts ?? 0) }));
-        } catch { return []; }
-      },
-    }),
-    { exitOnCtrlC: false }
-  );
+
+  const app = render(React.createElement(App, { gw: gateway }), { exitOnCtrlC: false });
 
   // Ctrl+C：运行中中断 / 空闲退出
-  const { useInput } = await import('ink');
-  // 退出守卫：unmount + 显式 exit（防 cmd 冻结）
   process.on('SIGINT', () => {
     if (exitRequested) { try { app?.unmount(); } catch {} process.exit(0); }
     exitRequested = true;
+    gateway.kill('SIGINT');
     agent.abort();
     setTimeout(() => { try { app?.unmount(); } catch {} process.exit(0); }, 300);
   });
