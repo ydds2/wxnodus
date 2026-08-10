@@ -438,3 +438,41 @@ describe('回归：中断竞态与 SSE 错误', () => {
     }
   });
 });
+
+// ── P1b：插件热重载 updateTools ───
+describe('updateTools 热重载', () => {
+  it('updateTools 后新工具立即可用（无需重建 agent）', async () => {
+    const extra = {
+      hotplug_now: {
+        schema: { type: 'function', function: { name: 'hotplug_now', description: '时间戳', parameters: { type: 'object', properties: {} } } },
+        danger: true,
+        run: async () => '热重载时间戳：123',
+      },
+    };
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-hot',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      mode: 'yolo',
+      callModel: (() => {
+        // 每次 run 的第一轮返回工具调用（calls 1/3），第二轮返回文本（calls 2/4）
+        let calls = 0;
+        return async (req: any) => {
+          calls++;
+          if (calls === 1 || calls === 3) {
+            return { type: 'tool_call', id: 'h1', name: 'hotplug_now', args: {} } as ToolCallMsg;
+          }
+          const toolMsg = req.messages.find((m: any) => m.role === 'tool');
+          return { type: 'text', content: `结果：${String(toolMsg?.content ?? '').slice(0, 40)}` };
+        };
+      })(),
+    });
+    // 重载前：工具不存在 → 调用被回填「不存在」
+    const before = await agent.run('调用工具');
+    expect(before.text).toContain('不存在');
+    // 热重载注入
+    agent.updateTools(extra);
+    const after = await agent.run('调用工具');
+    expect(after.ok).toBe(true);
+    expect(after.text).toContain('热重载时间戳');
+  });
+});

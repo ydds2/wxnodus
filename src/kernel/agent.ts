@@ -79,7 +79,8 @@ function makeAbortSignal(): { promise: Promise<void>; resolve: () => void; abort
 }
 
 export function createAgent(opts: AgentOptions) {
-  const tools = Object.fromEntries(
+  // P1b：tools 可变——插件热重载（updateTools 重建，不重启进程）
+  let tools = Object.fromEntries(
     Object.entries({ ...coreTools(), ...(opts.extraTools ?? {}) }).filter(([n]) => !(opts.excludeTools ?? []).includes(n)),
   );
   const bus = opts.bus;
@@ -528,6 +529,12 @@ export function createAgent(opts: AgentOptions) {
     getMode(): Mode { return mode; },
     // F7：运行中注入消息（busy_input_mode: steer）
     steer(text: string): boolean { return steer(text); },
+    // P1b：插件热重载——重建工具表（extraTools 合并 + excludeTools 过滤）
+    updateTools(extra: Record<string, import('./tools.js').ToolDef>) {
+      tools = Object.fromEntries(
+        Object.entries({ ...coreTools(), ...extra }).filter(([n]) => !(opts.excludeTools ?? []).includes(n)),
+      );
+    },
     // 会话切换：多会话 UI 复用同一 agent 实例（消息经 mem.append 落库到目标会话）
     setSessionId(id: string) { sessionId = id; },
   };

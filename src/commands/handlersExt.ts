@@ -697,7 +697,47 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     }
 
     const name = rest[0];
-    if (!name) return '用法：/plugin install <目录> ｜ list ｜ remove｜enable｜disable <名称>';
+    if (!name) return '用法：/plugin install <目录> ｜ new <名称> ｜ reload ｜ list ｜ remove｜enable｜disable <名称>';
+
+    // P1b：/plugin new <名称> —— 生成插件骨架（plugin.json + index.js 模板）
+    if (sub === 'new') {
+      if (!/^[a-zA-Z0-9_-]+$/.test(name)) return '插件名非法（仅字母/数字/_/-）';
+      const dest = join(ctx.dataDir, 'plugins', name);
+      if (existsSync(dest)) return `插件已存在：${name}`;
+      mkdirSync(dest, { recursive: true });
+      writeFileSync(join(dest, 'plugin.json'), JSON.stringify({
+        name,
+        version: '0.1.0',
+        description: `${name} 插件`,
+        tools: [{ name: `${name}_greet`, description: '打招呼', parameters: { who: { type: 'string', description: '对象' } } }],
+        commands: ['hello'],
+      }, null, 2), 'utf8');
+      writeFileSync(join(dest, 'index.js'), `// ${name} 插件实现（ESM 模块）
+// tools: Record<工具名, (args, ctx) => string | Promise<string>>
+// commands: Record<命令名, (args: string[]) => string | Promise<string>>（注册为 /${name}.<命令名>）
+export const tools = {
+  ${name}_greet: async (args, ctx) => \`你好，\${args?.who ?? '世界'}（插件数据目录：\${ctx.dataPath}）\`,
+}
+
+export const commands = {
+  hello: async (args) => \`\${args.length ? args.join(' ') : '（空参数）'}\`,
+}
+`, 'utf8');
+      return `插件骨架已生成 → ${dest}\n编辑 index.js 实现逻辑后，新开会话或 /plugin reload 生效`;
+    }
+
+    // P1b：/plugin reload —— 热重载（重建 agent 工具表，不重启进程）
+    if (sub === 'reload') {
+      const { loadAllPlugins, pluginToolsToExtra } = await import('../kernel/plugins.js');
+      const reloaded = await loadAllPlugins(ctx.dataDir, ctx.cwd);
+      const toolCount = Object.keys(pluginToolsToExtra(reloaded)).length;
+      const enabled = reloaded.filter(p => p.manifest.enabled !== false).length;
+      if (ctx.agent?.updateTools) {
+        ctx.agent.updateTools(pluginToolsToExtra(reloaded));
+        return `插件已热重载：${enabled} 个启用（${toolCount} 工具）——无需重启`;
+      }
+      return `已重新扫描：${enabled} 个启用（${toolCount} 工具）——当前环境不支持热更新，重启后生效`;
+    }
 
     if (sub === 'install') {
       const src = resolve(process.cwd(), name);
