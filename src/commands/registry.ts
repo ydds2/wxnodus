@@ -2,15 +2,15 @@
 // 设计：核心命令面（自然语言主线）+ 分类符号 + 全量描述 + 别名表
 export const SLASH: string[] = [
   // 对话
-  '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/context', '/fork', '/checkpoint',
+  '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint',
   // 模型
-  '/key', '/model', '/status', '/doctor', '/version', '/thinking', '/hooks',
+  '/key', '/login', '/logout', '/model', '/status', '/doctor', '/version', '/thinking', '/hooks',
   // 记忆（黑洞引擎）
   '/memory', '/hole', '/compact', '/digest', '/curator',
   // 构建（概念编译器）
-  '/build', '/deploy', '/forge', '/skill', '/learn', '/gate', '/fdr', '/evidence',
+  '/build', '/deploy', '/forge', '/skill', '/learn', '/gate', '/fdr', '/evidence', '/plan', '/flow', '/import',
   // 安全（合规红线）
-  '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt',
+  '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt', '/yolo', '/afk',
   // 系统
   '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init',
   // 视觉与媒体（可视化 AI 技能）
@@ -18,32 +18,42 @@ export const SLASH: string[] = [
   // 网络与集成
   '/claw', '/mcp', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
   // 协作
-  '/swarm', '/duo', '/cron', '/jobs', '/delegate', '/goal', '/btw',
+  '/swarm', '/duo', '/cron', '/jobs', '/task', '/delegate', '/goal', '/btw',
   // 工具（确定性）
   '/calc', '/hash', '/base64', '/uuid', '/rand', '/json', '/timer', '/sql', '/fs', '/units', '/csv',
 ];
 
 export const COMMAND_CAT: Record<string, string> = {
-  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈',
-  '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
+  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈',
+  '/key': '⚙', '/login': '⚙', '/logout': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
-  '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆',
-  '/perm': '🛡', '/sandbox': '🛡', '/compliance': '🛡', '/consent': '🛡', '/audit': '🛡', '/encrypt': '🛡',
+  '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆',
+  '/perm': '🛡', '/sandbox': '🛡', '/compliance': '🛡', '/consent': '🛡', '/audit': '🛡', '/encrypt': '🛡', '/yolo': '🛡', '/afk': '🛡',
   '/backup': '⚙', '/export': '⚙', '/theme': '⚙', '/lang': '⚙', '/config': '⚙', '/logs': '⚙', '/bench': '⚙', '/init': '⚙',
   '/vision': '👁', '/img': '👁', '/video': '👁', '/render': '👁', '/capture': '👁',
   '/claw': '⛭', '/mcp': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
-  '/swarm': '◈', '/duo': '◈', '/cron': '◈', '/jobs': '◈', '/delegate': '◈', '/goal': '◈', '/btw': '◈',
+  '/swarm': '◈', '/duo': '◈', '/cron': '◈', '/jobs': '◈', '/task': '◈', '/delegate': '◈', '/goal': '◈', '/btw': '◈',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
 };
 
 export const COMMAND_DESC: Record<string, string> = {
   '/help': '查看帮助（/help <命令> 展开单个）',
   '/clear': '清空会话视图',
-  '/undo': '撤销上一轮回复',
+  '/undo': '撤销最近 N 轮（/undo list 查看可撤销轮次）',
   '/usage': '用量统计（token/成本）',
   '/quit': '退出',
-  '/sessions': '会话列表',
-  '/resume': '恢复会话',
+  '/new': '新建空会话并切换',
+  '/title': '重命名当前会话',
+  '/login': '登录平台（/login <平台> <密钥>）',
+  '/logout': '退出登录（清除凭证）',
+  '/yolo': '完全访问开关（除硬红线全部放行）',
+  '/afk': '无人值守自动批准开关',
+  '/plan': '计划模式（on/off/save/view/clear）',
+  '/flow': 'AI 生成流程图（Mermaid 写入 data/flow/）',
+  '/import': '导入消息（JSON 或文本文件回填会话）',
+  '/task': '后台任务浏览器（等价 /jobs）',
+  '/sessions': '会话列表（非交互模式输出文本列表）',
+  '/resume': '切换会话（真正加载历史并继续）',
   '/context': '上下文占用可视化',
   '/fork': '分支会话（复制当前会话为副本）',
   '/checkpoint': '会话快照（save/list/restore/clear，undo 前自动保存）',
@@ -56,7 +66,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/hooks': '生命周期 Hooks（settings.hooks 本地命令）',
   '/memory': '记忆概览（三层）',
   '/hole': '黑洞引擎检索（自然语言直达）',
-  '/compact': '压缩上下文',
+  '/compact': '压缩上下文（有密钥时 LLM 真实总结）',
   '/digest': '融化吸收外来产物入记忆',
   '/curator': '黑洞策展（即时审查 + 后台自动审查 on/off/interval）',
   '/build': '概念编译：自然语言需求直达可运行系统',
@@ -95,7 +105,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/acp': 'ACP server',
   '/swarm': '同种子代理多开',
   '/duo': '双脑协作',
-  '/cron': '定时任务',
+  '/cron': '定时任务（add/list/del/pause 真实调度）',
   '/jobs': '后台任务中心',
   '/delegate': '派生子代理',
   '/goal': '循环目标执行',

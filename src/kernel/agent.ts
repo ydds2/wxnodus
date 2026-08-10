@@ -26,9 +26,11 @@ export interface AgentOptions {
   mem: Memory;
   sessionId: string;
   config: { settings: { apiKeyEnc?: string | null; baseURL?: string; model?: string } };
-  callModel?: ((req: { messages: Array<{ role: string; content: string | null }>; tools?: unknown[] }, streamCtx?: { onToken?: (t: string) => void }) => Promise<ModelCall | ToolCallMsg>) | null;
+  callModel?: ((req: { messages: Array<{ role: string; content: string | null }>; tools?: unknown[] }, streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal }) => Promise<ModelCall | ToolCallMsg>) | null;
   mode?: Mode;
   onApproval?: (tool: string, args: Record<string, any>) => Promise<boolean>;
+  /** C6：文字提问回调（clarify 工具）——返回用户文本答案 */
+  onClarify?: (question: string, choices?: string[]) => Promise<string>;
   maxTurns?: number;
   /** 生命周期 hooks（本地命令执行）；缺省关闭 */
   hooks?: HookRunner | null;
@@ -83,19 +85,17 @@ export function createAgent(opts: AgentOptions) {
   const bus = opts.bus;
   let sessionId = opts.sessionId; // 可变：setSessionId 热切换（多会话）
   let mode = opts.mode ?? 'smart'; // 可变：/perm 切换经 setMode 热更新
-  let aborted = false;
-  let interrupted = false;
+  // C1 修复（中断竞态）：回合级状态——abort() 只操作当前回合（turn 引用），
+  // 旧回合在收尾时读取自己的 st 快照，不会被新回合的重置标志污染而"复活"
+  let turn: { aborted: boolean; interrupted: boolean; signal: { promise: Promise<void>; resolve: () => void; abortController: AbortController } } | null = null;
   // Hooks（生命周期本地命令）：settings.hooks 热生效——每次触发读当前配置
   const hooks = opts.hooks ?? null;
-  // abort 信号：每轮 loop 重建——Promise.race 一旦 resolve 就永久 resolve，
-  // 一次性 abortPromise 会让中断后的所有后续提问立即失败（"aborted"）。
-  let abortSignal: { promise: Promise<void>; resolve: () => void; abortController: AbortController } = makeAbortSignal();
 
   // 默认模型调用：OpenAI 兼容真流式（SSE）——token 逐块推送总线（UI 实时显示）
   // 工具调用解析保留 tool_call id（严格格式：assistant.tool_calls + tool.tool_call_id 回填）
   const defaultCallModel = async (
     req: { messages: Array<{ role: string; content: string | null }>; tools?: unknown[] },
-    streamCtx?: { onToken?: (t: string) => void; signal?: AbortSignal },
+    streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal },
   ): Promise<ModelCall | ToolCallMsg> => {
     const s = opts.config.settings;
     let key: string | null = null;
@@ -164,7 +164,14 @@ export function createAgent(opts: AgentOptions) {
         if (data === '[DONE]') { finished = true; break; }
         let j: any;
         try { j = JSON.parse(data); } catch { continue; }
+        // C2 修复：SSE 错误对象（OpenAI/DeepSeek 流中报错如上下文超限）不得静默吞掉——
+        // 识别 j.error / finish_reason=error，抛带消息的 Error 走错误反馈路径
+        if (j?.error) {
+          const msg = j.error?.message ?? j.error?.code ?? 'SSE 流错误';
+          throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg).slice(0, 300));
+        }
         const delta = j?.choices?.[0]?.delta;
+        const finishReason = j?.choices?.[0]?.finish_reason;
         if (delta?.content) {
           full += delta.content;
           streamCtx?.onToken?.(delta.content);
@@ -175,6 +182,8 @@ export function createAgent(opts: AgentOptions) {
           if (typeof v === 'string' && v) {
             reasoningField ??= f;
             fullReasoning += v;
+            // C5 修复：思考分片实时推送（UI reasoning.delta 事件，参考 CLI 流式思考同款）
+            streamCtx?.onReasoning?.(v);
             break;
           }
         }
@@ -187,7 +196,15 @@ export function createAgent(opts: AgentOptions) {
             if (tc.function?.arguments) toolCalls[i]!.arguments += tc.function.arguments;
           }
         }
+        // C2：finish_reason=error 且无内容 → 视为错误
+        if (finishReason === 'error' && !full) {
+          throw new Error('模型流结束于错误状态（无输出）');
+        }
       }
+    }
+    // C2：正常结束但空内容（无 token 无工具调用）→ 错误而非静默空消息
+    if (!full && !toolCalls.length) {
+      throw new Error('模型返回空响应');
     }
 
     // 批量 tool_calls 全量返回（修复对比轮 5 缺口：同回合多工具调用不得丢弃——
@@ -217,7 +234,8 @@ export function createAgent(opts: AgentOptions) {
       return { ok: false, output: `子代理深度超限（${MAX_SUBAGENT_DEPTH} 层）——请拆分子任务`, turns: 0 };
     }
     // 子代理生命周期事件（独立实例，手动发事件保持 UI 可见）
-    bus.emit('agent.subagent', { goal, phase: 'start', session_id: sessionId + ':sub' });
+    // C4 修复：subagent_id 稳定（start/complete 同 id，/agents 面板可正确闭合）
+    bus.emit('agent.subagent', { goal, phase: 'start', session_id: sessionId + ':sub', subagent_id: sessionId + ':sub' });
     bus.emit('agent.stage', { stage: `子代理执行中（深度 ${depth}）…` }); // 对比轮 5：状态条可见中间态
     const sub = createAgent({
       ...opts,
@@ -228,7 +246,7 @@ export function createAgent(opts: AgentOptions) {
       hooks: null,
     });
     const r = await sub.run(goal);
-    bus.emit('agent.subagent', { goal, phase: 'complete', ok: r.ok, turns: r.turns, session_id: sessionId + ':sub' });
+    bus.emit('agent.subagent', { goal, phase: 'complete', ok: r.ok, turns: r.turns, session_id: sessionId + ':sub', subagent_id: sessionId + ':sub' });
     return { ok: r.ok, output: r.text, turns: r.turns };
   };
 
@@ -236,9 +254,10 @@ export function createAgent(opts: AgentOptions) {
     cwd: process.cwd(),
     dataDir: join(process.cwd(), 'data'),
     ask: async (q) => (opts.onApproval ? opts.onApproval('ask_user', { question: q }) : false),
+    clarify: async (q, choices) => (opts.onClarify ? opts.onClarify(q, choices) : ''),
     spawnSubagent: spawnSub,
-    // F15：getter 动态取当前轮次信号（loop 每轮重建 abortSignal，工具执行须拿到最新）
-    get signal() { return abortSignal?.abortController?.signal; },
+    // F15：getter 动态取当前轮次信号（每回合独立信号，工具执行须拿到当前回合的）
+    get signal() { return turn?.signal.abortController?.signal; },
   };
 
   const onApproval = opts.onApproval ?? (async () => true);
@@ -252,7 +271,9 @@ export function createAgent(opts: AgentOptions) {
   };
 
   async function executeTool(name: string, args: Record<string, any>): Promise<string> {
-    bus.emit('agent.tool', { name, args, phase: 'start' });
+    // C3 修复：工具调用稳定 id（start/complete 同 id，UI 工具卡可正确闭合）
+    const toolId = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    bus.emit('agent.tool', { name, args, phase: 'start', toolId });
     const t0 = Date.now();
     try {
       const tool = tools[name];
@@ -270,38 +291,42 @@ export function createAgent(opts: AgentOptions) {
       if (hooks) {
         const allowed = await hooks.preToolUse(name, args);
         if (!allowed) {
-          bus.emit('agent.tool', { name, phase: 'complete', ok: false });
+          bus.emit('agent.tool', { name, phase: 'complete', ok: false, toolId });
           return `工具被 hook 拒绝（${name}）`;
         }
       }
       // F4：危险/外部工具输出统一 untrusted 包裹（提示注入防护）
       const raw = await tool.run(args, toolCtx);
       const out = tool.danger ? wrapDanger(raw) : raw;
-      bus.emit('agent.tool', { name, phase: 'complete', ok: true, ms: Date.now() - t0 });
+      bus.emit('agent.tool', { name, phase: 'complete', ok: true, ms: Date.now() - t0, toolId });
       hooks?.postToolUse(name, out);
       return out;
     } catch (e: any) {
-      bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0 });
+      bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId });
       return `工具执行异常：${e?.message?.slice(0, 300) ?? e}`;
     }
   }
 
   async function loop(sessionId: string, prompt: string, opts2: { subagent?: boolean } = {}): Promise<AgentResult> {
-    aborted = false;
-    interrupted = false;
-    // 每轮重建 abort 信号（见 makeAbortSignal 注释）
-    abortSignal = makeAbortSignal();
+    // C1：每回合独立状态快照——旧回合收尾读自己的 st，不受新回合影响
+    const st = { aborted: false, interrupted: false, signal: makeAbortSignal() };
+    turn = st;
     // 子代理生命周期事件（UI agentsOverlay / spawnHistoryStore 消费）
     if (opts2.subagent) {
-      bus.emit('agent.subagent', { goal: prompt, phase: 'start', session_id: sessionId });
+      bus.emit('agent.subagent', { goal: prompt, phase: 'start', session_id: sessionId, subagent_id: sessionId });
     }
     const callWithAbort = (req: { messages: Array<{ role: string; content: string | null }>; tools?: unknown[] }) => {
       // 修复 F3：abort 信号同时传入 fetch（真中断流式读取）与 race（吞 late rejection）
-      const racing = callModel(req, { onToken: (t) => bus.emit('agent.token', { text: t }), signal: abortSignal.abortController.signal });
+      // C5：onReasoning 实时转发思考分片（UI reasoning.delta）
+      const racing = callModel(req, {
+        onToken: (t) => bus.emit('agent.token', { text: t }),
+        onReasoning: (r) => bus.emit('reasoning.delta', { text: r }),
+        signal: st.signal.abortController.signal,
+      });
       racing.catch(() => { /* race 输家静默（abort 后模型 reject 不再 unhandled） */ });
       return Promise.race([
         racing,
-        abortSignal.promise.then(() => { throw new Error('aborted'); }),
+        st.signal.promise.then(() => { throw new Error('aborted'); }),
       ]);
     };
     const msgs: Array<{ role: string; content: string | null; tool_call_id?: string; reasoning_content?: string; thinking_content?: string; reasoning?: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }> = [];
@@ -316,6 +341,12 @@ export function createAgent(opts: AgentOptions) {
         if (h.role === 'user' || h.role === 'assistant') {
           msgs.push({ role: h.role, content: h.content });
         }
+      }
+      // C11 修复（auto-continue）：上回合被打断（历史以 tool 或 user 结尾）→ 注入继续注记，
+      // 否则模型把新提问当作全新任务，丢失被打断的上下文
+      const lastH = history.at(-1);
+      if (lastH && (lastH.role === 'tool' || lastH.role === 'user')) {
+        msgs.push({ role: 'system', content: '（上回合任务被打断——请基于以上进度继续完成，而不是重新开始）' });
       }
     } catch { /* 历史加载失败不阻断 */ }
     // 召回注入（黑洞引擎：FTS 命中历史上下文；限定当前会话防串记忆）
@@ -335,7 +366,7 @@ export function createAgent(opts: AgentOptions) {
 
     try {
     while (turns < (opts.maxTurns ?? MAX_TURNS)) {
-      if (aborted) { interrupted = true; break; }
+      if (st.aborted) { st.interrupted = true; break; }
       turns++;
       // F7：steer 注入——运行中队列消息并入当前回合上下文
       while (steerQueue.length) {
@@ -366,13 +397,13 @@ export function createAgent(opts: AgentOptions) {
       try {
         res = await callWithAbort({ messages: msgs, tools: toolList });
       } catch (e: any) {
-        if (aborted) { interrupted = true; break; }
+        if (st.aborted) { st.interrupted = true; break; }
         // 4xx 确定性错误（密钥无效/模型不存在/请求非法等）：不重试，立即反馈——
         // 否则无效 key 会空转 ~6s（3 次退避重试）才显示错误，被误判为「卡死」。
         // 429 限流除外：mapHttpError 语义为稍后重试，保留退避重试。
         if (typeof e?.status === 'number' && e.status >= 400 && e.status < 500 && e.status !== 429) {
           bus.emit('agent.error', { message: String(e?.message ?? e) });
-          return { ok: false, text: `模型调用失败：${e?.message?.slice(0, 200)}`, turns, interrupted };
+          return { ok: false, text: `模型调用失败：${e?.message?.slice(0, 200)}`, turns, interrupted: st.interrupted };
         }
         // 瞬时失败：800ms 退避重试（最多 3 次）
         let tried = 0;
@@ -380,12 +411,12 @@ export function createAgent(opts: AgentOptions) {
         while (tried < 3) {
           await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (tried + 1)));
           try { res = await callWithAbort({ messages: msgs, tools: toolList }); break; }
-          catch (e2: any) { if (aborted) { interrupted = true; break; } lastErr = e2; tried++; }
+          catch (e2: any) { if (st.aborted) { st.interrupted = true; break; } lastErr = e2; tried++; }
         }
-        if (interrupted) break;
+        if (st.interrupted) break;
         if (tried >= 3) {
           bus.emit('agent.error', { message: String(lastErr?.message ?? lastErr) });
-          return { ok: false, text: `模型调用失败：${lastErr?.message?.slice(0, 200)}`, turns, interrupted };
+          return { ok: false, text: `模型调用失败：${lastErr?.message?.slice(0, 200)}`, turns, interrupted: st.interrupted };
         }
         continue;
       }
@@ -415,7 +446,7 @@ export function createAgent(opts: AgentOptions) {
             unknownRounds++;
             if (unknownRounds >= MAX_UNKNOWN_TOOL_ROUNDS) {
               bus.emit('agent.error', { message: `连续 ${MAX_UNKNOWN_TOOL_ROUNDS} 轮未知工具，终止` });
-              return { ok: false, text: '模型连续调用未知工具，已终止', turns, interrupted };
+              return { ok: false, text: '模型连续调用未知工具，已终止', turns, interrupted: st.interrupted };
             }
             executed.push({ id: c.id, name: c.name, args: c.args, out: `工具 ${c.name} 不存在` });
             continue;
@@ -429,7 +460,7 @@ export function createAgent(opts: AgentOptions) {
         consecutiveFail = anyFail ? consecutiveFail + 1 : 0;
         if (consecutiveFail >= MAX_CONSECUTIVE_FAIL) {
           bus.emit('agent.error', { message: `同工具连续失败 ${MAX_CONSECUTIVE_FAIL} 次，终止` });
-          return { ok: false, text: '同工具连续失败 5 次，已终止', turns, interrupted };
+          return { ok: false, text: '同工具连续失败 5 次，已终止', turns, interrupted: st.interrupted };
         }
         const first = executed[0]!;
         msgs.push({
@@ -450,13 +481,15 @@ export function createAgent(opts: AgentOptions) {
         opts.mem.setTitleIfEmpty(sessionId, title);
       } catch { /* 标题写入失败不阻断 */ }
     }
+    // C8 修复：错误路径也发 agent.end（ok:false）——事件契约对齐参考（错误也完成回合）
     bus.emit('agent.end', { ok: finalText.length > 0, turns });
-    return { ok: finalText.length > 0, text: finalText, turns, interrupted };
+    return { ok: finalText.length > 0, text: finalText, turns, interrupted: st.interrupted };
     } finally {
+      if (turn === st) turn = null; // C1：当前回合结束，释放 turn 引用
       // Stop hook：无论正常结束/中断/提前 return 都触发（不改 agent.end 总线语义）
       hooks?.stop({ ok: finalText.length > 0, turns });
       if (opts2.subagent) {
-        bus.emit('agent.subagent', { goal: prompt, phase: 'complete', ok: finalText.length > 0, turns, session_id: sessionId });
+        bus.emit('agent.subagent', { goal: prompt, phase: 'complete', ok: finalText.length > 0, turns, session_id: sessionId, subagent_id: sessionId });
       }
     }
   }
@@ -489,7 +522,8 @@ export function createAgent(opts: AgentOptions) {
       return runWithGoalLoop(prompt);
     },
     spawnSubagent: spawnSub,
-    abort() { aborted = true; abortSignal.abortController.abort(); abortSignal.resolve(); },
+    // C1：abort 只作用于当前回合（若在跑）；空闲时置位无副作用
+    abort() { const t = turn; if (t) { t.aborted = true; t.signal.abortController.abort(); t.signal.resolve(); } },
     setMode(m: Mode) { mode = m; },
     getMode(): Mode { return mode; },
     // F7：运行中注入消息（busy_input_mode: steer）

@@ -3,7 +3,9 @@ import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 const CLIPBOARD_MAX_BUFFER = 4 * 1024 * 1024
-const POWERSHELL_ARGS = ['-NoProfile', '-NonInteractive', '-Command', 'Get-Clipboard -Raw'] as const
+// A1 修复：读路径同样走 base64（写路径已修）——PowerShell 输出按系统 ANSI 代码页
+// （CP936）解码会损坏中文/emoji；base64 输出 + UTF-8 解码彻底规避代码页变量
+const POWERSHELL_ARGS = ['-NoProfile', '-NonInteractive', '-Command', '[Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes((Get-Clipboard -Raw)))'] as const
 
 type ClipboardRun = typeof execFileAsync
 
@@ -81,6 +83,14 @@ export async function readClipboardText(
       })
 
       if (typeof result.stdout === 'string') {
+        // PowerShell 后端输出 base64（见 POWERSHELL_ARGS）——解码回 UTF-8
+        if (attempt.cmd === 'powershell' || attempt.cmd === 'powershell.exe') {
+          try {
+            return Buffer.from(result.stdout.trim(), 'base64').toString('utf8')
+          } catch {
+            return null
+          }
+        }
         return result.stdout
       }
     } catch {

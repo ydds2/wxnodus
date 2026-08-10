@@ -31,6 +31,9 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   const [keyError, setKeyError] = useState('')
   // Type-to-filter query, scoped per stage (cleared on stage change).
   const [filter, setFilter] = useState('')
+  // A13 修复：过滤前选中位置（清过滤后恢复，参考 providerIndexAfterClearingFilter 同款）
+  const [preFilterProviderIdx, setPreFilterProviderIdx] = useState(0)
+  const [preFilterModelIdx, setPreFilterModelIdx] = useState(0)
 
   const { stdout } = useStdout()
   // Pin the picker to a stable width so the FloatBox parent (which shrinks-
@@ -124,9 +127,10 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   const back = () => {
     // Esc first clears an active filter on the list stages, before navigating.
     if ((stage === 'provider' || stage === 'model') && filter.trim()) {
+      // A13：清过滤后恢复过滤前选中
       setFilter('')
-      setProviderIdx(stage === 'provider' ? 0 : providerIdx)
-      setModelIdx(0)
+      if (stage === 'provider') setProviderIdx(preFilterProviderIdx)
+      else setModelIdx(preFilterModelIdx)
 
       return
     }
@@ -372,6 +376,11 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
 
     // Any other printable single character extends the filter.
     if (ch && !key.ctrl && !key.meta && ch.length === 1 && ch >= ' ') {
+      // A13：过滤首字符时记录当前选中（清过滤后恢复）
+      if (!filter.trim()) {
+        if (stage === 'provider') setPreFilterProviderIdx(providerIdx)
+        else setPreFilterModelIdx(modelIdx)
+      }
       setFilter(v => v + ch)
       setSel(0)
     }

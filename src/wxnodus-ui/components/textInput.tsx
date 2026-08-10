@@ -372,6 +372,12 @@ export function supportsFastEchoTerminal(env: NodeJS.ProcessEnv = process.env): 
     return false
   }
 
+  // A14 修复：tmux 会话（TERM=tmux*）禁用快速回显——bypass 路径在 tmux 的
+  // 分隔窗格/滚动区边界存在光标漂移（参考同款保护）
+  if (/^tmux(?:-.+)?$/i.test(String(env.TERM ?? '').trim()) || (env.TMUX ?? '').length > 0) {
+    return false
+  }
+
   return true
 }
 
@@ -1098,15 +1104,20 @@ export function TextInput({
           v = v.slice(0, range.start) + v.slice(range.end)
           c = range.start
         } else {
-          v = v.slice(c)
-          c = 0
+          // A5 修复：多行输入按逻辑行删除（参考 killToLineStart 同款）——删到当前行首
+          const lineStart = v.lastIndexOf('\n', c - 1) + 1
+          v = v.slice(0, lineStart) + v.slice(c)
+          c = lineStart
         }
       } else if (actionKillToEnd) {
         if (range) {
           v = v.slice(0, range.start) + v.slice(range.end)
           c = range.start
         } else {
-          v = v.slice(0, c)
+          // A5：删到当前行尾（保留换行与后续行；单行时等价原行为）
+          const nl = v.indexOf('\n', c)
+          const lineEnd = nl === -1 ? v.length : nl
+          v = v.slice(0, c) + v.slice(lineEnd)
         }
       } else if (event.keypress.isPasted || inp.length > 0) {
         const bracketed = event.keypress.isPasted || inp.includes('[200~')

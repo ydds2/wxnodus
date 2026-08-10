@@ -3,8 +3,8 @@
 //       系统/视觉/连接/协作。每个命令真实可用（查询现有数据或执行确定性操作），
 //       输出统一 lines() 面板或单行。红线：只读工具不写库；路径操作限制在 dataDir。
 import { createHash, randomUUID, randomBytes } from 'node:crypto';
-import { join, basename, extname } from 'node:path';
-import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync } from 'node:fs';
+import { join, basename, extname, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, rmSync } from 'node:fs';
 import { searchMessages, appendAudit, saveCheckpoint, restoreCheckpoint } from '../store/db.js';
 import { estimateTokens, compactKeepHeadTail } from '../kernel/memory.js';
 import { runGate } from '../build/gate.js';
@@ -174,28 +174,61 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // ── 会话类 ──────────────────────────────────
+  // /resume <id>：真正切换会话（修复：此前仅 restoreCheckpoint 提示，不切 agent 会话）
   bus.register('/resume', (args) => {
     const id = args[0];
-    const rows = ctx.db.prepare(`SELECT id, title FROM sessions`).all() as any[];
+    const rows = ctx.db.prepare(`SELECT id, title FROM sessions ORDER BY updated_at DESC`).all() as any[];
     if (!id) return lines(' 会话（/resume <id> 恢复） ', rows.map(r => ` ${r.id}  ${r.title || '(无标题)'}`));
     if (!rows.some(r => r.id === id)) return `会话不存在：${id}`;
-    const cp = restoreCheckpoint(ctx.db, id);
-    return `已恢复会话 ${id}（${cp ? `检查点：${JSON.stringify(cp).slice(0, 60)}` : '无检查点'}）——完整恢复需重启后 /resume ${id}`;
+    const cnt = (ctx.db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(id) as { c: number }).c;
+    // 真正切换：agent 会话 + 状态提示（CLI 单会话 'default' 主用；UI 走 session.resume RPC）
+    try { ctx.agent?.setSessionId(id); } catch { /* 无 agent 时仅提示 */ }
+    return `已切换到会话 ${id}（${cnt} 条消息）${cnt ? '——历史已加载，可直接继续对话' : ''}`;
+  });
+
+  // /new：新建空会话并切换
+  bus.register('/new', () => {
+    const newId = `s${Date.now()}n`;
+    ctx.db.prepare(`INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`)
+      .run(newId, '', Date.now(), Date.now());
+    try { ctx.agent?.setSessionId(newId); } catch { /* 忽略 */ }
+    return `已新建会话 ${newId} 并切换`;
+  });
+
+  // /title <名称>：重命名当前会话（对齐参考 /title 语义）
+  bus.register('/title', (args) => {
+    const name = args.join(' ').trim();
+    const sid = 'default';
+    if (!name) {
+      const row = ctx.db.prepare(`SELECT title FROM sessions WHERE id=?`).get(sid) as { title: string } | undefined;
+      return `当前会话标题：${row?.title || '(未命名)'}（/title <名称> 重命名）`;
+    }
+    ctx.db.prepare(`UPDATE sessions SET title=?, updated_at=? WHERE id=?`).run(name.slice(0, 50), Date.now(), sid);
+    return `会话已重命名：${name.slice(0, 50)}`;
   });
 
   // /undo：轮级回滚（机制补强）——撤销最近 N 轮（默认 1 轮），撤销前自动保存 checkpoint
   //   F20 修复：软撤销（UPDATE archived=1 而非 DELETE——recall 全量永不丢，黑洞可检索）；
   //   快照含完整字段（id/archived/ts），restore 才能重建原始状态
+  //   对比轮 6 补强：/undo list 列出可撤销轮次（时间 + 首句）
   bus.register('/undo', (args) => {
-    const n = parseInt(args[0] ?? '1', 10);
     const sid = 'default';
-    if (!Number.isFinite(n) || n < 1 || n > 20) return '用法：/undo [轮次数 1-20]（撤销前自动保存 checkpoint，/checkpoint restore 可回退）';
-    const msgs = ctx.db.prepare(`SELECT id, role FROM messages WHERE session_id=? AND role!='system' ORDER BY id`).all(sid) as Array<{ id: number; role: string }>;
+    const msgs = ctx.db.prepare(`SELECT id, role, content, ts FROM messages WHERE session_id=? AND role!='system' AND archived=0 ORDER BY id`).all(sid) as Array<{ id: number; role: string; content: string; ts: number }>;
     if (!msgs.length) return '没有可撤销的消息';
-    // 定位第 n 个 user 消息（从尾部数）
+    // 定位 user 消息轮次（从尾部数）
     const userIdx: number[] = [];
     msgs.forEach((m, i) => { if (m.role === 'user') userIdx.push(i); });
     if (!userIdx.length) return '没有可撤销的轮次';
+    if (args[0] === 'list') {
+      const recent = userIdx.slice(-5).reverse();
+      return lines(' 可撤销轮次（/undo <n> 撤销） ', recent.map((ui, k) => {
+        const m = msgs[ui]!;
+        const firstLine = String(m.content ?? '').split('\n')[0]!.slice(0, 30);
+        return ` #${userIdx.length - ui}  ${new Date(m.ts).toLocaleString('zh-CN', { hour12: false })}  ${firstLine}`;
+      }));
+    }
+    const n = parseInt(args[0] ?? '1', 10);
+    if (!Number.isFinite(n) || n < 1 || n > 20) return '用法：/undo [轮次数 1-20] ｜ /undo list 查看可撤销轮次';
     const target = userIdx[Math.max(0, userIdx.length - n)]!;
     // 撤销前自动快照（F20：完整字段 id/archived/ts，restore 保留原始 id 与黑洞状态）
     try {
@@ -305,18 +338,70 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // ── 记忆类 ──────────────────────────────────
+  // /compact：上下文压缩（对比轮 6 修复：有密钥时 LLM 真实总结，无密钥降级规则摘要）
   bus.register('/compact', async () => {
     const before = ctx.mem.recall('default').length;
-    // 无 LLM 时用规则摘要：头尾保留 + 中间截断
-    await ctx.mem.compactSmart('default', async (text) => `（规则压缩）${text.slice(0, 400)}${text.length > 400 ? '…' : ''}`);
+    const summarize = async (text: string): Promise<string> => {
+      try {
+        const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
+        if (!enc) return `（规则压缩）${text.slice(0, 400)}${text.length > 400 ? '…' : ''}`;
+        const key = decryptKey(enc);
+        if (!key) return `（规则压缩）${text.slice(0, 400)}${text.length > 400 ? '…' : ''}`;
+        const { buildChatRequest } = await import('../kernel/providers.js');
+        const baseURL = (ctx.config.getKey('settings', 'baseURL') as string) || 'https://api.deepseek.com/v1';
+        const model = (ctx.config.getKey('settings', 'model') as string) || 'deepseek-v4-flash';
+        const req = buildChatRequest({
+          baseURL, model, key,
+          messages: [
+            { role: 'system', content: '你是上下文压缩器。把对话片段压缩为保留关键信息的摘要（中文，≤400 字），只输出摘要。' },
+            { role: 'user', content: text },
+          ],
+          stream: false,
+        });
+        const resp = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body, signal: AbortSignal.timeout(60000) });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const j = await resp.json() as any;
+        const summary = String(j?.choices?.[0]?.message?.content ?? '').trim();
+        return summary || `（规则压缩）${text.slice(0, 400)}`;
+      } catch { return `（规则压缩）${text.slice(0, 400)}${text.length > 400 ? '…' : ''}`; }
+    };
+    await ctx.mem.compactSmart('default', summarize);
     const after = ctx.mem.recall('default').length;
-    return `压缩完成：${before} → ${after} 条`;
+    return `压缩完成：${before} → ${after} 条（LLM 摘要，无密钥时规则降级）`;
   });
 
-  bus.register('/digest', () => {
+  // /digest：最近对话摘要（对比轮 6 修复：有密钥时 LLM 真实提炼，无密钥规则摘要）
+  bus.register('/digest', async () => {
     const rec = ctx.mem.recall('default');
     if (!rec.length) return '暂无记忆';
     const last = rec.slice(-10);
+    const transcript = last.filter((m: any) => m.role !== 'system').map((m: any) => `${m.role}: ${String(m.content ?? '').slice(0, 200)}`).join('\n');
+    // LLM 提炼（有密钥时）
+    try {
+      const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
+      if (enc) {
+        const key = decryptKey(enc);
+        if (key) {
+          const { buildChatRequest } = await import('../kernel/providers.js');
+          const baseURL = (ctx.config.getKey('settings', 'baseURL') as string) || 'https://api.deepseek.com/v1';
+          const model = (ctx.config.getKey('settings', 'model') as string) || 'deepseek-v4-flash';
+          const req = buildChatRequest({
+            baseURL, model, key,
+            messages: [
+              { role: 'system', content: '你是对话摘要器。把对话提炼为要点（中文，≤200 字），只输出要点。' },
+              { role: 'user', content: transcript },
+            ],
+            stream: false,
+          });
+          const resp = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body, signal: AbortSignal.timeout(60000) });
+          if (resp.ok) {
+            const j = await resp.json() as any;
+            const summary = String(j?.choices?.[0]?.message?.content ?? '').trim();
+            if (summary) return lines(' 对话摘要（LLM） ', summary.split('\n').map(l => ` ${l}`));
+          }
+        }
+      }
+    } catch { /* 降级规则摘要 */ }
     const roles = last.filter((m: any) => m.role !== 'system').map((m: any) => m.role === 'user' ? '问' : '答');
     return lines(' 摘要 ', [
       ` 最近 ${last.length} 条：${roles.join(' → ')}`,
@@ -868,12 +953,35 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     ]);
   });
 
-  bus.register('/cron', () => {
-    try {
-      const jobs = ctx.db.prepare(`SELECT * FROM cron_jobs ORDER BY id`).all() as any[];
-      if (!jobs.length) return '暂无定时任务（说「每天早上9点提醒我」创建）';
-      return lines(' 定时任务 ', jobs.map(j => ` ${j.id}  ${j.schedule}  ${String(j.action ?? '').slice(0, 30)}`));
-    } catch { return '定时任务表未初始化（说「每天早上9点提醒我」自动创建）'; }
+  // /cron：定时任务（真实调度——add/list/del；cli 启动后轮询执行到期任务）
+  //   用法：/cron add <分钟间隔> <命令文本> ｜ /cron list ｜ /cron del <id> ｜ /cron pause <id>
+  bus.register('/cron', (args) => {
+    const [sub, ...rest] = args;
+    if (sub === 'add') {
+      const interval = parseInt(rest[0] ?? '', 10);
+      const action = rest.slice(1).join(' ').trim();
+      if (!Number.isFinite(interval) || interval < 1 || !action) return '用法：/cron add <分钟间隔> <命令文本>（如 /cron add 30 检查并报告仓库状态）';
+      const r = ctx.db.prepare(`INSERT INTO cron_jobs (schedule, action, last_run, enabled) VALUES (?,?,?,1)`).run(`every ${interval}m`, action, Date.now()); // last_run=创建时刻（周期起算点）
+      return `定时任务已创建 #${r.lastInsertRowid}：每 ${interval} 分钟执行「${action.slice(0, 40)}」`;
+    }
+    if (sub === 'del' || sub === 'rm') {
+      const id = parseInt(rest[0] ?? '', 10);
+      if (!Number.isFinite(id)) return '用法：/cron del <id>';
+      ctx.db.prepare(`DELETE FROM cron_jobs WHERE id=?`).run(id);
+      return `定时任务 #${id} 已删除`;
+    }
+    if (sub === 'pause' || sub === 'resume') {
+      const id = parseInt(rest[0] ?? '', 10);
+      if (!Number.isFinite(id)) return `用法：/cron ${sub} <id>`;
+      ctx.db.prepare(`UPDATE cron_jobs SET enabled=? WHERE id=?`).run(sub === 'pause' ? 0 : 1, id);
+      return `定时任务 #${id} 已${sub === 'pause' ? '暂停' : '恢复'}`;
+    }
+    const jobs = ctx.db.prepare(`SELECT * FROM cron_jobs ORDER BY id`).all() as any[];
+    if (!jobs.length) return '暂无定时任务——/cron add <分钟间隔> <命令> 创建（如 /cron add 30 检查仓库状态）';
+    return lines(' 定时任务 ', jobs.map(j => {
+      const last = j.last_run ? new Date(j.last_run).toLocaleTimeString('zh-CN', { hour12: false }) : '未执行';
+      return ` #${j.id} ${j.enabled ? '●' : '○'} ${j.schedule}（上次 ${last}）→ ${String(j.action ?? '').slice(0, 40)}`;
+    }));
   });
 
   // /jobs：后台任务注册表（真实 fire-and-forget 子代理派发 + db 持久化状态）
@@ -961,6 +1069,18 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // /goal：开放目标循环执行——逐轮推进直到完成或达到最大轮数（真实 agent 执行）
+  // /task：后台任务浏览器（对比轮 6 补强——映射 /jobs 同一后端）
+  bus.register('/task', (args) => {
+    const [sub, ...rest] = args;
+    if (sub === 'run') return '后台派发请用 /jobs run <任务>（本命令为任务浏览）';
+    let rows: any[] = [];
+    try {
+      rows = ctx.db.prepare(`SELECT id, goal, status, created_at, done_at FROM tasks ORDER BY created_at DESC LIMIT 20`).all() as any[];
+    } catch { return '任务表未初始化（/jobs run <任务> 派发后可用）'; }
+    if (!rows.length) return '暂无后台任务（/jobs run <任务> 派发）';
+    return lines(' 后台任务 ', rows.map(r => ` ${r.status === 'running' ? '⏳' : r.status === 'done' ? '✓' : '✗'} ${r.id} ${r.status === 'running' ? '' : `[${Math.round((r.done_at - r.created_at) / 1000)}s] `}${String(r.goal).slice(0, 50)}`));
+  });
+
   bus.register('/goal', async (args) => {
     const maxIter = args.length > 1 && /^\d+$/.test(args[args.length - 1]!) ? parseInt(args.pop()!, 10) : 3;
     const goal = args.join(' ');
@@ -979,6 +1099,122 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ` 目标：${goal.slice(0, 80)}`,
       ...rounds.map((r, i) => ['', ` ── 第 ${i + 1} 轮 ──`, ...String(r).split('\n').slice(0, 12).map(l => ` ${l.slice(0, 110)}`)]).flat(),
     ]);
+  });
+
+  // /plan：计划模式产物（对比轮 6 补强——对齐参考 plan 文件机制）
+  //   /plan on|off 模式切换 ｜ /plan save [需求] LLM 生成计划文件 ｜ /plan view ｜ /plan clear
+  bus.register('/plan', async (args) => {
+    const [sub, ...rest] = args;
+    const sid = 'default';
+    const dir = join(ctx.dataDir, 'plans');
+    const file = join(dir, `${sid}.md`);
+    if (sub === 'on') { ctx.setMode('plan'); return '计划模式已开启（只读研究 + 非只读需计划审批）——完成后 /plan save 生成计划文件'; }
+    if (sub === 'off') { ctx.setMode('smart'); return '计划模式已关闭（回到 smart 更改前确认）'; }
+    if (sub === 'view') {
+      try { return readFileSync(file, 'utf8').slice(0, 6000); } catch { return '暂无计划文件——/plan save 生成'; }
+    }
+    if (sub === 'clear') {
+      try { rmSync?.(file, { force: true }); } catch { /* 忽略 */ }
+      return '计划文件已清除';
+    }
+    if (sub === 'save') {
+      const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
+      if (!enc) return '未配置模型密钥——/key set <密钥> 后 /plan save 才能生成计划（不产生假内容）';
+      const key = decryptKey(enc);
+      if (!key) return '密钥无法解密——请 /key set <密钥> 重新配置';
+      const goal = rest.join(' ').trim() || String(ctx.mem.recall(sid).filter(m => m.role === 'user').at(-1)?.content ?? '').slice(0, 500);
+      if (!goal) return '没有可规划的需求——/plan save <需求描述> 或先对话几轮';
+      try {
+        const { buildChatRequest } = await import('../kernel/providers.js');
+        const baseURL = (ctx.config.getKey('settings', 'baseURL') as string) || 'https://api.deepseek.com/v1';
+        const model = (ctx.config.getKey('settings', 'model') as string) || 'deepseek-v4-flash';
+        const req = buildChatRequest({
+          baseURL, model, key,
+          messages: [
+            { role: 'system', content: '你是实施规划器。把需求拆解为可执行计划（Markdown：目标/步骤/验证/风险，中文，步骤可逐项落地），只输出计划正文。' },
+            { role: 'user', content: `需求：${goal}` },
+          ],
+          stream: false,
+        });
+        const resp = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body, signal: AbortSignal.timeout(60000) });
+        if (!resp.ok) return `计划生成失败（${resp.status}）——请检查密钥与模型配置`;
+        const j = await resp.json() as any;
+        const plan = String(j?.choices?.[0]?.message?.content ?? '').trim() || '（模型未返回计划）';
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(file, `# 实施计划\n\n> 生成时间：${new Date().toLocaleString('zh-CN', { hour12: false })}\n> 需求：${goal.slice(0, 200)}\n\n${plan}`, 'utf8');
+        return `计划已写入 → ${file}\n${plan.slice(0, 400)}${plan.length > 400 ? '…' : ''}`;
+      } catch (e: any) {
+        return `计划生成失败：${e?.message?.slice(0, 200) ?? e}`;
+      }
+    }
+    return '用法：/plan on｜off｜save [需求]｜view｜clear';
+  });
+
+  // /import <文件>：导入消息（JSON [{role,content}] 或纯文本 → user 消息）回填会话
+  bus.register('/import', (args) => {
+    const path = args[0];
+    if (!path) return '用法：/import <文件路径>（JSON [{role,content}] 或文本）';
+    let text = '';
+    try { text = readFileSync(resolve(process.cwd(), path), 'utf8'); } catch { return `无法读取文件：${path}`; }
+    let imported = 0;
+    try {
+      const data = JSON.parse(text);
+      if (Array.isArray(data)) {
+        const ins = ctx.db.prepare(`INSERT INTO messages (session_id, role, content, tool_call_id, ts) VALUES (?,?,?,?,?)`);
+        const now = Date.now();
+        for (const m of data) {
+          const role = String(m?.role ?? 'user');
+          if (!['user', 'assistant', 'system'].includes(role)) continue;
+          ins.run('default', role, String(m?.content ?? ''), null, now + imported);
+          imported++;
+        }
+      } else {
+        ctx.mem.append('default', 'user', text);
+        imported = 1;
+      }
+    } catch {
+      // 非 JSON：整体作为 user 消息导入
+      ctx.mem.append('default', 'user', text);
+      imported = 1;
+    }
+    return `已导入 ${imported} 条消息到当前会话（/resume 或直接继续对话）`;
+  });
+
+  // /flow <需求>：AI 生成流程图（Mermaid）写入 data/flow/（参考 flow 技能的落地替代）
+  bus.register('/flow', async (args) => {
+    const goal = args.join(' ').trim();
+    if (!goal) return '用法：/flow <流程需求>（如 /flow 用户注册流程）——AI 生成 Mermaid 流程图';
+    const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
+    if (!enc) return '未配置模型密钥——/key set <密钥> 后 /flow 才能生成流程图';
+    const key = decryptKey(enc);
+    if (!key) return '密钥无法解密——请 /key set <密钥> 重新配置';
+    try {
+      const { buildChatRequest } = await import('../kernel/providers.js');
+      const baseURL = (ctx.config.getKey('settings', 'baseURL') as string) || 'https://api.deepseek.com/v1';
+      const model = (ctx.config.getKey('settings', 'model') as string) || 'deepseek-v4-flash';
+      const req = buildChatRequest({
+        baseURL, model, key,
+        messages: [
+          { role: 'system', content: '你是流程图设计师。把流程需求转换为 Mermaid 流程图（flowchart TD 语法，节点用中文，只输出 mermaid 代码块内容，不要解释）。' },
+          { role: 'user', content: goal },
+        ],
+        stream: false,
+      });
+      const resp = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body, signal: AbortSignal.timeout(60000) });
+      if (!resp.ok) return `流程图生成失败（${resp.status}）`;
+      const j = await resp.json() as any;
+      const mermaid = String(j?.choices?.[0]?.message?.content ?? '').trim()
+        .replace(/^```(?:mermaid)?\s*/i, '').replace(/```\s*$/, '');
+      if (!mermaid || !mermaid.includes('-->')) return '模型未返回有效流程图';
+      const dir = join(ctx.dataDir, 'flow');
+      mkdirSync(dir, { recursive: true });
+      const slug = goal.replace(/[^\w\u4e00-\u9fff]+/g, '-').slice(0, 30) || `flow-${Date.now().toString(36)}`;
+      const file = join(dir, `${slug}.mmd`);
+      writeFileSync(file, mermaid, 'utf8');
+      return `流程图已生成 → ${file}\n\`\`\`mermaid\n${mermaid.slice(0, 800)}\n\`\`\``;
+    } catch (e: any) {
+      return `流程图生成失败：${e?.message?.slice(0, 200) ?? e}`;
+    }
   });
 
   // 审计留痕

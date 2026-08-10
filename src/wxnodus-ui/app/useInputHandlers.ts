@@ -358,6 +358,12 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       }
     }
 
+    // A3 修复：Ctrl+O 打开模型选择器（保留草稿；参考热键同款）
+    if (isCtrl(key, ch, 'o')) {
+      patchOverlayState({ modelPicker: true })
+      return
+    }
+
     if (cState.completions.length && cState.input && cState.historyIdx === null && (key.upArrow || key.downArrow || key.pageUp || key.pageDown)) {
       const len = cState.completions.length
 

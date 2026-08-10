@@ -344,3 +344,46 @@ describe('loop-goal 模式', () => {
     expect(r.text).toContain('一次完成');
   });
 });
+
+// ── 对比轮 6：clarify 文字回答 / todo 工具 ───
+describe('clarify 与 todo', () => {
+  it('clarify 工具：模型提问 → 用户文字回答回填', async () => {
+    let got: { q: string; choices?: string[] } | null = null;
+    let answered = false;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-clarify',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      mode: 'yolo',
+      onClarify: async (q, choices) => {
+        got = { q, choices };
+        answered = true;
+        return '用 TypeScript';
+      },
+      callModel: async (req) => {
+        if (!req.messages.some((m: any) => m.role === 'assistant')) {
+          return { type: 'tool_call', id: 'cl1', name: 'clarify', args: { question: '用什么语言实现？', choices: ['TS', 'Python'] } } as ToolCallMsg;
+        }
+        const toolMsg = req.messages.find((m: any) => m.role === 'tool');
+        return { type: 'text', content: `好的，用${String(toolMsg?.content ?? '').includes('TypeScript') ? 'TypeScript' : '未知'}实现` };
+      },
+    });
+    const r = await agent.run('实现一个工具');
+    expect(answered).toBe(true);
+    expect(got?.q).toContain('用什么语言');
+    expect(Array.isArray(got?.choices)).toBe(true);
+    expect(r.text).toContain('TypeScript');
+  });
+  it('todo 工具：add/list/done 持久化', async () => {
+    const { coreTools } = await import('../src/kernel/tools.js');
+    const tools = coreTools();
+    const ctx = { cwd: process.cwd(), dataDir: process.cwd() + '/data' };
+    const r1 = await tools.todo.run({ action: 'add', item: '完成对比清单' }, ctx as any);
+    expect(String(r1)).toContain('已添加');
+    const r2 = await tools.todo.run({ action: 'list' }, ctx as any);
+    expect(String(r2)).toContain('完成对比清单');
+    const r3 = await tools.todo.run({ action: 'done', item: '完成对比清单' }, ctx as any);
+    expect(String(r3)).toContain('已完成');
+    const r4 = await tools.todo.run({ action: 'list' }, ctx as any);
+    expect(String(r4)).toContain('待办为空');
+  });
+});

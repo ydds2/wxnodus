@@ -85,6 +85,8 @@ async function main() {
       if (choice === 'session') approvalCache.grant(name, args);
       return choice !== 'deny';
     },
+    // C6：clarify 文字提问（UI clarify 面板真实回答）
+    onClarify: async (question, choices) => (gateway ? gateway.requestClarify(question, choices) : ''),
     hooks: hookRunner,
     extraTools: mcpClientsToTools(mcpClients),
   });
@@ -132,6 +134,23 @@ async function main() {
       maybeRunCurator({ getSettings: () => config.get('settings') as Record<string, any>, mem, dataDir, cwd, bus });
     }).catch(() => { /* 后台审查失败静默 */ });
   }, 5000);
+
+  // 定时任务调度（对比轮 6：/cron 真实执行）——每分钟检查到期任务，后台派发 agent 执行
+  setInterval(() => {
+    try {
+      const jobs = db.prepare(`SELECT * FROM cron_jobs WHERE enabled=1`).all() as Array<{ id: number; schedule: string; action: string; last_run: number | null }>;
+      const now = Date.now();
+      for (const j of jobs) {
+        const m = /every (\d+)m/.exec(j.schedule ?? '');
+        if (!m) continue;
+        const intervalMs = parseInt(m[1]!, 10) * 60_000;
+        if (j.last_run && now - j.last_run < intervalMs) continue;
+        db.prepare(`UPDATE cron_jobs SET last_run=? WHERE id=?`).run(now, j.id);
+        bus.emit('system.notice', { text: `定时任务 #${j.id} 触发：${String(j.action).slice(0, 60)}` });
+        void agent.run(`（定时任务 #${j.id}）${j.action}`).catch(() => { /* 执行失败不阻断调度 */ });
+      }
+    } catch { /* 任务表未就绪静默 */ }
+  }, 60_000);
 
   // 非交互模式
   if (opts.prompt) {

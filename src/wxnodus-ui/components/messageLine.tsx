@@ -1,5 +1,5 @@
 import { Ansi, Box, NoSelect, Text } from '@wxnodus/ink'
-import { memo, useState } from 'react'
+import { memo, useState, type ReactNode } from 'react'
 
 import { TERMUX_TUI_MODE } from '../config/env.js'
 import { LONG_MSG } from '../config/limits.js'
@@ -26,6 +26,35 @@ import { TodoPanel } from './todoPanel.js'
 
 // Collapse threshold for long system messages (system prompt etc.)
 const SYSTEM_COLLAPSE_CHARS = 400
+
+// A8：已发消息中 /skill:名 引用高亮（参考 splitSlashSkillRefs 同款）
+const SKILL_REF_RE = /(\/skill:[^\s，。！？,.;]+)/g
+
+function renderSkillRefs(text: string, t: Theme): ReactNode {
+  const parts: ReactNode[] = []
+  let last = 0
+
+  for (const m of text.matchAll(SKILL_REF_RE)) {
+    const i = m.index ?? 0
+
+    if (i > last) {
+      parts.push(<Text key={parts.length}>{text.slice(last, i)}</Text>)
+    }
+
+    parts.push(
+      <Text color={t.color.accent} key={parts.length}>
+        {m[1]}
+      </Text>
+    )
+    last = i + m[0].length
+  }
+
+  if (last < text.length) {
+    parts.push(<Text key={parts.length}>{text.slice(last)}</Text>)
+  }
+
+  return parts.length ? parts : text
+}
 
 export const MessageLine = memo(function MessageLine({
   cols,
@@ -186,7 +215,8 @@ export const MessageLine = memo(function MessageLine({
       )
     }
 
-    return <Text {...(body ? { color: body } : {})}>{msg.text}</Text>
+    // A8：user 消息中的 /skill:名 引用以 accent 高亮（技能直达提示）
+    return <Text {...(body ? { color: body } : {})}>{renderSkillRefs(msg.text, t)}</Text>
   })()
 
   // Diff segments (emitted by pushInlineDiffSegment between narration

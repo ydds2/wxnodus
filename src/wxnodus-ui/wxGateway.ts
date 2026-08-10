@@ -47,6 +47,10 @@ interface PendingApproval {
   resolve: (choice: string) => void
 }
 
+interface PendingClarify {
+  resolve: (answer: string) => void
+}
+
 export class GatewayClient extends EventEmitter {
   private kernel: WxGatewayKernel
   private ready = false
@@ -54,6 +58,9 @@ export class GatewayClient extends EventEmitter {
   private bufferedEvents: GatewayEvent[] = []
   private logs: string[] = []
   private pendingApproval: PendingApproval | null = null
+  private pendingClarify: PendingClarify | null = null
+  // delegation.status 数据源（活跃子代理集合，agent.subagent 事件驱动）
+  private activeSubagents = new Set<string>()
   private sessionSeq = 0
   private unsubscribe: Array<() => void> = []
   private running = false
@@ -99,16 +106,24 @@ export class GatewayClient extends EventEmitter {
         const content = String(p?.content ?? '')
         if (content) {
           this.finalText = content
-          this.publish({ type: 'message.delta', payload: { text: content } })
+          // C9 修复：token 已逐块经 agent.token→message.delta 推送——此处不再重推全文
+          // （否则 turnController bufRef 翻倍，直播渲染尾部闪现重复文本）
         }
+      },
+      // C5 修复：思考分片实时转发（UI reasoning.delta 事件，thinking 面板实时可见）
+      'reasoning.delta': (p) => {
+        const text = String(p?.text ?? '')
+        if (text) this.publish({ type: 'reasoning.delta', payload: { text } })
       },
       'agent.tool': (p) => {
         const name = String(p?.name ?? 'tool')
+        // C3 修复：工具调用稳定 id（内核生成，start/complete 同 id——UI 工具卡正确闭合）
+        const toolId = String(p?.toolId ?? `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
         if (p?.phase === 'start') {
           this.publish({
             type: 'tool.start',
             payload: {
-              tool_id: `t${Date.now()}`,
+              tool_id: toolId,
               name,
               context: String(p?.ctx ?? ''),
               args_text: p?.args ? JSON.stringify(p.args).slice(0, 400) : undefined,
@@ -118,7 +133,7 @@ export class GatewayClient extends EventEmitter {
           this.publish({
             type: 'tool.complete',
             payload: {
-              tool_id: `t${Date.now()}`,
+              tool_id: toolId,
               name,
               error: p?.ok ? undefined : String(p?.detail ?? 'failed'),
               summary: String(p?.detail ?? (p?.ok ? 'ok' : 'failed')),
@@ -137,9 +152,14 @@ export class GatewayClient extends EventEmitter {
       },
       'agent.subagent': (p) => {
         const phase = p?.phase === 'start' ? 'start' : 'complete'
+        // C4 修复：subagent_id 稳定（内核生成——/agents 面板 complete 事件可匹配闭合）
+        const subagentId = String(p?.subagent_id ?? `sub-${Date.now().toString(36)}`)
+        // delegation.status 数据源：维护活跃子代理列表
+        if (phase === 'start') this.activeSubagents.add(subagentId)
+        else this.activeSubagents.delete(subagentId)
         this.publish({
           type: phase === 'start' ? 'subagent.start' : 'subagent.complete',
-          payload: { subagent_id: `sub-${Date.now().toString(36)}`, goal: String(p?.goal ?? ''), status: p?.ok ? 'completed' : 'error', task_index: 0 },
+          payload: { subagent_id: subagentId, goal: String(p?.goal ?? ''), status: p?.ok ? 'completed' : 'error', task_index: 0 },
         })
       },
       'agent.end': (p) => {
@@ -199,17 +219,27 @@ export class GatewayClient extends EventEmitter {
       case 'model.options': return this.modelOptions(params) as T
       case 'model.save_key': return this.modelSaveKey(params) as T
       case 'model.disconnect': return this.modelDisconnect(params) as T
-      case 'delegation.status': return { active: [], max_concurrent_children: 4, max_spawn_depth: 3, paused: false } as T
+      case 'delegation.status': return this.delegationStatus() as T
       case 'spawn_tree.save': return {} as T
       case 'skills.manage': return this.skillsManage(params) as T
       case 'skills.reload': return { output: '技能缓存已清空（发现目录即时扫描）' } as T
       case 'reload.mcp': return {} as T
-      case 'voice.toggle': return { enabled: false } as T
-      case 'voice.record': return { ok: false, message: '语音不可用' } as T
+      case 'voice.toggle': return { enabled: false, audio_available: false, message: '语音输入当前不可用' } as T
+      case 'voice.record': return { ok: false, audio_available: false, message: '语音输入当前不可用' } as T
       case 'image.attach': return {} as T
       default:
         this.pushLog(`[rpc] unsupported method: ${method}`)
         throw new Error(`unsupported rpc: ${method}`)
+    }
+  }
+
+  // delegation.status 真实数据：活跃子代理（agent.subagent start/complete 事件驱动）
+  private delegationStatus(): unknown {
+    return {
+      active: [...this.activeSubagents],
+      max_concurrent_children: 4,
+      max_spawn_depth: 3,
+      paused: false,
     }
   }
 
@@ -505,7 +535,8 @@ export class GatewayClient extends EventEmitter {
       config: {
         display: {
           bell_on_complete: false,
-          busy_input_mode: 'queue',
+          // C7 修复：busy 时输入默认中断（参考默认 interrupt——Ctrl+C 总是打断）
+          busy_input_mode: 'interrupt',
           details_mode: 'collapsed',
           inline_diffs: true,
           mouse_tracking: 'all',
@@ -519,6 +550,7 @@ export class GatewayClient extends EventEmitter {
         paste_collapse_threshold: 5,
         paste_collapse_char_threshold: 2000,
       },
+      value: 'interrupt', // C7：/busy 命令显示实际值（与默认一致）
     }
   }
 
@@ -535,13 +567,19 @@ export class GatewayClient extends EventEmitter {
       const slug = /--provider\s+(\S+)/.exec(value)?.[1]
       const hit = MODEL_CATALOG.find(m => m.modelId === modelId || m.provider === slug)
       this.kernel.applyModel(hit ? hit.modelId : modelId, hit?.baseURL)
+      // A12：模型切换可见反馈（通知机制）
+      this.publish({ type: 'notification.show', payload: { text: `已切换模型：${hit ? hit.modelId : modelId}`, level: 'info' } })
     } else if (key === 'mode') {
       this.kernel.setMode(value)
       this.kernel.agent.setMode(value)
     } else if (key === 'theme') {
       this.kernel.setTheme(value)
-    } else if (key === 'thinking') {
+    } else if (key === 'thinking' || key === 'reasoning') {
+      // C5 修复：/reasoning 命令映射 thinking（此前假成功零效果）
       this.kernel.setThinking(value === 'true' || value === 'on' || value === '1')
+    } else if (key === 'busy') {
+      // C7：/busy 命令接入（queue/interrupt/steer 三模式；写入 settings 供状态条显示）
+      ;(s as any).busyInputMode = ['queue', 'interrupt', 'steer'].includes(value) ? value : 'interrupt'
     }
 
     return { value: s[key as keyof typeof s] ?? value }
@@ -574,10 +612,24 @@ export class GatewayClient extends EventEmitter {
     return { ok: true }
   }
 
+  // C6 修复：clarify 文字提问（独立 pending——不占用审批通道；激活 UI clarify 死分支）
+  requestClarify(question: string, choices?: string[]): Promise<string> {
+    return new Promise((resolve) => {
+      this.pendingClarify = { resolve }
+      this.publish({
+        type: 'clarify.request',
+        payload: { choices: choices ?? null, question, request_id: `clr-${Date.now().toString(36)}` },
+      })
+    })
+  }
+
   private clarifyRespond(params: Record<string, unknown>): unknown {
     const answer = String(params.answer ?? '')
 
-    if (this.pendingApproval) {
+    if (this.pendingClarify) {
+      this.pendingClarify.resolve(answer)
+      this.pendingClarify = null
+    } else if (this.pendingApproval) {
       this.pendingApproval.resolve(answer !== '' ? 'allow' : 'deny')
       this.pendingApproval = null
     }

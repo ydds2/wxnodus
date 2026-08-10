@@ -140,12 +140,27 @@ export function useMainApp(gw: GatewayClient) {
   const { stdout } = useStdout()
   const [cols, setCols] = useState(stdout?.columns ?? 80)
 
+  // A15 修复：resize 合并器（参考同款）——拖拽调窗时 SIGWINCH 高频触发，
+  // 合并到 80ms 窗口内最后一次，避免每帧 setCols 重排闪烁
+  const RESIZE_COALESCE_MS = 80
+
   useEffect(() => {
     if (!stdout) {
       return
     }
 
-    const sync = () => setCols(stdout.columns ?? 80)
+    let timer: NodeJS.Timeout | null = null
+
+    const sync = () => {
+      if (timer) {
+        clearTimeout(timer)
+      }
+
+      timer = setTimeout(() => {
+        timer = null
+        setCols(stdout.columns ?? 80)
+      }, RESIZE_COALESCE_MS)
+    }
 
     stdout.on('resize', sync)
 
@@ -155,6 +170,10 @@ export function useMainApp(gw: GatewayClient) {
 
     return () => {
       stdout.off('resize', sync)
+
+      if (timer) {
+        clearTimeout(timer)
+      }
 
       if (stdout.isTTY) {
         stdout.write(BRACKET_PASTE_OFF)

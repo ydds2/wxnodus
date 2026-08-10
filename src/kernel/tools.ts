@@ -10,6 +10,8 @@ export interface ToolCtx {
   cwd: string;
   dataDir: string;
   ask?: (q: string, opts?: { danger?: boolean }) => Promise<boolean>;
+  /** C6：文字提问（clarify 工具）——返回用户文本答案 */
+  clarify?: (q: string, choices?: string[]) => Promise<string>;
   /** 派生子代理（只读工具集，独立上下文）——delegate 工具真实执行入口 */
   spawnSubagent?: (goal: string) => Promise<{ ok: boolean; output: string; turns: number }>;
   /** 当前轮次的中止信号（F15：bash 等长时工具可被用户 abort 真中断） */
@@ -76,8 +78,13 @@ export function coreTools(): Record<string, ToolDef> {
           { cwd: ctx.cwd, signal },
         );
         let out = '';
-        child.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
-        child.stderr?.on('data', (d: Buffer) => { out += d.toString(); });
+        // C12 修复：流式截断——长输出（如 dir /s）在命令结束前无界累积会撑爆内存
+        const appendOut = (d: Buffer) => {
+          out += d.toString();
+          if (out.length > 20000) out = out.slice(0, 20000); // 保留 8000 截断余量
+        };
+        child.stdout?.on('data', appendOut);
+        child.stderr?.on('data', appendOut);
         await new Promise<void>((resolveP, rejectP) => {
           child.on('error', rejectP);
           child.on('close', (code) => {
@@ -182,6 +189,17 @@ export function coreTools(): Record<string, ToolDef> {
       return ok ? `用户已确认：${question}` : '用户未确认';
     },
   };
+  // C6 修复（clarify 文字回答）：提问并接收文本答案（参考 clarify 工具同款）——
+  // 与 ask_user（布尔确认）互补：模型需要用户提供信息时用 clarify 拿到真实答案
+  const clarify: ToolDef = {
+    schema: { type: 'function', function: { name: 'clarify', description: '向用户提问并获取文字回答（需要信息时使用，如路径/偏好/选择）', parameters: { type: 'object', properties: { question: { type: 'string', description: '问题' }, choices: { type: 'array', items: { type: 'string' }, description: '可选答案（可为空）' } }, required: ['question'] } } },
+    danger: false,
+    async run({ question, choices }, ctx) {
+      if (!ctx.clarify) return `clarify 不可用：当前环境未提供提问能力（请配置交互环境）`;
+      const answer = await ctx.clarify(String(question), Array.isArray(choices) ? choices.map(String) : []);
+      return answer ? `用户回答：${answer}` : '用户未回答';
+    },
+  };
   const skillLoad: ToolDef = {
     schema: { type: 'function', function: { name: 'skill_load', description: '加载本地技能（SKILL.md 工作流）辅助完成任务', parameters: { type: 'object', properties: { name: { type: 'string', description: '技能名（/skill list 查看）' } }, required: ['name'] } } },
     danger: false,
@@ -191,7 +209,33 @@ export function coreTools(): Record<string, ToolDef> {
       return content || `未找到技能「${name}」——/skill list 查看已安装技能`;
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, http_get: httpGet, memory_write: memoryWrite, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, skill_load: skillLoad };
+  // 对比轮 6：todo 工具（参考 SetTodoList 同款）——待办清单持久化 data/todos.json
+  const todo: ToolDef = {
+    schema: { type: 'function', function: { name: 'todo', description: '管理待办清单（list/add/done/clear）——长期任务跟踪', parameters: { type: 'object', properties: { action: { type: 'string', description: 'list｜add｜done｜clear' }, item: { type: 'string', description: 'add/done 的待办内容' } }, required: ['action'] } } },
+    danger: false,
+    async run({ action, item }, ctx) {
+      const file = join(ctx.dataDir, 'todos.json');
+      let todos: string[] = [];
+      try { todos = JSON.parse(readFileSync(file, 'utf8')) as string[]; } catch { /* 空列表 */ }
+      const act = String(action ?? 'list').toLowerCase();
+      if (act === 'add' && item) {
+        todos.push(String(item));
+        try { writeFileSync(file, JSON.stringify(todos, null, 2), 'utf8'); } catch (e: any) { return `待办写入失败：${e?.message?.slice(0, 100) ?? e}`; }
+        return `已添加待办：${String(item).slice(0, 100)}`;
+      }
+      if (act === 'done' && item) {
+        todos = todos.filter(t => t !== String(item));
+        try { writeFileSync(file, JSON.stringify(todos, null, 2), 'utf8'); } catch (e: any) { return `待办写入失败：${e?.message?.slice(0, 100) ?? e}`; }
+        return `已完成待办：${String(item).slice(0, 100)}`;
+      }
+      if (act === 'clear') {
+        try { writeFileSync(file, '[]', 'utf8'); } catch (e: any) { return `待办写入失败：${e?.message?.slice(0, 100) ?? e}`; }
+        return '待办已清空';
+      }
+      return todos.length ? `待办清单（${todos.length} 项）：\n${todos.map((t, i) => `${i + 1}. ${t.slice(0, 80)}`).join('\n')}` : '待办为空——todo add <内容> 添加';
+    },
+  };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, http_get: httpGet, memory_write: memoryWrite, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

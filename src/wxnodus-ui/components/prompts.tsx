@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from '@wxnodus/ink'
 import { useState } from 'react'
+import { wrapAnsi } from '@wxnodus/ink'
 
 import { isMac } from '../lib/platform.js'
 import type { Theme } from '../theme.js'
@@ -66,7 +67,7 @@ export function approvalAction(
   return { kind: 'noop' }
 }
 
-export function ApprovalPrompt({ onChoice, req, t }: ApprovalPromptProps) {
+export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptProps) {
   const [sel, setSel] = useState(0)
   const opts = req.allowPermanent === false ? APPROVAL_OPTS_NO_ALWAYS : APPROVAL_OPTS
 
@@ -80,7 +81,13 @@ export function ApprovalPrompt({ onChoice, req, t }: ApprovalPromptProps) {
     }
   })
 
-  const rawLines = (req.description || req.command).split('\n')
+  // A2 修复：审批前必须可完整审阅——长命令逐行硬折行（参考同款 wrapAnsi），
+  // 超长部分才截断提示（"…+N more lines"）
+  const innerWidth = Math.max(20, cols - 6)
+  const rawLines = (req.description || req.command).split('\n').flatMap(line => {
+    const wrapped = wrapAnsi(line, innerWidth, { hard: true, trim: false })
+    return wrapped.split('\n')
+  })
   const shown = rawLines.slice(0, CMD_PREVIEW_LINES)
   const overflow = rawLines.length - shown.length
 
@@ -269,6 +276,7 @@ export function ConfirmPrompt({ onCancel, onConfirm, req, t }: ConfirmPromptProp
 }
 
 interface ApprovalPromptProps {
+  cols?: number
   onChoice: (s: string) => void
   req: ApprovalReq
   t: Theme

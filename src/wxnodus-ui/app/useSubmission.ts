@@ -363,7 +363,8 @@ export function useSubmission(opts: UseSubmissionOptions) {
           const text = value.startsWith('/') && row.text.startsWith('/') ? row.text.slice(1) : row.text
           const next = value.slice(0, composerState.compReplace) + text
 
-          if (next !== value) {
+          // A4 修复：补全增量仅为尾随空白时（如 /exit → /exit ）直接提交而非吞掉 Enter
+          if (next !== value && next.trimEnd() !== value.trimEnd()) {
             return composerActions.setInput(next)
           }
         }

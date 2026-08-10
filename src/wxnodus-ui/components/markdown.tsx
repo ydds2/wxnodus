@@ -164,14 +164,16 @@ const pickFallbackLabel = (label: string | undefined, target: string): string | 
 }
 
 interface ResolvedLinkProps {
+  authoredLabel?: boolean
   fallbackLabel?: string
   t: Theme
   url: string
 }
 
-function ResolvedLink({ fallbackLabel, t, url }: ResolvedLinkProps) {
-  const fetched = useLinkTitle(url)
-  const display = fetched || fallbackLabel || defaultLinkLabel(url)
+function ResolvedLink({ authoredLabel, fallbackLabel, t, url }: ResolvedLinkProps) {
+  // A9 修复：有作者标签的链接（[Read the RFC](url)）不抓取页面标题——标签优先（参考同款）
+  const fetched = useLinkTitle(authoredLabel ? null : url)
+  const display = (authoredLabel ? fallbackLabel : fetched || fallbackLabel) || defaultLinkLabel(url)
 
   return (
     <Link url={url}>
@@ -184,8 +186,9 @@ function ResolvedLink({ fallbackLabel, t, url }: ResolvedLinkProps) {
 
 const renderResolvedLink = (k: number, t: Theme, rawUrl: string, label?: string) => {
   const target = normalizeExternalUrl(rawUrl)
+  const authored = Boolean(label)
 
-  return <ResolvedLink fallbackLabel={pickFallbackLabel(label, target)} key={k} t={t} url={target} />
+  return <ResolvedLink authoredLabel={authored} fallbackLabel={pickFallbackLabel(label, target)} key={k} t={t} url={target} />
 }
 
 export const stripInlineMarkup = (v: string) =>
@@ -503,7 +506,12 @@ function MdInline({ t, text }: { t: Theme; text: string }) {
     const k = parts.length
 
     if (i > last) {
-      parts.push(<Text key={k}>{text.slice(last, i)}</Text>)
+      // A10 修复：散文显式锚定主题文本色（浅色终端/深色皮肤场景不失真）
+      parts.push(
+        <Text color={t.color.text} key={k}>
+          {text.slice(last, i)}
+        </Text>
+      )
     }
 
     if (m[1] && m[2]) {

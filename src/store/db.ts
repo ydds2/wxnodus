@@ -106,6 +106,13 @@ export function openDB(dataDir: string): Db {
       created_at INTEGER NOT NULL,
       done_at INTEGER
     );
+    CREATE TABLE IF NOT EXISTS cron_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      schedule TEXT NOT NULL,
+      action TEXT NOT NULL,
+      last_run INTEGER,
+      enabled INTEGER NOT NULL DEFAULT 1
+    );
   `);
 
   // FTS5 消息全文索引（content='' 外部内容表，rowid 对齐 messages.id）

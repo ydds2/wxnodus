@@ -17,9 +17,10 @@ await sleep(2800)
 // ── 分组命令扫描：执行 + 检查「可用」信号 ──
 const BROKEN = /不支持|未实现|unknown rpc|unsupported|not implemented|内部错误|异常：/
 const groups = {
-  '对话': ['/help', '/clear', '/undo', '/usage', '/quit', '/context', '/resume'],
-  '模型': ['/key', '/model', '/status', '/doctor', '/version', '/thinking on', '/thinking off'],
+  '对话': ['/help', '/clear', '/undo', '/usage', '/quit', '/context', '/resume', '/new', '/title', '/undo list'],
+  '模型': ['/key', '/login', '/logout', '/model', '/status', '/doctor', '/version', '/thinking on', '/thinking off'],
   '记忆': ['/memory', '/hole 测试', '/compact', '/digest', '/curator'],
+  '计划': ['/plan', '/flow 用户注册流程', '/import'],
   '构建': ['/build', '/deploy', '/forge', '/skill', '/skill list', '/skill inspect demo', '/skill new sweep-tmp', '/learn test-skill', '/gate', '/fdr', '/evidence'],
   '会话': ['/fork', '/init'],
   '钩子': ['/hooks'],
@@ -27,7 +28,7 @@ const groups = {
   '系统': ['/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench'],
   '视觉': ['/vision', '/img', '/video', '/render', '/capture'],
   '网络': ['/claw', '/mcp', '/gateway', '/proxy', '/webhook', '/a2a', '/acp'],
-  '协作': ['/swarm', '/duo', '/cron', '/jobs', '/delegate', '/goal 测试目标'],
+  '协作': ['/swarm', '/duo', '/cron', '/cron list', '/jobs', '/task', '/delegate', '/goal 测试目标'],
   '工具': ['/calc 2+3*4', '/hash abc', '/base64 abc', '/uuid', '/rand', '/json {"a":1}', '/timer', '/units 1km to m', '/csv a,b\\nc,d', '/fs ls', '/sql select 1'],
   '设置': ['/statusbar', '/indicator', '/reasoning', '/fast', '/busy', '/verbose', '/title', '/details', '/fortune', '/history', '/queue', '/redraw', '/mouse', '/skin', '/sessions']
 }

@@ -67,5 +67,7 @@ export function scrollWithSelectionBy(delta: number, { scrollRef, selection }: S
     shift(-actual, top, bottom)
   }
 
-  s.scrollBy(actual)
+  // A6 修复：scrollTo 绝对定位（参考同款）——scrollBy 在 pending-delta 多帧排水
+  // 期间产生阶梯滚动；绝对定位一次到位
+  s.scrollTo(Math.max(0, cur + actual))
 }

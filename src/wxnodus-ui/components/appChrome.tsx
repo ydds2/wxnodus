@@ -404,6 +404,7 @@ export function GoodVibesHeart({ tick, t }: { tick: number; t: Theme }) {
 
 export function StatusRule({
   cwdLabel,
+  sessionTitle,
   cols,
   busy,
   status,
@@ -642,7 +643,8 @@ export function StatusRule({
           <Text color={t.color.border}>{separatorWidth >= 3 ? ' ─ ' : ' '}</Text>
           <Box flexShrink={0} width={rightWidth}>
             <Text color={t.color.label} wrap="truncate-end">
-              {cwdLabel}
+              {/* A7：会话标题优先于 cwd（参考 rightLabel 同款——标题即当前工作上下文） */}
+              {sessionTitle || cwdLabel}
             </Text>
           </Box>
         </>
@@ -765,6 +767,8 @@ interface StatusRuleProps {
   busy: boolean
   cols: number
   cwdLabel: string
+  /** A7：会话标题（状态条右侧标签，参考同款——有标题时替代 cwd 显示） */
+  sessionTitle?: string
   model: string
   modelFast?: boolean
   modelReasoningEffort?: string
