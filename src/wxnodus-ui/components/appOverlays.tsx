@@ -239,6 +239,12 @@ export function FloatingOverlays({
                 </Box>
               )
             })}
+            {completions.length > viewportSize && (
+              <Text color={theme.color.muted}>
+                {' '}
+                {compIdx + 1}/{completions.length} · 上下键选择 · PgUp/PgDn 翻页
+              </Text>
+            )}
           </Box>
         )}
       </FloatBox>

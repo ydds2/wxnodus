@@ -358,8 +358,16 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       }
     }
 
-    if (cState.completions.length && cState.input && cState.historyIdx === null && (key.upArrow || key.downArrow)) {
+    if (cState.completions.length && cState.input && cState.historyIdx === null && (key.upArrow || key.downArrow || key.pageUp || key.pageDown)) {
       const len = cState.completions.length
+
+      // PgUp/PgDn 翻页浏览建议（一次移动一个窗口，与建议面板 COMPLETION_WINDOW 对齐）
+      if (key.pageUp || key.pageDown) {
+        const PAGE = 16
+        cActions.setCompIdx(i => (key.pageUp ? (i - PAGE + len) % len : (i + PAGE) % len))
+
+        return
+      }
 
       cActions.setCompIdx(i => (key.upArrow ? (i - 1 + len) % len : (i + 1) % len))
 

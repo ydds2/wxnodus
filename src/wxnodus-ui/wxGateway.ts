@@ -498,7 +498,8 @@ export class GatewayClient extends EventEmitter {
   private completeSlash(params: Record<string, unknown>): unknown {
     const text = String(params.text ?? '')
     const q = text.startsWith('/') ? text.slice(1).toLowerCase() : text.toLowerCase()
-    const items = SLASH.filter((c) => c.slice(1).toLowerCase().startsWith(q)).slice(0, 12)
+    // 32 条 ≈ 2-3 页（建议面板窗口 16 行 + PgUp/PgDn 翻页浏览全部命令）
+    const items = SLASH.filter((c) => c.slice(1).toLowerCase().startsWith(q)).slice(0, 32)
     const desc = (c: string) => COMMAND_DESC[c] ?? ''
 
     return {
