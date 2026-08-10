@@ -66,6 +66,10 @@ async function main() {
 
   // 审批桥：agent 工具确认 → GatewayClient.requestApproval（审批 overlay）
   let gateway: any = null;
+  // 会话级批准缓存（Kimi auto_approve_actions 同款）：用户选「Allow this session」的
+  // action 记入缓存，本次进程内同 action 自动放行不再弹——危险确认不再频繁
+  const { createApprovalCache } = await import('../kernel/permissions.js');
+  const approvalCache = createApprovalCache();
   // Hooks：settings.hooks 热生效（每次触发读当前配置），本地命令执行
   const hookRunner = createHookRunner(() => config.get('settings') as Record<string, any>, bus);
   // MCP 客户端（本地 stdio）：data/mcp.json 配置的 server 动态并入工具表
@@ -74,7 +78,13 @@ async function main() {
   const agent = createAgent({
     db, bus, mem, sessionId: 'default', config: { settings },
     mode: (config.get('settings') as any).mode ?? 'smart',
-    onApproval: async (name, args) => gateway ? gateway.requestApproval(name, args) : false,
+    onApproval: async (name, args) => {
+      if (approvalCache.has(name, args)) return true; // 本会话已批准（Allow this session）
+      if (!gateway) return false;
+      const choice = await gateway.requestApproval(name, args);
+      if (choice === 'session') approvalCache.grant(name, args);
+      return choice !== 'deny';
+    },
     hooks: hookRunner,
     extraTools: mcpClientsToTools(mcpClients),
   });

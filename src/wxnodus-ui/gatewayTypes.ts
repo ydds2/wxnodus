@@ -570,7 +570,7 @@ export type GatewayEvent =
       type: 'clarify.request'
     }
   | {
-      payload: { allow_permanent?: boolean; command: string; description: string }
+      payload: { allow_permanent?: boolean; command: string; description: string; tool?: string; category?: string; icon?: string }
       session_id?: string
       type: 'approval.request'
     }

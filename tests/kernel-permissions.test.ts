@@ -1,7 +1,7 @@
 // tests/kernel-permissions.test.ts — L2-3 工具表 + 权限模式（危险分级/硬红线）
 import { describe, it, expect } from 'vitest';
 import { coreTools, isDangerous, type ToolDef } from '../src/kernel/tools.js';
-import { modeVerdict, HARD_REDLINES, type Verdict } from '../src/kernel/permissions.js';
+import { modeVerdict, HARD_REDLINES, classifyBashCommand, classifyToolAction, createApprovalCache, type Verdict } from '../src/kernel/permissions.js';
 
 describe('工具表', () => {
   it('核心工具存在且带危险分级', () => {
@@ -40,7 +40,7 @@ describe('硬红线（任何模式不可绕过）', () => {
   });
   it('smart 模式红线同样拦截', () => {
     expect(modeVerdict('smart', 'bash', { command: 'rm -rf /' })).toBe('reject');
-    expect(modeVerdict('smart', 'bash', { command: 'echo hi' })).toBe('confirm');
+    expect(modeVerdict('smart', 'bash', { command: 'mkdir x' })).toBe('confirm'); // 写命令仍确认
     expect(modeVerdict('smart', 'fs_read', { path: 'x' })).toBe('approve');
   });
 });
@@ -48,7 +48,8 @@ describe('硬红线（任何模式不可绕过）', () => {
 describe('模式语义', () => {
   it('plan：只读研究 + 计划审批（F12：只读工具免审批，危险工具需计划审批）', () => {
     expect(modeVerdict('plan', 'fs_read', { path: 'x' })).toBe('approve');
-    expect(modeVerdict('plan', 'bash', { command: 'ls' })).toBe('plan');
+    expect(modeVerdict('plan', 'bash', { command: 'ls' })).toBe('approve'); // 只读命令 plan 下放行
+    expect(modeVerdict('plan', 'bash', { command: 'npm install x' })).toBe('plan');
   });
   it('auto：非危险直接 approve', () => {
     expect(modeVerdict('auto', 'fs_read', { path: 'x' })).toBe('approve');
@@ -56,6 +57,60 @@ describe('模式语义', () => {
   });
   it('manual：危险工具必须 confirm', () => {
     expect(modeVerdict('manual', 'fs_write', { path: 'x' })).toBe('confirm');
+  });
+});
+
+describe('bash 命令分级（Claude Code read-only 白名单 + Kimi 分类同款）', () => {
+  it('只读命令分类 readonly', () => {
+    for (const c of ['pwd', 'ls -la', 'cat a.txt', 'git status', 'git log --oneline -5', 'grep -rn foo src', 'find . -name "*.ts"', 'echo hello', 'pwd && ls -la']) {
+      expect(classifyBashCommand(c)).toBe('readonly');
+    }
+  });
+  it('写入/网络/危险分类', () => {
+    expect(classifyBashCommand('mkdir out')).toBe('write');
+    expect(classifyBashCommand('git add .')).toBe('write');
+    expect(classifyBashCommand('curl https://x.com')).toBe('network');
+    expect(classifyBashCommand('wget http://y')).toBe('network');
+    expect(classifyBashCommand('npm install lodash')).toBe('write');
+    expect(classifyBashCommand('some-unknown-cmd')).toBe('danger');
+    expect(classifyBashCommand('')).toBe('danger');
+  });
+  it('多命令串取最保守等级（echo && rm 必为危险）', () => {
+    expect(classifyBashCommand('echo hi && rm -rf x')).toBe('danger');
+    expect(classifyBashCommand('cd src && git status')).toBe('readonly');
+    expect(classifyBashCommand('ls; mkdir x')).toBe('write');
+  });
+  it('smart 模式：只读命令免确认，写/危险仍需确认', () => {
+    expect(modeVerdict('smart', 'bash', { command: 'pwd && ls -la' })).toBe('approve');
+    expect(modeVerdict('smart', 'bash', { command: 'mkdir x' })).toBe('confirm');
+    expect(modeVerdict('smart', 'bash', { command: 'curl https://x.com' })).toBe('confirm');
+    expect(modeVerdict('smart', 'bash', { command: 'rm -rf /' })).toBe('reject'); // 红线先行
+  });
+  it('manual 模式：只读命令也确认（全量确认语义）', () => {
+    expect(modeVerdict('manual', 'bash', { command: 'pwd' })).toBe('confirm');
+  });
+});
+
+describe('工具动作分类（审批框徽标）', () => {
+  it('bash 按命令分级，其余按只读名单', () => {
+    expect(classifyToolAction('bash', { command: 'ls' }).category).toBe('readonly');
+    expect(classifyToolAction('bash', { command: 'rm -rf x' }).category).toBe('danger');
+    expect(classifyToolAction('fs_read', { path: 'a' }).category).toBe('readonly');
+    expect(classifyToolAction('fs_write', { path: 'a' }).category).toBe('write');
+    expect(classifyToolAction('fs_write', { path: 'a' }).icon).toBe('✏️');
+  });
+});
+
+describe('会话级批准缓存（Kimi auto_approve_actions 同款）', () => {
+  it('session 批准后同 action 自动放行', () => {
+    const cache = createApprovalCache();
+    expect(cache.has('bash', { command: 'mkdir x' })).toBe(false);
+    cache.grant('bash', { command: 'mkdir x' });
+    expect(cache.has('bash', { command: 'mkdir x' })).toBe(true);
+    expect(cache.has('bash', { command: 'mkdir y' })).toBe(false); // 不同命令不误放
+    expect(cache.has('fs_write', { path: 'a.txt' })).toBe(false);
+    cache.grant('fs_write', { path: 'a.txt' });
+    expect(cache.has('fs_write', { path: 'a.txt' })).toBe(true);
   });
 });
 

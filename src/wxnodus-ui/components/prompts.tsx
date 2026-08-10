@@ -80,15 +80,20 @@ export function ApprovalPrompt({ onChoice, req, t }: ApprovalPromptProps) {
     }
   })
 
-  const rawLines = req.command.split('\n')
+  const rawLines = (req.description || req.command).split('\n')
   const shown = rawLines.slice(0, CMD_PREVIEW_LINES)
   const overflow = rawLines.length - shown.length
 
   return (
     <Box borderColor={t.color.warn} borderStyle="double" flexDirection="column" paddingX={1}>
       <Text bold color={t.color.warn}>
-        ⚠ approval required · {req.description}
+        ⚠ approval required · {req.tool ?? req.command}
       </Text>
+      {req.icon && req.category ? (
+        <Text color={t.color.muted}>
+          {req.icon} {req.category}
+        </Text>
+      ) : null}
 
       <Box flexDirection="column" paddingLeft={1}>
         {shown.map((line, i) => (

@@ -94,6 +94,10 @@ export interface ApprovalReq {
   allowPermanent?: boolean
   command: string
   description: string
+  // 危险行为分类（审批框徽标）：tool 工具名 / category 类别中文 / icon 徽标
+  tool?: string
+  category?: string
+  icon?: string
 }
 
 export interface ConfirmReq {

@@ -41,6 +41,70 @@ const SENSITIVE_WRITE = /(^|[\\/])(\.bashrc|\.zshrc|\.profile|\.bash_profile|\.s
 // 注意：memory_write/http_get 有副作用/外联，移出只读名单
 const READONLY_TOOLS = new Set(['fs_read', 'ls', 'grep', 'skill_search', 'skill_load', 'code_symbols', 'repo_map', 'rag_search', 'hole_recall']);
 
+// ── bash 命令分级（参考 Claude Code read-only 命令白名单 + Kimi auto_approve_actions）──
+// 只读命令（pwd/ls/cat/git status 等）smart/auto/plan 下直接放行不弹确认；
+// 多命令串（&&/;/|/重定向）逐段分类取最保守等级——`echo hi && rm -rf x` 必为 danger
+export type BashCategory = 'readonly' | 'write' | 'network' | 'danger';
+const BASH_READONLY = /^(pwd|ls|dir|cd|cat|head|tail|less|more|wc|grep|find|which|where|type|echo|date|time|env|uname|whoami|hostname|true|false|git\s+(status|log|diff|show|branch|remote|rev-parse|config|ls-files|stash\s+list|tag\s+-l))(?:[\s]|$)/i;
+const BASH_NETWORK = /^(curl|wget|ping|nslookup|netstat|tracert|ssh\s+-T|git\s+ls-remote)(?:[\s]|$)/i;
+// 破坏性命令（危险级，与 HARD_REDLINES 互补——红线管全局模式，这里管命令首词）
+const BASH_DANGEROUS = /^(rm|rmdir\s+\/s|del|erase|format|diskpart|mkfs|shutdown|reboot|poweroff|halt|kill|dd|iex|reg\s+delete|taskkill)(?:[\s]|$)/i;
+const BASH_WRITE = /^(mkdir|touch|cp|mv|ren|move|copy|setx|npm\s+(install|i|init|publish|run)|pnpm\s+(install|add|publish)|yarn\s+(add|install)|pip\s+install|git\s+(add|commit|push|checkout|reset|merge|rebase|clean|stash\s+(pop|save|drop)|branch\s+-[dD]|tag)|echo\s+[^|]*[>»])(?:[\s]|$)/i;
+
+const CATEGORY_LABEL: Record<BashCategory, string> = { readonly: '只读查询', write: '写入操作', network: '网络请求', danger: '危险操作' };
+const CATEGORY_ICON: Record<BashCategory, string> = { readonly: '📖', write: '✏️', network: '🌐', danger: '☠️' };
+
+function classifyBashSingle(seg: string): BashCategory {
+  if (BASH_DANGEROUS.test(seg)) return 'danger';
+  if (BASH_WRITE.test(seg)) return 'write';
+  if (BASH_NETWORK.test(seg)) return 'network';
+  if (BASH_READONLY.test(seg)) return 'readonly';
+  return 'danger'; // 未知命令保守确认
+}
+
+export function classifyBashCommand(command: string): BashCategory {
+  const c = String(command ?? '').trim();
+  if (!c) return 'danger';
+  const segs = c.split(/\s*(?:&&|\|\||;|\||>>|>|2>)\s*/).map(s => s.trim()).filter(Boolean);
+  if (!segs.length) return 'danger';
+  const rank: Record<BashCategory, number> = { readonly: 0, write: 1, network: 2, danger: 3 };
+  let worst: BashCategory = 'readonly';
+  for (const seg of segs) {
+    const cat = classifyBashSingle(seg);
+    if (rank[cat] > rank[worst]) worst = cat;
+  }
+  return worst;
+}
+
+/** 工具动作分类（审批框徽标用）：bash 按命令分级；其余按只读工具名单 */
+export function classifyToolAction(tool: string, args: Record<string, any>): { category: BashCategory; label: string; icon: string } {
+  if (tool === 'bash') {
+    const c = classifyBashCommand(String(args?.command ?? ''));
+    return { category: c, label: CATEGORY_LABEL[c], icon: CATEGORY_ICON[c] };
+  }
+  if (READONLY_TOOLS.has(tool)) return { category: 'readonly', label: CATEGORY_LABEL.readonly, icon: CATEGORY_ICON.readonly };
+  return { category: 'write', label: CATEGORY_LABEL.write, icon: CATEGORY_ICON.write };
+}
+
+// ── 会话级批准缓存（Kimi auto_approve_actions 同款）──
+// 用户选「Allow this session」的 action 记入缓存，本次进程内同 action 自动放行不再弹
+export interface ApprovalCache {
+  key(tool: string, args: Record<string, any>): string;
+  has(tool: string, args: Record<string, any>): boolean;
+  grant(tool: string, args: Record<string, any>): void;
+}
+export function createApprovalCache(): ApprovalCache {
+  const granted = new Set<string>();
+  return {
+    key: (tool, args) =>
+      tool === 'bash'
+        ? `bash:${String(args?.command ?? '').trim()}`
+        : `${tool}:${String(args?.path ?? JSON.stringify(args ?? {}))}`,
+    has: (tool, args) => granted.has(tool === 'bash' ? `bash:${String(args?.command ?? '').trim()}` : `${tool}:${String(args?.path ?? JSON.stringify(args ?? {}))}`),
+    grant: (tool, args) => { granted.add(tool === 'bash' ? `bash:${String(args?.command ?? '').trim()}` : `${tool}:${String(args?.path ?? JSON.stringify(args ?? {}))}`); },
+  };
+}
+
 export function modeVerdict(mode: Mode, tool: string, args: Record<string, any>, toolDanger?: boolean): Verdict {
   // 1. 硬红线：任何模式不可绕过
   const red = hitRedline(tool, args);
@@ -50,8 +114,12 @@ export function modeVerdict(mode: Mode, tool: string, args: Record<string, any>,
     const path = String(args?.path ?? '');
     if (SENSITIVE_WRITE.test(path)) return 'reject';
   }
+  // 3. bash 只读命令分级：只读（pwd/ls/cat/git status…）smart/auto/plan 直接放行（manual 仍确认）
+  if (tool === 'bash' && classifyBashCommand(String(args?.command ?? '')) === 'readonly') {
+    return mode === 'manual' ? 'confirm' : 'approve';
+  }
   const isDanger = toolDanger ?? !READONLY_TOOLS.has(tool);
-  // 3. 模式语义
+  // 4. 模式语义
   switch (mode) {
     case 'yolo': return 'approve';
     case 'plan': return READONLY_TOOLS.has(tool) ? 'approve' : 'plan'; // 修复：只读研究自由，非只读计划审批

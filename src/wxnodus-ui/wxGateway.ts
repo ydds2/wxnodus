@@ -11,6 +11,7 @@ import { join, resolve } from 'node:path'
 import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
 import { MODEL_CATALOG, encryptKey } from '../kernel/providers.js'
+import { classifyToolAction } from '../kernel/permissions.js'
 import { COMMAND_CAT, COMMAND_DESC, SLASH } from '../commands/registry.js'
 import type { GatewayEvent } from './gatewayTypes.js'
 import { ZERO } from './domain/usage.js'
@@ -43,7 +44,7 @@ export interface WxGatewayKernel {
 }
 
 interface PendingApproval {
-  resolve: (ok: boolean) => void
+  resolve: (choice: string) => void
 }
 
 export class GatewayClient extends EventEmitter {
@@ -566,7 +567,7 @@ export class GatewayClient extends EventEmitter {
     const choice = String(params.choice ?? 'deny')
 
     if (this.pendingApproval) {
-      this.pendingApproval.resolve(choice !== 'deny')
+      this.pendingApproval.resolve(choice)
       this.pendingApproval = null
     }
 
@@ -577,7 +578,7 @@ export class GatewayClient extends EventEmitter {
     const answer = String(params.answer ?? '')
 
     if (this.pendingApproval) {
-      this.pendingApproval.resolve(answer !== '')
+      this.pendingApproval.resolve(answer !== '' ? 'allow' : 'deny')
       this.pendingApproval = null
     }
 
@@ -744,15 +745,21 @@ export class GatewayClient extends EventEmitter {
   }
 
   // ── 审批桥：agent 工具确认 → approval.request 事件 → approval.respond RPC ──
-  requestApproval(name: string, args: Record<string, any>): Promise<boolean> {
+  // 返回用户选择：'allow'（一次）/ 'session'（本会话）/ 'deny'（拒绝）——Kimi auto_approve_actions 同款
+  requestApproval(name: string, args: Record<string, any>): Promise<'allow' | 'session' | 'deny'> {
     return new Promise((resolve) => {
-      this.pendingApproval = { resolve }
+      this.pendingApproval = { resolve: (choice: string) => resolve(choice === 'deny' ? 'deny' : choice === 'session' ? 'session' : 'allow') }
+      const cls = classifyToolAction(name, args)
       this.publish({
         type: 'approval.request',
         payload: {
           command: name,
-          description: args?.question ? String(args.question) : JSON.stringify(args ?? {}).slice(0, 300),
+          // bash 直接显示命令原文（而非 JSON 包裹）；其他工具显示参数 JSON
+          description: args?.question ? String(args.question) : name === 'bash' ? String(args?.command ?? '') : JSON.stringify(args ?? {}).slice(0, 300),
           allow_permanent: false,
+          tool: name,
+          category: cls.label,
+          icon: cls.icon,
         },
       })
     })
