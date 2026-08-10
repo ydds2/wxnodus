@@ -10,6 +10,8 @@ export interface ToolCtx {
   cwd: string;
   dataDir: string;
   ask?: (q: string, opts?: { danger?: boolean }) => Promise<boolean>;
+  /** 派生子代理（只读工具集，独立上下文）——delegate 工具真实执行入口 */
+  spawnSubagent?: (goal: string) => Promise<{ ok: boolean; output: string; turns: number }>;
 }
 
 export interface ToolDef {
@@ -116,9 +118,18 @@ export function coreTools(): Record<string, ToolDef> {
     async run() { return 'scaffold_build 由 build 模块接管（L3-1）'; },
   };
   const delegate: ToolDef = {
-    schema: { type: 'function', function: { name: 'delegate', description: '派生子代理执行独立任务', parameters: { type: 'object', properties: { goal: { type: 'string' } }, required: ['goal'] } } },
+    schema: { type: 'function', function: { name: 'delegate', description: '派生子代理执行独立任务（只读工具集，结果返回）', parameters: { type: 'object', properties: { goal: { type: 'string', description: '子代理目标（独立上下文，只读工具）' } }, required: ['goal'] } } },
     danger: true,
-    async run() { return 'delegate 由 agent 层接管（L2-4）'; },
+    async run({ goal }, ctx) {
+      if (!ctx.spawnSubagent) return 'delegate 不可用：当前环境未提供子代理能力';
+      try {
+        const r = await ctx.spawnSubagent(String(goal ?? '').trim() || '（空任务）');
+        const head = r.ok ? '子代理完成' : '子代理未完成';
+        return `${head}（${r.turns} 轮）：\n${r.output.slice(0, 4000)}`;
+      } catch (e: any) {
+        return `子代理执行异常：${e?.message?.slice(0, 300) ?? e}`;
+      }
+    },
   };
   const askUser: ToolDef = {
     schema: { type: 'function', function: { name: 'ask_user', description: '向用户提问', parameters: { type: 'object', properties: { question: { type: 'string' } }, required: ['question'] } } },

@@ -43,6 +43,40 @@ export function extractFrames(path: string, outDir: string, opts: { intervalSec?
   } catch { return []; }
 }
 
+// 场景切换检测（纯本地确定性）：ffmpeg select scene 滤镜 → 切换时间点列表
+// 无 key 降级路径的真实数据来源（不做「帧分析失败」假输出）
+export function detectScenes(path: string, threshold = 0.05): number[] {
+  try {
+    const r = spawnSync('ffmpeg', ['-i', path, '-vf', `select='gt(scene,${threshold})',showinfo`, '-f', 'null', '-'], { stdio: 'pipe', timeout: 120000, encoding: 'utf8' });
+    const stderr = String(r.stderr ?? '');
+    const times: number[] = [];
+    for (const m of stderr.matchAll(/pts_time:([0-9.]+)/g)) {
+      const t = parseFloat(m[1]!);
+      if (Number.isFinite(t) && !times.includes(t)) times.push(t);
+    }
+    return times.sort((a, b) => a - b);
+  } catch { return []; }
+}
+
+// 无 key 降级：场景时间线 + 帧统计（真实确定性数据）
+export function localSceneTimeline(path: string): string {
+  const dur = videoDuration(path);
+  const scenes = detectScenes(path);
+  const bounds = [0, ...scenes, dur ?? scenes.at(-1) ?? 0];
+  const segs: string[] = [];
+  for (let i = 0; i < bounds.length - 1; i++) {
+    const start = bounds[i]!, end = bounds[i + 1]!;
+    if (end - start < 0.1) continue;
+    segs.push(` 场景${i + 1} [${start.toFixed(1)}s - ${end.toFixed(1)}s]（${(end - start).toFixed(1)}s）`);
+  }
+  return [
+    `本地场景分析（无 GLM key，确定性 ffmpeg 场景检测）——时长 ${dur !== null ? dur.toFixed(1) + 's' : '未知'}，场景切换点 ${scenes.length ? scenes.map(s => s.toFixed(1) + 's').join(' / ') : '无'}：`,
+    ...segs,
+    '',
+    '配置有效 GLM key（/key set <密钥>）后重跑可升级为逐帧语义描述 + 项目级综合报告。',
+  ].join('\n');
+}
+
 // 文本相似度（字符二元组重叠率）——用于场景变化检测
 export function textSimilarity(a: string, b: string): number {
   const norm = (s: string) => [...s.replace(/\s+/g, '')];
@@ -126,8 +160,9 @@ export async function synthesizeProjectReport(notes: FrameNote[], scenes: Array<
 
 // 完整项目级分析入口（/video 调用）
 export async function analyzeVideoAsProject(target: string, apiKeyEnc: string | null, opts?: { intervalSec?: number; maxFrames?: number }): Promise<string> {
-  if (!apiKeyEnc) return '视频项目级分析需要 GLM key（/key set <key> 配置后使用）';
   if (!hasFfmpeg()) return '未检测到 ffmpeg——请先安装（winget install ffmpeg 或 choco install ffmpeg）后重试';
+  // 无 key：本地确定性场景分析（真实数据，不做「帧分析失败」假输出）
+  if (!apiKeyEnc) return localSceneTimeline(target);
   const dur = videoDuration(target);
   const outDir = join(tmpdir(), `wxnodus-frames-${Date.now().toString(36)}`);
   const frames = extractFrames(target, outDir, opts ?? { intervalSec: 1, maxFrames: 24 });
@@ -136,7 +171,21 @@ export async function analyzeVideoAsProject(target: string, apiKeyEnc: string | 
     return '帧提取失败（文件不是视频、ffmpeg 解码出错或路径无效）';
   }
   // 逐帧描述
+  // 预检：先分析前 2 帧——key 无效/模型不可用时立即降级本地场景分析，
+  // 避免 24 次无效调用空转（实测无效 key 每次 401 约 0.3s）
+  const { describeImage } = await import('./vision.js');
+  const probe: Array<string | null> = [];
+  for (const f of frames.slice(0, 2)) probe.push(await describeImage(f, apiKeyEnc));
+  if (probe.every(p => !p)) {
+    rmSync(outDir, { recursive: true, force: true });
+    return localSceneTimeline(target);
+  }
   const notes = await describeFrames(frames, dur, apiKeyEnc);
+  // 全部帧描述失败（key 无效/模型不可用）→ 同样降级为本地场景分析
+  if (notes.every(n => n.desc.includes('帧分析失败'))) {
+    rmSync(outDir, { recursive: true, force: true });
+    return localSceneTimeline(target);
+  }
   // 场景分段
   const scenes = segmentScenes(notes);
   // 项目级综合报告

@@ -100,6 +100,7 @@ async function main() {
   };
   const makeHandlerCtx = () => ({
     dataDir, cwd, db, mem, config, bus,
+    agent,
     getModel: () => model,
     getMode: () => mode,
     setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },

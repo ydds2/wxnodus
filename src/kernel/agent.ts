@@ -114,7 +114,18 @@ export function createAgent(opts: AgentOptions) {
   };
   const callModel = opts.callModel ?? defaultCallModel;
 
-  const toolCtx: ToolCtx = { cwd: process.cwd(), dataDir: join(process.cwd(), 'data'), ask: async (q) => (opts.onApproval ? opts.onApproval('ask_user', { question: q }) : false) };
+  // 子代理：独立只读上下文（spawnSubagent 与 delegate 工具共用）
+  const spawnSub = async (goal: string): Promise<{ ok: boolean; output: string; turns: number }> => {
+    const r = await loop(sessionId + ':sub', goal, { subagent: true });
+    return { ok: r.ok, output: r.text, turns: r.turns };
+  };
+
+  const toolCtx: ToolCtx = {
+    cwd: process.cwd(),
+    dataDir: join(process.cwd(), 'data'),
+    ask: async (q) => (opts.onApproval ? opts.onApproval('ask_user', { question: q }) : false),
+    spawnSubagent: spawnSub,
+  };
 
   const onApproval = opts.onApproval ?? (async () => true);
 
@@ -154,6 +165,10 @@ export function createAgent(opts: AgentOptions) {
     interrupted = false;
     // 每轮重建 abort 信号（见 makeAbortSignal 注释）
     abortSignal = makeAbortSignal();
+    // 子代理生命周期事件（UI agentsOverlay / spawnHistoryStore 消费）
+    if (opts2.subagent) {
+      bus.emit('agent.subagent', { goal: prompt, phase: 'start', session_id: sessionId });
+    }
     const callWithAbort = (req: { messages: Array<{ role: string; content: string }>; tools?: unknown[] }) =>
       Promise.race([
         callModel(req),
@@ -246,6 +261,9 @@ export function createAgent(opts: AgentOptions) {
     } finally {
       // Stop hook：无论正常结束/中断/提前 return 都触发（不改 agent.end 总线语义）
       hooks?.stop({ ok: finalText.length > 0, turns });
+      if (opts2.subagent) {
+        bus.emit('agent.subagent', { goal: prompt, phase: 'complete', ok: finalText.length > 0, turns, session_id: sessionId });
+      }
     }
   }
 
@@ -253,10 +271,7 @@ export function createAgent(opts: AgentOptions) {
     async run(prompt: string): Promise<AgentResult> {
       return loop(sessionId, prompt);
     },
-    async spawnSubagent(goal: string): Promise<{ ok: boolean; output: string; turns: number }> {
-      const r = await loop(sessionId + ':sub', goal, { subagent: true });
-      return { ok: r.ok, output: r.text, turns: r.turns };
-    },
+    spawnSubagent: spawnSub,
     abort() { aborted = true; abortSignal.resolve(); },
     setMode(m: Mode) { mode = m; },
     getMode(): Mode { return mode; },

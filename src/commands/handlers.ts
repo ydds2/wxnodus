@@ -25,6 +25,8 @@ export interface HandlerCtx {
   mem: Memory;
   config: Config;
   bus: EventBus;
+  /** agent 实例（/delegate 派生子代理等） */
+  agent?: { run(prompt: string): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>; spawnSubagent(goal: string): Promise<{ ok: boolean; output: string; turns: number }>; abort(): void; setMode(m: string): void; getMode(): string; setSessionId(id: string): void };
   getModel: () => string;
   getMode: () => string;
   setMode: (m: string) => void;

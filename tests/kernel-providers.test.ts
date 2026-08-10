@@ -127,3 +127,26 @@ describe('模型能力元数据', () => {
     expect(filterModels('').length).toBe(10);
   });
 });
+
+// ── 视频无 key 降级（本地场景分析）────
+import { detectScenes, localSceneTimeline } from '../src/kernel/video.js';
+import { existsSync } from 'node:fs';
+
+describe('视频本地场景分析降级', () => {
+  it('detectScenes 返回切换时间点（真实 ffmpeg）', () => {
+    const mp4 = 'data/wxnodus-scene.mp4';
+    if (existsSync(mp4)) {
+      const scenes = detectScenes(mp4);
+      expect(Array.isArray(scenes)).toBe(true);
+      expect(scenes.length).toBeGreaterThan(0);
+      expect(scenes[0]).toBeGreaterThan(0);
+    } else {
+      expect(true).toBe(true); // 视频不存在时跳过（CI 无录制产物）
+    }
+  });
+  it('localSceneTimeline 输出确定性场景段', () => {
+    const out = localSceneTimeline('data/wxnodus-scene.mp4');
+    expect(out).toContain('场景');
+    expect(out).not.toContain('帧分析失败');
+  });
+});

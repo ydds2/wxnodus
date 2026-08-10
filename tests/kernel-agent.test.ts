@@ -172,3 +172,37 @@ describe('子代理', () => {
     expect(r.output.length).toBeGreaterThan(0);
   });
 });
+
+// ── 子代理（delegate 真实执行）────
+describe('子代理派发', () => {
+  it('delegate 工具真实调用 spawnSubagent 并返回结果', async () => {
+    const events: string[] = [];
+    bus.on('agent.subagent', (e: any) => events.push(`${e.payload?.phase}:${e.payload?.ok ?? ''}`));
+    // 主 agent 第一轮返回 delegate 工具调用，第二轮返回文本；子代理独立 loop 返回文本
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-delegate',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      callModel: async (req) => {
+        const last = req.messages[req.messages.length - 1]!.content;
+        if (last.includes('主任务')) return { type: 'tool_call', name: 'delegate', args: { goal: '子任务：计算答案' } };
+        return { type: 'text', content: '子代理回复：完成' };
+      },
+    });
+    const r = await agent.run('主任务');
+    expect(r.text).toContain('子代理回复');
+    expect(events).toContain('start:');
+    expect(events).toContain('complete:true');
+  });
+  it('/delegate 命令真实执行子代理（有 ctx.agent）', async () => {
+    // 通过 createAgent + 直接调 spawnSubagent 验证命令依赖的接口
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-sub',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      callModel: async () => ({ type: 'text', content: '研究结果' }),
+    });
+    const r = await agent.spawnSubagent('研究 X');
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('研究结果');
+    expect(r.turns).toBeGreaterThan(0);
+  });
+});

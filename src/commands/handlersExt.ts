@@ -535,10 +535,23 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/jobs', () => '任务队列：当前无后台任务（/build 编译任务同步执行）');
 
-  bus.register('/delegate', (args) => {
+  // /delegate：真实派发子代理（只读工具集、独立上下文），结果回显
+  bus.register('/delegate', async (args) => {
     const task = args.join(' ');
-    if (!task) return '用法：/delegate <任务>（派发给子代理，只读工具集）';
-    return `已派发任务：「${task.slice(0, 50)}」（子代理运行中…结果将回到会话）`;
+    if (!task) return '用法：/delegate <任务>（派发只读子代理，结果返回当前会话）';
+    if (!ctx.agent) return 'delegate 不可用：当前环境未提供子代理能力';
+    ctx.bus.emit('system.notice', { text: `派发子代理：「${task.slice(0, 60)}」…` });
+    try {
+      const r = await ctx.agent.spawnSubagent(task);
+      return lines(` 子代理结果 `, [
+        ` 任务：${task.slice(0, 80)}`,
+        ` 状态：${r.ok ? '完成' : '未完成'}（${r.turns} 轮）`,
+        '',
+        ...String(r.output ?? '').split('\n').slice(0, 30).map(l => ` ${l.slice(0, 110)}`),
+      ]);
+    } catch (e: any) {
+      return `子代理执行异常：${e?.message?.slice(0, 300) ?? e}`;
+    }
   });
 
   bus.register('/goal', (args) => {

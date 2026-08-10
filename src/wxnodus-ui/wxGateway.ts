@@ -133,6 +133,13 @@ export class GatewayClient extends EventEmitter {
         this.running = false
         this.publish({ type: 'error', payload: { message: String(p?.message ?? 'agent error') } })
       },
+      'agent.subagent': (p) => {
+        const phase = p?.phase === 'start' ? 'start' : 'complete'
+        this.publish({
+          type: phase === 'start' ? 'subagent.start' : 'subagent.complete',
+          payload: { subagent_id: `sub-${Date.now().toString(36)}`, goal: String(p?.goal ?? ''), status: p?.ok ? 'completed' : 'error', task_index: 0 },
+        })
+      },
       'agent.end': (p) => {
         this.running = false
         this.publish({ type: 'message.complete', payload: { text: this.finalText } })
