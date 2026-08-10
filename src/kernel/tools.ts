@@ -128,7 +128,16 @@ export function coreTools(): Record<string, ToolDef> {
       return ok ? `用户已确认：${question}` : '用户未确认';
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, http_get: httpGet, memory_write: memoryWrite, scaffold_build: scaffoldBuild, delegate, ask_user: askUser };
+  const skillLoad: ToolDef = {
+    schema: { type: 'function', function: { name: 'skill_load', description: '加载本地技能（SKILL.md 工作流）辅助完成任务', parameters: { type: 'object', properties: { name: { type: 'string', description: '技能名（/skill list 查看）' } }, required: ['name'] } } },
+    danger: false,
+    async run({ name }, ctx) {
+      const { skillContentForModel } = await import('./skills.js');
+      const content = skillContentForModel(ctx.dataDir, ctx.cwd, String(name ?? ''));
+      return content || `未找到技能「${name}」——/skill list 查看已安装技能`;
+    },
+  };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, http_get: httpGet, memory_write: memoryWrite, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, skill_load: skillLoad };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

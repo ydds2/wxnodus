@@ -176,6 +176,20 @@ export function restoreCheckpoint<T = unknown>(db: Db, sessionId: string): T | n
   return row ? JSON.parse(row.data) as T : null;
 }
 
+// 会话 fork：复制会话（含全部消息）到新会话——分支会话不回写源
+export function forkSession(db: Db, srcId: string, newId: string, titleSuffix = ' (fork)'): number {
+  const src = db.prepare(`SELECT title, created_at FROM sessions WHERE id=?`).get(srcId) as { title: string; created_at: number } | undefined;
+  if (!src) return 0;
+  const now = Date.now();
+  db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`)
+    .run(newId, `${src.title || srcId}${titleSuffix}`, now, now);
+  db.prepare(`
+    INSERT INTO messages (session_id, role, content, tool_call_id, archived, ts)
+    SELECT ?, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=?
+  `).run(newId, srcId);
+  return Number((db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(newId) as { c: number }).c);
+}
+
 // 全文搜索（FTS5）：查询词经 bigram 转换后 OR 展开，命中返回消息行
 export function searchMessages(db: Db, query: string, opts: { limit?: number; sessionId?: string } = {}): Array<{ id: number; session_id: string; role: string; content: string; ts: number }> {
   const limit = opts.limit ?? 10;

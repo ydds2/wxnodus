@@ -37,6 +37,58 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
 
     const runCtx: SlashRunCtx = { ...ctx, flight, guarded, guardedErr, sid, stale, ui }
 
+    // 统一处理 slash.exec / command.dispatch 的结构化响应
+    const handleDispatch = (d: NonNullable<ReturnType<typeof asCommandDispatch>>): void => {
+      if (d.type === 'exec' || d.type === 'plugin') {
+        sys(d.output || '(no output)')
+
+        return
+      }
+
+      if (d.type === 'alias') {
+        handler(`/${d.target}${argTail}`)
+
+        return
+      }
+
+      if (d.type === 'skill') {
+        sys(`⚡ loading skill: ${d.name}`)
+
+        if (d.message?.trim()) {
+          send(d.message)
+        } else {
+          sys(`/${parsed.name}: skill payload missing message`)
+        }
+
+        return
+      }
+
+      if (d.type === 'send') {
+        if (d.notice?.trim()) {
+          sys(d.notice)
+        }
+        if (d.message?.trim()) {
+          send(d.message)
+        } else {
+          sys(`/${parsed.name}: empty message`)
+        }
+
+        return
+      }
+
+      if (d.type === 'prefill') {
+        // /undo returns prefill: drop the backed-up message text into
+        // the composer so the user can edit and resubmit, instead of
+        // submitting it immediately like 'send'.
+        if (d.notice?.trim()) {
+          sys(d.notice)
+        }
+        if (d.message) {
+          ctx.composer.setInput(d.message)
+        }
+      }
+    }
+
     const found = findSlashCommand(parsed.name)
 
     if (found) {
@@ -80,6 +132,13 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
           return
         }
 
+        // 结构化响应（/skill:name 技能注入等）：走统一 dispatch 处理
+        const d = asCommandDispatch(r)
+
+        if (d) {
+          return handleDispatch(d)
+        }
+
         const body = r?.output || `/${parsed.name}: no output`
         const text = r?.warning ? `warning: ${r.warning}\n${body}` : body
         const long = text.length > 180 || text.split('\n').filter(Boolean).length > 2
@@ -99,39 +158,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
               return sys('error: invalid response: command.dispatch')
             }
 
-            if (d.type === 'exec' || d.type === 'plugin') {
-              return sys(d.output || '(no output)')
-            }
-
-            if (d.type === 'alias') {
-              return handler(`/${d.target}${argTail}`)
-            }
-
-            if (d.type === 'skill') {
-              sys(`⚡ loading skill: ${d.name}`)
-
-              return d.message?.trim() ? send(d.message) : sys(`/${parsed.name}: skill payload missing message`)
-            }
-
-            if (d.type === 'send') {
-              if (d.notice?.trim()) {
-                sys(d.notice)
-              }
-              return d.message?.trim() ? send(d.message) : sys(`/${parsed.name}: empty message`)
-            }
-
-            if (d.type === 'prefill') {
-              // /undo returns prefill: drop the backed-up message text into
-              // the composer so the user can edit and resubmit, instead of
-              // submitting it immediately like 'send'.
-              if (d.notice?.trim()) {
-                sys(d.notice)
-              }
-              if (d.message) {
-                ctx.composer.setInput(d.message)
-              }
-              return
-            }
+            handleDispatch(d)
           })
           .catch(guardedErr)
       })

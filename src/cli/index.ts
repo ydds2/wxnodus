@@ -21,6 +21,8 @@ if (!process.env.WXNODUS_NO_DEBUG) {
 const program = new Command();
 program.name('wxnodus').version(VERSION).description('WxNodus V3 — 本地概念编译器 CLI');
 program.option('-p, --prompt <text>', '非交互单次执行');
+program.option('--json', '-p 模式下 agent 结果输出 JSON（{ok,text,turns,interrupted}）');
+program.option('--wire', '-p 模式下输出总线事件流（JSONL：agent.start/token/message/tool/end/error）');
 program.parse(process.argv);
 const opts = program.opts();
 
@@ -30,13 +32,14 @@ async function main() {
   const dataDir = join(cwd, 'data');
   mkdirSync(dataDir, { recursive: true });
 
-  const [{ createConfig }, { openDB }, { createEventBus }, { createMemory }, { createAgent }, { createCommandBus }, { GatewayClient }] = await Promise.all([
+  const [{ createConfig }, { openDB }, { createEventBus }, { createMemory }, { createAgent }, { createCommandBus }, { createHookRunner }, { GatewayClient }] = await Promise.all([
     import('../store/config.js'),
     import('../store/db.js'),
     import('../kernel/events.js'),
     import('../kernel/memory.js'),
     import('../kernel/agent.js'),
     import('../app/CommandBus.js'),
+    import('../kernel/hooks.js'),
     import('../wxnodus-ui/wxGateway.js'),
   ]);
 
@@ -63,10 +66,17 @@ async function main() {
 
   // 审批桥：agent 工具确认 → GatewayClient.requestApproval（审批 overlay）
   let gateway: any = null;
+  // Hooks：settings.hooks 热生效（每次触发读当前配置），本地命令执行
+  const hookRunner = createHookRunner(() => config.get('settings') as Record<string, any>, bus);
+  // MCP 客户端（本地 stdio）：data/mcp.json 配置的 server 动态并入工具表
+  const { connectAllMcp, mcpClientsToTools, closeAllMcp } = await import('../kernel/mcp.js');
+  const mcpClients = await connectAllMcp(dataDir);
   const agent = createAgent({
     db, bus, mem, sessionId: 'default', config: { settings },
     mode: (config.get('settings') as any).mode ?? 'smart',
     onApproval: async (name, args) => gateway ? gateway.requestApproval(name, args) : false,
+    hooks: hookRunner,
+    extraTools: mcpClientsToTools(mcpClients),
   });
 
   // 模式/主题状态
@@ -108,16 +118,35 @@ async function main() {
   // 非交互模式
   if (opts.prompt) {
     const text = String(opts.prompt);
+    // --wire：订阅总线输出 JSONL 事件流（协议化接口，供外部工具/CI 消费）
+    if (opts.wire) {
+      const WIRE_EVENTS = new Set(['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'system.notice']);
+      const offs: Array<() => void> = [];
+      for (const type of WIRE_EVENTS) {
+        offs.push(bus.on(type, (e: any) => {
+          const line = { type, ...(e?.payload ?? {}) };
+          console.log(JSON.stringify(line));
+        }));
+      }
+      const result = await agent.run(text);
+      console.log(JSON.stringify({ type: 'agent.result', ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted }));
+      for (const off of offs) off();
+      process.exit(0);
+    }
     const { routeInput } = await import('../commands/intent.js');
     const routed = await routeInput(text);
     if (routed.kind === 'command' && routed.cmd) {
       const r = await commandBus.execute(routed.cmd + (routed.value ? ' ' + routed.value : ''));
-      console.log(r.output ?? r.error ?? '');
+      console.log(r.output || r.dispatch?.message || r.error || '');
     } else if (routed.kind === 'tool' && routed.value) {
       console.log(routed.value);
     } else {
       const result = await agent.run(text);
-      console.log(result.text);
+      if (opts.json) {
+        console.log(JSON.stringify({ ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted }));
+      } else {
+        console.log(result.text);
+      }
     }
     process.exit(0);
   }

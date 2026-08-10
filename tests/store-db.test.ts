@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDB, closeDB, appendAudit, saveCheckpoint, restoreCheckpoint, searchMessages, bigramZh, auditHash } from '../src/store/db.js';
+import { openDB, closeDB, appendAudit, saveCheckpoint, restoreCheckpoint, searchMessages, bigramZh, auditHash, forkSession } from '../src/store/db.js';
 
 let dir: string;
 let db: ReturnType<typeof openDB>;
@@ -149,5 +149,23 @@ describe('旧版库迁移（用户在任意目录运行的兼容性）', () => {
     expect(readdirSync(d2).some(f => f.startsWith('nodus-legacy-'))).toBe(true);
     closeDB(ndb);
     rmSync(d2, { recursive: true, force: true });
+  });
+});
+
+// ── 会话 fork（M4）────
+describe('forkSession 会话分支', () => {
+  it('复制会话与全部消息', () => {
+    db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES ('f-src', '源会话', 1, 1)`).run();
+    db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES ('f-src', 'user', '你好', 1)`).run();
+    db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES ('f-src', 'assistant', '回复', 2)`).run();
+    const n = forkSession(db, 'f-src', 'f-dst');
+    expect(n).toBe(2);
+    const rows = db.prepare(`SELECT role, content FROM messages WHERE session_id='f-dst' ORDER BY id`).all() as any[];
+    expect(rows.map(r => r.content)).toEqual(['你好', '回复']);
+    const title = db.prepare(`SELECT title FROM sessions WHERE id='f-dst'`).get() as { title: string };
+    expect(title.title).toContain('(fork)');
+  });
+  it('源会话不存在返回 0', () => {
+    expect(forkSession(db, 'nope', 'f-x')).toBe(0);
   });
 });

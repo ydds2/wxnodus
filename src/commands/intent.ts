@@ -31,12 +31,22 @@ export function routeNaturalLanguage(text: string): string | null {
 // 完整输入路由：别名 → 确定性 → NL → null（null 走 AI 意图/对话）
 export async function routeInput(text: string): Promise<{ kind: 'command' | 'tool' | 'chat'; cmd?: string; value?: string }> {
   const trimmed = text.trim();
-  // ① 斜杠命令（别名 + 补全）
+  // ① 斜杠命令（别名 + 补全 + `/skill:名` 冒号参数语法）
   if (isSlash(trimmed)) {
     const [head, ...rest] = trimmed.split(/\s+/);
-    const cmd = resolveAlias(head);
+    let cmd = resolveAlias(head);
+    let argTail = rest.join(' ');
+    if (!SLASH.includes(cmd) && head.includes(':')) {
+      const [c, ...a] = head.split(':');
+      const canon = resolveAlias(c);
+      if (SLASH.includes(canon)) {
+        cmd = canon;
+        const joined = a.join(':');
+        argTail = joined ? joined + (argTail ? ' ' + argTail : '') : argTail;
+      }
+    }
     const full = completeCommand(cmd) ?? cmd;
-    if (SLASH.includes(full)) return { kind: 'command', cmd: full, value: rest.join(' ') };
+    if (SLASH.includes(full)) return { kind: 'command', cmd: full, value: argTail };
     return { kind: 'chat', value: text };
   }
   // ② 确定性工具直调（毫秒级）

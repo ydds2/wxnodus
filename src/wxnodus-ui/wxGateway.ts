@@ -165,6 +165,8 @@ export class GatewayClient extends EventEmitter {
       case 'session.activate': return this.sessionActivate(params) as T
       case 'session.resume': return this.sessionResume(params) as T
       case 'session.close': return this.sessionClose(params) as T
+      case 'session.undo': return this.sessionUndo(params) as T
+      case 'session.fork': return this.sessionFork(params) as T
       case 'session.active_list': return this.sessionActiveList(params) as T
       case 'session.most_recent': return this.sessionMostRecent() as T
       case 'session.title': return this.sessionTitle(params) as T
@@ -189,6 +191,8 @@ export class GatewayClient extends EventEmitter {
       case 'model.disconnect': return this.modelDisconnect(params) as T
       case 'delegation.status': return { active: [], max_concurrent_children: 4, max_spawn_depth: 3, paused: false } as T
       case 'spawn_tree.save': return {} as T
+      case 'skills.manage': return this.skillsManage(params) as T
+      case 'skills.reload': return { output: '技能缓存已清空（发现目录即时扫描）' } as T
       case 'reload.mcp': return {} as T
       case 'voice.toggle': return { enabled: false } as T
       case 'voice.record': return { ok: false, message: '语音不可用' } as T
@@ -207,7 +211,54 @@ export class GatewayClient extends EventEmitter {
     const input = `/${name}${arg ? ` ${arg}` : ''}`
     const r = await this.kernel.commandBus.execute(input)
 
+    if (r.dispatch) {
+      return { type: 'skill', name: r.dispatch.name, message: r.dispatch.message }
+    }
     return { type: 'exec', output: r.output ?? r.error ?? '' }
+  }
+
+  private async skillsManage(params: Record<string, unknown>): Promise<unknown> {
+    const { discoverSkills, loadSkill, installSkill } = await import('../kernel/skills.js')
+    const action = String(params.action ?? 'list')
+    const arg = String(params.arg ?? '')
+    const name = String(params.name ?? '')
+    const all = discoverSkills(this.kernel.dataDir, this.kernel.cwd)
+
+    switch (action) {
+      case 'list': {
+        const cats: Record<string, string[]> = {}
+        for (const s of all) {
+          const cat = s.source === 'project' ? '项目' : s.source === 'forge' ? '锻造' : '用户'
+          ;(cats[cat] ??= []).push(s.name)
+        }
+        return { skills: cats }
+      }
+      case 'inspect': {
+        const s = loadSkill(this.kernel.dataDir, this.kernel.cwd, name || arg)
+        if (!s) return { info: undefined }
+        return { info: { name: s.meta.name, category: s.meta.source, description: s.meta.description, path: s.meta.path } }
+      }
+      case 'search': {
+        const q = arg.toLowerCase()
+        const results = all.filter(s => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
+          .map(s => ({ name: s.name, description: s.description }))
+        return { results }
+      }
+      case 'install': {
+        try {
+          const dir = installSkill(this.kernel.dataDir, name || arg)
+          return { installed: true, name: dir.split(/[\\/]/).pop() }
+        } catch (e: any) {
+          return { installed: false, name: String(e?.message ?? e) }
+        }
+      }
+      case 'browse': {
+        const items = all.map(s => ({ name: s.name, description: s.description, source: s.source }))
+        return { items, page: 1, total: items.length, total_pages: 1 }
+      }
+      default:
+        return { skills: {} }
+    }
   }
 
   private async promptSubmit(params: Record<string, unknown>): Promise<unknown> {
@@ -233,6 +284,9 @@ export class GatewayClient extends EventEmitter {
     const command = String(params.command ?? '').trim()
     const r = await this.kernel.commandBus.execute(`/${command}`)
 
+    if (r.dispatch) {
+      return { type: 'skill', name: r.dispatch.name, message: r.dispatch.message }
+    }
     return { output: r.output ?? '', warning: r.error }
   }
 
@@ -290,6 +344,46 @@ export class GatewayClient extends EventEmitter {
     }
 
     return { ok: true }
+  }
+
+  // session.undo：删除当前会话最后一条非 system 消息（真实实现，复活 UI 撤销/重试）
+  private async sessionUndo(params: Record<string, unknown>): Promise<unknown> {
+    const id = String(params.session_id ?? this.currentSessionId)
+    const last = this.kernel.db.prepare(`SELECT id FROM messages WHERE session_id=? AND role!='system' ORDER BY id DESC LIMIT 1`).get(id) as { id: number } | undefined
+
+    if (!last) {
+      return { ok: false, message: '没有可撤销的消息' }
+    }
+
+    this.kernel.db.prepare(`DELETE FROM messages WHERE id=?`).run(last.id)
+    this.publish({ type: 'status.update', payload: { kind: 'done', text: 'ready' } })
+
+    return { ok: true, deleted_id: last.id }
+  }
+
+  // session.fork：复制会话（含全部消息）为分支并激活
+  private async sessionFork(params: Record<string, unknown>): Promise<unknown> {
+    const id = String(params.session_id ?? this.currentSessionId)
+    const newId = `s${Date.now()}f${++this.sessionSeq}`
+    const src = this.kernel.db.prepare(`SELECT title FROM sessions WHERE id=?`).get(id) as { title: string } | undefined
+
+    if (!src) {
+      return { ok: false, message: `会话不存在：${id}` }
+    }
+
+    const now = Date.now()
+    this.kernel.db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`)
+      .run(newId, `${src.title || id} (fork)`, now, now)
+    this.kernel.db.prepare(`
+      INSERT INTO messages (session_id, role, content, tool_call_id, archived, ts)
+      SELECT ?, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=?
+    `).run(newId, id)
+
+    this.currentSessionId = newId
+    this.kernel.agent.setSessionId(newId)
+    this.publish({ type: 'session.info', payload: this.buildInfo() })
+
+    return { ok: true, session_id: newId, info: this.buildInfo() }
   }
 
   private async sessionActiveList(params: Record<string, unknown>): Promise<unknown> {

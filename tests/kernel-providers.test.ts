@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { encryptKey, decryptKey } from '../src/kernel/providers.js';
 import { ruleBrain, routeByKeywords, mapHttpError, buildChatRequest } from '../src/kernel/providers.js';
+import { MODEL_CATALOG, capabilityBadges, filterModels } from '../src/kernel/providers.js';
 
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -97,5 +98,32 @@ describe('video 逐帧分析', () => {
     const { analyzeVideo } = await import('../src/kernel/video.js');
     const r = await analyzeVideo('/no/such/video.mp4', 'enc1:aa:bb:cc');
     expect(r.length).toBeGreaterThan(0);
+  });
+});
+
+// ── 模型能力元数据（M1）────
+describe('模型能力元数据', () => {
+  it('GLM-4V Flash 标记视觉输入', () => {
+    const m = MODEL_CATALOG.find(x => x.modelId === 'glm-4v-flash');
+    expect(m?.capabilities?.imageIn).toBe(true);
+    expect(m?.capabilities?.thinking).toBeFalsy();
+  });
+  it('推理模型标记 thinking', () => {
+    for (const id of ['deepseek-reasoner', 'glm-4.5']) {
+      expect(MODEL_CATALOG.find(x => x.modelId === id)?.capabilities?.thinking).toBe(true);
+    }
+  });
+  it('K3-256k 标记 256k 上下文', () => {
+    expect(MODEL_CATALOG.find(x => x.modelId === 'kimi-k3-256k')?.capabilities?.maxContext).toBe(256_000);
+  });
+  it('能力徽标输出', () => {
+    expect(capabilityBadges({ imageIn: true, maxContext: 32_000 })).toContain('👁');
+    expect(capabilityBadges({ thinking: true })).toContain('🧠');
+    expect(capabilityBadges(undefined)).toBe('');
+  });
+  it('filterModels 模糊过滤接通（子串匹配）', () => {
+    expect(filterModels('glm').map(m => m.modelId)).toContain('glm-4v-flash');
+    expect(filterModels('k3').map(m => m.modelId)).toEqual(['kimi-k3', 'kimi-k3-256k']);
+    expect(filterModels('').length).toBe(10);
   });
 });

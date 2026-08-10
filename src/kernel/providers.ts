@@ -33,25 +33,42 @@ export function decryptKey(stored: string): string | null {
 }
 
 // ── 模型目录（/model 选择器与直接切换共用）────────────────
+export interface ModelCapabilities {
+  imageIn?: boolean;   // 支持图片输入（视觉）
+  thinking?: boolean;  // 支持推理链（reasoning）
+  maxContext?: number; // 上下文窗口（token）
+}
+
 export interface ModelEntry {
   name: string;      // 显示名（如 DeepSeek V4 Flash）
   provider: string;  // 提供商（deepseek / kimi / zhipu）
   modelId: string;   // API model 字段
   baseURL: string;   // OpenAI 兼容端点
+  capabilities?: ModelCapabilities; // 能力元数据（工具准入/UI 徽标）
 }
 
 export const MODEL_CATALOG: ModelEntry[] = [
-  { name: 'DeepSeek Reasoner', provider: 'deepseek', modelId: 'deepseek-reasoner', baseURL: 'https://api.deepseek.com/v1' },
-  { name: 'DeepSeek Chat', provider: 'deepseek', modelId: 'deepseek-chat', baseURL: 'https://api.deepseek.com/v1' },
-  { name: 'DeepSeek V4 Flash', provider: 'deepseek', modelId: 'deepseek-v4-flash', baseURL: 'https://api.deepseek.com/v1' },
-  { name: 'DeepSeek V4 Pro', provider: 'deepseek', modelId: 'deepseek-v4-pro', baseURL: 'https://api.deepseek.com/v1' },
-  { name: 'K2.7 Coding', provider: 'kimi', modelId: 'kimi-k2.7', baseURL: 'https://api.moonshot.cn/v1' },
-  { name: 'K2.7 Coding Highspeed', provider: 'kimi', modelId: 'kimi-k2.7-highspeed', baseURL: 'https://api.moonshot.cn/v1' },
-  { name: 'K3', provider: 'kimi', modelId: 'kimi-k3', baseURL: 'https://api.moonshot.cn/v1' },
-  { name: 'K3-256k', provider: 'kimi', modelId: 'kimi-k3-256k', baseURL: 'https://api.moonshot.cn/v1' },
-  { name: 'GLM-4.5', provider: 'zhipu', modelId: 'glm-4.5', baseURL: 'https://open.bigmodel.cn/api/paas/v4' },
-  { name: 'GLM-4V Flash', provider: 'zhipu', modelId: 'glm-4v-flash', baseURL: 'https://open.bigmodel.cn/api/paas/v4' },
+  { name: 'DeepSeek Reasoner', provider: 'deepseek', modelId: 'deepseek-reasoner', baseURL: 'https://api.deepseek.com/v1', capabilities: { thinking: true, maxContext: 64_000 } },
+  { name: 'DeepSeek Chat', provider: 'deepseek', modelId: 'deepseek-chat', baseURL: 'https://api.deepseek.com/v1', capabilities: { maxContext: 64_000 } },
+  { name: 'DeepSeek V4 Flash', provider: 'deepseek', modelId: 'deepseek-v4-flash', baseURL: 'https://api.deepseek.com/v1', capabilities: { maxContext: 64_000 } },
+  { name: 'DeepSeek V4 Pro', provider: 'deepseek', modelId: 'deepseek-v4-pro', baseURL: 'https://api.deepseek.com/v1', capabilities: { maxContext: 128_000 } },
+  { name: 'K2.7 Coding', provider: 'kimi', modelId: 'kimi-k2.7', baseURL: 'https://api.moonshot.cn/v1', capabilities: { maxContext: 128_000 } },
+  { name: 'K2.7 Coding Highspeed', provider: 'kimi', modelId: 'kimi-k2.7-highspeed', baseURL: 'https://api.moonshot.cn/v1', capabilities: { maxContext: 128_000 } },
+  { name: 'K3', provider: 'kimi', modelId: 'kimi-k3', baseURL: 'https://api.moonshot.cn/v1', capabilities: { maxContext: 128_000 } },
+  { name: 'K3-256k', provider: 'kimi', modelId: 'kimi-k3-256k', baseURL: 'https://api.moonshot.cn/v1', capabilities: { maxContext: 256_000 } },
+  { name: 'GLM-4.5', provider: 'zhipu', modelId: 'glm-4.5', baseURL: 'https://open.bigmodel.cn/api/paas/v4', capabilities: { thinking: true, maxContext: 128_000 } },
+  { name: 'GLM-4V Flash', provider: 'zhipu', modelId: 'glm-4v-flash', baseURL: 'https://open.bigmodel.cn/api/paas/v4', capabilities: { imageIn: true, maxContext: 32_000 } },
 ];
+
+// 能力徽标（/model 列表与 UI 显示）
+export function capabilityBadges(c: ModelCapabilities | undefined): string {
+  if (!c) return '';
+  const parts: string[] = [];
+  if (c.thinking) parts.push('🧠');
+  if (c.imageIn) parts.push('👁');
+  if (c.maxContext) parts.push(`${Math.round(c.maxContext / 1000)}k`);
+  return parts.join(' ');
+}
 
 // 模糊过滤模型（名称/提供商/ID 子串，不区分大小写）
 export function filterModels(q: string, catalog: ModelEntry[] = MODEL_CATALOG): ModelEntry[] {

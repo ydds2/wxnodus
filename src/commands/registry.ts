@@ -2,17 +2,17 @@
 // 设计：核心命令面（说人话主线）+ 分类符号 + 全量描述 + 别名表
 export const SLASH: string[] = [
   // 对话
-  '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/context',
+  '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/context', '/fork',
   // 模型
-  '/key', '/model', '/status', '/doctor', '/version', '/thinking',
+  '/key', '/model', '/status', '/doctor', '/version', '/thinking', '/hooks',
   // 记忆（黑洞引擎）
   '/memory', '/hole', '/compact', '/digest', '/curator',
   // 构建（概念编译器）
-  '/build', '/deploy', '/forge', '/skill', '/gate', '/fdr', '/evidence',
+  '/build', '/deploy', '/forge', '/skill', '/learn', '/gate', '/fdr', '/evidence',
   // 安全（合规红线）
   '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt',
   // 系统
-  '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench',
+  '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init',
   // 视觉与媒体（可视化 AI 技能）
   '/vision', '/img', '/video', '/render', '/capture',
   // 网络与集成
@@ -24,12 +24,12 @@ export const SLASH: string[] = [
 ];
 
 export const COMMAND_CAT: Record<string, string> = {
-  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/context': '◈',
-  '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙',
+  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/context': '◈', '/fork': '◈',
+  '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
-  '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆',
+  '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆',
   '/perm': '🛡', '/sandbox': '🛡', '/compliance': '🛡', '/consent': '🛡', '/audit': '🛡', '/encrypt': '🛡',
-  '/backup': '⚙', '/export': '⚙', '/theme': '⚙', '/lang': '⚙', '/config': '⚙', '/logs': '⚙', '/bench': '⚙',
+  '/backup': '⚙', '/export': '⚙', '/theme': '⚙', '/lang': '⚙', '/config': '⚙', '/logs': '⚙', '/bench': '⚙', '/init': '⚙',
   '/vision': '👁', '/img': '👁', '/video': '👁', '/render': '👁', '/capture': '👁',
   '/claw': '⛭', '/mcp': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
   '/swarm': '◈', '/duo': '◈', '/cron': '◈', '/jobs': '◈', '/delegate': '◈', '/goal': '◈',
@@ -45,12 +45,14 @@ export const COMMAND_DESC: Record<string, string> = {
   '/sessions': '会话列表',
   '/resume': '恢复会话',
   '/context': '上下文占用可视化',
+  '/fork': '分支会话（复制当前会话为副本）',
   '/key': '配置/查看模型密钥（加密存储）',
   '/model': '切换模型（打开选择器或 /model <名称>）',
   '/thinking': '推理显示开关（on/off）',
   '/status': '系统状态',
   '/doctor': '健康体检',
   '/version': '版本信息',
+  '/hooks': '生命周期 Hooks（settings.hooks 本地命令）',
   '/memory': '记忆概览（三层）',
   '/hole': '黑洞引擎检索（说人话即触发）',
   '/compact': '压缩上下文',
@@ -59,7 +61,8 @@ export const COMMAND_DESC: Record<string, string> = {
   '/build': '概念编译：说一句话交付可运行系统',
   '/deploy': '业务落地（FDE 五段）',
   '/forge': '组件锻造（MCP Server/Skill 打包）',
-  '/skill': '技能管理',
+  '/skill': '技能管理（/skill list｜inspect｜new；/skill:名 注入）',
+  '/learn': '从最近对话学习生成技能（需密钥，AI 生成标注）',
   '/gate': '统一质量门（四门）',
   '/fdr': '部署后保障（五回路）',
   '/evidence': '证据链查看',
@@ -76,6 +79,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/config': '配置中心',
   '/logs': '日志查看',
   '/bench': '基准测试',
+  '/init': '分析项目生成 AGENTS.md（本地扫描，--overwrite 覆盖）',
   '/vision': 'GLM 视觉理解（/vision <图片>）',
   '/img': '图片分析（GLM-4V 多模态）',
   '/video': '视频人工视觉分析（不下载）',

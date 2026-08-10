@@ -6,7 +6,8 @@ import type { Memory } from '../kernel/memory.js';
 import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, resolveAlias } from './registry.js';
-import { decryptKey, encryptKey, maskKey, MODEL_CATALOG } from '../kernel/providers.js';
+import { capabilityBadges, decryptKey, encryptKey, filterModels, maskKey, MODEL_CATALOG } from '../kernel/providers.js';
+import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { makeSpec } from '../build/spec.js';
 import { makePlan, topoSort } from '../build/plan.js';
 import { instantiate, checkLeftover } from '../build/scaffold.js';
@@ -90,6 +91,27 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return lines(' 体检 ', checks.map(([k, v]) => ` ${k}：${v}`));
   });
 
+  // 生命周期 Hooks（settings.hooks 本地命令）
+  bus.register('/hooks', () => {
+    const cfg = hooksFromConfig(ctx.config.get('settings'));
+    if (!Object.keys(cfg).length) {
+      return lines(' Hooks ', [
+        ' 未配置（全事件关闭）',
+        '',
+        ' 在 data/settings.json 的 settings.hooks 配置本地命令：',
+        '  "hooks": {',
+        '    "userPromptSubmit": "node C:/notify.js",',
+        '    "preToolUse": "echo DENY 安全规则拦截",',
+        '    "postToolUse": "echo 工具完成",',
+        '    "stop": "node C:/on-stop.js"',
+        '  }',
+        ' 上下文经环境变量传入：WXNODUS_HOOK_EVENT / WXNODUS_HOOK_DATA(JSON)',
+        ' preToolUse 输出 DENY 开头即拦截工具执行；命令 10s 超时，失败不阻断',
+      ]);
+    }
+    return lines(' Hooks ', HOOK_EVENTS.map(ev => ` ${cfg[ev] ? '✓' : '○'} ${ev}${cfg[ev] ? ' → ' + cfg[ev] : ''}`));
+  });
+
   // 密钥
   bus.register('/key', async (args) => {
     const sub = args[0] ?? 'status';
@@ -133,7 +155,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return `当前模式：${ctx.getMode()}（可选：smart/auto/manual/plan/yolo）`;
   });
 
-  // 模型选择（无参 → 打开交互选择器；有参 → 目录查找直接切换）
+  // 模型选择（无参 → 打开交互选择器；有参 → 模糊过滤+目录查找直接切换）
   bus.register('/model', (args) => {
     const q = args.join(' ');
     if (q) {
@@ -143,10 +165,12 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const s = clean.toLowerCase();
       const hit = MODEL_CATALOG.find(m => m.name.toLowerCase() === s || m.modelId.toLowerCase() === s);
       if (!hit) {
-        return lines(' 模型目录 ', [`未找到「${q}」，可用模型：`, ...MODEL_CATALOG.map(m => ` ${m.name}（${m.provider}）`)]);
+        const filtered = filterModels(q);
+        const list = filtered.length ? filtered : MODEL_CATALOG;
+        return lines(' 模型目录 ', [`未找到「${q}」${filtered.length ? '，相近模型：' : '，可用模型：'}`, ...list.map(m => ` ${m.name}（${m.provider}）${capabilityBadges(m.capabilities)}`)]);
       }
       ctx.setModel(hit.modelId, hit.baseURL);
-      return `已切换模型：${hit.name}（${hit.provider}）`;
+      return `已切换模型：${hit.name}（${hit.provider}）${capabilityBadges(hit.capabilities)}`;
     }
     ctx.openModelPicker();
     return '';

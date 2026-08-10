@@ -12,6 +12,7 @@ import type { Memory } from './memory.js';
 import { decryptKey } from './providers.js';
 import { coreTools, isDangerous, toolsToOpenAI, type ToolCtx } from './tools.js';
 import { modeVerdict, type Mode } from './permissions.js';
+import type { HookRunner } from './hooks.js';
 import { join } from 'node:path';
 
 export interface ModelCall { type: 'text'; content: string }
@@ -27,6 +28,10 @@ export interface AgentOptions {
   mode?: Mode;
   onApproval?: (tool: string, args: Record<string, any>) => Promise<boolean>;
   maxTurns?: number;
+  /** 生命周期 hooks（本地命令执行）；缺省关闭 */
+  hooks?: HookRunner | null;
+  /** 附加工具（如 MCP 客户端工具表 mcp__<server>__<tool>） */
+  extraTools?: Record<string, import('./tools.js').ToolDef>;
 }
 
 export interface AgentResult {
@@ -49,12 +54,14 @@ function makeAbortSignal(): { promise: Promise<void>; resolve: () => void } {
 }
 
 export function createAgent(opts: AgentOptions) {
-  const tools = coreTools();
+  const tools = { ...coreTools(), ...(opts.extraTools ?? {}) };
   const bus = opts.bus;
   let sessionId = opts.sessionId; // 可变：setSessionId 热切换（多会话）
   let mode = opts.mode ?? 'smart'; // 可变：/perm 切换经 setMode 热更新
   let aborted = false;
   let interrupted = false;
+  // Hooks（生命周期本地命令）：settings.hooks 热生效——每次触发读当前配置
+  const hooks = opts.hooks ?? null;
   // abort 信号：每轮 loop 重建——Promise.race 一旦 resolve 就永久 resolve，
   // 一次性 abortPromise 会让中断后的所有后续提问立即失败（"aborted"）。
   let abortSignal: { promise: Promise<void>; resolve: () => void } = makeAbortSignal();
@@ -122,10 +129,19 @@ export function createAgent(opts: AgentOptions) {
         const ok = await onApproval(name, args);
         if (!ok) return `用户拒绝执行 ${name}`;
       }
+      // PreToolUse hook：输出 DENY 即真实拦截（权限门之后、执行之前）
+      if (hooks) {
+        const allowed = await hooks.preToolUse(name, args);
+        if (!allowed) {
+          bus.emit('agent.tool', { name, phase: 'complete', ok: false });
+          return `工具被 hook 拒绝（${name}）`;
+        }
+      }
       const tool = tools[name];
       if (!tool) return `未知工具：${name}`;
       const out = await tool.run(args, toolCtx);
       bus.emit('agent.tool', { name, phase: 'complete', ok: true, ms: 0 });
+      hooks?.postToolUse(name, out);
       return out;
     } catch (e: any) {
       bus.emit('agent.tool', { name, phase: 'complete', ok: false });
@@ -157,7 +173,9 @@ export function createAgent(opts: AgentOptions) {
     let unknownRounds = 0;
     let finalText = '';
     bus.emit('agent.start', { sessionId, prompt });
+    hooks?.userPromptSubmit(prompt, sessionId);
 
+    try {
     while (turns < (opts.maxTurns ?? MAX_TURNS)) {
       if (aborted) { interrupted = true; break; }
       turns++;
@@ -225,6 +243,10 @@ export function createAgent(opts: AgentOptions) {
     }
     bus.emit('agent.end', { ok: finalText.length > 0, turns });
     return { ok: finalText.length > 0, text: finalText, turns, interrupted };
+    } finally {
+      // Stop hook：无论正常结束/中断/提前 return 都触发（不改 agent.end 总线语义）
+      hooks?.stop({ ok: finalText.length > 0, turns });
+    }
   }
 
   return {

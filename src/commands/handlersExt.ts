@@ -10,8 +10,11 @@ import { estimateTokens, compactKeepHeadTail } from '../kernel/memory.js';
 import { runGate } from '../build/gate.js';
 import { writeEvidence } from '../build/evidence.js';
 import { forgeMcpServer, forgeSkillDir } from '../forge/forge.js';
+import { discoverSkills, loadSkill, installSkill, writeSkill, skillContentForModel } from '../kernel/skills.js';
+import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
+import { decryptKey } from '../kernel/providers.js';
 import type { HandlerCtx } from './handlers.js';
-import type { CommandBus } from '../app/CommandBus.js';
+import type { CommandBus, StructuredCommand } from '../app/CommandBus.js';
 
 const lines = (title: string, body: string[]): string => {
   const w = Math.max(...body.map(l => l.length), title.length) + 4;
@@ -147,11 +150,41 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return `已恢复会话 ${id}（${cp ? `检查点：${JSON.stringify(cp).slice(0, 60)}` : '无检查点'}）——完整恢复需重启后 /resume ${id}`;
   });
 
+  // /undo：撤销当前会话最后一条消息（CLI 单会话即 'default'；UI 走 session.undo RPC）
   bus.register('/undo', () => {
     const last = ctx.db.prepare(`SELECT id FROM messages WHERE session_id='default' AND role!='system' ORDER BY id DESC LIMIT 1`).get() as any;
     if (!last) return '没有可撤销的消息';
     ctx.db.prepare(`DELETE FROM messages WHERE id=?`).run(last.id);
     return '已撤销最后一条消息';
+  });
+
+  // /fork：复制当前会话（含全部消息）为分支会话
+  bus.register('/fork', (args) => {
+    const target = args[0] ?? 'default';
+    const newId = `s${Date.now()}f`;
+    const n = (ctx.db.prepare(`SELECT COUNT(*) AS c FROM sessions WHERE id=?`).get(target) as { c: number }).c;
+    if (!n) return `会话不存在：${target}`;
+    const src = ctx.db.prepare(`SELECT title FROM sessions WHERE id=?`).get(target) as { title: string } | undefined;
+    const now = Date.now();
+    ctx.db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`)
+      .run(newId, `${src?.title || target} (fork)`, now, now);
+    ctx.db.prepare(`
+      INSERT INTO messages (session_id, role, content, tool_call_id, archived, ts)
+      SELECT ?, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=?
+    `).run(newId, target);
+    return `已分支会话 ${target} → ${newId}（${(ctx.db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(newId) as { c: number }).c} 条消息）`;
+  });
+
+  // /init：本地扫描项目生成 AGENTS.md（确定性数据；--overwrite 覆盖）
+  bus.register('/init', (args) => {
+    const overwrite = args.includes('--overwrite');
+    const target = join(ctx.cwd, 'AGENTS.md');
+    if (existsSync(target) && !overwrite) {
+      return `AGENTS.md 已存在（用 /init --overwrite 重新生成）——现有内容：\n${readFileSync(target, 'utf8').slice(0, 200)}`;
+    }
+    const profile = scanProject(ctx.cwd);
+    writeFileSync(target, renderAgentsMd(profile), 'utf8');
+    return `已生成 ${target}（项目类型：${profile.type}，顶层 ${profile.structure.length} 项）`;
   });
 
   bus.register('/usage', () => {
@@ -228,13 +261,72 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return lines(` 锻造 ${name} `, [` MCP server → ${server}`, ` SKILL.md → ${skill}`]);
   });
 
-  bus.register('/skill', (args) => {
+  bus.register('/skill', (args): string | StructuredCommand => {
+    const [sub, ...rest] = args;
+    if (!sub) return '用法：/skill <技能名>（加载注入）| /skill new <名> [描述] | /skill list | /skill inspect <名>';
+    if (sub === 'new') {
+      const name = rest[0];
+      if (!name) return '用法：/skill new <技能名> [描述]';
+      const desc = rest.slice(1).join(' ') || `${name} 技能`;
+      const dir = writeSkill(ctx.dataDir, name, desc, '1. 理解任务 2. 制定步骤 3. 执行并验证', { aiGenerated: true });
+      return `技能已生成（ai_generated 标注）→ ${dir}`;
+    }
+    if (sub === 'list') {
+      const all = discoverSkills(ctx.dataDir, ctx.cwd);
+      if (!all.length) return '技能库为空——/skill new <名> 创建，或把 SKILL.md 放到 .wxnodus/skills/<名>/';
+      return lines(' 技能库 ', [
+        ...all.map(s => ` ${s.name}${s.description ? ' — ' + s.description : ''}（${s.source}）`),
+        ` 共 ${all.length} 个`,
+      ]);
+    }
+    if (sub === 'inspect') {
+      const name = rest[0];
+      if (!name) return '用法：/skill inspect <技能名>';
+      const s = loadSkill(ctx.dataDir, ctx.cwd, name);
+      if (!s) return `未找到技能「${name}」——/skill list 查看已安装技能`;
+      return lines(` 技能 ${s.meta.name} `, [
+        ` 描述：${s.meta.description || '（无）'}`,
+        ` 来源：${s.meta.source}｜路径：${s.meta.path}`,
+        ` ${s.meta.aiGenerated ? 'AI 生成标注' : '人工编写'}`,
+        '',
+        s.body.slice(0, 800),
+      ]);
+    }
+    // 加载技能：TUI 侧 /skill:name 注入为消息发送；CLI 侧直接输出正文
+    const s = loadSkill(ctx.dataDir, ctx.cwd, sub);
+    if (!s) return `未找到技能「${sub}」——/skill list 查看已安装技能，或 /skill new ${sub} 创建`;
+    return { kind: 'skill', name: sub, message: skillContentForModel(ctx.dataDir, ctx.cwd, sub) };
+  });
+
+  // /learn：把最近对话总结为可复用技能（AI 生成——无 key 时明确提示，不产生假技能）
+  bus.register('/learn', async (args): Promise<string> => {
     const name = args[0];
-    if (!name) return '用法：/skill <技能名>（生成 SKILL.md）';
-    const outDir = join(ctx.dataDir, 'forge', name);
-    mkdirSync(outDir, { recursive: true });
-    const skill = forgeSkillDir(outDir, name, `${name} 技能`, '1. 理解任务 2. 制定步骤 3. 执行并验证');
-    return `技能已生成 → ${skill}`;
+    if (!name) return '用法：/learn <技能名> [描述]——用最近对话总结生成 SKILL.md';
+    const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
+    if (!enc) return '当前未配置模型密钥——/key set <密钥> 后 /learn 才能用 AI 总结生成技能（不产生假内容）';
+    const key = decryptKey(enc);
+    if (!key) return '密钥无法解密（机器环境变化或数据损坏？）——请用 /key set <密钥> 重新配置。';
+    const recent = ctx.mem.recall('default').slice(-8);
+    if (!recent.length) return '暂无对话记忆可学习——先对话几轮再 /learn';
+    const desc = args.slice(1).join(' ') || `${name} 技能`;
+    const transcript = recent.map(r => `${r.role}: ${String(r.content ?? '').slice(0, 300)}`).join('\n');
+    const { buildChatRequest } = await import('../kernel/providers.js');
+    const baseURL = (ctx.config.getKey('settings', 'baseURL') as string) || 'https://api.deepseek.com/v1';
+    const model = (ctx.config.getKey('settings', 'model') as string) || 'deepseek-v4-flash';
+    const req = buildChatRequest({
+      baseURL, model, key,
+      messages: [
+        { role: 'system', content: '你是技能提炼器。把用户提供的对话片段提炼为可复用的技能工作流，只输出 Markdown 工作流正文（分步、可执行、中文），不要多余说明。' },
+        { role: 'user', content: `技能名：${name}\n技能描述：${desc}\n\n对话片段：\n${transcript}` },
+      ],
+      stream: false,
+    });
+    const resp = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body, signal: AbortSignal.timeout(60000) });
+    if (!resp.ok) return `技能提炼失败（${resp.status}）——请检查密钥与模型配置`;
+    const j = await resp.json() as any;
+    const workflow = String(j?.choices?.[0]?.message?.content ?? '').trim() || '1. 理解任务 2. 制定步骤 3. 执行并验证';
+    const dir = writeSkill(ctx.dataDir, name, desc, workflow, { aiGenerated: true });
+    return `已从对话学习生成技能 → ${dir}（ai_generated 标注）`;
   });
 
   bus.register('/gate', (args) => {
@@ -363,10 +455,48 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // ── 连接类 ──────────────────────────────────
-  bus.register('/mcp', (args) => {
-    const name = args[0];
-    if (name) return `/mcp <名称>：生成 MCP server → ${join(ctx.dataDir, 'forge', name)}（用 /forge ${name}）`;
-    return lines(' MCP ', [` stdio JSON-RPC 协议`, ` 用法：/forge <名称> 生成 server.js + SKILL.md`, ` 连接：/gateway 查看网关状态`]);
+  // /mcp：本地 MCP 客户端管理（data/mcp.json）——list/add/remove/test
+  bus.register('/mcp', async (args) => {
+    const { loadMcpConfig, saveMcpConfig, connectMcp } = await import('../kernel/mcp.js');
+    const [sub, ...rest] = args;
+    const servers = loadMcpConfig(ctx.dataDir);
+    if (!sub || sub === 'list') {
+      if (!servers.length) {
+        return lines(' MCP ', [' 未配置 server', '', ' 用法：/mcp add <名称> <命令> [参数...]', '       /mcp remove <名称>', '       /mcp test <名称>', ' 配置存 data/mcp.json（本地 stdio 进程）']);
+      }
+      return lines(' MCP ', servers.map(s => ` ${s.name} → ${s.command} ${(s.args ?? []).join(' ')}`));
+    }
+    if (sub === 'add') {
+      const name = rest[0];
+      const command = rest[1];
+      if (!name || !command) return '用法：/mcp add <名称> <命令> [参数...]';
+      if (servers.some(s => s.name === name)) return `server「${name}」已存在（/mcp remove ${name} 后重加）`;
+      servers.push({ name, command, args: rest.slice(2) });
+      saveMcpConfig(ctx.dataDir, servers);
+      return `已添加 MCP server「${name}」（重启后生效，或 /mcp test ${name} 验证连接）`;
+    }
+    if (sub === 'remove') {
+      const name = rest[0];
+      if (!name) return '用法：/mcp remove <名称>';
+      const next = servers.filter(s => s.name !== name);
+      if (next.length === servers.length) return `未找到 server「${name}」`;
+      saveMcpConfig(ctx.dataDir, next);
+      return `已移除 MCP server「${name}」`;
+    }
+    if (sub === 'test') {
+      const name = rest[0];
+      const cfg = servers.find(s => s.name === name);
+      if (!cfg) return `未找到 server「${name}」（/mcp list 查看）`;
+      try {
+        const client = await connectMcp(cfg);
+        const tools = client.tools.map(t => t.name).join(', ') || '（无工具）';
+        client.close();
+        return lines(` MCP 测试 ${name} `, [` 连接成功，工具：${tools}`]);
+      } catch (e: any) {
+        return `连接失败：${e?.message ?? e}`;
+      }
+    }
+    return '用法：/mcp list｜add <名称> <命令> [参数...]｜remove <名称>｜test <名称>';
   });
 
   bus.register('/claw', async () => {
