@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// src/cli/index.ts — L6-2 CLI 入口（commander + Hermes UI 装配）
-// 装配：data/config/db/mem/bus/agent → wxGateway（进程内桥接）→ @hermes/ink render App
+// src/cli/index.ts — L6-2 CLI 入口（commander + WxNodus UI 装配）
+// 装配：data/config/db/mem/bus/agent → wxGateway（进程内桥接）→ @wxnodus/ink render App
 import { Command } from 'commander';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
@@ -37,7 +37,7 @@ async function main() {
     import('../kernel/memory.js'),
     import('../kernel/agent.js'),
     import('../app/CommandBus.js'),
-    import('../hermes-ui/wxGateway.js'),
+    import('../wxnodus-ui/wxGateway.js'),
   ]);
 
   const config = createConfig(dataDir);
@@ -47,7 +47,7 @@ async function main() {
   const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string; mode?: string; theme?: string; thinking?: boolean };
   let model = settings.model ?? (settings.apiKeyEnc ? 'deepseek-v4-flash' : '');
 
-  // 审批桥：agent 工具确认 → GatewayClient.requestApproval（Hermes approval overlay）
+  // 审批桥：agent 工具确认 → GatewayClient.requestApproval（审批 overlay）
   let gateway: any = null;
   const agent = createAgent({
     db, bus, mem, sessionId: 'default', config: { settings },
@@ -84,8 +84,8 @@ async function main() {
     requestExit: () => { exitRequested = true; setTimeout(() => process.exit(0), 50); },
     clearHistory: () => { /* UI 历史清理由 App 层处理 */ },
     setModel: applyModel,
-    openModelPicker: () => { /* Hermes UI: /model 打开选择器 */ },
-    openSessions: () => { /* Hermes UI: /sessions 打开列表 */ },
+    openModelPicker: () => { /* WxNodus UI: /model 打开选择器 */ },
+    openSessions: () => { /* WxNodus UI: /sessions 打开列表 */ },
     setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); },
   });
   registerCoreHandlers(commandBus, makeHandlerCtx());
@@ -123,7 +123,7 @@ async function main() {
   }
   try { process.stdout.write('\x1b]0;WxNodus — 概念编译器\x07'); } catch {}
 
-  // Hermes UI 装配
+  // WxNodus UI 装配
   gateway = new GatewayClient({
     bus, db, config, mem, agent, commandBus,
     dataDir, cwd, settings,
@@ -135,8 +135,8 @@ async function main() {
   });
   gateway.start();
 
-  const { App } = await import('../hermes-ui/app.js');
-  const { render } = await import('@hermes/ink');
+  const { App } = await import('../wxnodus-ui/app.js');
+  const { render } = await import('@wxnodus/ink');
   const React = (await import('react')).default;
 
   const app = render(React.createElement(App, { gw: gateway }), { exitOnCtrlC: false });

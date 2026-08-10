@@ -1,5 +1,5 @@
 // src/app/TurnController.ts — L5 回合状态机（流式分片/工具生命周期/中断/错误）
-// 设计（参考 Hermes turnController 思想，自有实现）：token 累积 → 段边界 flush → 工具生命周期 → 回合归档
+// 设计（参考业界 turn 控制器思想，自有实现）：token 累积 → 段边界 flush → 工具生命周期 → 回合归档
 import { patchTurn, pushSegment, upsertTool, pushTrail, getTurn } from './stores/turnStore.js';
 import { patchUi } from './stores/uiStore.js';
 

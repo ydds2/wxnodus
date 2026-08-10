@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hermes/ink": "file:packages/hermes-ink",
+    "@wxnodus/ink": "file:packages/wxnodus-ink",
     "@huggingface/transformers": "^3.0.0",
     "@inkjs/ui": "^2.0.0",
     "@modelcontextprotocol/sdk": "^1.0.0",

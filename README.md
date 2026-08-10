@@ -35,7 +35,7 @@ wxnodus -p "帮我做一个待办系统"   # 非交互：说一句话 → 生成
 
 ## 技术栈（成熟框架）
 
-Node 22 + TypeScript 严格 ESM · ink 7 + React 19（官方 TUI）· zustand · micromark+GFM+math（Markdown）· better-sqlite3+sqlite-vec+FTS5 · robotjs+playwright-core+node-screenshots（computer use）· @huggingface/transformers（本地 embedding）· vitest（162 测试）
+Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器（React 19 自定义 reconciler + yoga 布局 + 行级差分 + DECSTBM 硬件滚动 + BSU/ESU 同步输出）· zustand · micromark+GFM+math（Markdown）· better-sqlite3+sqlite-vec+FTS5 · robotjs+playwright-core+node-screenshots（computer use）· @huggingface/transformers（本地 embedding）· vitest
 
 ## 验收证据
 

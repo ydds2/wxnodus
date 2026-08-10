@@ -1,6 +1,6 @@
-// scripts/full-scene-test.mjs — 全场景自动化测试（pty 驱动真实终端，Hermes UI 版）
+// scripts/full-scene-test.mjs — 全场景自动化测试（pty 驱动真实终端，WxNodus UI 版）
 // 覆盖：启动/品牌/输入/提交/命令/建议/模型选择器/会话/滚动/退出
-// 注意：Hermes textInput 有 burst 处理——逐键写入，Enter 单独发送（模拟真实逐键）
+// 注意：WxNodus textInput 有 burst 处理——逐键写入，Enter 单独发送（模拟真实逐键）
 import { spawn } from 'node-pty';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -1,5 +1,5 @@
 // src/ui/entry.tsx — 入口组件（主屏幕模式：消息区应用内滚动 + 输入框固定底部）
-// 架构（参考 Hermes / Kimi CLI）：
+// 架构（参考业界现代 TUI CLI 范式）：
 //   非 alternateScreen（无固定全屏）；启动欢迎消息在消息区顶部；
 //   消息区 scrollTail 按终端行数裁剪渲染尾部（固定高度），应用内滚动回看
 //   （PgUp/PgDn/Ctrl+U/D/Home/End/空输入 ↑↓）——cmd 下唯一可靠的

@@ -1,6 +1,6 @@
 // src/kernel/events.ts — L1-3 事件总线：kernel→UI 唯一通道
 // 设计：类型化事件 + 发布订阅 + append-only jsonl 持久化（审计/回放）
-// 参考：Hermes gateway 事件流（31 种事件映射）、opencode hook 事件体系
+// 参考业界 gateway 事件流（31 种事件映射）与 hook 事件体系
 import { join } from 'node:path';
 import { mkdirSync, appendFileSync } from 'node:fs';
 

@@ -1,6 +1,6 @@
 // src/app/Bridge.ts — L5 桥接层（kernel 事件 → zustand；UI 动作 → kernel）
 // 设计：agent 事件总线（agent.token/tool/stage/error/end）→ TurnController/stores
-//       参考：Hermes createGatewayEventHandler 的事件映射思想（自有实现）
+//       参考业界 gateway 事件映射思想（自有实现）
 import { turnController } from './TurnController.js';
 import { patchUi } from './stores/uiStore.js';
 import { pushSegment } from './stores/turnStore.js';
