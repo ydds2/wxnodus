@@ -50,10 +50,11 @@ console.log('展开/goal 含描述:', hg.includes('/goal'))
 // ── 2. 建议补全 ──
 p.write('/'); await sleep(700)
 const sug = strip(out)
-console.log('建议含/calc:', sug.includes('/calc'), '含/help:', sug.includes('/help'), '含/memory:', sug.includes('/memory'))
+// 建议列表最多返回前 12 个（completeSlash 截断）——只查前部命令
+console.log('建议含/help:', sug.includes('/help'), '含/model:', sug.includes('/model'))
 await typeKeys('mem'); await sleep(600)
 const sug2 = strip(out)
-console.log('过滤mem后含/memory:', sug2.includes('/memory'), '含/calc:', sug2.includes('/calc'))
+console.log('过滤mem后含/memory:', sug2.includes('/memory'), '不含/calc:', !sug2.includes('/calc'))
 p.write('\x1b'); await sleep(300)
 
 // ── 3. 执行链路抽查 ──

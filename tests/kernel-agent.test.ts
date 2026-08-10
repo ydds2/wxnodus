@@ -124,6 +124,31 @@ describe('中断', () => {
     const r = await p;
     expect(r.interrupted).toBe(true);
   });
+
+  it('中断后再次 run 正常（abort 信号每轮重建，不永久毒化）', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    let calls = 0;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't6',
+      config: { settings: {} } as any,
+      callModel: async () => {
+        calls++;
+        if (calls === 1) { await gate; return { type: 'text', content: 'x' }; }
+        return { type: 'text', content: '第二轮正常回答' };
+      },
+    });
+    // 第一轮：abort 中断
+    const p1 = agent.run('问题一');
+    setTimeout(() => { agent.abort(); release(); }, 10);
+    const r1 = await p1;
+    expect(r1.interrupted).toBe(true);
+    // 第二轮：必须正常完成（旧实现 abortPromise 已 resolve → 立即失败）
+    const r2 = await agent.run('问题二');
+    expect(r2.ok).toBe(true);
+    expect(r2.text).toBe('第二轮正常回答');
+    expect(calls).toBe(2);
+  });
 });
 
 describe('子代理', () => {

@@ -59,6 +59,18 @@ describe('键路径读写（settings.apiKeyEnc）', () => {
   });
 });
 
+describe('内存写穿透（会话内生效）', () => {
+  it('get 返回稳定引用，setKey 同步更新同一对象（/key set 后 agent 快照立即生效）', () => {
+    const snap = cfg.get('settings');
+    const before = snap.apiKeyEnc;
+    cfg.setKey('settings', 'apiKeyEnc', 'enc1:test');
+    // 持有快照的调用方（agent）无需重新 get 即可看到新值
+    expect(snap.apiKeyEnc).toBe('enc1:test');
+    expect(cfg.get('settings').apiKeyEnc).toBe('enc1:test');
+    cfg.setKey('settings', 'apiKeyEnc', before ?? '');
+  });
+});
+
 describe('原子写', () => {
   it('写入后无 .tmp 残留', () => {
     cfg.set('routes', { '/default': 'deepseek' });

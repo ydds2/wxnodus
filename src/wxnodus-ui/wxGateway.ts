@@ -186,6 +186,7 @@ export class GatewayClient extends EventEmitter {
       case 'complete.path': return this.completePath(params) as T
       case 'model.options': return this.modelOptions(params) as T
       case 'model.save_key': return this.modelSaveKey(params) as T
+      case 'model.disconnect': return this.modelDisconnect(params) as T
       case 'delegation.status': return { active: [], max_concurrent_children: 4, max_spawn_depth: 3, paused: false } as T
       case 'spawn_tree.save': return {} as T
       case 'reload.mcp': return {} as T
@@ -392,7 +393,13 @@ export class GatewayClient extends EventEmitter {
     const s = this.kernel.settings
 
     if (key === 'model') {
-      this.kernel.applyModel(value)
+      // UI 模型选择器传入的是命令串（"modelId --provider slug [--global|--session]"）——
+      // 解析出 modelId 再应用，避免把命令串整体写进 settings.model
+      // （会导致 API 模型名非法 + 状态栏显示乱串）
+      const modelId = value.split(/\s+/)[0] ?? value
+      const slug = /--provider\s+(\S+)/.exec(value)?.[1]
+      const hit = MODEL_CATALOG.find(m => m.modelId === modelId || m.provider === slug)
+      this.kernel.applyModel(hit ? hit.modelId : modelId, hit?.baseURL)
     } else if (key === 'mode') {
       this.kernel.setMode(value)
       this.kernel.agent.setMode(value)
@@ -523,10 +530,21 @@ export class GatewayClient extends EventEmitter {
 
   private modelOptions(params: Record<string, unknown>): unknown {
     const byProvider = new Map<string, any>()
+    // 有密钥即视为已认证（规则脑模式始终可用，无门禁）
+    const authenticated = Boolean(this.kernel.settings.apiKeyEnc)
 
     for (const m of MODEL_CATALOG) {
       if (!byProvider.has(m.provider)) {
-        byProvider.set(m.provider, { name: m.name, slug: m.provider, models: [] })
+        byProvider.set(m.provider, {
+          name: m.name,
+          slug: m.provider,
+          models: [],
+          // modelPicker 依赖 authenticated/auth_type/key_env 决定是否进入
+          // 密钥输入 stage——缺失时密钥保存链路永远无法触发
+          authenticated,
+          auth_type: 'api_key',
+          key_env: `WXNODUS_${m.provider.toUpperCase()}_KEY`,
+        })
       }
       byProvider.get(m.provider)!.models.push(m.modelId)
     }
@@ -542,8 +560,9 @@ export class GatewayClient extends EventEmitter {
   }
 
   private modelSaveKey(params: Record<string, unknown>): unknown {
-    const key = String(params.key ?? '')
-    const baseURL = String(params.base_url ?? '')
+    // 兼容双契约：picker 传 { slug, api_key }，旧调用传 { key, base_url }
+    const key = String(params.api_key ?? params.key ?? '')
+    const baseURL = String(params.base_url ?? params.baseURL ?? '')
 
     if (key) {
       this.kernel.settings.apiKeyEnc = encryptKey(key)
@@ -558,7 +577,35 @@ export class GatewayClient extends EventEmitter {
       this.kernel.config.setKey('settings', 'baseURL', baseURL)
     }
 
-    return {}
+    // picker 期待 { provider }（含 authenticated）——返回保存后的 provider
+    const slug = String(params.slug ?? '')
+    const byProvider = new Map<string, any>()
+
+    for (const m of MODEL_CATALOG) {
+      if (!byProvider.has(m.provider)) {
+        byProvider.set(m.provider, {
+          name: m.name,
+          slug: m.provider,
+          models: [],
+          authenticated: Boolean(this.kernel.settings.apiKeyEnc),
+          auth_type: 'api_key',
+          key_env: `WXNODUS_${m.provider.toUpperCase()}_KEY`,
+        })
+      }
+      byProvider.get(m.provider)!.models.push(m.modelId)
+    }
+
+    return {
+      provider: byProvider.get(slug) ?? { slug, authenticated: Boolean(key), models: [] },
+    }
+  }
+
+  private modelDisconnect(_params: Record<string, unknown>): unknown {
+    // 断开连接：清除密钥（模型选择器 ^d + 确认）
+    this.kernel.settings.apiKeyEnc = ''
+    this.kernel.config.setKey('settings', 'apiKeyEnc', '')
+
+    return { disconnected: true }
   }
 
   // ── 审批桥：agent 工具确认 → approval.request 事件 → approval.respond RPC ──

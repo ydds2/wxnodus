@@ -51,15 +51,30 @@ function deepGet(obj: Record<string, any>, path: string): any {
 }
 
 export function createConfig(dataDir: string): Config {
+  // 读快照缓存：get() 返回稳定引用（内存最新），set/setKey 写穿透同步
+  // 更新同一对象——否则 /key set 等只写磁盘，持有装配时快照的 agent
+  // 会继续用旧值（会话内配置不生效，重启才生效）。
+  const cache = new Map<string, Record<string, any>>();
+
+  const load = (p: Partition): Record<string, any> => {
+    let obj = cache.get(p);
+    if (!obj) {
+      obj = read(dataDir, p);
+      cache.set(p, obj);
+    }
+    return obj;
+  };
+
   return {
-    get(p) { return read(dataDir, p); },
+    get(p) { return load(p); },
     set(p, patch) {
-      const merged = { ...read(dataDir, p), ...patch };
-      write(dataDir, p, merged);
+      const obj = load(p);
+      Object.assign(obj, patch);
+      write(dataDir, p, obj);
     },
-    getKey(p, key) { return deepGet(read(dataDir, p), key); },
+    getKey(p, key) { return deepGet(load(p), key); },
     setKey(p, key, value) {
-      const obj = read(dataDir, p);
+      const obj = load(p);
       deepSet(obj, key, value);
       write(dataDir, p, obj);
     },

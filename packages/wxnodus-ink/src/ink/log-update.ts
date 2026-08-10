@@ -320,7 +320,10 @@ export class LogUpdate {
       // advance 2 columns when we write the wide character itself.
       // SpacerTail: Second cell of a wide character
       // SpacerHead: Marks line-end position where wide char wraps to next line
-      if (added && (added.width === CellWidth.SpacerTail || added.width === CellWidth.SpacerHead)) {
+      // 注意：仅当 removed 无内容（prev 也是空/无字符）才跳过——若 prev 有
+      // 真实字符（next 变成 SpacerHead，如宽字符贴边被裁切），跳过会导致
+      // 终端里的旧字符永久残留（下一帧两边相等无 diff，永不清理）。
+      if (added && (added.width === CellWidth.SpacerTail || added.width === CellWidth.SpacerHead) && !removed) {
         return
       }
 
@@ -352,7 +355,7 @@ export class LogUpdate {
         return true // early exit
       }
 
-      moveCursorTo(screen, x, y)
+      moveCursorTo(screen, x, y, viewportY)
 
       if (added) {
         const targetHyperlink = added.hyperlink
@@ -396,7 +399,7 @@ export class LogUpdate {
 
     // Handle growth: render new rows directly (they naturally scroll the terminal)
     if (growing) {
-      renderFrameSlice(screen, next, prev.screen.height, next.screen.height, stylePool)
+      renderFrameSlice(screen, next, prev.screen.height, next.screen.height, stylePool, viewportY)
     }
 
     // Restore cursor. Skipped in alt-screen: the cursor is hidden, its
@@ -442,7 +445,7 @@ export class LogUpdate {
         return [[], { dx: 0, dy: 0 }]
       })
     } else {
-      moveCursorTo(screen, next.cursor.x, next.cursor.y)
+      moveCursorTo(screen, next.cursor.x, next.cursor.y, viewportY)
     }
 
     const elapsed = performance.now() - startTime
@@ -505,7 +508,8 @@ function fullResetSequence_CAUSES_FLICKER(
 }
 
 function renderFrame(screen: VirtualScreen, frame: Frame, stylePool: StylePool): void {
-  renderFrameSlice(screen, frame, 0, frame.screen.height, stylePool)
+  // 全量重绘（clearTerminal 后）无 scrollback 偏移
+  renderFrameSlice(screen, frame, 0, frame.screen.height, stylePool, 0)
 }
 
 /**
@@ -517,7 +521,8 @@ function renderFrameSlice(
   frame: Frame,
   startY: number,
   endY: number,
-  stylePool: StylePool
+  stylePool: StylePool,
+  viewportY = 0
 ): VirtualScreen {
   let currentStyleId = stylePool.none
   let currentHyperlink: Hyperlink = undefined
@@ -564,7 +569,7 @@ function renderFrameSlice(
         continue
       }
 
-      moveCursorTo(screen, x, y)
+      moveCursorTo(screen, x, y, viewportY)
 
       // Handle hyperlink
       const targetHyperlink = cell.hyperlink
@@ -665,7 +670,7 @@ function writeCellWithStyleStr(screen: VirtualScreen, cell: Cell, styleStr: stri
   return true
 }
 
-function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
+function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, viewportY = 0) {
   screen.txn(prev => {
     const dx = targetX - prev.x
     const dy = targetY - prev.y
@@ -681,8 +686,9 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
 
     // Standard same-line cursor move → 绝对列定位（cursorTo/CHA）：
     // 相对列移动（cursorMove dx）依赖虚拟光标与物理光标一致，pty 渲染层
-    // 漂移后逐 cell 列定位累积错位（状态栏 elapsed 更新时旧内容残留重叠）
-    return [[{ type: 'cursorTo', col: targetX }], { dx, dy }]
+    // 漂移后逐 cell 列定位累积错位（状态栏 elapsed 更新时旧内容残留重叠）。
+    // CHA 是 1-based——0-based targetX 需 +1（与 CUP 分支、宽字符补偿一致）
+    return [[{ type: 'cursorTo', col: targetX + 1 }], { dx, dy }]
   })
 }
 

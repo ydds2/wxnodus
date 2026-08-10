@@ -41,6 +41,13 @@ const RETRY_DELAY_MS = 800;
 const MAX_CONSECUTIVE_FAIL = 5;
 const MAX_UNKNOWN_TOOL_ROUNDS = 3;
 
+/** 可重建的 abort 信号：Promise.race 一次性语义要求每轮新建 promise。 */
+function makeAbortSignal(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>(r => { resolve = r; });
+  return { promise, resolve };
+}
+
 export function createAgent(opts: AgentOptions) {
   const tools = coreTools();
   const bus = opts.bus;
@@ -48,8 +55,9 @@ export function createAgent(opts: AgentOptions) {
   let mode = opts.mode ?? 'smart'; // 可变：/perm 切换经 setMode 热更新
   let aborted = false;
   let interrupted = false;
-  let abortResolve: () => void = () => {};
-  const abortPromise = new Promise<void>(r => { abortResolve = r; });
+  // abort 信号：每轮 loop 重建——Promise.race 一旦 resolve 就永久 resolve，
+  // 一次性 abortPromise 会让中断后的所有后续提问立即失败（"aborted"）。
+  let abortSignal: { promise: Promise<void>; resolve: () => void } = makeAbortSignal();
 
   // 默认模型调用：OpenAI 兼容流式（真实 fetch）——key 解密后请求
   const defaultCallModel = async (req: { messages: Array<{ role: string; content: string }>; tools?: unknown[] }): Promise<ModelCall | ToolCallMsg> => {
@@ -85,7 +93,9 @@ export function createAgent(opts: AgentOptions) {
     try {
       const verdict = modeVerdict(mode, name, args);
       if (verdict === 'reject') return `工具被拒绝：权限红线（${name}）`;
-      if (verdict === 'confirm') {
+      // plan 模式语义是「只读研究 + 计划审批」：所有非只读动作都必须确认
+      // （与 confirm 同路径——审批桥弹出确认；拒绝则不执行）
+      if (verdict === 'confirm' || verdict === 'plan') {
         const ok = await onApproval(name, args);
         if (!ok) return `用户拒绝执行 ${name}`;
       }
@@ -103,10 +113,12 @@ export function createAgent(opts: AgentOptions) {
   async function loop(sessionId: string, prompt: string, opts2: { subagent?: boolean } = {}): Promise<AgentResult> {
     aborted = false;
     interrupted = false;
+    // 每轮重建 abort 信号（见 makeAbortSignal 注释）
+    abortSignal = makeAbortSignal();
     const callWithAbort = (req: { messages: Array<{ role: string; content: string }>; tools?: unknown[] }) =>
       Promise.race([
         callModel(req),
-        abortPromise.then(() => { throw new Error('aborted'); }),
+        abortSignal.promise.then(() => { throw new Error('aborted'); }),
       ]);
     const msgs: Array<{ role: string; content: string }> = [];
     // 召回注入（黑洞引擎：FTS 命中历史上下文）
@@ -193,7 +205,7 @@ export function createAgent(opts: AgentOptions) {
       const r = await loop(sessionId + ':sub', goal, { subagent: true });
       return { ok: r.ok, output: r.text, turns: r.turns };
     },
-    abort() { aborted = true; abortResolve?.(); },
+    abort() { aborted = true; abortSignal.resolve(); },
     setMode(m: Mode) { mode = m; },
     getMode(): Mode { return mode; },
     // 会话切换：多会话 UI 复用同一 agent 实例（消息经 mem.append 落库到目标会话）
