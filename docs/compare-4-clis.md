@@ -1,8 +1,9 @@
 # WxNodus V3 与 4 个同类型 CLI 全量对比报告
 
 > 对比对象：**Claude Code**（Anthropic，闭源二进制+插件仓库）、**Kimi CLI**（Moonshot，Python，已宣布被 kimi-code 取代）、**Hermes Agent**（Nous Research，Python+TS 全开源）、**OpenAI Codex CLI**（Rust，全开源）。
-> 分析依据：`docs/analysis/01~04`（各仓库 git tree/源码精读/官方类型定义交叉验证，推断项已标注）+ `docs/analysis/00`（WxNodus V3 自身盘点：203 文件/38.6k 行/413 测试/86 命令）。
-> 结论先行：**WxNodus V3 在「本地优先、工具丰富度、协作与协议覆盖」上不落后，核心差距集中在「安全深度（沙箱/规则引擎）、会话工程（事件源存储）、生态标准（skills 跨品牌、hooks 完备性）、规模工程（单文件拆解/CI）」。**
+> 分析依据：`docs/analysis/01~04`（各仓库 git tree/源码精读/官方类型定义交叉验证，推断项已标注）+ `docs/analysis/00`（WxNodus V3 自身盘点：194 文件/38.4k 行/439 测试/86 命令/21 依赖，2026-08 更新版）。
+> 结论先行：**WxNodus V3 经独立改造化 + 深度体检 + 智能度提升后，已收口 P0/P1 差距（危险检测升级/规则文件/环境净化/Hooks 12 类/退出码/错误码），核心差距收窄至 P2（--wire 双向化/工具延迟加载/Flow skills/配置分层）与平台级能力（平台沙箱/事件源会话）。**
+> 注：本版为更新对比——P0/P1 差距已实施（证据：`docs/audit-deep.md`），剩余项见第 3 节状态列。
 
 ---
 
@@ -155,21 +156,23 @@
 
 ## 3. WxNodus V3 差距清单（按可执行性排序）
 
-### P0（安全加固，借鉴 Codex/Hermes 已实现机制）
-1. **危险命令检测升级**：BASH_DANGEROUS 前缀正则 → 移植 wrapper 解包（sudo/env/trap/bash -lc）+ operand 后置 flag 变体（`rm build/ -rf`）+ 深度上限。Hermes/Codex 源码均开源可移植。
-2. **持久化审批规则文件**：`/perm rule add <tool>(<glob>) allow|deny|ask` → data/permissions.json 持久化，启动加载，会话缓存合并。对齐 Claude settings.permissions / Codex .rules。
-3. **子进程环境净化**：bash 工具执行时剥离含 KEY/SECRET/TOKEN 的环境变量（Codex shell_environment_policy 简化版）。
+### 差距状态总览（2026-08 更新）
+| 编号 | 差距 | 优先级 | 状态 |
+|---|---|---|---|
+| 1 | 危险命令检测升级（wrapper 解包/operand 变体） | P0 | ✅ 已实施（unwrapCommand 深度 8 + OPERAND_AFTER_FLAG） |
+| 2 | 持久化审批规则文件（/perm rule） | P0 | ✅ 已实施（data/permissions.json，deny>allow>ask） |
+| 3 | 子进程环境净化（剥离密钥变量） | P0 | ✅ 已实施（sanitizedEnv 白名单） |
+| 4 | Hooks 扩充到 12 类 | P1 | ✅ 已实施（含 preCompact BLOCK/notification/subagent 生命周期） |
+| 5 | 审批回显脱敏 | P1 | ⚠️ 部分（notice 留痕已有；approval 面板脱敏未做） |
+| 6 | 退出码协议（0/1/75） | P1 | ✅ 已实施（exitCodeForError） |
+| 7 | --wire 双向化 | P1 | ❌ 未实施（客户端请求帧） |
+| 8 | Flow skills | P2 | ❌ 未实施 |
+| 9 | 工具延迟加载 | P2 | ❌ 未实施 |
+| 10 | 会话导出 jsonl | P2 | ✅ 已实施（/export --jsonl 完整会话审计导出） |
+| 11 | 错误码体系（4xxx/5xxx） | P1 | ✅ 已实施（WxError + RPC {ok,code,message}） |
+| 12 | 配置分层与校验 | P2 | ❌ 未实施 |
 
-### P1（生态补齐，成本低收益高）
-4. **Hooks 扩充到 12 类**：+PostToolUseFailure/PreCompact/PostCompact/SessionStart/SessionEnd/SubagentStart/SubagentStop/Notification（机制已存在，纯事件注册）。
-5. **审批回显脱敏**：approval overlay 命令显示前对 credential 形状内容打码（Hermes _redact_approval_command 思路）。
-6. **退出码协议**：-p 模式 0/1/75（EX_TEMPFAIL 可重试语义，对齐 Kimi，CI 脚本友好）。
-7. **--wire 双向化**：增加客户端请求帧（approval.respond/clarify.respond 已存在——统一为 wire 通道，对齐 Kimi Wire/Hermes 协议）。
-
-### P2（工程深化）
-8. **Flow skills**：SKILL.md frontmatter 支持 mermaid 流程图，`/flow:<name>` 驱动节点工作流（Kimi 独有，移植成本中等）。
-9. **工具延迟加载**：MCP 工具数超阈值时按需发现 + 检索（Codex tool_search BM25）。
-10. **会话导出**：`/export --format jsonl|trace`（对齐 Hermes trace/Claude transcript，供外部审计）。
+**剩余未实施（4 项）：** --wire 双向化、Flow skills、工具延迟加载、配置分层、审批面板脱敏（5 项，其中 4 项为 P2 增强）。
 
 ## 4. WxNodus V3 的独有领先点（对比中确认）
 
@@ -182,10 +185,13 @@
 | **中文 NL 意图路由** | 四层路由（别名→确定性→NL→AI）+ 86 命令中文别名 |
 | **多模态历史回显** | 图片摘要入历史（GLM-4V 本地化），后续轮次可回忆 |
 | **零依赖自研渲染器** | React reconciler 自研，不依赖第三方 TUI 生态 |
+| **智能三件套** | 结构化系统提示（此前无系统提示）+ 模型降级链（429/5xx 自动降级）+ AI 审批预审（allow/deny/ask）——对比基线后新增 |
+| **全栈自研** | 参数解析/模糊匹配/状态引擎/渲染器/核心机制全自研，纯逻辑零第三方（依赖 34→21） |
 
 ## 5. 结论
 
-- **功能广度**：WxNodus V3 与四家同代（86 命令 vs Claude 42 工具/95 命令 vs Kimi 40+ vs Hermes 95+42 vs Codex 30+ 子命令），且协作（/swarm /duo /goal /jobs /cron）与协议（ACP/A2A/gateway/webhook/wire）覆盖处于第一梯队。
-- **安全深度**：最大差距。规则文件、沙箱、危险检测升级是优先项。
-- **生态标准**：Hooks 12 类扩充与 skills 跨品牌兼容（Kimi 直接读 ~/.claude/skills）成本低、收益明确。
-- **工程规模**：203 文件/38.6k 行 vs 对手 6k-8k 文件——WxNodus 以 1/30 的规模实现同代功能，是优势也是风险（单文件需持续关注拆分，如 wxGateway.ts 已 1224 行、agent.ts 580 行）。
+- **功能广度**：WxNodus V3 与四家同代（86 命令 vs Claude 42 工具/95 命令 vs Kimi 40+ vs Hermes 95+42 vs Codex 30+ 子命令），且协作（/swarm /duo /goal /jobs /cron）与协议（ACP/A2A/gateway/webhook/wire）覆盖处于第一梯队；439 测试（32 文件）为自身最大回归网。
+- **安全深度（更新）**：P0 三项（危险检测升级/规则文件/环境净化）已实施；剩余平台级差距为「四平台沙箱」（Codex Seatbelt/bwrap/受限令牌）与「凭据掩码」（Claude bubblewrap MITM）——需要系统级能力，属长期项。
+- **生态标准（更新）**：Hooks 12 类已对齐 Claude 事件面；skills 跨品牌兼容（Kimi 读 ~/.claude/skills）与审批面板脱敏为剩余低成本项。
+- **智能度（新增维度）**：结构化系统提示 + 模型降级链 + AI 预审 + 22 条意图路由——超越旧版自身，对齐市场 CLI 智能处理水平。
+- **工程规模**：194 文件/38.4k 行 vs 对手 6k-8k 文件——以 1/30 规模实现同代功能 + 纯逻辑零第三方依赖；单文件拆分（wxGateway.ts 1224 行）为持续关注项。
