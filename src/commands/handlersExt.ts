@@ -220,7 +220,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   //   快照含完整字段（id/archived/ts），restore 才能重建原始状态
   //   对比轮 6 补强：/undo list 列出可撤销轮次（时间 + 首句）
   bus.register('/undo', (args) => {
-    const sid = 'default';
+    // M4 修复：定位当前会话（UI 多会话切换后 /undo 作用于活跃会话）
+    const sid = ctx.agent?.getSessionId?.() ?? 'default';
     const msgs = ctx.db.prepare(`SELECT id, role, content, ts FROM messages WHERE session_id=? AND role!='system' AND archived=0 ORDER BY id`).all(sid) as Array<{ id: number; role: string; content: string; ts: number }>;
     if (!msgs.length) return '没有可撤销的消息';
     // 定位 user 消息轮次（从尾部数）
@@ -251,7 +252,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   // /fork：复制当前会话（含全部消息）为分支会话
   bus.register('/fork', (args) => {
-    const target = args[0] ?? 'default';
+    const target = args[0] ?? ctx.agent?.getSessionId?.() ?? 'default';
     const newId = `s${Date.now()}f`;
     const n = (ctx.db.prepare(`SELECT COUNT(*) AS c FROM sessions WHERE id=?`).get(target) as { c: number }).c;
     if (!n) return `会话不存在：${target}`;

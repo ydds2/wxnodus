@@ -546,6 +546,8 @@ export function createAgent(opts: AgentOptions) {
     },
     // 会话切换：多会话 UI 复用同一 agent 实例（消息经 mem.append 落库到目标会话）
     setSessionId(id: string) { sessionId = id; },
+    // M4：当前会话读取——命令层（/undo /fork 等）定位真实会话，不再硬编码 'default'
+    getSessionId(): string { return sessionId; },
   };
 }
 

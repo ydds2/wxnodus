@@ -501,3 +501,24 @@ describe('自动压缩与 DB 联动', () => {
     expect(mem.recall('t-autocmp').length).toBe(14); // 12 预填 + 新问题 + 助手回复
   });
 });
+
+// ── M4：会话切换与定位 ──
+describe('会话切换与定位（M4）', () => {
+  it('setSessionId 后 getSessionId 返回当前会话', () => {
+    const agent = makeAgent([]);
+    expect(agent.getSessionId()).toBe('t');
+    agent.setSessionId('s-other');
+    expect(agent.getSessionId()).toBe('s-other');
+    agent.setSessionId('t');
+    expect(agent.getSessionId()).toBe('t');
+  });
+  it('消息落库到切换后的会话', async () => {
+    const agent = makeAgent([{ type: 'text', content: '切会话回复' }]);
+    agent.setSessionId('s-branch');
+    const r = await agent.run('切换后的问题');
+    expect(r.ok).toBe(true);
+    const rows = db.prepare(`SELECT session_id, role FROM messages WHERE session_id=?`).all('s-branch') as any[];
+    expect(rows.length).toBe(2); // user + assistant
+    agent.setSessionId('t');
+  });
+});

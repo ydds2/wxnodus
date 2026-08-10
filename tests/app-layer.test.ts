@@ -6,6 +6,9 @@ import { useOverlay, patchOverlay, getOverlay, resetFlowOverlays } from '../src/
 import { turnController } from '../src/app/TurnController.js';
 import { createBridge } from '../src/app/Bridge.js';
 import { createCommandBus } from '../src/app/CommandBus.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 beforeEach(() => {
   resetTurn();
@@ -140,5 +143,52 @@ describe('CommandBus 执行器', () => {
     bus.register('/help', async () => { hit = '/help'; return 'ok'; });
     await bus.execute('/帮助');
     expect(hit).toBe('/help');
+  });
+});
+
+// ── M4：/undo 与 /fork 定位当前会话（硬编码 'default' 回归防护）──
+describe('/undo 当前会话定位', () => {
+  it('切换会话后 /undo 归档活跃会话消息而非 default', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wx-undo-'));
+    try {
+      const { openDB, closeDB } = await import('../src/store/db.js');
+      const { createMemory } = await import('../src/kernel/memory.js');
+      const { createEventBus } = await import('../src/kernel/events.js');
+      const { registerExtHandlers } = await import('../src/commands/handlersExt.js');
+      const db = openDB(dir);
+      const mem = createMemory(db);
+      const bus = createEventBus(dir);
+      const bus2 = createCommandBus();
+      let active = 's-active';
+      const ctx: any = {
+        dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}), getKey: () => undefined },
+        bus: createEventBus(dir),
+        agent: { getSessionId: () => active, setSessionId: (id: string) => { active = id; } },
+        getModel: () => '', getMode: () => 'smart', setMode: () => {}, setTheme: () => {},
+        getThemeName: () => 'wxnodus', requestExit: () => {}, clearHistory: () => {},
+        setModel: () => {}, openModelPicker: () => {}, openSessions: () => {}, setThinking: () => {},
+      };
+      registerExtHandlers(bus2, ctx);
+      // 预置：default 有消息，活跃会话 s-active 也有消息
+      mem.append('default', 'user', '旧会话问题');
+      mem.append('default', 'assistant', '旧会话回答');
+      mem.append('s-active', 'user', '活跃会话问题');
+      mem.append('s-active', 'assistant', '活跃会话回答');
+      // /undo list 应显示活跃会话轮次
+      const listR = await bus2.execute('/undo list');
+      expect(listR.ok).toBe(true);
+      expect(listR.output).toContain('活跃会话问题');
+      expect(listR.output).not.toContain('旧会话问题');
+      // 执行撤销 → 只归档活跃会话
+      const r = await bus2.execute('/undo 1');
+      expect(r.ok).toBe(true);
+      const activeLeft = db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id='s-active' AND archived=0`).get() as any;
+      const defLeft = db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id='default' AND archived=0`).get() as any;
+      expect(activeLeft.c).toBe(0); // 活跃会话被撤销
+      expect(defLeft.c).toBe(2);    // default 不受影响
+      closeDB(db);
+    } finally {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* Windows WAL 延迟解锁，忽略 */ }
+    }
   });
 });
