@@ -392,6 +392,15 @@ export function createAgent(opts: AgentOptions) {
           return r.type === 'text' ? r.content : '';
         });
         msgs.splice(0, msgs.length, ...condensed);
+        // DB 联动（深化）：compactSmart 归档 DB 中部消息——摘要复用已生成文本
+        // （不重复调 LLM）；recall 全量保留，working 窗口与内存一致收缩
+        try {
+          const summaryMsg = condensed.find(m => m.role === 'system' && String(m.content ?? '').includes('压缩摘要'));
+          const summaryText = summaryMsg ? String(summaryMsg.content) : '';
+          if (summaryText) {
+            void opts.mem.compactSmart(sessionId, async () => summaryText).catch(() => { /* DB 同步失败不影响对话 */ });
+          }
+        } catch { /* 忽略 */ }
         bus.emit('system.notice', { text: `自动压缩完成（${used} → ${estimateMessagesTokens(msgs)} token）` });
       }
       let res: ModelCall | ToolCallMsg;

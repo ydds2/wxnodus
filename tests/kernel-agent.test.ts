@@ -476,3 +476,28 @@ describe('updateTools 热重载', () => {
     expect(after.text).toContain('热重载时间戳');
   });
 });
+
+// ── P3b：自动压缩触发 + DB 联动（小上下文预算触发）───
+describe('自动压缩与 DB 联动', () => {
+  it('上下文超阈值自动压缩，且 DB 中部消息归档（联动）', async () => {
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-autocmp',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      maxContextTokens: 600, // 小预算：>510 token 即触发压缩
+      callModel: async () => ({ type: 'text', content: '完成' }),
+    });
+    // 预填充大量历史（触发压缩）
+    const longText = '这是一段用于撑大上下文的长文本内容。'.repeat(40); // ~400+ token
+    for (let i = 0; i < 6; i++) {
+      mem.append('t-autocmp', 'user', longText);
+      mem.append('t-autocmp', 'assistant', longText);
+    }
+    const beforeAbsorb = mem.absorbCount('t-autocmp');
+    const r = await agent.run('新问题');
+    expect(r.ok).toBe(true);
+    // DB 联动：中部消息被归档（compactSmart 写入摘要 + 归档）
+    expect(mem.absorbCount('t-autocmp')).toBeGreaterThan(beforeAbsorb);
+    // recall 全量保留（不硬删）
+    expect(mem.recall('t-autocmp').length).toBe(14); // 12 预填 + 新问题 + 助手回复
+  });
+});

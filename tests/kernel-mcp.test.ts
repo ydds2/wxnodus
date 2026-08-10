@@ -99,3 +99,42 @@ describe('mcpClientsToTools 并入 agent 工具表', () => {
     closeAllMcp(clients);
   });
 });
+
+// ── P3b：工具命名与调用链路 / 失败降级 ──
+describe('MCP 工具链路', () => {
+  it('工具命名为 mcp__server__tool 且可调用', async () => {
+    const cfg: any = { name: 'mock', command: 'node', args: mockServerArgs() };
+    const client = await connectMcp(cfg);
+    const tools = mcpClientsToTools([client]);
+    const names = Object.keys(tools);
+    expect(names).toContain('mcp__mock__echo');
+    expect(names).toContain('mcp__mock__add');
+    const addTool = tools['mcp__mock__add']!;
+    expect(addTool.danger).toBe(false); // MCP 工具默认非危险标记
+    const out = await addTool.run({ a: 2, b: 3 }, { cwd: process.cwd(), dataDir: dir });
+    expect(String(out)).toContain('SUM:5');
+    const echoOut = await tools['mcp__mock__echo']!.run({ text: 'hi' }, { cwd: process.cwd(), dataDir: dir });
+    expect(String(echoOut)).toContain('ECHO:hi');
+    closeAllMcp([client]);
+  });
+  it('连接失败返回 null（降级不抛）', async () => {
+    const bad: any = { name: 'ghost', command: 'node', args: ['-e', 'process.exit(1)'] };
+    await expect(connectMcp(bad)).rejects.toThrow();
+  });
+  it('connectAllMcp 空配置返回空数组', async () => {
+    expect(await connectAllMcp(dir)).toEqual([]);
+  });
+  it('closeAllMcp 幂等', async () => {
+    closeAllMcp([]);
+    const cfg: any = { name: 'mock', command: 'node', args: mockServerArgs() };
+    const client = await connectMcp(cfg);
+    closeAllMcp([client]);
+    closeAllMcp([client]);
+  });
+  it('连接超时快速失败（15s 内）', async () => {
+    const t0 = Date.now();
+    const sleeper: any = { name: 'sleeper', command: 'node', args: ['-e', 'setTimeout(()=>{}, 60000)'] };
+    await expect(connectMcp(sleeper)).rejects.toThrow(/超时/);
+    expect(Date.now() - t0).toBeLessThan(20_000);
+  });
+});

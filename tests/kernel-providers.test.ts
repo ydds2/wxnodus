@@ -202,3 +202,48 @@ describe('buildChatRequest 结构', () => {
     expect(glm4v).toBeDefined();
   });
 });
+
+// ── P3b：decryptKey 边界（机器指纹/损坏数据）───
+describe('decryptKey 边界', () => {
+  it('损坏密文返回 null（不抛错）', async () => {
+    const { decryptKey } = await import('../src/kernel/providers.js');
+    expect(decryptKey('not-a-valid-enc')).toBeNull();
+    expect(decryptKey('')).toBeNull();
+    expect(decryptKey('enc1:bad:bad:bad')).toBeNull();
+  });
+  it('AES-256-GCM 加密→解密往返一致', async () => {
+    const { encryptKey, decryptKey } = await import('../src/kernel/providers.js');
+    const enc = encryptKey('sk-roundtrip-test-123');
+    expect(enc.startsWith('enc1:')).toBe(true);
+    const dec = decryptKey(enc);
+    expect(dec).toBe('sk-roundtrip-test-123');
+  });
+});
+
+// ── P3b：filterModels 模糊过滤 / 能力徽标 ──
+describe('模型目录能力', () => {
+  it('filterModels 模糊匹配（名称/模型ID/厂商）', async () => {
+    const { filterModels, MODEL_CATALOG } = await import('../src/kernel/providers.js');
+    expect(filterModels('reasoner', MODEL_CATALOG).map(m => m.modelId)).toContain('deepseek-reasoner');
+    expect(filterModels('glm', MODEL_CATALOG).some(m => m.provider === 'zhipu')).toBe(true);
+    expect(filterModels('256k', MODEL_CATALOG).some(m => m.capabilities?.maxContext === 256_000)).toBe(true);
+    expect(filterModels('zzz-none', MODEL_CATALOG)).toEqual([]);
+    expect(filterModels('', MODEL_CATALOG).length).toBe(MODEL_CATALOG.length);
+  });
+  it('capabilityBadges 徽标输出', async () => {
+    const { capabilityBadges } = await import('../src/kernel/providers.js');
+    expect(capabilityBadges({ imageIn: true, thinking: true, maxContext: 256_000 })).toContain('👁');
+    expect(capabilityBadges({ thinking: true })).toContain('🧠');
+    expect(capabilityBadges({ maxContext: 256_000 })).toContain('256k');
+    expect(capabilityBadges(undefined)).toBe('');
+  });
+  it('routeByKeywords 确定性路由', async () => {
+    const { routeByKeywords } = await import('../src/kernel/providers.js');
+    const routes = [
+      { match: /部署|上线/, cmd: '/deploy' },
+      { match: /备份/, cmd: '/backup' },
+    ];
+    expect(routeByKeywords('帮我部署到服务器', routes)?.cmd).toBe('/deploy');
+    expect(routeByKeywords('随便聊聊', routes)).toBeNull();
+  });
+});

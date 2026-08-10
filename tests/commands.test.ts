@@ -1,7 +1,7 @@
 // tests/commands.test.ts — L4 命令层：注册表/别名/NL 路由/确定性工具
 import { describe, it, expect } from 'vitest';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, isSlash, resolveAlias } from '../src/commands/registry.js';
-import { nlTrigger, routeNaturalLanguage, NL_TRIGGERS, type NlTrigger } from '../src/commands/intent.js';
+import { nlTrigger, routeNaturalLanguage, routeInput, NL_TRIGGERS, type NlTrigger } from '../src/commands/intent.js';
 import { deterministicRun } from '../src/commands/deterministic.js';
 
 describe('命令注册表（单一事实来源）', () => {
@@ -85,5 +85,74 @@ describe('NL_TRIGGERS 结构', () => {
       expect(x.re).toBeInstanceOf(RegExp);
       expect(typeof x.cmd).toBe('string');
     }
+  });
+});
+
+// ── P3b：routeInput 全链路分派（命令/工具/对话三态）───
+describe('routeInput 完整分派', () => {
+  it('斜杠命令 → command', async () => {
+    const r = await routeInput('/calc 1+2');
+    expect(r.kind).toBe('command');
+    expect(r.cmd).toBe('/calc');
+    expect(r.value).toBe('1+2');
+  });
+  it('确定性工具 → tool（毫秒级不走模型）', async () => {
+    const r = await routeInput('计算 1+1');
+    expect(r.kind).toBe('tool');
+  });
+  it('自然语言需求 → chat（走 AI）', async () => {
+    const r = await routeInput('帮我分析一下这个项目的架构');
+    expect(r.kind).toBe('chat');
+  });
+  it('斜杠冒号参数语法（/skill:名）→ command 带 value', async () => {
+    const r = await routeInput('/skill:myflow 帮我做事');
+    expect(r.kind).toBe('command');
+    expect(r.cmd).toBe('/skill');
+    expect(r.value).toContain('myflow');
+  });
+  it('未知斜杠命令 → chat（交 AI 意图层）', async () => {
+    const r = await routeInput('/nonexistent-cmd-xyz');
+    expect(r.kind).toBe('chat');
+  });
+});
+
+// ── P3b：NL 触发参数化矩阵 + 斜杠边界 ──
+describe('NL 触发矩阵（参数化）', () => {
+  it.each([
+    ['帮我建一个记账系统', '/build'],
+    ['做一个待办应用', '/build'],
+    ['分析这个视频里的内容', '/video'],
+    ['视频里说了什么', '/video'],
+    ['帮我看这张图', '/vision'],
+    ['识别图片里的文字', '/vision'],
+    ['搜索黑洞记忆里的内容', '/hole'],
+    ['找一下之前说的那个项目', '/hole'],
+    ['给项目做个体检', '/doctor'],
+    ['备份一下项目代码', '/backup'],
+    ['把这个部署上线', '/deploy'],
+    ['抓取这个网页的内容', '/claw'],
+    ['每天定时提醒我喝水', '/cron'],
+    ['沙盒里跑这个脚本', '/sandbox'],
+  ])('%s → %s', (input, expected) => {
+    expect(routeNaturalLanguage(input)).toBe(expected);
+  });
+  it.each([
+    ['我之前备份过数据', null],
+    ['项目已经部署了', null],
+    ['你觉得这个方案怎么样', null],
+    ['请问如何处理报错', null],
+    ['随便聊聊今天的天气', null],
+  ])('误劫持防御：%s → null', (input, expected) => {
+    expect(routeNaturalLanguage(input)).toBe(expected);
+  });
+  it('别名解析进入 command 分派', async () => {
+    const r = await routeInput('/帮助');
+    expect(r.kind).toBe('command');
+    expect(r.cmd).toBe('/help');
+  });
+  it('大小写斜杠命令归一', async () => {
+    const r = await routeInput('/HELP');
+    expect(r.kind).toBe('command');
+    expect(r.cmd).toBe('/help');
   });
 });

@@ -58,3 +58,38 @@ describe('renderAgentsMd 生成', () => {
     expect(md.length).toBeGreaterThan(50);
   });
 });
+
+// ── P3b：更多项目形态与渲染真实性 ──
+describe('scanProject 更多形态', () => {
+  it('go.mod 识别 Go 项目', () => {
+    writeFileSync(join(dir, 'go.mod'), 'module demo\n\ngo 1.22');
+    mkdirSync(join(dir, 'cmd'));
+    const p = scanProject(dir);
+    expect(p.type).toBe('Go');
+    expect(p.structure).toContain('cmd/');
+  });
+  it('Python 项目运行命令', () => {
+    writeFileSync(join(dir, 'pyproject.toml'), '[project]');
+    writeFileSync(join(dir, 'main.py'), 'print(1)');
+    const p = scanProject(dir);
+    expect(p.type).toBe('Python');
+    expect(p.runCmd).toContain('python');
+  });
+  it('README 被采集进 profile', () => {
+    writeFileSync(join(dir, 'README.md'), '# Demo 项目说明');
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'demo' }));
+    const p = scanProject(dir);
+    expect(p.readme).toContain('Demo');
+  });
+  it('renderAgentsMd 输出真实扫描事实（非占位）', () => {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '事实项目', scripts: { build: 'tsc' } }));
+    mkdirSync(join(dir, 'lib'));
+    const p = scanProject(dir);
+    const md = renderAgentsMd(p);
+    expect(md).toContain('事实项目');
+    expect(md).toContain('lib/');
+    expect(md).toContain('npm run build');
+    expect(md).not.toContain('TODO');
+    expect(md).not.toContain('待补充');
+  });
+});

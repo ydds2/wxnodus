@@ -47,11 +47,13 @@ export async function routeInput(text: string): Promise<{ kind: 'command' | 'too
   // ① 斜杠命令（别名 + 补全 + `/skill:名` 冒号参数语法）
   if (isSlash(trimmed)) {
     const [head, ...rest] = trimmed.split(/\s+/);
-    let cmd = resolveAlias(head);
+    // 大小写归一：/HELP → /help（仅命令段，参数/技能名保持原样）
+    const headNorm = head.toLowerCase();
+    let cmd = resolveAlias(headNorm);
     let argTail = rest.join(' ');
     if (!SLASH.includes(cmd) && head.includes(':')) {
       const [c, ...a] = head.split(':');
-      const canon = resolveAlias(c);
+      const canon = resolveAlias(c.toLowerCase());
       if (SLASH.includes(canon)) {
         cmd = canon;
         const joined = a.join(':');

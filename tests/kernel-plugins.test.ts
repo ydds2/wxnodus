@@ -103,3 +103,35 @@ describe('插件发现与加载', () => {
     expect(setPluginEnabled(d, true)).toBe(true);
   });
 });
+
+// ── P3b：清单边界与容错 ──
+describe('清单边界', () => {
+  it('缺 name 抛错', () => {
+    expect(() => parsePluginManifest('{}')).toThrow();
+    expect(() => parsePluginManifest('')).toThrow();
+  });
+  it('缺 tools/commands 默认空数组', () => {
+    const m = parsePluginManifest(JSON.stringify({ name: 'min' }));
+    expect(m.tools).toEqual([]);
+    expect(m.commands).toEqual([]);
+  });
+  it('name 含路径分隔符拒绝', () => {
+    expect(() => parsePluginManifest(JSON.stringify({ name: '../evil' }))).toThrow();
+    expect(() => parsePluginManifest(JSON.stringify({ name: 'a\\b' }))).toThrow();
+  });
+  it('加载不存在的目录返回 null', async () => {
+    expect(await loadPlugin(join(dir, 'nope'), process.cwd(), dir)).toBeNull();
+  });
+  it('损坏 index.js 降级为空工具插件（不抛）', async () => {
+    const d = join(dir, 'plugins', 'epsilon');
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ name: 'epsilon', tools: [{ name: 't', description: 'x' }] }));
+    writeFileSync(join(d, 'index.js'), 'export const 语法错误 = ;;;');
+    const p = await loadPlugin(d, process.cwd(), dir);
+    expect(p).not.toBeNull();
+    expect(Object.keys(p!.tools).length).toBe(0);
+  });
+  it('setPluginEnabled 不存在目录返回 false', () => {
+    expect(setPluginEnabled(join(dir, 'ghost'), false)).toBe(false);
+  });
+});

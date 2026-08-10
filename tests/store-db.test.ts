@@ -181,3 +181,28 @@ describe('cron_jobs 表', () => {
     db.prepare(`DELETE FROM cron_jobs WHERE id=?`).run(Number(r.lastInsertRowid));
   });
 });
+
+// ── P3b：forkSession 会话复制 ──
+describe('forkSession', () => {
+  it('复制会话与全部消息（含归档）', () => {
+    const src = 'fork-src';
+    db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`).run(src, '原会话', 1, 1);
+    db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES (?,?,?,?)`).run(src, 'user', '问题一', 1);
+    db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES (?,?,?,?)`).run(src, 'assistant', '回答一', 2);
+    db.prepare(`INSERT INTO messages (session_id, role, content, archived, ts) VALUES (?,?,?,?,?)`).run(src, 'user', '旧归档', 1, 3);
+    const n = forkSession(db, src, 'fork-copy', '（副本）');
+    expect(n).toBe(3);
+    const copy = db.prepare(`SELECT title FROM sessions WHERE id=?`).get('fork-copy') as any;
+    expect(copy.title).toContain('（副本）');
+    const msgs = db.prepare(`SELECT role, content FROM messages WHERE session_id=? ORDER BY ts`).all('fork-copy') as any[];
+    expect(msgs.map(m => m.content)).toEqual(['问题一', '回答一', '旧归档']);
+    expect(db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(src)!.c).toBe(3);
+  });
+  it('源会话不存在返回 0', () => {
+    expect(forkSession(db, 'no-such', 'x')).toBe(0);
+  });
+  it('fork 后可检索（FTS5 索引覆盖新会话）', () => {
+    const r = searchMessages(db, '问题一', { sessionId: 'fork-copy' });
+    expect(r.length).toBeGreaterThan(0);
+  });
+});

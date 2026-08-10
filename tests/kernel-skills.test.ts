@@ -106,3 +106,42 @@ describe('加载/安装/创建', () => {
     expect(skillContentForModel(dataDir, cwd, 'missing')).toBe('');
   });
 });
+
+// ── P3b：安装 / 创建 / 模型注入 / 优先级 ──
+describe('技能安装与创建', () => {
+  it('installSkill 复制到用户级并保留正文', () => {
+    const src = join(dir, 'src-skill');
+    mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, 'SKILL.md'), '---\nname: "copied-skill"\ndescription: 复制测试\n---\n# 正文');
+    const target = installSkill(dataDir, src);
+    expect(existsSync(join(target, 'SKILL.md'))).toBe(true);
+    expect(readFileSync(join(target, 'SKILL.md'), 'utf-8')).toContain('copied-skill');
+    const s = loadSkill(dataDir, cwd, 'copied-skill');
+    expect(s?.body).toContain('正文');
+  });
+  it('writeSkill 创建含 ai_generated 标注', () => {
+    const p = writeSkill(dataDir, 'gen-skill', '生成技能', '步骤：1. 做 X\n2. 做 Y', { aiGenerated: true });
+    expect(existsSync(join(p, 'SKILL.md'))).toBe(true);
+    const raw = readFileSync(join(p, 'SKILL.md'), 'utf-8');
+    expect(raw).toContain('ai_generated: true');
+    expect(parseSkillMd(raw).body).toContain('做 X');
+  });
+  it('skillContentForModel 注入正文', () => {
+    writeSkill(dataDir, 'for-model', '注入测试', '操作说明 ABC');
+    const content = skillContentForModel(dataDir, cwd, 'for-model');
+    expect(content).toContain('操作说明 ABC');
+  });
+  it('不存在技能返回空', () => {
+    expect(skillContentForModel(dataDir, cwd, 'ghost')).toBe('');
+  });
+  it('发现优先级：项目级覆盖用户级同名', () => {
+    writeSkill(dataDir, 'dup', '用户版', '用户正文');
+    const proj = join(cwd, '.wxnodus', 'skills', 'dup');
+    mkdirSync(proj, { recursive: true });
+    writeFileSync(join(proj, 'SKILL.md'), '---\nname: "dup"\ndescription: 项目版\n---\n项目正文');
+    const found = discoverSkills(dataDir, cwd).filter(s => s.name === 'dup');
+    expect(found[0]!.source).toBe('project');
+    const loaded = loadSkill(dataDir, cwd, 'dup');
+    expect(loaded?.body).toContain('项目正文');
+  });
+});
