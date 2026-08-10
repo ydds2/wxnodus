@@ -13,6 +13,7 @@ import { forgeMcpServer, forgeSkillDir } from '../forge/forge.js';
 import { discoverSkills, loadSkill, installSkill, writeSkill, skillContentForModel } from '../kernel/skills.js';
 import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
 import { decryptKey } from '../kernel/providers.js';
+import { HARD_REDLINES } from '../kernel/permissions.js';
 import type { HandlerCtx } from './handlers.js';
 import type { CommandBus, StructuredCommand } from '../app/CommandBus.js';
 
@@ -20,6 +21,31 @@ const lines = (title: string, body: string[]): string => {
   const w = Math.max(...body.map(l => l.length), title.length) + 4;
   return [`┌${'─'.repeat(w)}┐`, `│ ${title}${' '.repeat(w - title.length - 2)} │`, ...body.map(l => `│ ${l}${' '.repeat(Math.max(0, w - l.length - 2))} │`), `└${'─'.repeat(w)}┘`].join('\n');
 };
+
+// ── Webhook 引擎（事件 → HTTP POST 回调；本地化为准，默认全部核心事件）──
+const WEBHOOK_EVENTS = ['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'system.notice', 'ui.confirm'];
+const webhookSubs = new Map<string, () => void>();
+
+function subscribeWebhooks(ctx: HandlerCtx): void {
+  const hooks = (ctx.config.getKey('settings', 'webhooks') as Array<{ url: string; events?: string[] }> | undefined) ?? [];
+  for (const h of hooks) {
+    if (!h?.url || webhookSubs.has(h.url)) continue;
+    const events = h.events?.length ? h.events : WEBHOOK_EVENTS;
+    const offs: Array<() => void> = [];
+    for (const ev of events) {
+      offs.push(ctx.bus.on(ev, (e: any) => {
+        // 后台投递，失败静默（不阻断主流程）
+        void fetch(h.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event: ev, payload: e?.payload ?? null, ts: Date.now() }),
+          signal: AbortSignal.timeout(8000),
+        }).catch(() => { /* 投递失败忽略 */ });
+      }));
+    }
+    webhookSubs.set(h.url, () => { for (const off of offs) off(); });
+  }
+}
 
 // 安全表达式求值（仅数字/四则/括号/空格）
 function safeEval(expr: string): number | null {
@@ -31,6 +57,8 @@ function safeEval(expr: string): number | null {
 }
 
 export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
+  // 启动时订阅既有 webhook 配置（热注册由 /webhook add 处理）
+  subscribeWebhooks(ctx);
   // ── 工具类（确定性）────────────────────────────
   bus.register('/calc', (args) => {
     const expr = args.join(' ');
@@ -72,10 +100,14 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   bus.register('/timer', (args) => {
-    const sec = parseInt(args[0] ?? '60', 10);
-    if (!Number.isFinite(sec) || sec < 1 || sec > 3600) return '用法：/timer <秒>（到时提示）';
+    const sec = parseInt(args[0] ?? '', 10);
+    const hint = args.slice(1).join(' ') || '时间到';
+    if (!Number.isFinite(sec) || sec < 1 || sec > 3600) return '用法：/timer <秒> [提示语]（到时通过事件通知提示）';
     const end = Date.now() + sec * 1000;
-    return `计时器已启动：${sec}s（${new Date(end).toTimeString().slice(0, 8)} 到点）`;
+    setTimeout(() => {
+      try { ctx.bus.emit('system.notice', { text: `⏰ 计时器到点（${sec}s）：${hint}` }); } catch { /* 进程可能已退出 */ }
+    }, sec * 1000);
+    return `计时器已启动：${sec}s（${new Date(end).toTimeString().slice(0, 8)} 到点，提示语「${hint.slice(0, 30)}」）`;
   });
 
   bus.register('/sql', (args) => {
@@ -360,12 +392,26 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // ── 安全类 ──────────────────────────────────
-  bus.register('/sandbox', () => {
-    const HARD = ['rm -rf /', 'format', 'del /s', 'shutdown', 'mkfs', 'dd if='];
-    return lines(' 沙箱 ', [
-      ` 模式：${ctx.getMode()}（smart/auto/manual/plan/yolo）`,
-      ` 硬性红线：${HARD.join(' · ')}…（任何模式不可绕过）`,
-      ` 工具：/perm <模式> 切换权限`,
+  // /sandbox [L0-L3]：分层沙盒——映射真实权限模式并切换（非说明文字）
+  //   L0 只读（plan：只读+审批）｜L1 默认（smart）｜L2 自动（auto）｜L3 全放（yolo）
+  bus.register('/sandbox', (args) => {
+    const LAYERS: Record<string, string> = { L0: 'plan', L1: 'smart', L2: 'auto', L3: 'yolo' };
+    const current = Object.entries(LAYERS).find(([, m]) => m === ctx.getMode())?.[0] ?? '?';
+    const want = (args[0] ?? '').toUpperCase();
+    if (want in LAYERS) {
+      ctx.setMode(LAYERS[want]!);
+      const desc: Record<string, string> = { plan: '只读探索 + 计划审批', smart: '只读放行，危险工具确认', auto: '自动批准（硬红线除外）', yolo: '除硬红线全部放行' };
+      return `沙盒已切换：L${want.slice(1)} → ${LAYERS[want]} 模式（${desc[LAYERS[want]!]}）`;
+    }
+    return lines(' 沙盒（L0-L3） ', [
+      ` 当前层：L${current.slice(1)}（${ctx.getMode()}）`,
+      ` L0 → plan  只读探索 + 计划审批（写操作需确认）`,
+      ` L1 → smart 只读放行，危险工具确认（默认）`,
+      ` L2 → auto  自动批准（硬红线除外）`,
+      ` L3 → yolo  除硬红线全部放行`,
+      '',
+      ` 硬红线（任何模式不可绕过）：${HARD_REDLINES.map(r => r.desc).join(' · ')}`,
+      ` 用法：/sandbox L0|L1|L2|L3`,
     ]);
   });
 
@@ -499,14 +545,92 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return '用法：/mcp list｜add <名称> <命令> [参数...]｜remove <名称>｜test <名称>';
   });
 
-  bus.register('/claw', async () => {
+  // /claw：网页抓取（SSRF 防护：内网/保留地址拦截）——真实 fetch + 正文文本提取
+  bus.register('/claw', async (args) => {
+    const url = args.join(' ').replace(/^["']|["']$/g, '').trim();
+    if (!url) return '用法：/claw <URL>（网页抓取，SSRF 防护拦截内网）';
+    let u: URL;
+    try { u = new URL(url); } catch { return `URL 非法：${url.slice(0, 80)}`; }
+    if (!/^https?:$/.test(u.protocol)) return '仅支持 http/https';
+    const host = u.hostname;
+    if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost|0\.0\.0\.0)$/.test(host) || host === '::1') {
+      return `已拦截：内网地址 ${host}（SSRF 防护）`;
+    }
     try {
-      const { ComputerUse } = await import('../kernel/computer/index.js');
-      return lines(' Computer Use ', [' 动作层：robotjs + 屏幕捕获', ' 守卫：边界/中止/串行', ' 用法：说「帮我打开记事本输入…」']);
-    } catch { return 'Computer Use：模块未加载（需图形环境）'; }
+      const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      const html = await resp.text();
+      // 提取正文文本（去 script/style/标签/空白）
+      const text = html
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/\s+/g, ' ').trim();
+      const body = text || '（页面无可提取文本，可能是 JS 渲染）';
+      return `HTTP ${resp.status}｜${html.length} 字节\n${body.slice(0, 4000)}`;
+    } catch (e: any) {
+      return `抓取失败：${e?.message?.slice(0, 300) ?? e}`;
+    }
   });
 
-  bus.register('/gateway', () => lines(' 网关 ', [' 状态：本地直连（OpenAI 兼容）', ' 代理：/proxy 查看', ' Webhook：/webhook 注册回调']));
+  // /gateway：本地 HTTP JSON-RPC 网关（localhost 监听，POST /rpc 面）
+  //   method: prompt {text} → 意图路由执行；command {input} → 命令总线
+  let gatewayServer: import('node:http').Server | null = null;
+  bus.register('/gateway', async (args) => {
+    const [sub, ...rest] = args;
+    const port = parseInt(rest[0] ?? '8765', 10);
+    if (sub === 'start' || !sub) {
+      if (gatewayServer) return `网关已在运行：http://127.0.0.1:${(gatewayServer.address() as any)?.port ?? port}`;
+      const { createServer } = await import('node:http');
+      gatewayServer = createServer((req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        if (req.method !== 'POST' || req.url !== '/rpc') {
+          res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return;
+        }
+        let body = '';
+        req.on('data', c => { body += c; if (body.length > 1e6) req.destroy(); });
+        req.on('end', () => {
+          void (async () => {
+            try {
+              const { method, params } = JSON.parse(body || '{}');
+              if (method === 'command') {
+                const r = await bus.execute(String(params?.input ?? ''));
+                res.writeHead(200); res.end(JSON.stringify({ ok: r.ok, output: r.output || r.dispatch?.message || r.error || '' }));
+              } else if (method === 'prompt') {
+                if (!ctx.agent) { res.writeHead(500); res.end(JSON.stringify({ error: 'no agent' })); return; }
+                const r = await ctx.agent.run(String(params?.text ?? ''));
+                res.writeHead(200); res.end(JSON.stringify({ ok: r.ok, text: r.text, turns: r.turns }));
+              } else if (method === 'health') {
+                res.writeHead(200); res.end(JSON.stringify({ ok: true, version: '3.0.0' }));
+              } else {
+                res.writeHead(400); res.end(JSON.stringify({ error: `unknown method: ${method}` }));
+              }
+            } catch (e: any) {
+              res.writeHead(500); res.end(JSON.stringify({ error: String(e?.message ?? e) }));
+            }
+          })();
+        });
+      });
+      await new Promise<void>((resolve, reject) => {
+        gatewayServer!.once('error', reject);
+        gatewayServer!.listen(port, '127.0.0.1', resolve);
+      }).catch((e: any) => { gatewayServer = null; return; });
+      if (!gatewayServer) return `启动失败：端口 ${port} 可能被占用（/gateway start <其他端口>）`;
+      return `__KEEPALIVE__\n网关已启动：http://127.0.0.1:${port}（POST /rpc，method=command|prompt|health；仅本机监听，SIGINT 停止）`;
+    }
+    if (sub === 'stop') {
+      if (!gatewayServer) return '网关未运行';
+      gatewayServer.close();
+      gatewayServer = null;
+      return '网关已停止';
+    }
+    if (sub === 'status') {
+      return gatewayServer
+        ? `运行中：http://127.0.0.1:${(gatewayServer.address() as any)?.port ?? port}`
+        : '未运行（/gateway start [端口] 启动本地 JSON-RPC 网关）';
+    }
+    return '用法：/gateway start [端口]｜stop｜status';
+  });
 
   bus.register('/proxy', (args) => {
     const v = args[0];
@@ -514,16 +638,153 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return `代理：${ctx.config.getKey('settings', 'proxy') ?? '未设置（直连）'}`;
   });
 
-  bus.register('/webhook', () => 'Webhook：注册回调 URL 到本地事件总线（开发中，可配置 /config）');
+  // /webhook：注册/管理事件回调（真实 HTTP POST 投递，本地事件总线驱动）
+  bus.register('/webhook', (args) => {
+    const [sub, ...rest] = args;
+    if (sub === 'list' || !sub) {
+      const hooks = (ctx.config.getKey('settings', 'webhooks') as Array<{ url: string; events?: string[] }> | undefined) ?? [];
+      if (!hooks.length) {
+        return lines(' Webhook ', [' 未注册回调', '', ' 用法：/webhook add <URL> [事件...]（事件缺省=全部核心事件）', '       /webhook remove <URL>', '       /webhook test <URL>']);
+      }
+      return lines(' Webhook ', hooks.map(h => ` ${h.url}（${(h.events ?? WEBHOOK_EVENTS).length} 事件）`));
+    }
+    if (sub === 'add') {
+      const url = rest[0];
+      if (!/^https?:\/\//.test(url ?? '')) return '用法：/webhook add <URL> [事件...]（http/https 回调）';
+      const events = rest.slice(1);
+      const hooks = (ctx.config.getKey('settings', 'webhooks') as Array<{ url: string; events?: string[] }> | undefined) ?? [];
+      if (hooks.some(h => h.url === url)) return `已存在回调：${url}`;
+      hooks.push({ url, events: events.length ? events : undefined });
+      ctx.config.setKey('settings', 'webhooks', hooks);
+      subscribeWebhooks(ctx);
+      return `已注册回调 ${url}（${events.length ? events.join(',') : '全部核心事件'}）——事件发生时将 POST JSON 到此地址`;
+    }
+    if (sub === 'remove') {
+      const url = rest[0];
+      const hooks = (ctx.config.getKey('settings', 'webhooks') as Array<{ url: string }> | undefined) ?? [];
+      const next = hooks.filter(h => h.url !== url);
+      if (next.length === hooks.length) return `未找到回调：${url}`;
+      ctx.config.setKey('settings', 'webhooks', next);
+      webhookSubs.get(url)?.();
+      webhookSubs.delete(url);
+      return `已移除回调 ${url}`;
+    }
+    if (sub === 'test') {
+      return (async () => {
+        const url = rest[0];
+        if (!/^https?:\/\//.test(url ?? '')) return '用法：/webhook test <URL>';
+        try {
+          const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event: 'webhook.test', payload: { message: '测试投递' }, ts: Date.now() }),
+            signal: AbortSignal.timeout(8000),
+          });
+          return `测试投递成功：HTTP ${r.status}`;
+        } catch (e: any) {
+          return `测试投递失败：${e?.message?.slice(0, 120) ?? e}`;
+        }
+      })();
+    }
+    return '用法：/webhook list｜add <URL> [事件...]｜remove <URL>｜test <URL>';
+  });
 
-  bus.register('/a2a', () => lines(' A2A ', [' Agent-to-Agent 协议', ' 状态：实验性（可与 /swarm 组合）']));
+  // /a2a：Agent-to-Agent 协议——call 调用对端 / serve 启动本地端点（A2A messages/send）
+  let a2aServer: { url: string; stop(): void } | null = null;
+  bus.register('/a2a', async (args) => {
+    const [sub, ...rest] = args;
+    if (sub === 'call') {
+      const url = rest[0];
+      const text = rest.slice(1).join(' ');
+      if (!/^https?:\/\//.test(url ?? '') || !text) return '用法：/a2a call <对端URL> <消息>（A2A messages/send）';
+      const { a2aCall } = await import('../kernel/a2a.js');
+      const r = await a2aCall(url, text);
+      if (!r.ok) return `A2A 调用失败：${r.error ?? '无响应'}`;
+      return lines(' A2A 回复 ', String(r.text).split('\n').slice(0, 20).map(l => ` ${l.slice(0, 110)}`));
+    }
+    if (sub === 'serve') {
+      if (a2aServer) return `A2A 端点运行中：${a2aServer.url}`;
+      const port = parseInt(rest[0] ?? '8787', 10);
+      if (!ctx.agent) return 'a2a serve 不可用：当前环境未提供 agent';
+      const { a2aServe } = await import('../kernel/a2a.js');
+      try {
+        a2aServer = await a2aServe(port, async (text) => {
+          const r = await ctx.agent!.run(text);
+          return { ok: r.ok, text: r.text };
+        });
+        return `__KEEPALIVE__\nA2A 端点已启动：${a2aServer.url}（POST messages/send，仅本机监听，SIGINT 停止；/a2a stop 停止）`;
+      } catch (e: any) {
+        return `启动失败：端口 ${port} 可能被占用（/a2a serve <其他端口>）——${e?.message?.slice(0, 80)}`;
+      }
+    }
+    if (sub === 'stop') {
+      if (!a2aServer) return 'A2A 端点未运行';
+      a2aServer.stop();
+      a2aServer = null;
+      return 'A2A 端点已停止';
+    }
+    return lines(' A2A ', [
+      ' 用法：/a2a call <对端URL> <消息>——调用其他 agent（A2A 协议）',
+      '       /a2a serve [端口]——启动本机 A2A 端点（默认 8787）',
+      '       /a2a stop——停止端点',
+      ' 协议：JSON-RPC messages/send（A2A 规范子集，本地优先）',
+    ]);
+  });
 
-  bus.register('/acp', () => 'ACP（Agent Client Protocol）：状态：实验性');
+  // /acp：Agent Client Protocol stdio 服务器（IDE 集成）
+  //   交互模式下提示；`wxnodus -p "/acp server"` 启动阻塞式 stdio 会话（Zed/JetBrains 接入）
+  bus.register('/acp', async (args) => {
+    const wantServer = args[0] === 'server';
+    if (!wantServer) {
+      return lines(' ACP ', [
+        ' Agent Client Protocol（ACP）stdio 服务器——IDE 集成',
+        ' 用法：wxnodus -p "/acp server"（阻塞式，供 ACP 客户端启动）',
+        ' 协议：initialize → session/new → prompt → assistant 消息',
+        ' 参考：Zed / JetBrains 的 ACP 客户端配置',
+      ]);
+    }
+    if (!ctx.agent) return 'acp server 不可用：当前环境未提供 agent';
+    const { runAcpServer } = await import('../kernel/acp.js');
+    const code = await runAcpServer({ run: async (text) => { const r = await ctx.agent!.run(text); return { ok: r.ok, text: r.text }; } });
+    return `ACP 会话结束（exit ${code}）`;
+  });
 
   // ── 协作类 ──────────────────────────────────
-  bus.register('/swarm', () => lines(' 集群 ', [' 多代理并行：/delegate <任务> 派发', ' 角色：规划/编码/审查 子代理']));
+  // /swarm <任务> [N]：N 个子代理并行执行同一任务（角色拆分提示词），汇总结果
+  bus.register('/swarm', async (args) => {
+    let n = 3;
+    if (args.length > 1 && /^\d+$/.test(args[args.length - 1]!)) n = Math.min(parseInt(args.pop()!, 10), 8);
+    const goal = args.join(' ');
+    if (!goal) return '用法：/swarm <任务> [并行数 1-8]（多子代理并行执行）';
+    if (!ctx.agent) return 'swarm 不可用：当前环境未提供子代理';
+    const roles = ['（视角：结构设计）', '（视角：实现细节）', '（视角：边界与风险）', '（视角：验证与测试）', '（视角：性能优化）', '（视角：文档与交付）', '（视角：兼容性）', '（视角：复盘总结）'];
+    const tasks = Array.from({ length: n }, (_, i) => `${goal}\n${roles[i % roles.length]}`);
+    const results = await Promise.allSettled(tasks.map(t => ctx.agent!.spawnSubagent(t)));
+    const lines2: string[] = [];
+    results.forEach((r, i) => {
+      const body = r.status === 'fulfilled' ? r.value : { ok: false, output: `异常：${(r.reason as any)?.message ?? r.reason}` };
+      lines2.push('', ` ══ 子代理 ${i + 1} ${body.ok ? '✓' : '✗'}（${(body as any).turns ?? '?'} 轮）══`, ...String((body as any).output ?? '').split('\n').slice(0, 10).map(l => `  ${l.slice(0, 108)}`));
+    });
+    return lines(` 集群执行 ${goal.slice(0, 30)} `, [` ${n} 个子代理并行（只读工具集）`, ...lines2]);
+  });
 
-  bus.register('/duo', () => '双人模式：与另一代理协同（实验性）');
+  // /duo <任务>：双脑协作——两个子代理独立方案 + 交叉对比汇总
+  bus.register('/duo', async (args) => {
+    const goal = args.join(' ');
+    if (!goal) return '用法：/duo <任务>（双脑协作：两方案独立推演 + 对比）';
+    if (!ctx.agent) return 'duo 不可用：当前环境未提供子代理';
+    const [a, b] = await Promise.all([
+      ctx.agent.spawnSubagent(`${goal}\n（请输出完整方案 A，含步骤与理由）`),
+      ctx.agent.spawnSubagent(`${goal}\n（请输出完整方案 B，含步骤与理由，尽量与直觉方案不同）`),
+    ]);
+    return lines(` 双脑 ${goal.slice(0, 26)} `, [
+      ` ══ 方案 A ${a.ok ? '✓' : '✗'}（${a.turns} 轮）══`,
+      ...String(a.output ?? '').split('\n').slice(0, 14).map(l => `  ${l.slice(0, 108)}`),
+      '',
+      ` ══ 方案 B ${b.ok ? '✓' : '✗'}（${b.turns} 轮）══`,
+      ...String(b.output ?? '').split('\n').slice(0, 14).map(l => `  ${l.slice(0, 108)}`),
+    ]);
+  });
 
   bus.register('/cron', () => {
     try {
@@ -533,7 +794,48 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     } catch { return '定时任务表未初始化（说「每天早上9点提醒我」自动创建）'; }
   });
 
-  bus.register('/jobs', () => '任务队列：当前无后台任务（/build 编译任务同步执行）');
+  // /jobs：后台任务注册表（真实 fire-and-forget 子代理派发 + db 持久化状态）
+  bus.register('/jobs', (args) => {
+    const [sub, ...rest] = args;
+    if (sub === 'run') {
+      const goal = rest.join(' ');
+      if (!goal) return '用法：/jobs run <任务>（后台派发子代理，不阻塞当前会话）';
+      if (!ctx.agent) return 'jobs 不可用：当前环境未提供子代理';
+      const id = `t${Date.now().toString(36)}`;
+      const now = Date.now();
+      try {
+        ctx.db.prepare(`INSERT INTO tasks (id, goal, status, created_at) VALUES (?,?,?,?)`).run(id, goal.slice(0, 200), 'running', now);
+      } catch { return '任务表未初始化（重启后自动建表）'; }
+      // fire-and-forget：后台执行，完成后写回
+      void ctx.agent.spawnSubagent(goal).then(r => {
+        try {
+          ctx.db.prepare(`UPDATE tasks SET status=?, output=?, done_at=? WHERE id=?`).run(r.ok ? 'done' : 'failed', String(r.output).slice(0, 4000), Date.now(), id);
+        } catch { /* 忽略 */ }
+        try { ctx.bus.emit('system.notice', { text: `后台任务 ${id} ${r.ok ? '完成' : '失败'}（${r.turns} 轮）` }); } catch { /* 忽略 */ }
+      }).catch(() => {
+        try { ctx.db.prepare(`UPDATE tasks SET status='failed', done_at=? WHERE id=?`).run(Date.now(), id); } catch { /* 忽略 */ }
+      });
+      return `后台任务已派发：${id}「${goal.slice(0, 60)}」（/jobs list 查看状态）`;
+    }
+    if (sub === 'show') {
+      const id = rest[0];
+      if (!id) return '用法：/jobs show <任务ID>';
+      const row = ctx.db.prepare(`SELECT * FROM tasks WHERE id=?`).get(id) as any;
+      if (!row) return `任务不存在：${id}`;
+      return lines(` 任务 ${id} `, [
+        ` 目标：${row.goal}`,
+        ` 状态：${row.status === 'running' ? '⏳ 运行中' : row.status === 'done' ? '✓ 完成' : '✗ 失败'}（${row.status}）`,
+        ...(row.output ? ['', ...String(row.output).split('\n').slice(0, 15).map(l => ` ${l.slice(0, 110)}`)] : []),
+      ]);
+    }
+    // list（默认）
+    let rows: any[] = [];
+    try {
+      rows = ctx.db.prepare(`SELECT id, goal, status, created_at, done_at FROM tasks ORDER BY created_at DESC LIMIT 20`).all() as any[];
+    } catch { return '任务表未初始化（/jobs run <任务> 自动建表后可用）'; }
+    if (!rows.length) return '暂无后台任务（/jobs run <任务> 派发）';
+    return lines(' 后台任务 ', rows.map(r => ` ${r.status === 'running' ? '⏳' : r.status === 'done' ? '✓' : '✗'} ${r.id} ${r.status === 'running' ? '' : `[${Math.round((r.done_at - r.created_at) / 1000)}s] `}${String(r.goal).slice(0, 50)}`));
+  });
 
   // /delegate：真实派发子代理（只读工具集、独立上下文），结果回显
   bus.register('/delegate', async (args) => {
@@ -554,10 +856,25 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     }
   });
 
-  bus.register('/goal', (args) => {
+  // /goal：开放目标循环执行——逐轮推进直到完成或达到最大轮数（真实 agent 执行）
+  bus.register('/goal', async (args) => {
+    const maxIter = args.length > 1 && /^\d+$/.test(args[args.length - 1]!) ? parseInt(args.pop()!, 10) : 3;
     const goal = args.join(' ');
-    if (!goal) return '用法：/goal <目标>（开放目标驱动，规划→执行→验证）';
-    return `目标已设定：「${goal.slice(0, 60)}」——概念编译器将拆解为计划并逐步执行`;
+    if (!goal) return '用法：/goal <目标> [最大轮数]（循环执行直到完成或达上限）';
+    if (!ctx.agent) return 'goal 不可用：当前环境未提供 agent';
+    const rounds: string[] = [];
+    let done = false;
+    for (let i = 1; i <= Math.min(maxIter, 8); i++) {
+      const prompt = `目标：${goal}\n当前进度：${rounds.at(-1) ? '已完成以下工作——' + rounds.at(-1)!.slice(0, 600) : '尚未开始'}。\n请继续推进目标。若目标已全部完成，以「✓ 已完成」开头输出总结；否则输出本轮完成的事项与下一步。`;
+      const r = await ctx.agent.run(prompt);
+      rounds.push(r.text);
+      if (r.text.includes('✓ 已完成') || r.text.includes('✅')) { done = true; break; }
+      if (!r.ok && r.text.includes('未配置模型密钥')) break; // 无 key：不空转
+    }
+    return lines(` 目标执行 ${done ? '✓ 完成' : `（${rounds.length} 轮）`} `, [
+      ` 目标：${goal.slice(0, 80)}`,
+      ...rounds.map((r, i) => ['', ` ── 第 ${i + 1} 轮 ──`, ...String(r).split('\n').slice(0, 12).map(l => ` ${l.slice(0, 110)}`)]).flat(),
+    ]);
   });
 
   // 审计留痕

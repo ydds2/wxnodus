@@ -113,9 +113,26 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const scaffoldBuild: ToolDef = {
-    schema: { type: 'function', function: { name: 'scaffold_build', description: '构建可运行项目（概念编译器产物）', parameters: { type: 'object', properties: { spec: { type: 'string', description: '项目规格 JSON' } }, required: ['spec'] } } },
+    schema: { type: 'function', function: { name: 'scaffold_build', description: '构建可运行项目（概念编译器：规格 → 计划 → 脚手架落地到 data/projects/）', parameters: { type: 'object', properties: { spec: { type: 'string', description: '项目规格 JSON（title/summary/scaffold/acceptance）' } }, required: ['spec'] } } },
     danger: true,
-    async run() { return 'scaffold_build 由 build 模块接管（L3-1）'; },
+    async run({ spec }, ctx) {
+      try {
+        const parsed = typeof spec === 'string' ? JSON.parse(spec) : spec;
+        if (!parsed?.title || !parsed?.summary) return 'spec 不完整（需要 title/summary）';
+        const { makeSpec, validateSpec } = await import('../build/spec.js');
+        const { makePlan } = await import('../build/plan.js');
+        const { instantiate } = await import('../build/scaffold.js');
+        const s = makeSpec(parsed.summary, { key: null });
+        if (!validateSpec(s).ok) return `规格校验失败：${validateSpec(s).reason}`;
+        const plan = makePlan(parsed.summary, { key: null });
+        const dir = join(ctx.dataDir, 'projects', parsed.title);
+        const r = instantiate(s, dir, { checkLeftover: false });
+        if (!r.ok) return `脚手架失败：${r.reason}`;
+        return `项目已生成 → ${dir}\n模块计划：${plan.order.join(' → ')}\n验收：${s.acceptance.join('；')}`;
+      } catch (e: any) {
+        return `scaffold_build 异常：${e?.message?.slice(0, 300) ?? e}`;
+      }
+    },
   };
   const delegate: ToolDef = {
     schema: { type: 'function', function: { name: 'delegate', description: '派生子代理执行独立任务（只读工具集，结果返回）', parameters: { type: 'object', properties: { goal: { type: 'string', description: '子代理目标（独立上下文，只读工具）' } }, required: ['goal'] } } },

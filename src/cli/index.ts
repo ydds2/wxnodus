@@ -138,7 +138,17 @@ async function main() {
     const routed = await routeInput(text);
     if (routed.kind === 'command' && routed.cmd) {
       const r = await commandBus.execute(routed.cmd + (routed.value ? ' ' + routed.value : ''));
-      console.log(r.output || r.dispatch?.message || r.error || '');
+      const out = r.output || r.dispatch?.message || r.error || '';
+      // __KEEPALIVE__ 前缀：常驻服务命令（/gateway start、/a2a serve）不退出，SIGINT 停止
+      if (out.startsWith('__KEEPALIVE__')) {
+        console.log(out.slice(14).trim());
+        await new Promise<void>(resolve => {
+          process.once('SIGINT', () => resolve());
+          process.once('SIGTERM', () => resolve());
+        });
+      } else {
+        console.log(out);
+      }
     } else if (routed.kind === 'tool' && routed.value) {
       console.log(routed.value);
     } else {

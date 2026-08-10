@@ -98,6 +98,14 @@ export function openDB(dataDir: string): Db {
       hash TEXT NOT NULL,
       ts INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      goal TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      output TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      done_at INTEGER
+    );
   `);
 
   // FTS5 消息全文索引（content='' 外部内容表，rowid 对齐 messages.id）

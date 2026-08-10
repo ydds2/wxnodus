@@ -35,6 +35,7 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 - **MCP 客户端**：`/mcp add｜list｜remove｜test` 管理本地 stdio server（data/mcp.json），工具以 `mcp__<server>__<tool>` 并入 agent；连接失败干净降级
 - **分支会话**：`/fork` 复制会话（含全部消息）为分支；UI `session.fork`/`session.undo` RPC 真实实现
 - **/init 项目分析**：本地扫描生成 AGENTS.md（确定性数据，`/init --overwrite` 重新生成）
+- **协作与协议（全部真实实现）**：`/swarm` 并行子代理（1-8 个）、`/duo` 双脑方案对比、`/goal` 循环目标执行、`/jobs run` 后台任务（db 持久化）、`/delegate` 派发子代理；`/gateway start` 本地 HTTP JSON-RPC 网关（command/prompt/health）、`/a2a call|serve` Agent-to-Agent 协议端点、`/acp server` ACP stdio 服务器（IDE 集成）、`/webhook add` 事件→HTTP 回调、`/claw <URL>` 网页抓取（SSRF 防护）、`/sandbox L0-L3` 分层权限沙盒、`/timer` 真实到时通知
 - **模型能力元数据**：10 模型带能力徽标（🧠 推理 / 👁 视觉 / 上下文窗口），`/model <关键词>` 模糊过滤
 - **Computer Use**：robotjs 桌面控制 + 动作层（DPI 换算/护栏/串行）+ GLM-4V 屏幕理解
 - **合规五项**（红线）：授权存证 / AI 生成标注（深度合成办法）/ 审计导出 / 许可证扫描 / robots 护栏
