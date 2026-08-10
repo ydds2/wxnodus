@@ -1,0 +1,23 @@
+{
+  "name": "example",
+  "version": "0.1.0",
+  "description": "示例插件：展示工具与命令的编写方式",
+  "tools": [
+    {
+      "name": "example_greet",
+      "description": "用指定语言打招呼（示例插件工具）",
+      "parameters": {
+        "name": { "type": "string", "description": "打招呼对象" },
+        "lang": { "type": "string", "description": "语言（zh/en）" }
+      }
+    },
+    {
+      "name": "example_echo",
+      "description": "原样返回输入（示例插件工具）",
+      "parameters": {
+        "text": { "type": "string", "description": "要回显的文本" }
+      }
+    }
+  ],
+  "commands": ["hello"]
+}

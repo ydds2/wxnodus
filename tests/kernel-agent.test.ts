@@ -387,3 +387,54 @@ describe('clarify 与 todo', () => {
     expect(String(r4)).toContain('待办为空');
   });
 });
+
+// ── 对比轮 6 回归：C1 中断竞态 / C2 SSE 错误 ───
+describe('回归：中断竞态与 SSE 错误', () => {
+  it('C1：中断后立即重发——旧回合不复活（回合级状态隔离）', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    let firstCall = true;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-c1',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      callModel: async () => {
+        if (firstCall) { firstCall = false; await gate; return { type: 'text', content: '旧回合' }; }
+        return { type: 'text', content: '新回合' };
+      },
+    });
+    const p1 = agent.run('旧任务');
+    await new Promise(r => setTimeout(r, 50)); // 旧回合进入 callModel（挂起）
+    agent.abort();                             // 中断旧回合
+    const r2 = await agent.run('新任务');
+    expect(r2.text).toContain('新回合');       // 新回合正常完成（不被旧回合污染）
+    release();                                 // 释放旧回合 gate
+    const r1 = await p1;
+    expect(r1.interrupted).toBe(true);         // 旧回合标记中断，不复活继续执行
+  });
+
+  it('C2：SSE 错误对象抛错（不静默空消息回合）', async () => {
+    const { encryptKey } = await import('../src/kernel/providers.js');
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('data: {"error":{"message":"上下文超限"}}\n\ndata: [DONE]\n\n'));
+          c.close();
+        },
+      }),
+    }) as any);
+    try {
+      const agent = createAgent({
+        db, bus, mem, sessionId: 't-c2',
+        config: { settings: { apiKeyEnc: encryptKey('test-key'), baseURL: 'https://example.com/v1', model: 'deepseek-v4-flash' } } as any,
+      });
+      const r = await agent.run('任务');
+      expect(r.ok).toBe(false);
+      expect(r.text).toContain('上下文超限');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});

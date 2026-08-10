@@ -169,3 +169,15 @@ describe('forkSession 会话分支', () => {
     expect(forkSession(db, 'nope', 'f-x')).toBe(0);
   });
 });
+
+// ── P0/P3：cron_jobs 表与插件命令面（对比轮 6 新增）───
+describe('cron_jobs 表', () => {
+  it('表已创建且可读写（/cron 真实调度数据源）', () => {
+    const r = db.prepare(`INSERT INTO cron_jobs (schedule, action, last_run, enabled) VALUES ('every 30m', '检查仓库状态', ?, 1)`).run(Date.now());
+    expect(Number(r.lastInsertRowid)).toBeGreaterThan(0);
+    const row = db.prepare(`SELECT * FROM cron_jobs WHERE id=?`).get(Number(r.lastInsertRowid)) as any;
+    expect(row.schedule).toBe('every 30m');
+    expect(row.enabled).toBe(1);
+    db.prepare(`DELETE FROM cron_jobs WHERE id=?`).run(Number(r.lastInsertRowid));
+  });
+});

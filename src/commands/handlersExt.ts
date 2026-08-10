@@ -174,16 +174,24 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // ── 会话类 ──────────────────────────────────
-  // /resume <id>：真正切换会话（修复：此前仅 restoreCheckpoint 提示，不切 agent 会话）
+  // /resume <id|标题片段>：真正切换会话（修复：此前仅 restoreCheckpoint 提示，不切 agent 会话）
+  //   P2 深化：id 未命中时按标题模糊匹配（/resume 我的分析 → 标题含「我的分析」的会话）
   bus.register('/resume', (args) => {
     const id = args[0];
     const rows = ctx.db.prepare(`SELECT id, title FROM sessions ORDER BY updated_at DESC`).all() as any[];
     if (!id) return lines(' 会话（/resume <id> 恢复） ', rows.map(r => ` ${r.id}  ${r.title || '(无标题)'}`));
-    if (!rows.some(r => r.id === id)) return `会话不存在：${id}`;
-    const cnt = (ctx.db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(id) as { c: number }).c;
+    let target = id;
+    if (!rows.some(r => r.id === id)) {
+      // 标题模糊匹配：取最近更新且标题包含关键词的会话
+      const q = id.toLowerCase();
+      const hit = rows.find(r => String(r.title ?? '').toLowerCase().includes(q));
+      if (!hit) return `会话不存在：${id}`;
+      target = hit.id;
+    }
+    const cnt = (ctx.db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(target) as { c: number }).c;
     // 真正切换：agent 会话 + 状态提示（CLI 单会话 'default' 主用；UI 走 session.resume RPC）
-    try { ctx.agent?.setSessionId(id); } catch { /* 无 agent 时仅提示 */ }
-    return `已切换到会话 ${id}（${cnt} 条消息）${cnt ? '——历史已加载，可直接继续对话' : ''}`;
+    try { ctx.agent?.setSessionId(target); } catch { /* 无 agent 时仅提示 */ }
+    return `已切换到会话 ${target}（${cnt} 条消息）${cnt ? '——历史已加载，可直接继续对话' : ''}`;
   });
 
   // /new：新建空会话并切换
@@ -667,6 +675,71 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return out;
   });
 
+  // ── 插件类（P0）──────────────────────────────────
+  // /plugin：插件管理——list/install/remove/enable/disable
+  //   插件 = data/plugins/<name>/（plugin.json 声明 + index.js 实现）
+  //   工具自动并入 agent（danger 包裹）；命令注册为 /<插件名>.<命令名>
+  bus.register('/plugin', async (args) => {
+    const { loadAllPlugins, setPluginEnabled } = await import('../kernel/plugins.js');
+    const [sub, ...rest] = args;
+    const all = await loadAllPlugins(ctx.dataDir, ctx.cwd);
+
+    if (!sub || sub === 'list') {
+      if (!all.length) {
+        return lines(' 插件 ', [' 未安装插件', '', ' 用法：/plugin install <插件目录路径>（目录需含 plugin.json + index.js）', '       /plugin remove <名称> ｜ enable｜disable <名称>', ' 插件目录：' + join(ctx.dataDir, 'plugins')]);
+      }
+      return lines(' 插件 ', all.map(p => {
+        const toolCount = Object.keys(p.tools).length;
+        const cmdCount = Object.keys(p.commands).length;
+        const status = p.manifest.enabled === false ? '○ 禁用' : '● 启用';
+        return ` ${status} ${p.manifest.name} v${p.manifest.version}（${toolCount} 工具${cmdCount ? ` + ${cmdCount} 命令` : ''}）${p.manifest.description ? ' · ' + p.manifest.description.slice(0, 40) : ''}`;
+      }));
+    }
+
+    const name = rest[0];
+    if (!name) return '用法：/plugin install <目录> ｜ list ｜ remove｜enable｜disable <名称>';
+
+    if (sub === 'install') {
+      const src = resolve(process.cwd(), name);
+      if (!existsSync(src)) return `目录不存在：${src}`;
+      const manifestFile = join(src, 'plugin.json');
+      if (!existsSync(manifestFile)) return `不是插件目录（缺 plugin.json）：${src}`;
+      // 解析清单取插件名（复制目标目录名）
+      const { parsePluginManifest } = await import('../kernel/plugins.js');
+      let pluginName = '';
+      try { pluginName = parsePluginManifest(readFileSync(manifestFile, 'utf8')).name; } catch (e: any) { return `plugin.json 解析失败：${e?.message?.slice(0, 120) ?? e}`; }
+      const dest = join(ctx.dataDir, 'plugins', pluginName);
+      if (existsSync(dest)) return `插件已存在：${pluginName}（/plugin remove ${pluginName} 后重装）`;
+      mkdirSync(dest, { recursive: true });
+      // 复制 plugin.json 与 index.js（及 data 目录）
+      for (const f of ['plugin.json', 'index.js']) {
+        const srcF = join(src, f);
+        if (existsSync(srcF)) writeFileSync(join(dest, f), readFileSync(srcF, 'utf8'), 'utf8');
+      }
+      const srcData = join(src, 'data');
+      if (existsSync(srcData)) {
+        mkdirSync(join(dest, 'data'), { recursive: true });
+        for (const f of readdirSync(srcData)) {
+          writeFileSync(join(dest, 'data', f), readFileSync(join(srcData, f), 'utf8'), 'utf8');
+        }
+      }
+      return `插件已安装：${pluginName} → ${dest}（重启后工具/命令生效；本会话可用 /plugin list 查看）`;
+    }
+
+    const target = all.find(p => p.manifest.name === name);
+    if (!target) return `插件不存在：${name}（/plugin list 查看）`;
+
+    if (sub === 'remove') {
+      try { rmSync(target.dir, { recursive: true, force: true }); } catch (e: any) { return `删除失败：${e?.message?.slice(0, 120) ?? e}`; }
+      return `插件已移除：${name}`;
+    }
+    if (sub === 'enable' || sub === 'disable') {
+      const ok = setPluginEnabled(target.dir, sub === 'enable');
+      return ok ? `插件已${sub === 'enable' ? '启用' : '禁用'}：${name}（重启后生效）` : `状态修改失败：${name}`;
+    }
+    return '用法：/plugin install <目录> ｜ list ｜ remove｜enable｜disable <名称>';
+  });
+
   // ── 连接类 ──────────────────────────────────
   // /mcp：本地 MCP 客户端管理（data/mcp.json）——list/add/remove/test
   bus.register('/mcp', async (args) => {
@@ -1069,9 +1142,24 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // /goal：开放目标循环执行——逐轮推进直到完成或达到最大轮数（真实 agent 执行）
-  // /task：后台任务浏览器（对比轮 6 补强——映射 /jobs 同一后端）
+  // /task：后台任务浏览器（对比轮 6 补强——映射 /jobs 同一后端；show 查看输出）
   bus.register('/task', (args) => {
     const [sub, ...rest] = args;
+    if (sub === 'show') {
+      const id = rest[0];
+      if (!id) return '用法：/task show <任务ID>';
+      const row = ctx.db.prepare(`SELECT * FROM tasks WHERE id=?`).get(id) as any;
+      if (!row) return `任务不存在：${id}`;
+      return lines(` 任务 ${id} `, [
+        ` 目标：${row.goal}`,
+        ` 状态：${row.status === 'running' ? '⏳ 运行中' : row.status === 'done' ? '✓ 完成' : '✗ 失败'}（${row.status}）`,
+        ...(row.output ? ['', ...String(row.output).split('\n').slice(0, 15).map(l => ` ${l.slice(0, 110)}`)] : []),
+      ]);
+    }
+    if (sub === 'clean') {
+      const r = ctx.db.prepare(`DELETE FROM tasks WHERE status != 'running'`).run();
+      return `已清理 ${r.changes} 条已完成/失败任务`;
+    }
     if (sub === 'run') return '后台派发请用 /jobs run <任务>（本命令为任务浏览）';
     let rows: any[] = [];
     try {

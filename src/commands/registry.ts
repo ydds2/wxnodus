@@ -16,7 +16,7 @@ export const SLASH: string[] = [
   // 视觉与媒体（可视化 AI 技能）
   '/vision', '/img', '/video', '/render', '/capture',
   // 网络与集成
-  '/claw', '/mcp', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
+  '/claw', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
   // 协作
   '/swarm', '/duo', '/cron', '/jobs', '/task', '/delegate', '/goal', '/btw',
   // 工具（确定性）
@@ -31,7 +31,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/perm': '🛡', '/sandbox': '🛡', '/compliance': '🛡', '/consent': '🛡', '/audit': '🛡', '/encrypt': '🛡', '/yolo': '🛡', '/afk': '🛡',
   '/backup': '⚙', '/export': '⚙', '/theme': '⚙', '/lang': '⚙', '/config': '⚙', '/logs': '⚙', '/bench': '⚙', '/init': '⚙',
   '/vision': '👁', '/img': '👁', '/video': '👁', '/render': '👁', '/capture': '👁',
-  '/claw': '⛭', '/mcp': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
+  '/claw': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
   '/swarm': '◈', '/duo': '◈', '/cron': '◈', '/jobs': '◈', '/task': '◈', '/delegate': '◈', '/goal': '◈', '/btw': '◈',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
 };
@@ -51,6 +51,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/plan': '计划模式（on/off/save/view/clear）',
   '/flow': 'AI 生成流程图（Mermaid 写入 data/flow/）',
   '/import': '导入消息（JSON 或文本文件回填会话）',
+  '/plugin': '插件管理（list/install/remove/enable/disable）',
   '/task': '后台任务浏览器（等价 /jobs）',
   '/sessions': '会话列表（非交互模式输出文本列表）',
   '/resume': '切换会话（真正加载历史并继续）',

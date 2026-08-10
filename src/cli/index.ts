@@ -75,6 +75,9 @@ async function main() {
   // MCP 客户端（本地 stdio）：data/mcp.json 配置的 server 动态并入工具表
   const { connectAllMcp, mcpClientsToTools, closeAllMcp } = await import('../kernel/mcp.js');
   const mcpClients = await connectAllMcp(dataDir);
+  // 插件系统（P0）：data/plugins/*/ 加载 → 工具并入 extraTools（命令注册在 commandBus 创建后）
+  const { loadAllPlugins, pluginToolsToExtra } = await import('../kernel/plugins.js');
+  const plugins = await loadAllPlugins(dataDir, cwd);
   const agent = createAgent({
     db, bus, mem, sessionId: 'default', config: { settings },
     mode: (config.get('settings') as any).mode ?? 'smart',
@@ -88,7 +91,7 @@ async function main() {
     // C6：clarify 文字提问（UI clarify 面板真实回答）
     onClarify: async (question, choices) => (gateway ? gateway.requestClarify(question, choices) : ''),
     hooks: hookRunner,
-    extraTools: mcpClientsToTools(mcpClients),
+    extraTools: { ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) },
   });
 
   // 模式/主题状态
@@ -99,6 +102,19 @@ async function main() {
 
   // 命令注册
   const commandBus = createCommandBus();
+  // 插件命令注册为 /<插件名>.<命令名>（如 /example.hello），防与内置命令冲突；
+  // 同时动态注册进 SLASH 命令表——routeInput 白名单校验与 UI 补全才能识别
+  const { SLASH, COMMAND_DESC } = await import('../commands/registry.js');
+  for (const p of plugins) {
+    for (const [cmdName, fn] of Object.entries(p.commands)) {
+      const full = `/${p.manifest.name}.${cmdName}`;
+      commandBus.register(full, (args) => Promise.resolve(fn(args)));
+      if (!SLASH.includes(full)) {
+        SLASH.push(full);
+        COMMAND_DESC[full] = `插件命令（${p.manifest.name}）`;
+      }
+    }
+  }
   const { registerCoreHandlers } = await import('../commands/handlers.js');
   const { registerExtHandlers } = await import('../commands/handlersExt.js');
 
