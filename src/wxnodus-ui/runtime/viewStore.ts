@@ -1,4 +1,4 @@
-import { atom, computed } from 'nanostores'
+import { createAtom as atom, computed } from '../../app/stores/engine.js'
 
 import { MOUSE_TRACKING } from '../config/env.js'
 import { ZERO } from '../domain/usage.js'

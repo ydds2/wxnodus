@@ -1,5 +1,5 @@
 import { Text } from '@wxnodus/ink'
-import { useStore } from '@nanostores/react'
+import { useAtom as useStore } from '../../app/stores/engine.js'
 import type { ReactNode } from 'react'
 
 import { $uiState } from '../runtime/viewStore.js'

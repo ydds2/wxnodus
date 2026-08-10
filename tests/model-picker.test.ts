@@ -1,7 +1,7 @@
 // tests/model-picker.test.ts — 模型选择器纯函数（键位/过滤/分组）
 import { describe, it, expect } from 'vitest';
 import { filterModels, MODEL_CATALOG } from '../src/kernel/providers.js';
-import { initPicker, handlePickerKey, groupByProvider } from '../src/ui/components/ModelPicker.js';
+import { initPicker, handlePickerKey, groupByProvider } from '../src/wxnodus-ui/lib/modelPicker.js';
 
 describe('filterModels 模型过滤', () => {
   it('空查询返回全部', () => {

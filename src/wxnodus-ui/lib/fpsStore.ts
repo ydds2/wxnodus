@@ -5,7 +5,7 @@
 // Zero-cost when WXNODUS_TUI_FPS is unset: trackFrame is undefined so the
 // onFrame callback short-circuits at the optional chain.
 
-import { atom } from 'nanostores'
+import { createAtom as atom } from '../../app/stores/engine.js'
 
 import { SHOW_FPS } from '../config/env.js'
 

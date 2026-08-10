@@ -20,7 +20,6 @@
     "@huggingface/transformers": "^3.0.0",
     "@inkjs/ui": "^2.0.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "@nanostores/react": "^1.1.0",
     "@shikijs/stream": "^4.4.2",
     "better-sqlite3": "^11.3.0",
     "chalk": "^5.3.0",
@@ -39,7 +38,6 @@
     "micromark": "^4.0.2",
     "micromark-extension-gfm": "^3.0.0",
     "micromark-extension-math": "^3.1.0",
-    "nanostores": "^1.4.2",
     "node-screenshots": "^0.2.8",
     "nodemailer": "^6.9.14",
     "playwright-core": "^1.62.1",
@@ -51,8 +49,7 @@
     "typescript": "^5.5.4",
     "undici": "^6.28.0",
     "unicode-animations": "^1.0.3",
-    "zod": "^3.23.8",
-    "zustand": "^5.0.0"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",

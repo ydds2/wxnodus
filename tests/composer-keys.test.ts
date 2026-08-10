@@ -1,6 +1,6 @@
 // tests/composer-keys.test.ts — Composer 键位纯函数（提交/换行/历史/光标/编辑）
 import { describe, it, expect } from 'vitest';
-import { initComposer, handleComposerKey } from '../src/ui/lib/composerKeys.js';
+import { initComposer, handleComposerKey } from '../src/wxnodus-ui/lib/composerKeys.js';
 
 describe('handleComposerKey', () => {
   it('Enter 提交：trim 后提交并清空', () => {

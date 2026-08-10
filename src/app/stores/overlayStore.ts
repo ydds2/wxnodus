@@ -1,5 +1,5 @@
 // src/app/stores/overlayStore.ts — L5 弹层状态（zustand）
-import { create } from 'zustand';
+import { createStore as create } from './engine.js';
 import type { OverlayState } from './types.js';
 
 const initial: OverlayState = { approval: null, clarify: null, confirm: null, sessions: false, modelPicker: false, pager: null };

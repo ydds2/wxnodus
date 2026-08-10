@@ -1,4 +1,4 @@
-import { useStore } from '@nanostores/react'
+import { useAtom as useStore } from '../app/stores/engine.js'
 
 import { GatewayProvider } from './bridge/gatewayProvider.js'
 import { $uiState } from './runtime/viewStore.js'

@@ -1,5 +1,5 @@
 import { Box, Text } from '@wxnodus/ink'
-import { useStore } from '@nanostores/react'
+import { useAtom as useStore } from '../../app/stores/engine.js'
 
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { AppOverlaysProps } from '../bridge/interfaces.js'

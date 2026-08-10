@@ -1,4 +1,4 @@
-import { useStore } from '@nanostores/react'
+import { useAtom as useStore } from '../../app/stores/engine.js'
 import { memo } from 'react'
 
 import type { AppLayoutProgressProps } from '../bridge/interfaces.js'

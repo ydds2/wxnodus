@@ -1,5 +1,5 @@
 import { forceRedraw, useInput } from '@wxnodus/ink'
-import { useStore } from '@nanostores/react'
+import { useAtom as useStore } from '../../app/stores/engine.js'
 import { useEffect, useRef } from 'react'
 
 import { TYPING_IDLE_MS } from '../config/timing.js'

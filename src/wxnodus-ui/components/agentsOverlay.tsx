@@ -1,5 +1,5 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@wxnodus/ink'
-import { useStore } from '@nanostores/react'
+import { useAtom as useStore } from '../../app/stores/engine.js'
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 
 import {

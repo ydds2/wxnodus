@@ -1,7 +1,7 @@
 // FPS counter overlay (WXNODUS_TUI_FPS=1). Zero-cost when disabled.
 
 import { Text } from '@wxnodus/ink'
-import { useStore } from '@nanostores/react'
+import { useAtom as useStore } from '../../app/stores/engine.js'
 
 import { SHOW_FPS } from '../config/env.js'
 import { $fpsState } from '../lib/fpsStore.js'

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { useStdin, withInkSuspended } from '@wxnodus/ink'
-import { useStore } from '@nanostores/react'
+import { useAtom as useStore } from '../../app/stores/engine.js'
 import { useCallback, useMemo, useState } from 'react'
 
 import type { PasteEvent } from '../components/textInput.js'

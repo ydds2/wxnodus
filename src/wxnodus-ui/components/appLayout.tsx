@@ -1,5 +1,5 @@
 import { AlternateScreen, Box, NoSelect, ScrollBox, Text } from '@wxnodus/ink'
-import { useStore } from '@nanostores/react'
+import { useAtom as useStore } from '../../app/stores/engine.js'
 import { Fragment, memo, useMemo, useRef } from 'react'
 
 import { useGateway } from '../bridge/gatewayProvider.js'

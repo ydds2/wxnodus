@@ -1,10 +1,10 @@
 // tests/gaps.test.ts — L6-3 差距补齐：/undo checkpoint/vim 薄层/审批预审/stream-json/@引用匹配
 import { describe, it, expect } from 'vitest';
 import { openDB, closeDB, saveCheckpoint, restoreCheckpoint } from '../src/store/db.js';
-import { vimHandleKey } from '../src/ui/lib/vimKeys.js';
+import { vimHandleKey } from '../src/wxnodus-ui/lib/vimKeys.js';
 import { createAutoReview } from '../src/kernel/autoReview.js';
 import { toStreamJson } from '../src/kernel/streamJson.js';
-import { resolveAtRefs } from '../src/ui/lib/atRefs.js';
+import { resolveAtRefs } from '../src/wxnodus-ui/lib/atRefs.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

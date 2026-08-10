@@ -1,4 +1,4 @@
-import { atom } from 'nanostores'
+import { createAtom as atom } from '../../app/stores/engine.js'
 import { useSyncExternalStore } from 'react'
 
 import { isTodoDone } from '../lib/liveProgress.js'

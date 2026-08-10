@@ -1,6 +1,6 @@
 // tests/lines.test.ts — 行数估算 / 消息滚动裁剪（纯函数）
 import { describe, it, expect } from 'vitest';
-import { estimateLines, strWidth, trimTail, scrollTail } from '../src/ui/lib/lines.js';
+import { estimateLines, strWidth, trimTail, scrollTail } from '../src/wxnodus-ui/lib/lines.js';
 
 describe('strWidth / estimateLines', () => {
   it('ASCII 1 列 / 中文 2 列', () => {

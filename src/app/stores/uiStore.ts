@@ -1,5 +1,5 @@
 // src/app/stores/uiStore.ts — L5 UI 状态（zustand）
-import { create } from 'zustand';
+import { createStore as create } from './engine.js';
 import type { UiState } from './types.js';
 
 const initial: UiState = {

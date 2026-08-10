@@ -1,4 +1,4 @@
-import { atom, computed } from 'nanostores'
+import { createAtom as atom, computed } from '../../app/stores/engine.js'
 import { flushSync } from 'react-dom'
 import { forceRedraw } from '@wxnodus/ink'
 

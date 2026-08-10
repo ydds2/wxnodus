@@ -1,5 +1,5 @@
 import { type ScrollBoxHandle, useApp, useHasSelection, useSelection, useStdout, useTerminalTitle } from '@wxnodus/ink'
-import { useStore } from '@nanostores/react'
+import { useAtom as useStore } from '../../app/stores/engine.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { STARTUP_RESUME_ID } from '../config/env.js'
