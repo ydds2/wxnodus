@@ -12,6 +12,8 @@ export interface SkillMeta {
   aiGenerated?: boolean;
   source: 'project' | 'user' | 'forge';
   path: string;
+  /** 流程节点链（frontmatter flow: "A → B"）——/flow 驱动 */
+  flow?: string;
 }
 
 export interface LoadedSkill {
@@ -130,7 +132,7 @@ export function installSkill(dataDir: string, srcDir: string): string {
 }
 
 // ── 创建技能（/skill new 与 /learn 共用）────────────
-export function writeSkill(dataDir: string, name: string, description: string, workflow: string, opts: { aiGenerated?: boolean } = {}): string {
+export function writeSkill(dataDir: string, name: string, description: string, workflow: string, opts: { aiGenerated?: boolean; flow?: string } = {}): string {
   const dir = join(dataDir, 'skills', name);
   mkdirSync(dir, { recursive: true });
   const front = [
@@ -138,6 +140,7 @@ export function writeSkill(dataDir: string, name: string, description: string, w
     `name: "${name}"`,
     `description: "${description}"`,
   ];
+  if (opts.flow) front.push(`flow: "${opts.flow}"`);
   if (opts.aiGenerated) front.push('ai_generated: true');
   front.push('---', '');
   const body = [
@@ -150,6 +153,28 @@ export function writeSkill(dataDir: string, name: string, description: string, w
   ].filter(Boolean).join('\n');
   writeFileSync(join(dir, SKILL_FILE), front.join('\n') + '\n' + body + '\n', 'utf8');
   return dir;
+}
+
+// ── Flow skills（P2）：从 SKILL.md 解析节点流程 ──
+// frontmatter flow: "准备 → 构建 → 部署"（→ 分隔节点链）
+// 正文每节点一段：## 节点: 准备 + 执行说明
+export interface FlowNode { name: string; instruction: string }
+
+export function parseFlow(skillBody: string, flowField: string | undefined): FlowNode[] | null {
+  const names = (flowField ?? '').split(/→|->/).map(n => n.trim()).filter(Boolean);
+  if (!names.length) return null;
+  // 按 ## 节点: <名> 分段提取指令
+  const sections = new Map<string, string>();
+  const re = /^##\s*节点\s*[:：]\s*(.+)$/gm;
+  let m: RegExpExecArray | null;
+  let lastKey: string | null = null;
+  const lines = skillBody.split(/\r?\n/);
+  for (const line of lines) {
+    const hit = re.exec(line);
+    if (hit) { lastKey = hit[1]!.trim(); sections.set(lastKey, ''); continue; }
+    if (lastKey) sections.set(lastKey, (sections.get(lastKey) ?? '') + line + '\n');
+  }
+  return names.map(name => ({ name, instruction: (sections.get(name) ?? '（节点无说明，按名称执行）').trim() }));
 }
 
 // ── 技能工具：注入 SKILL.md 正文给模型（≤8000 字符）──

@@ -50,6 +50,15 @@ function deepGet(obj: Record<string, any>, path: string): any {
   return path.split('.').reduce((acc, k) => (acc === undefined || acc === null ? undefined : acc[k]), obj);
 }
 
+// P2 配置校验：settings 分区已知键 schema——未知键 /config set 时警告（防拼写错误静默无效）
+const SETTINGS_KEYS = new Set([
+  'apiKeyEnc', 'model', 'baseURL', 'mode', 'theme', 'thinking', 'hooks', 'security',
+  'lowRiskAutoApprove', 'autoResume', 'autoReview', 'webhooks', 'busy_input_mode',
+]);
+export function unknownSettingsKeys(settings: Record<string, any>): string[] {
+  return Object.keys(settings).filter(k => !SETTINGS_KEYS.has(k));
+}
+
 export function createConfig(dataDir: string): Config {
   // 读快照缓存：get() 返回稳定引用（内存最新），set/setKey 写穿透同步
   // 更新同一对象——否则 /key set 等只写磁盘，持有装配时快照的 agent

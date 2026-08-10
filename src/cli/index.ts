@@ -228,6 +228,21 @@ async function main() {
           console.log(JSON.stringify(line));
         }));
       }
+      // --wire 双向化（P1）：stdin 接收 JSONL 请求帧 → gateway RPC 分发——
+      // 外部工具/CI 可应答 approval.respond / clarify.respond / sudo.respond / secret.respond
+      // 帧格式：{"method":"approval.respond","params":{"request_id":"…","answer":"allow"}}
+      if (gateway) {
+        const { createInterface } = await import('node:readline');
+        const rl = createInterface({ input: process.stdin });
+        rl.on('line', (line) => {
+          const frame = (() => { try { return JSON.parse(line); } catch { return null; } })();
+          if (!frame?.method || typeof frame.method !== 'string') return;
+          const params = (frame.params ?? {}) as Record<string, unknown>;
+          void gateway.request(frame.method, params).then((r: any) => {
+            if (r && typeof r === 'object') console.log(JSON.stringify({ type: 'wire.response', method: frame.method, ...r }));
+          }).catch(() => {});
+        });
+      }
       const result = await agent.run(text);
       console.log(JSON.stringify({ type: 'agent.result', ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted }));
       for (const off of offs) off();

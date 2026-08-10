@@ -12,6 +12,7 @@ import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
 import { MODEL_CATALOG, encryptKey, hasImageIn } from '../kernel/providers.js'
 import { classifyToolAction } from '../kernel/permissions.js'
+import { redactSecrets } from '../kernel/redact.js'
 import { discoverSkills } from '../kernel/skills.js'
 import { COMMAND_CAT, COMMAND_DESC, SLASH } from '../commands/registry.js'
 import type { GatewayEvent } from './gatewayTypes.js'
@@ -1160,12 +1161,18 @@ export class GatewayClient extends EventEmitter {
     return new Promise((resolve) => {
       this.pendingApproval = { resolve: (choice: string) => resolve(choice === 'deny' ? 'deny' : choice === 'session' ? 'session' : 'allow') }
       const cls = classifyToolAction(name, args)
+      // P1 脱敏：审批回显前对疑似凭据形状打码（sk-xxx/Bearer/JWT/KEY=值 等），
+      // 防止命令中的密钥在审批面板/日志中明文出现（Hermes _redact_approval_command 同思路）
+      const rawDescription = args?.question ? String(args.question) : name === 'bash' ? String(args?.command ?? '') : JSON.stringify(args ?? {}).slice(0, 300);
+      const redacted = redactSecrets(rawDescription);
+      if (redacted.hits.length) {
+        this.publish({ type: 'notification.show', payload: { kind: 'ttl', level: 'warn', text: `审批内容已脱敏：${redacted.hits.length} 处疑似凭据（${[...new Set(redacted.hits.map(h => h.label))].join('、')}）` } });
+      }
       this.publish({
         type: 'approval.request',
         payload: {
           command: name,
-          // bash 直接显示命令原文（而非 JSON 包裹）；其他工具显示参数 JSON
-          description: args?.question ? String(args.question) : name === 'bash' ? String(args?.command ?? '') : JSON.stringify(args ?? {}).slice(0, 300),
+          description: redacted.text,
           allow_permanent: false,
           tool: name,
           category: cls.label,

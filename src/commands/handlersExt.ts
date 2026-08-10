@@ -660,10 +660,25 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return `当前语言：${ctx.config.getKey('settings', 'lang') ?? 'zh'}（zh/en）`;
   });
 
-  bus.register('/config', () => {
+  bus.register('/config', (args) => {
     const s = ctx.config.get('settings') as Record<string, any>;
+    // P2 配置校验：未知键警告（防拼写错误静默无效）
+    const { unknownSettingsKeys } = require('../store/config.js') as typeof import('../store/config.js');
+    const unknown = unknownSettingsKeys(s);
+    if (args[0] === 'set' && args[1]) {
+      const key = args[1];
+      if (!['model', 'theme', 'mode', 'thinking', 'autoResume', 'autoReview', 'lowRiskAutoApprove', 'busy_input_mode'].includes(key)) {
+        return `未知配置键「${key}」——支持：model/theme/mode/thinking/autoResume/autoReview/lowRiskAutoApprove/busy_input_mode`;
+      }
+      const raw = args.slice(2).join(' ');
+      const value: any = raw === 'true' ? true : raw === 'false' ? false : raw === 'null' ? null : !Number.isNaN(Number(raw)) && raw !== '' ? Number(raw) : raw;
+      ctx.config.setKey('settings', key, value);
+      return `已设置 ${key} = ${JSON.stringify(value)}`;
+    }
     const safe = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, k === 'apiKeyEnc' ? (v ? 'enc:****' : '') : v]));
-    return lines(' 配置 ', Object.entries(safe).map(([k, v]) => ` ${k}: ${JSON.stringify(v)}`));
+    const rows = Object.entries(safe).map(([k, v]) => ` ${k}: ${JSON.stringify(v)}`);
+    if (unknown.length) rows.push('', ` ⚠ 未知键（可能拼写错误，不生效）：${unknown.join('、')}`);
+    return lines(' 配置 ', rows);
   });
 
   bus.register('/logs', (args) => {
@@ -897,6 +912,43 @@ export const commands = {
       return '已清空全部审批规则';
     }
     return '用法：/perm rule list ｜ add <工具> allow|deny|ask [glob] ｜ remove <编号> ｜ clear';
+  });
+
+  // /flow：技能流程图驱动（P2——Kimi /flow 能力的自研版）
+  // frontmatter flow: "准备 → 构建 → 部署"；正文每节点：## 节点: <名>
+  bus.register('/flow', async (args) => {
+    const { loadSkill, parseFlow } = await import('../kernel/skills.js');
+    const [sub, ...rest] = args;
+    if (sub === 'cancel') {
+      ctx.db.prepare(`UPDATE flow_runs SET finished=1 WHERE finished=0`).run();
+      return '已取消全部进行中的流程';
+    }
+    if (sub === 'status') {
+      const rows = ctx.db.prepare(`SELECT skill, nodes, current, finished FROM flow_runs ORDER BY id DESC LIMIT 1`).get() as any;
+      if (!rows) return '当前无流程';
+      const nodes = JSON.parse(rows.nodes) as Array<{ name: string }>;
+      return lines(` 流程 ${rows.skill} `, [
+        ...nodes.map((n, i) => ` ${i === rows.current && !rows.finished ? '▶' : i < rows.current || rows.finished ? '✓' : '·'} ${n.name}`),
+        rows.finished ? '' : ` 下一步：/flow next（${rows.current + 1}/${nodes.length}）`,
+      ]);
+    }
+    const name = sub ?? '';
+    if (!name) return '用法：/flow <技能名> ｜ /flow next ｜ /flow status ｜ /flow cancel';
+    const skill = loadSkill(ctx.dataDir, ctx.cwd, name);
+    if (!skill) return `技能不存在：${name}（/skill list 查看）`;
+    const flow = parseFlow(skill.body, skill.meta.flow);
+    if (!flow) return `技能「${name}」未定义流程（frontmatter 需 flow: "节点A → 节点B"）`;
+    // 已有进行中流程则继续，否则新建
+    let run = ctx.db.prepare(`SELECT id, current FROM flow_runs WHERE skill=? AND finished=0 ORDER BY id DESC LIMIT 1`).get(name) as { id: number; current: number } | undefined;
+    if (!run) {
+      const r = ctx.db.prepare(`INSERT INTO flow_runs (skill, nodes, current, finished, ts) VALUES (?,?,?,?,?)`)
+        .run(name, JSON.stringify(flow), 0, 0, Date.now());
+      run = { id: Number(r.lastInsertRowid), current: 0 };
+    }
+    const node = flow[run.current]!;
+    const step = `${run.current + 1}/${flow.length}`;
+    void ctx.agent?.run(`（流程「${name}」步骤 ${step}：${node.name}）执行以下步骤并完成后简要汇报：\n${node.instruction}`).catch(() => {});
+    return `▶ 流程「${name}」步骤 ${step}：${node.name}——已交给助手执行（/flow next 推进下一步，/flow status 查看进度）`;
   });
 
   // /security：安全注入通道管理（红线：关闭通道即同步清除内存敏感缓存）

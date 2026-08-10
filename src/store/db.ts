@@ -114,6 +114,14 @@ export function openDB(dataDir: string): Db {
       output_tokens INTEGER NOT NULL DEFAULT 0,
       ts INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS flow_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      skill TEXT NOT NULL,
+      nodes TEXT NOT NULL,
+      current INTEGER NOT NULL DEFAULT 0,
+      finished INTEGER NOT NULL DEFAULT 0,
+      ts INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS cron_jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       schedule TEXT NOT NULL,

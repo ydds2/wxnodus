@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseSkillMd, discoverSkills, loadSkill, installSkill, writeSkill, skillContentForModel } from '../src/kernel/skills.js';
+import { parseSkillMd, discoverSkills, loadSkill, installSkill, writeSkill, skillContentForModel, parseFlow } from '../src/kernel/skills.js';
 
 let dir: string;
 let dataDir: string;
@@ -143,5 +143,35 @@ describe('技能安装与创建', () => {
     expect(found[0]!.source).toBe('project');
     const loaded = loadSkill(dataDir, cwd, 'dup');
     expect(loaded?.body).toContain('项目正文');
+  });
+});
+
+// ── P2：Flow skills（流程图驱动）──
+describe('Flow skills', () => {
+  it('parseFlow 解析节点链与节点指令', () => {
+    const body = [
+      '## 节点: 准备',
+      '检查环境、安装依赖',
+      '',
+      '## 节点: 构建',
+      '执行 npm run build',
+    ].join('\n');
+    const nodes = parseFlow(body, '准备 → 构建');
+    expect(nodes?.length).toBe(2);
+    expect(nodes?.[0]?.name).toBe('准备');
+    expect(nodes?.[0]?.instruction).toContain('检查环境');
+    expect(nodes?.[1]?.instruction).toContain('build');
+  });
+  it('无 flow 字段 → null；无节点段落 → 占位指令', () => {
+    expect(parseFlow('正文', undefined)).toBeNull();
+    const nodes = parseFlow('没有节点段落', 'A → B');
+    expect(nodes?.[1]?.instruction).toContain('无说明');
+  });
+  it('writeSkill 支持 flow frontmatter 并可读回', () => {
+    const dir = writeSkill(dataDir, 'flow-skill', '流程技能', '工作流内容', { flow: '准备 → 部署' });
+    const raw = readFileSync(join(dir, 'SKILL.md'), 'utf-8');
+    expect(raw).toContain('flow: "准备 → 部署"');
+    const parsed = parseSkillMd(raw);
+    expect(parsed.meta.flow).toBe('准备 → 部署');
   });
 });

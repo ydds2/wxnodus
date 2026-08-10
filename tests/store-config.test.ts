@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createConfig, type Config } from '../src/store/config.js';
+import { createConfig, unknownSettingsKeys, type Config } from '../src/store/config.js';
 
 let dir: string;
 let cfg: Config;
@@ -76,5 +76,14 @@ describe('原子写', () => {
     cfg.set('routes', { '/default': 'deepseek' });
     const files = require('node:fs').readdirSync(dir) as string[];
     expect(files.some(f => f.includes('.tmp'))).toBe(false);
+  });
+});
+
+// ── P2：配置校验（未知键警告）──
+describe('配置校验', () => {
+  it('unknownSettingsKeys 识别未知键', () => {
+    expect(unknownSettingsKeys({ model: 'x', theme: 'dark' })).toEqual([]);
+    expect(unknownSettingsKeys({ modle: 'x' })).toContain('modle'); // 拼写错误
+    expect(unknownSettingsKeys({ autoResume: true, bogusKey: 1 })).toEqual(['bogusKey']);
   });
 });
