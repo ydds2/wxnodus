@@ -208,37 +208,44 @@ export function FloatingOverlays({
       <FloatBox color={theme.color.primary} display={completions.length ? undefined : 'none'}>
         {!!completions.length && (
           <Box flexDirection="column" width={Math.max(28, cols - 6)}>
-            {completions.slice(start, start + viewportSize).map((item, i) => {
-              const active = start + i === compIdx
+            {/* A11：name/meta 两列对齐（参考同款 nameW）——meta 独立列，display 不抖动 */}
+            {completions
+              .slice(start, start + viewportSize)
+              .reduce((acc: number, item) => Math.max(acc, item.display.length), 0) > 0 ? (
+              (() => {
+                const nameW = completions.slice(start, start + viewportSize).reduce((acc: number, item) => Math.max(acc, item.display.length), 0)
 
-              return (
-                <Box
-                  backgroundColor={active ? theme.color.completionCurrentBg : theme.color.completionBg}
-                  flexDirection="row"
-                  key={`${start + i}:${item.text}:${item.display}:${item.meta ?? ''}`}
-                  width="100%"
-                >
-                  {/* flexShrink=0 — when meta overflows the row, Ink/Yoga
-                      otherwise shaves the last char off the display column
-                      (e.g. /goal renders as /goa). */}
-                  <Box flexShrink={0}>
-                    <Text bold color={theme.color.label}>
-                      {' '}
-                      {item.display}
-                    </Text>
-                  </Box>
-                  {item.meta ? (
-                    <Text
-                      backgroundColor={active ? theme.color.completionMetaCurrentBg : theme.color.completionMetaBg}
-                      color={theme.color.muted}
+                return completions.slice(start, start + viewportSize).map((item, i) => {
+                  const active = start + i === compIdx
+
+                  return (
+                    <Box
+                      backgroundColor={active ? theme.color.completionCurrentBg : theme.color.completionBg}
+                      flexDirection="row"
+                      key={`${start + i}:${item.text}:${item.display}:${item.meta ?? ''}`}
+                      width="100%"
                     >
-                      {' '}
-                      {item.meta}
-                    </Text>
-                  ) : null}
-                </Box>
-              )
-            })}
+                      <Box flexShrink={0} width={nameW + 2}>
+                        <Text bold color={theme.color.label}>
+                          {' '}
+                          {item.display}
+                        </Text>
+                      </Box>
+                      {item.meta ? (
+                        <Text
+                          backgroundColor={active ? theme.color.completionMetaCurrentBg : theme.color.completionMetaBg}
+                          color={theme.color.muted}
+                          wrap="truncate-end"
+                        >
+                          {' '}
+                          {item.meta}
+                        </Text>
+                      ) : null}
+                    </Box>
+                  )
+                })
+              })()
+            ) : null}
             {completions.length > viewportSize && (
               <Text color={theme.color.muted}>
                 {' '}

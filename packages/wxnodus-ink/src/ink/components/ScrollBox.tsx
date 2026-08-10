@@ -14,6 +14,12 @@ export type ScrollBoxHandle = {
   scrollTo: (y: number) => void
   scrollBy: (dy: number) => void
   /**
+   * A6：视口保持补偿——视口上方内容高度变化（卸载/折叠）时调用，
+   * scrollTop 平移 dy 以保持当前视口内容稳定。不解除 sticky、不更新
+   * 手动滚动时间戳（区别于 scrollTo/scrollBy）。
+   */
+  adjustScrollTop: (dy: number) => void
+  /**
    * Scroll so `el`'s top is at the viewport top (plus `offset`). Unlike
    * scrollTo which bakes a number that's stale by the time the throttled
    * render fires, this defers the position read to render time —
@@ -170,6 +176,25 @@ function ScrollBox({ children, ref, stickyScroll, ...style }: PropsWithChildren<
         manualScrollAtRef.current = Date.now()
         el.scrollAnchor = undefined
         el.pendingScrollDelta = (el.pendingScrollDelta ?? 0) + Math.floor(dy)
+        scrollMutated(el)
+      },
+      adjustScrollTop(dy: number) {
+        const el = domRef.current
+
+        if (!el || !Number.isFinite(dy)) {
+          return
+        }
+
+        const current = el.scrollTop ?? 0
+        const next = Math.max(0, Math.floor(current + dy))
+
+        if (next === current) {
+          return
+        }
+
+        // 视口保持：直接平移 scrollTop（渲染 clamp 仅限制 [0, maxScroll]，
+        // 内容高度变化后的新位置仍在合法范围）。不解除 sticky。
+        el.scrollTop = next
         scrollMutated(el)
       },
       scrollToBottom() {

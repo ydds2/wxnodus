@@ -4,7 +4,7 @@
 //       wxnodus agent 事件 → GatewayEvent（message.delta/tool.*/status.update 等）
 // 参考：gateway 客户端接口契约（业界通用） + wxnodus kernel/events 事件流
 import { EventEmitter } from 'node:events'
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
@@ -12,6 +12,7 @@ import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
 import { MODEL_CATALOG, encryptKey } from '../kernel/providers.js'
 import { classifyToolAction } from '../kernel/permissions.js'
+import { discoverSkills } from '../kernel/skills.js'
 import { COMMAND_CAT, COMMAND_DESC, SLASH } from '../commands/registry.js'
 import type { GatewayEvent } from './gatewayTypes.js'
 import { ZERO } from './domain/usage.js'
@@ -61,6 +62,8 @@ export class GatewayClient extends EventEmitter {
   private pendingClarify: PendingClarify | null = null
   // delegation.status 数据源（活跃子代理集合，agent.subagent 事件驱动）
   private activeSubagents = new Set<string>()
+  // A12：会话切换 timeline 事件（loadMessages 一次性注入）
+  private lastSessionEvent: { sid: string; text: string } | null = null
   private sessionSeq = 0
   private unsubscribe: Array<() => void> = []
   private running = false
@@ -219,6 +222,7 @@ export class GatewayClient extends EventEmitter {
       case 'model.options': return this.modelOptions(params) as T
       case 'model.save_key': return this.modelSaveKey(params) as T
       case 'model.disconnect': return this.modelDisconnect(params) as T
+      case 'system.battery': return this.systemBattery() as T
       case 'delegation.status': return this.delegationStatus() as T
       case 'spawn_tree.save': return {} as T
       case 'skills.manage': return this.skillsManage(params) as T
@@ -240,6 +244,44 @@ export class GatewayClient extends EventEmitter {
       max_concurrent_children: 4,
       max_spawn_depth: 3,
       paused: false,
+    }
+  }
+
+  // A7：system.battery 真实读取（Windows WMI Win32_Battery；无电池/失败 → available:false）
+  // 状态条电池指示的数据源（参考同款 system.battery RPC）
+  private batteryCache: { ts: number; value: unknown } | null = null
+
+  private systemBattery(): unknown {
+    // 5s 缓存——UI 30s 轮询，WMI 查询 ~100ms，避免每 30s 重复 spawn
+    if (this.batteryCache && Date.now() - this.batteryCache.ts < 5000) {
+      return this.batteryCache.value
+    }
+
+    const fallback = { available: false, percent: null, plugged: null, category: 'dim' }
+
+    if (process.platform !== 'win32') {
+      // macOS/Linux 无内置读取通道（参考后端同样平台相关）——诚实返回不可用
+      return fallback
+    }
+
+    try {
+      const script =
+        'Get-CimInstance Win32_Battery | Select-Object EstimatedChargeRemaining, BatteryStatus | ConvertTo-Json -Compress'
+      const raw = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+        encoding: 'utf8',
+        timeout: 5000,
+        windowsHide: true,
+      }).trim()
+      const j = JSON.parse(raw) as { EstimatedChargeRemaining?: number; BatteryStatus?: number }
+      const percent = typeof j.EstimatedChargeRemaining === 'number' ? Math.round(j.EstimatedChargeRemaining) : null
+      // BatteryStatus: 2 = AC 供电（充电中/已充满）
+      const plugged = j.BatteryStatus === 2
+      const category = percent === null ? 'dim' : plugged ? 'good' : percent <= 10 ? 'critical' : percent <= 20 ? 'bad' : percent <= 50 ? 'warn' : 'good'
+      const value = { available: percent !== null, percent, plugged, category }
+      this.batteryCache = { ts: Date.now(), value }
+      return value
+    } catch {
+      return fallback
     }
   }
 
@@ -349,6 +391,7 @@ export class GatewayClient extends EventEmitter {
 
   private async sessionActivate(params: Record<string, unknown>): Promise<unknown> {
     const id = String(params.session_id ?? '')
+    this.lastSessionEvent = { sid: id, text: `已切换到会话 ${id}` }
     const messages = this.loadMessages(id)
 
     this.currentSessionId = id
@@ -359,6 +402,7 @@ export class GatewayClient extends EventEmitter {
 
   private async sessionResume(params: Record<string, unknown>): Promise<unknown> {
     const id = String(params.session_id ?? '')
+    this.lastSessionEvent = { sid: id, text: `已恢复会话 ${id}` }
     const messages = this.loadMessages(id)
 
     this.currentSessionId = id
@@ -682,9 +726,44 @@ export class GatewayClient extends EventEmitter {
     }
   }
 
+  // A8：技能名发现（/skill: 行内补全数据源；10s 缓存避免每次按键扫描目录）
+  private skillNamesCache: { ts: number; names: string[] } | null = null
+
+  private discoverSkillNames(): string[] {
+    if (this.skillNamesCache && Date.now() - this.skillNamesCache.ts < 10_000) {
+      return this.skillNamesCache.names
+    }
+
+    let names: string[] = []
+    try {
+      names = discoverSkills(this.kernel.dataDir, this.kernel.cwd).map(s => s.name)
+    } catch {
+      names = []
+    }
+
+    this.skillNamesCache = { ts: Date.now(), names }
+    return names
+  }
+
   private completeSlash(params: Record<string, unknown>): unknown {
     const text = String(params.text ?? '')
     const q = text.startsWith('/') ? text.slice(1).toLowerCase() : text.toLowerCase()
+
+    // A8：行内 /skill:<前缀> → 技能名补全（skillsOnly；参考 inlineSlashTrigger 同款）
+    const skillMatch = /^skill:(.*)$/.exec(q)
+
+    if (skillMatch) {
+      const prefix = skillMatch[1]!.toLowerCase()
+      const skills = this.discoverSkillNames()
+        .filter((n) => n.toLowerCase().startsWith(prefix))
+        .slice(0, 12)
+      // 补全为 /skill:<名>（replace_from=1：从斜杠后替换）
+      return {
+        items: skills.map((n) => ({ display: `/skill:${n}`, meta: '技能', text: `/skill:${n}` })),
+        replace_from: 1,
+      }
+    }
+
     // 32 条 ≈ 2-3 页（建议面板窗口 16 行 + PgUp/PgDn 翻页浏览全部命令）
     const items = SLASH.filter((c) => c.slice(1).toLowerCase().startsWith(q)).slice(0, 32)
     const desc = (c: string) => COMMAND_DESC[c] ?? ''
@@ -823,9 +902,18 @@ export class GatewayClient extends EventEmitter {
         `SELECT role, content FROM messages WHERE session_id = ? ORDER BY id`
       ).all(sessionId) as Array<{ role: string; content: string }>
 
-      return rows
+      const msgs = rows
         .filter((r) => r.role === 'user' || r.role === 'assistant')
         .map((r) => ({ role: r.role as 'user' | 'assistant', text: r.content }))
+
+      // A12：会话切换 timeline 事件（◈ 前缀，一次性注入列表头部）
+      if (this.lastSessionEvent && this.lastSessionEvent.sid === sessionId && msgs.length) {
+        const ev = this.lastSessionEvent
+        this.lastSessionEvent = null
+        return [{ role: 'system' as const, text: `◈ ${ev.text}` }, ...msgs]
+      }
+
+      return msgs
     } catch {
       return []
     }

@@ -138,6 +138,18 @@ export interface UiState {
   streaming: boolean
   theme: Theme
   usage: Usage
+  /** A7：系统电池（system.battery RPC 轮询；无电池/不可用 → null） */
+  battery: BatteryInfo | null
+}
+
+// A7：电池状态（参考 SystemBatteryResponse 同款形状）
+export type BatteryCategory = 'bad' | 'critical' | 'dim' | 'good' | 'warn'
+
+export interface BatteryInfo {
+  available: boolean
+  category: BatteryCategory
+  percent: null | number
+  plugged: null | boolean
 }
 
 export interface VirtualHistoryState {

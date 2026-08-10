@@ -435,10 +435,17 @@ export function useVirtualHistory(
         // and offset math drifts until the next mount/remount cycle.
         const existing = nodes.current.get(key) as MeasuredNode | undefined
         const h = Math.ceil(existing?.yogaNode?.getComputedHeight?.() ?? 0)
+        const prevH = heights.current.get(key) ?? 0
 
-        if (h > 0 && heights.current.get(key) !== h) {
+        if (h > 0 && prevH !== h) {
           heights.current.set(key, h)
           offsetVersion.current++
+          // A6：视口上方元素高度变化（卸载/折叠）→ 平移 scrollTop 保持视口
+          // （参考 adjustScrollTop 同款：h - previousHeight）
+          // ScrollBoxHandle 类型 re-export 链在 skipLibCheck 下不跟随 .tsx 新字段——
+          // 用轻量接口断言（运行时方法已存在于 ScrollBox handle）
+          const adjust = (scrollRef.current as { adjustScrollTop?: (dy: number) => void } | null)?.adjustScrollTop
+          adjust?.(h - prevH)
           onHeightsChangeRef.current?.(heights.current)
         }
 

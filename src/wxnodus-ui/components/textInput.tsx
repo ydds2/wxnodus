@@ -514,7 +514,10 @@ export function TextInput({
   // auto-wrap onto the next row when inverted text fills the column
   // exactly) or when the terminal loses focus (suppresses the hollow-rect
   // ghost most terminals draw at the parked position).
-  const hideHardwareCursor = focus && !!stdout?.isTTY && (!!selected || !termFocus)
+  // A16：占位符显示时隐藏硬件光标（参考同款——否则光标停在占位符上造成歧义），
+  // 用合成 chip 指示输入起点
+  const showingPlaceholder = !display && !!placeholder
+  const hideHardwareCursor = focus && !!stdout?.isTTY && (!!selected || !termFocus || showingPlaceholder)
 
   useEffect(() => {
     if (!hideHardwareCursor || !stdout) {
@@ -540,7 +543,8 @@ export function TextInput({
     }
 
     if (!display && placeholder) {
-      return nativeCursor ? dim(placeholder) : invert(placeholder[0] ?? ' ') + dim(placeholder.slice(1))
+      // A16：统一合成光标 chip（硬件光标已隐藏）——首字符 inverse + 其余 dim
+      return invert(placeholder[0] ?? ' ') + dim(placeholder.slice(1))
     }
 
     if (selected) {

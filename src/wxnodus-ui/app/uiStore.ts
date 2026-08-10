@@ -24,6 +24,7 @@ const buildUiState = (): UiState => ({
   sections: {},
   sessionTitle: '',
   showCost: false,
+  battery: null,
   showReasoning: false,
   sid: null,
   status: '正在初始化 WxNodus…',

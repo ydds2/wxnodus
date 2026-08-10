@@ -41,6 +41,7 @@ import { patchTurnState, useTurnSelector } from './turnStore.js'
 import { $uiState, getUiState, patchUiState } from './uiStore.js'
 import { useComposerState } from './useComposerState.js'
 import { useConfigSync } from './useConfigSync.js'
+import { useBatteryPoll } from './useBatteryPoll.js'
 import { useInputHandlers } from './useInputHandlers.js'
 import { useLongRunToolCharms } from './useLongRunToolCharms.js'
 import { useSessionLifecycle } from './useSessionLifecycle.js'
@@ -530,6 +531,8 @@ export function useMainApp(gw: GatewayClient) {
   }, [ui.busy, turnStartedAt])
 
   useConfigSync({ gw, setBellOnComplete, setVoiceEnabled, setVoiceRecordKey, sid: ui.sid })
+  // A7：状态条电池指示轮询（30s；无电池自动隐藏）
+  useBatteryPoll(gw)
 
   useEffect(() => {
     if (!ui.sid) {

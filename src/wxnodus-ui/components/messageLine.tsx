@@ -92,6 +92,17 @@ export const MessageLine = memo(function MessageLine({
   const systemIsLong = msg.role === 'system' && msg.text.length > SYSTEM_COLLAPSE_CHARS
   const [systemOpen, setSystemOpen] = useState(false)
 
+  // A12：timeline 事件消息（◈ 会话切换/委派完成等——参考 kind==='event' 同款）
+  if (msg.kind === 'event') {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text color={t.color.muted} dimColor wrap="truncate-end">
+          {' '}◈ {msg.text}
+        </Text>
+      </Box>
+    )
+  }
+
   if (msg.kind === 'trail' && msg.todos?.length) {
     return (
       <TodoPanel

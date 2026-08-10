@@ -4,7 +4,7 @@ import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } 
 import unicodeSpinners from 'unicode-animations'
 
 import { $delegationState } from '../app/delegationStore.js'
-import type { IndicatorStyle, Notice } from '../app/interfaces.js'
+import type { BatteryInfo, IndicatorStyle, Notice } from '../app/interfaces.js'
 import { useTurnSelector } from '../app/turnStore.js'
 import { DEV_CREDITS_MODE } from '../config/env.js'
 import { FACES } from '../content/faces.js'
@@ -405,6 +405,7 @@ export function GoodVibesHeart({ tick, t }: { tick: number; t: Theme }) {
 export function StatusRule({
   cwdLabel,
   sessionTitle,
+  battery,
   cols,
   busy,
   status,
@@ -511,6 +512,13 @@ export function StatusRule({
   const showIdle = segs.duration && !busy && lastTurnEndedAt != null && fits(SEP + stringWidth('✓ ') + MAX_DURATION_WIDTH)
   const showCompressions = segs.compressions && compressions > 0 && fits(SEP + stringWidth(`cmp ${compressions}`))
   const showVoice = segs.voice && !!voiceLabel && fits(SEP + stringWidth(voiceLabel))
+  // A7：电池段（⚡ 未插电 / 🔋 充电中；分级着色 good/warn/bad/critical）
+  const batteryLabel = battery?.available
+    ? battery.percent != null
+      ? `${battery.plugged ? '🔋' : '⚡'} ${battery.percent}%`
+      : '🔋'
+    : ''
+  const showBattery = battery?.available && fits(SEP + stringWidth(batteryLabel))
   const showSessionCount = !!sessionCountText && fits(SEP + stringWidth(sessionCountText))
   const showBg = segs.bg && bgCount > 0 && fits(SEP + stringWidth(`${bgCount} bg`))
   const showCostSeg = segs.cost && showCost && !!costText && fits(SEP + stringWidth(costText))
@@ -611,6 +619,23 @@ export function StatusRule({
           >
             {' │ '}
             {voiceLabel}
+          </Text>
+        ) : null}
+        {showBattery ? (
+          <Text
+            color={
+              battery?.category === 'critical'
+                ? t.color.statusCritical
+                : battery?.category === 'bad'
+                  ? t.color.statusBad
+                  : battery?.category === 'warn'
+                    ? t.color.statusWarn
+                    : t.color.muted
+            }
+            wrap="truncate-end"
+          >
+            {' │ '}
+            {batteryLabel}
           </Text>
         ) : null}
         {showSessionCount ? sessionCountNode : null}
@@ -762,6 +787,8 @@ export function TranscriptScrollbar({ scrollRef, t }: TranscriptScrollbarProps) 
 
 interface StatusRuleProps {
   bgCount: number
+  /** A7：电池状态（无电池/不可用 → null，段自动隐藏） */
+  battery?: BatteryInfo | null
   lastTurnEndedAt?: null | number
   liveSessionCount: number
   busy: boolean
