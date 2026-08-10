@@ -124,6 +124,17 @@ async function main() {
     // 简化人工操作（阶段 C）：smart 模式工作区内文件编辑自动放行（默认开启，/perm 说明）
     lowRiskAutoApprove: (settings as any).lowRiskAutoApprove !== false,
     dataDir,
+    // D 批次：AI 审批预审（settings.autoReview=true 开启）——用主模型单轮判断 allow/deny/ask
+    autoReview: (() => {
+      const { createAutoReview } = require('../kernel/autoReview.js') as typeof import('../kernel/autoReview.js');
+      return createAutoReview(
+        () => (settings as any).autoReview === true,
+        async (prompt) => {
+          const r = await agent.run(`（auto-review 预审）${prompt}`);
+          return r.ok ? r.text : 'ask';
+        },
+      );
+    })(),
     hooks: hookRunner,
     extraTools: { ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) },
   });

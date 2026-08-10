@@ -7,6 +7,7 @@ export function createAutoReview(
   callLlm: (prompt: string) => Promise<string>,
 ) {
   return {
+    enabled,
     async review(req: ReviewRequest): Promise<ReviewVerdict> {
       if (!enabled()) return 'ask'; // 默认关：不阻塞主流程
       const prompt = `判断以下工具调用是否安全，只回答 allow/ask/deny 三词。\n工具: ${req.tool}\n参数: ${req.args}\n目录: ${req.cwd}`;

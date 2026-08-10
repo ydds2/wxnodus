@@ -48,6 +48,8 @@ export interface AgentOptions {
   lowRiskAutoApprove?: boolean;
   /** 数据目录（P0-2 审批规则文件 data/permissions.json 读取位置） */
   dataDir?: string;
+  /** AI 审批预审（/perm auto-review 开启）：LLM 预审代替人工弹窗，allow/deny/ask */
+  autoReview?: { enabled: () => boolean; review: (req: { tool: string; args: string; cwd: string }) => Promise<'allow' | 'ask' | 'deny'> };
 }
 
 export interface AgentResult {
@@ -102,6 +104,10 @@ export function createAgent(opts: AgentOptions) {
 
   // 默认模型调用：OpenAI 兼容真流式（SSE）——token 逐块推送总线（UI 实时显示）
   // 工具调用解析保留 tool_call id（严格格式：assistant.tool_calls + tool.tool_call_id 回填）
+  // 模型降级链（智能度增强）：429/5xx → 同 provider 备选模型自动降级重试
+  // 会话级保持（degradedModel 非空即不再逐轮重试）；/model 手动切换后重置
+  let degradedModel: string | null = null;
+
   const defaultCallModel = async (
     req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[] },
     streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal },
@@ -140,7 +146,18 @@ export function createAgent(opts: AgentOptions) {
     const fetchSignal = streamCtx?.signal
       ? AbortSignal.any([AbortSignal.timeout(120000), streamCtx.signal])
       : AbortSignal.timeout(120000);
-    const resp = await fetch(httpReq.url, { method: 'POST', headers: httpReq.headers, body: httpReq.body, signal: fetchSignal });
+    let resp = await fetch(httpReq.url, { method: 'POST', headers: httpReq.headers, body: httpReq.body, signal: fetchSignal });
+    // 模型降级链：429/5xx 且未降级 → 同 provider 备选模型重试（单 key 语义，/model 可复位）
+    if (!resp.ok && (resp.status === 429 || resp.status >= 500) && !degradedModel) {
+      const provider = MODEL_CATALOG.find(m => m.modelId === model)?.provider ?? '';
+      const fallbacks = MODEL_CATALOG.filter(m => m.provider === provider && m.modelId !== model && !m.capabilities?.imageIn).slice(0, 2);
+      for (const fb of fallbacks) {
+        bus.emit('system.notice', { text: `模型 ${model} 不可用（HTTP ${resp.status}）——降级到 ${fb.modelId} 重试` });
+        const fbReq = buildChatRequest({ baseURL, model: fb.modelId, key, messages: req.messages as any, stream: true, tools: req.tools });
+        const r2 = await fetch(fbReq.url, { method: 'POST', headers: fbReq.headers, body: fbReq.body, signal: fetchSignal }).catch(() => null);
+        if (r2?.ok) { degradedModel = fb.modelId; resp = r2; break; }
+      }
+    }
     if (!resp.ok) {
       const err = new Error(mapHttpError(resp.status)) as Error & { status?: number };
       err.status = resp.status;
@@ -323,6 +340,18 @@ export function createAgent(opts: AgentOptions) {
         && isPathWithinCwd(String((args as any).path));
       if (ruleHit === 'allow') {
         bus.emit('system.notice', { text: `规则放行：${name}（/perm rule list 查看）` });
+      } else if (opts.autoReview?.enabled() && (verdict === 'confirm' || verdict === 'plan')) {
+        // AI 审批预审（D 批次）：LLM 预审代替人工弹窗——allow 放行（留痕）/ deny 拒绝 / ask 弹窗
+        const verdict2 = await opts.autoReview.review({ tool: name, args: JSON.stringify(args ?? {}).slice(0, 500), cwd: process.cwd() });
+        if (verdict2 === 'allow') {
+          bus.emit('system.notice', { text: `AI 预审放行：${name}（auto-review）` });
+        } else if (verdict2 === 'deny') {
+          bus.emit('system.notice', { text: `AI 预审拒绝：${name}（auto-review）` });
+          return `工具被 AI 预审拒绝（${name}）`;
+        } else {
+          const ok = await onApproval(name, args);
+          if (!ok) return `用户拒绝执行 ${name}`;
+        }
       } else if (ruleHit === 'ask' && (verdict === 'approve' || verdict === 'confirm')) {
         const ok = await onApproval(name, args);
         if (!ok) return `用户拒绝执行 ${name}`;
@@ -378,6 +407,13 @@ export function createAgent(opts: AgentOptions) {
       ]);
     };
     const msgs: Array<{ role: string; content: string | Array<Record<string, any>> | null; tool_call_id?: string; reasoning_content?: string; thinking_content?: string; reasoning?: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }> = [];
+    // 结构化系统提示（智能度基础）：角色/工作准则/模式语义/输出规范/环境
+    const { buildSystemPrompt } = await import('./systemPrompt.js');
+    const modelName = (opts.config?.settings as any)?.model ?? '';
+    const { hasImageIn } = await import('./providers.js');
+    msgs.push({ role: 'system', content: buildSystemPrompt({
+      mode, cwd: process.cwd(), model: modelName, hasImageIn: hasImageIn(modelName), sessionId,
+    }) });
     // 项目引导注入（对比轮 5 修复）：AGENTS.md 存在时进系统提示（kimi 运行时注入对齐）
     const agentsMd = loadAgentsMd(process.cwd());
     if (agentsMd) msgs.push({ role: 'system', content: `（项目引导 AGENTS.md）\n${agentsMd}` });
@@ -595,8 +631,13 @@ export function createAgent(opts: AgentOptions) {
     return result;
   }
 
+  // 降级状态按会话隔离：切换会话即复位（避免跨会话错误保持降级模型）
+  let degradedForSession = sessionId;
+  const resetDegradeIfNeeded = () => { if (degradedForSession !== sessionId) { degradedModel = null; degradedForSession = sessionId; } };
+
   return {
     async run(prompt: string, opts?: { images?: Array<{ dataUrl: string; mime: string }> }): Promise<AgentResult> {
+      resetDegradeIfNeeded();
       return runWithGoalLoop(prompt, opts?.images);
     },
     spawnSubagent: spawnSub,

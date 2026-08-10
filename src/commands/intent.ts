@@ -21,6 +21,21 @@ export const NL_TRIGGERS: NlTrigger[] = [
   { re: /沙盒|隔离.*运行/i, cmd: '/sandbox' },
   { re: /合规|授权|consent/i, cmd: '/compliance' },
   { re: /多开|并行.*代理|swarm/i, cmd: '/swarm' },
+  // ── 智能度扩充（全方面自研化·B）：编程/运维/会话类触发 ──
+  { re: /审查|审阅|review.*代码|代码.*review|检查.*(?:代码|逻辑|bug)|找.*(?:bug|缺陷)/i, cmd: '/fdr' },
+  { re: /写测试|补测试|测试(?:一下|这个|代码)|单测/i, cmd: '/fdr' },
+  { re: /重构|整理代码|代码整理/i, cmd: '/build' },
+  { re: /写文档|生成文档|README/i, cmd: '/evidence' },
+  { re: /数据库|执行.*sql|sql.*查询/i, cmd: '/sql' },
+  { re: /提交代码|git.*提交|commit/i, cmd: '/build' },
+  { re: /导出.*(?:会话|历史|对话)|导出数据/i, cmd: '/export' },
+  { re: /恢复(?:上次|之前)?会话|继续上次|resume/i, cmd: '/resume' },
+  { re: /压缩(?:上下文|记忆)|清理上下文/i, cmd: '/compact' },
+  { re: /用量|token.*(?:用了|花费)|花了多少/i, cmd: '/usage' },
+  { re: /审计|合规审查|留痕/i, cmd: '/audit' },
+  { re: /安全通道|注入通道|sudo.*开启|secret.*开启/i, cmd: '/security' },
+  { re: /做(?:一个)?计划|制定方案|规划(?:一下|方案)/i, cmd: '/plan' },
+  { re: /派(?:子)?任务|委派|子代理.*(?:做|处理)/i, cmd: '/delegate' },
 ];
 
 // 祈使动词开头（"帮我/请/把/看/搜/分析/备份…"）——非此开头的长句视为叙述/提及，不劫持为命令

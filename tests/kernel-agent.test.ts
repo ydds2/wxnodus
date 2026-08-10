@@ -571,3 +571,52 @@ describe('低危自动放行', () => {
     expect(count()).toBeGreaterThan(0);
   });
 });
+
+// ── D 批次：AI 审批预审链（autoReview）──
+describe('AI 审批预审（autoReview）', () => {
+  function makeReviewAgent(verdict: 'allow' | 'ask' | 'deny', enabled = true, path: string = join(process.cwd(), 'review-target.txt')) {
+    let approvals = 0;
+    let called = 0;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-review',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any) => {
+        called++;
+        if (called === 1) {
+          return { type: 'tool_call', name: 'fs_write', args: { path, content: 'x' } } as any;
+        }
+        return { type: 'text', content: '完成' };
+      },
+      onApproval: async () => { approvals++; return true; },
+      autoReview: {
+        enabled: () => enabled,
+        review: async () => verdict,
+      },
+    } as any);
+    return { agent, approvals: () => approvals };
+  }
+
+  it('预审 allow → 不弹审批直接放行', async () => {
+    const { agent, approvals } = makeReviewAgent('allow');
+    const r = await agent.run('写入文件');
+    expect(r.ok).toBe(true);
+    expect(approvals()).toBe(0);
+  });
+  it('预审 deny → 拒绝执行', async () => {
+    const { agent, approvals } = makeReviewAgent('deny');
+    const r = await agent.run('写入文件');
+    expect(r.ok).toBe(true); // 回合仍完成（工具被拒不中断）
+    expect(approvals()).toBe(0);
+  });
+  it('预审 ask → 回落到人工弹窗', async () => {
+    const { agent, approvals } = makeReviewAgent('ask');
+    await agent.run('写入文件');
+    expect(approvals()).toBe(1);
+  });
+  it('关闭时（enabled=false）→ 直接人工弹窗（区外路径避免低危放行）', async () => {
+    const outside = process.platform === 'win32' ? 'C:/Windows/temp/rv.txt' : '/etc/rv.txt';
+    const { agent, approvals } = makeReviewAgent('allow', false, outside);
+    await agent.run('写入文件');
+    expect(approvals()).toBe(1);
+  });
+});

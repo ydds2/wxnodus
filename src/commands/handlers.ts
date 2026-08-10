@@ -89,11 +89,19 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/status', () => {
     const u = { model: ctx.getModel(), mode: ctx.getMode(), cwd: ctx.cwd };
+    const sec = ((ctx.config.get('settings') as any)?.security ?? {}) as Record<string, boolean>;
+    const autoReview = (ctx.config.get('settings') as any)?.autoReview === true;
     return lines(' 状态 ', [
       ` 模型：${u.model || '未配置（/key set <密钥> 配置）'}`,
       ` 模式：${u.mode}`,
       ` 目录：${u.cwd}`,
       ` 命令：${SLASH.length} 个`,
+      ` 智能：${[
+        autoReview ? 'AI 预审' : null,
+        sec.sudoInjection ? 'sudo 通道' : null,
+        sec.secretInjection ? 'secret 通道' : null,
+        (ctx.config.get('settings') as any)?.lowRiskAutoApprove !== false ? '低危放行' : null,
+      ].filter(Boolean).join(' / ') || '标准'}`,
     ]);
   });
 
