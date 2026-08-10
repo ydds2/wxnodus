@@ -1,11 +1,11 @@
-// src/commands/intent.ts — L4 意图路由（说人话不记命令）
+// src/commands/intent.ts — L4 意图路由（自然语言免记命令）
 // 四层：① 别名（registry）② 确定性工具直调 ③ NL 正则路由 ④ AI 意图（agent 层）
 import { resolveAlias, isSlash, completeCommand, SLASH } from './registry.js';
 import { deterministicRun } from './deterministic.js';
 
 export interface NlTrigger { re: RegExp; cmd: string }
 
-// ③ NL 正则路由：说人话 → 命令（不占用 AI 意图层）
+// ③ NL 正则路由：自然语言 → 命令（不占用 AI 意图层）
 // F16 修复：误劫持防御——长句必须祈使动词开头（"把代码备份到U盘" ✓ / "我之前备份过" ✗ 叙述），
 // 疑问/陈述式长句一律交 AI 对话层；触发正则排除完成态（备份过/部署后/上线了）
 export const NL_TRIGGERS: NlTrigger[] = [

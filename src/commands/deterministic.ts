@@ -1,4 +1,4 @@
-// src/commands/deterministic.ts — L4 确定性工具包（AI_OWNED：说人话即触发，毫秒级不走模型）
+// src/commands/deterministic.ts — L4 确定性工具包（AI_OWNED：自然语言直达触发，毫秒级不经模型）
 import { createHash } from 'node:crypto';
 
 interface Det { re: RegExp; run: (m: RegExpMatchArray) => string | null }

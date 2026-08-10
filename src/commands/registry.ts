@@ -1,5 +1,5 @@
 // src/commands/registry.ts — L4 命令注册表（单一事实来源）
-// 设计：核心命令面（说人话主线）+ 分类符号 + 全量描述 + 别名表
+// 设计：核心命令面（自然语言主线）+ 分类符号 + 全量描述 + 别名表
 export const SLASH: string[] = [
   // 对话
   '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/context', '/fork', '/checkpoint',
@@ -55,11 +55,11 @@ export const COMMAND_DESC: Record<string, string> = {
   '/version': '版本信息',
   '/hooks': '生命周期 Hooks（settings.hooks 本地命令）',
   '/memory': '记忆概览（三层）',
-  '/hole': '黑洞引擎检索（说人话即触发）',
+  '/hole': '黑洞引擎检索（自然语言直达）',
   '/compact': '压缩上下文',
   '/digest': '融化吸收外来产物入记忆',
   '/curator': '黑洞策展（即时审查 + 后台自动审查 on/off/interval）',
-  '/build': '概念编译：说一句话交付可运行系统',
+  '/build': '概念编译：自然语言需求直达可运行系统',
   '/deploy': '业务落地（FDE 五段）',
   '/forge': '组件锻造（MCP Server/Skill 打包）',
   '/skill': '技能管理（/skill list｜inspect｜new；/skill:名 注入）',
@@ -100,7 +100,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/delegate': '派生子代理',
   '/goal': '循环目标执行',
   '/btw': '侧边提问（隔离只读上下文，不打断主对话）',
-  '/calc': '计算器（说人话即触发）',
+  '/calc': '计算器（自然语言直达）',
   '/hash': '哈希（md5/sha256）',
   '/base64': 'Base64 编解码',
   '/uuid': '生成 UUID',
@@ -113,7 +113,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/csv': 'CSV 摘要',
 };
 
-// 别名表（中文说人话）
+// 别名表（中文自然语言）
 const ALIASES: Record<string, string> = {
   '/帮助': '/help', '/退出': '/quit', '/清空': '/clear', '/会话': '/sessions', '/恢复': '/resume',
   '/体检': '/doctor', '/状态': '/status', '/模型': '/model', '/密钥': '/key', '/版本': '/version',

@@ -26,7 +26,7 @@ const buildUiState = (): UiState => ({
   showCost: false,
   showReasoning: false,
   sid: null,
-  status: '唤醒 WxNodus…',
+  status: '正在初始化 WxNodus…',
   statusBar: 'top',
   streaming: true,
   theme: DEFAULT_THEME,

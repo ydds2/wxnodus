@@ -198,7 +198,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // 黑洞检索
   bus.register('/hole', async (args) => {
     const q = args.join(' ');
-    if (!q) return '用法：/hole <关键词>（说人话「搜一下…」也会触发）';
+    if (!q) return '用法：/hole <关键词>（自然语言「搜一下…」亦可直达）';
     const hits = searchMessages(ctx.db, q, { limit: 5 });
     if (!hits.length) return `黑洞检索「${q}」：无命中`;
     return lines(` 黑洞检索「${q}」 `, hits.map(h => ` [${h.role}] ${h.content.slice(0, 80)}`));
@@ -217,7 +217,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // 概念编译（超复杂项目能力）
   bus.register('/build', async (args) => {
     const input = args.join(' ');
-    if (!input) return '用法：/build <需求>（说人话「做个待办系统」也会触发）';
+    if (!input) return '用法：/build <需求>（自然语言「做个待办系统」亦可直达）';
     const spec = makeSpec(input, { key: ctx.getModel() ? 'x' : null });
     if (spec.scaffold === 'unknown') return `需求无法编译（${input.slice(0, 30)}…）——换个说法或说「/help build」`;
     const plan = makePlan(input, { key: null });

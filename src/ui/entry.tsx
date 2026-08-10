@@ -106,7 +106,7 @@ export function App({ bridge, version, model, cwd, runCommand, onQuit, setModel,
   // 欢迎消息作为首条历史（消息区顶部，滚动后可回看）
   const [history, setHistory] = useState<UiMsg[]>([{
     id: 'welcome', role: 'system', kind: 'intro',
-    text: `WxNodus v${version} · 概念编译器 — 说一句话，交付可运行系统（/ 打开命令面板 · /help 全部命令 · Ctrl+G 退出）`,
+    text: `WxNodus v${version} · 概念编译器 — 自然语言描述需求，交付可运行系统（/ 打开命令面板 · /help 全部命令 · Ctrl+G 退出）`,
   }]);
   const [inputLines, setInputLines] = useState(1);
   const [composerEmpty, setComposerEmpty] = useState(true);

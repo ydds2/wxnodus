@@ -241,10 +241,10 @@ const BRAND: ThemeBrand = {
   name: 'WxNodus V3',
   icon: '◉',
   prompt: '❯',
-  welcome: '说一句话，交付可运行系统',
+  welcome: '自然语言描述需求，交付可运行系统',
   goodbye: '再见！◉',
   tool: '┊',
-  helpHeader: '◉ 命令 · 说人话即可'
+  helpHeader: '◉ 命令 · 自然语言直达'
 }
 
 const cleanPromptSymbol = (s: string | undefined, fallback: string) => {
