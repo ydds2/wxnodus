@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // src/cli/index.ts — L6-2 CLI 入口（commander + WxNodus UI 装配）
 // 装配：data/config/db/mem/bus/agent → wxGateway（进程内桥接）→ @wxnodus/ink render App
-import { Command } from 'commander';
+
 import { join } from 'node:path';
 import { mkdirSync, appendFileSync } from 'node:fs';
 
@@ -28,13 +28,11 @@ if (!process.env.WXNODUS_NO_DEBUG) {
     } catch { /* 日志初始化失败不阻断启动 */ }
   };
 }
-const program = new Command();
-program.name('wxnodus').version(VERSION).description('WxNodus V3 — 本地概念编译器 CLI');
-program.option('-p, --prompt <text>', '非交互单次执行');
-program.option('--json', '-p 模式下 agent 结果输出 JSON（{ok,text,turns,interrupted}）');
-program.option('--wire', '-p 模式下输出总线事件流（JSONL：agent.start/token/message/tool/end/error）');
-program.parse(process.argv);
-const opts = program.opts();
+// A 批次：自研参数解析（替代 commander，零依赖）
+const { parseArgs, USAGE } = await import('./args.js');
+const opts = parseArgs(process.argv.slice(2));
+if (opts.help) { console.log(USAGE); process.exit(0); }
+if (opts.version) { console.log(`wxnodus ${VERSION}`); process.exit(0); }
 
 
 async function main() {
