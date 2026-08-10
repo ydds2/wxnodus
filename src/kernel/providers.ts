@@ -110,7 +110,12 @@ export function routeByKeywords(text: string, routes: Route[]): Route | null {
 }
 
 // ── 请求构造（OpenAI 兼容 /chat/completions）────────────────
-export interface ChatMessage { role: 'user' | 'assistant' | 'system' | 'tool'; content: string; tool_call_id?: string }
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string | null;
+  tool_call_id?: string;
+  tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+}
 
 export function buildChatRequest(opts: {
   baseURL: string; model: string; key: string;

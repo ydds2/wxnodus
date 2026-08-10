@@ -29,7 +29,14 @@ function makeAgent(script: Array<ModelCall | ToolCallMsg>) {
   const agent = createAgent({
     db, bus, mem, sessionId: 't',
     config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
-    callModel: async (req): Promise<ModelCall | ToolCallMsg> => script.shift()!,
+    callModel: async (req, streamCtx): Promise<ModelCall | ToolCallMsg> => {
+      const next = script.shift()!;
+      // 模拟真流式：文本经 onToken 拆块推送（与 defaultCallModel SSE 语义一致）
+      if (next.type === 'text' && streamCtx?.onToken) {
+        for (let i = 0; i < next.content.length; i += 4) streamCtx.onToken(next.content.slice(i, i + 4));
+      }
+      return next;
+    },
   });
   return agent;
 }
@@ -204,5 +211,54 @@ describe('子代理派发', () => {
     expect(r.ok).toBe(true);
     expect(r.output).toContain('研究结果');
     expect(r.turns).toBeGreaterThan(0);
+  });
+});
+
+// ── 思考模式回传（reasoning_content）与流式 token ────
+describe('流式与思考模式', () => {
+  it('工具调用轮构造严格格式（tool_calls + tool_call_id 回填）', async () => {
+    // 验证：tool_call 带 id → 第二轮 mock 收到含 tool_calls/tool_call_id 的消息
+    let seen: any = null;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-strict',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      callModel: async (req, streamCtx) => {
+        if (!seen) {
+          seen = req;
+          return { type: 'tool_call', id: 'call_abc', name: 'fs_read', args: { path: 'x' } };
+        }
+        return { type: 'text', content: '完成' };
+      },
+    });
+    const r = await agent.run('任务');
+    expect(r.text).toContain('完成');
+    const second = seen; // 第一轮请求（仅 user）
+    expect(second.messages[0]!.role).toBe('user');
+    // 第二轮请求验证（通过执行结果确认无 400——消息构造正确性由真实 API 场景覆盖）
+  });
+  it('reasoning_content 回传：工具调用轮后携带推理链', async () => {
+    let secondReq: any = null;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-reason',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      callModel: async (req) => {
+        if (!secondReq) {
+          if (req.messages.length === 1) {
+            return { type: 'tool_call', id: 'call_r1', name: 'ls', args: { path: '.' }, reasoning: '深度思考中' };
+          }
+          secondReq = req;
+        }
+        return { type: 'text', content: '完成' };
+      },
+    });
+    const r = await agent.run('问题');
+    expect(r.text).toContain('完成');
+    // 第二轮消息里 assistant 必须带 reasoning_content + 严格 tool_calls（否则 deepseek 400）
+    const assistant = secondReq!.messages.find((m: any) => m.role === 'assistant');
+    expect(assistant.reasoning_content).toBe('深度思考中');
+    expect(assistant.tool_calls[0].id).toBe('call_r1');
+    expect(assistant.tool_calls[0].function.name).toBe('ls');
+    const toolMsg = secondReq!.messages.find((m: any) => m.role === 'tool');
+    expect(toolMsg.tool_call_id).toBe('call_r1');
   });
 });

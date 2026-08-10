@@ -15,8 +15,8 @@ import { modeVerdict, type Mode } from './permissions.js';
 import type { HookRunner } from './hooks.js';
 import { join } from 'node:path';
 
-export interface ModelCall { type: 'text'; content: string }
-export interface ToolCallMsg { type: 'tool_call'; name: string; args: Record<string, any> }
+export interface ModelCall { type: 'text'; content: string; reasoning?: string }
+export interface ToolCallMsg { type: 'tool_call'; name: string; args: Record<string, any>; id?: string; reasoning?: string }
 
 export interface AgentOptions {
   db: Db;
@@ -24,7 +24,7 @@ export interface AgentOptions {
   mem: Memory;
   sessionId: string;
   config: { settings: { apiKeyEnc?: string | null; baseURL?: string; model?: string } };
-  callModel?: ((req: { messages: Array<{ role: string; content: string }>; tools?: unknown[] }) => Promise<ModelCall | ToolCallMsg>) | null;
+  callModel?: ((req: { messages: Array<{ role: string; content: string | null }>; tools?: unknown[] }, streamCtx?: { onToken?: (t: string) => void }) => Promise<ModelCall | ToolCallMsg>) | null;
   mode?: Mode;
   onApproval?: (tool: string, args: Record<string, any>) => Promise<boolean>;
   maxTurns?: number;
@@ -66,8 +66,12 @@ export function createAgent(opts: AgentOptions) {
   // 一次性 abortPromise 会让中断后的所有后续提问立即失败（"aborted"）。
   let abortSignal: { promise: Promise<void>; resolve: () => void } = makeAbortSignal();
 
-  // 默认模型调用：OpenAI 兼容流式（真实 fetch）——key 解密后请求
-  const defaultCallModel = async (req: { messages: Array<{ role: string; content: string }>; tools?: unknown[] }): Promise<ModelCall | ToolCallMsg> => {
+  // 默认模型调用：OpenAI 兼容真流式（SSE）——token 逐块推送总线（UI 实时显示）
+  // 工具调用解析保留 tool_call id（严格格式：assistant.tool_calls + tool.tool_call_id 回填）
+  const defaultCallModel = async (
+    req: { messages: Array<{ role: string; content: string | null }>; tools?: unknown[] },
+    streamCtx?: { onToken?: (t: string) => void },
+  ): Promise<ModelCall | ToolCallMsg> => {
     const s = opts.config.settings;
     let key: string | null = null;
 
@@ -97,20 +101,62 @@ export function createAgent(opts: AgentOptions) {
     // 不降级规则脑——否则 /key 配置后仍提示「未配置」或 API 模型名非法
     const baseURL = s.baseURL || 'https://api.deepseek.com/v1';
     const model = MODEL_CATALOG.some(m => m.modelId === s.model) ? s.model! : 'deepseek-v4-flash';
-    const httpReq = buildChatRequest({ baseURL, model, key, messages: req.messages as any, stream: false, tools: req.tools });
+    const httpReq = buildChatRequest({ baseURL, model, key, messages: req.messages as any, stream: true, tools: req.tools });
     const resp = await fetch(httpReq.url, { method: 'POST', headers: httpReq.headers, body: httpReq.body, signal: AbortSignal.timeout(120000) });
     if (!resp.ok) {
       const err = new Error(mapHttpError(resp.status)) as Error & { status?: number };
       err.status = resp.status;
       throw err;
     }
-    const j = await resp.json() as any;
-    const msg = j?.choices?.[0]?.message;
-    if (msg?.tool_calls?.length) {
-      const tc = msg.tool_calls[0];
-      return { type: 'tool_call', name: tc.function.name, args: safeJson(tc.function.arguments) };
+
+    // SSE 流式解析：delta.content 逐块推送 / delta.tool_calls 按 index 累积
+    // reasoning_content（思考模式）也必须累积——deepseek 思考模式要求回传，否则 400
+    const reader = resp.body!.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let full = '';
+    let fullReasoning = '';
+    const toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
+    let finished = false;
+
+    while (!finished) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') { finished = true; break; }
+        let j: any;
+        try { j = JSON.parse(data); } catch { continue; }
+        const delta = j?.choices?.[0]?.delta;
+        if (delta?.content) {
+          full += delta.content;
+          streamCtx?.onToken?.(delta.content);
+        }
+        if (delta?.reasoning_content) {
+          fullReasoning += delta.reasoning_content;
+        }
+        if (Array.isArray(delta?.tool_calls)) {
+          for (const tc of delta.tool_calls) {
+            const i = tc?.index ?? 0;
+            toolCalls[i] ??= { id: '', name: '', arguments: '' };
+            if (tc.id) toolCalls[i]!.id = tc.id;
+            if (tc.function?.name) toolCalls[i]!.name += tc.function.name;
+            if (tc.function?.arguments) toolCalls[i]!.arguments += tc.function.arguments;
+          }
+        }
+      }
     }
-    return { type: 'text', content: String(msg?.content ?? '') };
+
+    if (toolCalls.length && (toolCalls[0]!.name || toolCalls[0]!.arguments)) {
+      const tc = toolCalls[0]!;
+      return { type: 'tool_call', id: tc.id || `call_${Date.now().toString(36)}`, name: tc.name, args: safeJson(tc.arguments), reasoning: fullReasoning || undefined };
+    }
+    return { type: 'text', content: full, reasoning: fullReasoning || undefined };
   };
   const callModel = opts.callModel ?? defaultCallModel;
 
@@ -169,12 +215,13 @@ export function createAgent(opts: AgentOptions) {
     if (opts2.subagent) {
       bus.emit('agent.subagent', { goal: prompt, phase: 'start', session_id: sessionId });
     }
-    const callWithAbort = (req: { messages: Array<{ role: string; content: string }>; tools?: unknown[] }) =>
+    const callWithAbort = (req: { messages: Array<{ role: string; content: string | null }>; tools?: unknown[] }) =>
       Promise.race([
-        callModel(req),
+        // 真流式：SSE token 逐块推送总线（UI 实时显示运行状态）
+        callModel(req, { onToken: (t) => bus.emit('agent.token', { text: t }) }),
         abortSignal.promise.then(() => { throw new Error('aborted'); }),
       ]);
-    const msgs: Array<{ role: string; content: string }> = [];
+    const msgs: Array<{ role: string; content: string | null; tool_call_id?: string; reasoning_content?: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }> = [];
     // 召回注入（黑洞引擎：FTS 命中历史上下文）
     const recalled = opts.mem.recallHybrid(prompt, { limit: 3 });
     const recallBlock = recalled.length
@@ -223,16 +270,16 @@ export function createAgent(opts: AgentOptions) {
       }
       if (res.type === 'text') {
         finalText = res.content;
-        msgs.push({ role: 'assistant', content: res.content });
+        // 思考模式（reasoning_content）必须回传，否则 deepseek 400
+        msgs.push(res.reasoning
+          ? { role: 'assistant', content: res.content, reasoning_content: res.reasoning }
+          : { role: 'assistant', content: res.content });
         try { opts.mem.append(sessionId, 'assistant', res.content); } catch { /* 忽略 */ }
-        for (let i = 0; i < res.content.length; i += 4) {
-          if (aborted) break;
-          bus.emit('agent.token', { text: res.content.slice(i, i + 4) });
-        }
+        // token 已由流式 onToken 实时推送（此处不再事后模拟）
         bus.emit('agent.message', { content: res.content });
         break; // 文本 = 回合结束
       }
-      // 工具调用
+      // 工具调用（严格 OpenAI 格式：assistant.tool_calls + tool.tool_call_id 回填）
       if (res.type === 'tool_call') {
         const tool = tools[res.name];
         if (!tool) {
@@ -245,14 +292,20 @@ export function createAgent(opts: AgentOptions) {
           continue;
         }
         unknownRounds = 0;
+        const callId = res.id ?? `call_${Date.now().toString(36)}${turns}`;
         const out = await executeTool(res.name, res.args);
         consecutiveFail = out.includes('失败') || out.includes('异常') ? consecutiveFail + 1 : 0;
         if (consecutiveFail >= MAX_CONSECUTIVE_FAIL) {
           bus.emit('agent.error', { message: `同工具连续失败 ${MAX_CONSECUTIVE_FAIL} 次，终止` });
           return { ok: false, text: '同工具连续失败 5 次，已终止', turns, interrupted };
         }
-        msgs.push({ role: 'assistant', content: JSON.stringify({ tool: res.name, args: res.args }) });
-        msgs.push({ role: 'tool', content: out });
+        msgs.push({
+          role: 'assistant',
+          content: '',
+          ...(res.reasoning ? { reasoning_content: res.reasoning } : {}),
+          tool_calls: [{ id: callId, type: 'function', function: { name: res.name, arguments: JSON.stringify(res.args) } }],
+        });
+        msgs.push({ role: 'tool', tool_call_id: callId, content: out });
         try { opts.mem.append(sessionId, 'tool', `${res.name}: ${out.slice(0, 300)}`); } catch { /* 忽略 */ }
       }
     }
