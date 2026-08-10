@@ -26,7 +26,7 @@ export interface AgentOptions {
   mem: Memory;
   sessionId: string;
   config: { settings: { apiKeyEnc?: string | null; baseURL?: string; model?: string } };
-  callModel?: ((req: { messages: Array<{ role: string; content: string | null }>; tools?: unknown[] }, streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal }) => Promise<ModelCall | ToolCallMsg>) | null;
+  callModel?: ((req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[] }, streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal }) => Promise<ModelCall | ToolCallMsg>) | null;
   mode?: Mode;
   onApproval?: (tool: string, args: Record<string, any>) => Promise<boolean>;
   /** C6：文字提问回调（clarify 工具）——返回用户文本答案 */
@@ -95,7 +95,7 @@ export function createAgent(opts: AgentOptions) {
   // 默认模型调用：OpenAI 兼容真流式（SSE）——token 逐块推送总线（UI 实时显示）
   // 工具调用解析保留 tool_call id（严格格式：assistant.tool_calls + tool.tool_call_id 回填）
   const defaultCallModel = async (
-    req: { messages: Array<{ role: string; content: string | null }>; tools?: unknown[] },
+    req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[] },
     streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal },
   ): Promise<ModelCall | ToolCallMsg> => {
     const s = opts.config.settings;
@@ -113,7 +113,7 @@ export function createAgent(opts: AgentOptions) {
     if (!key) {
       // 无 key：所有对话输出必须经 AI 模型——不做规则脑假装回答，
       // 明确引导配置（配置类命令 /key 等仍本地可用）
-      const q = req.messages[req.messages.length - 1]?.content ?? '';
+      const q = (() => { const c = req.messages[req.messages.length - 1]?.content ?? ''; return typeof c === 'string' ? c : ''; })();
       return {
         type: 'text',
         content: q.trim()
@@ -308,7 +308,10 @@ export function createAgent(opts: AgentOptions) {
     }
   }
 
-  async function loop(sessionId: string, prompt: string, opts2: { subagent?: boolean } = {}): Promise<AgentResult> {
+  async function loop(sessionId: string, prompt: string, opts2: { subagent?: boolean; images?: Array<{ dataUrl: string; mime: string }> } = {}): Promise<AgentResult> {
+    // 多模态注入（P3 图片附加链路）：用户消息构建为 OpenAI parts 数组（text + image_url）——
+    // 仅本次 API 调用的内存消息；DB append 仍存纯文本（消息库文本化）
+    const imgParts = (opts2.images ?? []).map(img => ({ type: 'image_url', image_url: { url: img.dataUrl } }));
     // C1：每回合独立状态快照——旧回合收尾读自己的 st，不受新回合影响
     const st = { aborted: false, interrupted: false, signal: makeAbortSignal() };
     turn = st;
@@ -316,7 +319,7 @@ export function createAgent(opts: AgentOptions) {
     if (opts2.subagent) {
       bus.emit('agent.subagent', { goal: prompt, phase: 'start', session_id: sessionId, subagent_id: sessionId });
     }
-    const callWithAbort = (req: { messages: Array<{ role: string; content: string | null }>; tools?: unknown[] }) => {
+    const callWithAbort = (req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[] }) => {
       // 修复 F3：abort 信号同时传入 fetch（真中断流式读取）与 race（吞 late rejection）
       // C5：onReasoning 实时转发思考分片（UI reasoning.delta）
       const racing = callModel(req, {
@@ -330,7 +333,7 @@ export function createAgent(opts: AgentOptions) {
         st.signal.promise.then(() => { throw new Error('aborted'); }),
       ]);
     };
-    const msgs: Array<{ role: string; content: string | null; tool_call_id?: string; reasoning_content?: string; thinking_content?: string; reasoning?: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }> = [];
+    const msgs: Array<{ role: string; content: string | Array<Record<string, any>> | null; tool_call_id?: string; reasoning_content?: string; thinking_content?: string; reasoning?: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }> = [];
     // 项目引导注入（对比轮 5 修复）：AGENTS.md 存在时进系统提示（kimi 运行时注入对齐）
     const agentsMd = loadAgentsMd(process.cwd());
     if (agentsMd) msgs.push({ role: 'system', content: `（项目引导 AGENTS.md）\n${agentsMd}` });
@@ -355,7 +358,9 @@ export function createAgent(opts: AgentOptions) {
     const recallBlock = recalled.length
       ? `\n[相关历史记忆（本会话）]\n${recalled.map(r => r.content.slice(0, 300)).join('\n---\n')}`
       : '';
-    msgs.push({ role: 'user', content: prompt + recallBlock });
+    msgs.push({ role: 'user', content: imgParts.length
+      ? [{ type: 'text', text: prompt + recallBlock }, ...imgParts]
+      : prompt + recallBlock });
     try { opts.mem.append(sessionId, 'user', prompt); } catch { /* 记忆写入失败不阻断对话 */ }
     const toolList = opts2.subagent ? toolsToOpenAI(Object.fromEntries(Object.entries(tools).filter(([n]) => !['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate'].includes(n)))) : toolsToOpenAI(tools);
     let turns = 0;
@@ -509,10 +514,10 @@ export function createAgent(opts: AgentOptions) {
   // 每轮 loop 独立回合（历史经 working 窗口延续上下文）
   const MAX_GOAL_ROUNDS = 10;
   const GOAL_DONE_MARK = '[GOAL_DONE]';
-  async function runWithGoalLoop(prompt: string): Promise<AgentResult> {
-    if (mode !== 'goal') return loop(sessionId, prompt);
+  async function runWithGoalLoop(prompt: string, images?: Array<{ dataUrl: string; mime: string }>): Promise<AgentResult> {
+    if (mode !== 'goal') return loop(sessionId, prompt, { images });
     const goalPrompt = `${prompt}\n\n（goal 模式：自主规划并持续执行直到目标全部完成。全部完成时回复末尾输出 ${GOAL_DONE_MARK}，未完成则继续执行。每轮都可以调用工具。）`;
-    let result = await loop(sessionId, goalPrompt);
+    let result = await loop(sessionId, goalPrompt, { images });
     let rounds = 1;
     while (rounds < MAX_GOAL_ROUNDS && !result.interrupted && !result.text.includes(GOAL_DONE_MARK)) {
       rounds++;
@@ -528,8 +533,8 @@ export function createAgent(opts: AgentOptions) {
   }
 
   return {
-    async run(prompt: string): Promise<AgentResult> {
-      return runWithGoalLoop(prompt);
+    async run(prompt: string, opts?: { images?: Array<{ dataUrl: string; mime: string }> }): Promise<AgentResult> {
+      return runWithGoalLoop(prompt, opts?.images);
     },
     spawnSubagent: spawnSub,
     // C1：abort 只作用于当前回合（若在跑）；空闲时置位无副作用

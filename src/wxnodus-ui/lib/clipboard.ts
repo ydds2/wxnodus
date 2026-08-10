@@ -1,5 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
+import { join } from 'node:path'
+import { writeFileSync } from 'node:fs'
 
 const execFileAsync = promisify(execFile)
 const CLIPBOARD_MAX_BUFFER = 4 * 1024 * 1024
@@ -155,6 +157,42 @@ function writeClipboardCommands(
  * Returns true if at least one backend succeeded, false otherwise
  * (callers should fall back to OSC52 on false).
  */
+
+// ── P3：剪贴板图片读取（粘贴截图链路）────────────────────
+// Windows: Get-Clipboard -Format Image → System.Drawing 存 PNG
+// Linux X11: xclip -t image/png -o；Wayland: wl-paste
+// 成功返回保存的 PNG 路径，无图片/失败返回 null
+export async function readClipboardImage(outDir: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  const ts = Date.now()
+  const target = join(outDir, `clip-${ts}.png`)
+  if (process.platform === 'win32') {
+    // 单引号包裹路径防空格；路径内单引号翻倍转义（Windows 罕见但安全）
+    const safe = target.replace(/'/g, `''`)
+    const script = `Add-Type -AssemblyName System.Drawing; $img = Get-Clipboard -Format Image -ErrorAction SilentlyContinue; if ($img) { $img.Save('${safe}', [System.Drawing.Imaging.ImageFormat]::Png); 'SAVED' } else { 'NONE' }`
+    try {
+      const { stdout } = await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 8000, windowsHide: true })
+      return String(stdout ?? '').trim() === 'SAVED' ? target : null
+    } catch {
+      return null
+    }
+  }
+  // Linux：xclip 优先，wl-paste 兜底
+  const attempts: Array<{ cmd: string; args: string[] }> = []
+  if (env.WAYLAND_DISPLAY) attempts.push({ cmd: 'wl-paste', args: ['--type', 'image/png'] })
+  attempts.push({ cmd: 'xclip', args: ['-selection', 'clipboard', '-t', 'image/png', '-o'] })
+  for (const a of attempts) {
+    try {
+      const { stdout } = await execFileAsync(a.cmd, a.args, { encoding: 'buffer', timeout: 5000 })
+      const buf = stdout as Buffer
+      if (buf && buf.length > 16) {
+        writeFileSync(target, buf)
+        return target
+      }
+    } catch { /* 尝试下一个后端 */ }
+  }
+  return null
+}
+
 export async function writeClipboardText(
   text: string,
   platform: NodeJS.Platform = process.platform,

@@ -5,12 +5,12 @@
 // 参考：gateway 客户端接口契约（业界通用） + wxnodus kernel/events 事件流
 import { EventEmitter } from 'node:events'
 import { execFile, execFileSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, unlinkSync } from 'node:fs'
+import { join, resolve, basename } from 'node:path'
 
 import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
-import { MODEL_CATALOG, encryptKey } from '../kernel/providers.js'
+import { MODEL_CATALOG, encryptKey, hasImageIn } from '../kernel/providers.js'
 import { classifyToolAction } from '../kernel/permissions.js'
 import { discoverSkills } from '../kernel/skills.js'
 import { COMMAND_CAT, COMMAND_DESC, SLASH } from '../commands/registry.js'
@@ -26,7 +26,7 @@ export interface WxGatewayKernel {
   config: any
   mem: { append(sessionId: string, role: string, content: string, toolCallId?: string): void; recallHybrid?(q: string, o?: { limit?: number }): Promise<Array<{ id: number; content: string; score: number }>> }
   agent: {
-    run(prompt: string): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>
+    run(prompt: string, opts?: { images?: Array<{ dataUrl: string; mime: string }> }): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>
     abort(): void
     setMode(m: string): void
     getMode(): string
@@ -44,6 +44,29 @@ export interface WxGatewayKernel {
   setTheme: (t: string) => void
   setThinking: (on: boolean) => void
   requestExit: () => void
+}
+
+// ── P3 图片附加链路：附件目录 + 待注入图片（pending.json）持久化 ──
+function attachmentsDir(dataDir: string, sessionId: string): string {
+  return join(dataDir, 'attachments', sessionId.replace(/[^\w.-]/g, '_'))
+}
+function pendingPath(dataDir: string, sessionId: string): string {
+  return join(attachmentsDir(dataDir, sessionId), 'pending.json')
+}
+function writePending(dataDir: string, sessionId: string, file: string, mime: string): void {
+  const dir = attachmentsDir(dataDir, sessionId)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(pendingPath(dataDir, sessionId), JSON.stringify({ file, mime, ts: Date.now() }), 'utf8')
+}
+function readPending(dataDir: string, sessionId: string): { file: string; mime: string } | null {
+  try {
+    const raw = readFileSync(pendingPath(dataDir, sessionId), 'utf8')
+    const p = JSON.parse(raw) as { file: string; mime: string }
+    return p?.file && existsSync(p.file) ? p : null
+  } catch { return null }
+}
+function clearPending(dataDir: string, sessionId: string): void {
+  try { unlinkSync(pendingPath(dataDir, sessionId)) } catch { /* 无待注入 */ }
 }
 
 interface PendingApproval {
@@ -214,7 +237,7 @@ export class GatewayClient extends EventEmitter {
       case 'clarify.respond': return this.clarifyRespond(params) as T
       case 'sudo.respond': return {} as T
       case 'secret.respond': return {} as T
-      case 'clipboard.paste': return { attached: false, message: '未检测到剪贴板图片' } as T
+      case 'clipboard.paste': return this.clipboardPaste(params) as T
       case 'terminal.resize': return {} as T
       case 'input.detect_drop': return this.detectDrop(params) as T
       case 'shell.exec': return this.shellExec(params) as T
@@ -233,7 +256,7 @@ export class GatewayClient extends EventEmitter {
       case 'reload.mcp': return {} as T
       case 'voice.toggle': return { enabled: false, audio_available: false, message: '语音输入当前不可用' } as T
       case 'voice.record': return { ok: false, audio_available: false, message: '语音输入当前不可用' } as T
-      case 'image.attach': return {} as T
+      case 'image.attach': return this.imageAttach(params) as T
       default:
         this.pushLog(`[rpc] unsupported method: ${method}`)
         throw new Error(`unsupported rpc: ${method}`)
@@ -394,8 +417,23 @@ export class GatewayClient extends EventEmitter {
       throw new Error('session busy: waiting for model response')
     }
 
+    // P3 图片附加链路：会话有待注入图片且当前模型支持图像输入 → 多模态 parts 随本次提问进入模型；
+    // 模型不支持图像（如 deepseek 文本模型）→ 优雅降级：丢弃待注入并提示切换 GLM-4V Flash
+    const sid = String(params.session_id ?? this.currentSessionId)
+    const pending = readPending(this.kernel.dataDir, sid)
+    let images: Array<{ dataUrl: string; mime: string }> | undefined
+    if (pending) {
+      const model = String(this.kernel.settings.model ?? '')
+      if (hasImageIn(model)) {
+        const b64 = readFileSync(pending.file).toString('base64')
+        images = [{ dataUrl: `data:${pending.mime};base64,${b64}`, mime: pending.mime }]
+      } else {
+        this.publish({ type: 'notification.show', payload: { kind: 'ttl', level: 'warn', text: `当前模型不支持图像输入，已忽略附加图片——请 /model 切换至 GLM-4V Flash 后重试` } })
+      }
+      clearPending(this.kernel.dataDir, sid)
+    }
     // 后台执行 agent（事件流驱动 UI），不阻塞 RPC
-    void this.kernel.agent.run(text).catch((e) => {
+    void this.kernel.agent.run(text, images ? { images } : undefined).catch((e) => {
       process.stderr.write(`[wxGateway] agent.run failed: ${e?.message ?? e}\n`)
       this.running = false
       this.publish({ type: 'error', payload: { message: String(e?.message ?? 'agent run failed') } })
@@ -489,6 +527,64 @@ export class GatewayClient extends EventEmitter {
     this.publish({ type: 'status.update', payload: { kind: 'done', text: 'ready' } })
 
     return { ok: true, deleted: id }
+  }
+
+  // P3 图片附加链路：/image 命令（按路径附加图片）
+  // 验证文件真实存在且为受支持图片（魔数），解析宽高与 token 估算，
+  // 复制进会话附件目录并登记 pending——下一次 prompt.submit 随提问注入模型
+  private async imageAttach(params: Record<string, unknown>): Promise<unknown> {
+    const sid = String(params.session_id ?? this.currentSessionId)
+    const file = String(params.path ?? '').trim()
+    if (!file || !existsSync(file)) {
+      return { attached: false, message: file ? `文件不存在：${file}` : '用法：/image <图片路径>' }
+    }
+    try {
+      const { detectImageType, readImageDimensions, estimateVisionTokens } = await import('../kernel/imageMeta.js')
+      const buf = readFileSync(file)
+      const kind = detectImageType(buf)
+      if (!kind) return { attached: false, message: '不是受支持的图片格式（PNG/JPEG/WebP/GIF）' }
+      const dim = readImageDimensions(buf)
+      const dir = attachmentsDir(this.kernel.dataDir, sid)
+      mkdirSync(dir, { recursive: true })
+      const saved = join(dir, `${Date.now()}-${basename(file).replace(/[^\w.-]/g, '_')}`)
+      copyFileSync(file, saved)
+      const mime = kind === 'jpeg' ? 'image/jpeg' : kind === 'webp' ? 'image/webp' : kind === 'gif' ? 'image/gif' : 'image/png'
+      writePending(this.kernel.dataDir, sid, saved, mime)
+      const meta = {
+        attached: true, count: 1, name: basename(file),
+        width: dim?.width, height: dim?.height,
+        token_estimate: dim ? estimateVisionTokens(dim.width, dim.height) : 0,
+        message: '图片已附加——发送消息时将随提问送入模型（需图像模型）',
+      }
+      this.publish({ type: 'status.update', payload: { kind: 'done', text: 'ready' } })
+      return meta
+    } catch (e: any) {
+      return { attached: false, message: `图片附加失败：${String(e?.message ?? e).slice(0, 120)}` }
+    }
+  }
+
+  // P3 图片附加链路：Ctrl+V 粘贴截图（剪贴板图片 → PNG 附件 → pending 注入）
+  private async clipboardPaste(params: Record<string, unknown>): Promise<unknown> {
+    const sid = String(params.session_id ?? this.currentSessionId)
+    try {
+      const { readClipboardImage } = await import('./lib/clipboard.js')
+      const { detectImageType, readImageDimensions, estimateVisionTokens } = await import('../kernel/imageMeta.js')
+      const dir = attachmentsDir(this.kernel.dataDir, sid)
+      mkdirSync(dir, { recursive: true })
+      const png = await readClipboardImage(dir)
+      if (!png) return { attached: false, message: '未检测到剪贴板图片（Ctrl+V 粘贴图片或先截图）' }
+      const buf = readFileSync(png)
+      const dim = detectImageType(buf) ? readImageDimensions(buf) : null
+      writePending(this.kernel.dataDir, sid, png, 'image/png')
+      return {
+        attached: true, count: 1, name: basename(png),
+        width: dim?.width, height: dim?.height,
+        token_estimate: dim ? estimateVisionTokens(dim.width, dim.height) : 0,
+        message: '剪贴板图片已附加——发送消息时将随提问送入模型',
+      }
+    } catch (e: any) {
+      return { attached: false, message: `剪贴板图片读取失败：${String(e?.message ?? e).slice(0, 120)}` }
+    }
   }
 
   // F7 修复：session.steer 真实现（注入当前回合）

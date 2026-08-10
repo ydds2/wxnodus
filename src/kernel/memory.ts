@@ -30,10 +30,20 @@ export function compactKeepHeadTail(msgs: MemMsg[], opts: { head: number; tail: 
 }
 
 // ── 消息序列 token 估算（自动压缩触发阈值用）────────────────
-export function estimateMessagesTokens(msgs: Array<{ role: string; content: string | null }>): number {
+// 消息内容文本化：字符串原样；数组（OpenAI 多模态 parts）→ 文本段拼接 + 图片占位
+// （图片 dataUrl 基编码体量巨大，进摘要/估算会撑爆上下文——占位符计数即可）
+export function contentToText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((p: any) => (p?.type === 'text' ? String(p.text ?? '') : p?.type === 'image_url' ? '[图片]' : '[附件]')).join('\n');
+  }
+  return String(content ?? '');
+}
+
+export function estimateMessagesTokens(msgs: Array<{ role: string; content: unknown | null }>): number {
   let t = 0;
   for (const m of msgs) {
-    t += estimateTokens(String(m.content ?? ''));
+    t += estimateTokens(contentToText(m.content));
     t += m.role === 'tool' ? 12 : 4; // 角色/工具调用开销
   }
   return t;
@@ -52,7 +62,7 @@ export async function compactMessages(
   const keepHead = msgs.slice(0, head);
   const keepTail = msgs.slice(-tail);
   const mid = msgs.slice(head, -tail);
-  const summary = await summarize(mid.map(m => `${m.role}: ${String(m.content).slice(0, 300)}`).join('\n')).catch(() => '');
+  const summary = await summarize(mid.map(m => `${m.role}: ${contentToText(m.content).slice(0, 300)}`).join('\n')).catch(() => '');
   if (summary) {
     return [...keepHead, { role: 'system', content: `（自动压缩摘要）${summary.slice(0, 500)}` }, ...keepTail];
   }

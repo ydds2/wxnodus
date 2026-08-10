@@ -79,6 +79,13 @@ export const MODEL_CATALOG: ModelEntry[] = [
 ];
 
 // 能力徽标（/model 列表与 UI 显示）
+// 模型是否支持图像输入（imageIn 能力）——网关在注入图片前校验，文本模型优雅降级
+export function hasImageIn(modelId: string | undefined | null): boolean {
+  if (!modelId) return false;
+  const m = MODEL_CATALOG.find(x => x.modelId === modelId);
+  return m?.capabilities?.imageIn === true;
+}
+
 export function capabilityBadges(c: ModelCapabilities | undefined): string {
   if (!c) return '';
   const parts: string[] = [];
