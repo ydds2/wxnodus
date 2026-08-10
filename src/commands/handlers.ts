@@ -73,7 +73,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/status', () => {
     const u = { model: ctx.getModel(), mode: ctx.getMode(), cwd: ctx.cwd };
     return lines(' 状态 ', [
-      ` 模型：${u.model || '规则脑（未配置 key）'}`,
+      ` 模型：${u.model || '未配置（/key set <密钥> 配置）'}`,
       ` 模式：${u.mode}`,
       ` 目录：${u.cwd}`,
       ` 命令：${SLASH.length} 个`,
@@ -85,7 +85,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ['配置中心', existsSync(join(ctx.dataDir, 'settings.json')) ? '正常' : '未初始化'],
       ['数据库', '正常'],
       ['黑洞记忆', '正常'],
-      ['模型密钥', ctx.getModel() ? '已配置' : '未配置（规则脑兜底）'],
+      ['模型密钥', ctx.getModel() ? '已配置' : '未配置（/key set <密钥> 配置）'],
     ];
     return lines(' 体检 ', checks.map(([k, v]) => ` ${k}：${v}`));
   });
@@ -110,7 +110,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     }
     if (sub === 'off') {
       ctx.config.setKey('settings', 'apiKeyEnc', '');
-      return '密钥已清除（退回规则脑）';
+      return '密钥已清除（对话将提示配置，直到重新 /key set）';
     }
     const enc = ctx.config.getKey('settings', 'apiKeyEnc');
     if (!enc) return '密钥状态：未配置——/key set <密钥> 配置后获得完整能力';

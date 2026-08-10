@@ -153,7 +153,16 @@ async function main() {
   const { render } = await import('@wxnodus/ink');
   const React = (await import('react')).default;
 
-  const app = render(React.createElement(App, { gw: gateway }), { exitOnCtrlC: false });
+  if (process.env.WXNODUS_DEBUG_EVENTS) {
+    process.stdout.write('[boot] rendering App\n')
+  }
+  let app: any = null
+  try {
+    app = render(React.createElement(App, { gw: gateway }), { exitOnCtrlC: false })
+  } catch (e: any) {
+    if (process.env.WXNODUS_DEBUG_EVENTS) process.stdout.write('[boot] render FAILED: ' + String(e?.message ?? e).slice(0, 200) + '\n')
+    throw e
+  }
 
   // Ctrl+C：运行中中断 / 空闲退出
   process.on('SIGINT', () => {

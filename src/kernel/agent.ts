@@ -9,7 +9,7 @@
 import type { Db } from '../store/db.js';
 import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
-import { ruleBrain, decryptKey } from './providers.js';
+import { decryptKey } from './providers.js';
 import { coreTools, isDangerous, toolsToOpenAI, type ToolCtx } from './tools.js';
 import { modeVerdict, type Mode } from './permissions.js';
 import { join } from 'node:path';
@@ -74,7 +74,15 @@ export function createAgent(opts: AgentOptions) {
     }
 
     if (!key) {
-      return { type: 'text', content: ruleBrain(req.messages[req.messages.length - 1]?.content ?? '') };
+      // 无 key：所有对话输出必须经 AI 模型——不做规则脑假装回答，
+      // 明确引导配置（配置类命令 /key 等仍本地可用）
+      const q = req.messages[req.messages.length - 1]?.content ?? '';
+      return {
+        type: 'text',
+        content: q.trim()
+          ? '当前未配置模型密钥，所有回答需要 AI 模型提供。请用 /key set <密钥> 配置后重试（配置类命令不受影响）。'
+          : '（空输入）',
+      };
     }
 
     const { buildChatRequest, mapHttpError, MODEL_CATALOG } = await import('./providers.js');
@@ -84,7 +92,11 @@ export function createAgent(opts: AgentOptions) {
     const model = MODEL_CATALOG.some(m => m.modelId === s.model) ? s.model! : 'deepseek-v4-flash';
     const httpReq = buildChatRequest({ baseURL, model, key, messages: req.messages as any, stream: false, tools: req.tools });
     const resp = await fetch(httpReq.url, { method: 'POST', headers: httpReq.headers, body: httpReq.body, signal: AbortSignal.timeout(120000) });
-    if (!resp.ok) throw new Error(mapHttpError(resp.status));
+    if (!resp.ok) {
+      const err = new Error(mapHttpError(resp.status)) as Error & { status?: number };
+      err.status = resp.status;
+      throw err;
+    }
     const j = await resp.json() as any;
     const msg = j?.choices?.[0]?.message;
     if (msg?.tool_calls?.length) {
@@ -154,6 +166,13 @@ export function createAgent(opts: AgentOptions) {
         res = await callWithAbort({ messages: msgs, tools: toolList });
       } catch (e: any) {
         if (aborted) { interrupted = true; break; }
+        // 4xx 确定性错误（密钥无效/模型不存在/请求非法等）：不重试，立即反馈——
+        // 否则无效 key 会空转 ~6s（3 次退避重试）才显示错误，被误判为「卡死」。
+        // 429 限流除外：mapHttpError 语义为稍后重试，保留退避重试。
+        if (typeof e?.status === 'number' && e.status >= 400 && e.status < 500 && e.status !== 429) {
+          bus.emit('agent.error', { message: String(e?.message ?? e) });
+          return { ok: false, text: `模型调用失败：${e?.message?.slice(0, 200)}`, turns, interrupted };
+        }
         // 瞬时失败：800ms 退避重试（最多 3 次）
         let tried = 0;
         let lastErr = e;

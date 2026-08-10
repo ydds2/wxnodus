@@ -5,7 +5,7 @@
 // 参考：gateway 客户端接口契约（业界通用） + wxnodus kernel/events 事件流
 import { EventEmitter } from 'node:events'
 import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import type { EventBus } from '../kernel/events.js'
@@ -516,7 +516,7 @@ export class GatewayClient extends EventEmitter {
     let entries: string[] = []
 
     try {
-      entries = (require('node:fs') as typeof import('node:fs')).readdirSync(base)
+      entries = readdirSync(base)
         .filter((n) => !n.startsWith('.') && n.toLowerCase().startsWith(prefix))
         .slice(0, 12)
     } catch {

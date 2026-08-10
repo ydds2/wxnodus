@@ -34,8 +34,8 @@ function makeAgent(script: Array<ModelCall | ToolCallMsg>) {
   return agent;
 }
 
-describe('规则脑兜底（无 key）', () => {
-  it('无密钥时返回规则脑回复（诚实不假装）', async () => {
+describe('无 key 配置引导（全部输出必须经 AI 模型）', () => {
+  it('无密钥时提示配置，不做规则脑假装回答', async () => {
     const agent = createAgent({
       db, bus, mem, sessionId: 't2',
       config: { settings: {} } as any,
@@ -43,7 +43,8 @@ describe('规则脑兜底（无 key）', () => {
     });
     const r = await agent.run('你好');
     expect(r.ok).toBe(true);
-    expect(r.text.length).toBeGreaterThan(0);
+    expect(r.text).toContain('/key set');
+    expect(r.text).not.toContain('规则脑');
   });
 
   it('enc 存在但解密失败（机器指纹变化）→ 明确提示重新配置而非「未配置」', async () => {
