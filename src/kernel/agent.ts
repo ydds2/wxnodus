@@ -9,14 +9,14 @@
 import type { Db } from '../store/db.js';
 import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
-import { decryptKey } from './providers.js';
+import { decryptKey, REASONING_FIELDS } from './providers.js';
 import { coreTools, isDangerous, toolsToOpenAI, type ToolCtx } from './tools.js';
 import { modeVerdict, type Mode } from './permissions.js';
 import type { HookRunner } from './hooks.js';
 import { join } from 'node:path';
 
-export interface ModelCall { type: 'text'; content: string; reasoning?: string }
-export interface ToolCallMsg { type: 'tool_call'; name: string; args: Record<string, any>; id?: string; reasoning?: string }
+export interface ModelCall { type: 'text'; content: string; reasoning?: string; reasoningField?: string }
+export interface ToolCallMsg { type: 'tool_call'; name: string; args: Record<string, any>; id?: string; reasoning?: string; reasoningField?: string }
 
 export interface AgentOptions {
   db: Db;
@@ -110,12 +110,15 @@ export function createAgent(opts: AgentOptions) {
     }
 
     // SSE 流式解析：delta.content 逐块推送 / delta.tool_calls 按 index 累积
-    // reasoning_content（思考模式）也必须累积——deepseek 思考模式要求回传，否则 400
+    // 思考模式字段多 provider 适配：按别名表识别「首个命中的字段」（deepseek/kimi/GLM
+    // 共用 reasoning_content，未来厂商可能用 thinking_content），回传时用同名字段——
+    // 思考模式必须回传（deepseek 实测否则 400），原字段名回传保证各家兼容
     const reader = resp.body!.getReader();
     const decoder = new TextDecoder();
     let buf = '';
     let full = '';
     let fullReasoning = '';
+    let reasoningField: string | null = null;
     const toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
     let finished = false;
 
@@ -137,8 +140,14 @@ export function createAgent(opts: AgentOptions) {
           full += delta.content;
           streamCtx?.onToken?.(delta.content);
         }
-        if (delta?.reasoning_content) {
-          fullReasoning += delta.reasoning_content;
+        // 思考字段别名探测（reasoning_content / thinking_content / reasoning）
+        for (const f of REASONING_FIELDS) {
+          const v = delta?.[f];
+          if (typeof v === 'string' && v) {
+            reasoningField ??= f;
+            fullReasoning += v;
+            break;
+          }
         }
         if (Array.isArray(delta?.tool_calls)) {
           for (const tc of delta.tool_calls) {
@@ -154,9 +163,9 @@ export function createAgent(opts: AgentOptions) {
 
     if (toolCalls.length && (toolCalls[0]!.name || toolCalls[0]!.arguments)) {
       const tc = toolCalls[0]!;
-      return { type: 'tool_call', id: tc.id || `call_${Date.now().toString(36)}`, name: tc.name, args: safeJson(tc.arguments), reasoning: fullReasoning || undefined };
+      return { type: 'tool_call', id: tc.id || `call_${Date.now().toString(36)}`, name: tc.name, args: safeJson(tc.arguments), reasoning: fullReasoning || undefined, reasoningField: reasoningField ?? undefined };
     }
-    return { type: 'text', content: full, reasoning: fullReasoning || undefined };
+    return { type: 'text', content: full, reasoning: fullReasoning || undefined, reasoningField: reasoningField ?? undefined };
   };
   const callModel = opts.callModel ?? defaultCallModel;
 
@@ -221,7 +230,7 @@ export function createAgent(opts: AgentOptions) {
         callModel(req, { onToken: (t) => bus.emit('agent.token', { text: t }) }),
         abortSignal.promise.then(() => { throw new Error('aborted'); }),
       ]);
-    const msgs: Array<{ role: string; content: string | null; tool_call_id?: string; reasoning_content?: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }> = [];
+    const msgs: Array<{ role: string; content: string | null; tool_call_id?: string; reasoning_content?: string; thinking_content?: string; reasoning?: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }> = [];
     // 召回注入（黑洞引擎：FTS 命中历史上下文）
     const recalled = opts.mem.recallHybrid(prompt, { limit: 3 });
     const recallBlock = recalled.length
@@ -270,9 +279,10 @@ export function createAgent(opts: AgentOptions) {
       }
       if (res.type === 'text') {
         finalText = res.content;
-        // 思考模式（reasoning_content）必须回传，否则 deepseek 400
+        // 思考模式回传：用模型返回的原始字段名（reasoning_content/thinking_content 等）
+        // 多 provider 适配——deepseek 实测必须回传否则 400；原字段名回传各家兼容
         msgs.push(res.reasoning
-          ? { role: 'assistant', content: res.content, reasoning_content: res.reasoning }
+          ? { role: 'assistant', content: res.content, [res.reasoningField ?? 'reasoning_content']: res.reasoning }
           : { role: 'assistant', content: res.content });
         try { opts.mem.append(sessionId, 'assistant', res.content); } catch { /* 忽略 */ }
         // token 已由流式 onToken 实时推送（此处不再事后模拟）
@@ -302,7 +312,7 @@ export function createAgent(opts: AgentOptions) {
         msgs.push({
           role: 'assistant',
           content: '',
-          ...(res.reasoning ? { reasoning_content: res.reasoning } : {}),
+          ...(res.reasoning ? { [res.reasoningField ?? 'reasoning_content']: res.reasoning } : {}),
           tool_calls: [{ id: callId, type: 'function', function: { name: res.name, arguments: JSON.stringify(res.args) } }],
         });
         msgs.push({ role: 'tool', tool_call_id: callId, content: out });

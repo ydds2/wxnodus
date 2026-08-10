@@ -32,6 +32,24 @@ export function decryptKey(stored: string): string | null {
   }
 }
 
+// ── 多 provider 适配（OpenAI 兼容生态的思考模式差异）────
+// 各运营商的思考模式字段名与回传要求不同（deepseek 必须回传，否则 400）：
+//   - DeepSeek：reasoning_content（必须原样回传）
+//   - Moonshot/Kimi：reasoning_content（thinking 模型同字段）
+//   - 智谱 GLM：reasoning_content（glm-4.5 thinking 输出）
+//   - 未来 OpenAI 兼容厂商可能用 thinking_content 等别名
+// 防御性策略：SSE 解析按别名表识别「首个命中的字段」，回传时用同名字段（原字段名回传）。
+export const REASONING_FIELDS = ['reasoning_content', 'thinking_content', 'reasoning'] as const;
+
+// 从 baseURL 推断 provider（未知 → 'openai-compatible'，仍走通用通道）
+export function detectProvider(baseURL: string | undefined): string {
+  const b = (baseURL ?? '').toLowerCase();
+  if (b.includes('deepseek')) return 'deepseek';
+  if (b.includes('moonshot')) return 'kimi';
+  if (b.includes('bigmodel') || b.includes('zhipu')) return 'zhipu';
+  return 'openai-compatible';
+}
+
 // ── 模型目录（/model 选择器与直接切换共用）────────────────
 export interface ModelCapabilities {
   imageIn?: boolean;   // 支持图片输入（视觉）

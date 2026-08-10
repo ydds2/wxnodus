@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { encryptKey, decryptKey } from '../src/kernel/providers.js';
 import { ruleBrain, routeByKeywords, mapHttpError, buildChatRequest } from '../src/kernel/providers.js';
-import { MODEL_CATALOG, capabilityBadges, filterModels } from '../src/kernel/providers.js';
+import { MODEL_CATALOG, capabilityBadges, filterModels, REASONING_FIELDS, detectProvider } from '../src/kernel/providers.js';
 
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -148,5 +148,21 @@ describe('视频本地场景分析降级', () => {
     const out = localSceneTimeline('data/wxnodus-scene.mp4');
     expect(out).toContain('场景');
     expect(out).not.toContain('帧分析失败');
+  });
+});
+
+// ── 多 provider 适配（思考字段别名）────
+describe('多 provider 适配层', () => {
+  it('REASONING_FIELDS 覆盖主流思考字段别名', () => {
+    expect(REASONING_FIELDS).toContain('reasoning_content');
+    expect(REASONING_FIELDS).toContain('thinking_content');
+    expect(REASONING_FIELDS).toContain('reasoning');
+  });
+  it('detectProvider 从 baseURL 识别三家运营商', () => {
+    expect(detectProvider('https://api.deepseek.com/v1')).toBe('deepseek');
+    expect(detectProvider('https://api.moonshot.cn/v1')).toBe('kimi');
+    expect(detectProvider('https://open.bigmodel.cn/api/paas/v4')).toBe('zhipu');
+    expect(detectProvider('https://example.com/v1')).toBe('openai-compatible');
+    expect(detectProvider(undefined)).toBe('openai-compatible');
   });
 });
