@@ -40,6 +40,8 @@ export interface HandlerCtx {
   setThinking: (on: boolean) => void;
   /** MCP 热重载（/mcp add/remove 后自动接通，无需重启） */
   reloadMcp?: () => Promise<{ ok: boolean; count: number; message: string }>;
+  /** 敏感数据内存保险库（/security 关闭通道时同步清空） */
+  secrets?: import('../kernel/secrets.js').SecretVault;
 }
 
 const lines = (title: string, body: string[]): string => {

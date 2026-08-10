@@ -16,6 +16,10 @@ export interface ToolCtx {
   spawnSubagent?: (goal: string) => Promise<{ ok: boolean; output: string; turns: number }>;
   /** 当前轮次的中止信号（F15：bash 等长时工具可被用户 abort 真中断） */
   signal?: AbortSignal;
+  /** 敏感注入通道（P3 安全）：vault=内存保险库；sudoEnabled/secretEnabled=通道开关（/security 控制） */
+  secrets?: { vault: import('./secrets.js').SecretVault; sudoEnabled: boolean; secretEnabled: boolean } | null;
+  /** 敏感输入请求（用户亲手输入）：kind=sudo 返回密码；kind=secret 返回密钥值；拒绝/不可用返回 null */
+  requestSecret?: (kind: 'sudo' | 'secret', prompt: string, name?: string) => Promise<string | null>;
 }
 
 export interface ToolDef {
@@ -69,14 +73,52 @@ export function coreTools(): Record<string, ToolDef> {
     async run({ command }, ctx) {
       // F15 修复：spawn 异步执行（非 execSync 阻塞）——abort 信号真中断（kill 子进程），60s 兜底超时
       try {
-        const cmd = String(command);
+        let cmd = String(command);
+        // P3 安全注入通道（红线：敏感内容仅用户亲手输入、仅内存、通道关闭即清）：
+        //  ① `sudo <命令>` → 经 sudo -S 从 stdin 读密码（不进 argv/ps 列表，子进程无泄露面）
+        //  ② `$WXNODUS_SECRET_<NAME>` 占位符 → vault 取值；缺失经 requestSecret 请用户输入后缓存
+        let stdinSecret: string | null = null;
+        const sudoMatch = cmd.match(/^\s*sudo\s+(.+)$/);
+        if (sudoMatch) {
+          if (!ctx.secrets?.sudoEnabled) {
+            return wrapDanger('检测到 sudo 命令但注入通道未开启——请 /security sudo on 开启（密码仅内存使用，关闭通道即清除）');
+          }
+          let pwd = ctx.secrets.vault.getSudoPassword();
+          if (!pwd) {
+            pwd = (await ctx.requestSecret?.('sudo', 'bash 工具需要 sudo 密码（仅本次内存使用，不落盘）')) ?? null;
+            if (!pwd) return wrapDanger('sudo 需要密码但输入不可用/已拒绝——请确认交互模式后重试');
+            ctx.secrets.vault.setSudoPassword(pwd); // 会话内缓存（通道关闭即清）
+          }
+          cmd = `sudo -S ${sudoMatch[1]}`;
+                    stdinSecret = pwd + String.fromCharCode(10);
+        } else {
+          const secretRefs = [...cmd.matchAll(/\$WXNODUS_SECRET_([A-Z0-9_]+)/g)].map(x => x[1]);
+          if (secretRefs.length) {
+            if (!ctx.secrets?.secretEnabled) {
+              return wrapDanger('命令包含 $WXNODUS_SECRET_* 占位符但注入通道未开启——请 /security secret on 开启（密钥仅内存使用，关闭通道即清除）');
+            }
+            for (const name of [...new Set(secretRefs)]) {
+              let v = ctx.secrets.vault.getSecret(name);
+              if (v === undefined) {
+                v = (await ctx.requestSecret?.('secret', `环境变量 ${name} 需要密钥（仅内存使用，不落盘）`, name)) ?? undefined;
+                if (v === undefined) return wrapDanger(`缺少密钥 ${name}：输入不可用/已拒绝（/security secret on 开启通道）`);
+                ctx.secrets.vault.setSecret(name, v);
+              }
+              cmd = cmd.split(`$WXNODUS_SECRET_${name}`).join(v);
+            }
+          }
+        }
         const timeout = AbortSignal.timeout(60000);
         const signal = ctx.signal ? AbortSignal.any([timeout, ctx.signal]) : timeout;
         const child = spawn(
           process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
           process.platform === 'win32' ? ['-NoProfile', '-Command', cmd] : ['-c', cmd],
-          { cwd: ctx.cwd, signal },
+          { cwd: ctx.cwd, signal, stdio: ['pipe', 'pipe', 'pipe'] },
         );
+        if (stdinSecret) {
+          child.stdin?.write(stdinSecret);
+          child.stdin?.end();
+        }
         let out = '';
         // C12 修复：流式截断——长输出（如 dir /s）在命令结束前无界累积会撑爆内存
         const appendOut = (d: Buffer) => {

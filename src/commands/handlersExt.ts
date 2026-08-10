@@ -856,6 +856,44 @@ export const commands = {
     return '用法：/mcp list｜add <名称> <命令> [参数...]｜remove <名称>｜test <名称>';
   });
 
+  // /security：安全注入通道管理（红线：关闭通道即同步清除内存敏感缓存）
+  bus.register('/security', (args) => {
+    const [sub, state] = args;
+    const sec = ((ctx.config.get('settings') as any)?.security ?? {}) as { sudoInjection?: boolean; secretInjection?: boolean };
+    if (!sub || sub === 'status') {
+      const sudoOn = sec.sudoInjection === true;
+      const secretOn = sec.secretInjection === true;
+      const vault = ctx.secrets;
+      return lines(' 安全注入通道 ', [
+        ` sudo 注入：${sudoOn ? '开启' : '关闭'} ｜ 内存密码：${vault?.hasSudo() ? '已缓存（仅内存）' : '无'}`,
+        ` secret 注入：${secretOn ? '开启' : '关闭'} ｜ 内存密钥：${vault?.secretNames().length ? `${vault.secretNames().length} 个（仅内存）` : '无'}`,
+        '',
+        ' 用法：/security sudo on|off ｜ /security secret on|off ｜ /security all off',
+        ' 红线：敏感内容仅用户亲手输入、仅内存使用；关闭通道即同步清除缓存',
+      ]);
+    }
+    const set = (next: Record<string, boolean>) => {
+      ctx.config.setKey('settings', 'security', { ...sec, ...next });
+      return next;
+    };
+    if (sub === 'sudo') {
+      if (state === 'on') { set({ sudoInjection: true }); return 'sudo 注入通道已开启——密码仅内存使用，/security sudo off 关闭即清除'; }
+      if (state === 'off') { set({ sudoInjection: false }); ctx.secrets?.clearSudoPassword(); return '已关闭 sudo 注入通道，并同步清除内存密码缓存'; }
+      return '用法：/security sudo on|off';
+    }
+    if (sub === 'secret') {
+      if (state === 'on') { set({ secretInjection: true }); return 'secret 注入通道已开启——密钥仅内存使用，/security secret off 关闭即清除'; }
+      if (state === 'off') { set({ secretInjection: false }); ctx.secrets?.clearSecrets(); return '已关闭 secret 注入通道，并同步清除内存密钥缓存'; }
+      return '用法：/security secret on|off';
+    }
+    if (sub === 'all' && state === 'off') {
+      set({ sudoInjection: false, secretInjection: false });
+      ctx.secrets?.clearAll();
+      return '已关闭全部注入通道，并同步清空内存敏感数据';
+    }
+    return '用法：/security status ｜ sudo on|off ｜ secret on|off ｜ all off';
+  });
+
   // /claw：网页抓取（SSRF 防护：内网/保留地址拦截）——真实 fetch + 正文文本提取
   bus.register('/claw', async (args) => {
     const url = args.join(' ').replace(/^["']|["']$/g, '').trim();

@@ -90,6 +90,9 @@ async function main() {
   // 插件系统（P0）：data/plugins/*/ 加载 → 工具并入 extraTools（命令注册在 commandBus 创建后）
   const { loadAllPlugins, pluginToolsToExtra } = await import('../kernel/plugins.js');
   const plugins = await loadAllPlugins(dataDir, cwd);
+  // P3 安全注入通道：敏感数据内存保险库（sudo 密码/环境变量密钥——用户亲手输入、仅内存、关闭即清）
+  const { createSecretVault } = await import('../kernel/secrets.js');
+  const secrets = createSecretVault();
   const agent = createAgent({
     db, bus, mem, sessionId: 'default', config: { settings },
     mode: (config.get('settings') as any).mode ?? 'smart',
@@ -102,6 +105,13 @@ async function main() {
     },
     // C6：clarify 文字提问（UI clarify 面板真实回答）
     onClarify: async (question, choices) => (gateway ? gateway.requestClarify(question, choices) : ''),
+    // P3 安全注入：敏感输入走 UI overlay（用户亲手输入）；非交互/未装配时返回 null（工具拒绝并提示）
+    security: {
+      sudoInjection: (settings as any).security?.sudoInjection === true,
+      secretInjection: (settings as any).security?.secretInjection === true,
+      vault: secrets,
+    },
+    onSecretRequest: async (kind, prompt, name) => (gateway ? gateway.requestSecretInput(kind, prompt, name) : null),
     hooks: hookRunner,
     extraTools: { ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) },
   });
@@ -153,6 +163,7 @@ async function main() {
     openSessions: () => { /* WxNodus UI: /sessions 打开列表 */ },
     setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); },
     reloadMcp,
+    secrets,
   });
   registerCoreHandlers(commandBus, makeHandlerCtx());
   registerExtHandlers(commandBus, makeHandlerCtx());

@@ -43,6 +43,7 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 - **Computer Use**：robotjs 桌面控制 + 动作层（DPI 换算/护栏/串行）+ GLM-4V 屏幕理解
 - **合规五项**（红线）：授权存证 / AI 生成标注（深度合成办法）/ 审计导出 / 许可证扫描 / robots 护栏
 - **安全**：5 权限模式 + 8 条硬红线（任何模式不可绕过）+ AES-256-GCM 密钥加密（明文绝不落盘）
+- **安全注入通道**（`/security`）：sudo 密码 / `$WXNODUS_SECRET_<NAME>` 环境变量密钥注入——敏感内容仅用户亲手输入（UI overlay）、仅内存使用（stdin 传密码不进进程列表）、绝不落盘/不进历史/不进模型上下文；`/security sudo|secret on|off` 控制通道，**关闭即同步清除内存缓存**（`all off` 全量清空）；默认关闭
 
 ## 技术栈（成熟框架）
 
@@ -50,7 +51,7 @@ Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器（React 19 
 
 ## 验收证据
 
-- ✅ 396 单元/契约/进程级测试全绿（28 测试文件）+ 类型检查零错误
+- ✅ 413 单元/契约/进程级测试全绿（29 测试文件）+ 类型检查零错误
 - ✅ TUI 冒烟（真实终端 node-pty）：首屏/输入/回复/命令面板/Esc/终止不挂死
 - ✅ 全命令扫描 105/105 可用（scripts/cmd-sweep.mjs 回归工具，112 命令注册表全覆盖）
 - ✅ 概念编译器端到端：「帮我做一个待办系统」→ todo 项目生成 → 启动 → API 增删查 → healthcheck 通过 → evidence.json
@@ -71,7 +72,7 @@ src/
   kernel/     领域层（agent/黑洞引擎/tools/权限/事件/providers/computer/vision/skills/hooks/mcp/projectScan/plugins/imageMeta）
   store/      基础设施（SQLite/配置中心/审计/checkpoint/fork）
   ui/         交互层（ink7 组件/Markdown 管线/Kimi 主题）
-tests/        四层测试（396 用例，28 文件）
+tests/        四层测试（413 用例，29 文件）
 scripts/      TUI 冒烟（node-pty 驱动）/ cmd-sweep 全命令扫描
 ```
 

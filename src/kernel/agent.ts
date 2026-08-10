@@ -40,6 +40,10 @@ export interface AgentOptions {
   maxContextTokens?: number;
   /** 排除的工具名（子代理收窄工具集用） */
   excludeTools?: string[];
+  /** P3 安全注入通道：vault=内存保险库；sudoInjection/secretInjection=通道开关（/security 控制，默认关闭） */
+  security?: { sudoInjection?: boolean; secretInjection?: boolean; vault?: import('./secrets.js').SecretVault | null };
+  /** 敏感输入请求（用户亲手输入）：kind=sudo 返回密码；kind=secret 返回密钥值；不可用返回 null */
+  onSecretRequest?: (kind: 'sudo' | 'secret', prompt: string, name?: string) => Promise<string | null>;
 }
 
 export interface AgentResult {
@@ -259,6 +263,11 @@ export function createAgent(opts: AgentOptions) {
     spawnSubagent: spawnSub,
     // F15：getter 动态取当前轮次信号（每回合独立信号，工具执行须拿到当前回合的）
     get signal() { return turn?.signal.abortController?.signal; },
+    // P3 安全注入通道：任一通道开启才暴露 vault（关闭即工具侧不可用）
+    secrets: opts.security?.vault && (opts.security.sudoInjection || opts.security.secretInjection)
+      ? { vault: opts.security.vault, sudoEnabled: !!opts.security.sudoInjection, secretEnabled: !!opts.security.secretInjection }
+      : null,
+    requestSecret: opts.onSecretRequest,
   };
 
   const onApproval = opts.onApproval ?? (async () => true);

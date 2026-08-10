@@ -236,8 +236,8 @@ export class GatewayClient extends EventEmitter {
       case 'setup.status': return this.setupStatus() as T
       case 'approval.respond': return this.approvalRespond(params) as T
       case 'clarify.respond': return this.clarifyRespond(params) as T
-      case 'sudo.respond': return {} as T
-      case 'secret.respond': return {} as T
+      case 'sudo.respond': return this.sudoRespond(params) as T
+      case 'secret.respond': return this.secretRespond(params) as T
       case 'clipboard.paste': return this.clipboardPaste(params) as T
       case 'terminal.resize': return {} as T
       case 'input.detect_drop': return this.detectDrop(params) as T
@@ -601,6 +601,47 @@ export class GatewayClient extends EventEmitter {
     } catch (e: any) {
       return { subagents: [], message: String(e?.message ?? e).slice(0, 120) }
     }
+  }
+
+  // ── P3 安全注入通道：sudo/secret 用户亲手输入（UI overlay）──
+  // 请求表：request_id → resolve；60s 超时自动拒绝（不悬挂）
+  private pendingSecrets = new Map<string, { resolve: (v: string | null) => void; timer: NodeJS.Timeout }>()
+
+  // 向 UI 发起敏感输入请求（agent onSecretRequest 桥）：发事件 + 等 respond
+  requestSecretInput(kind: 'sudo' | 'secret', prompt: string, name?: string): Promise<string | null> {
+    const requestId = `sec${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    return new Promise(resolve => {
+      const timer = setTimeout(() => {
+        this.pendingSecrets.delete(requestId)
+        resolve(null) // 超时：不悬挂工具调用
+      }, 60000)
+      this.pendingSecrets.set(requestId, { resolve, timer })
+      if (kind === 'sudo') {
+        this.publish({ type: 'sudo.request', payload: { request_id: requestId }, session_id: this.currentSessionId })
+      } else {
+        this.publish({ type: 'secret.request', payload: { env_var: name ?? '', prompt, request_id: requestId }, session_id: this.currentSessionId })
+      }
+    })
+  }
+
+  private sudoRespond(params: Record<string, unknown>): unknown {
+    const id = String(params.request_id ?? '')
+    const p = this.pendingSecrets.get(id)
+    if (!p) return { ok: false, message: '请求不存在或已超时' }
+    clearTimeout(p.timer)
+    this.pendingSecrets.delete(id)
+    p.resolve(String(params.password ?? ''))
+    return { ok: true }
+  }
+
+  private secretRespond(params: Record<string, unknown>): unknown {
+    const id = String(params.request_id ?? '')
+    const p = this.pendingSecrets.get(id)
+    if (!p) return { ok: false, message: '请求不存在或已超时' }
+    clearTimeout(p.timer)
+    this.pendingSecrets.delete(id)
+    p.resolve(String(params.value ?? ''))
+    return { ok: true }
   }
 
   // P3 图片附加链路：/image 命令（按路径附加图片）

@@ -237,3 +237,87 @@ describe('/mcp 热重载', () => {
     }
   });
 });
+
+// ── /security 安全注入通道：开关 + 关闭即清缓存 ──
+describe('/security 通道管理', () => {
+  it('sudo on → 状态开启；off → 关闭并清除内存密码', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wx-sec-'));
+    try {
+      const { openDB, closeDB } = await import('../src/store/db.js');
+      const { createMemory } = await import('../src/kernel/memory.js');
+      const { createEventBus } = await import('../src/kernel/events.js');
+      const { createSecretVault } = await import('../src/kernel/secrets.js');
+      const { registerExtHandlers } = await import('../src/commands/handlersExt.js');
+      const db = openDB(dir);
+      const mem = createMemory(db);
+      const bus2 = createCommandBus();
+      const secrets = createSecretVault();
+      let persisted: Record<string, any> = {};
+      const ctx: any = {
+        dataDir: dir, cwd: process.cwd(), db, mem, secrets,
+        config: {
+          get: () => ({ security: persisted }),
+          getKey: () => undefined,
+          setKey: (_s: string, _k: string, v: any) => { persisted = v; },
+        },
+        bus: createEventBus(dir),
+        agent: { getSessionId: () => 'default' },
+        getModel: () => '', getMode: () => 'smart', setMode: () => {}, setTheme: () => {},
+        getThemeName: () => 'wxnodus', requestExit: () => {}, clearHistory: () => {},
+        setModel: () => {}, openModelPicker: () => {}, openSessions: () => {}, setThinking: () => {},
+      };
+      registerExtHandlers(bus2, ctx);
+      secrets.setSudoPassword('cached-pw'); // 预置缓存
+      const on = await bus2.execute('/security sudo on');
+      expect(on.ok).toBe(true);
+      expect(persisted.sudoInjection).toBe(true);
+      const status1 = await bus2.execute('/security status');
+      expect(status1.output).toContain('开启');
+      const off = await bus2.execute('/security sudo off');
+      expect(off.output).toContain('清除');
+      expect(persisted.sudoInjection).toBe(false);
+      expect(secrets.getSudoPassword()).toBeNull(); // 关闭即清（红线）
+    } finally {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* Windows 延迟解锁 */ }
+    }
+  });
+
+  it('secret off → 清除全部内存密钥；all off → clearAll', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wx-sec2-'));
+    try {
+      const { openDB, closeDB } = await import('../src/store/db.js');
+      const { createMemory } = await import('../src/kernel/memory.js');
+      const { createEventBus } = await import('../src/kernel/events.js');
+      const { createSecretVault } = await import('../src/kernel/secrets.js');
+      const { registerExtHandlers } = await import('../src/commands/handlersExt.js');
+      const db = openDB(dir);
+      const mem = createMemory(db);
+      const bus2 = createCommandBus();
+      const secrets = createSecretVault();
+      let persisted: Record<string, any> = {};
+      const ctx: any = {
+        dataDir: dir, cwd: process.cwd(), db, mem, secrets,
+        config: { get: () => ({ security: persisted }), getKey: () => undefined, setKey: (_s: string, _k: string, v: any) => { persisted = v; } },
+        bus: createEventBus(dir),
+        agent: { getSessionId: () => 'default' },
+        getModel: () => '', getMode: () => 'smart', setMode: () => {}, setTheme: () => {},
+        getThemeName: () => 'wxnodus', requestExit: () => {}, clearHistory: () => {},
+        setModel: () => {}, openModelPicker: () => {}, openSessions: () => {}, setThinking: () => {},
+      };
+      registerExtHandlers(bus2, ctx);
+      secrets.setSecret('A', '1');
+      secrets.setSecret('B', '2');
+      await bus2.execute('/security secret off');
+      expect(secrets.secretNames()).toEqual([]);
+      secrets.setSudoPassword('pw');
+      secrets.setSecret('C', '3');
+      const all = await bus2.execute('/security all off');
+      expect(all.output).toContain('清空');
+      expect(secrets.getSudoPassword()).toBeNull();
+      expect(secrets.secretNames()).toEqual([]);
+      closeDB(db);
+    } finally {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* Windows 延迟解锁 */ }
+    }
+  });
+});

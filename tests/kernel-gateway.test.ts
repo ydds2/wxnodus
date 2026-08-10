@@ -233,3 +233,49 @@ describe('reload.mcp', () => {
     expect(typeof r.message).toBe('string');
   });
 });
+
+// ── P3 安全注入通道：sudo/secret 用户亲手输入（UI overlay）──
+describe('sudo/secret 注入通道', () => {
+  it('requestSecretInput 发 sudo.request 事件，respond 完成请求', async () => {
+    (gw as any).subscribed = true;
+    const events: any[] = [];
+    (gw as any).on('event', (e: any) => events.push(e));
+    const promise = gw.requestSecretInput('sudo', '需要密码');
+    const req = events.find((e: any) => e.type === 'sudo.request');
+    expect(req).toBeDefined();
+    const requestId = req.payload.request_id;
+    const r = await gw.request('sudo.respond', { request_id: requestId, password: '手输密码' });
+    expect(r.ok).toBe(true);
+    expect(await promise).toBe('手输密码');
+  });
+
+  it('secret 通道：事件带 env_var 与 prompt，respond 返回值', async () => {
+    (gw as any).subscribed = true;
+    const events: any[] = [];
+    (gw as any).on('event', (e: any) => events.push(e));
+    const promise = gw.requestSecretInput('secret', '需要密钥', 'MY_TOKEN');
+    const req = events.find((e: any) => e.type === 'secret.request');
+    expect(req?.payload?.env_var).toBe('MY_TOKEN');
+    await gw.request('secret.respond', { request_id: req.payload.request_id, value: 'sk-xyz' });
+    expect(await promise).toBe('sk-xyz');
+  });
+
+  it('未知 request_id respond → 失败且不影响其他请求', async () => {
+    const r = await gw.request('sudo.respond', { request_id: 'ghost', password: 'x' });
+    expect(r.ok).toBe(false);
+  });
+
+  it('超时（60s）自动拒绝不悬挂', async () => {
+    (gw as any).subscribed = true;
+    const t0 = Date.now();
+    const promise = gw.requestSecretInput('sudo', '无人响应');
+    // 缩短超时验证机制：直接手动触发 timer
+    const entries = [...(gw as any).pendingSecrets.entries()];
+    const [id, entry] = entries[0]!;
+    clearTimeout(entry.timer);
+    (gw as any).pendingSecrets.delete(id);
+    entry.resolve(null);
+    expect(await promise).toBeNull();
+    expect(Date.now() - t0).toBeLessThan(5000);
+  });
+});

@@ -10,7 +10,7 @@ export const SLASH: string[] = [
   // 构建（概念编译器）
   '/build', '/deploy', '/forge', '/skill', '/learn', '/gate', '/fdr', '/evidence', '/plan', '/flow', '/import',
   // 安全（合规红线）
-  '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt', '/yolo', '/afk',
+  '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt', '/yolo', '/afk', '/security',
   // 系统
   '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init',
   // 视觉与媒体（可视化 AI 技能）
@@ -28,7 +28,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/key': '⚙', '/login': '⚙', '/logout': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆',
-  '/perm': '🛡', '/sandbox': '🛡', '/compliance': '🛡', '/consent': '🛡', '/audit': '🛡', '/encrypt': '🛡', '/yolo': '🛡', '/afk': '🛡',
+  '/perm': '🛡', '/sandbox': '🛡', '/compliance': '🛡', '/consent': '🛡', '/audit': '🛡', '/encrypt': '🛡', '/yolo': '🛡', '/afk': '🛡', '/security': '🛡',
   '/backup': '⚙', '/export': '⚙', '/theme': '⚙', '/lang': '⚙', '/config': '⚙', '/logs': '⚙', '/bench': '⚙', '/init': '⚙',
   '/vision': '👁', '/img': '👁', '/video': '👁', '/render': '👁', '/capture': '👁',
   '/claw': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
@@ -81,6 +81,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/perm': '权限模式（smart 确认/auto 自动编辑/goal 循环/plan 计划/yolo 全放）',
   '/sandbox': '分层沙盒（L0-L3）',
   '/compliance': '合规五项',
+  '/security': '安全注入通道（sudo/secret，关闭即清缓存）',
   '/consent': '授权存证',
   '/audit': '审计导出',
   '/encrypt': '加密工具',
