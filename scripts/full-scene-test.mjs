@@ -48,7 +48,7 @@ async function main() {
   check('模型选择器:打开', f3.includes('model') || f3.includes('Model') || f3.includes('模型') || f3.includes('Select provider'));
   check('模型选择器:provider 分组', f3.includes('DeepSeek') && (f3.includes('K2.7') || f3.includes('GLM') || f3.includes('kimi')));
   p.write('\x1b');
-  await sleep(400);
+  await sleep(1800); // overlay 关闭经 patchOverlayState → React 渲染 → diff 透传，约 1.5s
   check('模型选择器:Esc 关闭', !last().includes('Select provider'));
 
   await submit('/sessions');
@@ -56,7 +56,7 @@ async function main() {
   const f4 = last();
   check('会话选择器:打开', f4.includes('Session') || f4.includes('会话') || f4.includes('session') || f4.includes('live') || f4.includes('resumable') || f4.includes('filter') || f4.includes('Ctrl+N'));
   p.write('\x1b');
-  await sleep(400);
+  await sleep(1800); // overlay 关闭渲染延迟约 1.5s——未关闭前输入会被 overlay 拦截
 
   // ── 2. 输入与提交（规则脑回复） ─────────
   await submit('你好');
@@ -73,7 +73,7 @@ async function main() {
 
   // ── 3. 命令建议（complete.slash RPC） ────
   p.write('/');
-  await sleep(450);
+  await sleep(800);
   const f2 = last();
   check('建议:/ 弹出建议', f2.includes('/help') || f2.includes('/model'));
   await typeKeys('calc');
@@ -95,6 +95,10 @@ async function main() {
   await submit('/status');
   await sleep(800);
   check('命令:/status 输出', strip(out).includes('状态') || strip(out).includes('模型'));
+  // 中断 agent（/status 无有效 key 时挂起 → 后续消息排队不显示），
+  // 保证测试消息直接进入 transcript
+  p.write('\x03');
+  await sleep(800);
 
   // ── 7. 滚动（ScrollBox 应用内滚动） ───────
   for (let i = 0; i < 3; i++) { await submit('测试' + i); await sleep(400); }
