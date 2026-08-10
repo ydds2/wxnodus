@@ -362,6 +362,16 @@ export function createAgent(opts: AgentOptions) {
       ? [{ type: 'text', text: prompt + recallBlock }, ...imgParts]
       : prompt + recallBlock });
     try { opts.mem.append(sessionId, 'user', prompt); } catch { /* 记忆写入失败不阻断对话 */ }
+    // 多模态历史回显（P3）：图片摘要异步入历史——后续轮次可回忆"看过什么图"；
+    // append 同步先行（摘要 UPDATE 定位最后一条 user 消息不会错位）；无 key 不调用（红线）
+    if (imgParts.length) {
+      const { attachImageSummary } = await import('./imageHistory.js');
+      void attachImageSummary({
+        db: opts.db, sessionId,
+        images: opts2.images ?? [],
+        apiKeyEnc: (opts.config?.settings as any)?.apiKeyEnc ?? null,
+      }).catch(() => { /* 摘要失败不影响对话 */ });
+    }
     const toolList = opts2.subagent ? toolsToOpenAI(Object.fromEntries(Object.entries(tools).filter(([n]) => !['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate'].includes(n)))) : toolsToOpenAI(tools);
     let turns = 0;
     let consecutiveFail = 0;

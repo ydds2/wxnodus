@@ -29,7 +29,9 @@ export async function describeImage(target: string, apiKeyEnc: string | null, pr
   if (!key) return null;
   try {
     let imageUrl: string;
-    if (/^https?:\/\//i.test(target)) {
+    if (target.startsWith('data:')) {
+      imageUrl = target; // data:URL 直传（多模态历史回显复用）
+    } else if (/^https?:\/\//i.test(target)) {
       imageUrl = target;
     } else {
       const { readFileSync } = await import('node:fs');

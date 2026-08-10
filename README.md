@@ -35,7 +35,7 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 - **MCP 客户端**：`/mcp add｜list｜remove｜test` 管理本地 stdio server（data/mcp.json），工具以 `mcp__<server>__<tool>` 并入 agent；`/mcp add/remove` 后自动热重载（重连 + 工具表热换，无需重启）；`/reload-mcp` 确认门重载；连接失败干净降级
 - **插件生态**：`data/plugins/*/`（plugin.json + index.js，ESM/CJS）——`/plugin list｜install｜remove｜enable｜disable｜reload`，工具并入 agent 工具表、命令注册为 `/插件名.命令名`；`/plugin new` 模板生成；TUI pluginsHub 面板启停热更新
 - **分支会话**：`/fork` 复制会话（含全部消息）为分支；UI `session.fork`/`session.undo` RPC 真实实现；`/undo` 作用于当前活跃会话（软归档 + 撤销前快照，`/checkpoint restore` 可恢复）
-- **图片附加链路**：Ctrl+V 粘贴截图 / `/image <路径>` → 附件登记 → 提问时多模态注入（GLM-4V Flash 等图像模型直接看图）；文本模型优雅降级提示；零依赖图片元数据（魔数/宽高/视觉 token 估算）
+- **图片附加链路**：Ctrl+V 粘贴截图 / `/image <路径>` → 附件登记 → 提问时多模态注入（GLM-4V Flash 等图像模型直接看图）；文本模型优雅降级提示；零依赖图片元数据（魔数/宽高/视觉 token 估算）；**历史回显**——图片轮次经 GLM-4V 生成摘要并入历史（后续轮次可回忆看图内容，无 key 不生成）
 - **委派档案**：`/replay list｜load` 回放历史 spawn 树（data/spawns/*.json 持久化）
 - **/init 项目分析**：本地扫描生成 AGENTS.md（确定性数据，`/init --overwrite` 重新生成）
 - **协作与协议（全部真实实现）**：`/swarm` 并行子代理（1-8 个）、`/duo` 双脑方案对比、`/goal` 循环目标执行、`/jobs run` 后台任务（db 持久化）、`/delegate` 派发子代理；`/gateway start` 本地 HTTP JSON-RPC 网关（command/prompt/health）、`/a2a call|serve` Agent-to-Agent 协议端点、`/acp server` ACP stdio 服务器（IDE 集成）、`/webhook add` 事件→HTTP 回调、`/claw <URL>` 网页抓取（SSRF 防护）、`/sandbox L0-L3` 分层权限沙盒、`/timer` 真实到时通知
@@ -50,7 +50,7 @@ Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器（React 19 
 
 ## 验收证据
 
-- ✅ 389 单元/契约/进程级测试全绿（27 测试文件）+ 类型检查零错误
+- ✅ 396 单元/契约/进程级测试全绿（28 测试文件）+ 类型检查零错误
 - ✅ TUI 冒烟（真实终端 node-pty）：首屏/输入/回复/命令面板/Esc/终止不挂死
 - ✅ 全命令扫描 105/105 可用（scripts/cmd-sweep.mjs 回归工具，112 命令注册表全覆盖）
 - ✅ 概念编译器端到端：「帮我做一个待办系统」→ todo 项目生成 → 启动 → API 增删查 → healthcheck 通过 → evidence.json
@@ -71,7 +71,7 @@ src/
   kernel/     领域层（agent/黑洞引擎/tools/权限/事件/providers/computer/vision/skills/hooks/mcp/projectScan/plugins/imageMeta）
   store/      基础设施（SQLite/配置中心/审计/checkpoint/fork）
   ui/         交互层（ink7 组件/Markdown 管线/Kimi 主题）
-tests/        四层测试（389 用例，27 文件）
+tests/        四层测试（396 用例，28 文件）
 scripts/      TUI 冒烟（node-pty 驱动）/ cmd-sweep 全命令扫描
 ```
 
