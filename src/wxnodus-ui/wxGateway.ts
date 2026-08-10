@@ -249,7 +249,9 @@ export class GatewayClient extends EventEmitter {
       case 'model.disconnect': return this.modelDisconnect(params) as T
       case 'system.battery': return this.systemBattery() as T
       case 'delegation.status': return this.delegationStatus() as T
-      case 'spawn_tree.save': return {} as T
+      case 'spawn_tree.save': return this.spawnTreeSave(params) as T
+      case 'spawn_tree.list': return this.spawnTreeList(params) as T
+      case 'spawn_tree.load': return this.spawnTreeLoad(params) as T
       case 'skills.manage': return this.skillsManage(params) as T
       case 'skills.reload': return { output: '技能缓存已清空（发现目录即时扫描）' } as T
       case 'plugins.manage': return this.pluginsManage(params) as T
@@ -527,6 +529,64 @@ export class GatewayClient extends EventEmitter {
     this.publish({ type: 'status.update', payload: { kind: 'done', text: 'ready' } })
 
     return { ok: true, deleted: id }
+  }
+
+  // spawn_tree 持久化（/replay list|load 磁盘档案）：data/spawns/*.json
+  // save 写入快照文件；list 按会话过滤倒序返回；load 按路径读取回放
+  private async spawnTreeSave(params: Record<string, unknown>): Promise<unknown> {
+    try {
+      const dir = join(this.kernel.dataDir, 'spawns')
+      mkdirSync(dir, { recursive: true })
+      const file = join(dir, `spawn-${Date.now()}-${Math.floor(Math.random() * 1e6)}.json`)
+      writeFileSync(file, JSON.stringify(params, null, 2), 'utf8')
+      return { ok: true, path: file }
+    } catch (e: any) {
+      return { ok: false, message: String(e?.message ?? e).slice(0, 120) }
+    }
+  }
+
+  private async spawnTreeList(params: Record<string, unknown>): Promise<unknown> {
+    const limit = Number(params.limit ?? 30)
+    const sessionId = String(params.session_id ?? 'default')
+    try {
+      const dir = join(this.kernel.dataDir, 'spawns')
+      if (!existsSync(dir)) return { entries: [] }
+      const entries = readdirSync(dir).filter(f => f.endsWith('.json')).map(f => {
+        try {
+          const snap = JSON.parse(readFileSync(join(dir, f), 'utf8')) as Record<string, any>
+          return {
+            finished_at: Number(snap.finished_at ?? 0),
+            label: String(snap.label ?? ''),
+            count: Array.isArray(snap.subagents) ? snap.subagents.length : 0,
+            path: join(dir, f),
+            session_id: String(snap.session_id ?? ''),
+          }
+        } catch { return null }
+      }).filter(Boolean)
+        .filter((e: any) => e.session_id === sessionId)
+        .sort((a: any, b: any) => b.finished_at - a.finished_at)
+        .slice(0, Math.max(1, limit))
+      return { entries }
+    } catch (e: any) {
+      return { entries: [], message: String(e?.message ?? e).slice(0, 120) }
+    }
+  }
+
+  private async spawnTreeLoad(params: Record<string, unknown>): Promise<unknown> {
+    const path = String(params.path ?? '')
+    try {
+      const raw = readFileSync(path, 'utf8')
+      const snap = JSON.parse(raw) as Record<string, any>
+      return {
+        finished_at: Number(snap.finished_at ?? 0),
+        label: String(snap.label ?? ''),
+        session_id: String(snap.session_id ?? ''),
+        started_at: snap.started_at ?? null,
+        subagents: Array.isArray(snap.subagents) ? snap.subagents : [],
+      }
+    } catch (e: any) {
+      return { subagents: [], message: String(e?.message ?? e).slice(0, 120) }
+    }
   }
 
   // P3 图片附加链路：/image 命令（按路径附加图片）

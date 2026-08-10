@@ -175,3 +175,39 @@ describe('image.attach 附加链路', () => {
     }
   });
 });
+
+// ── spawn_tree 持久化：save/list/load 三件套（/replay 磁盘档案）──
+describe('spawn_tree 持久化', () => {
+  it('save → list（按会话过滤倒序）→ load 回放往返', async () => {
+    const s1 = await gw.request('spawn_tree.save', {
+      finished_at: Date.now() / 1000,
+      label: '第一个委派',
+      session_id: 's1',
+      started_at: Date.now() / 1000 - 30,
+      subagents: [{ goal: '目标A', status: 'completed' }],
+    });
+    expect(s1.ok).toBe(true);
+    // 另一会话的快照（不应出现在 s1 列表）
+    await gw.request('spawn_tree.save', {
+      finished_at: Date.now() / 1000,
+      label: '其他会话委派',
+      session_id: 's-other',
+      subagents: [{ goal: 'B', status: 'running' }, { goal: 'C', status: 'completed' }],
+    });
+    const list = await gw.request('spawn_tree.list', { session_id: 's1', limit: 10 });
+    expect(list.entries.length).toBe(1);
+    expect(list.entries[0].label).toBe('第一个委派');
+    expect(list.entries[0].count).toBe(1);
+    // load 回放
+    const loaded = await gw.request('spawn_tree.load', { path: list.entries[0].path });
+    expect(loaded.subagents.length).toBe(1);
+    expect(loaded.subagents[0].goal).toBe('目标A');
+    expect(loaded.session_id).toBe('s1');
+  });
+  it('空目录 / 损坏文件容错', async () => {
+    const empty = await gw.request('spawn_tree.list', { session_id: 'ghost' });
+    expect(empty.entries).toEqual([]);
+    const bad = await gw.request('spawn_tree.load', { path: join(dir, '不存在.json') });
+    expect(bad.subagents).toEqual([]);
+  });
+});
