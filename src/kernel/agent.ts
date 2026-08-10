@@ -461,9 +461,32 @@ export function createAgent(opts: AgentOptions) {
     }
   }
 
+  // loop-goal 模式（Kimi Ralph 同款）：目标驱动自主循环——
+  // 模型自主规划/执行/自判完成（输出 [GOAL_DONE] 结束），直到完成或轮次上限；
+  // 每轮 loop 独立回合（历史经 working 窗口延续上下文）
+  const MAX_GOAL_ROUNDS = 10;
+  const GOAL_DONE_MARK = '[GOAL_DONE]';
+  async function runWithGoalLoop(prompt: string): Promise<AgentResult> {
+    if (mode !== 'goal') return loop(sessionId, prompt);
+    const goalPrompt = `${prompt}\n\n（goal 模式：自主规划并持续执行直到目标全部完成。全部完成时回复末尾输出 ${GOAL_DONE_MARK}，未完成则继续执行。每轮都可以调用工具。）`;
+    let result = await loop(sessionId, goalPrompt);
+    let rounds = 1;
+    while (rounds < MAX_GOAL_ROUNDS && !result.interrupted && !result.text.includes(GOAL_DONE_MARK)) {
+      rounds++;
+      bus.emit('agent.stage', { stage: `goal 循环第 ${rounds}/${MAX_GOAL_ROUNDS} 轮…` });
+      result = await loop(sessionId, `（goal 模式第 ${rounds} 轮）继续执行直到目标全部完成，完成后输出 ${GOAL_DONE_MARK}。以上文历史为当前进度。`);
+    }
+    if (result.text.includes(GOAL_DONE_MARK)) {
+      // 转义方括号（正则字符类）——[GOAL_DONE] 必须按字面匹配
+      const esc = GOAL_DONE_MARK.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      result.text = result.text.replace(new RegExp(`\\s*${esc}\\s*$`), '').trim();
+    }
+    return result;
+  }
+
   return {
     async run(prompt: string): Promise<AgentResult> {
-      return loop(sessionId, prompt);
+      return runWithGoalLoop(prompt);
     },
     spawnSubagent: spawnSub,
     abort() { aborted = true; abortSignal.abortController.abort(); abortSignal.resolve(); },

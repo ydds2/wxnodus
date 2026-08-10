@@ -55,6 +55,17 @@ describe('模式语义', () => {
     expect(modeVerdict('auto', 'fs_read', { path: 'x' })).toBe('approve');
     expect(modeVerdict('auto', 'bash', { command: 'ls' })).toBe('approve');
   });
+  it('auto：自动编辑语义（Claude acceptEdits）——文件写入免确认，命令按分级', () => {
+    expect(modeVerdict('auto', 'fs_write', { path: 'x' })).toBe('approve');
+    expect(modeVerdict('auto', 'fs_edit', { path: 'x' })).toBe('approve');
+    expect(modeVerdict('auto', 'bash', { command: 'mkdir x' })).toBe('confirm'); // 写命令仍确认
+    expect(modeVerdict('auto', 'bash', { command: 'curl https://x' })).toBe('confirm'); // 网络仍确认
+  });
+  it('goal：loop-goal 权限语义同自动编辑', () => {
+    expect(modeVerdict('goal', 'fs_write', { path: 'x' })).toBe('approve');
+    expect(modeVerdict('goal', 'bash', { command: 'mkdir x' })).toBe('confirm');
+    expect(modeVerdict('goal', 'bash', { command: 'pwd' })).toBe('approve');
+  });
   it('manual：危险工具必须 confirm', () => {
     expect(modeVerdict('manual', 'fs_write', { path: 'x' })).toBe('confirm');
   });

@@ -32,7 +32,7 @@ export interface TurnState {
   turnTrail: string[];
 }
 
-export type Mode = 'smart' | 'auto' | 'manual' | 'plan' | 'yolo';
+export type Mode = 'smart' | 'auto' | 'manual' | 'plan' | 'yolo' | 'goal';
 
 export interface UiState {
   busy: boolean;

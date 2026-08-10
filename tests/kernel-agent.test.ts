@@ -291,3 +291,56 @@ describe('流式与思考模式', () => {
     expect(toolMsgs[1].tool_call_id).toBe('c2');
   });
 });
+
+// ── loop-goal 模式（Kimi Ralph 同款）───
+describe('loop-goal 模式', () => {
+  it('goal：目标驱动自主循环直到 [GOAL_DONE]（多轮调用 + 标记剥离）', async () => {
+    let calls = 0;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-goal',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      mode: 'goal',
+      callModel: async () => {
+        calls++;
+        return calls < 3
+          ? { type: 'text', content: '正在处理中，尚未完成' } // 无标记 → 继续循环
+          : { type: 'text', content: '全部任务已完成 [GOAL_DONE]' };
+      },
+    });
+    const r = await agent.run('完成一个任务');
+    expect(calls).toBeGreaterThanOrEqual(3); // 自主多轮循环
+    expect(r.text).toContain('全部任务已完成');
+    expect(r.text).not.toContain('[GOAL_DONE]'); // 完成标记已剥离
+  });
+  it('goal：模型始终不宣告完成时受轮次上限约束', async () => {
+    let calls = 0;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-goal-max',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      mode: 'goal',
+      callModel: async () => {
+        calls++;
+        return { type: 'text', content: '继续执行中' }; // 永不输出标记
+      },
+    });
+    const r = await agent.run('任务');
+    expect(r.ok).toBe(true);
+    expect(calls).toBeLessThanOrEqual(12); // 10 轮上限 + 余量
+    expect(r.text).toContain('继续执行中');
+  });
+  it('非 goal 模式不进入循环（单轮）', async () => {
+    let calls = 0;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-goal-off',
+      config: { settings: { apiKeyEnc: null as any } } as any,
+      mode: 'smart',
+      callModel: async () => {
+        calls++;
+        return { type: 'text', content: '一次完成' };
+      },
+    });
+    const r = await agent.run('任务');
+    expect(calls).toBe(1);
+    expect(r.text).toContain('一次完成');
+  });
+});

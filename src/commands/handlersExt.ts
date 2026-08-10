@@ -475,22 +475,22 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   // ── 安全类 ──────────────────────────────────
   // /sandbox [L0-L3]：分层沙盒——映射真实权限模式并切换（非说明文字）
-  //   L0 只读（plan：只读+审批）｜L1 默认（smart）｜L2 自动（auto）｜L3 全放（yolo）
+  //   L0 只读（plan）｜L1 默认（smart）｜L2 自动编辑（auto）｜L3 全放（yolo）
   bus.register('/sandbox', (args) => {
     const LAYERS: Record<string, string> = { L0: 'plan', L1: 'smart', L2: 'auto', L3: 'yolo' };
     const current = Object.entries(LAYERS).find(([, m]) => m === ctx.getMode())?.[0] ?? '?';
     const want = (args[0] ?? '').toUpperCase();
     if (want in LAYERS) {
       ctx.setMode(LAYERS[want]!);
-      const desc: Record<string, string> = { plan: '只读探索 + 计划审批', smart: '只读放行，危险工具确认', auto: '自动批准（硬红线除外）', yolo: '除硬红线全部放行' };
+      const desc: Record<string, string> = { plan: '只读探索 + 计划审批', smart: '只读放行，危险工具确认', auto: '自动编辑（文件写入免确认）', yolo: '除硬红线全部放行' };
       return `沙盒已切换：L${want.slice(1)} → ${LAYERS[want]} 模式（${desc[LAYERS[want]!]}）`;
     }
     return lines(' 沙盒（L0-L3） ', [
       ` 当前层：L${current.slice(1)}（${ctx.getMode()}）`,
       ` L0 → plan  只读探索 + 计划审批（写操作需确认）`,
-      ` L1 → smart 只读放行，危险工具确认（默认）`,
-      ` L2 → auto  自动批准（硬红线除外）`,
-      ` L3 → yolo  除硬红线全部放行`,
+      ` L1 → smart 更改前确认：只读放行，危险工具确认（默认）`,
+      ` L2 → auto  自动编辑：文件写入免确认，命令按分级`,
+      ` L3 → yolo  完全访问：除硬红线全部放行`,
       '',
       ` 硬红线（任何模式不可绕过）：${HARD_REDLINES.map(r => r.desc).join(' · ')}`,
       ` 用法：/sandbox L0|L1|L2|L3`,

@@ -1,9 +1,14 @@
 // src/kernel/permissions.ts — L2-3 权限模式（危险分级 + 硬红线）
 // 设计（参考 Claude Code 6 模式 + Codex approval policy + hermes HARDLINE 结构）：
-//  模式：smart(默认：只读/非危险放行、危险确认) / auto(危险也自动放行，除红线)
-//        manual(非只读必确认) / plan(只读放行、非只读计划审批) / yolo(除红线全放)
+//  模式（对齐 Claude Code 五模式体系）：
+//    smart 更改前确认（默认）：只读放行、写/网络/危险确认
+//    auto  自动编辑：文件编辑（fs_write/fs_edit）自动接受；bash 按分级、危险确认
+//    goal  loop-goal：自动编辑语义 + agent 层目标驱动自主循环（Ralph 同款）
+//    manual 全量确认（只读也确认）
+//    plan 计划模式：只读放行、非只读计划审批
+//    yolo 完全访问：除红线全放
 //  硬红线：任何模式不可绕过——扩展自 hermes 的 HARDLINE/DANGEROUS_PATTERNS 结构
-export type Mode = 'smart' | 'auto' | 'manual' | 'plan' | 'yolo';
+export type Mode = 'smart' | 'auto' | 'manual' | 'plan' | 'yolo' | 'goal';
 export type Verdict = 'approve' | 'reject' | 'confirm' | 'plan';
 
 export interface Redline { pattern: RegExp; desc: string }
@@ -114,16 +119,20 @@ export function modeVerdict(mode: Mode, tool: string, args: Record<string, any>,
     const path = String(args?.path ?? '');
     if (SENSITIVE_WRITE.test(path)) return 'reject';
   }
-  // 3. bash 只读命令分级：只读（pwd/ls/cat/git status…）smart/auto/plan 直接放行（manual 仍确认）
+  // 3. bash 只读命令分级：只读（pwd/ls/cat/git status…）除 manual 外直接放行
   if (tool === 'bash' && classifyBashCommand(String(args?.command ?? '')) === 'readonly') {
     return mode === 'manual' ? 'confirm' : 'approve';
   }
   const isDanger = toolDanger ?? !READONLY_TOOLS.has(tool);
-  // 4. 模式语义
+  // 4. 模式语义（Claude Code 五模式对齐）
   switch (mode) {
     case 'yolo': return 'approve';
     case 'plan': return READONLY_TOOLS.has(tool) ? 'approve' : 'plan'; // 修复：只读研究自由，非只读计划审批
-    case 'auto': return 'approve';
+    case 'goal':
+    case 'auto':
+      // 自动编辑（Claude acceptEdits）：文件编辑自动接受；bash 写/网络/危险按分级确认；只读放行
+      if (tool === 'fs_write' || tool === 'fs_edit') return 'approve';
+      return isDanger ? 'confirm' : 'approve';
     case 'manual': return isDanger ? 'confirm' : 'approve';
     case 'smart':
     default:

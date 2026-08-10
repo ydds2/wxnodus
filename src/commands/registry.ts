@@ -67,7 +67,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/gate': '统一质量门（四门）',
   '/fdr': '部署后保障（五回路）',
   '/evidence': '证据链查看',
-  '/perm': '权限模式（smart/auto/manual/plan/yolo）',
+  '/perm': '权限模式（smart 确认/auto 自动编辑/goal 循环/plan 计划/yolo 全放）',
   '/sandbox': '分层沙盒（L0-L3）',
   '/compliance': '合规五项',
   '/consent': '授权存证',

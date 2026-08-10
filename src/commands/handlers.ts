@@ -147,14 +147,15 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/version', () => 'WxNodus 3.0.0 · 概念进·证据出');
 
-  // 模式
+  // 模式（Claude Code 五模式体系：smart 更改前确认 / auto 自动编辑 / goal loop-goal /
+  // manual 全量确认 / plan 计划模式 / yolo 完全访问）
   bus.register('/perm', (args) => {
     const mode = args[0];
-    if (mode && ['smart', 'auto', 'manual', 'plan', 'yolo'].includes(mode)) {
+    if (mode && ['smart', 'auto', 'manual', 'plan', 'yolo', 'goal'].includes(mode)) {
       ctx.setMode(mode);
       return `模式已切换：${mode}`;
     }
-    return `当前模式：${ctx.getMode()}（可选：smart/auto/manual/plan/yolo）`;
+    return '当前模式：' + ctx.getMode() + '（可选：smart 更改前确认 / auto 自动编辑 / goal loop-goal / manual 全量确认 / plan 计划模式 / yolo 完全访问）';
   });
 
   // 模型选择（无参 → 打开交互选择器；有参 → 模糊过滤+目录查找直接切换）
