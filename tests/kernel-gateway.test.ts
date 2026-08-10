@@ -211,3 +211,25 @@ describe('spawn_tree 持久化', () => {
     expect(bad.subagents).toEqual([]);
   });
 });
+
+// ── reload.mcp：确认门 + 热重载回调 ──
+describe('reload.mcp', () => {
+  it('未确认 → confirm_required', async () => {
+    const r = await gw.request('reload.mcp', { session_id: 's1' });
+    expect(r.status).toBe('confirm_required');
+  });
+  it('确认后调用 kernel.reloadMcp 并返回计数', async () => {
+    let called = 0;
+    (gw as any).kernel.reloadMcp = async () => { called++; return { ok: true, count: 2, message: '已重载 2 个' }; };
+    const r = await gw.request('reload.mcp', { session_id: 's1', confirm: true });
+    expect(r.status).toBe('reloaded');
+    expect(r.message).toContain('2');
+    expect(called).toBe(1);
+  });
+  it('无 reloadMcp 能力时优雅降级', async () => {
+    (gw as any).kernel.reloadMcp = undefined;
+    const r = await gw.request('reload.mcp', { session_id: 's1', confirm: true });
+    expect(r.status).toBe('reloaded');
+    expect(typeof r.message).toBe('string');
+  });
+});

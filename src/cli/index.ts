@@ -74,7 +74,19 @@ async function main() {
   const hookRunner = createHookRunner(() => config.get('settings') as Record<string, any>, bus);
   // MCP 客户端（本地 stdio）：data/mcp.json 配置的 server 动态并入工具表
   const { connectAllMcp, mcpClientsToTools, closeAllMcp } = await import('../kernel/mcp.js');
-  const mcpClients = await connectAllMcp(dataDir);
+  let mcpClients = await connectAllMcp(dataDir);
+  // MCP 热重载（/reload-mcp）：断开 → 重连 → updateTools 热换工具表（不重启进程）
+  const reloadMcp = async (): Promise<{ ok: boolean; count: number; message: string }> => {
+    try {
+      closeAllMcp(mcpClients);
+      const clients = await connectAllMcp(dataDir);
+      mcpClients = clients;
+      agent.updateTools({ ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) });
+      return { ok: true, count: clients.length, message: `MCP 服务器已重载（${clients.length} 个在线）` };
+    } catch (e: any) {
+      return { ok: false, count: 0, message: `MCP 重载失败：${String(e?.message ?? e).slice(0, 120)}` };
+    }
+  };
   // 插件系统（P0）：data/plugins/*/ 加载 → 工具并入 extraTools（命令注册在 commandBus 创建后）
   const { loadAllPlugins, pluginToolsToExtra } = await import('../kernel/plugins.js');
   const plugins = await loadAllPlugins(dataDir, cwd);
@@ -232,7 +244,7 @@ async function main() {
   // WxNodus UI 装配
   gateway = new GatewayClient({
     bus, db, config, mem, agent, commandBus,
-    dataDir, cwd, settings,
+    dataDir, cwd, settings, reloadMcp,
     applyModel,
     setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
     setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },

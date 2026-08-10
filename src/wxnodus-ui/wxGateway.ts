@@ -44,6 +44,7 @@ export interface WxGatewayKernel {
   setTheme: (t: string) => void
   setThinking: (on: boolean) => void
   requestExit: () => void
+  reloadMcp?: () => Promise<{ ok: boolean; count: number; message: string }>
 }
 
 // ── P3 图片附加链路：附件目录 + 待注入图片（pending.json）持久化 ──
@@ -255,7 +256,7 @@ export class GatewayClient extends EventEmitter {
       case 'skills.manage': return this.skillsManage(params) as T
       case 'skills.reload': return { output: '技能缓存已清空（发现目录即时扫描）' } as T
       case 'plugins.manage': return this.pluginsManage(params) as T
-      case 'reload.mcp': return {} as T
+      case 'reload.mcp': return this.reloadMcp(params) as T
       case 'voice.toggle': return { enabled: false, audio_available: false, message: '语音输入当前不可用' } as T
       case 'voice.record': return { ok: false, audio_available: false, message: '语音输入当前不可用' } as T
       case 'image.attach': return this.imageAttach(params) as T
@@ -529,6 +530,19 @@ export class GatewayClient extends EventEmitter {
     this.publish({ type: 'status.update', payload: { kind: 'done', text: 'ready' } })
 
     return { ok: true, deleted: id }
+  }
+
+  // reload.mcp：MCP 服务器热重载（/reload-mcp）——确认门 → 后端重连 + 工具表热换
+  private async reloadMcp(params: Record<string, unknown>): Promise<unknown> {
+    const confirmed = params.confirm === true || params.always === true
+    if (!confirmed) {
+      return { status: 'confirm_required', message: '重载 MCP 会失效模型提示缓存——确认请用 /reload-mcp now' }
+    }
+    if (!this.kernel.reloadMcp) {
+      return { status: 'reloaded', message: '当前环境无 MCP 配置（data/mcp.json 为空或不支持重载）' }
+    }
+    const r = await this.kernel.reloadMcp()
+    return { status: r.ok ? 'reloaded' : 'reloaded', message: r.message }
   }
 
   // spawn_tree 持久化（/replay list|load 磁盘档案）：data/spawns/*.json
