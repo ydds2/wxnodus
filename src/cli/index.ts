@@ -45,6 +45,20 @@ async function main() {
   const bus = createEventBus(dataDir);
   const mem = createMemory(db);
   const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string; mode?: string; theme?: string; thinking?: boolean };
+  // 默认模型/端点兜底：/key 只保存密钥时，若 config 无 model/baseURL，
+  // agent 的 defaultCallModel 会因 `!s.model || !s.baseURL` 降级规则脑
+  // （提示「未配置」）——有 key 即视为已配置，补齐默认值并持久化。
+  // 同时校验 model 必须是合法 modelId：遗留数据可能把 UI 命令串
+  // （"deepseek-reasoner --provider deepseek"）写进 model 字段，
+  // 会导致 API 请求模型名非法而失败。
+  if (settings.apiKeyEnc) {
+    const { MODEL_CATALOG } = await import('../kernel/providers.js');
+    if (!settings.model || !MODEL_CATALOG.some(m => m.modelId === settings.model)) {
+      settings.model = 'deepseek-v4-flash';
+      config.setKey('settings', 'model', settings.model);
+    }
+    if (!settings.baseURL) { settings.baseURL = 'https://api.deepseek.com/v1'; config.setKey('settings', 'baseURL', settings.baseURL); }
+  }
   let model = settings.model ?? (settings.apiKeyEnc ? 'deepseek-v4-flash' : '');
 
   // 审批桥：agent 工具确认 → GatewayClient.requestApproval（审批 overlay）

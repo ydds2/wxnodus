@@ -95,6 +95,10 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const sub = args[0] ?? 'status';
     if (sub === 'set' && args[1]) {
       ctx.config.setKey('settings', 'apiKeyEnc', encryptKey(args[1]));
+      // 补默认模型/端点：有 key 但 model/baseURL 缺失时 agent 会降级规则脑
+      // （提示「未配置」）——配置密钥即视为已配置，补齐默认并持久化
+      if (!ctx.config.getKey('settings', 'model')) ctx.config.setKey('settings', 'model', 'deepseek-v4-flash');
+      if (!ctx.config.getKey('settings', 'baseURL')) ctx.config.setKey('settings', 'baseURL', 'https://api.deepseek.com/v1');
       return '密钥已配置（AES-256-GCM 加密存储，绝不回显）';
     }
     if (sub === 'off') {
@@ -121,7 +125,10 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/model', (args) => {
     const q = args.join(' ');
     if (q) {
-      const s = q.toLowerCase();
+      // UI 模型选择器传入的是命令串（"modelId --provider slug [--global|--session]"），
+      // 取第一个 token 作为 modelId（modelId 不含空格）
+      const clean = q.split(/\s+/)[0] ?? q;
+      const s = clean.toLowerCase();
       const hit = MODEL_CATALOG.find(m => m.name.toLowerCase() === s || m.modelId.toLowerCase() === s);
       if (!hit) {
         return lines(' 模型目录 ', [`未找到「${q}」，可用模型：`, ...MODEL_CATALOG.map(m => ` ${m.name}（${m.provider}）`)]);

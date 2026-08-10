@@ -671,21 +671,18 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
     const dy = targetY - prev.y
     const inPendingWrap = prev.x >= screen.viewportWidth
 
-    // If we're in pending wrap state (cursor.x >= width), use CR
-    // to reset to column 0 on the current line without advancing
-    // to the next line, then issue the cursor movement.
-    if (inPendingWrap) {
-      return [[CARRIAGE_RETURN, { type: 'cursorMove', x: targetX, y: dy }], { dx, dy }]
+    // 行切换：CUP 绝对定位（\x1b[{r};{c}H）。相对定位（CR+cursorMove）
+    // 依赖物理光标状态——winpty/conpty 渲染层吞掉帧首 HOME 后，每帧
+    // 起点漂移，高频更新行（状态栏）逐 cell 定位累积错位 → 内容重叠
+    // 乱码（elapsed 残留 / 模型名串位）。
+    if (inPendingWrap || dy !== 0) {
+      return [[{ type: 'stdout', content: `\x1b[${targetY + 1};${targetX + 1}H` }], { dx, dy }]
     }
 
-    // When moving to a different line, use carriage return (\r) to reset to
-    // column 0 first, then cursor move.
-    if (dy !== 0) {
-      return [[CARRIAGE_RETURN, { type: 'cursorMove', x: targetX, y: dy }], { dx, dy }]
-    }
-
-    // Standard same-line cursor move
-    return [[{ type: 'cursorMove', x: dx, y: dy }], { dx, dy }]
+    // Standard same-line cursor move → 绝对列定位（cursorTo/CHA）：
+    // 相对列移动（cursorMove dx）依赖虚拟光标与物理光标一致，pty 渲染层
+    // 漂移后逐 cell 列定位累积错位（状态栏 elapsed 更新时旧内容残留重叠）
+    return [[{ type: 'cursorTo', col: targetX }], { dx, dy }]
   })
 }
 

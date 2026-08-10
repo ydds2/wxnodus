@@ -55,11 +55,15 @@ export function createAgent(opts: AgentOptions) {
   const defaultCallModel = async (req: { messages: Array<{ role: string; content: string }>; tools?: unknown[] }): Promise<ModelCall | ToolCallMsg> => {
     const s = opts.config.settings;
     const key = s.apiKeyEnc ? decryptKey(s.apiKeyEnc) : null;
-    if (!key || !s.baseURL || !s.model) {
+    if (!key) {
       return { type: 'text', content: ruleBrain(req.messages[req.messages.length - 1]?.content ?? '') };
     }
-    const { buildChatRequest, mapHttpError } = await import('./providers.js');
-    const httpReq = buildChatRequest({ baseURL: s.baseURL, model: s.model, key, messages: req.messages as any, stream: false, tools: req.tools });
+    const { buildChatRequest, mapHttpError, MODEL_CATALOG } = await import('./providers.js');
+    // 有 key 即视为已配置：model/baseURL 缺失或非法（遗留命令串）时用默认，
+    // 不降级规则脑——否则 /key 配置后仍提示「未配置」或 API 模型名非法
+    const baseURL = s.baseURL || 'https://api.deepseek.com/v1';
+    const model = MODEL_CATALOG.some(m => m.modelId === s.model) ? s.model! : 'deepseek-v4-flash';
+    const httpReq = buildChatRequest({ baseURL, model, key, messages: req.messages as any, stream: false, tools: req.tools });
     const resp = await fetch(httpReq.url, { method: 'POST', headers: httpReq.headers, body: httpReq.body, signal: AbortSignal.timeout(120000) });
     if (!resp.ok) throw new Error(mapHttpError(resp.status));
     const j = await resp.json() as any;

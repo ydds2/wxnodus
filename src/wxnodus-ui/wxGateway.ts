@@ -413,7 +413,8 @@ export class GatewayClient extends EventEmitter {
 
     if (configured) {
       const fallback = MODEL_CATALOG.find((m) => m.modelId === (s.model ?? 'deepseek-v4-flash')) ?? MODEL_CATALOG[2]
-      if (!s.model) s.model = fallback.modelId
+      // model 缺失或非法（遗留命令串）→ 回退默认 modelId
+      if (!s.model || !MODEL_CATALOG.some((m) => m.modelId === s.model)) s.model = fallback.modelId
       if (!s.baseURL) s.baseURL = fallback.baseURL
     }
 
@@ -547,6 +548,10 @@ export class GatewayClient extends EventEmitter {
     if (key) {
       this.kernel.settings.apiKeyEnc = encryptKey(key)
       this.kernel.config.setKey('settings', 'apiKeyEnc', this.kernel.settings.apiKeyEnc)
+      // 补默认模型/端点：有 key 但 model/baseURL 缺失时 agent 会降级规则脑
+      // （提示「未配置」）——与 /key set 行为一致
+      if (!this.kernel.config.getKey('settings', 'model')) this.kernel.config.setKey('settings', 'model', 'deepseek-v4-flash')
+      if (!this.kernel.config.getKey('settings', 'baseURL')) this.kernel.config.setKey('settings', 'baseURL', 'https://api.deepseek.com/v1')
     }
     if (baseURL) {
       this.kernel.settings.baseURL = baseURL
