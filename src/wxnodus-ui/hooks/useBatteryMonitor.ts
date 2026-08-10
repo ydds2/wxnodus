@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 
-import type { BatteryInfo } from './interfaces.js'
-import { patchUiState } from './uiStore.js'
+import type { BatteryInfo } from '../bridge/interfaces.js'
+import { patchUiState } from '../runtime/viewStore.js'
 
 // A7：电池轮询（参考 useBatteryPoll 同款）——30s 间隔读 system.battery RPC，
 // 无电池/不可用时置 null（状态条自动隐藏该段）

@@ -1,8 +1,8 @@
 import { useStore } from '@nanostores/react'
 
-import { GatewayProvider } from './app/gatewayContext.js'
-import { $uiState } from './app/uiStore.js'
-import { useMainApp } from './app/useMainApp.js'
+import { GatewayProvider } from './bridge/gatewayProvider.js'
+import { $uiState } from './runtime/viewStore.js'
+import { useMainApp } from './hooks/useSessionShell.js'
 import { AppLayout } from './components/appLayout.js'
 import type { GatewayClient } from './gatewayClient.js'
 

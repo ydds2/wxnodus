@@ -1,6 +1,6 @@
 import type { ScrollBoxHandle } from '@wxnodus/ink'
 
-import type { SelectionApi } from './interfaces.js'
+import type { SelectionApi } from '../bridge/interfaces.js'
 
 export interface SelectionSnap {
   anchor?: { row: number } | null

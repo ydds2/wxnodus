@@ -1,6 +1,6 @@
 import type { MutableRefObject } from 'react'
 
-import type { SlashHandlerContext, UiState } from '../interfaces.js'
+import type { SlashHandlerContext, UiState } from '../bridge/interfaces.js'
 
 export interface SlashRunCtx extends SlashHandlerContext {
   flight: number

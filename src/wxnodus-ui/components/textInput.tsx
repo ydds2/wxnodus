@@ -2,7 +2,7 @@ import type { InputEvent, Key } from '@wxnodus/ink'
 import * as Ink from '@wxnodus/ink'
 import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'react'
 
-import { setInputSelection } from '../app/inputSelectionStore.js'
+import { setInputSelection } from '../runtime/selectionStore.js'
 import { readClipboardText, writeClipboardText } from '../lib/clipboard.js'
 import { cursorLayout, offsetFromPosition } from '../lib/inputMetrics.js'
 import {

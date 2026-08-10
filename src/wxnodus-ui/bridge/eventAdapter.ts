@@ -15,11 +15,11 @@ import { formatAbandonedClarify, formatToolCall, stripAnsi } from '../lib/text.j
 import { fromSkin } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
-import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
+import { applyDelegationStatus, getDelegationState } from '../runtime/delegationStatus.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
-import { getOverlayState, patchOverlayState } from './overlayStore.js'
-import { turnController } from './turnController.js'
-import { getUiState, patchUiState } from './uiStore.js'
+import { getOverlayState, patchOverlayState } from '../runtime/promptStore.js'
+import { turnController } from '../runtime/flowController.js'
+import { getUiState, patchUiState } from '../runtime/viewStore.js'
 
 const NO_PROVIDER_RE = /\bNo (?:LLM|inference) provider configured\b/i
 

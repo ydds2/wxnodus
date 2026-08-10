@@ -2,10 +2,10 @@ import { parseSlashCommand } from '../domain/slash.js'
 import type { SlashExecResponse } from '../gatewayTypes.js'
 import { asCommandDispatch, rpcErrorMessage } from '../lib/rpc.js'
 
-import type { SlashHandlerContext } from './interfaces.js'
-import { findSlashCommand } from './slash/registry.js'
-import type { SlashRunCtx } from './slash/types.js'
-import { getUiState } from './uiStore.js'
+import type { SlashHandlerContext } from '../bridge/interfaces.js'
+import { findSlashCommand } from './slashRegistry.js'
+import type { SlashRunCtx } from './slashTypes.js'
+import { getUiState } from '../runtime/viewStore.js'
 
 export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => boolean {
   const { gw } = ctx.gateway

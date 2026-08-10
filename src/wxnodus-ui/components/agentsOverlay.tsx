@@ -7,10 +7,10 @@ import {
   $overlaySectionsOpen,
   applyDelegationStatus,
   toggleOverlaySection
-} from '../app/delegationStore.js'
-import { patchOverlayState } from '../app/overlayStore.js'
-import { $spawnDiff, $spawnHistory, clearDiffPair, type SpawnSnapshot } from '../app/spawnHistoryStore.js'
-import { useTurnSelector } from '../app/turnStore.js'
+} from '../runtime/delegationStatus.js'
+import { patchOverlayState } from '../runtime/promptStore.js'
+import { $spawnDiff, $spawnHistory, clearDiffPair, type SpawnSnapshot } from '../runtime/delegationArchive.js'
+import { useTurnSelector } from '../runtime/flowStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { DelegationPauseResponse, DelegationStatusResponse, SubagentInterruptResponse } from '../gatewayTypes.js'
 import { asRpcResult } from '../lib/rpc.js'

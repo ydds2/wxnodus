@@ -14,12 +14,12 @@ import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platfo
 import { computePrecisionWheelStep, initPrecisionWheel } from '../lib/precisionWheel.js'
 import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
 
-import { getInputSelection } from './inputSelectionStore.js'
-import type { InputHandlerContext, InputHandlerResult } from './interfaces.js'
-import { $isBlocked, $overlayState, patchOverlayState } from './overlayStore.js'
-import { turnController } from './turnController.js'
-import { patchTurnState } from './turnStore.js'
-import { getUiState } from './uiStore.js'
+import { getInputSelection } from '../runtime/selectionStore.js'
+import type { InputHandlerContext, InputHandlerResult } from '../bridge/interfaces.js'
+import { $isBlocked, $overlayState, patchOverlayState } from '../runtime/promptStore.js'
+import { turnController } from '../runtime/flowController.js'
+import { patchTurnState } from '../runtime/flowStore.js'
+import { getUiState } from '../runtime/viewStore.js'
 
 const isCtrl = (key: { ctrl: boolean }, ch: string, target: string) => key.ctrl && ch.toLowerCase() === target
 

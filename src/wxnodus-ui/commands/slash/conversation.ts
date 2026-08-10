@@ -1,5 +1,5 @@
-import { attachedImageNotice, introMsg, toTranscriptMessages } from '../../../domain/messages.js'
-import { TUI_SESSION_MODEL_FLAG } from '../../../domain/slash.js'
+import { attachedImageNotice, introMsg, toTranscriptMessages } from '../../domain/messages.js'
+import { TUI_SESSION_MODEL_FLAG } from '../../domain/slash.js'
 import type {
   BackgroundStartResponse,
   ConfigGetValueResponse,
@@ -9,14 +9,14 @@ import type {
   SessionCompressResponse,
   SessionUsageResponse,
   VoiceToggleResponse
-} from '../../../gatewayTypes.js'
-import { formatVoiceRecordKey, parseVoiceRecordKey } from '../../../lib/platform.js'
-import { fmtK } from '../../../lib/text.js'
-import type { PanelSection } from '../../../types.js'
-import { DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES, type IndicatorStyle } from '../../interfaces.js'
-import { patchOverlayState } from '../../overlayStore.js'
-import { patchUiState } from '../../uiStore.js'
-import type { SlashCommand } from '../types.js'
+} from '../../gatewayTypes.js'
+import { formatVoiceRecordKey, parseVoiceRecordKey } from '../../lib/platform.js'
+import { fmtK } from '../../lib/text.js'
+import type { PanelSection } from '../../types.js'
+import { DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES, type IndicatorStyle } from '../../bridge/interfaces.js'
+import { patchOverlayState } from '../../runtime/promptStore.js'
+import { patchUiState } from '../../runtime/viewStore.js'
+import type { SlashCommand } from '../slashTypes.js'
 
 const TUI_SESSION_MODEL_RE = new RegExp(`(?:^|\\s)${TUI_SESSION_MODEL_FLAG}(?:\\s|$)`)
 const TUI_SESSION_STRIP_RE = new RegExp(`\\s*${TUI_SESSION_MODEL_FLAG}\\b\\s*`, 'g')

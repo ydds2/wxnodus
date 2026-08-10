@@ -1,9 +1,9 @@
 import { useStore } from '@nanostores/react'
 import { memo } from 'react'
 
-import type { AppLayoutProgressProps } from '../app/interfaces.js'
-import { toggleTodoCollapsed, useTurnSelector } from '../app/turnStore.js'
-import { $uiState } from '../app/uiStore.js'
+import type { AppLayoutProgressProps } from '../bridge/interfaces.js'
+import { toggleTodoCollapsed, useTurnSelector } from '../runtime/flowStore.js'
+import { $uiState } from '../runtime/viewStore.js'
 import { blockRenders } from '../domain/blockLayout.js'
 import { appendToolShelfMessage } from '../lib/liveProgress.js'
 import type { ActiveTool, DetailsMode, Msg, SectionVisibility } from '../types.js'

@@ -2,7 +2,7 @@ import { Text } from '@wxnodus/ink'
 import { useStore } from '@nanostores/react'
 import type { ReactNode } from 'react'
 
-import { $uiState } from '../app/uiStore.js'
+import { $uiState } from '../runtime/viewStore.js'
 import type { ThemeColors } from '../theme.js'
 
 export function Fg({ bold, c, children, dim, italic, literal, strikethrough, underline, wrap }: FgProps) {

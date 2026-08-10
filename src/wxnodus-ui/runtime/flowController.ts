@@ -19,11 +19,11 @@ import {
 } from '../lib/text.js'
 import type { ActiveTool, ActivityItem, Msg, SubagentProgress, TodoItem } from '../types.js'
 
-import type { Notice } from './interfaces.js'
-import { resetFlowOverlays } from './overlayStore.js'
-import { pushSnapshot } from './spawnHistoryStore.js'
-import { archiveDoneTodos, getTurnState, patchTurnState, resetTurnState } from './turnStore.js'
-import { getUiState, patchUiState } from './uiStore.js'
+import type { Notice } from '../bridge/interfaces.js'
+import { resetFlowOverlays } from './promptStore.js'
+import { pushSnapshot } from './delegationArchive.js'
+import { archiveDoneTodos, getTurnState, patchTurnState, resetTurnState } from './flowStore.js'
+import { getUiState, patchUiState } from './viewStore.js'
 
 const INTERRUPT_COOLDOWN_MS = 1500
 const ACTIVITY_LIMIT = 8

@@ -15,9 +15,9 @@ import { hasInterpolation, INTERPOLATION_RE } from '../protocol/interpolation.js
 import { PASTE_SNIPPET_RE } from '../protocol/paste.js'
 import type { Msg } from '../types.js'
 
-import type { ComposerActions, ComposerRefs, ComposerState, PasteSnippet } from './interfaces.js'
-import { turnController } from './turnController.js'
-import { getUiState, patchUiState } from './uiStore.js'
+import type { ComposerActions, ComposerRefs, ComposerState, PasteSnippet } from '../bridge/interfaces.js'
+import { turnController } from '../runtime/flowController.js'
+import { getUiState, patchUiState } from '../runtime/viewStore.js'
 
 const DOUBLE_ENTER_MS = 450
 const SESSION_BUSY_RE = /session busy|waiting for model response/i

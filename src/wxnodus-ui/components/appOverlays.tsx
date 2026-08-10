@@ -1,10 +1,10 @@
 import { Box, Text } from '@wxnodus/ink'
 import { useStore } from '@nanostores/react'
 
-import { useGateway } from '../app/gatewayContext.js'
-import type { AppOverlaysProps } from '../app/interfaces.js'
-import { $overlayState, patchOverlayState } from '../app/overlayStore.js'
-import { $uiSessionId, $uiTheme } from '../app/uiStore.js'
+import { useGateway } from '../bridge/gatewayProvider.js'
+import type { AppOverlaysProps } from '../bridge/interfaces.js'
+import { $overlayState, patchOverlayState } from '../runtime/promptStore.js'
+import { $uiSessionId, $uiTheme } from '../runtime/viewStore.js'
 
 import { ActiveSessionSwitcher } from './activeSessionSwitcher.js'
 import { FloatBox } from './appChrome.js'

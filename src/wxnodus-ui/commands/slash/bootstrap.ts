@@ -1,8 +1,8 @@
 import { withInkSuspended } from '@wxnodus/ink'
 
-import { launchWxnodusCommand } from '../../../lib/externalCli.js'
-import { runExternalSetup } from '../../setupHandoff.js'
-import type { SlashCommand } from '../types.js'
+import { launchWxnodusCommand } from '../../lib/externalCli.js'
+import { runExternalSetup } from '../../bridge/setupHandoff.js'
+import type { SlashCommand } from '../slashTypes.js'
 
 export const setupCommands: SlashCommand[] = [
   {

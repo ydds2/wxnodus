@@ -1,5 +1,5 @@
-import { formatBytes, performHeapDump } from '../../../lib/memory.js'
-import type { SlashCommand } from '../types.js'
+import { formatBytes, performHeapDump } from '../../lib/memory.js'
+import type { SlashCommand } from '../slashTypes.js'
 
 export const debugCommands: SlashCommand[] = [
   {

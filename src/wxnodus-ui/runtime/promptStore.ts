@@ -2,7 +2,7 @@ import { atom, computed } from 'nanostores'
 import { flushSync } from 'react-dom'
 import { forceRedraw } from '@wxnodus/ink'
 
-import type { OverlayState } from './interfaces.js'
+import type { OverlayState } from '../bridge/interfaces.js'
 
 const buildOverlayState = (): OverlayState => ({
   agents: false,

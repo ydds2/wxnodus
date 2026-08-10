@@ -20,11 +20,11 @@ import type {
 import { asRpcResult } from '../lib/rpc.js'
 import type { Msg, PanelSection, SessionInfo, Usage } from '../types.js'
 
-import type { ComposerActions, GatewayRpc, StateSetter } from './interfaces.js'
-import { patchOverlayState } from './overlayStore.js'
-import { turnController } from './turnController.js'
-import { patchTurnState } from './turnStore.js'
-import { getUiState, patchUiState } from './uiStore.js'
+import type { ComposerActions, GatewayRpc, StateSetter } from '../bridge/interfaces.js'
+import { patchOverlayState } from '../runtime/promptStore.js'
+import { turnController } from '../runtime/flowController.js'
+import { patchTurnState } from '../runtime/flowStore.js'
+import { getUiState, patchUiState } from '../runtime/viewStore.js'
 
 const usageFrom = (info: null | SessionInfo): Usage => (info?.usage ? { ...ZERO, ...info.usage } : ZERO)
 

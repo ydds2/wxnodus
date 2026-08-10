@@ -1,9 +1,9 @@
-import { coreCommands } from './commands/core.js'
-import { debugCommands } from './commands/debug.js'
-import { opsCommands } from './commands/ops.js'
-import { sessionCommands } from './commands/session.js'
-import { setupCommands } from './commands/setup.js'
-import type { SlashCommand } from './types.js'
+import { coreCommands } from './slash/chat.js'
+import { debugCommands } from './slash/diagnostics.js'
+import { opsCommands } from './slash/ops.js'
+import { sessionCommands } from './slash/conversation.js'
+import { setupCommands } from './slash/bootstrap.js'
+import type { SlashCommand } from './slashTypes.js'
 
 // wxnodus 适配：保留 本地 UI 命令（config.set/session.* 等已由 wxGateway 桥接），
 // 移除调用未实现 RPC 的命令——同名 wxnodus 中文命令会经 slash.exec RPC 接管

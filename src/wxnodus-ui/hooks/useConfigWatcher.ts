@@ -21,9 +21,9 @@ import {
   INDICATOR_STYLES,
   type IndicatorStyle,
   type StatusBarMode
-} from './interfaces.js'
-import { turnController } from './turnController.js'
-import { patchUiState } from './uiStore.js'
+} from '../bridge/interfaces.js'
+import { turnController } from '../runtime/flowController.js'
+import { patchUiState } from '../runtime/viewStore.js'
 
 const STATUSBAR_ALIAS: Record<string, StatusBarMode> = {
   bottom: 'bottom',

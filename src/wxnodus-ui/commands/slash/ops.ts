@@ -12,12 +12,12 @@ import type {
   SpawnTreeListResponse,
   SpawnTreeLoadResponse,
   ToolsConfigureResponse
-} from '../../../gatewayTypes.js'
-import type { PanelSection } from '../../../types.js'
-import { applyDelegationStatus, getDelegationState } from '../../delegationStore.js'
-import { patchOverlayState } from '../../overlayStore.js'
-import { getSpawnHistory, pushDiskSnapshot, setDiffPair, type SpawnSnapshot } from '../../spawnHistoryStore.js'
-import type { SlashCommand } from '../types.js'
+} from '../../gatewayTypes.js'
+import type { PanelSection } from '../../types.js'
+import { applyDelegationStatus, getDelegationState } from '../../runtime/delegationStatus.js'
+import { patchOverlayState } from '../../runtime/promptStore.js'
+import { getSpawnHistory, pushDiskSnapshot, setDiffPair, type SpawnSnapshot } from '../../runtime/delegationArchive.js'
+import type { SlashCommand } from '../slashTypes.js'
 
 interface SkillInfo {
   category?: string

@@ -3,9 +3,9 @@ import { useEffect, useRef } from 'react'
 import { LONG_RUN_CHARMS } from '../content/charms.js'
 import { pick, toolTrailLabel } from '../lib/text.js'
 
-import { turnController } from './turnController.js'
-import { useTurnSelector } from './turnStore.js'
-import { getUiState } from './uiStore.js'
+import { turnController } from '../runtime/flowController.js'
+import { useTurnSelector } from '../runtime/flowStore.js'
+import { getUiState } from '../runtime/viewStore.js'
 
 const DELAY_MS = 8_000
 const INTERVAL_MS = 10_000

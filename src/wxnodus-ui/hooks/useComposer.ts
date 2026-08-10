@@ -9,18 +9,18 @@ import { useCallback, useMemo, useState } from 'react'
 
 import type { PasteEvent } from '../components/textInput.js'
 import type { ImageAttachResponse, InputDetectDropResponse } from '../gatewayTypes.js'
-import { useCompletion } from '../hooks/useCompletion.js'
-import { useInputHistory } from '../hooks/useInputHistory.js'
-import { useQueue } from '../hooks/useQueue.js'
+import { useCompletion } from './useCompletion.js'
+import { useInputHistory } from './useInputHistory.js'
+import { useQueue } from './useQueue.js'
 import { isUsableClipboardText, readClipboardText } from '../lib/clipboard.js'
 import { resolveEditor } from '../lib/editor.js'
 import { readOsc52Clipboard } from '../lib/osc52.js'
 import { isRemoteShellSession } from '../lib/terminalSetup.js'
 import { pasteTokenLabel, stripTrailingPasteNewlines } from '../lib/text.js'
 
-import type { MaybePromise, PasteSnippet, UseComposerStateOptions, UseComposerStateResult } from './interfaces.js'
-import { $isBlocked } from './overlayStore.js'
-import { getUiState } from './uiStore.js'
+import type { MaybePromise, PasteSnippet, UseComposerStateOptions, UseComposerStateResult } from '../bridge/interfaces.js'
+import { $isBlocked } from '../runtime/promptStore.js'
+import { getUiState } from '../runtime/viewStore.js'
 
 const PASTE_SNIP_MAX_COUNT = 32
 const PASTE_SNIP_MAX_TOTAL_BYTES = 4 * 1024 * 1024
