@@ -242,11 +242,21 @@ async function main() {
     } else if (routed.kind === 'tool' && routed.value) {
       console.log(routed.value);
     } else {
-      const result = await agent.run(text);
-      if (opts.json) {
-        console.log(JSON.stringify({ ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted }));
-      } else {
-        console.log(result.text);
+      try {
+        const result = await agent.run(text);
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted }));
+        } else {
+          console.log(result.text);
+        }
+        // P1-2 退出码协议：0 成功｜1 失败（-p 分支）
+        process.exit(result.ok ? 0 : 1);
+      } catch (e: any) {
+        // P1-2：可重试失败（429/5xx/网络/超时）→ 75（EX_TEMPFAIL），CI 据此重试
+        const { exitCodeForError } = await import('../kernel/errors.js');
+        process.stderr.write(`wxnodus: ${e?.message ?? e}
+`);
+        process.exit(exitCodeForError(e));
       }
     }
     process.exit(0);

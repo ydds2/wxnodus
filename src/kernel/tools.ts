@@ -20,6 +20,8 @@ export interface ToolCtx {
   secrets?: { vault: import('./secrets.js').SecretVault; sudoEnabled: boolean; secretEnabled: boolean } | null;
   /** 敏感输入请求（用户亲手输入）：kind=sudo 返回密码；kind=secret 返回密钥值；拒绝/不可用返回 null */
   requestSecret?: (kind: 'sudo' | 'secret', prompt: string, name?: string) => Promise<string | null>;
+  /** P1-1：工具失败通知（postToolUseFailure hook） */
+  hookFailure?: (name: string, err: string) => void;
 }
 
 export interface ToolDef {
@@ -158,6 +160,7 @@ export function coreTools(): Record<string, ToolDef> {
         });
         return wrapDanger(out.slice(0, 8000) || '（无输出）');
       } catch (e: any) {
+        ctx.hookFailure?.('bash', String(e?.message ?? e).slice(0, 500));
         return wrapDanger(`命令失败：${e.message?.slice(0, 500)}`);
       }
     },

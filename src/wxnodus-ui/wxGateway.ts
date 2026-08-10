@@ -215,6 +215,18 @@ export class GatewayClient extends EventEmitter {
   }
 
   async request<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    try {
+      return await this._dispatch(method, params)
+    } catch (e: any) {
+      // P1-3 错误码体系：WxError 带 code，其余归 INTERNAL——客户端可区分处理
+      const code = e?.code ?? 5001
+      const out = { ok: false, code, message: String(e?.message ?? e).slice(0, 300) }
+      this.publish({ type: 'error', payload: out })
+      return out as T
+    }
+  }
+
+  private async _dispatch<T = unknown>(method: string, params: Record<string, unknown>): Promise<T> {
     switch (method) {
       case 'command.dispatch': return this.dispatchCommand(params) as T
       case 'prompt.submit': return this.promptSubmit(params) as T
@@ -417,7 +429,8 @@ export class GatewayClient extends EventEmitter {
     if (!text) return { ok: true }
 
     if (this.running) {
-      throw new Error('session busy: waiting for model response')
+      const { WxError, WX_ERR } = await import('../kernel/errors.js')
+      throw new WxError(WX_ERR.BUSY, 'session busy: waiting for model response')
     }
 
     // P3 图片附加链路：会话有待注入图片且当前模型支持图像输入 → 多模态 parts 随本次提问进入模型；

@@ -45,12 +45,12 @@
 
 ## 6. 剩余结构缺口（未实施，按优先级标注）
 
-| 缺口 | 优先级 | 说明 |
+| 缺口 | 优先级 | 状态 |
 |---|---|---|
-| Hooks 12 类扩充 | P1 | 现 4 类（userPromptSubmit/preToolUse/postToolUse/stop）→ 补 SubagentStop/SessionStart 等 8 类 |
-| 退出码协议（0/1/75） | P1 | -p 模式可重试失败区分 |
-| 协议错误码体系 | P1 | Hermes 式 4xxx/5xxx 分段，gateway RPC 统一返回码 |
-| --wire 双向化 | P1 | 客户端请求帧（approval/clarify 通道复用） |
-| 工具延迟加载 | P2 | 大工具集 BM25 检索（Codex tool_search） |
-| Flow skills | P2 | SKILL.md 内嵌流程图驱动（Kimi /flow） |
-| 配置分层与校验 | P2 | 8 层配置 + strict 校验 + 迁移（Codex/Hermes） |
+| Hooks 12 类扩充 | P1 | ✅ 已实施（+sessionStart/sessionEnd/preCompact(BLOCK)/postCompact/subagentStart/Stop/postToolUseFailure/notification） |
+| 退出码协议（0/1/75） | P1 | ✅ 已实施（-p 分支 exitCodeForError 分类） |
+| 协议错误码体系 | P1 | ✅ 已实施（kernel/errors.ts：WxError + 4xxx/5xxx，gateway RPC 统一 {ok,code,message}） |
+| --wire 双向化 | P2 | ❌ 未实施（客户端请求帧） |
+| 工具延迟加载 | P2 | ❌ 未实施（BM25 检索） |
+| Flow skills | P2 | ❌ 未实施（SKILL.md 流程图驱动） |
+| 配置分层与校验 | P2 | ❌ 未实施（8 层配置 + strict） |

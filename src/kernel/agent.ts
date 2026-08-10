@@ -256,6 +256,7 @@ export function createAgent(opts: AgentOptions) {
     // 子代理生命周期事件（独立实例，手动发事件保持 UI 可见）
     // C4 修复：subagent_id 稳定（start/complete 同 id，/agents 面板可正确闭合）
     bus.emit('agent.subagent', { goal, phase: 'start', session_id: sessionId + ':sub', subagent_id: sessionId + ':sub' });
+    hooks?.subagentStart(goal);
     bus.emit('agent.stage', { stage: `子代理执行中（深度 ${depth}）…` }); // 对比轮 5：状态条可见中间态
     const sub = createAgent({
       ...opts,
@@ -267,6 +268,7 @@ export function createAgent(opts: AgentOptions) {
     });
     const r = await sub.run(goal);
     bus.emit('agent.subagent', { goal, phase: 'complete', ok: r.ok, turns: r.turns, session_id: sessionId + ':sub', subagent_id: sessionId + ':sub' });
+    hooks?.subagentStop({ ok: r.ok, output: r.text, turns: r.turns });
     return { ok: r.ok, output: r.text, turns: r.turns };
   };
 
@@ -283,6 +285,7 @@ export function createAgent(opts: AgentOptions) {
       ? { vault: opts.security.vault, sudoEnabled: !!opts.security.sudoInjection, secretEnabled: !!opts.security.secretInjection }
       : null,
     requestSecret: opts.onSecretRequest,
+    hookFailure: (name, err) => hooks?.postToolUseFailure(name, err),
   };
 
   const onApproval = opts.onApproval ?? (async () => true);
@@ -420,6 +423,7 @@ export function createAgent(opts: AgentOptions) {
     let finalText = '';
     bus.emit('agent.start', { sessionId, prompt });
     hooks?.userPromptSubmit(prompt, sessionId);
+    if (turns === 1) hooks?.sessionStart(sessionId);
 
     try {
     while (turns < (opts.maxTurns ?? MAX_TURNS)) {
@@ -436,6 +440,10 @@ export function createAgent(opts: AgentOptions) {
       const ctxLimit = opts2.subagent ? 64_000 : (opts.maxContextTokens ?? 64_000);
       const used = estimateMessagesTokens(msgs);
       if (used > ctxLimit * 0.85 && msgs.length > 10) {
+        // P1-1：preCompact hook 可阻止压缩（输出 BLOCK）
+        if (hooks?.preCompact(`auto: ${used}/${ctxLimit}`)) {
+          bus.emit('system.notice', { text: '压缩被 hook 阻止（preCompact BLOCK）' });
+        } else {
         bus.emit('system.notice', { text: `上下文已达 ${Math.round((used / ctxLimit) * 100)}%（${used} token）——自动压缩…` });
         const condensed = await compactMessages(msgs as any, async (text) => {
           const r = await callWithAbort({
@@ -457,7 +465,10 @@ export function createAgent(opts: AgentOptions) {
             void opts.mem.compactSmart(sessionId, async () => summaryText).catch(() => { /* DB 同步失败不影响对话 */ });
           }
         } catch { /* 忽略 */ }
-        bus.emit('system.notice', { text: `自动压缩完成（${used} → ${estimateMessagesTokens(msgs)} token）` });
+        const nextTokens = estimateMessagesTokens(msgs);
+        bus.emit('system.notice', { text: `自动压缩完成（${used} → ${nextTokens} token）` });
+        hooks?.postCompact(used, nextTokens);
+        }
       }
       let res: ModelCall | ToolCallMsg;
       try {
@@ -549,6 +560,7 @@ export function createAgent(opts: AgentOptions) {
     }
     // C8 修复：错误路径也发 agent.end（ok:false）——事件契约对齐参考（错误也完成回合）
     bus.emit('agent.end', { ok: finalText.length > 0, turns });
+    hooks?.sessionEnd({ ok: finalText.length > 0, turns });
     return { ok: finalText.length > 0, text: finalText, turns, interrupted: st.interrupted };
     } finally {
       if (turn === st) turn = null; // C1：当前回合结束，释放 turn 引用
