@@ -247,7 +247,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const dropIds = msgs.slice(target).map(m => m.id);
     // F20：软撤销——归档而非删除（recall 全量仍可检索，working 窗口回退）
     ctx.db.prepare(`UPDATE messages SET archived=1 WHERE id IN (${dropIds.map(() => '?').join(',')})`).run(...dropIds);
-    return `已撤销 ${n} 轮（${dropIds.length} 条消息归档）——/checkpoint restore 可恢复`;
+    return `已撤销 ${n} 轮（${dropIds.length} 条消息移入历史存档，仍可检索）——/checkpoint restore 可恢复到撤销前`;
   });
 
   // /fork：复制当前会话（含全部消息）为分支会话

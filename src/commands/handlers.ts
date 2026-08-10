@@ -118,7 +118,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     try {
       const total = (ctx.db.prepare(`SELECT COUNT(*) c FROM messages`).get() as { c: number }).c;
       const archived = (ctx.db.prepare(`SELECT COUNT(*) c FROM messages WHERE archived=1`).get() as { c: number }).c;
-      checks.push(['黑洞记忆', `${total} 条（吸附 ${archived} 条）`]);
+      checks.push(['黑洞记忆', `${total} 条（其中 ${archived} 条已归档压缩，仍可检索）`]);
     } catch { checks.push(['黑洞记忆', '异常（表不可读）']); }
     // FTS 索引可检索性
     try {

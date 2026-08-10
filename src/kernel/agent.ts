@@ -484,7 +484,7 @@ export function createAgent(opts: AgentOptions) {
         const condensed = await compactMessages(msgs as any, async (text) => {
           const r = await callWithAbort({
             messages: [
-              { role: 'system', content: '你是上下文压缩器。把对话片段压缩为保留关键信息的摘要（中文，≤300 字），只输出摘要。' },
+              { role: 'system', content: '你是对话压缩器：把一段对话浓缩为摘要（中文，≤300 字），保留关键信息（结论、决策、未完成任务、重要数据），去掉寒暄与重复。只输出摘要本身。' },
               { role: 'user', content: text },
             ],
             tools: [],

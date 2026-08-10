@@ -130,7 +130,7 @@ async function main() {
       return createAutoReview(
         () => (settings as any).autoReview === true,
         async (prompt) => {
-          const r = await agent.run(`（auto-review 预审）${prompt}`);
+          const r = await agent.run(`（安全预审任务）请直接回答审查结论：${prompt}`);
           return r.ok ? r.text : 'ask';
         },
       );
