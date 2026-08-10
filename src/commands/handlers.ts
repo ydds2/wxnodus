@@ -192,7 +192,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/theme', (args) => {
     const name = args[0];
     if (name) { ctx.setTheme(name); return `主题已切换：${name}`; }
-    return `当前主题：${ctx.getThemeName()}（可选：kimi/dark/light）`;
+    return `当前主题：${ctx.getThemeName()}（可选：wxnodus 黑洞/dark/light）`;
   });
 
   // 黑洞检索

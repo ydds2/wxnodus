@@ -91,7 +91,7 @@ async function main() {
 
   // 模式/主题状态
   let mode = (config.get('settings') as any).mode ?? 'smart';
-  let themeName = (config.get('settings') as any).theme ?? 'kimi';
+  let themeName = (config.get('settings') as any).theme ?? 'wxnodus';
   let thinking = (config.get('settings') as any).thinking ?? true;
   let exitRequested = false;
 

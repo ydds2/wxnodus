@@ -235,15 +235,16 @@ function normalizeAnsiForeground(color: string): string {
 }
 
 // ── Defaults ─────────────────────────────────────────────────────────
-
+// WxNodus 品牌（差异化）：黑洞引擎（事件视界辉光）+ 概念编译器
+// 配色概念：深空背景 × 电光青主色（吸积盘辉光）× 紫罗兰点缀（事件视界）
 const BRAND: ThemeBrand = {
   name: 'WxNodus V3',
-  icon: '◆',
+  icon: '◉',
   prompt: '❯',
   welcome: '说一句话，交付可运行系统',
-  goodbye: '再见！◆',
+  goodbye: '再见！◉',
   tool: '┊',
-  helpHeader: '(^_^)? 命令'
+  helpHeader: '◉ 命令 · 说人话即可'
 }
 
 const cleanPromptSymbol = (s: string | undefined, fallback: string) => {
@@ -256,46 +257,42 @@ const cleanPromptSymbol = (s: string | undefined, fallback: string) => {
 
 export const DARK_THEME: Theme = {
   color: {
-    primary: '#FFD700',
-    accent: '#FFBF00',
-    border: '#CD7F32',
-    text: '#FFF8DC',
-    muted: '#CC9B1F',
-    // Bumped from the old `#B8860B` darkgoldenrod (~53% luminance) which
-    // read as barely-visible on dark terminals for long body text.  The
-    // new value sits ~60% luminance — readable without losing the "muted /
-    // secondary" semantic.  Field labels still use `label` (65%) which
-    // stays brighter so hierarchy holds.
-    completionBg: '#1a1a2e',
-    completionCurrentBg: '#333355',
-    completionMetaBg: '#1a1a2e',
-    completionMetaCurrentBg: '#333355',
+    // 黑洞引擎：电光青（吸积盘辉光）× 紫罗兰（事件视界）× 深空冷白
+    primary: '#00E5FF',
+    accent: '#B388FF',
+    border: '#26A69A',
+    text: '#E0F7FA',
+    muted: '#80CBC4',
+    completionBg: '#0B0F19',
+    completionCurrentBg: '#1E2A4A',
+    completionMetaBg: '#0B0F19',
+    completionMetaCurrentBg: '#1E2A4A',
 
-    label: '#DAA520',
-    ok: '#4caf50',
-    error: '#ef5350',
-    warn: '#ffa726',
+    label: '#4DD0E1',
+    ok: '#66BB6A',
+    error: '#EF5350',
+    warn: '#FFB74D',
 
-    prompt: '#FFF8DC',
+    prompt: '#E0F7FA',
     // sessionLabel/sessionBorder intentionally track the `dim` value — they
     // are "same role, same colour" by design.  fromSkin's banner_dim fallback
     // relies on this pairing (#11300).
-    sessionLabel: '#CC9B1F',
-    sessionBorder: '#CC9B1F',
+    sessionLabel: '#80CBC4',
+    sessionBorder: '#80CBC4',
 
-    statusBg: '#1a1a2e',
-    statusFg: '#C0C0C0',
-    statusGood: '#8FBC8F',
-    statusWarn: '#FFD700',
-    statusBad: '#FF8C00',
+    statusBg: '#0B0F19',
+    statusFg: '#9EA7B3',
+    statusGood: '#4DD0E1',
+    statusWarn: '#FFD54F',
+    statusBad: '#FF8A65',
     statusCritical: '#FF6B6B',
-    selectionBg: '#3a3a55',
+    selectionBg: '#1E2A4A',
 
     diffAdded: 'rgb(220,255,220)',
     diffRemoved: 'rgb(255,220,220)',
     diffAddedWord: 'rgb(36,138,61)',
     diffRemovedWord: 'rgb(207,34,46)',
-    shellDollar: '#4dabf7'
+    shellDollar: '#4DD0E1'
   },
 
   brand: BRAND,
@@ -304,33 +301,33 @@ export const DARK_THEME: Theme = {
   bannerHero: ''
 }
 
-// Light-terminal palette: darker golds/ambers that stay legible on white
+// Light-terminal palette: deeper teal/violet that stay legible on white
 // backgrounds. Same shape as DARK_THEME so `fromSkin` still layers on top
 // cleanly (#11300).
 export const LIGHT_THEME: Theme = {
   color: {
-    primary: '#8B6914',
-    accent: '#A0651C',
-    border: '#7A4F1F',
-    text: '#3D2F13',
-    muted: '#7A5A0F',
-    completionBg: '#F5F5F5',
-    completionCurrentBg: mix('#F5F5F5', '#A0651C', 0.25),
-    completionMetaBg: '#F5F5F5',
-    completionMetaCurrentBg: mix('#F5F5F5', '#A0651C', 0.25),
+    primary: '#00838F',
+    accent: '#5E35B1',
+    border: '#00695C',
+    text: '#1C2B33',
+    muted: '#4A6B74',
+    completionBg: '#F0F6F7',
+    completionCurrentBg: mix('#F0F6F7', '#00838F', 0.2),
+    completionMetaBg: '#F0F6F7',
+    completionMetaCurrentBg: mix('#F0F6F7', '#00838F', 0.2),
 
-    label: '#7A5A0F',
+    label: '#00695C',
     ok: '#2E7D32',
     error: '#C62828',
     warn: '#E65100',
 
-    prompt: '#2B2014',
-    sessionLabel: '#7A5A0F',
-    sessionBorder: '#7A5A0F',
+    prompt: '#142A33',
+    sessionLabel: '#4A6B74',
+    sessionBorder: '#4A6B74',
 
-    statusBg: '#F5F5F5',
-    statusFg: '#333333',
-    statusGood: '#2E7D32',
+    statusBg: '#F0F6F7',
+    statusFg: '#333F45',
+    statusGood: '#00796B',
     statusWarn: '#8B6914',
     statusBad: '#D84315',
     statusCritical: '#B71C1C',
@@ -340,7 +337,7 @@ export const LIGHT_THEME: Theme = {
     diffRemoved: 'rgb(240,200,200)',
     diffAddedWord: 'rgb(27,94,32)',
     diffRemovedWord: 'rgb(183,28,28)',
-    shellDollar: '#1565C0'
+    shellDollar: '#00695C'
   },
 
   brand: BRAND,
