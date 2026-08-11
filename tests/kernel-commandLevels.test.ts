@@ -74,3 +74,23 @@ describe('classifyCommand 边界', () => {
     expect(classifyCommand('/sandbox L2')).toBe('redline');
   });
 });
+
+describe('任务系统分级（AI 联动）', () => {
+  it('查询类 safe：模型可直接查看任务状态/日志', () => {
+    expect(classifyCommand('/jobs list')).toBe('safe');
+    expect(classifyCommand('/jobs show t123')).toBe('safe');
+    expect(classifyCommand('/jobs logs t123 50')).toBe('safe');
+    expect(classifyCommand('/jobs tree t123')).toBe('safe');
+    expect(classifyCommand('/jobs')).toBe('safe'); // 无参 = list
+  });
+  it('调度类 danger：AI 发起任意 shell 后台执行需人工确认', () => {
+    expect(classifyCommand('/jobs run npm run build')).toBe('danger');
+    expect(classifyCommand('/jobs run node build.js --parallel "node test.js"')).toBe('danger');
+    expect(classifyCommand('/jobs kill t123')).toBe('danger');
+  });
+  it('管理类 confirm：retry/pause/resume/clean 走模式确认链', () => {
+    expect(classifyCommand('/jobs retry t123')).toBe('confirm');
+    expect(classifyCommand('/jobs clean 50')).toBe('confirm');
+    expect(classifyCommand('/cron run 1')).toBe('confirm');
+  });
+});

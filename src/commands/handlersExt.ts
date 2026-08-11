@@ -21,6 +21,7 @@ import { decryptKey } from '../kernel/providers.js';
 import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissions.js';
 import { unknownSettingsKeys, knownSettingsKeys } from '../store/config.js';
 import { runCuratorReview, curatorConfigFrom, readCuratorState } from '../kernel/curator.js';
+import type { TaskSpec, TaskRow } from '../kernel/taskRunner.js';
 import { c, type HandlerCtx } from './handlers.js';
 import type { CommandBus, StructuredCommand } from '../app/CommandBus.js';
 
@@ -53,7 +54,7 @@ export function renderWaterfall(
 }
 
 // ── Webhook 引擎（事件 → HTTP POST 回调；本地化为准，默认全部核心事件）──
-const WEBHOOK_EVENTS = ['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'system.notice', 'ui.confirm'];
+const WEBHOOK_EVENTS = ['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'system.notice', 'ui.confirm', 'jobs.complete'];
 const webhookSubs = new Map<string, () => void>();
 
 function subscribeWebhooks(ctx: HandlerCtx): void {
@@ -1826,55 +1827,193 @@ export const commands = {
       ctx.db.prepare(`UPDATE cron_jobs SET enabled=? WHERE id=?`).run(sub === 'pause' ? 0 : 1, id);
       return `定时任务 #${id} 已${sub === 'pause' ? '暂停' : '恢复'}`;
     }
+    if (sub === 'run') {
+      // 立即触发一次：投递任务系统（agent 型独立会话），结果 /jobs show 可查
+      const id = parseInt(rest[0] ?? '', 10);
+      if (!Number.isFinite(id)) return '用法：/cron run <id>（立即执行一次）';
+      const j = ctx.db.prepare(`SELECT * FROM cron_jobs WHERE id=?`).get(id) as any;
+      if (!j) return `定时任务不存在：#${id}`;
+      if (!ctx.taskRunner) return '任务系统不可用（taskRunner 未装配）';
+      const tid = ctx.taskRunner.run({ goal: `（定时任务 #${id}）${j.action}`, kind: 'agent', tags: [`cron:${id}`], maxRetries: 1 });
+      return `已立即触发定时任务 #${id} → 任务 ${tid}（/jobs show ${tid} 查看结果；/jobs list --tag cron:${id} 查看历史）`;
+    }
     const jobs = ctx.db.prepare(`SELECT * FROM cron_jobs ORDER BY id`).all() as any[];
     if (!jobs.length) return '暂无定时任务——/cron add <分钟间隔> <命令> 创建（如 /cron add 30 检查仓库状态）';
     return lines(' 定时任务 ', jobs.map(j => {
       const last = j.last_run ? new Date(j.last_run).toLocaleTimeString('zh-CN', { hour12: false }) : '未执行';
-      return ` #${j.id} ${j.enabled ? '●' : '○'} ${j.schedule}（上次 ${last}）→ ${String(j.action ?? '').slice(0, 40)}`;
+      // 上次执行结果（关联任务系统 tag=cron:<id> 最新一条）
+      let lastRes = '－';
+      try {
+        const r = ctx.db.prepare(`SELECT status FROM tasks WHERE tags LIKE ? ORDER BY created_at DESC LIMIT 1`).get(`%cron:${j.id}%`) as { status: string } | undefined;
+        if (r) lastRes = r.status === 'success' || r.status === 'done' ? '🟢' : r.status === 'failed' ? '🔴' : r.status === 'cancelled' ? '⏸' : '🟡';
+      } catch { /* 表未就绪 */ }
+      return ` #${j.id} ${j.enabled ? '●' : '○'} ${j.schedule}（上次 ${last} ${lastRes}）→ ${String(j.action ?? '').slice(0, 40)}`;
     }));
   });
 
-  // /jobs：后台任务注册表（真实 fire-and-forget 子代理派发 + db 持久化状态）
-  bus.register('/jobs', (args) => {
+  // /jobs：并行任务系统（双线子任务 + 三任务并行）
+  //   run <命令> [--parallel <支线>]... [--agent|--parallel-agent <目标>] [--timeout 秒] [--retries N] [--tag <名>] [--cwd <目录>]
+  //   tree <id> ｜ show <id> ｜ list [--status x] [--tag x] ｜ logs <id> [N] ｜ follow <id>
+  //   kill <id>（父任务级联）｜ retry <id> ｜ pause|resume <id> ｜ clean [keep]
+  bus.register('/jobs', async (args) => {
     const [sub, ...rest] = args;
+    const tr = ctx.taskRunner;
+    if (!tr) return '任务系统不可用（taskRunner 未装配）';
+    const GLYPH: Record<string, string> = { queued: '⚪', running: '🟡', success: '🟢', failed: '🔴', cancelled: '⏸', done: '🟢' };
+    const LABEL: Record<string, string> = { queued: '排队中', running: '运行中', success: '完成', failed: '失败', cancelled: '已取消', done: '完成' };
+    const kindIcon = (k: string) => (k === 'shell' ? '⚙' : k === 'agent' ? '◈' : '⧉');
+
     if (sub === 'run') {
-      const goal = rest.join(' ');
-      if (!goal) return '用法：/jobs run <任务>（后台派发子代理，不阻塞当前会话）';
-      if (!ctx.agent) return 'jobs 不可用：当前环境未提供子代理';
-      const id = `t${Date.now().toString(36)}`;
-      const now = Date.now();
-      try {
-        ctx.db.prepare(`INSERT INTO tasks (id, goal, status, created_at) VALUES (?,?,?,?)`).run(id, goal.slice(0, 200), 'running', now);
-      } catch { return '任务表未初始化（重启后自动建表）'; }
-      // fire-and-forget：后台执行，完成后写回
-      void ctx.agent.spawnSubagent(goal).then(r => {
-        try {
-          ctx.db.prepare(`UPDATE tasks SET status=?, output=?, done_at=? WHERE id=?`).run(r.ok ? 'done' : 'failed', String(r.output).slice(0, 4000), Date.now(), id);
-        } catch { /* 忽略 */ }
-        try { ctx.bus.emit('system.notice', { text: `后台任务 ${id} ${r.ok ? '完成' : '失败'}（${r.turns} 轮）` }); } catch { /* 忽略 */ }
-      }).catch(() => {
-        try { ctx.db.prepare(`UPDATE tasks SET status='failed', done_at=? WHERE id=?`).run(Date.now(), id); } catch { /* 忽略 */ }
+      // 参数解析：--parallel/--parallel-agent 可多个（双线子任务）；其余为开关/选项
+      let main: string | null = null;
+      let mainAgent = false;
+      const branches: Array<{ goal: string; agent: boolean }> = [];
+      let timeoutSec: number | undefined;
+      let maxRetries: number | undefined;
+      let tag: string | undefined;
+      let cwd: string | undefined;
+      const pos: string[] = [];
+      for (let i = 0; i < rest.length; i++) {
+        const a = rest[i]!;
+        if (a === '--parallel' || a === '--parallel-agent') {
+          // 命令可能含空格：收集直到下一个 -- flag
+          const parts: string[] = [];
+          while (i + 1 < rest.length && !rest[i + 1]!.startsWith('--')) parts.push(rest[++i]!);
+          if (parts.length) branches.push({ goal: parts.join(' '), agent: a === '--parallel-agent' });
+        } else if (a === '--agent') mainAgent = true;
+        else if (a === '--timeout') timeoutSec = Number(rest[++i]);
+        else if (a === '--retries') maxRetries = Number(rest[++i]);
+        else if (a === '--tag') tag = rest[++i];
+        else if (a === '--cwd') cwd = rest[++i];
+        else pos.push(a);
+      }
+      main = pos.join(' ');
+      if (!main && !branches.length) return '用法：/jobs run <命令> [--parallel <支线>]... [--agent] [--timeout 秒] [--retries N] [--tag <名>]';
+      const mk = (goal: string, agent: boolean): TaskSpec => ({
+        goal, kind: agent ? 'agent' : 'shell',
+        timeoutMs: timeoutSec ? timeoutSec * 1000 : undefined,
+        maxRetries, tags: tag ? [tag] : undefined, cwd,
       });
-      return `后台任务已派发：${id}「${goal.slice(0, 60)}」（/jobs list 查看状态）`;
+      if (branches.length) {
+        // 并行任务：父任务（编排器）＋ N 条支线同时启动——三任务并行（含对话主线）
+        const { id, children } = tr.runParallel(mk(main || '（纯并行编排）', mainAgent), branches.map(b => mk(b.goal, b.agent)));
+        return `并行任务已启动：${c(id, '35')}（1 父 + ${children.length} 支线并行，主线对话不受影响）——/jobs tree ${id} 查看`;
+      }
+      const id = tr.run(mk(main!, mainAgent));
+      return `后台任务已启动：${c(id, '35')}「${main!.slice(0, 60)}」（/jobs show ${id} ｜ /jobs list 监控）`;
     }
+
+    if (sub === 'tree') {
+      const id = rest[0];
+      if (!id) return '用法：/jobs tree <任务ID>';
+      const t = tr.get(id);
+      if (!t) return `任务不存在：${id}`;
+      const line = (x: TaskRow, depth: number) =>
+        ` ${'  '.repeat(depth)}${GLYPH[x.status] ?? '·'} ${c(x.id, '35')} ${LABEL[x.status] ?? x.status}${x.exit_code != null ? `(${x.exit_code})` : ''} ${kindIcon(x.kind)}「${x.goal.slice(0, 40)}」`;
+      return lines(` 任务树 ${id} `, [line(t, 0), ...tr.childrenOf(id).map(ch => line(ch, 1))]);
+    }
+
     if (sub === 'show') {
       const id = rest[0];
       if (!id) return '用法：/jobs show <任务ID>';
-      const row = ctx.db.prepare(`SELECT * FROM tasks WHERE id=?`).get(id) as any;
-      if (!row) return `任务不存在：${id}`;
+      const t = tr.get(id);
+      if (!t) return `任务不存在：${id}`;
+      const dur = t.done_at ? Math.round((t.done_at - t.created_at) / 1000) : t.started_at ? Math.round((Date.now() - t.started_at) / 1000) : 0;
+      const children = tr.childrenOf(id);
       return lines(` 任务 ${id} `, [
-        ` 目标：${row.goal}`,
-        ` 状态：${row.status === 'running' ? '⏳ 运行中' : row.status === 'done' ? '✓ 完成' : '✗ 失败'}（${row.status}）`,
-        ...(row.output ? ['', ...String(row.output).split('\n').slice(0, 15).map(l => ` ${l.slice(0, 110)}`)] : []),
+        ` 目标：${t.goal}`,
+        ` 状态：${GLYPH[t.status] ?? '·'} ${LABEL[t.status] ?? t.status}${t.error ? ` —— ${t.error}` : ''}`,
+        ` 类型：${t.kind === 'shell' ? 'Shell 子进程' : t.kind === 'agent' ? 'AI 子代理' : '并行编排'} ｜ PID：${t.pid ?? '-'} ｜ 退出码：${t.exit_code ?? '-'} ｜ 耗时：${dur}s${t.retries ? ` ｜ 重试：${t.retries}` : ''}`,
+        ...(t.log_file ? [` 日志：${t.log_file}（/jobs logs ${id} 查看）`] : []),
+        ...(children.length ? ['', ` 子任务（${children.length}）：`, ...children.map(ch => `   ${GLYPH[ch.status] ?? '·'} ${ch.id} ${LABEL[ch.status] ?? ch.status}「${ch.goal.slice(0, 36)}」`)] : []),
+        ...(t.output ? ['', ...String(t.output).split('\n').slice(0, 10).map(l => ` ${l.slice(0, 108)}`)] : []),
       ]);
     }
-    // list（默认）
-    let rows: any[] = [];
-    try {
-      rows = ctx.db.prepare(`SELECT id, goal, status, created_at, done_at FROM tasks ORDER BY created_at DESC LIMIT 20`).all() as any[];
-    } catch { return '任务表未初始化（/jobs run <任务> 自动建表后可用）'; }
-    if (!rows.length) return '暂无后台任务（/jobs run <任务> 派发）';
-    return lines(' 后台任务 ', rows.map(r => ` ${r.status === 'running' ? '⏳' : r.status === 'done' ? '✓' : '✗'} ${r.id} ${r.status === 'running' ? '' : `[${Math.round((r.done_at - r.created_at) / 1000)}s] `}${String(r.goal).slice(0, 50)}`));
+
+    if (sub === 'logs') {
+      const id = rest[0];
+      const n = Math.min(Number(rest[1] ?? 30) || 30, 200);
+      const t = tr.get(id);
+      if (!t) return `任务不存在：${id}`;
+      if (!t.log_file) return '该任务无日志文件（agent 型任务输出见 /jobs show）';
+      try {
+        const { readFileSync, existsSync } = await import('node:fs');
+        if (!existsSync(t.log_file)) return '日志文件尚未生成（任务排队中）';
+        const text = readFileSync(t.log_file, 'utf8');
+        const ls = text.split('\n').filter(Boolean);
+        return lines(` 日志 ${id}（${ls.length} 行） `, ls.slice(-n).map(l => ` ${l.slice(0, 110)}`));
+      } catch (e: any) { return `日志读取失败：${e?.message ?? e}`; }
+    }
+
+    if (sub === 'follow') {
+      // 流式尾随：每 2s 输出日志新增行，任务结束自动退出（最多 120s）
+      const id = rest[0];
+      const t = tr.get(id);
+      if (!t) return `任务不存在：${id}`;
+      if (!t.log_file) return '该任务无日志文件';
+      const { readFileSync, existsSync } = await import('node:fs');
+      let pos = 0;
+      const out: string[] = [];
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        const cur = tr.get(id);
+        if (cur && existsSync(t.log_file)) {
+          const text = readFileSync(t.log_file, 'utf8');
+          if (text.length > pos) { out.push(text.slice(pos)); pos = text.length; }
+        }
+        if (cur && ['success', 'failed', 'cancelled'].includes(cur.status)) break;
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      const final = tr.get(id);
+      return lines(` 日志尾随 ${id} `, [
+        ...(out.length ? out.join('').split('\n').filter(Boolean).slice(-50).map(l => ` ${l.slice(0, 110)}`) : ['（无新增输出）']),
+        ` 最终状态：${final ? `${GLYPH[final.status] ?? '·'} ${LABEL[final.status] ?? final.status}` : '未知'}（日志：${t.log_file}）`,
+      ]);
+    }
+
+    if (sub === 'kill') {
+      const id = rest[0];
+      if (!id) return '用法：/jobs kill <任务ID>（父任务级联 kill 全部支线）';
+      const ok = await tr.kill(id);
+      return ok ? `任务已取消：${id}` : `任务不存在：${id}`;
+    }
+
+    if (sub === 'retry') {
+      const id = rest[0];
+      if (!id) return '用法：/jobs retry <任务ID>';
+      const nid = tr.retry(id);
+      return nid ? `任务已重新入队：${nid}` : `任务不存在或仍在运行：${id}`;
+    }
+
+    if (sub === 'pause') {
+      const id = rest[0];
+      if (!id) return '用法：/jobs pause <任务ID>（仅排队中可暂停）';
+      return tr.pause(id) ? `任务已暂停（队列中）：${id}` : `任务不可暂停（仅排队中有效）：${id}`;
+    }
+
+    if (sub === 'resume') {
+      const id = rest[0];
+      if (!id) return '用法：/jobs resume <任务ID>';
+      return tr.resume(id) ? `任务已恢复：${id}` : `任务未暂停：${id}`;
+    }
+
+    if (sub === 'clean') {
+      const keep = Number(rest[0] ?? 100) || 100;
+      const n = tr.clean(keep);
+      return `已清理 ${n} 条已结束任务（保留最近 ${keep} 条）`;
+    }
+
+    // list（默认）：--status <状态> ｜ --tag <名> 过滤
+    const si = rest.indexOf('--status');
+    const ti = rest.indexOf('--tag');
+    const status = si >= 0 ? rest[si + 1] : undefined;
+    const tag = ti >= 0 ? rest[ti + 1] : undefined;
+    const rows = tr.list({ status: status as any, tag, limit: 20 });
+    if (!rows.length) return '暂无后台任务（/jobs run <命令> 或 /jobs run <命令> --parallel <支线> 启动并行任务）';
+    return lines(' 后台任务 ', rows.map(r => {
+      const dur = r.done_at ? `[${Math.round((r.done_at - r.created_at) / 1000)}s]` : r.started_at ? `[${Math.round((Date.now() - r.started_at) / 1000)}s]` : '[排队]';
+      return ` ${GLYPH[r.status] ?? '·'} ${c(r.id, '35')} ${LABEL[r.status] ?? r.status} ${dur} ${kindIcon(r.kind)}${r.parent_id ? ' ↳' : ''} ${String(r.goal).slice(0, 46)}${r.tags ? ` #${r.tags}` : ''}`;
+    }));
   });
 
   // /delegate：真实派发子代理（只读工具集、独立上下文），结果回显并持久化到 tasks 表（可查可恢复）
@@ -1919,31 +2058,36 @@ export const commands = {
   });
 
   // /goal：开放目标循环执行——逐轮推进直到完成或达到最大轮数（真实 agent 执行）
-  // /task：后台任务浏览器（对比轮 6 补强——映射 /jobs 同一后端；show 查看输出）
+  // /task：后台任务浏览器（/jobs 同一后端——并行任务系统）
   bus.register('/task', (args) => {
     const [sub, ...rest] = args;
+    const tr = ctx.taskRunner;
+    if (!tr) return '任务系统不可用（taskRunner 未装配）';
+    const GLYPH: Record<string, string> = { queued: '⚪', running: '🟡', success: '🟢', failed: '🔴', cancelled: '⏸', done: '🟢' };
+    const LABEL: Record<string, string> = { queued: '排队中', running: '运行中', success: '完成', failed: '失败', cancelled: '已取消', done: '完成' };
     if (sub === 'show') {
       const id = rest[0];
       if (!id) return '用法：/task show <任务ID>';
-      const row = ctx.db.prepare(`SELECT * FROM tasks WHERE id=?`).get(id) as any;
-      if (!row) return `任务不存在：${id}`;
+      const t = tr.get(id);
+      if (!t) return `任务不存在：${id}`;
       return lines(` 任务 ${id} `, [
-        ` 目标：${row.goal}`,
-        ` 状态：${row.status === 'running' ? '⏳ 运行中' : row.status === 'done' ? '✓ 完成' : '✗ 失败'}（${row.status}）`,
-        ...(row.output ? ['', ...String(row.output).split('\n').slice(0, 15).map(l => ` ${l.slice(0, 110)}`)] : []),
+        ` 目标：${t.goal}`,
+        ` 状态：${GLYPH[t.status] ?? '·'} ${LABEL[t.status] ?? t.status}${t.error ? ` —— ${t.error}` : ''}`,
+        ` 类型：${t.kind === 'shell' ? 'Shell 子进程' : t.kind === 'agent' ? 'AI 子代理' : '并行编排'} ｜ PID：${t.pid ?? '-'} ｜ 退出码：${t.exit_code ?? '-'}`,
+        ...(t.output ? ['', ...String(t.output).split('\n').slice(0, 15).map(l => ` ${l.slice(0, 110)}`)] : []),
       ]);
     }
     if (sub === 'clean') {
-      const r = ctx.db.prepare(`DELETE FROM tasks WHERE status != 'running'`).run();
-      return `已清理 ${r.changes} 条已完成/失败任务`;
+      const n = tr.clean(Number(rest[0] ?? 100) || 100);
+      return `已清理 ${n} 条已结束任务`;
     }
-    if (sub === 'run') return '后台派发请用 /jobs run <任务>（本命令为任务浏览）';
-    let rows: any[] = [];
-    try {
-      rows = ctx.db.prepare(`SELECT id, goal, status, created_at, done_at FROM tasks ORDER BY created_at DESC LIMIT 20`).all() as any[];
-    } catch { return '任务表未初始化（/jobs run <任务> 派发后可用）'; }
+    if (sub === 'run') return '后台派发请用 /jobs run <命令>（本命令为任务浏览；并行任务：/jobs run <主> --parallel <支线>）';
+    const rows = tr.list({ limit: 20 });
     if (!rows.length) return '暂无后台任务（/jobs run <任务> 派发）';
-    return lines(' 后台任务 ', rows.map(r => ` ${r.status === 'running' ? '⏳' : r.status === 'done' ? '✓' : '✗'} ${r.id} ${r.status === 'running' ? '' : `[${Math.round((r.done_at - r.created_at) / 1000)}s] `}${String(r.goal).slice(0, 50)}`));
+    return lines(' 后台任务 ', rows.map(r => {
+      const dur = r.done_at ? `[${Math.round((r.done_at - r.created_at) / 1000)}s]` : r.started_at ? `[${Math.round((Date.now() - r.started_at) / 1000)}s]` : '[排队]';
+      return ` ${GLYPH[r.status] ?? '·'} ${r.id} ${LABEL[r.status] ?? r.status} ${dur} ${r.kind === 'shell' ? '⚙' : r.kind === 'agent' ? '◈' : '⧉'}${r.parent_id ? ' ↳' : ''} ${String(r.goal).slice(0, 50)}`;
+    }));
   });
 
   bus.register('/goal', async (args) => {

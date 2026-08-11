@@ -186,6 +186,16 @@ async function main() {
   let thinking = (config.get('settings') as any).thinking ?? true;
   let exitRequested = false;
 
+  // 并行任务系统（/jobs）：shell 真进程 / agent 子代理 / 并行双线子任务——
+  // 与主对话并行（三任务并行：主线 + 双支线）；启动恢复遗留孤儿任务
+  const { createTaskRunner } = await import('../kernel/taskRunner.js');
+  const taskRunner = createTaskRunner({
+    db, bus, dataDir,
+    spawnSubagent: (goal) => agent.spawnSubagent(goal),
+    maxConcurrent: (settings as any).jobsConcurrency ?? 2,
+  });
+  taskRunner.recoverOrphans();
+
   // 命令注册
   const commandBus = createCommandBus();
   // 插件命令注册为 /<插件名>.<命令名>（如 /example.hello），防与内置命令冲突；
@@ -221,6 +231,8 @@ async function main() {
     setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); },
     reloadMcp,
     secrets,
+    // 并行任务系统（/jobs：shell 真进程 / agent 子代理 / 并行双线子任务）
+    taskRunner,
     // getter：gateway 在 TUI 装配后赋值——命令执行时动态读取（注册时快照为 null 的坑）
     get gateway() { return gateway; },
   });
@@ -255,7 +267,14 @@ async function main() {
         }
         db.prepare(`UPDATE cron_jobs SET last_run=? WHERE id=?`).run(now, j.id);
         bus.emit('system.notice', { text: `定时任务 #${j.id} 触发：${String(j.action).slice(0, 60)}` });
-        void agent.run(`（定时任务 #${j.id}）${j.action}`).catch(() => { /* 执行失败不阻断调度 */ });
+        // 投递任务系统（agent 型独立会话）——不再用主 agent.run，避免与用户对话抢占上下文；
+        // 执行结果落 tasks 表（tag=cron:<id>），/jobs list --tag cron:1 可查
+        taskRunner.run({
+          goal: `（定时任务 #${j.id}）${j.action}`,
+          kind: 'agent',
+          tags: [`cron:${j.id}`],
+          maxRetries: 1,
+        });
       }
     } catch { /* 任务表未就绪静默 */ }
   }, 60_000);

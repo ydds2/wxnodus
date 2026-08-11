@@ -21,7 +21,10 @@ export type EventType =
   | 'agent.error'
   | 'agent.end'
   | 'ui.confirm'
-  | 'system.notice';
+  | 'system.notice'
+  // 并行任务系统（taskRunner）：任务创建/完成（payload: id/kind/parent_id/status/exit_code/duration_ms）
+  | 'jobs.created'
+  | 'jobs.complete';
 
 type Listener = (e: WxEvent) => void;
 

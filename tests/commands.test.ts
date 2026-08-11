@@ -247,3 +247,55 @@ describe('/self-evolve --report 自我审查报告', () => {
     }
   });
 });
+
+// ── /jobs 并行任务系统（真实 shell 子进程 + 并行编排）──
+describe('/jobs 并行任务系统', () => {
+  it('run --parallel 创建父任务 + 3 条执行线；tree 展示任务树', async () => {
+    const d = tmp();
+    const bus = createCommandBus();
+    const db = openDB(d);
+    const evBus = createEventBus(d);
+    const mem = createMemory(db);
+    const { createTaskRunner } = await import('../src/kernel/taskRunner.js');
+    const taskRunner = createTaskRunner({
+      db, bus: evBus, dataDir: d,
+      spawnSubagent: async () => ({ ok: true, output: 'ok', turns: 1 }),
+      maxConcurrent: 4,
+    });
+    const ctx = {
+      dataDir: d, cwd: process.cwd(), db, mem, bus: evBus,
+      config: { get: () => ({}), getKey: () => undefined, setKey: () => {} },
+      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }) },
+      taskRunner,
+      getModel: () => '', getMode: () => 'smart', setMode: () => {}, setTheme: () => {}, getThemeName: () => 'wxnodus',
+      requestExit: () => {}, clearHistory: () => {}, setModel: () => {}, openModelPicker: () => {}, openSessions: () => {}, setThinking: () => {},
+    } as any;
+    registerExtHandlers(bus, ctx);
+    const r = await bus.execute('/jobs run node -e "console.log(1)" --parallel node -e "console.log(2)" --parallel node -e "console.log(3)"');
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('并行任务已启动');
+    const m = r.output!.match(/t[a-z0-9]+/);
+    const pid = m ? m[0] : '';
+    expect(pid).toBeTruthy();
+    // 等待父任务聚合完成
+    const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
+    let done = false;
+    for (let i = 0; i < 50 && !done; i++) {
+      await wait(200);
+      done = taskRunner.get(pid)?.status === 'success' || taskRunner.get(pid)?.status === 'failed';
+    }
+    expect(taskRunner.get(pid)!.status).toBe('success');
+    expect(taskRunner.childrenOf(pid)).toHaveLength(3); // 主线 + 2 支线
+    const tree = await bus.execute(`/jobs tree ${pid}`);
+    expect(tree.ok).toBe(true);
+    expect(tree.output).toContain('任务树');
+    expect(tree.output).toContain(pid);
+    const list = await bus.execute('/jobs list');
+    expect(list.ok).toBe(true);
+    expect(list.output).toContain(pid);
+    // kill 已完成任务 → 无副作用（幂等）
+    const kill = await bus.execute(`/jobs kill ${pid}`);
+    expect(kill.ok).toBe(true);
+    closeDB(db);
+  });
+});

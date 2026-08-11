@@ -109,7 +109,18 @@ export function openDB(dataDir: string): Db {
       status TEXT NOT NULL DEFAULT 'running',
       output TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL,
-      done_at INTEGER
+      done_at INTEGER,
+      parent_id TEXT DEFAULT '',
+      kind TEXT DEFAULT 'agent',
+      pid INTEGER,
+      exit_code INTEGER,
+      log_file TEXT DEFAULT '',
+      retries INTEGER DEFAULT 0,
+      timeout_ms INTEGER DEFAULT 600000,
+      tags TEXT DEFAULT '',
+      cwd TEXT DEFAULT '',
+      started_at INTEGER,
+      error TEXT DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS usage_stats (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,6 +146,30 @@ export function openDB(dataDir: string): Db {
       enabled INTEGER NOT NULL DEFAULT 1
     );
   `);
+
+  // tasks 表迁移（V3 并行任务系统：旧库 tasks 无新列 → ALTER 补齐，绝不丢数据）
+  try {
+    const taskCols = db.prepare(`PRAGMA table_info(tasks)`).all() as Array<{ name: string }>;
+    const have = new Set(taskCols.map(c => c.name));
+    const ADD: Array<[string, string]> = [
+      ['parent_id', `TEXT DEFAULT ''`],
+      ['kind', `TEXT DEFAULT 'agent'`],
+      ['pid', 'INTEGER'],
+      ['exit_code', 'INTEGER'],
+      ['log_file', `TEXT DEFAULT ''`],
+      ['retries', 'INTEGER DEFAULT 0'],
+      ['timeout_ms', 'INTEGER DEFAULT 600000'],
+      ['tags', `TEXT DEFAULT ''`],
+      ['cwd', `TEXT DEFAULT ''`],
+      ['started_at', 'INTEGER'],
+      ['error', `TEXT DEFAULT ''`],
+    ];
+    for (const [col, def] of ADD) {
+      if (!have.has(col)) db.exec(`ALTER TABLE tasks ADD COLUMN ${col} ${def}`);
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, created_at)`);
+  } catch { /* 迁移失败不阻断（新库已含全列） */ }
 
   // FTS5 消息全文索引（content='' 外部内容表，rowid 对齐 messages.id）
   try {

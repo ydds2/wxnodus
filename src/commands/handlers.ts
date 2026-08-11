@@ -47,6 +47,8 @@ export interface HandlerCtx {
   gateway?: { requestCredentialForm(fields: Array<{ name: string; label?: string; kind: string }>, prompt?: string): Promise<Record<string, string> | null> } | null;
   /** 敏感数据内存保险库（/security 关闭通道时同步清空） */
   secrets?: import('../kernel/secrets.js').SecretVault;
+  /** 并行任务系统（/jobs：shell 真进程 / agent 子代理 / 并行双线子任务） */
+  taskRunner?: import('../kernel/taskRunner.js').TaskRunner;
 }
 
 const lines = (title: string, body: string[]): string => {

@@ -26,6 +26,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/video': 'safe', '/jobs': 'safe', '/task': 'safe', '/cron list': 'safe',
   '/script list': 'safe', '/script show': 'safe', '/script dry-run': 'safe', '/script verify': 'safe',
   '/script ci': 'safe', '/script watch list': 'safe',
+  '/jobs list': 'safe', '/jobs show': 'safe', '/jobs logs': 'safe', '/jobs tree': 'safe',
   '/plan': 'safe', '/perm': 'safe', '/perm rule list': 'safe',
   '/sandbox': 'safe', '/security': 'safe', '/security status': 'safe',
   '/theme': 'safe', '/lang': 'safe', '/config': 'safe', '/versions': 'safe',
@@ -48,11 +49,15 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/delegate': 'confirm', '/goal': 'confirm', '/btw': 'confirm',
   '/rewind': 'confirm', '/reload-skills': 'confirm', '/script': 'confirm',
   '/script record': 'confirm', '/script stop': 'confirm', '/script watch': 'confirm',
+  '/jobs retry': 'confirm', '/jobs pause': 'confirm', '/jobs resume': 'confirm', '/jobs clean': 'confirm',
+  '/cron run': 'confirm',
   '/security sudo off': 'confirm', '/security secret off': 'confirm',
   // ── danger：高危，强制人工确认（AI 预审不可放行）──
   '/deploy': 'danger', '/script run': 'danger',
   '/webhook add': 'danger', '/webhook del': 'danger',
   '/gateway': 'danger', '/gateway start': 'danger', '/a2a serve': 'danger', '/acp serve': 'danger',
+  // 任务系统：AI 发起任意 shell 后台执行 / 取消 → 强制人工确认
+  '/jobs run': 'danger', '/jobs kill': 'danger',
   // ── redline：AI 通道一律拒绝，提示手动执行 ──
   '/quit': 'redline', '/yolo': 'redline', '/afk': 'redline',
   '/perm smart': 'redline', '/perm auto': 'redline', '/perm manual': 'redline', '/perm plan': 'redline',
