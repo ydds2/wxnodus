@@ -54,6 +54,10 @@ const lines = (title: string, body: string[]): string => {
   return [`┌${'─'.repeat(w)}┐`, `│ ${title}${' '.repeat(w - title.length - 2)} │`, ...body.map(l => `│ ${l}${' '.repeat(Math.max(0, w - l.length - 2))} │`), `└${'─'.repeat(w)}┘`].join('\n');
 };
 
+// TTY 门控 ANSI 着色（面板级样式）：TUI 交互输出彩色（slash 消息已支持 Ansi 渲染），
+// -p 管道/测试环境 stdout 非 TTY → 纯文本（脚本与断言零污染）
+export const c = (s: string, code: string): string => (process.stdout.isTTY === true ? `\x1b[${code}m${s}\x1b[0m` : s);
+
 export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // 对话
   bus.register('/help', (args) => {
@@ -61,13 +65,27 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const cmd = resolveAlias('/' + args[0].replace(/^\//, ''));
       return `${cmd}：${COMMAND_DESC[cmd] ?? '无描述'}`;
     }
+    // 100% 重构：分组标题行 + 每命令一行两列（命令名 / 描述）——TTY 门控 ANSI 彩色，
+    // TUI 彩色（slash 消息已支持 Ansi 渲染）、-p 管道/测试纯文本
+    const catName: Record<string, string> = {
+      '◈': '对话', '⚙': '模型', '▤': '记忆', '◆': '构建', '⛨': '安全', '◉': '系统',
+      '❖': '视觉', '⚿': '输入', '⛭': '网络', '◍': '协作', '☆': '工具', '⬡': '上下文',
+    };
     const cats = new Map<string, string[]>();
-    for (const c of SLASH) {
-      const cat = COMMAND_CAT[c] ?? '·';
+    for (const cmd of SLASH) {
+      const cat = COMMAND_CAT[cmd] ?? '·';
       if (!cats.has(cat)) cats.set(cat, []);
-      cats.get(cat)!.push(c);
+      cats.get(cat)!.push(cmd);
     }
-    return lines(' 命令 ', [...cats.entries()].map(([cat, cmds]) => ` ${cat} ${cmds.slice(0, 12).join(' ')}${cmds.length > 12 ? ' …' : ''}`));
+    const rows: string[] = [];
+    for (const [cat, cmds] of cats) {
+      rows.push(`${c(` ${cat} ${catName[cat] ?? cat}`, '1;36')}`);
+      for (const cmd of cmds) {
+        rows.push(`    ${c(cmd.padEnd(26), '35')}${COMMAND_DESC[cmd] ?? ''}`);
+      }
+    }
+    rows.push('', `${c(' ◈ 提示', '1;33')}：/help <命令> 查看单个命令详情 · /map 生成仓库地图`);
+    return lines(` 命令（共 ${SLASH.length} 个） `, rows);
   });
 
   bus.register('/clear', async () => { ctx.clearHistory(); return '已清空'; });
@@ -86,7 +104,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     // 非交互模式：文本列表（按最近更新排序）
     return lines(' 会话 ', filtered.map(r => {
       const t = new Date(r.updated_at).toLocaleString('zh-CN', { hour12: false });
-      return ` ${r.id}  ${r.title || '(无标题)'}（${r.msgs} 条）${t}`;
+      return ` ${c(r.id, '35')}  ${r.title || '(无标题)'}（${r.msgs} 条）${t}`;
     }));
   });
 
@@ -97,10 +115,10 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const sec = ((ctx.config.get('settings') as any)?.security ?? {}) as Record<string, boolean>;
     const autoReview = (ctx.config.get('settings') as any)?.autoReview === true;
     return lines(' 状态 ', [
-      ` 模型：${u.model || '未配置（/key set <密钥> 配置）'}`,
-      ` 模式：${u.mode}`,
-      ` 目录：${u.cwd}`,
-      ` 命令：${SLASH.length} 个`,
+      ` 模型：${c(u.model || '未配置（/key set <密钥> 配置）', u.model ? '35' : '33')}`,
+      ` 模式：${c(u.mode, '36')}`,
+      ` 目录：${c(u.cwd, '36')}`,
+      ` 命令：${c(`${SLASH.length} 个`, '36')}`,
       ` 智能：${[
         autoReview ? 'AI 预审' : null,
         sec.sudoInjection ? 'sudo 通道' : null,
@@ -141,7 +159,8 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     // 当前模型目录可用性
     const model = ctx.getModel();
     checks.push(['当前模型', model ? model : '未选择']);
-    return lines(' 体检 ', checks.map(([k, v]) => ` ${k}：${v}`));
+    // 面板着色：键名 label 青、异常/未配置红、正常绿
+    return lines(' 体检 ', checks.map(([k, v]) => ` ${c(k, '36')}：${/异常|未配置|无法/.test(v) ? c(v, '31') : /正常|可解密|可检索/.test(v) ? c(v, '32') : v}`));
   });
 
   // /login [平台] [密钥]：认证入口（对比轮 6 补强——平台选择 + 密钥录入 + 模型目录刷新）
@@ -203,12 +222,12 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       return '密钥已清除（对话将提示配置，直到重新 /key set）';
     }
     const enc = ctx.config.getKey('settings', 'apiKeyEnc');
-    if (!enc) return '密钥状态：未配置——/key set <密钥> 配置后获得完整能力';
+    if (!enc) return `密钥状态：${c('未配置', '33')}——/key set <密钥> 配置后获得完整能力`;
     // 验证可解密：enc 存在但机器指纹变化（hostname/用户名）会导致解密失败
     const dec = decryptKey(enc);
     return dec
-      ? `密钥状态：已配置（${maskKey(dec)}）`
-      : '密钥状态：已配置但无法解密（机器环境变化或数据损坏？）——请 /key set <密钥> 重新配置';
+      ? `密钥状态：${c('已配置', '32')}（${maskKey(dec)}）`
+      : `密钥状态：${c('已配置但无法解密', '31')}（机器环境变化或数据损坏？）——请 /key set <密钥> 重新配置`;
   });
 
   bus.register('/version', () => 'WxNodus 3.0.0 · 概念进·证据出');
@@ -311,11 +330,11 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
     const salient = ctx.mem.listSalient();
     return lines(' 记忆 ', [
-      ` 全量消息：${rec.length} 条`,
-      ` 已吸附归档：${absorbed} 条（黑洞引擎）`,
+      ` 全量消息：${c(`${rec.length} 条`, '36')}`,
+      ` 已吸附归档：${c(`${absorbed} 条`, '35')}（黑洞引擎）`,
       ` 窗口：${Math.min(rec.length, 20)}/20`,
       ...(salient.length
-        ? [` 置顶记忆：${salient.length} 条（召回加权优先）`,
+        ? [` 置顶记忆：${c(`${salient.length} 条`, '33')}（召回加权优先）`,
            ...salient.slice(0, 8).map(s => `   ★ #${s.id} ×${s.salience} ${s.content.slice(0, 40)}`)]
         : [` 置顶记忆：无（/memory pin <id> 可把核心约束置顶，召回恒优先）`]),
     ]);

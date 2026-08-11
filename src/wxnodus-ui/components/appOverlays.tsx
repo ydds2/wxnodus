@@ -1,10 +1,11 @@
-import { Box, Text } from '@wxnodus/ink'
+import { Ansi, Box, stringWidth, Text } from '@wxnodus/ink'
 import { useAtom as useStore } from '../../app/stores/engine.js'
 
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { AppOverlaysProps } from '../bridge/interfaces.js'
 import { $overlayState, patchOverlayState } from '../runtime/promptStore.js'
 import { $uiSessionId, $uiTheme } from '../runtime/viewStore.js'
+import { hasAnsi, sanitizeAnsiForRender, stripAnsi } from '../lib/text.js'
 
 import { ActiveSessionSwitcher } from './activeSessionSwitcher.js'
 import { CommandPalette } from './commandPalette.js'
@@ -216,26 +217,47 @@ export function FloatingOverlays({
         {overlay.pluginsHub && <PluginsHub gw={gw} onClose={() => patchOverlayState({ pluginsHub: false })} t={theme} />}
       </FloatBox>
 
-      <FloatBox color={theme.color.border} display={overlay.pager ? undefined : 'none'}>
+      {/* pager：内容首行自带 box-drawing 边框（╔╭┌ lines() 面板）时外层去边框——
+          避免双边框叠加（修复 /help 双层壁）；否则 double 边框兜底 */}
+      <FloatBox
+        color={theme.color.border}
+        display={overlay.pager ? undefined : 'none'}
+        noBorder={!!overlay.pager && /^[╔╭┌]/.test(overlay.pager.lines[0] ?? '')}
+      >
         {overlay.pager && (
           <Box flexDirection="column" paddingX={1} paddingY={1}>
             {overlay.pager.title && (
-              <Box justifyContent="center" marginBottom={1}>
-                <Text bold color={theme.color.primary}>
-                  {overlay.pager.title}
+              <Box flexDirection="column" marginBottom={1}>
+                <Text bold color={theme.color.accent}>
+                  ◈ {overlay.pager.title}
+                </Text>
+                {/* 分隔线：按可见行最大宽度（strip ANSI 后算宽，防止转义序列干扰） */}
+                <Text color={theme.color.border}>
+                  {'─'.repeat(
+                    Math.max(
+                      8,
+                      ...overlay.pager.lines
+                        .slice(overlay.pager.offset, overlay.pager.offset + pagerPageSize)
+                        .map(l => stringWidth(stripAnsi(l)) + 4)
+                    )
+                  )}
                 </Text>
               </Box>
             )}
 
-            {overlay.pager.lines.slice(overlay.pager.offset, overlay.pager.offset + pagerPageSize).map((line, i) => (
-              <Text key={i}>{line}</Text>
-            ))}
+            {overlay.pager.lines.slice(overlay.pager.offset, overlay.pager.offset + pagerPageSize).map((line, i) =>
+              hasAnsi(line) ? (
+                <Ansi key={i}>{sanitizeAnsiForRender(line)}</Ansi>
+              ) : (
+                <Text key={i}>{line}</Text>
+              )
+            )}
 
             <Box marginTop={1}>
               <OverlayHint t={theme}>
                 {overlay.pager.offset + pagerPageSize < overlay.pager.lines.length
-                  ? `↑↓/jk 行 · Enter/Space/PgDn 页 · b/PgUp 返回 · g/G 顶/底 · Esc/q 关闭 (${Math.min(overlay.pager.offset + pagerPageSize, overlay.pager.lines.length)}/${overlay.pager.lines.length})`
-                  : `已到末尾 · ↑↓/jk · b/PgUp 返回 · g 顶部 · Esc/q 关闭 (${overlay.pager.lines.length} lines)`}
+                  ? `↑↓/jk 行 · Enter/Space/PgDn 页 · b/PgUp 返回 · g/G 顶/底 · Esc/q 关闭（${Math.min(overlay.pager.offset + pagerPageSize, overlay.pager.lines.length)}/${overlay.pager.lines.length} 行）`
+                  : `已到末尾 · ↑↓/jk · b/PgUp 返回 · g 顶部 · Esc/q 关闭（共 ${overlay.pager.lines.length} 行）`}
               </OverlayHint>
             </Box>
           </Box>

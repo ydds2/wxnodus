@@ -143,7 +143,17 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
         const text = r?.warning ? `warning: ${r.warning}\n${body}` : body
         const long = text.length > 180 || text.split('\n').filter(Boolean).length > 2
 
-        long ? page(text, parsed.name[0]!.toUpperCase() + parsed.name.slice(1)) : sys(text)
+        // pager 标题中文化（中文为主）：高频命令映射中文标题，未知命令回退首字母大写
+        const PAGER_TITLES: Record<string, string> = {
+          help: '命令帮助', status: '状态', doctor: '体检', memory: '记忆', hole: '黑洞检索',
+          key: '密钥', model: '模型', config: '配置', perm: '权限', usage: '用量',
+          compliance: '合规', audit: '审计', evidence: '证据', gate: '质量门', fdr: '保障',
+          script: '剧本', skill: '技能', map: '仓库地图', build: '构建', deploy: '部署',
+          sessions: '会话', logs: '日志', versions: '版本历史', snapshot: '快照', plan: '计划',
+        }
+        const title = PAGER_TITLES[parsed.name] ?? parsed.name[0]!.toUpperCase() + parsed.name.slice(1)
+
+        long ? page(text, title) : sys(text)
       })
       .catch(() => {
         gw.request('command.dispatch', { arg: parsed.arg, name: parsed.name, session_id: sid })

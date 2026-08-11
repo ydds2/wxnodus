@@ -26,17 +26,19 @@ export const SLASH: string[] = [
 ];
 
 export const COMMAND_CAT: Record<string, string> = {
+  // 分类符号全部 BMP 宽字符（无 emoji 代理对）——旧终端字体/winpty 下不产生 � 乱码；
+  // 每类唯一符号（/help 分组按符号聚合——此前模型/系统共用 ⚙、对话/协作共用 ◈ 导致组错乱合并）
   '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈', '/versions': '◈', '/snapshot': '◈', '/script': '◈', '/self-evolve': '◈',
   '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆',
-  '/perm': '🛡', '/sandbox': '🛡', '/compliance': '🛡', '/consent': '🛡', '/audit': '🛡', '/encrypt': '🛡', '/yolo': '🛡', '/afk': '🛡', '/security': '🛡',
-  '/backup': '⚙', '/export': '⚙', '/theme': '⚙', '/lang': '⚙', '/config': '⚙', '/logs': '⚙', '/bench': '⚙', '/init': '⚙',
-  '/vision': '👁', '/img': '👁', '/video': '👁', '/render': '👁', '/capture': '👁', '/input': '🔐',
+  '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨',
+  '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉',
+  '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿',
   '/claw': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
-  '/swarm': '◈', '/duo': '◈', '/cron': '◈', '/jobs': '◈', '/task': '◈', '/delegate': '◈', '/goal': '◈', '/btw': '◈',
+  '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/task': '◍', '/delegate': '◍', '/goal': '◍', '/btw': '◍',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
-  '/map': '◆', '/rewind': '◈', '/reload-skills': '◆',
+  '/map': '⬡', '/rewind': '⬡', '/reload-skills': '⬡',
 };
 
 export const COMMAND_DESC: Record<string, string> = {

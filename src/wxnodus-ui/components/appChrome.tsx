@@ -535,11 +535,12 @@ export function StatusRule({
   const showIdle = segs.duration && !busy && lastTurnEndedAt != null && fits(SEP + stringWidth('✓ ') + MAX_DURATION_WIDTH)
   const showCompressions = segs.compressions && compressions > 0 && fits(SEP + stringWidth(`cmp ${compressions}`))
   const showVoice = segs.voice && !!voiceLabel && fits(SEP + stringWidth(voiceLabel))
-  // A7：电池段（⚡ 未插电 / 🔋 充电中；分级着色 good/warn/bad/critical）
+  // A7：电池段（⚡ 充电中 / ◌ 放电中；分级着色 good/warn/bad/critical）——
+  // 符号用 BMP 宽字符（emoji 🔋 在旧终端字体下显示 �）
   const batteryLabel = battery?.available
     ? battery.percent != null
-      ? `${battery.plugged ? '🔋' : '⚡'} ${battery.percent}%`
-      : '🔋'
+      ? `${battery.plugged ? '⚡' : '◌'} ${battery.percent}%`
+      : battery.plugged ? '⚡' : '◌'
     : ''
   const showBattery = battery?.available && fits(SEP + stringWidth(batteryLabel))
   const showSessionCount = !!sessionCountText && fits(SEP + stringWidth(sessionCountText))
@@ -720,17 +721,23 @@ export function StatusRule({
 export function FloatBox({
   children,
   color,
-  display
+  display,
+  borderStyle = 'double',
+  noBorder = false
 }: {
   children: ReactNode
   color: string
   display?: 'flex' | 'none'
+  /** 边框样式（pager 内容自带边框时用 noBorder 去掉外层，避免双重边框） */
+  borderStyle?: 'single' | 'double' | 'round' | 'bold' | 'singleDouble' | 'doubleSingle' | 'classic' | 'arrow' | 'dashed'
+  /** 无边框：Box 收到 undefined borderStyle 即不渲染边框（ink 语义） */
+  noBorder?: boolean
 }) {
   return (
     <Box
       alignSelf="flex-start"
       borderColor={color}
-      borderStyle="double"
+      borderStyle={noBorder ? undefined : borderStyle}
       display={display}
       flexDirection="column"
       marginTop={1}

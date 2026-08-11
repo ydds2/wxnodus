@@ -183,7 +183,13 @@ export const MessageLine = memo(function MessageLine({
 
   const content = (() => {
     if (msg.kind === 'slash') {
-      return <Text color={t.color.muted}>{msg.text}</Text>
+      // 命令输出支持 ANSI 彩色（/help 分组面板等 TTY 门控输出）——
+      // 纯文本向后兼容；sanitizeAnsiForRender 防注入
+      return hasAnsi(msg.text) ? (
+        <Ansi>{sanitizeAnsiForRender(msg.text)}</Ansi>
+      ) : (
+        <Text color={t.color.muted}>{msg.text}</Text>
+      )
     }
 
     // ── Collapsible long system message (system prompt, AGENTS.md, etc.) ──

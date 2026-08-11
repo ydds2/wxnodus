@@ -21,7 +21,7 @@ import { decryptKey } from '../kernel/providers.js';
 import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissions.js';
 import { unknownSettingsKeys, knownSettingsKeys } from '../store/config.js';
 import { runCuratorReview, curatorConfigFrom, readCuratorState } from '../kernel/curator.js';
-import type { HandlerCtx } from './handlers.js';
+import { c, type HandlerCtx } from './handlers.js';
 import type { CommandBus, StructuredCommand } from '../app/CommandBus.js';
 
 const lines = (title: string, body: string[]): string => {
@@ -621,11 +621,11 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const est = rows.reduce((a, r) => a + estimateTokens(r.content), 0);
     const realTotal = real.it + real.ot;
     const tokenLine = real.c > 0
-      ? ` 实际 Token：${realTotal.toLocaleString()}（输入 ${real.it.toLocaleString()} / 输出 ${real.ot.toLocaleString()}，${real.models} 个模型）`
+      ? ` 实际 Token：${c(realTotal.toLocaleString(), '36')}（输入 ${real.it.toLocaleString()} / 输出 ${real.ot.toLocaleString()}，${real.models} 个模型）`
       : ` Token：约 ${est.toLocaleString()}（本地估算，尚无 API 用量记录）`;
     return lines(' 用量 ', [
       ` 会话：${sid.slice(0, 12)}…`,
-      ` 消息：${rows.length} 条`,
+      ` 消息：${c(`${rows.length} 条`, '36')}`,
       tokenLine,
       ` 成本：本地运行，无 API 计费`,
       ` 瀑布：/usage --waterfall（最近 12 轮 input/output 条形图）`,
