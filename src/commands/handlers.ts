@@ -27,7 +27,7 @@ export interface HandlerCtx {
   config: Config;
   bus: EventBus;
   /** agent 实例（/delegate 派生子代理等） */
-  agent?: { run(prompt: string): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>; spawnSubagent(goal: string): Promise<{ ok: boolean; output: string; turns: number }>; abort(): void; setMode(m: string): void; getMode(): string; setSessionId(id: string): void; getSessionId?(): string; updateTools?(extra: Record<string, any>): void; setScriptRecorder?(fn: ((name: string, args: Record<string, any>) => void) | null): void; runScript?(steps: Array<{ prompt: string; tools: Array<{ name: string; args: Record<string, any> }> }>): Promise<{ ok: boolean; log: Array<{ kind: 'prompt' | 'tool' | 'result'; text: string; name?: string }> }> };
+  agent?: { run(prompt: string): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>; spawnSubagent(goal: string): Promise<{ ok: boolean; output: string; turns: number }>; abort(): void; setMode(m: string): void; getMode(): string; setSessionId(id: string): void; getSessionId?(): string; updateTools?(extra: Record<string, any>): void; setScriptRecorder?(fn: ((name: string, args: Record<string, any>) => void) | null): void; runScript?(steps: any[]): Promise<{ ok: boolean; log: Array<{ kind: string; step: number; text: string; name?: string }> }> };
   getModel: () => string;
   getMode: () => string;
   setMode: (m: string) => void;

@@ -254,6 +254,26 @@ async function main() {
     } catch { /* 任务表未就绪静默 */ }
   }, 60_000);
 
+  // AI 网关模式（颠覆性改造）：wxnodus --serve —— 本地 HTTP 服务，
+  // 多前端共享同一 agent/记忆/权限面（IDE 插件/浏览器/第二个终端等）
+  if (opts.serve) {
+    const { startServeServer } = await import('./serve.js');
+    const port = opts.port ?? Number(process.env.WXNODUS_SERVE_PORT ?? 4789);
+    const srv = startServeServer({
+      dataDir, cwd, db, bus, mem, agent,
+      commandBus,
+      config,
+    }, port);
+    console.log(`◉ WxNodus AI 网关已启动：http://127.0.0.1:${srv.port}`);
+    console.log(`  GET  /health   状态 ｜ POST /rpc   chat/command/memory.*/sessions ｜ GET /events  SSE 事件流`);
+    console.log('  Ctrl+C 停止');
+    process.on('SIGINT', async () => { await srv.close(); process.exit(0); });
+    process.on('SIGTERM', async () => { await srv.close(); process.exit(0); });
+    // 常驻等待（事件循环由 HTTP server 保持）
+    await new Promise<void>(() => {});
+    return;
+  }
+
   // 非交互模式
   if (opts.prompt) {
     const text = String(opts.prompt);

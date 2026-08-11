@@ -10,6 +10,10 @@ export interface CliOptions {
   session: string | null;
   /** --strict-mcp-config：仅信任项目声明 MCP server（Claude Code 同款） */
   strictMcpConfig: boolean;
+  /** --serve：启动本地 AI 网关（HTTP 服务，多前端共享 agent/记忆/权限） */
+  serve: boolean;
+  /** --port：网关监听端口（默认 4789） */
+  port: number | null;
   positional: string[];
 }
 
@@ -22,10 +26,12 @@ const SPEC: Array<{ long: string; short?: string; key: keyof CliOptions; takeVal
   { long: '--cwd', short: '-C', key: 'cwd', takeValue: true, type: 'string' },
   { long: '--session', short: '-s', key: 'session', takeValue: true, type: 'string' },
   { long: '--strict-mcp-config', key: 'strictMcpConfig', type: 'bool' },
+  { long: '--serve', key: 'serve', type: 'bool' },
+  { long: '--port', key: 'port', takeValue: true, type: 'string' },
 ];
 
 export function parseArgs(argv: string[]): CliOptions {
-  const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, positional: [] };
+  const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, port: null, positional: [] };
   let i = 0;
   const findSpec = (tok: string): { spec: (typeof SPEC)[number]; inline?: string } | null => {
     for (const spec of SPEC) {
@@ -55,6 +61,10 @@ export function parseArgs(argv: string[]): CliOptions {
       (out as any)[spec.key] = value ?? null;
       i += inline !== undefined ? 1 : 2;
     }
+  }
+  if (out.port !== null) {
+    const n = Number(out.port);
+    out.port = Number.isFinite(n) && n > 0 ? n : null;
   }
   return out;
 }

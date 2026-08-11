@@ -3,7 +3,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { listScripts, loadScript, saveScript, deleteScript, isValidScriptName, scriptStats, type Script } from '../src/kernel/scripts.js';
+import { listScripts, loadScript, saveScript, deleteScript, isValidScriptName, scriptStats, checkScriptExpectations, type Script } from '../src/kernel/scripts.js';
+import { substituteVars } from '../src/kernel/agent.js';
 
 const dirs: string[] = [];
 const tmp = () => {
@@ -56,5 +57,62 @@ describe('剧本存储', () => {
     saveScript(d, sample());
     writeFileSync(join(d, 'scripts', 'bad.json'), '{broken', 'utf8');
     expect(listScripts(d)).toHaveLength(1);
+  });
+});
+
+describe('回放 CI 断言（checkScriptExpectations）', () => {
+  it('step.expect 命中/未命中判定', () => {
+    const script: Script = {
+      name: 'ci', description: '', created_at: 0,
+      steps: [
+        { prompt: '检查', tools: [{ name: 'bash', args: { command: 'ls' } }], expect: ['package.json'] },
+        { prompt: '构建', tools: [{ name: 'bash', args: { command: 'npm run build' } }], expect: ['构建成功'] },
+      ],
+    };
+    const r = checkScriptExpectations(script, [
+      { step: 0, tool: 'bash', out: 'package.json  README.md' },
+      { step: 1, tool: 'bash', out: '构建失败：xxx' },
+    ]);
+    expect(r).toHaveLength(2);
+    expect(r[0]!.ok).toBe(true);
+    expect(r[1]!.ok).toBe(false);
+    expect(r[1]!.detail).toContain('未包含');
+  });
+  it('全局 expect 与步骤输出合并检查', () => {
+    const script: Script = {
+      name: 'g', description: '', created_at: 0,
+      steps: [{ prompt: '', tools: [{ name: 'bash', args: { command: 'echo hi' } }] }],
+      expect: ['hi'],
+    };
+    const r = checkScriptExpectations(script, [{ step: 0, tool: 'bash', out: 'hi there' }]);
+    expect(r).toHaveLength(1);
+    expect(r[0]!.ok).toBe(true);
+  });
+  it('无断言 → 空结果（不误判）', () => {
+    const script: Script = { name: 'n', description: '', created_at: 0, steps: [] };
+    expect(checkScriptExpectations(script, [])).toEqual([]);
+  });
+});
+
+describe('WxScript DSL（substituteVars 模板替换）', () => {
+  it('{{item}} 递归替换 prompt/args/嵌套指令', () => {
+    const steps = [
+      { prompt: '处理 {{item}}', tools: [{ name: 'bash', args: { command: 'echo {{item}}' } }] },
+      { loop: { items: ['x'], as: 'item', do: [{ prompt: '内层 {{item}}', tools: [{ name: 'ls', args: { path: '{{item}}' } }] }] } },
+    ];
+    const out = substituteVars(steps as any, 'item', 'alpha');
+    expect((out[0] as any).prompt).toBe('处理 alpha');
+    expect((out[0] as any).tools[0].args.command).toBe('echo alpha');
+    expect((out[1] as any).loop.do[0].prompt).toBe('内层 alpha');
+    expect((out[1] as any).loop.do[0].tools[0].args.path).toBe('alpha');
+  });
+  it('task/parallel 分支内替换', () => {
+    const steps = [
+      { task: { goal: '审查 {{item}}' } },
+      { parallel: [{ prompt: '分支 {{item}}', tools: [] }] },
+    ];
+    const out = substituteVars(steps as any, 'item', 'z');
+    expect((out[0] as any).task.goal).toBe('审查 z');
+    expect((out[1] as any).parallel[0].prompt).toBe('分支 z');
   });
 });

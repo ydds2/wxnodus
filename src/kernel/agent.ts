@@ -805,33 +805,117 @@ export function createAgent(opts: AgentOptions) {
     setScriptRecorder(fn: ((name: string, args: Record<string, any>) => void) | null) {
       scriptRecorder = fn;
     },
-    // 剧本重放：跳过 AI 决策，按序执行固定调用序列（确定性——每次结果可复现）。
-    // 每个 step：注入用户输入（mem 落库）→ 依序执行该 step 的工具序列；
-    // 工具输出经 untrusted 包裹安全执行（同正常对话路径）
-    async runScript(steps: Array<{ prompt: string; tools: Array<{ name: string; args: Record<string, any> }> }>): Promise<{
+    // 剧本重放（WxScript DSL 解释器）：跳过 AI 决策，按序执行固定调用序列——
+    // 确定性可复现。指令类型：
+    //   { prompt, tools, expect? }  普通步骤（工具序列）
+    //   { loop: { items, as?, do } }   循环（{{as}} 模板变量替换）
+    //   { if: { outputContains, then, else? } }  条件（判断上一步输出）
+    //   { parallel: [steps...] }     并行分支
+    //   { task: { goal } }           子代理委派
+    // 回放 CI：result 输出完整保留（不断言截断），带 step 索引供断言定位
+    async runScript(steps: WxStep[]): Promise<{
       ok: boolean;
-      log: Array<{ kind: 'prompt' | 'tool' | 'result'; text: string; name?: string }>;
+      log: WxLogEntry[];
     }> {
-      const log: Array<{ kind: 'prompt' | 'tool' | 'result'; text: string; name?: string }> = [];
-      try {
-        for (const step of steps) {
+      const log: WxLogEntry[] = [];
+      const run = async (list: WxStep[], siBase: number, depth: number): Promise<number> => {
+        let lastOut = '';
+        let si = siBase;
+        for (const step of list) {
+          if ('loop' in step) {
+            const { items, as, do: body } = step.loop;
+            log.push({ kind: 'loop', step: si, text: `循环 ${items.length} 项` });
+            for (const item of items) {
+              const subs = substituteVars(body, as ?? 'item', item);
+              si = await run(subs, si, depth + 1);
+            }
+            continue;
+          }
+          if ('if' in step) {
+            const cond = step.if.outputContains;
+            const hit = lastOut.includes(cond);
+            log.push({ kind: 'if', step: si, text: `条件「${cond.slice(0, 30)}」${hit ? '成立' : '不成立'}` });
+            si = await run(hit ? step.if.then : (step.if.else ?? []), si, depth + 1);
+            continue;
+          }
+          if ('parallel' in step) {
+            log.push({ kind: 'parallel', step: si, text: `并行 ${step.parallel.length} 个分支` });
+            const outs = await Promise.all(step.parallel.map(async (branch) => {
+              const branchLog: WxLogEntry[] = [];
+              await run([branch], si, depth + 1).then(() => {});
+              // 并行分支日志并入总日志（顺序拼接）
+              log.push(...branchLog);
+              return '';
+            }));
+            lastOut = outs.join('\n');
+            si++;
+            continue;
+          }
+          if ('task' in step) {
+            const goal = step.task.goal;
+            log.push({ kind: 'task', step: si, text: `子代理：${goal.slice(0, 60)}` });
+            const r = await spawnSub(goal);
+            log.push({ kind: 'result', step: si, name: 'delegate', text: r.output });
+            lastOut = r.output;
+            si++;
+            continue;
+          }
+          // 普通步骤
           if (step.prompt.trim()) {
             try { opts.mem.append(sessionId, 'user', step.prompt); } catch { /* 忽略 */ }
-            log.push({ kind: 'prompt', text: step.prompt });
+            log.push({ kind: 'prompt', step: si, text: step.prompt });
           }
           for (const tc of step.tools) {
-            log.push({ kind: 'tool', name: tc.name, text: `${tc.name} ${JSON.stringify(tc.args ?? {}).slice(0, 120)}` });
+            log.push({ kind: 'tool', step: si, name: tc.name, text: `${tc.name} ${JSON.stringify(tc.args ?? {}).slice(0, 120)}` });
             const out = await executeTool(tc.name, tc.args ?? {});
-            log.push({ kind: 'result', name: tc.name, text: out.slice(0, 300) });
+            log.push({ kind: 'result', step: si, name: tc.name, text: out });
+            lastOut = out;
             try { opts.mem.append(sessionId, 'tool', `${tc.name}: ${out.slice(0, 300)}`); } catch { /* 忽略 */ }
           }
+          si++;
         }
+        return si;
+      };
+      try {
+        await run(steps, 0, 0);
         return { ok: true, log };
       } catch (e: any) {
-        return { ok: false, log, };
+        return { ok: false, log };
       }
     },
   };
+}
+
+// ── WxScript DSL 类型与工具函数 ─────────────────────────────
+export type WxStep =
+  | { prompt: string; tools: Array<{ name: string; args: Record<string, any> }>; expect?: string[] }
+  | { loop: { items: string[]; as?: string; do: WxStep[] } }
+  | { if: { outputContains: string; then: WxStep[]; else?: WxStep[] } }
+  | { parallel: WxStep[] }
+  | { task: { goal: string } };
+
+export type WxLogEntry = {
+  kind: 'prompt' | 'tool' | 'result' | 'loop' | 'if' | 'parallel' | 'task';
+  step: number;
+  text: string;
+  name?: string;
+};
+
+/** 模板变量替换：{{as}} → item（递归应用于 steps 的 prompt/args 字符串） */
+export function substituteVars(steps: WxStep[], varName: string, value: string): WxStep[] {
+  const sub = (s: string): string => s.split(`{{${varName}}}`).join(value);
+  const mapArgs = (args: Record<string, any>): Record<string, any> => {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(args)) out[k] = typeof v === 'string' ? sub(v) : v;
+    return out;
+  };
+  return steps.map(st => {
+    if ('loop' in st) return { loop: { ...st.loop, items: st.loop.items.map(sub), do: substituteVars(st.loop.do, varName, value) } };
+    if ('if' in st) return { if: { ...st.if, then: substituteVars(st.if.then, varName, value), else: st.if.else ? substituteVars(st.if.else, varName, value) : undefined } };
+    if ('parallel' in st) return { parallel: st.parallel.map(p => substituteVars([p], varName, value)[0]!) };
+    if ('task' in st) return { task: { goal: sub(st.task.goal) } };
+    return { prompt: sub(st.prompt), tools: st.tools.map(t => ({ name: t.name, args: mapArgs(t.args ?? {}) })), ...(st.expect ? { expect: st.expect } : {}) };
+  });
 }
 
 // 路径是否在工作目录内（低危自动放行的安全边界）

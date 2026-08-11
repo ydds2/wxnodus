@@ -14,7 +14,7 @@ import { discoverSkills, loadSkill, installSkill, writeSkill, skillContentForMod
 import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
 import { buildRepoMap } from '../kernel/repoMap.js';
 import { listShadows, restoreShadow, versionsOfFile, snapshotDir, restoreDirShadows } from '../kernel/undoShadows.js';
-import { listScripts, loadScript, saveScript, deleteScript, isValidScriptName, scriptStats, type Script, type ScriptStep } from '../kernel/scripts.js';
+import { listScripts, loadScript, saveScript, deleteScript, isValidScriptName, scriptStats, checkScriptExpectations, type Script, type ScriptStep } from '../kernel/scripts.js';
 import { parseCronExpr, describeCronExpr } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { decryptKey } from '../kernel/providers.js';
@@ -434,8 +434,41 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         ` 结果已写入会话记忆（/memory 可检索）`,
       ]);
     }
-    return '用法：/script record <名> ｜ stop ｜ list ｜ show <名> ｜ run <名> ｜ dry-run <名> ｜ rm <名>';
+    // 回放 CI（审计扩展）：重放 + 断言校验——剧本带 expect 断言时输出 pass/fail 报告
+    if (sub === 'verify' || sub === 'ci') {
+      if (sub === 'ci') {
+        // 回归套件：遍历全部剧本逐个验证，汇总报告
+        const scripts = listScripts(ctx.dataDir);
+        if (!scripts.length) return '无剧本可验证（/script record 录制后 /script ci 作回归套件）';
+        const reports: string[] = [];
+        let passed = 0;
+        for (const sc of scripts) {
+          const r = await runScriptVerify(ctx, sc);
+          if (r.allOk) passed++;
+          reports.push(` ${r.allOk ? '✅' : '❌'} ${sc.name}（${r.assertions.length} 项断言，${r.assertions.filter(a => a.ok).length} 通过）`);
+        }
+        return lines(` 回归套件 ${passed}/${scripts.length} 通过 `, [
+          ...reports,
+          ` 全部通过时输出可作为发布门禁（/self-evolve 自举验证复用）`,
+        ]);
+      }
+      const r = await runScriptVerify(ctx, script);
+      return lines(` 剧本验证「${script.name}」${r.allOk ? '✅ 通过' : '❌ 失败'} `, [
+        ...r.assertions.map(a => ` ${a.ok ? '✓' : '✗'} ${a.label}${a.detail ? ' —— ' + a.detail : ''}`),
+        ...(r.assertions.length ? [] : [` （无断言——录制时或手工编辑剧本添加 expect 字段启用回放 CI）`]),
+      ]);
+    }
+    return '用法：/script record <名> ｜ stop ｜ list ｜ show <名> ｜ run <名> ｜ verify <名> ｜ ci ｜ dry-run <名> ｜ rm <名>';
   });
+
+  // 回放 CI 执行器（verify/ci 共用）：重放 → 按步骤收集输出 → 断言检查
+  async function runScriptVerify(ctx: HandlerCtx, sc: Script): Promise<{ allOk: boolean; assertions: Array<{ ok: boolean; label: string; detail?: string }> }> {
+    if (!ctx.agent?.runScript) return { allOk: false, assertions: [{ ok: false, label: 'agent 未装配', detail: '无法重放' }] };
+    const r = await ctx.agent.runScript(sc.steps);
+    const outputs = r.log.filter(l => l.kind === 'result').map(l => ({ step: l.step, tool: l.name ?? '', out: l.text }));
+    const assertions = checkScriptExpectations(sc, outputs);
+    return { allOk: r.ok && assertions.every(a => a.ok), assertions };
+  }
 
   // /fork：复制当前会话（含全部消息）为分支会话
   bus.register('/fork', (args) => {
@@ -1338,10 +1371,86 @@ export const commands = {
     return '用法：/perm rule list ｜ add <工具> allow|deny|ask [glob] [理由] ｜ remove <编号> ｜ clear';
   });
 
-  // /flow：技能流程图驱动（P2——Kimi /flow 能力的自研版）
-  // frontmatter flow: "准备 → 构建 → 部署"；正文每节点：## 节点: <名>
-  // /flow：双语义合一（审计修复——此前两个 /flow 注册互相覆盖，技能流程驱动
-  //  不可达；现在子命令走技能流程（next/status/cancel），其余走 AI Mermaid 生成）
+  // /self-evolve：自举模式（颠覆性改造——WxNodus 改进自己）
+  // 闭环：AI 分析自身源码 → 生成补丁（JSON）→ 真实应用（undo shadow 备份可回滚）
+  //   → 跑自身测试套件 → 失败自动回滚 → 报告（绝不自动提交——用户确认）
+  bus.register('/self-evolve', async (args) => {
+    const direction = args.join(' ') || '优化代码质量、消除重复、修复潜在 bug';
+    // 1. AI 分析自身源码生成补丁（无 key 诚实提示——不产生假补丁）
+    const { resolveApiKey } = await import('../kernel/providers.js');
+    const keyRes = resolveApiKey(ctx.config.get('settings') as any);
+    if (!keyRes.key) return '自举需要模型密钥——/key set <密钥> 后可用（AI 分析自身源码生成补丁并自验证）';
+    if (!ctx.agent) return '当前环境无 agent（无法自举）';
+    // 2. 生成补丁（限定 src/kernel + src/commands——不碰装配/UI/测试，防止自毁）
+    const r = await ctx.agent.run(`你是 WxNodus 的自我改进引擎。分析自身源码并生成修改补丁。
+改进方向：${direction}
+约束：
+- 只修改 src/kernel/** 与 src/commands/**（绝不碰 src/cli、src/wxnodus-ui、tests、package.json）
+- 输出必须是 JSON 数组：[{"file":"相对路径","old":"被替换原文（必须与现有代码精确匹配）","new":"替换后内容"}]
+- 每个补丁 ≤ 30 行；小而明确的改进；不重写整文件
+- 动手前用 fs_read 读文件确认 old 精确匹配
+- 只输出 JSON，不要任何其他文字`);
+    const text = r.text.trim();
+    const m = text.match(/\[[\s\S]*\]/);
+    if (!m) return `模型未输出补丁 JSON：${text.slice(0, 150)}`;
+    let patches: Array<{ file?: string; old?: string; new?: string }>;
+    try { patches = JSON.parse(m[0]); } catch { return '补丁解析失败（模型输出非法 JSON）——换更小方向重试'; }
+    if (!Array.isArray(patches) || !patches.length) return '补丁为空——换方向重试';
+    // 3. 应用补丁（先 undo shadow 备份——/undo fs 可回滚）
+    const { snapshotFile, versionsOfFile, restoreShadow } = await import('../kernel/undoShadows.js');
+    const applied: Array<{ file: string; ok: boolean; reason?: string }> = [];
+    for (const p of patches) {
+      const rel = String(p.file ?? '');
+      const file = resolve(ctx.cwd, rel);
+      if (!existsSync(file)) { applied.push({ file: rel, ok: false, reason: '文件不存在' }); continue; }
+      const content = readFileSync(file, 'utf8');
+      const oldText = String(p.old ?? '');
+      if (!oldText || !content.includes(oldText)) { applied.push({ file: rel, ok: false, reason: 'old 未精确匹配（模型幻觉？）' }); continue; }
+      snapshotFile(ctx.dataDir, file, content); // 备份原内容
+      writeFileSync(file, content.replace(oldText, String(p.new ?? '')), 'utf8');
+      applied.push({ file: rel, ok: true });
+    }
+    const okCount = applied.filter(a => a.ok).length;
+    if (!okCount) return '全部补丁未应用（old 未匹配）——模型幻觉或文件已变更，重试';
+    // 4. 验证：跑自身测试套件（npm test，净化环境）
+    const { execFileSync } = await import('node:child_process');
+    const { sanitizedEnv } = await import('../kernel/env.js');
+    let testOk = false;
+    let testOut = '';
+    try {
+      const t0 = Date.now();
+      execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['test', '--silent'], {
+        cwd: ctx.cwd, timeout: 300_000, stdio: 'pipe', shell: process.platform === 'win32', env: sanitizedEnv(),
+      });
+      testOk = true;
+      testOut = `✅ ${((Date.now() - t0) / 1000).toFixed(1)}s 全绿`;
+    } catch (e: any) {
+      testOut = `❌ ${String(e?.message ?? e).slice(0, 200)}`;
+    }
+    // 5. 失败自动回滚（逐文件恢复最新快照）
+    if (!testOk) {
+      let rolled = 0;
+      for (const a of applied.filter(x => x.ok)) {
+        const v = versionsOfFile(ctx.dataDir, resolve(ctx.cwd, a.file))[0];
+        if (v && restoreShadow(ctx.dataDir, v.id).ok) rolled++;
+      }
+      return lines(' 自举失败——已自动回滚 ', [
+        ` 方向：${direction}`,
+        ` 补丁：${okCount}/${applied.length} 应用成功`,
+        ` 测试：${testOut}`,
+        ` 已回滚：${rolled} 个文件（补丁全部撤销）`,
+        ` 建议：换更小粒度的方向重试，或人工检查后手工修改`,
+      ]);
+    }
+    return lines(' 自举完成——未提交 ', [
+      ` 方向：${direction}`,
+      ` 补丁：${okCount}/${applied.length} 应用成功`,
+      ...applied.filter(a => !a.ok).map(a => ` ✗ ${a.file}：${a.reason}`),
+      ` 测试：${testOut}`,
+      ` 回放 CI：/script ci 可做剧本回归（如有录制剧本）`,
+      ` 变更未提交——满意后 git add + commit；不满意 /undo fs restore 1 回滚`,
+    ]);
+  });
 
   // /security：安全注入通道管理（红线：关闭通道即同步清除内存敏感缓存）
   bus.register('/security', (args) => {
