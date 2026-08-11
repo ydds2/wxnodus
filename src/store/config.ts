@@ -59,6 +59,8 @@ const SETTINGS_KEYS = new Set([
   'lang', 'skin', 'curator',
   // UI 显示配置（/busy /indicator /statusbar 持久化）
   'tui_status_indicator', 'tui_statusbar',
+  // A22 语音配置（voice.recordKey/vad.{silenceMs,silenceThreshold,minSpeechMs}/wakeWords/continuous）
+  'voice',
 ]);
 export function unknownSettingsKeys(settings: Record<string, any>): string[] {
   return Object.keys(settings).filter(k => !SETTINGS_KEYS.has(k));

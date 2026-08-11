@@ -301,6 +301,19 @@ export function useComposerState({
 
   const actions = useMemo(
     () => ({
+      /** A22 鼠标化：补全行点击接受（与 Tab 接受同语义——含 / 前缀剥离） */
+      acceptCompletion: (index: number) => {
+        const row = completions[index]
+
+        if (!row?.text) {
+          return
+        }
+
+        const text =
+          input.startsWith('/') && row.text.startsWith('/') && compReplace > 0 ? row.text.slice(1) : row.text
+
+        setInput(input.slice(0, compReplace) + text)
+      },
       clearIn,
       dequeue,
       enqueue,
@@ -319,15 +332,19 @@ export function useComposerState({
     }),
     [
       clearIn,
+      compReplace,
+      completions,
       dequeue,
       enqueue,
       handleTextPaste,
+      input,
       openEditor,
       pushHistory,
       removeQ,
       replaceQ,
       setCompIdx,
       setHistoryIdx,
+      setInput,
       setQueueEdit,
       syncQueue
     ]

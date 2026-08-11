@@ -64,7 +64,8 @@ export function DynamicFormPrompt({ cols = 80, fields, prompt, onSubmit, onCance
 
       <Box flexDirection="column" paddingLeft={1}>
         {fields.map((f, i) => (
-          <Box key={f.name}>
+          // A22 鼠标化：点击字段行切换焦点（TextInput 自动聚焦该字段）
+          <Box key={f.name} onClick={() => setFocused(i)}>
             <Text bold color={focused === i ? t.color.warn : t.color.muted}>
               {focused === i ? '▸ ' : '  '}
             </Text>
@@ -89,8 +90,21 @@ export function DynamicFormPrompt({ cols = 80, fields, prompt, onSubmit, onCance
         ))}
       </Box>
 
+      {/* A22 鼠标化：提交/取消按钮（提交全部与末字段 Enter 同语义） */}
+      <Box flexDirection="row" marginTop={1}>
+        <Box onClick={() => onSubmit(values)}>
+          <Text bold color={t.color.warn}>
+            ⏎ 提交全部
+          </Text>
+        </Box>
+        <Text>{'   '}</Text>
+        <Box onClick={onCancel}>
+          <Text color={t.color.muted}>Esc 取消</Text>
+        </Box>
+      </Box>
+
       <Text color={t.color.muted}>
-        字段 {focused + 1}/{fields.length}（{fields[focused]?.label || fields[focused]?.name}）· ↑/↓ 或 Tab 切换 · Enter 提交（末字段=提交全部）· Esc 取消
+        字段 {focused + 1}/{fields.length}（{fields[focused]?.label || fields[focused]?.name}）· ↑/↓ 或 Tab 切换 · 鼠标点击字段/按钮 · Enter 提交（末字段=提交全部）· Esc 取消
       </Text>
     </Box>
   )

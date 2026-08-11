@@ -36,4 +36,15 @@ describe('matchWakeWord — 唤醒词匹配', () => {
     expect(matchWakeWord('wakeboard')).toBeNull()
     expect(matchWakeWord('waking up')).toBeNull()
   })
+
+  it('A22：自定义唤醒词表（settings.voice.wakeWords 接线）', () => {
+    const custom = ['小助手', 'hey jane']
+
+    expect(matchWakeWord('小助手 帮我查天气', custom)).toBe('小助手')
+    expect(matchWakeWord('Hey Jane 现在几点', custom)).toBe('hey jane')
+    // 自定义表不命中默认词（替换语义）
+    expect(matchWakeWord('wxnodus', custom)).toBeNull()
+    // 空表 → 永不唤醒
+    expect(matchWakeWord('wxnodus', [])).toBeNull()
+  })
 })

@@ -7,7 +7,7 @@ import { parseSinceArg } from '../kernel/memory.js';
 import { deleteMessage, appendAudit } from '../store/db.js';
 import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
-import { SLASH, COMMAND_CAT, COMMAND_DESC, resolveAlias } from './registry.js';
+import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias } from './registry.js';
 import { capabilityBadges, decryptKey, encryptKey, filterModels, maskKey, MODEL_CATALOG } from '../kernel/providers.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
@@ -69,7 +69,8 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/help', (args) => {
     if (args[0]) {
       const cmd = resolveAlias('/' + args[0].replace(/^\//, ''));
-      return `${cmd}：${COMMAND_DESC[cmd] ?? '无描述'}`;
+      const merge = COMMAND_MERGE[cmd];
+      return `${cmd}：${COMMAND_DESC[cmd] ?? '无描述'}${merge ? `（已并入 ${merge}）` : ''}`;
     }
     // 100% 重构：分组标题行 + 每命令一行两列（命令名 / 描述）——TTY 门控 ANSI 彩色，
     // TUI 彩色（slash 消息已支持 Ansi 渲染）、-p 管道/测试纯文本
@@ -87,7 +88,9 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     for (const [cat, cmds] of cats) {
       rows.push(`${c(` ${cat} ${catName[cat] ?? cat}`, '1;36')}`);
       for (const cmd of cmds) {
-        rows.push(`    ${c(cmd.padEnd(26), '35')}${COMMAND_DESC[cmd] ?? ''}`);
+        // A22 指令融合：合并命令标注「（=目标命令）」——同义命令不再重复心智负担
+        const merge = COMMAND_MERGE[cmd];
+        rows.push(`    ${c(cmd.padEnd(26), '35')}${COMMAND_DESC[cmd] ?? ''}${merge ? c(`（=${merge}）`, '2') : ''}`);
       }
     }
     rows.push('', `${c(' ◈ 提示', '1;33')}：/help <命令> 查看单个命令详情 · /map 生成仓库地图`);
@@ -437,7 +440,15 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const gate = await runGate({ projectDir: projDir, dataDir: ctx.dataDir });
     const order = topoSort(plan.modules);
     const gateFail = gate.gates.filter(g => !g.ok);
-    return lines(` 构建完成「${spec.title}」 `, [
+    // A22 诚实交付：标题按真实验证结果——「构建完成」仅验证通过才写；
+    // 失败如实报「未通过验证」（不假装 100% 完成）
+    const head =
+      vr.status === 'ok'
+        ? ` 构建完成「${spec.title}」 `
+        : vr.status === 'failed'
+          ? ` 构建未通过验证「${spec.title}」 `
+          : ` 构建完成（验证跳过）「${spec.title}」 `;
+    return lines(head, [
       ` 模具：${spec.scaffold} · 模块：${order.join(' → ')}`,
       ` 验收：${spec.acceptance.map(a => '✓ ' + a).join('\n       ')}`,
       ` 位置：${projDir}`,

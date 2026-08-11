@@ -196,6 +196,8 @@ export interface ComposerPasteResult {
 export type MaybePromise<T> = Promise<T> | T
 
 export interface ComposerActions {
+  /** A22 鼠标化：补全行点击接受（与 Tab 接受同语义——含 / 前缀剥离） */
+  acceptCompletion: (index: number) => void
   clearIn: () => void
   dequeue: () => string | undefined
   enqueue: (text: string) => void
@@ -389,6 +391,8 @@ export interface AppLayoutActions {
 }
 
 export interface AppLayoutComposerProps {
+  /** A22 鼠标化：补全行点击接受（与 Tab 接受同语义） */
+  acceptCompletion: (index: number) => void
   cols: number
   compIdx: number
   completions: CompletionItem[]
@@ -443,6 +447,8 @@ export interface AppOverlaysProps {
   cols: number
   compIdx: number
   completions: CompletionItem[]
+  /** A22 鼠标化：补全行点击接受（与 Tab 接受同语义） */
+  onCompletionSelect: (index: number) => void
   onApprovalChoice: (choice: string) => void
   onClarifyAnswer: (value: string) => void
   onActiveSessionSelect: (sessionId: string) => void

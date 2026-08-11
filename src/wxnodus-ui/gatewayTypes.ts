@@ -515,7 +515,7 @@ export type GatewayEvent =
   | { payload?: GatewaySkin; session_id?: string; type: 'skin.changed' }
   | { payload?: { name?: string }; session_id?: string; type: 'theme.changed' }
   | { payload: SessionInfo; session_id?: string; type: 'session.info' }
-  | { payload?: undefined; session_id?: string; type: 'message.start' }
+  | { payload?: { todos?: unknown[] }; session_id?: string; type: 'message.start' }
   | { payload?: { kind?: string; text?: string }; session_id?: string; type: 'status.update' }
   | {
       payload?: {
@@ -584,7 +584,7 @@ export type GatewayEvent =
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.complete' }
   | { payload: { rendered?: string; text?: string }; session_id?: string; type: 'message.delta' }
   | {
-      payload?: { reasoning?: string; rendered?: string; text?: string; usage?: Usage }
+      payload?: { reasoning?: string; rendered?: string; text?: string; todos?: unknown[]; usage?: Usage }
       session_id?: string
       type: 'message.complete'
     }

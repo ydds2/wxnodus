@@ -83,6 +83,47 @@ describe('脚手架（scaffold）', () => {
     writeFileSync(f, '// LEFTOVER_PLACEHOLDER\n', 'utf8');
     expect(checkLeftover(p)).toBe(false); // 有残留 → 拒交付
   });
+
+  it('A22 成熟栈：REST 分层（router/store）+ React 19 + esbuild + 冒烟测试齐全', () => {
+    const p = join(dir, 'proj-mature');
+    const r = instantiate({ title: '成熟栈', summary: 'x', scaffold: 'todo', acceptance: ['a', 'b', 'c'] }, p);
+    expect(r.ok).toBe(true);
+    // 服务端分层：入口/路由/存储/测试 四文件
+    expect(existsSync(join(p, 'server', 'index.js'))).toBe(true);
+    expect(existsSync(join(p, 'server', 'router.js'))).toBe(true);
+    expect(existsSync(join(p, 'server', 'store.js'))).toBe(true);
+    expect(existsSync(join(p, 'server', 'smoke.test.js'))).toBe(true);
+    // 前端：React 19 源码 + esbuild 打包脚本
+    expect(existsSync(join(p, 'public', 'src', 'main.jsx'))).toBe(true);
+    expect(existsSync(join(p, 'public', 'src', 'App.jsx'))).toBe(true);
+    const pkg = JSON.parse(readFileSync(join(p, 'package.json'), 'utf8'));
+    expect(pkg.scripts.test).toBe('node --test server/'); // 零依赖冒烟（质量门真跑）
+    expect(pkg.scripts.build).toContain('esbuild');
+    expect(pkg.dependencies.react).toMatch(/^\^19/);
+    expect(pkg.devDependencies.esbuild).toBeDefined();
+    // 冒烟测试用 node:test（无第三方依赖）
+    expect(readFileSync(join(p, 'server', 'smoke.test.js'), 'utf8')).toContain("require('node:test')");
+  });
+
+  it('A22 五模具差异化：路由表各不相同', () => {
+    const p = join(dir, 'proj-molds');
+    const routes = { todo: '/api/items', ledger: '/api/stats', note: '/api/search', anim: '/api/frames', generic: '/api/items' };
+    for (const [mold, route] of Object.entries(routes)) {
+      const mp = join(p, mold);
+      const r = instantiate({ title: mold, summary: 'x', scaffold: mold, acceptance: ['a', 'b', 'c'] }, mp);
+      expect(r.ok).toBe(true);
+      const server = readFileSync(join(mp, 'server', 'index.js'), 'utf8');
+      expect(server).toContain(route);
+      expect(server).toContain('createRouter(routes)'); // REST 分层接线
+      expect(server).toContain("require('./store.js')");
+      // 冒烟用例差异化（ledger 统计 / note 搜索 / anim 帧）
+      const smoke = readFileSync(join(mp, 'server', 'smoke.test.js'), 'utf8');
+      expect(smoke).toContain('健康探活');
+      if (mold === 'ledger') expect(smoke).toContain('/api/stats');
+      if (mold === 'note') expect(smoke).toContain('/api/search');
+      if (mold === 'anim') expect(smoke).toContain('/api/frames');
+    }
+  });
 });
 
 describe('证据链（evidence）', () => {

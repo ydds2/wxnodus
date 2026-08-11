@@ -217,21 +217,35 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
           const idx = offset + i
 
           return (
-            <Text
-              bold={catIdx === idx}
-              color={catIdx === idx ? t.color.accent : t.color.muted}
-              inverse={catIdx === idx}
+            // A22 鼠标化：点击分类行 = 打开该分类（Enter 同语义）
+            <Box
               key={row}
-              wrap="truncate-end"
+              onClick={() => {
+                const cat = cats[idx]
+
+                if (cat) {
+                  setSelectedCat(cat)
+                  setCatIdx(idx)
+                  setSkillIdx(0)
+                  setStage('skill')
+                }
+              }}
             >
-              {catIdx === idx ? '▸ ' : '  '}
-              {i + 1}. {row}
-            </Text>
+              <Text
+                bold={catIdx === idx}
+                color={catIdx === idx ? t.color.accent : t.color.muted}
+                inverse={catIdx === idx}
+                wrap="truncate-end"
+              >
+                {catIdx === idx ? '▸ ' : '  '}
+                {i + 1}. {row}
+              </Text>
+            </Box>
           )
         })}
 
         {offset + VISIBLE < rows.length && <Text color={t.color.muted}> ↓ {rows.length - offset - VISIBLE} 更多</Text>}
-        <OverlayHint t={t}>↑/↓ 选择 · Enter 打开 · 1-9,0 快捷 · Esc/q 取消</OverlayHint>
+        <OverlayHint t={t}>↑/↓ 选择 · Enter 打开 · 1-9,0 快捷 · 鼠标点击直达 · Esc/q 取消</OverlayHint>
       </Box>
     )
   }
@@ -253,16 +267,29 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
           const idx = offset + i
 
           return (
-            <Text
-              bold={skillIdx === idx}
-              color={skillIdx === idx ? t.color.accent : t.color.muted}
-              inverse={skillIdx === idx}
+            // A22 鼠标化：点击技能行 = 打开详情（Enter 同语义）
+            <Box
               key={row}
-              wrap="truncate-end"
+              onClick={() => {
+                const name = skills[idx]
+
+                if (name) {
+                  setSkillIdx(idx)
+                  setStage('actions')
+                  inspect(name)
+                }
+              }}
             >
-              {skillIdx === idx ? '▸ ' : '  '}
-              {i + 1}. {row}
-            </Text>
+              <Text
+                bold={skillIdx === idx}
+                color={skillIdx === idx ? t.color.accent : t.color.muted}
+                inverse={skillIdx === idx}
+                wrap="truncate-end"
+              >
+                {skillIdx === idx ? '▸ ' : '  '}
+                {i + 1}. {row}
+              </Text>
+            </Box>
           )
         })}
 
@@ -270,7 +297,7 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
           <Text color={t.color.muted}> ↓ {skills.length - offset - VISIBLE} 更多</Text>
         )}
         <OverlayHint t={t}>
-          {skills.length ? '↑/↓ 选择 · Enter 打开 · 1-9,0 快捷 · Esc 返回 · q 关闭' : 'Esc 返回 · q 关闭'}
+          {skills.length ? '↑/↓ 选择 · Enter 打开 · 1-9,0 快捷 · 鼠标点击直达 · Esc 返回 · q 关闭' : 'Esc 返回 · q 关闭'}
         </OverlayHint>
       </Box>
     )
@@ -289,7 +316,26 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
       {err ? <Text color={t.color.label}>error: {err}</Text> : null}
       {installing ? <Text color={t.color.accent}>installing…</Text> : null}
 
-      <OverlayHint t={t}>i 复查 · x 重装 · Enter/Esc 返回 · q 关闭</OverlayHint>
+      {/* A22 鼠标化：详情页动作按钮（i 复查 / x 重装 / Enter 返回） */}
+      <Box flexDirection="row" marginTop={1}>
+        <Box onClick={() => skillName && inspect(skillName)}>
+          <Text bold color={t.color.accent}>
+            i 复查
+          </Text>
+        </Box>
+        <Text>{'  '}</Text>
+        {!installing ? (
+          <Box onClick={() => skillName && install(skillName)}>
+            <Text color={t.color.muted}>x 重装</Text>
+          </Box>
+        ) : null}
+        <Text>{'  '}</Text>
+        <Box onClick={() => setStage('skill')}>
+          <Text color={t.color.muted}>Enter 返回</Text>
+        </Box>
+      </Box>
+
+      <OverlayHint t={t}>i 复查 · x 重装 · Enter/Esc 返回 · q 关闭 · 鼠标点击按钮</OverlayHint>
     </Box>
   )
 }

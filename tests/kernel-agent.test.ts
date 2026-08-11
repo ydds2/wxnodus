@@ -642,9 +642,10 @@ describe('工具延迟加载', () => {
     await agent.run('你好');
     const names = seenTools[0]!.map((t: any) => t.function.name);
     expect(names).toContain('tool_search');
+    expect(names).toContain('command_search'); // A22：命令目录检索常驻（AI 主动调用入口）
     expect(names).toContain('bash');
     expect(names).not.toContain('http_get'); // 高级工具未激活
-    expect(names.length).toBeLessThan(12);
+    expect(names.length).toBeLessThan(13);
   });
 
   it('tool_search 检索激活后，下一回合工具表含高级工具', async () => {
@@ -675,7 +676,7 @@ describe('工具延迟加载', () => {
     await agent.run('你好');
     const names = seenTools[0]!.map((t: any) => t.function.name);
     expect(names).not.toContain('tool_search');
-    expect(names.length).toBe(21); // 全表（20 内置含 repo_map/cron_create/credential_form/memory_search/find_files/wx_cmd - tool_search 未注册）
+    expect(names.length).toBe(22); // 全表（21 内置含 repo_map/cron_create/credential_form/memory_search/find_files/wx_cmd/command_search - tool_search 未注册）
   });
 });
 

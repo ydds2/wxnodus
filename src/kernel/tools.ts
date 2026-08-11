@@ -570,7 +570,7 @@ export function coreTools(): Record<string, ToolDef> {
       type: 'function',
       function: {
         name: 'wx_cmd',
-        description: '执行 WxNodus 内置命令（斜杠指令）——如 /memory（记忆概览）、/hole <关键词>（黑洞引擎检索）、/build <需求>（概念编译）、/plan on（计划模式）、/skill list、/cron list 等。参数 command 为完整指令串（含斜杠）。注意：涉及权限/密钥/安全/退出的指令会被拒绝，需用户手动执行。',
+        description: '执行 WxNodus 内置命令（斜杠指令）——如 /memory（记忆概览）、/hole <关键词>（黑洞引擎检索）、/build <需求>（概念编译）、/plan on（计划模式）、/skill list、/cron list 等。参数 command 为完整指令串（含斜杠）。不确定用哪个命令时先调 command_search 检索目录（返回名称/描述/安全等级）。注意：涉及权限/密钥/安全/退出的指令会被拒绝，需用户手动执行。',
         parameters: {
           type: 'object',
           properties: {
@@ -589,7 +589,35 @@ export function coreTools(): Record<string, ToolDef> {
       return out ? out.slice(0, 2000) : `命令已执行（无输出）：${command.slice(0, 80)}`;
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, memory_write: memoryWrite, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd };
+  // command_search：A22 命令目录检索（AI 主动调用入口——解决 96 条命令描述
+  // 从不注入模型的盲调缺口）。模型按关键词/意图检索 → 拿到名称/描述/等级/
+  // 合并关系 → 再经 wx_cmd 执行正确命令，不再瞎猜命令名。
+  const commandSearch: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'command_search',
+        description: '检索 WxNodus 内置命令目录（按关键词/意图，如「记忆」「构建」「安全」「任务」「搜索」）——返回命令名/描述/安全等级（🟢安全=AI 可直接执行，🟡确认=需模式确认链，🟠危险=强制人工确认，🔴红线=AI 拒绝）/合并关系。确定要调 wx_cmd 但不确定命令名时先调用本工具。',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: '关键词或意图描述，如 "记忆" "构建" "权限" "后台任务"' },
+          },
+          required: ['query'],
+        },
+      },
+    },
+    danger: false,
+    async run({ query }, ctx) {
+      const { searchCommandCatalog } = await import('../commands/registry.js');
+      const hits = searchCommandCatalog(String(query ?? ''), 8);
+      if (!hits.length) return `未找到匹配命令（关键词：${String(query ?? '').slice(0, 40)}）——换关键词或 /help 查看全目录`;
+      return `命令目录命中 ${hits.length} 条：\n` + hits
+        .map(h => `- ${h.name} ${h.level}${h.merge ? `（= ${h.merge} 合并）` : ''}：${h.desc}`)
+        .join('\n');
+    },
+  };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, memory_write: memoryWrite, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

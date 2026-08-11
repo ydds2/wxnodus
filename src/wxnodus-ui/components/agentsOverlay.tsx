@@ -540,6 +540,7 @@ function ListRow({
   active,
   index,
   node,
+  onSelect,
   peak,
   t,
   width
@@ -547,6 +548,8 @@ function ListRow({
   active: boolean
   index: number
   node: SubagentNode
+  /** A22 鼠标化：行点击回调（选中；再点已选中行 → 打开详情） */
+  onSelect?: () => void
   peak: number
   t: Theme
   width: number
@@ -566,18 +569,20 @@ function ListRow({
   const fg = active ? t.color.accent : t.color.text
 
   return (
-    <Text bold={active} color={fg} inverse={active} wrap="truncate-end">
-      {' '}
-      <Text color={active ? fg : t.color.muted}>{formatRowId(index)} </Text>
-      {indentFor(node.item.depth)}
-      {heatMarker ? <Text color={heatMarker}>▍</Text> : null}
-      <Text color={active ? fg : color}>{glyph}</Text> {goal}
-      <Text color={active ? fg : t.color.muted}>
-        {toolsCount}
-        {kids}
-        {trailing}
+    <Box onClick={onSelect}>
+      <Text bold={active} color={fg} inverse={active} wrap="truncate-end">
+        {' '}
+        <Text color={active ? fg : t.color.muted}>{formatRowId(index)} </Text>
+        {indentFor(node.item.depth)}
+        {heatMarker ? <Text color={heatMarker}>▍</Text> : null}
+        <Text color={active ? fg : color}>{glyph}</Text> {goal}
+        <Text color={active ? fg : t.color.muted}>
+          {toolsCount}
+          {kids}
+          {trailing}
+        </Text>
       </Text>
-    </Text>
+    </Box>
   )
 }
 
@@ -1015,17 +1020,28 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
           <GanttStrip cols={cols} cursor={cursor} flatNodes={rows} maxRows={6} now={now} t={t} />
 
           <Box flexDirection="column" flexGrow={0} flexShrink={0} overflow="hidden">
-            {rows.slice(listWindowStart, listWindowStart + rowsH).map((node, i) => (
-              <ListRow
-                active={listWindowStart + i === cursor}
-                index={listWindowStart + i}
-                key={node.item.id}
-                node={node}
-                peak={peak}
-                t={t}
-                width={cols}
-              />
-            ))}
+            {rows.slice(listWindowStart, listWindowStart + rowsH).map((node, i) => {
+              const idx = listWindowStart + i
+
+              return (
+                <ListRow
+                  active={idx === cursor}
+                  index={idx}
+                  key={node.item.id}
+                  node={node}
+                  // A22 鼠标化：点未选中行 → 选中；点已选中行 → 打开详情（Enter 同语义）
+                  onSelect={() => {
+                    setCursor(idx)
+                    if (cursor === idx) {
+                      setMode('detail')
+                    }
+                  }}
+                  peak={peak}
+                  t={t}
+                  width={cols}
+                />
+              )
+            })}
           </Box>
         </Box>
       ) : (
@@ -1045,12 +1061,53 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
       <Box flexDirection="column" marginTop={1}>
         {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
 
+        {/* A22 鼠标化：动作栏（与 x/X/p/s/f/[/] 快捷键同语义——选中行生效） */}
+        {mode === 'list' && !replayMode ? (
+          <Box flexDirection="row">
+            <Box onClick={() => selected && killOne(selected.item.id)}>
+              <Text bold color={t.color.error}>
+                ✕ kill
+              </Text>
+            </Box>
+            <Text>{'  '}</Text>
+            <Box onClick={() => selected && killSubtree(selected)}>
+              <Text bold color={t.color.warn}>
+                ✕ subtree
+              </Text>
+            </Box>
+            <Text>{'  '}</Text>
+            <Box onClick={togglePause}>
+              <Text color={t.color.muted}>{delegation.paused ? 'p resume' : 'p pause'}</Text>
+            </Box>
+            <Text>{'  '}</Text>
+            <Box onClick={() => setSort(m => cycle(SORT_ORDER, m))}>
+              <Text color={t.color.muted}>s sort:{SORT_LABEL[sort]}</Text>
+            </Box>
+            <Text>{'  '}</Text>
+            <Box onClick={() => setFilter(m => cycle(FILTER_ORDER, m))}>
+              <Text color={t.color.muted}>f filter:{FILTER_LABEL[filter]}</Text>
+            </Box>
+            {history.length > 0 ? (
+              <>
+                <Text>{'  '}</Text>
+                <Box onClick={() => stepHistory(1)}>
+                  <Text color={t.color.muted}>[ 上一轮</Text>
+                </Box>
+                <Text>{' '}</Text>
+                <Box onClick={() => stepHistory(-1)}>
+                  <Text color={t.color.muted}>下一轮 ]</Text>
+                </Box>
+              </>
+            ) : null}
+          </Box>
+        ) : null}
+
         {mode === 'list' ? (
           <Text color={t.color.muted}>
             ↑↓/jk move · g/G top/bottom · Enter/→ open detail{controlsHint} · s sort:{SORT_LABEL[sort]} · f filter:
             {FILTER_LABEL[filter]}
             {history.length > 0 ? ` · [ / ] history ${historyIndex}/${history.length}` : ''}
-            {' · q close'}
+            {' · 鼠标点行/按钮 · q close'}
           </Text>
         ) : (
           <Text color={t.color.muted}>

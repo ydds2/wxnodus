@@ -10,10 +10,12 @@ import { join, resolve, basename } from 'node:path'
 
 import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
+import { seedTurnTodos, syncToolTodo } from './lib/turnTodos.js'
 import { MODEL_CATALOG, encryptKey, hasImageIn } from '../kernel/providers.js'
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js'
 import { loadSkinFile } from '../kernel/skin.js'
 import { checkVoice } from '../kernel/voice.js'
+import { vadConfigFromSettings } from '../kernel/vad.js'
 import { coreTools } from '../kernel/tools.js'
 import { classifyToolAction } from '../kernel/permissions.js'
 import { redactSecrets } from '../kernel/redact.js'
@@ -21,7 +23,7 @@ import { discoverSkills } from '../kernel/skills.js'
 import { COMMAND_CAT, COMMAND_DESC, SLASH } from '../commands/registry.js'
 import type { GatewayEvent } from './gatewayTypes.js'
 import { ZERO } from './domain/usage.js'
-import type { SessionInfo } from './types.js'
+import type { SessionInfo, TodoItem } from './types.js'
 
 const LOG_LIMIT = 200
 
@@ -105,6 +107,10 @@ export class GatewayClient extends EventEmitter {
   private voiceTts = false
   private voiceRecordingSession: import('../kernel/voice.js').RecordingSession | null = null
   private voiceTranscribing = false
+  // ── A22 实时任务清单（工具调用序列 → 可勾选清单）──
+  // 合成逻辑在 lib/turnTodos.ts（纯函数，可单测）：复杂请求先给骨架，
+  // 首个真实工具落地时骨架让位——骨架只是预判，真实工具序列才是诚实清单
+  private turnTodos: TodoItem[] = []
 
   constructor(kernel: WxGatewayKernel) {
     super()
@@ -132,9 +138,11 @@ export class GatewayClient extends EventEmitter {
   // 事件翻译：wxnodus agent 事件 → GatewayEvent
   private attachBus() {
     const map: Record<string, (p: any) => void> = {
-      'agent.start': () => {
+      'agent.start': (p) => {
         this.running = true
-        this.publish({ type: 'message.start' })
+        // A22：复杂请求先给骨架清单（复杂度启发式），随 message.start 送 UI
+        this.turnTodos = seedTurnTodos(p?.prompt)
+        this.publish({ type: 'message.start', payload: { todos: this.turnTodos } })
         this.publish({ type: 'status.update', payload: { kind: 'thinking', text: 'running…' } })
       },
       'agent.token': (p) => {
@@ -164,6 +172,8 @@ export class GatewayClient extends EventEmitter {
         const name = String(p?.name ?? 'tool')
         // C3 修复：工具调用稳定 id（内核生成，start/complete 同 id——UI 工具卡正确闭合）
         const toolId = String(p?.toolId ?? `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
+        // A22：实时任务清单同步（工具序列 → ✓/[>] 清单，随事件送 UI）
+        this.turnTodos = syncToolTodo(this.turnTodos, name, toolId, p?.phase === 'start', p?.args, Boolean(p?.ok))
         if (p?.phase === 'start') {
           this.publish({
             type: 'tool.start',
@@ -172,6 +182,7 @@ export class GatewayClient extends EventEmitter {
               name,
               context: String(p?.ctx ?? ''),
               args_text: p?.args ? JSON.stringify(p.args).slice(0, 400) : undefined,
+              todos: this.turnTodos,
             },
           })
           // A20：免提播报——语音模式开启时说出当前执行的工具（1.5s 节流）
@@ -185,6 +196,7 @@ export class GatewayClient extends EventEmitter {
               error: p?.ok ? undefined : String(p?.detail ?? 'failed'),
               summary: String(p?.detail ?? (p?.ok ? 'ok' : 'failed')),
               duration_s: Number(p?.ms ?? 0) / 1000,
+              todos: this.turnTodos,
             },
           })
         }
@@ -211,8 +223,21 @@ export class GatewayClient extends EventEmitter {
       },
       'agent.end': (p) => {
         this.running = false
-        this.publish({ type: 'message.complete', payload: { text: this.finalText } })
+        // A22：骨架是预判不是工作——整回合无真实工具落地（纯文本回答）时
+        // 骨架不归档（避免「未完成骨架」噪音）；message.complete 携带最终
+        // 清单，turnState 侧在归档前应用
+        if (this.turnTodos.length && this.turnTodos.every(t => t.id.startsWith('tpl-'))) {
+          this.turnTodos = []
+        }
+        this.publish({ type: 'message.complete', payload: { text: this.finalText, todos: this.turnTodos } })
         this.finalText = ''
+        this.turnTodos = []
+        // A22 连续对话：语音模式开 + 非唤醒态 → 回答结束后自动 re-arm VAD
+        // （唤醒态有独立监听闭环，两者同时采麦克风会冲突）
+        if (this.voiceEnabled && !this.voiceWake) {
+          this.voiceContinuousArmed = true
+          this.scheduleVoiceRearm(900)
+        }
         this.publish({ type: 'status.update', payload: { kind: 'done', text: 'ready' } })
       },
       'system.notice': (p) => {
@@ -1201,11 +1226,46 @@ export class GatewayClient extends EventEmitter {
   // A20：VAD 免提——start 时 vad:true → 静音自动停止（onVadEnded）
   /** A20：语音密钥待命——用户说"设置密钥"后，下一段语音直接作为密钥录入 */
   private voicePendingSecret = false
+
+  /** A22 连续对话 re-arm：语音模式开 + 非唤醒态（唤醒有独立监听闭环）时，
+   *  agent 回答结束后自动再开 VAD 待命——多轮免提对话无需按键。 */
+  private scheduleVoiceRearm(delayMs = 700): void {
+    if (this.voiceRearmTimer) {
+      return
+    }
+
+    this.voiceRearmTimer = setTimeout(() => {
+      this.voiceRearmTimer = null
+
+      if (!this.voiceEnabled || this.voiceWake || !this.voiceContinuousArmed) {
+        return
+      }
+      if (this.voiceRecordingSession || this.voiceTranscribing) {
+        return
+      }
+
+      this.speak('请说')
+      void this.voiceRecord({ action: 'start', vad: true })
+    }, delayMs)
+  }
+
+  private resetVoiceContinuous(): void {
+    this.voiceContinuousArmed = false
+    this.voiceNoSpeechStreak = 0
+    if (this.voiceRearmTimer) {
+      clearTimeout(this.voiceRearmTimer)
+      this.voiceRearmTimer = null
+    }
+  }
   /** A20：唤醒监听器（/voice wake on） */
   private wakeListener: import('../kernel/wake.js').WakeListener | null = null
   private voiceWake = false
   /** A20：工具状态播报节流（1.5s 内只播一条） */
   private lastToolSpeakAt = 0
+  // ── A22 连续对话（多轮免提）：agent.end 后自动 re-arm VAD 待命 ──
+  private voiceContinuousArmed = false
+  private voiceNoSpeechStreak = 0
+  private voiceRearmTimer: ReturnType<typeof setTimeout> | null = null
 
   private voiceToggle(params: Record<string, unknown>): unknown {
     const action = String(params.action ?? 'status')
@@ -1219,6 +1279,8 @@ export class GatewayClient extends EventEmitter {
       }
     } else if (action === 'off') {
       this.voiceEnabled = false
+      // A22：关闭语音同时停掉连续对话 re-arm 循环
+      this.resetVoiceContinuous()
       // 录制中关闭：停止采集
       if (this.voiceRecordingSession) {
         this.voiceRecordingSession.proc.kill('SIGKILL')
@@ -1275,11 +1337,15 @@ export class GatewayClient extends EventEmitter {
     }
 
     const { WakeListener } = await import('../kernel/wake.js')
+    // A22：唤醒词可配（settings.voice.wakeWords；缺省 wxnodus/唤醒/wake）
+    const voice = (settings?.voice as Record<string, any> | undefined) ?? {}
+    const wakeWords = Array.isArray(voice.wakeWords) ? voice.wakeWords.map(String).filter(Boolean) : undefined
     this.wakeListener = new WakeListener({
       dataDir: this.kernel.dataDir,
       whisperBin: cfg.whisperBin,
       modelPath: cfg.modelPath,
       device,
+      ...(wakeWords?.length ? { wakeWords } : {}),
       onWake: () => {
         // 唤醒命中：播报"我在" + 自动进入 VAD 待命录音（免提闭环）
         if (this.voiceTts) {
@@ -1399,7 +1465,30 @@ export class GatewayClient extends EventEmitter {
         this.publish({ type: 'voice.transcript', payload: { text: r.text } })
       }
 
+      // A22 连续对话：听到语音 → 清空无语音计数，继续待命
+      if (this.voiceContinuousArmed) {
+        this.voiceNoSpeechStreak = 0
+        this.scheduleVoiceRearm(500)
+      }
+
       return { status: 'stopped', text: r.text }
+    }
+
+    // A22 连续对话：3 次无语音 → 自动停 + no_speech_limit 事件（UI 侧
+    // 已具备处理分支——此前网关永不发布，死代码今天激活）
+    if (this.voiceContinuousArmed) {
+      this.voiceNoSpeechStreak++
+      if (this.voiceNoSpeechStreak >= 3) {
+        this.voiceEnabled = false
+        this.voiceContinuousArmed = false
+        this.publish({ type: 'voice.transcript', payload: { no_speech_limit: true, text: '' } })
+        this.publish({
+          type: 'notification.show',
+          payload: { text: '连续 3 次未听到语音——连续对话已暂停（/voice on 或唤醒词恢复）', level: 'warn' },
+        })
+      } else {
+        this.scheduleVoiceRearm(600)
+      }
     }
 
     return { status: 'stopped', text: '' }
@@ -1415,8 +1504,11 @@ export class GatewayClient extends EventEmitter {
       const { startRecording } = await import('../kernel/voice.js')
       // A20：免提模式——/voice on 后默认 VAD（静音自动停止）；参数可关闭
       const vad = params.vad !== false && this.voiceEnabled
+      // A22：VAD 参数可配（settings.voice.vad.{silenceMs,silenceThreshold,minSpeechMs}）
+      const vadConfig = vadConfigFromSettings(settings)
       const r = startRecording(this.kernel.dataDir, settings, process.env, {
         vad,
+        ...(vadConfig ? { vadConfig } : {}),
         onVadEnded: () => { void this.finishVoiceRecording() },
       })
       if (!r.ok) {

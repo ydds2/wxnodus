@@ -119,6 +119,7 @@ export function FloatingOverlays({
   completions,
   onActiveSessionSelect,
   onActiveSessionClose,
+  onCompletionSelect,
   onModelSelect,
   onNewLiveSession,
   onNewPromptSession,
@@ -132,6 +133,7 @@ export function FloatingOverlays({
   | 'completions'
   | 'onActiveSessionSelect'
   | 'onActiveSessionClose'
+  | 'onCompletionSelect'
   | 'onModelSelect'
   | 'onNewLiveSession'
   | 'onNewPromptSession'
@@ -253,7 +255,35 @@ export function FloatingOverlays({
               )
             )}
 
-            <Box marginTop={1}>
+            <Box flexDirection="row" marginTop={1}>
+              {/* A22 鼠标化：翻页按钮（与 PgDn/b 同语义） */}
+              <Box
+                onClick={() =>
+                  patchOverlayState({
+                    pager: { ...overlay.pager!, offset: Math.max(0, overlay.pager!.offset - pagerPageSize) }
+                  })
+                }
+              >
+                <Text bold color={theme.color.accent}>
+                  ◀ 上一页
+                </Text>
+              </Box>
+              <Text color={theme.color.muted}>{'  '}</Text>
+              <Box
+                onClick={() =>
+                  patchOverlayState({
+                    pager: {
+                      ...overlay.pager!,
+                      offset: Math.min(overlay.pager!.offset + pagerPageSize, Math.max(0, overlay.pager!.lines.length - 1))
+                    }
+                  })
+                }
+              >
+                <Text bold color={theme.color.accent}>
+                  下一页 ▶
+                </Text>
+              </Box>
+              <Text>{'   '}</Text>
               <OverlayHint t={theme}>
                 {overlay.pager.offset + pagerPageSize < overlay.pager.lines.length
                   ? `↑↓/jk 行 · Enter/Space/PgDn 页 · b/PgUp 返回 · g/G 顶/底 · Esc/q 关闭（${Math.min(overlay.pager.offset + pagerPageSize, overlay.pager.lines.length)}/${overlay.pager.lines.length} 行）`
@@ -278,10 +308,12 @@ export function FloatingOverlays({
                   const active = start + i === compIdx
 
                   return (
+                    // A22 鼠标化：点击补全行 = 接受（与 Tab 同语义——文本并入输入区）
                     <Box
                       backgroundColor={active ? theme.color.completionCurrentBg : theme.color.completionBg}
                       flexDirection="row"
                       key={`${start + i}:${item.text}:${item.display}:${item.meta ?? ''}`}
+                      onClick={() => onCompletionSelect(start + i)}
                       width="100%"
                     >
                       <Box flexShrink={0} width={nameW + 2}>

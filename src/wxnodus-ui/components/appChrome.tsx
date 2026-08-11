@@ -491,10 +491,12 @@ export function StatusRule({
   // yields first. The busy face width depends on the active /indicator style
   // (kaomoji is wide + verb; unicode is a bare 1-col spinner). When a notice
   // occupies the slot it reserves only `noticeReserve` (it shrinks/truncates).
+  // A22：busy 时槽位 = FaceTicker + 动态 stage 文本（正在做什么——实时变化）
+  const busyFaceWidth = busyIndicatorWidth(indicatorStyle, turnStartedAt != null)
   const slotWidth = showHint
     ? hintReserve
     : busy
-      ? busyIndicatorWidth(indicatorStyle, turnStartedAt != null)
+      ? busyFaceWidth + stringWidth(status)
       : showNotice
         ? noticeReserve
         : stringWidth(status)
@@ -585,8 +587,15 @@ export function StatusRule({
         <Box flexDirection="row" flexShrink={0}>
           <Text color={t.color.accent} bold>{'▍'}</Text>
           <Text color={t.color.border}>{'─ '}</Text>
+          {/* A22：busy 时 FaceTicker + 动态 stage 文本并排——"正在做什么"实时可见（此前 busy 槽位只有动画，状态文本被遮蔽） */}
           {busy && !showHint ? (
-            <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} />
+            <Box flexDirection="row" flexShrink={1} overflow="hidden">
+              <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} />
+              <Text color={statusColor} wrap="truncate-end">
+                {' '}
+                {STATUS_LABEL[status] ?? status}
+              </Text>
+            </Box>
           ) : showHint || showNotice ? null : (
             <Text color={statusColor} bold={status === 'running…'} wrap="truncate-end">
               {STATUS_LABEL[status] ?? status}

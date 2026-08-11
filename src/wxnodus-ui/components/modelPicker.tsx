@@ -154,6 +154,45 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   const listStage = stage === 'provider' || stage === 'model'
   useOverlayKeys({ disabled: listStage, onBack: back, onClose: onCancel })
 
+  // A22 鼠标化：接受动作提取（键盘 Enter 与鼠标点击行共用同一语义——
+  // 点击其它提供商行时先切选中再前进，保证 stage 切换读到正确 provider）
+  const acceptProviderAt = (idx: number) => {
+    const p = filteredProviderRows[idx]?.provider
+
+    if (!p) {
+      return
+    }
+
+    if (p.authenticated === false) {
+      if (p.auth_type === 'api_key' && p.key_env) {
+        setProviderIdx(idx)
+        setStage('key')
+        setKeyInput('')
+        setKeyError('')
+        setFilter('')
+      }
+
+      return
+    }
+
+    setProviderIdx(idx)
+    setStage('model')
+    setModelIdx(0)
+    setFilter('')
+  }
+
+  const acceptModelAt = (idx: number) => {
+    const model = models[idx]
+
+    if (provider && model) {
+      onSelect(
+        `${model} --provider ${provider.slug}${allowPersistGlobal && persistGlobal ? ' --global' : ` ${TUI_SESSION_MODEL_FLAG}`}`
+      )
+    } else {
+      setStage('provider')
+    }
+  }
+
   useInput((ch, key) => {
     // Key entry stage handles its own input
     if (stage === 'key') {
@@ -304,38 +343,9 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
 
     if (key.return) {
       if (stage === 'provider') {
-        if (!provider) {
-          return
-        }
-
-        if (provider.authenticated === false) {
-          // api_key providers: prompt for key inline
-          if (provider.auth_type === 'api_key' && provider.key_env) {
-            setStage('key')
-            setKeyInput('')
-            setKeyError('')
-            setFilter('')
-          }
-
-          // Other auth types: no-op (warning shown tells them to run wxnodus model)
-          return
-        }
-
-        setStage('model')
-        setModelIdx(0)
-        setFilter('')
-
-        return
-      }
-
-      const model = models[modelIdx]
-
-      if (provider && model) {
-        onSelect(
-          `${model} --provider ${provider.slug}${allowPersistGlobal && persistGlobal ? ' --global' : ` ${TUI_SESSION_MODEL_FLAG}`}`
-        )
+        acceptProviderAt(providerIdx)
       } else {
-        setStage('provider')
+        acceptModelAt(modelIdx)
       }
 
       return
@@ -548,16 +558,18 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
             const dimmed = p?.authenticated === false
 
             return row ? (
-              <Text
-                bold={providerIdx === idx}
-                color={providerIdx === idx ? t.color.accent : dimmed ? t.color.label : t.color.muted}
-                backgroundColor={providerIdx === idx ? t.color.selectionBg : undefined}
-                key={p?.slug ?? `row-${idx}`}
-                wrap="truncate-end"
-              >
-                {providerIdx === idx ? '▸ ' : '  '}
-                {idx + 1}. {row}
-              </Text>
+              // A22 鼠标化：点击提供商行 = 选中并前进（Enter 同语义）
+              <Box key={p?.slug ?? `row-${idx}`} onClick={() => acceptProviderAt(idx)}>
+                <Text
+                  bold={providerIdx === idx}
+                  color={providerIdx === idx ? t.color.accent : dimmed ? t.color.label : t.color.muted}
+                  backgroundColor={providerIdx === idx ? t.color.selectionBg : undefined}
+                  wrap="truncate-end"
+                >
+                  {providerIdx === idx ? '▸ ' : '  '}
+                  {idx + 1}. {row}
+                </Text>
+              </Box>
             ) : (
               <Text color={t.color.muted} key={`pad-${i}`} wrap="truncate-end">
                 {' '}
@@ -574,7 +586,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
           持久化：{allowPersistGlobal ? (persistGlobal ? '全局' : '会话') : '会话'}
           {allowPersistGlobal ? ' · ^g 切换' : '（仅会话）'}
         </Text>
-        <OverlayHint t={t}>↑/↓ 选择 · Enter 选用 · ^d 断开 · Esc 清空/返回 · q 关闭</OverlayHint>
+        <OverlayHint t={t}>↑/↓ 选择 · Enter 选用 · 鼠标点击直达 · ^d 断开 · Esc 清空/返回 · q 关闭</OverlayHint>
       </Box>
     )
   }
@@ -621,16 +633,18 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
         const prefix = modelIdx === idx ? '▸ ' : row === currentModel ? '* ' : '  '
 
         return (
-          <Text
-            bold={modelIdx === idx}
-            color={modelIdx === idx ? t.color.accent : t.color.muted}
-            backgroundColor={modelIdx === idx ? t.color.selectionBg : undefined}
-            key={`${provider?.slug ?? 'prov'}:${idx}:${row}`}
-            wrap="truncate-end"
-          >
-            {prefix}
-            {idx + 1}. {row}
-          </Text>
+          // A22 鼠标化：点击模型行 = 立即选用（Enter 同语义）
+          <Box key={`${provider?.slug ?? 'prov'}:${idx}:${row}`} onClick={() => acceptModelAt(idx)}>
+            <Text
+              bold={modelIdx === idx}
+              color={modelIdx === idx ? t.color.accent : t.color.muted}
+              backgroundColor={modelIdx === idx ? t.color.selectionBg : undefined}
+              wrap="truncate-end"
+            >
+              {prefix}
+              {idx + 1}. {row}
+            </Text>
+          </Box>
         )
       })}
 
@@ -643,7 +657,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
         {allowPersistGlobal ? ' · ^g 切换' : '（仅会话）'}
       </Text>
       <OverlayHint t={t}>
-        {models.length ? '↑/↓ 选择 · Enter 切换 · Esc 清空/返回 · q 关闭' : 'Esc 返回 · q 关闭'}
+        {models.length ? '↑/↓ 选择 · Enter 切换 · 鼠标点击直达 · Esc 清空/返回 · q 关闭' : 'Esc 返回 · q 关闭'}
       </OverlayHint>
     </Box>
   )

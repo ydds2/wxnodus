@@ -3,6 +3,14 @@
 //       handler 可返回 string（普通输出）或结构化 { kind: 'skill' }（TUI 注入为消息发送）
 import { resolveAlias, isSlash } from '../commands/registry.js';
 
+// A22 指令融合：子命令注入别名（目标命令 + 注入参数）。
+// /hole <查询> → /memory search <查询>；/rewind → /checkpoint restore。
+// 与 registry.ALIASES（单 token 纯重定向）互补——语义需子命令的走这里。
+const ALIAS_INJECT: Record<string, { args: string[]; cmd: string }> = {
+  '/hole': { cmd: '/memory', args: ['search'] },
+  '/rewind': { cmd: '/checkpoint', args: ['restore'] },
+};
+
 export type CommandHandler = (args: string[], raw: string) => string | void | StructuredCommand | Promise<string | void | StructuredCommand>;
 
 /** 结构化命令结果（目前仅 skill：把技能正文作为用户消息注入对话） */
@@ -39,11 +47,21 @@ export function createCommandBus(): CommandBus {
       const head = tokens[0] ?? '';
       let cmd: string | null = null;
       let argPrefix: string[] = [];
+      // A22 指令融合：子命令注入别名——旧命令名分发重定向到目标命令（/hole X →
+      // /memory search X；/rewind → /checkpoint restore）。目标未注册时回退
+      // 旧命令本体（/hole 等仍注册）——别名化绝不破坏旧命令。
+      const inject = ALIAS_INJECT[head];
+      if (inject && handlers.has(inject.cmd)) {
+        cmd = inject.cmd;
+        argPrefix = [...inject.args, ...tokens.slice(1)];
+      }
       // 最长命令前缀匹配（子命令优先）：/perm rule list → /perm rule
       // （否则首 token 精确匹配会永久拦截多词命令——/perm rule 被 /perm 吃掉）
-      for (let n = tokens.length; n >= 1; n--) {
-        const candidate = resolveAlias(tokens.slice(0, n).join(' '));
-        if (handlers.has(candidate)) { cmd = candidate; argPrefix = tokens.slice(n); break; }
+      if (!cmd) {
+        for (let n = tokens.length; n >= 1; n--) {
+          const candidate = resolveAlias(tokens.slice(0, n).join(' '));
+          if (handlers.has(candidate)) { cmd = candidate; argPrefix = tokens.slice(n); break; }
+        }
       }
       // `/skill:foo` 冒号参数语法：拆为 cmd=/skill + argPrefix=foo
       // （kimi 风格：/skill:name —— 技能正文注入为消息）

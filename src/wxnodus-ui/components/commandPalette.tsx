@@ -137,7 +137,7 @@ export function CommandPalette({
       <Text bold color={t.color.accent} wrap="truncate-end">
         {head}
       </Text>
-      <Text color={t.color.muted}>命令 / 技能 / 会话 · ↑↓ 选择 · Enter 执行 · Esc 关闭</Text>
+      <Text color={t.color.muted}>命令 / 技能 / 会话 · ↑↓ 选择 · Enter 执行 · 鼠标点击直达 · Esc 关闭</Text>
       <Box flexDirection="column" marginTop={1}>
         {loading ? (
           <Text color={t.color.muted}>加载中…</Text>
@@ -147,7 +147,18 @@ export function CommandPalette({
           </Text>
         ) : (
           shown.map((e, i) => (
-            <Box key={`${e.kind}:${e.value}:${i}`}>
+            // A22 鼠标化：点击条目 = 执行（命令/技能 → 提交；会话 → 切换激活）
+            <Box
+              key={`${e.kind}:${e.value}:${i}`}
+              onClick={() => {
+                onClose()
+                if (e.kind === 'session') {
+                  onSessionSelect(e.value)
+                } else {
+                  onSubmit(e.value)
+                }
+              }}
+            >
               <Text
                 bold={i === idx}
                 color={i === idx ? t.color.accent : undefined}

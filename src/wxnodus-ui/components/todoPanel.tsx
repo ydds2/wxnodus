@@ -37,6 +37,8 @@ export const TodoPanel = memo(function TodoPanel({
   // A20：in_progress 行 [>] 500ms 闪烁（动态效果——任务在跑一眼可见；unref 防测试挂起）
   const hasActive = todos.some(todo => todo.status === 'in_progress')
   const [tick, setTick] = useState(0)
+  // A22 鼠标化：行点击选中高亮（再点取消）——纯视觉定位，不改变任务状态
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!hasActive) {
@@ -98,10 +100,17 @@ export const TodoPanel = memo(function TodoPanel({
               todo.status === 'in_progress' && tick % 2 === 1 ? '[ ]' : todoGlyph(todo.status)
 
             return (
-              <Text color={color} dim={tone === 'dim'} key={todo.id}>
-                <Text color={color}>{glyph} </Text>
-                {todo.content}
-              </Text>
+              // A22 鼠标化：点击行选中高亮（再点取消）
+              <Box key={todo.id} onClick={() => setSelectedId(prev => (prev === todo.id ? null : todo.id))}>
+                <Text
+                  backgroundColor={selectedId === todo.id ? t.color.selectionBg : undefined}
+                  color={color}
+                  dim={tone === 'dim'}
+                >
+                  <Text color={color}>{glyph} </Text>
+                  {todo.content}
+                </Text>
+              </Box>
             )
           })}
         </Box>

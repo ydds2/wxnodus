@@ -554,7 +554,12 @@ class TurnController {
     this.flushPendingNotice()
   }
 
-  recordMessageComplete(payload: { rendered?: string; reasoning?: string; text?: string }) {
+  recordMessageComplete(payload: { rendered?: string; reasoning?: string; text?: string; todos?: unknown }) {
+    // A22：回合收官清单（骨架让位后为空则清空，避免纯文本回答归档假骨架）
+    if (payload.todos !== undefined) {
+      this.recordTodos(payload.todos)
+    }
+
     this.closeReasoningSegment()
 
     // Ink renders markdown via <Md>; the gateway's Rich-rendered ANSI

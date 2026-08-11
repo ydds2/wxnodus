@@ -52,6 +52,8 @@ export interface WakeConfig {
   minRms?: number;
   /** 采样率（默认 16000） */
   sampleRate?: number;
+  /** A22：唤醒词表（settings.voice.wakeWords 可配；缺省 WAKE_WORDS） */
+  wakeWords?: readonly string[];
   /** 命中唤醒词回调（gateway：播报"我在"+ 进入 VAD 待命录音） */
   onWake: (word: string) => void;
   /** 异常回调（组件缺失/转写失败——不假装可用） */
@@ -159,7 +161,7 @@ export class WakeListener {
       writer.write(buf);
       writer.finalize();
       const text = await whisperToText(this.cfg.whisperBin, this.cfg.modelPath, `${base}.wav`, `${base}.txt`);
-      const hit = matchWakeWord(text);
+      const hit = matchWakeWord(text, this.cfg.wakeWords);
       if (hit && !this.stopped) {
         this.cfg.onWake(hit);
       }

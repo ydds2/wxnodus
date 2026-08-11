@@ -1,7 +1,7 @@
 // tests/kernel-vad.test.ts — A20 自研 VAD：RMS 能量检测 + 静音自动停止状态机
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_VAD, VadTracker, pcmToInt16, rmsOfBlock } from '../src/kernel/vad.js'
+import { DEFAULT_VAD, VadTracker, vadConfigFromSettings, pcmToInt16, rmsOfBlock } from '../src/kernel/vad.js'
 
 // 16kHz 单声道 s16le 合成音频工具
 const silentBlock = (n = 1600) => new Int16Array(n) // 全零 = 静音
@@ -96,5 +96,52 @@ describe('VadTracker — 静音自动停止', () => {
     const r = vad.feed(toneBlock())
     expect(r.speechEnded).toBe(false)
     expect(r.state).toBe('speech')
+  })
+})
+
+describe('vadConfigFromSettings — settings.voice.vad 接线（A22）', () => {
+  it('未配置 voice.vad → undefined（用默认）', () => {
+    expect(vadConfigFromSettings(undefined)).toBeUndefined()
+    expect(vadConfigFromSettings({})).toBeUndefined()
+    expect(vadConfigFromSettings({ voice: { recordKey: 'ctrl+b' } })).toBeUndefined()
+  })
+
+  it('部分配置 → 缺省值回退', () => {
+    const cfg = vadConfigFromSettings({ voice: { vad: { silenceMs: 2000 } } })
+
+    expect(cfg).toBeDefined()
+    expect(cfg!.silenceMs).toBe(2000)
+    expect(cfg!.silenceThreshold).toBe(DEFAULT_VAD.silenceThreshold)
+    expect(cfg!.minSpeechMs).toBe(DEFAULT_VAD.minSpeechMs)
+    expect(cfg!.blockSamples).toBe(DEFAULT_VAD.blockSamples)
+  })
+
+  it('非法值（0/负数/非数字）→ 回退默认', () => {
+    const cfg = vadConfigFromSettings({ voice: { vad: { silenceMs: 0, silenceThreshold: '高', minSpeechMs: -5 } } })
+
+    expect(cfg!.silenceMs).toBe(DEFAULT_VAD.silenceMs)
+    expect(cfg!.silenceThreshold).toBe(DEFAULT_VAD.silenceThreshold)
+    expect(cfg!.minSpeechMs).toBe(DEFAULT_VAD.minSpeechMs)
+  })
+
+  it('自定义配置生效于 VadTracker（短静音阈值 → 更快结束）', () => {
+    // silenceMs=400ms（4 块）+ minSpeechMs=100ms（1 块）→ 说话 2 块后静音 4 块即结束
+    const vad = new VadTracker({ ...DEFAULT_VAD, silenceMs: 400, minSpeechMs: 100 })
+    vad.feed(toneBlock())
+    vad.feed(toneBlock())
+    let ended = false
+    for (let i = 0; i < 4; i++) {
+      ended = vad.feed(silentBlock()).speechEnded
+    }
+    expect(ended).toBe(true)
+    // 默认 1200ms 阈值下同序列不结束（对比验证配置生效）
+    const def = new VadTracker()
+    def.feed(toneBlock())
+    def.feed(toneBlock())
+    let defEnded = false
+    for (let i = 0; i < 4; i++) {
+      defEnded = def.feed(silentBlock()).speechEnded
+    }
+    expect(defEnded).toBe(false)
   })
 })

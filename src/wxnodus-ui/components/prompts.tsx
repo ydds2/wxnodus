@@ -119,16 +119,17 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
       <Text />
 
       {opts.map((o, i) => (
-        <Text key={o}>
+        // A22 鼠标化：点击选项行 = 选择该许可（与数字键 1-4 同语义）
+        <Box key={o} onClick={() => onChoice(o)}>
           <Text bold={sel === i} color={sel === i ? t.color.warn : t.color.muted} inverse={sel === i}>
             {sel === i ? '▸ ' : '  '}
             {i + 1}. {LABELS[o]}
           </Text>
-        </Text>
+        </Box>
       ))}
 
       <Text color={t.color.muted}>
-        ↑/↓ 选择 · Enter 确认 · 1-{opts.length} 快捷选择 · Esc/Ctrl+C 拒绝
+        ↑/↓ 选择 · Enter 确认 · 1-{opts.length} 快捷 · 鼠标点击直接选择 · Esc/Ctrl+C 拒绝
       </Text>
     </Box>
   )
@@ -200,15 +201,21 @@ export function ClarifyPrompt({ cols = 80, onAnswer, onCancel, req, t }: Clarify
       {heading}
 
       {[...choices, 'Other (type your answer)'].map((c, i) => (
-        <Text key={i}>
+        // A22 鼠标化：点击选项 = 直接作答；Other 行 = 进入自定义输入
+        <Box
+          key={i}
+          onClick={() => {
+            i === choices.length ? setTyping(true) : choices[i] && onAnswer(choices[i]!)
+          }}
+        >
           <Text bold={sel === i} color={sel === i ? t.color.label : t.color.muted} inverse={sel === i}>
             {sel === i ? '▸ ' : '  '}
             {i + 1}. {c}
           </Text>
-        </Text>
+        </Box>
       ))}
 
-      <Text color={t.color.muted}>↑/↓ 选择 · Enter 确认 · 1-{choices.length} 快捷 · Esc/Ctrl+C 取消</Text>
+      <Text color={t.color.muted}>↑/↓ 选择 · Enter 确认 · 1-{choices.length} 快捷 · 鼠标点击作答 · Esc/Ctrl+C 取消</Text>
     </Box>
   )
 }
@@ -264,13 +271,14 @@ export function ConfirmPrompt({ onCancel, onConfirm, req, t }: ConfirmPromptProp
       <Text />
 
       {rows.map((row, i) => (
-        <Text key={row.label}>
+        // A22 鼠标化：点击行 = 确认/取消（0 行取消，1 行确认）
+        <Box key={row.label} onClick={() => (i === 0 ? onCancel() : onConfirm())}>
           <Text color={sel === i ? accent : t.color.muted}>{sel === i ? '▸ ' : '  '}</Text>
           <Text color={sel === i ? row.color : t.color.muted}>{row.label}</Text>
-        </Text>
+        </Box>
       ))}
 
-      <Text color={t.color.muted}>↑/↓ 选择 · Enter 确认 · Y/N 快捷 · Esc 取消</Text>
+      <Text color={t.color.muted}>↑/↓ 选择 · Enter 确认 · Y/N 快捷 · 鼠标点击选择 · Esc 取消</Text>
     </Box>
   )
 }

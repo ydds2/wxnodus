@@ -23,6 +23,24 @@ export const DEFAULT_VAD: VadConfig = {
   sampleRate: 16000
 }
 
+/** A22：settings.voice.vad → VadConfig（缺省/非法值回退 DEFAULT_VAD；未配置返回 undefined）。
+ *  纯函数——gateway 接线处与单测共用同一映射。 */
+export function vadConfigFromSettings(settings: Record<string, any> | undefined): VadConfig | undefined {
+  const vad = (settings?.voice as Record<string, any> | undefined)?.vad as Record<string, any> | undefined;
+  if (!vad) return undefined;
+  const num = (k: string, fallback: number) => {
+    const n = Number(vad[k]);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+  return {
+    blockSamples: DEFAULT_VAD.blockSamples,
+    silenceThreshold: num('silenceThreshold', DEFAULT_VAD.silenceThreshold),
+    silenceMs: num('silenceMs', DEFAULT_VAD.silenceMs),
+    minSpeechMs: num('minSpeechMs', DEFAULT_VAD.minSpeechMs),
+    sampleRate: DEFAULT_VAD.sampleRate,
+  };
+}
+
 export type VadState = 'silence' | 'speech' | 'trailing'
 
 export interface VadResult {

@@ -199,23 +199,37 @@ export function PluginsHub({ gw, onClose, t }: PluginsHubProps) {
       </Text>
 
       <Text color={t.color.muted}>{scopeLabel}</Text>
+      {/* A22 鼠标化：作用域切换（Tab 同语义） */}
+      <Box
+        onClick={() => {
+          setScope(s => (s === 'user' ? 'all' : 'user'))
+          setIdx(0)
+        }}
+      >
+        <Text bold color={t.color.accent}>
+          {effectiveScope === 'user' ? '⇄ 显示全部（含 bundled）' : '⇄ 只看用户插件'}
+        </Text>
+      </Box>
       {offset > 0 && <Text color={t.color.muted}> ↑ {offset} more</Text>}
 
       {items.map((row, i) => {
         const lineIdx = offset + i
         const active = clampedIdx === lineIdx
+        const rowData = effectiveRows[lineIdx]
 
         return (
-          <Text
-            bold={active}
-            color={active ? t.color.accent : t.color.muted}
-            inverse={active}
-            key={effectiveRows[lineIdx]?.name ?? row}
-            wrap="truncate-end"
-          >
-            {active ? '▸ ' : '  '}
-            {i + 1}. {row}
-          </Text>
+          // A22 鼠标化：点击插件行 = 切换启停（Enter/Space 同语义）
+          <Box key={rowData?.name ?? row} onClick={() => rowData && toggle(rowData)}>
+            <Text
+              bold={active}
+              color={active ? t.color.accent : t.color.muted}
+              inverse={active}
+              wrap="truncate-end"
+            >
+              {active ? '▸ ' : '  '}
+              {i + 1}. {row}
+            </Text>
+          </Box>
         )
       })}
 
@@ -226,7 +240,7 @@ export function PluginsHub({ gw, onClose, t }: PluginsHubProps) {
       {err ? <Text color={t.color.label}>error: {err}</Text> : null}
       {busy ? <Text color={t.color.accent}>updating…</Text> : null}
 
-      <OverlayHint t={t}>↑/↓ 选择 · Enter/Space 切换 · Tab 用户/全部 · 1-9,0 快捷 · Esc/q 关闭</OverlayHint>
+      <OverlayHint t={t}>↑/↓ 选择 · Enter/Space 切换 · Tab 用户/全部 · 1-9,0 快捷 · 鼠标点击行/切换 · Esc/q 关闭</OverlayHint>
     </Box>
   )
 }

@@ -445,6 +445,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       case 'message.start':
         resetAgentsNudgeTurnState()
         turnController.startMessage()
+        // A22：回合开场骨架清单（复杂度启发式合成）——LiveTodoPanel 立即可见
+        if (ev.payload?.todos) {
+          turnController.recordTodos(ev.payload.todos)
+        }
 
         return
       case 'status.update': {

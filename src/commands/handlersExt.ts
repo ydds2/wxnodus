@@ -2319,7 +2319,22 @@ export const commands = {
       const prompt = `目标：${goal}\n当前进度：${rounds.at(-1) ? '已完成以下工作——' + rounds.at(-1)!.slice(0, 600) : '尚未开始'}。\n请继续推进目标。若目标已全部完成，以「✓ 已完成」开头输出总结；否则输出本轮完成的事项与下一步。`;
       const r = await ctx.agent.run(prompt);
       rounds.push(r.text);
-      if (r.text.includes('✓ 已完成') || r.text.includes('✅')) { done = true; break; }
+      if (r.text.includes('✓ 已完成') || r.text.includes('✅')) {
+        // A22 诚实交付：声称完成 ≠ 完成——若本轮产生了构建产物（projects/ 有项目），
+        // 跑真实验证（启动→探活→重启→读回）；验证通过才判完成，不靠模型自夸
+        let verified = true;
+        try {
+          const projectsDir = join(ctx.dataDir, 'projects');
+          const proj = existsSync(projectsDir) ? readdirSync(projectsDir).filter(n => n.startsWith('p')).sort().at(-1) : null;
+          if (proj) {
+            const { verifyProject } = await import('../build/verify.js');
+            const vr = await verifyProject(join(projectsDir, proj));
+            verified = vr.status === 'ok';
+            if (!verified) rounds.push(`⚠ 声称完成但验证未通过：${vr.detail.slice(0, 160)}`);
+          }
+        } catch { verified = true; }
+        if (verified) { done = true; break; }
+      }
       if (!r.ok && r.text.includes('未配置模型密钥')) break; // 无 key：不空转
     }
     return lines(` 目标执行 ${done ? '✓ 完成' : `（${rounds.length} 轮）`} `, [

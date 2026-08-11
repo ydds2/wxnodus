@@ -70,6 +70,27 @@ export interface AgentResult {
 }
 
 const MAX_TURNS = 16;
+
+// ── A22：实时状态一句话——工具动词映射（动态短语，UI 状态行展示）──
+const TOOL_STAGE_VERBS: Record<string, string> = {
+  fs_read: '读取文件', fs_write: '写入文件', fs_edit: '编辑文件', ls: '列出目录',
+  grep: '搜索文本', find_files: '查找文件', bash: '执行命令', http_get: '抓取网页',
+  http_request: '发送请求', memory_write: '写入记忆', memory_search: '检索记忆',
+  scaffold_build: '构建项目', delegate: '派发子代理', ask_user: '询问用户',
+  clarify: '请求澄清', todo: '更新任务清单', skill_load: '加载技能', repo_map: '扫描仓库',
+  cron_create: '创建定时任务', credential_form: '录入凭据', wx_cmd: '执行指令',
+  tool_search: '检索工具', command_search: '检索命令',
+};
+
+/** 工具实时状态短语：动词 + 关键参数摘要（path/url/pattern/command/query 等），动态变化。
+ *  UI 侧实时任务清单（wxGateway turnTodos）复用同一动词表——一句话状态与清单标签同源。 */
+export function briefToolContext(name: string, args: Record<string, any> | undefined): string {
+  const verb = TOOL_STAGE_VERBS[name] ?? name;
+  const brief = (['path', 'url', 'pattern', 'command', 'query', 'file', 'goal', 'content'] as const)
+    .map(k => args?.[k])
+    .find((v): v is string => typeof v === 'string' && v.trim().length > 0 && v.trim().length < 60);
+  return brief ? `${verb} ${brief.trim()}` : verb;
+}
 const RETRY_DELAY_MS = 800;
 const MAX_CONSECUTIVE_FAIL = 5;
 const MAX_UNKNOWN_TOOL_ROUNDS = 3;
@@ -220,7 +241,7 @@ export function createAgent(opts: AgentOptions) {
   // 默认模型调用：OpenAI 兼容真流式（SSE）——token 逐块推送总线（UI 实时显示）
   // 工具调用解析保留 tool_call id（严格格式：assistant.tool_calls + tool.tool_call_id 回填）
   // ── 工具延迟加载（P2）：核心工具常驻 + tool_search 检索激活高级工具 ──
-  const CORE_TOOL_NAMES = new Set(['fs_read', 'fs_write', 'fs_edit', 'bash', 'ls', 'grep', 'todo', 'clarify', 'ask_user', 'skill_load', 'tool_search']);
+  const CORE_TOOL_NAMES = new Set(['fs_read', 'fs_write', 'fs_edit', 'bash', 'ls', 'grep', 'todo', 'clarify', 'ask_user', 'skill_load', 'tool_search', 'command_search']);
   let activeToolNames: Set<string> | null = null; // null = 延迟加载关闭（全表注入）
   if (opts.toolLazyLoad) {
     activeToolNames = new Set(CORE_TOOL_NAMES);
@@ -491,6 +512,9 @@ export function createAgent(opts: AgentOptions) {
     // C3 修复：工具调用稳定 id（start/complete 同 id，UI 工具卡可正确闭合）
     const toolId = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     bus.emit('agent.tool', { name, args, phase: 'start', toolId });
+    // A22：实时状态一句话——正在做什么（基于工具名/参数动态生成，UI 状态行显示）
+    const ctxBrief = briefToolContext(name, args);
+    bus.emit('agent.stage', { stage: `正在${ctxBrief}` });
     // 剧本录制钩子：/script record 期间每个工具调用进当前 step（跳过 AI 决策的确定性重放源）
     scriptRecorder?.(name, args);
     const t0 = Date.now();
@@ -794,6 +818,8 @@ export function createAgent(opts: AgentOptions) {
         }
       }
       let res: ModelCall | ToolCallMsg;
+      // A22：实时状态一句话——LLM 推理期（动态文本，UI 状态行显示）
+      bus.emit('agent.stage', { stage: turns > 0 ? '正在推理下一步…' : '正在思考分析需求…' });
       try {
         res = await callWithAbort({ messages: msgs, tools: toolList });
       } catch (e: any) {

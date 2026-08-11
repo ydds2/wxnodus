@@ -9,7 +9,9 @@ import { appendToolShelfMessage } from '../lib/liveProgress.js'
 import type { ActiveTool, DetailsMode, Msg, SectionVisibility } from '../types.js'
 
 import { MessageLine } from './messageLine.js'
+import { Spinner } from './thinking.js'
 import { TodoPanel } from './todoPanel.js'
+import { Box, Text } from '@wxnodus/ink'
 
 const groupedSegments = (segments: Msg[]): Msg[] =>
   segments.reduce<Msg[]>((acc, msg) => appendToolShelfMessage(acc, msg), [])
@@ -67,6 +69,21 @@ export const StreamingAssistant = memo(function StreamingAssistant({
 
   return (
     <>
+      {/* A22：动态状态行——busy 时一句话说明正在做什么（agent.stage 实时驱动，随输出变化） */}
+      {ui.busy && ui.status && ui.status !== 'running…' && ui.status !== 'ready' ? (
+        <Box flexDirection="row" marginBottom={1}>
+          <Box flexShrink={0}>
+            <Text color={ui.theme.color.accent}>
+              <Spinner color={ui.theme.color.accent} variant="think" />{' '}
+            </Text>
+          </Box>
+          <Box flexShrink={1} overflow="hidden">
+            <Text color={ui.theme.color.muted} wrap="truncate-end">
+              {ui.status}
+            </Text>
+          </Box>
+        </Box>
+      ) : null}
       {blocks.map(block => {
         const node = (
           <MessageLine

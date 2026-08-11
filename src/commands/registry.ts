@@ -1,5 +1,7 @@
 // src/commands/registry.ts — L4 命令注册表（单一事实来源）
 // 设计：核心命令面（自然语言主线）+ 分类符号 + 全量描述 + 别名表
+import { classifyCommand, COMMAND_LEVEL_ICON, COMMAND_LEVEL_LABEL } from '../kernel/commandLevels.js';
+
 export const SLASH: string[] = [
   // 对话
   '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint', '/versions', '/snapshot', '/script', '/self-evolve',
@@ -149,6 +151,24 @@ const ALIASES: Record<string, string> = {
   '/授权': '/consent', '/备份': '/backup', '/导出': '/export', '/主题': '/theme', '/语言': '/lang',
   '/视觉': '/vision', '/图片': '/img', '/视频': '/video', '/抓取': '/claw', '/定时': '/cron',
   '/计算': '/calc', '/哈希': '/hash', '/换算': '/units', '/同化': '/assimilate',
+  // A22 指令融合（保守全并）：语义完全一致的旧命令名分发重定向到目标命令，
+  // 旧命令仍可输入（参数原样透传）——/help 标注「（=目标命令）」
+  '/task': '/jobs', '/vision': '/img',
+};
+
+// A22 指令融合标注：命令 → 合并去向（仅标注，不改变旧命令行为——
+// 语义有差异的（/afk 开关、/evidence 验证落盘）保留原命令，/help 与
+// command_search 展示合并关系，用户与 AI 都走统一心智模型）
+export const COMMAND_MERGE: Record<string, string> = {
+  '/task': '/jobs',
+  '/vision': '/img',
+  '/hole': '/memory search',
+  '/learn': '/assimilate',
+  '/rewind': '/checkpoint restore',
+  '/yolo': '/perm yolo',
+  '/afk': '/perm yolo（无人值守=完全放行）',
+  '/evidence': '/gate + 验证落盘',
+  '/web': '/claw',
 };
 
 export function isSlash(text: string): boolean {
@@ -157,6 +177,57 @@ export function isSlash(text: string): boolean {
 
 export function resolveAlias(cmd: string): string {
   return ALIASES[cmd] ?? cmd;
+}
+
+// ── A22 command_search 数据源：命令目录检索 ─────────────────────────
+// 解决核心缺口：96 条 COMMAND_DESC 从不注入模型 → AI 盲调 wx_cmd。
+// 模型先 command_search（按关键词/意图检索目录），拿到名称/描述/等级/
+// 合并关系后再经 wx_cmd 执行正确命令。等级 = wx_cmd 分级裁决的同一
+// 依据（commandLevels.classifyCommand）——AI 可自行判断哪些命令能直接跑。
+
+export interface CommandCatalogHit {
+  desc: string
+  level: string
+  merge?: string
+  name: string
+}
+
+export function searchCommandCatalog(query: string, limit = 8): CommandCatalogHit[] {
+  const q = String(query ?? '').trim().toLowerCase();
+
+  const hits = SLASH
+    .map(cmd => {
+      const desc = COMMAND_DESC[cmd] ?? '';
+      const merge = COMMAND_MERGE[cmd];
+      const hay = `${cmd} ${desc} ${merge ?? ''}`.toLowerCase();
+      let score = -1;
+      if (cmd.startsWith(q)) score = 3;
+      else if (cmd.includes(q)) score = 2;
+      else if (hay.includes(q)) score = 1;
+      if (score < 0) return null;
+      return {
+        desc,
+        level: `${COMMAND_LEVEL_ICON[classifyCommand(cmd)] ?? ''}${COMMAND_LEVEL_LABEL[classifyCommand(cmd)] ?? '确认'}`,
+        merge,
+        name: cmd,
+        score,
+      };
+    })
+    .filter((h): h is NonNullable<typeof h> => h !== null)
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+    .slice(0, limit);
+
+  if (!q) {
+    // 空查询：全目录抽样 + 引导（模型拿不到目录时的兜底入口）
+    return SLASH.slice(0, limit).map(cmd => ({
+      desc: COMMAND_DESC[cmd] ?? '',
+      level: `${COMMAND_LEVEL_ICON[classifyCommand(cmd)] ?? ''}${COMMAND_LEVEL_LABEL[classifyCommand(cmd)] ?? '确认'}`,
+      merge: COMMAND_MERGE[cmd],
+      name: cmd,
+    }));
+  }
+
+  return hits;
 }
 
 // 前缀补全（输入 /hel → /help）

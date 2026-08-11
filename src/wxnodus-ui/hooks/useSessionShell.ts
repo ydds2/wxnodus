@@ -1164,6 +1164,7 @@ export function useMainApp(gw: GatewayClient) {
 
   const appComposer = useMemo(
     () => ({
+      acceptCompletion: composerActions.acceptCompletion,
       cols,
       compIdx: composerState.compIdx,
       completions: composerState.completions,
