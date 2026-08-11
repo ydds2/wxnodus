@@ -1,6 +1,6 @@
 // tests/build-spec.test.ts — L3-1 概念编译器：规格契约/计划分解/脚手架/验证/证据/质量门
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeSpec, validateSpec, type Spec } from '../src/build/spec.js';
@@ -114,8 +114,49 @@ describe('质量门（gate）', () => {
     instantiate({ title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p);
     const ctx: GateCtx = { projectDir: p, dataDir: dir };
     const g = await runGate(ctx);
-    expect(g.gates.length).toBe(4);
+    expect(g.gates.length).toBe(5); // 四门 + 测试门（P2 第五门）
     expect(g.gates.some(x => x.name === '自测门')).toBe(true);
     expect(g.gates.some(x => x.name === '证据门')).toBe(true);
+  });
+});
+
+// ── P2：测试门（概念编译器第五门）──
+describe('runGate 测试门', () => {
+  it('产物含 test 脚本 → 真实执行 npm test', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wx-gate-'));
+    try {
+      mkdirSync(join(dir, 'server'), { recursive: true });
+      writeFileSync(join(dir, 'server', 'index.js'), 'console.log("ok")');
+      writeFileSync(join(dir, 'healthcheck.js'), 'console.log("ok")');
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'g', scripts: { test: 'node -e "console.log(\'pass\')"' } }));
+      writeFileSync(join(dir, 'evidence.json'), JSON.stringify({ ok: true }));
+      writeFileSync(join(dir, 'README.md'), '# g');
+      const { runGate } = await import('../src/build/gate.js');
+      const r = await runGate({ projectDir: dir, dataDir: dir });
+      const testGate = r.gates.find(g => g.name === '测试门');
+      expect(testGate?.ok).toBe(true);
+      expect(testGate?.detail).toContain('通过');
+      expect(r.pass).toBe(true);
+    } finally {
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+  });
+  it('无 test 脚本 → 跳过（不误判失败）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wx-gate2-'));
+    try {
+      mkdirSync(join(dir, 'server'), { recursive: true });
+      writeFileSync(join(dir, 'server', 'index.js'), 'console.log("ok")');
+      writeFileSync(join(dir, 'healthcheck.js'), 'console.log("ok")');
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'g' }));
+      writeFileSync(join(dir, 'evidence.json'), JSON.stringify({ ok: true }));
+      writeFileSync(join(dir, 'README.md'), '# g');
+      const { runGate } = await import('../src/build/gate.js');
+      const r = await runGate({ projectDir: dir, dataDir: dir });
+      const testGate = r.gates.find(g => g.name === '测试门');
+      expect(testGate?.ok).toBe(true); // 跳过视为通过
+      expect(testGate?.detail).toContain('跳过');
+    } finally {
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
   });
 });
