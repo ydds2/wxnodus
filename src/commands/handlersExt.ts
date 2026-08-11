@@ -888,6 +888,100 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return `已从对话学习生成技能 → ${dir}（ai_generated 标注）`;
   });
 
+  // /assimilate：黑洞引擎同化器（技能同化）
+  //   <目录>        目录 100% 同化（确定性批量吸收：SKILL.md / 跨品牌 / 变体）
+  //   <文件|URL>    素材 AI 消化（LLM 提炼 SKILL.md → ai_generated 标注）
+  //   （无参数）     最近对话消化（对话提供需求 → AI 产出技能融入）
+  //   --name <名> ｜ --desc <描述> ｜ --force ｜ --flow "A → B" ｜ --effort low|medium|high
+  bus.register('/assimilate', async (args) => {
+    const flag = (k: string) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
+    const hasFlag = (k: string) => args.includes(k);
+    const name = flag('--name');
+    const desc = flag('--desc');
+    const force = hasFlag('--force');
+    const flow = flag('--flow');
+    const effort = flag('--effort') as 'low' | 'medium' | 'high' | undefined;
+    const pos = args.filter(a => !a.startsWith('--'));
+    const { assimilateDir, assimilateMaterial, readMaterial } = await import('../kernel/assimilate.js');
+    // LLM 消化回调（无 key 前置拦截——不产生假内容；与 /learn 同款调用模式）
+    const makeDigest = (key: string) => async (prompt: string): Promise<string> => {
+      const { buildChatRequest } = await import('../kernel/providers.js');
+      const baseURL = resolveDefaultBaseURL(ctx.config.get('settings') as any);
+      const model = resolveDefaultModel(ctx.config.get('settings') as any);
+      const req = buildChatRequest({
+        baseURL, model, key,
+        messages: [
+          { role: 'system', content: '你是技能提炼器。把用户提供的素材/对话片段消化提炼为可复用的技能工作流，只输出 Markdown 工作流正文（分步、可执行、中文），不要多余说明。' },
+          { role: 'user', content: prompt },
+        ],
+        stream: false,
+      });
+      const resp = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body, signal: AbortSignal.timeout(60000) });
+      if (!resp.ok) throw new Error(`LLM 调用失败（${resp.status}）——请检查密钥与模型配置`);
+      const j = await resp.json() as any;
+      return String(j?.choices?.[0]?.message?.content ?? '');
+    };
+    const { resolveApiKey } = await import('../kernel/providers.js');
+    const requireKey = () => {
+      const keyRes = resolveApiKey(ctx.config.get('settings') as any);
+      if (!keyRes.key) return { error: '消化需要模型密钥——/key set <密钥> 后可用（无 key 不产生假内容）' };
+      if (keyRes.error === 'decrypt-failed') return { error: '密钥无法解密（机器环境变化或数据损坏？）——请 /key set <密钥> 重新配置' };
+      return { key: keyRes.key };
+    };
+
+    // 无参数 → 最近对话消化（对话提供需求 → AI 产出技能）
+    if (!pos.length) {
+      if (!name) return '用法：/assimilate <目录|文件|URL> [--name <名>] [--desc <描述>] [--force] ｜ 无参数 = 消化最近对话（需 --name <技能名>）';
+      const k = requireKey();
+      if ('error' in k) return k.error;
+      const recent = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default').slice(-8);
+      if (!recent.length) return '暂无对话记忆可消化——先对话提供需求，或 /assimilate <文件|URL> --name <技能名>';
+      const transcript = recent.map(r => `${r.role}: ${String(r.content ?? '').slice(0, 300)}`).join('\n');
+      try {
+        const dir = await assimilateMaterial(ctx.dataDir, `（最近对话片段）\n${transcript}`, {
+          name, description: desc, flow, effort, llm: makeDigest(k.key),
+        });
+        return `已从对话消化生成技能 → ${dir}（ai_generated 标注，/skill list 查看）`;
+      } catch (e: any) {
+        return `消化失败：${e?.message?.slice(0, 200) ?? e}`;
+      }
+    }
+
+    const target = pos[0]!;
+    // 目录 → 100% 同化（确定性通道，无需 AI）
+    if (existsSync(target) && statSync(target).isDirectory()) {
+      const r = assimilateDir(ctx.dataDir, target, { force });
+      if (!r.assimilated.length && !r.skipped.length) {
+        return lines(' 黑洞同化（目录） ', [
+          ` 来源：${target}`,
+          ...r.invalid.map(i => ` ⚠ ${i.file.slice(0, 70)}（${i.reason}）`),
+        ]);
+      }
+      return lines(' 黑洞同化（目录） ', [
+        ` 来源：${target}`,
+        ` ✅ 同化 ${r.assimilated.length} 个${r.assimilated.length ? '：' : ''}`,
+        ...r.assimilated.map(a => `   ${c(a.name, '32')} ← ${a.from.slice(0, 70)}`),
+        ...(r.skipped.length ? [` ⏭ 跳过 ${r.skipped.length}：`, ...r.skipped.map(s => `   ${s.name}（${s.reason}）`)] : []),
+        ...(r.invalid.length ? [` ⚠ 无效 ${r.invalid.length}：`, ...r.invalid.map(i => `   ${i.file.slice(0, 70)}（${i.reason}）`)] : []),
+        ` 同化后 /skill list 可见；对话中 /skill:${r.assimilated[0]?.name ?? '名'} 或 skill_load 注入`,
+      ]);
+    }
+
+    // 文件/URL → 素材 AI 消化
+    if (!name) return `用法：/assimilate <文件|URL> --name <技能名> [--desc <描述>] [--flow "A → B"] [--effort low|medium|high]`;
+    const k = requireKey();
+    if ('error' in k) return k.error;
+    try {
+      const material = await readMaterial(target);
+      const dir = await assimilateMaterial(ctx.dataDir, material, {
+        name, description: desc, flow, effort, llm: makeDigest(k.key),
+      });
+      return `已消化素材「${target.slice(0, 50)}」→ 技能 ${c(name, '35')}（ai_generated 标注）→ ${dir}`;
+    } catch (e: any) {
+      return `消化失败：${e?.message?.slice(0, 200) ?? e}`;
+    }
+  });
+
   bus.register('/gate', (args) => {
     const name = args[0] ?? '';
     const dir = join(ctx.dataDir, 'projects', name);

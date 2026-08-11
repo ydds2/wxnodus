@@ -80,6 +80,7 @@ export function discoverSkills(dataDir: string, cwd: string): SkillMeta[] {
         aiGenerated: meta.ai_generated === 'true',
         source,
         path: dir,
+        flow: meta.flow, // /flow 驱动依赖（此前漏读——flow 技能无法被发现）
         effort: meta.effort === 'low' || meta.effort === 'medium' || meta.effort === 'high' ? meta.effort : undefined,
       });
     }
@@ -127,6 +128,7 @@ export function loadSkill(dataDir: string, cwd: string, name: string): LoadedSki
       meta: {
         name: meta.name || name, description: meta.description || '', version: meta.version,
         aiGenerated: meta.ai_generated === 'true', source, path: dir,
+        flow: meta.flow, // /flow 驱动依赖（此前漏读）
         effort: meta.effort === 'low' || meta.effort === 'medium' || meta.effort === 'high' ? meta.effort : undefined,
       },
       body,

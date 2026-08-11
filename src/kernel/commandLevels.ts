@@ -38,7 +38,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/thinking': 'confirm', '/hooks': 'confirm', '/key': 'confirm',
   '/compact': 'confirm', '/digest': 'confirm', '/curator': 'confirm',
   '/build': 'confirm', '/forge': 'confirm', '/skill': 'confirm', '/skill new': 'confirm',
-  '/skill install': 'confirm', '/learn': 'confirm', '/gate': 'confirm', '/fdr': 'confirm',
+  '/skill install': 'confirm', '/learn': 'confirm', '/assimilate': 'confirm', '/gate': 'confirm', '/fdr': 'confirm',
   '/flow': 'confirm', '/import': 'confirm', '/consent': 'confirm', '/encrypt': 'confirm',
   '/backup': 'confirm', '/export': 'confirm', '/theme dark': 'confirm', '/theme light': 'confirm',
   '/theme wxnodus': 'confirm', '/lang zh': 'confirm', '/lang en': 'confirm', '/config set': 'confirm',

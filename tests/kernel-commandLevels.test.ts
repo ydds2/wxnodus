@@ -94,3 +94,18 @@ describe('任务系统分级（AI 联动）', () => {
     expect(classifyCommand('/cron run 1')).toBe('confirm');
   });
 });
+
+describe('/assimilate 同化分级与 NL 触发', () => {
+  it('confirm 级：写技能文件走模式确认链（AI 可发起但需确认）', () => {
+    expect(classifyCommand('/assimilate ./skills')).toBe('confirm');
+    expect(classifyCommand('/assimilate 素材.md --name demo')).toBe('confirm');
+  });
+  it('中文别名与 NL 触发', async () => {
+    const { resolveAlias } = await import('../src/commands/registry.js');
+    expect(resolveAlias('/同化')).toBe('/assimilate');
+    const { routeNaturalLanguage } = await import('../src/commands/intent.js');
+    expect(routeNaturalLanguage('把技能目录同化进来')).toBe('/assimilate');
+    expect(routeNaturalLanguage('帮我消化这个技能文档')).toBe('/assimilate');
+    expect(routeNaturalLanguage('同化这个文件夹的技能')).toBe('/assimilate');
+  });
+});

@@ -299,3 +299,63 @@ describe('/jobs 并行任务系统', () => {
     closeDB(db);
   });
 });
+
+// ── /assimilate 黑洞同化器（目录 100% 同化 + 素材消化）──
+describe('/assimilate 黑洞同化', () => {
+  it('目录同化：真实技能目录 → 面板报告 + discoverSkills 可见', async () => {
+    const d = tmp();
+    const src = tmp();
+    const { mkdirSync, writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    mkdirSync(join(src, 'skill-x'), { recursive: true });
+    writeFileSync(join(src, 'skill-x', 'SKILL.md'), '---\nname: "skill-x"\ndescription: "测试技能"\n---\n\n# skill-x\n\n## 工作流\n1. 步骤');
+    const bus = createCommandBus();
+    const db = openDB(d);
+    const evBus = createEventBus(d);
+    const mem = createMemory(db);
+    const ctx = {
+      dataDir: d, cwd: process.cwd(), db, mem, bus: evBus,
+      config: { get: () => ({}), getKey: () => undefined, setKey: () => {} },
+      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }) },
+      getModel: () => '', getMode: () => 'smart', setMode: () => {}, setTheme: () => {}, getThemeName: () => 'wxnodus',
+      requestExit: () => {}, clearHistory: () => {}, setModel: () => {}, openModelPicker: () => {}, openSessions: () => {}, setThinking: () => {},
+    } as any;
+    registerExtHandlers(bus, ctx);
+    const r = await bus.execute(`/assimilate ${src}`);
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('黑洞同化');
+    expect(r.output).toContain('✅ 同化 1 个');
+    expect(r.output).toContain('skill-x');
+    // 同化后可用
+    const { discoverSkills } = await import('../src/kernel/skills.js');
+    expect(discoverSkills(d, process.cwd()).some(m => m.name === 'skill-x')).toBe(true);
+    closeDB(db);
+  });
+
+  it('素材消化：无 key 诚实提示（不产生假内容）', async () => {
+    const d = tmp();
+    const bus = createCommandBus();
+    const db = openDB(d);
+    const evBus = createEventBus(d);
+    const mem = createMemory(db);
+    const ctx = {
+      dataDir: d, cwd: process.cwd(), db, mem, bus: evBus,
+      config: { get: () => ({}), getKey: () => undefined, setKey: () => {} },
+      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }) },
+      getModel: () => '', getMode: () => 'smart', setMode: () => {}, setTheme: () => {}, getThemeName: () => 'wxnodus',
+      requestExit: () => {}, clearHistory: () => {}, setModel: () => {}, openModelPicker: () => {}, openSessions: () => {}, setThinking: () => {},
+    } as any;
+    registerExtHandlers(bus, ctx);
+    const oldKey = process.env.WXNODUS_API_KEY;
+    delete process.env.WXNODUS_API_KEY;
+    try {
+      const r = await bus.execute('/assimilate 素材.md --name demo-skill');
+      expect(r.ok).toBe(true);
+      expect(r.output).toContain('模型密钥'); // 诚实提示
+      expect(r.output).not.toContain('已消化'); // 未产生假技能
+    } finally {
+      if (oldKey !== undefined) process.env.WXNODUS_API_KEY = oldKey;
+      closeDB(db);
+    }
+  });
+});

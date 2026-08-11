@@ -8,7 +8,7 @@ export const SLASH: string[] = [
   // 记忆（黑洞引擎）
   '/memory', '/hole', '/compact', '/digest', '/curator',
   // 构建（概念编译器）
-  '/build', '/deploy', '/forge', '/skill', '/learn', '/gate', '/fdr', '/evidence', '/plan', '/flow', '/import',
+  '/build', '/deploy', '/forge', '/skill', '/learn', '/gate', '/fdr', '/evidence', '/plan', '/flow', '/import', '/assimilate',
   // 安全（合规红线）
   '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt', '/yolo', '/afk', '/security',
   // 系统
@@ -31,7 +31,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈', '/versions': '◈', '/snapshot': '◈', '/script': '◈', '/self-evolve': '◈',
   '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
-  '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆',
+  '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆', '/assimilate': '◆',
   '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨',
   '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉',
   '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿',
@@ -79,6 +79,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/curator': '黑洞策展（即时审查 + 后台自动审查 on/off/interval）',
   '/build': '概念编译：自然语言需求直达可运行系统',
   '/deploy': '业务落地（FDE 五段）',
+  '/assimilate': '黑洞同化（目录 100% 同化技能 / 文件·URL·对话 AI 消化产出融入）',
   '/forge': '组件锻造（MCP Server/Skill 打包）',
   '/skill': '技能管理（/skill list｜inspect｜new；/skill:名 注入）',
   '/learn': '从最近对话学习生成技能（需密钥，AI 生成标注）',
@@ -144,7 +145,7 @@ const ALIASES: Record<string, string> = {
   '/锻造': '/forge', '/技能': '/skill', '/权限': '/perm', '/沙盒': '/sandbox', '/合规': '/compliance',
   '/授权': '/consent', '/备份': '/backup', '/导出': '/export', '/主题': '/theme', '/语言': '/lang',
   '/视觉': '/vision', '/图片': '/img', '/视频': '/video', '/抓取': '/claw', '/定时': '/cron',
-  '/计算': '/calc', '/哈希': '/hash', '/换算': '/units',
+  '/计算': '/calc', '/哈希': '/hash', '/换算': '/units', '/同化': '/assimilate',
 };
 
 export function isSlash(text: string): boolean {
