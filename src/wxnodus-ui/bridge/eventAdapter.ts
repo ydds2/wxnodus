@@ -2,6 +2,7 @@ import { STARTUP_IMAGE, STARTUP_QUERY } from '../config/env.js'
 import { STREAM_BATCH_MS } from '../config/timing.js'
 import { buildSetupRequiredSections, SETUP_REQUIRED_TITLE } from '../content/setup.js'
 import type {
+  ApprovalRespondResponse,
   CommandsCatalogResponse,
   ConfigFullResponse,
   DelegationStatusResponse,
@@ -12,6 +13,7 @@ import type {
 import { rpcErrorMessage } from '../lib/rpc.js'
 import { topLevelSubagents } from '../lib/subagentTree.js'
 import { formatAbandonedClarify, formatToolCall, stripAnsi } from '../lib/text.js'
+import { CONFIRM_WORDS, REJECT_WORDS, voiceConfirmChoice } from '../lib/voiceIntent.js'
 import { fromSkin, DARK_THEME, LIGHT_THEME, DEFAULT_THEME } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
@@ -565,6 +567,30 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         const text = String(ev.payload?.text ?? '').trim()
 
         if (!text) {
+          return
+        }
+
+        // A20：语音确认路由——有审批/确认弹窗时，短文本匹配确认词库 →
+        // 直接响应 RPC，不提交对话（免提模式：说"确认/取消"推进审批）。
+        const overlay = getOverlayState()
+
+        if (overlay.approval || overlay.confirm) {
+          const choice = voiceConfirmChoice(text)
+
+          if (choice !== null) {
+            void rpc<ApprovalRespondResponse>('approval.respond', {
+              choice,
+              session_id: getUiState().sid,
+            })
+            patchOverlayState({ approval: null, confirm: null })
+            setStatus(choice === 'approve' ? '已确认（语音）' : '已取消（语音）')
+
+            return
+          }
+
+          // 词库未命中：提示用户说确认/取消——不把"嗯嗯"提交成对话
+          sys(`语音确认：请说「${CONFIRM_WORDS.slice(0, 3).join('/')}」或「${REJECT_WORDS.slice(0, 3).join('/')}」`)
+
           return
         }
 

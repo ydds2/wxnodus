@@ -174,6 +174,8 @@ export class GatewayClient extends EventEmitter {
               args_text: p?.args ? JSON.stringify(p.args).slice(0, 400) : undefined,
             },
           })
+          // A20：免提播报——语音模式开启时说出当前执行的工具（1.5s 节流）
+          this.speakToolStart(name)
         } else {
           this.publish({
             type: 'tool.complete',
@@ -1196,6 +1198,15 @@ export class GatewayClient extends EventEmitter {
   }
 
   // ── 语音模式（本地 whisper：真实实现，非占位）──────────────
+  // A20：VAD 免提——start 时 vad:true → 静音自动停止（onVadEnded）
+  /** A20：语音密钥待命——用户说"设置密钥"后，下一段语音直接作为密钥录入 */
+  private voicePendingSecret = false
+  /** A20：唤醒监听器（/voice wake on） */
+  private wakeListener: import('../kernel/wake.js').WakeListener | null = null
+  private voiceWake = false
+  /** A20：工具状态播报节流（1.5s 内只播一条） */
+  private lastToolSpeakAt = 0
+
   private voiceToggle(params: Record<string, unknown>): unknown {
     const action = String(params.action ?? 'status')
     const settings = this.kernel.config.get('settings') as Record<string, any> | undefined
@@ -1214,13 +1225,24 @@ export class GatewayClient extends EventEmitter {
         this.voiceRecordingSession = null
         this.publish({ type: 'voice.status', payload: { state: 'idle' } })
       }
+      // A20：关闭语音同时停掉唤醒监听
+      if (this.wakeListener) {
+        this.wakeListener.stop()
+        this.wakeListener = null
+        this.voiceWake = false
+      }
     } else if (action === 'tts') {
       this.voiceTts = !this.voiceTts
+    } else if (action === 'wake') {
+      // 异步启停（动态 import）；当前状态先翻转展示，失败会回滚
+      this.voiceWake = !this.voiceWake
+      void this.toggleWake()
     }
 
     return {
       enabled: this.voiceEnabled,
       tts: this.voiceTts,
+      wake: this.voiceWake,
       audio_available: check.sttAvailable,
       stt_available: check.sttAvailable,
       details: check.details.join('\n'),
@@ -1228,6 +1250,159 @@ export class GatewayClient extends EventEmitter {
       // 前端 /voice status 与热键绑定保持一致
       record_key: (settings?.voice as Record<string, any> | undefined)?.recordKey ?? 'ctrl+b',
     }
+  }
+
+  /** A20：唤醒模式启停（持续监听 + whisper 短窗匹配——纯自研） */
+  private async toggleWake(): Promise<void> {
+    if (this.wakeListener) {
+      this.wakeListener.stop()
+      this.wakeListener = null
+      this.voiceWake = false
+
+      return
+    }
+
+    const settings = this.kernel.config.get('settings') as Record<string, any> | undefined
+    const { resolveVoiceConfig, detectAudioDevice } = await import('../kernel/voice.js')
+    const cfg = resolveVoiceConfig(settings, this.kernel.dataDir)
+    const device = cfg.device || detectAudioDevice()
+
+    if (!cfg.whisperBin || !cfg.modelPath || !device) {
+      this.voiceWake = false
+      this.publish({ type: 'notification.show', payload: { text: '唤醒模式不可用：缺少 whisper/模型/录音设备（/voice status 查看）', level: 'warn' } })
+
+      return
+    }
+
+    const { WakeListener } = await import('../kernel/wake.js')
+    this.wakeListener = new WakeListener({
+      dataDir: this.kernel.dataDir,
+      whisperBin: cfg.whisperBin,
+      modelPath: cfg.modelPath,
+      device,
+      onWake: () => {
+        // 唤醒命中：播报"我在" + 自动进入 VAD 待命录音（免提闭环）
+        if (this.voiceTts) {
+          void import('../kernel/voice.js').then(({ speakTts }) => {
+            try { speakTts('我在，请说') } catch { /* 忽略 */ }
+          })
+        }
+        void this.voiceRecord({ action: 'start', vad: true })
+      },
+      onError: (e) => this.publish({ type: 'notification.show', payload: { text: e, level: 'warn' } }),
+    })
+    const r = this.wakeListener.start()
+
+    if (!r.ok) {
+      this.wakeListener = null
+      this.voiceWake = false
+      this.publish({ type: 'notification.show', payload: { text: r.error, level: 'warn' } })
+
+      return
+    }
+
+    this.publish({ type: 'notification.show', payload: { text: '唤醒模式已开启——说「wxnodus」唤醒（持续监听，CPU 有开销）', level: 'success' } })
+  }
+
+  /** A20：语音播报（voiceTts 门控 + 静默失败——附加能力不阻塞主流程） */
+  private speak(text: string): void {
+    if (!this.voiceTts) {
+      return
+    }
+    void import('../kernel/voice.js').then(({ speakTts }) => {
+      try { speakTts(text) } catch { /* 忽略 */ }
+    })
+  }
+
+  /** A20：工具状态播报（开始执行时，1.5s 节流） */
+  private speakToolStart(name: string): void {
+    const now = Date.now()
+
+    if (now - this.lastToolSpeakAt < 1500) {
+      return
+    }
+    this.lastToolSpeakAt = now
+    this.speak(`正在执行 ${name}`)
+  }
+
+  /** A20：语音密钥专用通道——转写含敏感内容时拦截，不进历史/模型/显示 */
+  private async routeVoiceSecret(text: string): Promise<boolean> {
+    const { detectSecretInTranscript } = await import('../kernel/secretDetect.js')
+    const hit = detectSecretInTranscript(text)
+
+    if (!hit) {
+      return false
+    }
+
+    if (this.voicePendingSecret) {
+      // 上一轮引导后：整段语音就是密钥
+      this.voicePendingSecret = false
+      const r = await this.kernel.commandBus.execute(`/key set ${hit.secret || text}`)
+
+      if (r.ok) {
+        this.publish({ type: 'notification.show', payload: { text: '语音密钥已安全录入（AES 加密存储，不回显）', level: 'success' } })
+        this.speak('密钥已安全录入')
+      } else {
+        this.publish({ type: 'notification.show', payload: { text: `密钥录入失败：${r.output ?? '未知错误'}`, level: 'error' } })
+      }
+
+      return true
+    }
+
+    if (hit.secret) {
+      // 转写直接含密钥（"设置密钥 sk-xxx" / "sk-xxx"）→ 本地加密存储
+      const r = await this.kernel.commandBus.execute(`/key set ${hit.secret}`)
+
+      if (r.ok) {
+        this.publish({ type: 'notification.show', payload: { text: '语音密钥已安全录入（AES 加密存储，不回显）', level: 'success' } })
+        this.speak('密钥已安全录入')
+      } else {
+        this.publish({ type: 'notification.show', payload: { text: `密钥录入失败：${r.output ?? '未知错误'}`, level: 'error' } })
+      }
+    } else {
+      // 只说"设置密钥"无内容 → 引导下一段语音作为密钥
+      this.voicePendingSecret = true
+      this.publish({ type: 'notification.show', payload: { text: '请说出密钥（下段语音将作为密钥安全录入）', level: 'warn' } })
+      this.speak('请说出密钥')
+    }
+
+    return true
+  }
+
+  /** A20：录音收尾（手动 stop 与 VAD 自动停止共用）——转写 + 敏感拦截 + 事件广播 */
+  private async finishVoiceRecording(): Promise<{ status: string; text: string }> {
+    const rec = this.voiceRecordingSession
+
+    if (!rec) {
+      return { status: 'stopped', text: '' }
+    }
+    this.voiceRecordingSession = null
+    this.voiceTranscribing = true
+    this.publish({ type: 'voice.status', payload: { state: 'transcribing' } })
+    const settings = this.kernel.config.get('settings') as Record<string, any> | undefined
+    const { stopAndTranscribe } = await import('../kernel/voice.js')
+    const r = await stopAndTranscribe(rec, this.kernel.dataDir, settings)
+    this.voiceTranscribing = false
+    this.publish({ type: 'voice.status', payload: { state: 'idle' } })
+
+    if (!r.ok) {
+      this.publish({ type: 'notification.show', payload: { text: `转写失败：${r.error}`, level: 'error' } })
+
+      return { status: 'stopped', text: '' }
+    }
+
+    if (r.text) {
+      // A20 红线：敏感检测——密钥/口令走专用通道（不进历史/模型/显示）
+      const intercepted = await this.routeVoiceSecret(r.text)
+
+      if (!intercepted) {
+        this.publish({ type: 'voice.transcript', payload: { text: r.text } })
+      }
+
+      return { status: 'stopped', text: r.text }
+    }
+
+    return { status: 'stopped', text: '' }
   }
 
   private async voiceRecord(params: Record<string, unknown>): Promise<unknown> {
@@ -1238,7 +1413,12 @@ export class GatewayClient extends EventEmitter {
       if (this.voiceTranscribing) return { status: 'busy' }
       if (this.voiceRecordingSession) return { status: 'recording' }
       const { startRecording } = await import('../kernel/voice.js')
-      const r = startRecording(this.kernel.dataDir, settings)
+      // A20：免提模式——/voice on 后默认 VAD（静音自动停止）；参数可关闭
+      const vad = params.vad !== false && this.voiceEnabled
+      const r = startRecording(this.kernel.dataDir, settings, process.env, {
+        vad,
+        onVadEnded: () => { void this.finishVoiceRecording() },
+      })
       if (!r.ok) {
         this.publish({ type: 'notification.show', payload: { text: `录音启动失败：${r.error}`, level: 'error' } })
         return { status: 'stopped', text: '' }
@@ -1250,25 +1430,7 @@ export class GatewayClient extends EventEmitter {
 
     // stop：结束采集 → whisper 本地转写 → 事件广播（前端自动注入 composer 提交）
     if (action === 'stop') {
-      const rec = this.voiceRecordingSession
-      if (!rec) return { status: 'stopped', text: '' }
-      this.voiceRecordingSession = null
-      this.voiceTranscribing = true
-      this.publish({ type: 'voice.status', payload: { state: 'transcribing' } })
-      const { stopAndTranscribe } = await import('../kernel/voice.js')
-      const r = await stopAndTranscribe(rec, this.kernel.dataDir, settings)
-      this.voiceTranscribing = false
-      this.publish({ type: 'voice.status', payload: { state: 'idle' } })
-      if (!r.ok) {
-        this.publish({ type: 'notification.show', payload: { text: `转写失败：${r.error}`, level: 'error' } })
-        return { status: 'stopped', text: '' }
-      }
-      if (r.text) {
-        // 前端 voice.transcript 处理：文本注入 composer 作为下一轮提交（语音直达对话）
-        this.publish({ type: 'voice.transcript', payload: { text: r.text } })
-        return { status: 'stopped', text: r.text }
-      }
-      return { status: 'stopped', text: '' }
+      return this.finishVoiceRecording()
     }
 
     return { status: 'stopped', text: '' }

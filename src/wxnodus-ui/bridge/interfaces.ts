@@ -384,6 +384,8 @@ export interface AppLayoutActions {
   onModelSelect: (value: string) => void
   resumeById: (id: string) => void
   setStickyPrompt: (value: string) => void
+  /** A20：麦克风钮（缺键盘场景鼠标触发录音开关——与 Ctrl+B 同链路） */
+  toggleVoice: () => void
 }
 
 export interface AppLayoutComposerProps {
@@ -416,6 +418,9 @@ export interface AppLayoutStatusProps {
   stickyPrompt: string
   turnStartedAt: null | number
   voiceLabel: string
+  /** A20：麦克风钮状态（语音模式开启/录音中） */
+  voiceEnabled: boolean
+  voiceRecording: boolean
 }
 
 export interface AppLayoutTranscriptProps {

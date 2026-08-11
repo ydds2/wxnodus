@@ -1663,7 +1663,9 @@ export const commands = {
     if (!url) return '用法：/claw <URL>（网页抓取，SSRF 防护拦截内网）';
     try {
       const { safeFetchText } = await import('../kernel/ssrf.js');
-      const r = await safeFetchText(url);
+      // A20：消费 settings.proxy（原死配置接入）+ 响应体上限 1MB + 默认 UA
+      const proxy = (ctx.config.get('settings') as any)?.proxy as string | undefined;
+      const r = await safeFetchText(url, { maxBytes: 1_000_000, proxy });
       if ('error' in r) return r.error;
       const html = r.text;
       // 提取正文文本（去 script/style/标签/空白）
@@ -1678,6 +1680,43 @@ export const commands = {
     } catch (e: any) {
       return `抓取失败：${e?.message?.slice(0, 300) ?? e}`;
     }
+  });
+
+  // A20：联网搜索（自研 DDG+Bing 双引擎解析，无 API key；SSRF 防护复用）
+  bus.register('/search', async (args) => {
+    const q = args.join(' ').trim();
+    if (!q) return '用法：/search <查询词>（DuckDuckGo/Bing 网页搜索，自研解析）';
+    try {
+      const { searchWeb } = await import('../kernel/search.js');
+      const proxy = (ctx.config.get('settings') as any)?.proxy as string | undefined;
+      const r = await searchWeb(q, { proxy });
+
+      if (!r.ok) {
+        return `搜索失败：${r.error}`;
+      }
+
+      if (!r.results.length) {
+        return '搜索无结果';
+      }
+
+      return `引擎：${r.engine}\n` +
+        r.results
+          .map((x, i) => `${i + 1}. ${x.title}\n   ${x.url}${x.snippet ? `\n   ${x.snippet}` : ''}`)
+          .join('\n');
+    } catch (e: any) {
+      return `搜索失败：${e?.message?.slice(0, 300) ?? e}`;
+    }
+  });
+
+  // A20：/web 别名（抓取 URL——与 /claw 同链路同防护）
+  bus.register('/web', async (args) => {
+    const url = args.join(' ').trim();
+    if (!url) return '用法：/web <URL>';
+    if (!ctx.commandBus) return '命令总线不可用';
+
+    const r = await ctx.commandBus.execute(`/claw ${url}`);
+
+    return r.output ?? (r.ok ? '' : '抓取失败');
   });
 
   // /gateway：本地 HTTP JSON-RPC 网关（localhost 监听，POST /rpc 面）
@@ -2373,6 +2412,55 @@ export const commands = {
     }
   });
 
+// ── A20：后台终端（/term）——node-pty 真实交互会话 ──────────
+  // 与 /jobs（一次性后台执行）不同：持久 PTY，可注入输入、跟随输出——
+  // python REPL / ssh / 交互式命令都能跑。write/kill 为 danger（写终端=执行命令）。
+  bus.register('/term', async (args) => {
+    const tm = ctx.term;
+    if (!tm) return '后台终端不可用（term 未装配）';
+    const [sub, ...rest] = args.join(' ').trim().split(/\s+/);
+    const action = (sub ?? '').toLowerCase();
+
+    if (!action || action === 'list') {
+      const list = tm.list();
+      if (!list.length) return '无后台终端（/term new 启动一个）';
+      return list.map(s => `${s.status === 'running' ? '●' : '○'} ${s.id}  ${s.shell}  ${s.status === 'running' ? '运行中' : `已退出(${s.exitCode})`}  ${new Date(s.startedAt).toLocaleTimeString()}`).join('\n');
+    }
+
+    if (action === 'new') {
+      const shell = rest.join(' ').trim() || undefined;
+      const r = await tm.spawn(shell);
+      return r.ok ? `终端已启动 → ${r.id}（/term attach ${r.id} 跟随输出；/term write ${r.id} <命令> 注入输入）` : r.error;
+    }
+
+    if (action === 'write') {
+      const id = rest[0] ?? '';
+      const input = `${rest.slice(1).join(' ')}\r`;
+      if (!id || !rest.slice(1).length) return '用法：/term write <id> <命令>';
+      const r = tm.write(id, input);
+      return r.ok ? `已注入 → ${id}` : r.error;
+    }
+
+    if (action === 'kill') {
+      const id = rest[0] ?? '';
+      if (!id) return '用法：/term kill <id>';
+      const r = tm.kill(id);
+      return r.ok ? `已终止 → ${id}` : r.error;
+    }
+
+    if (action === 'attach') {
+      const id = rest[0] ?? '';
+      if (!id) return '用法：/term attach <id>';
+      const s = tm.get(id);
+      if (!s) return `终端 ${id} 不存在（/term 查看列表）`;
+      const log = tm.getLog(id) || '（无输出——等待输入？/term write 注入）';
+      return `── 终端 ${id}（${s.shell} ${s.status}）──
+${log.slice(-3000)}`;
+    }
+
+    return '用法：/term [list] | new [shell] | write <id> <命令> | kill <id> | attach <id>';
+  });
+
   // 审计留痕
-  try { appendAudit(ctx.db, 'handlers.ext.registered', { count: 47 }); } catch { /* 审计表未就绪时静默 */ }
+  try { appendAudit(ctx.db, 'handlers.ext.registered', { count: 48 }); } catch { /* 审计表未就绪时静默 */ }
 }

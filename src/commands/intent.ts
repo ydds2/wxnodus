@@ -27,6 +27,8 @@ export const NL_TRIGGERS: NlTrigger[] = [
   { re: /备份(?!过|了|好|完)(?:一下|一份|数据|项目|代码|资料|文件|到|吧|$)/i, cmd: '/backup' },
   { re: /(?:部署|上线|落地)(?!了|过|后|完|完成)/i, cmd: '/deploy' },
   { re: /(?:抓取|爬).*网页|网页.*(?:抓|爬)|打开.*网页.*分析/i, cmd: '/claw' },
+  // A20：联网搜索（自研 DDG——区别于 /hole 的记忆检索）
+  { re: /(?:搜一搜|搜一下|帮我搜|上网.*搜|查一下.*资料|搜索)[^记]*$/i, cmd: '/search' },
   { re: /定时|每隔|每(?:天|周|小时)/i, cmd: '/cron' },
   { re: /沙盒|隔离.*运行/i, cmd: '/sandbox' },
   { re: /合规|授权|consent/i, cmd: '/compliance' },

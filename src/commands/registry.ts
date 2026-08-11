@@ -16,9 +16,9 @@ export const SLASH: string[] = [
   // 视觉与媒体（可视化 AI 技能）
   '/vision', '/img', '/video', '/render', '/capture', '/input',
   // 网络与集成
-  '/claw', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
+  '/claw', '/web', '/search', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
   // 协作
-  '/swarm', '/duo', '/cron', '/jobs', '/task', '/delegate', '/goal', '/btw',
+  '/swarm', '/duo', '/cron', '/jobs', '/term', '/task', '/delegate', '/goal', '/btw',
   // 工具（确定性）
   '/calc', '/hash', '/base64', '/uuid', '/rand', '/json', '/timer', '/sql', '/fs', '/units', '/csv',
   // 上下文工程（P3：repo map / 快照回滚 / 技能热重载）
@@ -35,8 +35,8 @@ export const COMMAND_CAT: Record<string, string> = {
   '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨',
   '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉',
   '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿',
-  '/claw': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
-  '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/task': '◍', '/delegate': '◍', '/goal': '◍', '/btw': '◍',
+  '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
+  '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/goal': '◍', '/btw': '◍',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
   '/map': '⬡', '/rewind': '⬡', '/reload-skills': '⬡',
 };
@@ -111,6 +111,8 @@ export const COMMAND_DESC: Record<string, string> = {
   '/render': 'Markdown 排版预览',
   '/capture': '屏幕截屏（当前界面留证）',
   '/claw': '网页抓取（SSRF 防护）',
+  '/web': '抓取网页（/claw 别名）',
+  '/search': '联网搜索（DuckDuckGo）',
   '/mcp': 'MCP 服务器管理',
   '/gateway': 'HTTP 网关',
   '/proxy': '代理转发',
@@ -121,6 +123,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/duo': '双脑协作',
   '/cron': '定时任务（add/list/del/pause 真实调度）',
   '/jobs': '后台任务中心',
+  '/term': '后台终端（PTY 交互会话）',
   '/delegate': '派生子代理',
   '/goal': '循环目标执行',
   '/btw': '侧边提问（隔离只读上下文，不打断主对话）',

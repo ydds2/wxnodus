@@ -252,13 +252,17 @@ export const sessionCommands: SlashCommand[] = [
   },
 
   {
-    help: 'voice mode: [on|off|tts|status]',
+    help: 'voice mode: [on|off|tts|wake|status]',
     name: 'voice',
     run: (arg, ctx) => {
       const normalized = (arg ?? '').trim().toLowerCase()
 
       const action =
-        normalized === 'on' || normalized === 'off' || normalized === 'tts' || normalized === 'status'
+        normalized === 'on' ||
+        normalized === 'off' ||
+        normalized === 'tts' ||
+        normalized === 'wake' ||
+        normalized === 'status'
           ? normalized
           : 'status'
 
@@ -297,9 +301,11 @@ export const sessionCommands: SlashCommand[] = [
           if (action === 'status') {
             const mode = r.enabled ? 'ON' : 'OFF'
             const tts = r.tts ? 'ON' : 'OFF'
+            const wake = r.wake ? 'ON' : 'OFF'
             ctx.transcript.sys('Voice Mode Status')
             ctx.transcript.sys(`  Mode:       ${mode}`)
             ctx.transcript.sys(`  TTS:        ${tts}`)
+            ctx.transcript.sys(`  Wake word:  ${wake}`)
             ctx.transcript.sys(`  Record key: ${recordKeyLabel}`)
 
             // CLI's "Requirements:" block — surfaces STT/audio setup issues
@@ -321,6 +327,12 @@ export const sessionCommands: SlashCommand[] = [
 
           if (action === 'tts') {
             ctx.transcript.sys(`Voice TTS ${r.tts ? 'enabled' : 'disabled'}.`)
+
+            return
+          }
+
+          if (action === 'wake') {
+            ctx.transcript.sys(`Wake word ${r.wake ? 'ON' : 'OFF'} — 说「wxnodus」唤醒（持续监听）`)
 
             return
           }

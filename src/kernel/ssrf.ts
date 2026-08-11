@@ -47,15 +47,44 @@ export async function checkUrlSafety(url: string): Promise<{ ok: boolean; reason
 }
 
 /** 带 SSRF 防护的 GET 请求（重定向逐跳校验，≤5 跳，15s 超时）；返回 { status, text } 或 { error } */
-export async function safeFetchText(url: string, maxRedirects = 5): Promise<{ status: number; text: string } | { error: string }> {
+export interface SafeFetchOptions {
+  /** 重定向上限（默认 5） */
+  maxRedirects?: number;
+  /** 响应体上限（默认 1MB——防内存炸弹） */
+  maxBytes?: number;
+  /** 附加请求头（UA 等） */
+  headers?: Record<string, string>;
+  /** HTTP 代理（settings.proxy——A20 接入原死配置） */
+  proxy?: string;
+}
+
+const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) WxNodus/3.0 (+local CLI search)';
+
+export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): Promise<{ status: number; text: string } | { error: string }> {
+  const { maxRedirects = 5, maxBytes = 1_000_000, headers = {}, proxy } = opts;
   let current = url;
+
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const check = await checkUrlSafety(current);
     if (!check.ok) return { error: `已拦截：${check.reason}` };
+
+    if (proxy) {
+      // 代理通道：Windows 10+ 内置 curl（SSRF 逐跳校验仍在 JS 侧完成）
+      const r = await proxyFetchOnce(current, proxy, { maxBytes, headers });
+      if ('error' in r) return r;
+      const { status, location, body } = r;
+      if (status >= 300 && status < 400 && location) {
+        current = new URL(location, current).toString();
+        continue;
+      }
+      return { status, text: body };
+    }
+
     try {
       const resp = await fetch(current, {
         redirect: 'manual', // 手动跟随以逐跳校验
         signal: AbortSignal.timeout(15000),
+        headers: { 'user-agent': DEFAULT_UA, ...headers },
       });
       if (resp.status >= 300 && resp.status < 400) {
         const loc = resp.headers.get('location');
@@ -63,10 +92,64 @@ export async function safeFetchText(url: string, maxRedirects = 5): Promise<{ st
         current = new URL(loc, current).toString();
         continue; // 下一跳继续校验
       }
-      return { status: resp.status, text: await resp.text() };
+      // A20：响应体上限（防内存炸弹）
+      const buf = Buffer.from(await resp.arrayBuffer());
+      if (buf.length > maxBytes) {
+        return { status: resp.status, text: buf.subarray(0, maxBytes).toString('utf8') + `\n[截断：响应超过 ${maxBytes} 字节上限]` };
+      }
+      return { status: resp.status, text: buf.toString('utf8') };
     } catch (e: any) {
       return { error: `请求失败：${String(e?.message ?? e).slice(0, 300)}` };
     }
   }
   return { error: `重定向次数超限（${maxRedirects} 跳）——已终止` };
+}
+
+/** 单跳代理请求（curl 系统工具）；返回状态/跳转目标/响应体 */
+async function proxyFetchOnce(
+  url: string,
+  proxy: string,
+  opts: { maxBytes: number; headers: Record<string, string> }
+): Promise<{ status: number; location: string | null; body: string } | { error: string }> {
+  const { spawnSync } = await import('node:child_process');
+  const { mkdtempSync, readFileSync, unlinkSync, writeFileSync, mkdirSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'wxnodus-fetch-'));
+  const outFile = join(dir, 'body.bin');
+  const headerFile = join(dir, 'headers.txt');
+  const args = [
+    '-s', '-m', '15',
+    '--max-filesize', String(opts.maxBytes),
+    '--proxy', proxy,
+    '-A', DEFAULT_UA,
+    ...Object.entries(opts.headers).flatMap(([k, v]) => ['-H', `${k}: ${v}`]),
+    '-D', headerFile,
+    '-o', outFile,
+    url,
+  ];
+  const r = spawnSync('curl', args, { encoding: 'utf8', timeout: 20000, maxBuffer: 64 * 1024 });
+  let body = '';
+  try {
+    if (r.status === 0) body = readFileSync(outFile, 'utf8');
+  } catch { /* 文件未生成（错误响应） */ }
+  // 清临时文件
+  for (const f of [outFile, headerFile]) {
+    try { unlinkSync(f); } catch { /* 忽略 */ }
+  }
+  try { mkdirSync(dir, { recursive: true }); } catch { /* 忽略 */ }
+  if (r.status !== 0 && !body) {
+    return { error: `代理请求失败（curl 退出码 ${r.status ?? '?'}）：${String(r.stderr ?? '').slice(0, 200)}` };
+  }
+  let status = 200;
+  let location: string | null = null;
+  try {
+    const headers = readFileSync(headerFile, 'utf8');
+    const statusMatch = headers.match(/^HTTP\/[\d.]+ (\d{3})/m);
+    if (statusMatch) status = Number(statusMatch[1]);
+    const locMatch = headers.match(/^location: (.+)$/im);
+    if (locMatch) location = locMatch[1]!.trim();
+  } catch { /* 头解析失败按 200 */ }
+  try { unlinkSync(headerFile); } catch { /* 忽略 */ }
+  return { status, location, body };
 }

@@ -673,7 +673,14 @@ class TurnController {
   }
 
   recordReasoningAvailable(text: string, force = false) {
-    if (this.interrupted || (!force && !getUiState().showReasoning)) {
+    if (this.interrupted) {
+      return
+    }
+
+    if (!force && !getUiState().showReasoning) {
+      // A20：showReasoning 关时仍点亮"思考中"指示灯（防卡死误判），不累积文本
+      this.pulseReasoningStreaming()
+
       return
     }
 
@@ -691,7 +698,14 @@ class TurnController {
   }
 
   recordReasoningDelta(text: string, force = false) {
-    if (this.interrupted || (!force && !getUiState().showReasoning)) {
+    if (this.interrupted) {
+      return
+    }
+
+    if (!force && !getUiState().showReasoning) {
+      // A20：同上——只保持动画指示，不累积思考文本
+      this.pulseReasoningStreaming()
+
       return
     }
 
@@ -761,6 +775,9 @@ class TurnController {
     const name = done?.name ?? fallbackName ?? 'tool'
     const label = toolTrailLabel(name)
     const fallbackDuration = done?.startedAt ? (Date.now() - done.startedAt) / 1000 : undefined
+    // A20 修复：后端 duration_s 为 0（瞬时工具/未上报）时用本地实测时长——
+    // 否则 trail 行永远显示 "(0.0s)" 不跳动
+    const effectiveDuration = duration && duration > 0 ? duration : fallbackDuration
 
     const line =
       done?.verboseArgs || resultText
@@ -768,19 +785,15 @@ class TurnController {
             name,
             done?.context || '',
             Boolean(error),
-            duration ?? fallbackDuration,
+            effectiveDuration,
             done?.verboseArgs,
             error || resultText || summary || ''
           )
-        : buildToolTrailLine(name, done?.context || '', Boolean(error), error || summary || '', duration ?? fallbackDuration)
+        : buildToolTrailLine(name, done?.context || '', Boolean(error), error || summary || '', effectiveDuration)
 
     this.activeTools = this.activeTools.filter(tool => tool.id !== toolId)
 
     const next = this.turnTools.filter(item => !sameToolTrailGroup(label, item))
-
-    if (!this.activeTools.length) {
-      next.push('analyzing tool output…')
-    }
 
     this.turnTools = next.slice(-TRAIL_LIMIT)
 

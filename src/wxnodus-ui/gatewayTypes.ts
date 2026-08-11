@@ -344,6 +344,8 @@ export interface VoiceToggleResponse {
   record_key?: string
   stt_available?: boolean
   tts?: boolean
+  /** A20：唤醒模式（wake word 持续监听）状态 */
+  wake?: boolean
 }
 
 export interface VoiceRecordResponse {

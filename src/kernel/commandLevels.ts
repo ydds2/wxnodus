@@ -23,7 +23,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/compliance': 'safe', '/audit': 'safe', '/logs': 'safe', '/bench': 'safe', '/map': 'safe',
   '/calc': 'safe', '/hash': 'safe', '/base64': 'safe', '/uuid': 'safe', '/rand': 'safe', '/json': 'safe',
   '/sql': 'safe', '/units': 'safe', '/csv': 'safe', '/claw': 'safe', '/vision': 'safe', '/img': 'safe',
-  '/video': 'safe', '/jobs': 'safe', '/task': 'safe', '/cron list': 'safe',
+  '/video': 'safe', '/jobs': 'safe', '/search': 'safe', '/web': 'safe', '/term': 'safe', '/term attach': 'safe', '/task': 'safe', '/cron list': 'safe',
   '/script list': 'safe', '/script show': 'safe', '/script dry-run': 'safe', '/script verify': 'safe',
   '/script ci': 'safe', '/script watch list': 'safe',
   '/jobs list': 'safe', '/jobs show': 'safe', '/jobs logs': 'safe', '/jobs tree': 'safe',
@@ -58,6 +58,8 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/gateway': 'danger', '/gateway start': 'danger', '/a2a serve': 'danger', '/acp serve': 'danger',
   // 任务系统：AI 发起任意 shell 后台执行 / 取消 → 强制人工确认
   '/jobs run': 'danger', '/jobs kill': 'danger',
+  // 后台终端：注入输入=执行命令，AI 发起必须人工确认
+  '/term write': 'danger', '/term kill': 'danger', '/term new': 'confirm',
   // ── redline：AI 通道一律拒绝，提示手动执行 ──
   '/quit': 'redline', '/yolo': 'redline', '/afk': 'redline',
   '/perm smart': 'redline', '/perm auto': 'redline', '/perm manual': 'redline', '/perm plan': 'redline',

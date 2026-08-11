@@ -1,5 +1,5 @@
 import { Box, Text } from '@wxnodus/ink'
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 
 import { countPendingTodos } from '../lib/liveProgress.js'
 import { todoGlyph, todoTone } from '../lib/todo.js'
@@ -33,6 +33,21 @@ export const TodoPanel = memo(function TodoPanel({
   const [localCollapsed, setLocalCollapsed] = useState(defaultCollapsed)
   const isControlled = typeof collapsed === 'boolean'
   const effectiveCollapsed = isControlled ? collapsed : localCollapsed
+
+  // A20：in_progress 行 [>] 500ms 闪烁（动态效果——任务在跑一眼可见；unref 防测试挂起）
+  const hasActive = todos.some(todo => todo.status === 'in_progress')
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    if (!hasActive) {
+      return
+    }
+
+    const id = setInterval(() => setTick(v => v + 1), 500)
+    id.unref?.()
+
+    return () => clearInterval(id)
+  }, [hasActive])
 
   const handleToggle = () => {
     if (onToggle) {
@@ -78,10 +93,13 @@ export const TodoPanel = memo(function TodoPanel({
           {todos.map(todo => {
             const tone = todoTone(todo.status)
             const color = rowColor(t, todo.status)
+            // A20：进行中 glyph 闪烁（[>] ↔ [ ]）
+            const glyph =
+              todo.status === 'in_progress' && tick % 2 === 1 ? '[ ]' : todoGlyph(todo.status)
 
             return (
               <Text color={color} dim={tone === 'dim'} key={todo.id}>
-                <Text color={color}>{todoGlyph(todo.status)} </Text>
+                <Text color={color}>{glyph} </Text>
                 {todo.content}
               </Text>
             )

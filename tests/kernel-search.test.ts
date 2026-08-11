@@ -1,0 +1,97 @@
+// tests/kernel-search.test.ts — A20 自研联网搜索：DDG HTML 解析器（fixture，不发真实网络）
+import { describe, expect, it } from 'vitest'
+
+import { decodeDdgUrl, parseBingHtml, parseDuckDuckGoHtml } from '../src/kernel/search.js'
+
+// DDG HTML 结果页 fixture（真实结构：result__a + result__snippet）
+const FIXTURE_HTML = `
+<html><body>
+<div class="result results_links results_links_deep web-result ">
+  <h2 class="result__title">
+    <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdocs&rut=abc">Example Docs &amp; Guide</a>
+  </h2>
+  <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdocs">这是摘要文本，介绍 Example 文档的用法与 API 参考。</a>
+</div>
+<div class="result results_links results_links_deep web-result ">
+  <h2 class="result__title">
+    <a rel="nofollow" class="result__a" href="https://direct.example.org/page">直接链接标题</a>
+  </h2>
+  <a class="result__snippet" href="https://direct.example.org/page">第二个结果的摘要，无跳转参数。</a>
+</div>
+</body></html>
+`
+
+describe('decodeDdgUrl — 跳转解码', () => {
+  it('uddg 参数解码为目标 URL', () => {
+    expect(decodeDdgUrl('//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdocs&rut=abc')).toBe(
+      'https://example.com/docs'
+    )
+  })
+
+  it('无 uddg 的普通链接原样返回', () => {
+    expect(decodeDdgUrl('https://direct.example.org/page')).toBe('https://direct.example.org/page')
+  })
+
+  it('协议相对链接补 https', () => {
+    expect(decodeDdgUrl('//example.com/x')).toBe('https://example.com/x')
+  })
+})
+
+describe('parseDuckDuckGoHtml — 结果解析', () => {
+  it('解析标题/URL/摘要（8 条上限）', () => {
+    const results = parseDuckDuckGoHtml(FIXTURE_HTML)
+    expect(results.length).toBe(2)
+    expect(results[0]).toEqual({
+      title: 'Example Docs & Guide',
+      url: 'https://example.com/docs',
+      snippet: '这是摘要文本，介绍 Example 文档的用法与 API 参考。'
+    })
+    expect(results[1]!.title).toBe('直接链接标题')
+    expect(results[1]!.url).toBe('https://direct.example.org/page')
+  })
+
+  it('HTML 实体解码（&amp; → &）', () => {
+    const r = parseDuckDuckGoHtml(FIXTURE_HTML)
+    expect(r[0]!.title).toContain('&')
+  })
+
+  it('无结果页返回空数组（诚实提示由调用方给出）', () => {
+    expect(parseDuckDuckGoHtml('<html><body>no results</body></html>')).toEqual([])
+    expect(parseDuckDuckGoHtml('')).toEqual([])
+  })
+
+  it('跳过空标题与残留跳转链接', () => {
+    const html = '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fx.com&rut=1">   </a>'
+    expect(parseDuckDuckGoHtml(html)).toEqual([])
+  })
+})
+
+describe('parseBingHtml — Bing 回退引擎解析', () => {
+  const BING_FIXTURE = `
+<ol id="b_results">
+<li class="b_algo">
+  <h2><a href="https://example.com/bing-page">Bing 结果标题</a></h2>
+  <div class="b_caption"><p>这是 Bing 摘要，说明页面内容。</p></div>
+</li>
+<li class="b_algo">
+  <h2><a href="https://example.org/second">第二条标题</a></h2>
+  <div class="b_caption"><p>第二条摘要。</p></div>
+</li>
+</ol>`
+
+  it('解析 b_algo 块（标题/URL/摘要）', () => {
+    const results = parseBingHtml(BING_FIXTURE)
+    expect(results.length).toBe(2)
+    expect(results[0]).toEqual({
+      title: 'Bing 结果标题',
+      url: 'https://example.com/bing-page',
+      snippet: '这是 Bing 摘要，说明页面内容。'
+    })
+    expect(results[1]!.title).toBe('第二条标题')
+  })
+
+  it('非 http 链接跳过；无结果空数组', () => {
+    expect(parseBingHtml('<li class="b_algo"><h2><a href="javascript:void(0)">x</a></h2></li>')).toEqual([])
+    expect(parseBingHtml('<html>no results</html>')).toEqual([])
+  })
+})

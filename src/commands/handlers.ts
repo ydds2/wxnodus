@@ -49,6 +49,8 @@ export interface HandlerCtx {
   secrets?: import('../kernel/secrets.js').SecretVault;
   /** 并行任务系统（/jobs：shell 真进程 / agent 子代理 / 并行双线子任务） */
   taskRunner?: import('../kernel/taskRunner.js').TaskRunner;
+  /** A20：后台终端（/term：node-pty 真实交互会话） */
+  term?: import('../kernel/term.js').TermManager;
 }
 
 const lines = (title: string, body: string[]): string => {

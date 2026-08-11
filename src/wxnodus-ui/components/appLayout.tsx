@@ -328,7 +328,17 @@ const ComposerPane = memo(function ComposerPane({
               </Box>
 
               <Box position="absolute" right={0}>
-                <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
+                {/* A20：麦克风钮——语音模式下可点击（缺键盘场景鼠标触发录音）；
+                    未开启语音时显示 GoodVibesHeart 心标 */}
+                {status.voiceEnabled ? (
+                  <Box onClick={actions.toggleVoice} flexDirection="row">
+                    <Text color={status.voiceRecording ? ui.theme.color.error : ui.theme.color.accent}>
+                      {status.voiceRecording ? '●REC ' : '◉ '}
+                    </Text>
+                  </Box>
+                ) : (
+                  <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
+                )}
               </Box>
             </Box>
           </>

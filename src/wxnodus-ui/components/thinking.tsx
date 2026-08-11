@@ -52,14 +52,16 @@ type TreeRails = readonly boolean[]
 
 const nextTreeRails = (rails: TreeRails, branch: TreeBranch) => [...rails, branch === 'mid']
 
+// A20 精简：rails 为空时平铺（无缩进树）——工具组传 []，子代理树保留层级
 const treeLead = (rails: TreeRails, branch: TreeBranch) =>
-  `${rails.map(on => (on ? '│ ' : '  ')).join('')}${branch === 'mid' ? '├─ ' : '└─ '}`
+  rails.length ? `${rails.map(on => (on ? '│ ' : '  ')).join('')}${branch === 'mid' ? '├─ ' : '└─ '}` : ''
 
 // ── Primitives ───────────────────────────────────────────────────────
 
 function TreeRow({
   branch,
   children,
+  onClick,
   rails = [],
   stemColor,
   stemDim = true,
@@ -67,6 +69,7 @@ function TreeRow({
 }: {
   branch: TreeBranch
   children: ReactNode
+  onClick?: () => void
   rails?: TreeRails
   stemColor?: string
   stemDim?: boolean
@@ -75,7 +78,7 @@ function TreeRow({
   const lead = treeLead(rails, branch)
 
   return (
-    <Box>
+    <Box onClick={onClick}>
       <NoSelect flexShrink={0} fromLeftEdge width={lead.length}>
         <Text color={stemColor ?? t.color.muted} dim={stemDim}>
           {lead}
@@ -93,6 +96,7 @@ function TreeTextRow({
   color,
   content,
   dimColor,
+  onClick,
   rails = [],
   t,
   wrap = 'wrap-trim'
@@ -101,6 +105,8 @@ function TreeTextRow({
   color: string
   content: ReactNode
   dimColor?: boolean
+  /** A20：行点击（工具详情折叠展开） */
+  onClick?: () => void
   rails?: TreeRails
   t: Theme
   wrap?: 'truncate-end' | 'wrap' | 'wrap-trim'
@@ -116,7 +122,7 @@ function TreeTextRow({
   )
 
   return (
-    <TreeRow branch={branch} rails={rails} t={t}>
+    <TreeRow branch={branch} onClick={onClick} rails={rails} t={t}>
       {text}
     </TreeRow>
   )
@@ -685,6 +691,8 @@ interface Group {
   details: DetailRow[]
   key: string
   label: string
+  /** A20：完成标记（trail 行 ✓/✗）——渲染在行首，一眼看成败 */
+  mark?: '✓' | '✗'
 }
 
 export const ToolTrail = memo(function ToolTrail({
@@ -743,13 +751,16 @@ export const ToolTrail = memo(function ToolTrail({
   const [openSubagents, setOpenSubagents] = useState(visible.subagents === 'expanded')
   const [deepSubagents, setDeepSubagents] = useState(visible.subagents === 'expanded')
   const [openMeta, setOpenMeta] = useState(visible.activity === 'expanded')
+  // A20 精简：工具 Args/Result 详情默认折叠——点击工具行展开
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(new Set())
 
   useEffect(() => {
     if (!tools.length || (visible.tools !== 'expanded' && !openTools)) {
       return
     }
 
-    const id = setInterval(() => setNow(Date.now()), 500)
+    // A20 修复：500ms → 200ms——亚秒级工具耗时也可见跳动
+    const id = setInterval(() => setNow(Date.now()), 200)
 
     return () => clearInterval(id)
   }, [openTools, tools.length, visible.tools])
@@ -801,7 +812,9 @@ export const ToolTrail = memo(function ToolTrail({
         content: parsed.call,
         details: [],
         key: `tr-${i}`,
-        label: parsed.call
+        label: parsed.call,
+        // A20：✓/✗ 完成标记（此前解析了 mark 却不显示）
+        mark: parsed.mark === '✗' ? '✗' : '✓'
       })
 
       if (parsed.detail) {
@@ -830,23 +843,7 @@ export const ToolTrail = memo(function ToolTrail({
       continue
     }
 
-    if (line === 'analyzing tool output…') {
-      pushDetail({
-        color: t.color.muted,
-        dimColor: true,
-        key: `tr-${i}`,
-        content: groups.length ? (
-          <>
-            <Spinner color={t.color.accent} variant="think" /> {line}
-          </>
-        ) : (
-          line
-        )
-      })
-
-      continue
-    }
-
+    // A20 精简：删除 'analyzing tool output…' 过渡行（无信息量噪音）
     meta.push({ color: t.color.muted, content: line, dimColor: true, key: `tr-${i}` })
   }
 
@@ -1071,22 +1068,25 @@ export const ToolTrail = memo(function ToolTrail({
       render: rails => (
         <Box flexDirection="column">
           {groups.map((group, index) => {
-            const branch: TreeBranch = index === groups.length - 1 ? 'last' : 'mid'
-            const childRails = nextTreeRails(rails, branch)
             const hasInlineSubagents = inlineDelegateKey === group.key
             // Surface the /agents hint the moment a delegate group appears —
             // while it's still in-flight and before any subagent has
             // registered — so users can open the live monitor immediately.
             const isDelegateGroup = group.label.startsWith('Delegate Task')
+            // A20 精简：详情默认折叠（点击工具行展开/收起）
+            const groupOpen = openGroups.has(group.key)
 
             return (
               <Box flexDirection="column" key={group.key}>
                 <TreeTextRow
-                  branch={branch}
+                  branch="last"
                   color={group.color}
                   content={
                     <>
                       <Text color={t.color.accent}>● </Text>
+                      {group.mark ? (
+                        <Text color={group.mark === '✗' ? t.color.error : t.color.ok}>{group.mark} </Text>
+                      ) : null}
                       {toolLabel(group)}
                       {isDelegateGroup ? (
                         <Text color={t.color.statusFg} dim>
@@ -1095,19 +1095,34 @@ export const ToolTrail = memo(function ToolTrail({
                       ) : null}
                     </>
                   }
-                  rails={rails}
+                  onClick={group.details.length ? () => {
+                    setOpenGroups(prev => {
+                      const next = new Set(prev)
+
+                      if (next.has(group.key)) {
+                        next.delete(group.key)
+                      } else {
+                        next.add(group.key)
+                      }
+
+                      return next
+                    })
+                  } : undefined}
+                  rails={[]}
                   t={t}
                 />
-                {group.details.map((detail, detailIndex) => (
-                  <Detail
-                    {...detail}
-                    branch={detailIndex === group.details.length - 1 && !hasInlineSubagents ? 'last' : 'mid'}
-                    key={detail.key}
-                    rails={childRails}
-                    t={t}
-                  />
-                ))}
-                {hasInlineSubagents ? renderSubagentList(childRails) : null}
+                {groupOpen
+                  ? group.details.map((detail, detailIndex) => (
+                      <Detail
+                        {...detail}
+                        branch={detailIndex === group.details.length - 1 && !hasInlineSubagents ? 'last' : 'mid'}
+                        key={detail.key}
+                        rails={[]}
+                        t={t}
+                      />
+                    ))
+                  : null}
+                {hasInlineSubagents ? renderSubagentList([]) : null}
               </Box>
             )
           })}

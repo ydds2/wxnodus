@@ -16,7 +16,8 @@ import type {
   GatewayEvent,
   SessionActiveListResponse,
   SessionCloseResponse,
-  TerminalResizeResponse
+  TerminalResizeResponse,
+  VoiceRecordResponse
 } from '../gatewayTypes.js'
 import { useGitBranch } from './useGitBranch.js'
 import { useVirtualHistory } from './useVirtualHistory.js'
@@ -42,7 +43,7 @@ import { $uiState, getUiState, patchUiState } from '../runtime/viewStore.js'
 import { useComposerState } from './useComposer.js'
 import { useConfigSync } from './useConfigWatcher.js'
 import { useBatteryPoll } from './useBatteryMonitor.js'
-import { useInputHandlers } from './useKeyBindings.js'
+import { useInputHandlers, applyVoiceRecordResponse } from './useKeyBindings.js'
 import { useLongRunToolCharms } from './useLongTaskHints.js'
 import { useSessionLifecycle } from './useConversationLifecycle.js'
 import { useSubmission } from './usePromptDispatch.js'
@@ -1086,6 +1087,34 @@ export function useMainApp(gw: GatewayClient) {
       : state.activity.some(item => item.tone !== 'info')
   )
 
+  // A20：麦克风钮（缺键盘场景鼠标触发）——与 Ctrl+B 热键同链路
+  const toggleVoice = useCallback(() => {
+    if (!voiceEnabled) {
+      return sys('语音模式未开启——/voice on 启用')
+    }
+
+    const starting = !voiceRecording
+    const action = starting ? 'start' : 'stop'
+
+    // Optimistic UI（与 useKeyBindings.voiceRecordToggle 同款——RPC 往返前先翻转）
+    if (starting) {
+      setVoiceRecording(true)
+    } else {
+      setVoiceRecording(false)
+      setVoiceProcessing(false)
+    }
+
+    rpc<VoiceRecordResponse>('voice.record', { action, session_id: getUiState().sid })
+      .then(r => applyVoiceRecordResponse(r, starting, { setProcessing: setVoiceProcessing, setRecording: setVoiceRecording }, sys))
+      .catch((e: Error) => {
+        if (starting) {
+          setVoiceRecording(false)
+        }
+
+        sys(`voice error: ${e.message}`)
+      })
+  }, [rpc, setVoiceProcessing, setVoiceRecording, sys, voiceEnabled, voiceRecording])
+
   const appActions = useMemo(
     () => ({
       activateLiveSession: session.activateLiveSession,
@@ -1100,6 +1129,7 @@ export function useMainApp(gw: GatewayClient) {
       newLiveSession: () => session.newLiveSession(),
       newPromptSession,
       onModelSelect,
+      toggleVoice,
       // Resuming a cold session from the overlay CLOSES the current one, so it
       // must respect the busy guard just like the `/resume` slash path.
       // (Switching between live sessions and `+ new` keep the current session
@@ -1127,7 +1157,8 @@ export function useMainApp(gw: GatewayClient) {
       session.activateLiveSession,
       session.guardBusySessionSwitch,
       session.newLiveSession,
-      session.resumeById
+      session.resumeById,
+      toggleVoice
     ]
   )
 
@@ -1173,7 +1204,10 @@ export function useMainApp(gw: GatewayClient) {
       turnStartedAt: ui.sid ? turnStartedAt : null,
       // CLI parity: the classic prompt_toolkit status bar shows a red dot
       // on REC (cli.py:_get_voice_status_fragments line 2344).
-      voiceLabel: voiceRecording ? '● REC' : voiceProcessing ? '◉ STT' : `语音 ${voiceEnabled ? '开' : '关'}${voiceTts ? ' [tts]' : ''}`
+      voiceLabel: voiceRecording ? '● REC' : voiceProcessing ? '◉ STT' : `语音 ${voiceEnabled ? '开' : '关'}${voiceTts ? ' [tts]' : ''}`,
+      // A20：麦克风钮状态（ComposerPane 订阅——缺键盘场景鼠标触发录音）
+      voiceEnabled,
+      voiceRecording
     }),
     [
       cwd,

@@ -196,6 +196,10 @@ async function main() {
   });
   taskRunner.recoverOrphans();
 
+  // A20：后台终端（/term）——node-pty 真实交互会话（与 /jobs 一次性执行互补）
+  const { createTerminalManager } = await import('../kernel/term.js');
+  const term = createTerminalManager({ dataDir, cwd });
+
   // 命令注册
   const commandBus = createCommandBus();
   // 插件命令注册为 /<插件名>.<命令名>（如 /example.hello），防与内置命令冲突；
@@ -233,6 +237,8 @@ async function main() {
     secrets,
     // 并行任务系统（/jobs：shell 真进程 / agent 子代理 / 并行双线子任务）
     taskRunner,
+    // A20：后台终端（/term：node-pty 交互会话）
+    term,
     // getter：gateway 在 TUI 装配后赋值——命令执行时动态读取（注册时快照为 null 的坑）
     get gateway() { return gateway; },
   });
