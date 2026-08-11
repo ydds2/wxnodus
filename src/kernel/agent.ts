@@ -50,6 +50,9 @@ export interface AgentOptions {
   dataDir?: string;
   /** AI 审批预审（/perm auto-review 开启）：LLM 预审代替人工弹窗，allow/deny/ask */
   autoReview?: { enabled: () => boolean; review: (req: { tool: string; args: string; cwd: string }) => Promise<'allow' | 'ask' | 'deny'> };
+  /** 工具延迟加载（P2，默认关）：开启后首轮只注入核心工具 + tool_search，
+   *  模型检索到高级工具后动态激活——省工具 schema token（Codex tool_search 自研版） */
+  toolLazyLoad?: boolean;
 }
 
 export interface AgentResult {
@@ -104,6 +107,36 @@ export function createAgent(opts: AgentOptions) {
 
   // 默认模型调用：OpenAI 兼容真流式（SSE）——token 逐块推送总线（UI 实时显示）
   // 工具调用解析保留 tool_call id（严格格式：assistant.tool_calls + tool.tool_call_id 回填）
+  // ── 工具延迟加载（P2）：核心工具常驻 + tool_search 检索激活高级工具 ──
+  const CORE_TOOL_NAMES = new Set(['fs_read', 'fs_write', 'fs_edit', 'bash', 'ls', 'grep', 'todo', 'clarify', 'ask_user', 'skill_load', 'tool_search']);
+  let activeToolNames: Set<string> | null = null; // null = 延迟加载关闭（全表注入）
+  if (opts.toolLazyLoad) {
+    activeToolNames = new Set(CORE_TOOL_NAMES);
+  }
+  // 检索函数：按名称/描述关键词打分（token 分词 + 子串），返回 top-k 工具描述
+  function searchTools(query: string, all: Record<string, import('./tools.js').ToolDef>, limit = 5): Array<{ name: string; description: string }> {
+    const q = query.toLowerCase();
+    const tokens = q.split(/[\s，。、,]+/).filter(Boolean);
+    // 中文 bigram 展开（'写入记忆' → '写入','入记','记忆'）——命中任一即得分
+    const bigrams = new Set<string>();
+    for (const tk of tokens) {
+      for (let i = 0; i + 1 < tk.length; i++) bigrams.add(tk.slice(i, i + 2));
+    }
+    const scored: Array<{ name: string; description: string; score: number }> = [];
+    for (const [name, t] of Object.entries(all)) {
+      if (activeToolNames?.has(name)) continue; // 已激活不重复
+      const desc = String(t.schema?.function?.description ?? '');
+      const hay = `${name} ${desc}`.toLowerCase();
+      let score = 0;
+      if (hay.includes(q)) score += 10;
+      for (const tk of tokens) if (tk && hay.includes(tk)) score += 3;
+      if (name.includes(q)) score += 6;
+      for (const bg of bigrams) if (hay.includes(bg)) score += 1; // bigram 弱命中
+      if (score > 0) scored.push({ name, description: desc.slice(0, 120), score });
+    }
+    return scored.sort((a, b) => b.score - a.score).slice(0, limit);
+  }
+
   // 模型降级链（智能度增强）：429/5xx → 同 provider 备选模型自动降级重试
   // 会话级保持（degradedModel 非空即不再逐轮重试）；/model 手动切换后重置
   let degradedModel: string | null = null;
@@ -289,6 +322,20 @@ export function createAgent(opts: AgentOptions) {
     return { ok: r.ok, output: r.text, turns: r.turns };
   };
 
+  // tool_search 工具（延迟加载入口）：检索 + 激活高级工具
+  if (opts.toolLazyLoad) {
+    tools['tool_search'] = {
+      schema: { type: 'function', function: { name: 'tool_search', description: '检索高级工具（按关键词，如 "图片" "网络" "视频"）——命中后该工具立即可用', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+      danger: false,
+      async run({ query }, ctx) {
+        const hits = searchTools(String(query ?? ''), tools);
+        if (!hits.length) return '未找到匹配工具（可用核心工具：' + [...CORE_TOOL_NAMES].filter(n => n !== 'tool_search').join('、') + '）';
+        for (const h of hits) activeToolNames?.add(h.name);
+        return `已激活 ${hits.length} 个工具（下次调用可用）：\n` + hits.map(h => `- ${h.name}：${h.description}`).join('\n');
+      },
+    };
+  }
+
   const toolCtx: ToolCtx = {
     cwd: process.cwd(),
     dataDir: join(process.cwd(), 'data'),
@@ -326,6 +373,10 @@ export function createAgent(opts: AgentOptions) {
     try {
       const tool = tools[name];
       if (!tool) return `未知工具：${name}（可用：${Object.keys(tools).slice(0, 12).join(', ')}）`;
+      // 工具延迟加载：未激活的高级工具 → 引导检索（不静默失败）
+      if (activeToolNames && !activeToolNames.has(name) && name !== 'tool_search') {
+        return `工具「${name}」未加载——请先调用 tool_search 检索并激活该工具（参数 query 填关键词）`;
+      }
       // F12：权限模型读 tool.danger（单一事实来源）
       // P0-2：持久化规则优先裁决（deny 直接拒绝 / allow 跳过审批 / ask 强制确认）
       const ruleHit = applyRules(name, args, permRules);
@@ -452,7 +503,10 @@ export function createAgent(opts: AgentOptions) {
         apiKeyEnc: (opts.config?.settings as any)?.apiKeyEnc ?? null,
       }).catch(() => { /* 摘要失败不影响对话 */ });
     }
-    const toolList = opts2.subagent ? toolsToOpenAI(Object.fromEntries(Object.entries(tools).filter(([n]) => !['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate'].includes(n)))) : toolsToOpenAI(tools);
+    const toolSource = activeToolNames
+      ? Object.fromEntries([...activeToolNames].filter(n => tools[n]).map(n => [n, tools[n]!]))
+      : tools;
+    const toolList = opts2.subagent ? toolsToOpenAI(Object.fromEntries(Object.entries(toolSource).filter(([n]) => !['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate'].includes(n)))) : toolsToOpenAI(toolSource);
     let turns = 0;
     let consecutiveFail = 0;
     let unknownRounds = 0;

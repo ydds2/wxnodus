@@ -620,3 +620,61 @@ describe('AI 审批预审（autoReview）', () => {
     expect(approvals()).toBe(1);
   });
 });
+
+// ── P2：工具延迟加载（tool_search 检索激活）──
+describe('工具延迟加载', () => {
+  function makeLazyAgent(script: Array<any>, toolLazyLoad = true) {
+    const seenTools: any[][] = [];
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-lazy',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      toolLazyLoad,
+      callModel: async (req: any) => {
+        seenTools.push((req.tools ?? []) as any[]);
+        return script.shift()!;
+      },
+    } as any);
+    return { agent, seenTools };
+  }
+
+  it('开启时首轮只注入核心工具 + tool_search（全表缩减）', async () => {
+    const { agent, seenTools } = makeLazyAgent([{ type: 'text', content: '完成' }]);
+    await agent.run('你好');
+    const names = seenTools[0]!.map((t: any) => t.function.name);
+    expect(names).toContain('tool_search');
+    expect(names).toContain('bash');
+    expect(names).not.toContain('http_get'); // 高级工具未激活
+    expect(names.length).toBeLessThan(12);
+  });
+
+  it('tool_search 检索激活后，下一回合工具表含高级工具', async () => {
+    const { agent, seenTools } = makeLazyAgent([
+      { type: 'tool_call', name: 'tool_search', args: { query: '写入记忆' } } as any,
+      { type: 'text', content: '第一轮完成' },
+      { type: 'text', content: '第二轮完成' },
+    ]);
+    const r1 = await agent.run('搜索工具');
+    expect(r1.ok).toBe(true);
+    // 第二回合：activeToolNames 保留 → 工具表应含 memory_write（已激活）
+    await agent.run('第二轮');
+    const names = seenTools[2]!.map((t: any) => t.function.name);
+    expect(names).toContain('memory_write');
+  });
+
+  it('未激活工具被调用 → 引导 tool_search（不静默）', async () => {
+    const { agent } = makeLazyAgent([
+      { type: 'tool_call', name: 'http_get', args: { url: 'https://example.com' } } as any,
+      { type: 'text', content: '完成' },
+    ]);
+    const r = await agent.run('抓取');
+    expect(r.text).toContain('完成');
+  });
+
+  it('关闭时全表注入（回归）', async () => {
+    const { agent, seenTools } = makeLazyAgent([{ type: 'text', content: '完成' }], false);
+    await agent.run('你好');
+    const names = seenTools[0]!.map((t: any) => t.function.name);
+    expect(names).not.toContain('tool_search');
+    expect(names.length).toBe(14); // 全表（15 内置 - tool_search 未注册）
+  });
+});
