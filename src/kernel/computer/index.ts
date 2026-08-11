@@ -19,17 +19,34 @@ function getRobot(): any {
 }
 
 // 截屏（node-screenshots：XCap Rust 原生，多显示器 scaleFactor）
-export async function captureScreen(): Promise<ScreenShot | null> {
+// opts.region：用户所需切片界面信息——指定屏幕区域裁剪（x/y/width/height，
+// 物理像素坐标）；缺省全屏。敏感操作留证/界面切片分析共用此入口
+export interface CaptureRegion { x: number; y: number; width: number; height: number }
+export async function captureScreen(opts: { region?: CaptureRegion } = {}): Promise<ScreenShot | null> {
   try {
     const { Monitor } = await import('node-screenshots');
     const monitors = await Monitor.all();
     if (!monitors.length) return null;
     const m = monitors[0];
-    const img = m.captureImageSync();
+    let img = m.captureImageSync();
+    const scale = Number(m.scaleFactor()) || 1;
+    let width = (m as any).width;
+    let height = (m as any).height;
+    if (opts.region) {
+      const r = opts.region;
+      // 越界裁剪为有效区（与屏幕边界求交）
+      const x = Math.max(0, Math.floor(r.x));
+      const y = Math.max(0, Math.floor(r.y));
+      const w = Math.min(Math.floor(r.width), width - x);
+      const h = Math.min(Math.floor(r.height), height - y);
+      if (w > 0 && h > 0) {
+        img = img.cropSync(x, y, w, h);
+        width = w;
+        height = h;
+      }
+    }
     const png = await img.toPng();
-    const buf = Buffer.from(png);
-    const scale = m.scaleFactor();
-    return { png: buf, width: (m as any).width, height: (m as any).height, scale: Number(scale) || 1 };
+    return { png: Buffer.from(png), width, height, scale };
   } catch { return null; } // 原生模块不可用（CI/无桌面）→ null
 }
 

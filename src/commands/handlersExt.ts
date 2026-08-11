@@ -757,13 +757,21 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // ── 视觉类 ──────────────────────────────────
-  bus.register('/capture', async () => {
+  bus.register('/capture', async (args) => {
+    // /capture [x y width height]——用户所需切片界面信息：缺省全屏；
+    // 提供 4 个数字参数则按屏幕区域切片（配合 /vision 或 /img 分析指定界面片段）
+    const nums = args.map(Number);
+    const region = nums.length === 4 && nums.every(Number.isFinite)
+      ? { x: nums[0]!, y: nums[1]!, width: nums[2]!, height: nums[3]! }
+      : undefined;
     try {
       const { captureScreen } = await import('../kernel/computer/index.js');
-      const shot = await captureScreen();
+      const shot = await captureScreen(region ? { region } : {});
       const out = shot ? join(ctx.dataDir, `capture-${Date.now().toString(36)}.png`) : null;
       if (shot && out) writeFileSync(out, shot.png, 'utf8');
-      return `屏幕已捕获 → ${out}（可用 /img <路径> 分析）`;
+      return region
+        ? `区域切片已捕获（${region.width}×${region.height} @ ${region.x},${region.y}）→ ${out}（/img <路径> 分析）`
+        : `屏幕已捕获 → ${out}（可用 /img <路径> 分析）`;
     } catch (e: any) { return `截图失败：${e?.message?.slice(0, 120)}（需要图形环境）`; }
   });
 

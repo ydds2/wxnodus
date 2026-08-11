@@ -437,6 +437,23 @@ export function createAgent(opts: AgentOptions) {
       // F4：危险/外部工具输出统一 untrusted 包裹（提示注入防护）
       const raw = await tool.run(args, toolCtx);
       const out = tool.danger ? wrapDanger(raw) : raw;
+      // 敏感操作自动截图留证（计算机视觉存证）：危险工具执行成功后，后台截屏
+      // 存 dataDir/captures/ 供审计追溯（无图形环境自动降级静默；不阻断主流程）
+      if (tool.danger) {
+        void (async () => {
+          try {
+            const { captureScreen } = await import('./computer/index.js');
+            const shot = await captureScreen();
+            if (!shot) return;
+            const { mkdirSync, writeFileSync } = await import('node:fs');
+            const dir = join(opts.dataDir ?? join(process.cwd(), 'data'), 'captures');
+            mkdirSync(dir, { recursive: true });
+            const file = join(dir, `${Date.now().toString(36)}-${name.replace(/[^\w-]/g, '_')}.png`);
+            writeFileSync(file, shot.png);
+            bus.emit('system.notice', { text: `敏感操作已截图留证 → ${file}` });
+          } catch { /* 留证失败静默（无桌面环境等） */ }
+        })();
+      }
       bus.emit('agent.tool', { name, phase: 'complete', ok: true, ms: Date.now() - t0, toolId });
       hooks?.postToolUse(name, out);
       return out;
