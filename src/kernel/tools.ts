@@ -9,6 +9,8 @@ import { join, resolve } from 'node:path';
 export interface ToolCtx {
   cwd: string;
   dataDir: string;
+  /** 数据库（cron_create 等持久化工具；未装配时为 undefined） */
+  db?: import('../store/db.js').Db;
   ask?: (q: string, opts?: { danger?: boolean }) => Promise<boolean>;
   /** C6：文字提问（clarify 工具）——返回用户文本答案 */
   clarify?: (q: string, choices?: string[]) => Promise<string>;
@@ -51,7 +53,18 @@ export function coreTools(): Record<string, ToolDef> {
     schema: { type: 'function', function: { name: 'fs_write', description: '写入文件（覆盖）', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } },
     danger: true,
     async run({ path, content }, ctx) {
-      try { writeFileSync(resolve(ctx.cwd, path), String(content), 'utf8'); return `已写入 ${path}`; }
+      try {
+        const p = resolve(ctx.cwd, path);
+        // 影子快照（/undo fs）：覆盖前备份原内容——文件存在才记录
+        if (existsSync(p)) {
+          try {
+            const { snapshotFile } = await import('./undoShadows.js');
+            snapshotFile(ctx.dataDir, p, readFileSync(p, 'utf8'));
+          } catch { /* 快照失败不影响写入 */ }
+        }
+        writeFileSync(p, String(content), 'utf8');
+        return `已写入 ${path}`;
+      }
       catch (e: any) { return `写入失败：${e.message}`; }
     },
   };
@@ -64,6 +77,11 @@ export function coreTools(): Record<string, ToolDef> {
         const content = readFileSync(p, 'utf8');
         const idx = content.indexOf(String(oldText));
         if (idx < 0) return `未找到要替换的文本：${String(oldText).slice(0, 80)}`;
+        // 影子快照（/undo fs）：编辑前备份原内容
+        try {
+          const { snapshotFile } = await import('./undoShadows.js');
+          snapshotFile(ctx.dataDir, p, content);
+        } catch { /* 快照失败不影响编辑 */ }
         writeFileSync(p, content.slice(0, idx) + String(newText) + content.slice(idx + String(oldText).length), 'utf8');
         return `已替换 ${path} 中 1 处`;
       } catch (e: any) { return `编辑失败：${e.message}`; }
@@ -320,7 +338,41 @@ export function coreTools(): Record<string, ToolDef> {
       return `${r.map}\n（扫描 ${r.scanned} 文件，跳过 ${r.skipped}）`;
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, http_get: httpGet, memory_write: memoryWrite, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap };
+  // cron_create：模型自主创建定时任务（Claude Code CronCreate 对齐）——
+  // 间隔分钟 + 任务文本，写入 cron_jobs 表由 CLI 调度器每分钟派发
+  const cronCreate: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'cron_create',
+        description: '创建定时任务：每隔 N 分钟自动执行一个动作（如「检查依赖更新」「生成每日报告」「巡检服务状态」）。返回任务 ID（/cron list 查看，/cron del <ID> 删除）。',
+        parameters: {
+          type: 'object',
+          properties: {
+            intervalMinutes: { type: 'number', description: '执行间隔（分钟，≥1 的整数）' },
+            action: { type: 'string', description: '到点自动执行的任务文本（中文自然语言即可）' },
+          },
+          required: ['intervalMinutes', 'action'],
+        },
+      },
+    },
+    danger: false,
+    async run(args, ctx) {
+      const interval = Math.floor(Number(args?.intervalMinutes));
+      const action = String(args?.action ?? '').trim();
+      if (!Number.isFinite(interval) || interval < 1) return '参数错误：intervalMinutes 需为 ≥1 的整数';
+      if (!action) return '参数错误：action 不能为空';
+      if (!ctx.db) return '定时任务不可用：数据库未装配（非交互环境）';
+      try {
+        const r = ctx.db.prepare(`INSERT INTO cron_jobs (schedule, action, last_run, enabled) VALUES (?,?,?,1)`)
+          .run(`every ${interval}m`, action, Date.now());
+        return `定时任务已创建 #${r.lastInsertRowid}：每 ${interval} 分钟执行「${action.slice(0, 60)}」（/cron list 查看，/cron del ${r.lastInsertRowid} 删除）`;
+      } catch (e: any) {
+        return `定时任务创建失败：${String(e?.message ?? e).slice(0, 120)}`;
+      }
+    },
+  };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, http_get: httpGet, memory_write: memoryWrite, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

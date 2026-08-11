@@ -45,6 +45,9 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 - **/init 项目分析**：本地扫描生成 AGENTS.md（确定性数据，`/init --overwrite` 重新生成）
 - **生态规范文件链**（agents.md 标准 + 多工具共存）：运行时注入首个存在者——AGENTS.md（/init 产物）> CLAUDE.md > GEMINI.md > .cursorrules > .clinerules > .roomodes，同一套项目规范被多家 CLI 消费
 - **协作与协议（全部真实实现）**：`/swarm` 并行子代理（1-8 个）、`/duo` 双脑方案对比、`/goal` 循环目标执行、`/jobs run` 后台任务（db 持久化）、`/delegate` 派发子代理；`/gateway start` 本地 HTTP JSON-RPC 网关（command/prompt/health）、`/a2a call|serve` Agent-to-Agent 协议端点、`/acp server` ACP stdio 服务器（IDE 集成）、`/webhook add` 事件→HTTP 回调、`/claw <URL>` 网页抓取（SSRF 防护）、`/sandbox L0-L3` 分层权限沙盒、`/timer` 真实到时通知
+- **定时任务工具**（Claude Code CronCreate 对齐）：`cron_create` 工具让模型自主创建定时任务（间隔分钟 + 任务文本 → cron_jobs 表，CLI 调度器每分钟派发）；`/cron add|list|del|pause|resume` 命令面
+- **文件编辑影子快照**（Aider /undo 精神的零 git 依赖版）：`fs_write`/`fs_edit` 覆盖文件前自动备份原内容（上限 50 份 FIFO），`/undo fs list｜restore <编号>` 安全撤销文件编辑——任何工作区可用，不依赖 git
+- **技能 effort 档位**（Claude Code skill effort 对齐）：SKILL.md frontmatter `effort: low|medium|high` 解析并在 `/skill list` 展示
 - **会话 token 预算**（Gemini general.budget 对齐）：`settings.budgetTokens` 设上限——会话累计用量（usage_stats 实时 SUM）超预算即 `system.notice` 告警一次，建议 /compact 或 /new 控制成本；`-p --json` 输出含 `usage` 字段（stats 对齐）
 - **模型能力元数据**：10 模型带能力徽标（🧠 推理 / 👁 视觉 / 上下文窗口），`/model <关键词>` 模糊过滤
 - **Computer Use**：robotjs 桌面控制 + 动作层（DPI 换算/护栏/串行）+ GLM-4V 屏幕理解
@@ -58,7 +61,7 @@ Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器（React 19 
 
 ## 验收证据
 
-- ✅ 481 单元/契约/进程级测试全绿（36 测试文件）+ 类型检查零错误
+- ✅ 487 单元/契约/进程级测试全绿（38 测试文件）+ 类型检查零错误
 - ✅ TUI 冒烟（真实终端 node-pty）：首屏/输入/回复/命令面板/Esc/终止不挂死
 - ✅ 全命令扫描 105/105 可用（scripts/cmd-sweep.mjs 回归工具，112 命令注册表全覆盖）
 - ✅ 概念编译器端到端：「帮我做一个待办系统」→ todo 项目生成 → 启动 → API 增删查 → healthcheck 通过 → evidence.json
@@ -79,7 +82,7 @@ src/
   kernel/     领域层（agent/黑洞引擎/tools/权限/事件/providers/computer/vision/skills/hooks/mcp/projectScan/plugins/imageMeta）
   store/      基础设施（SQLite/配置中心/审计/checkpoint/fork）
   ui/         交互层（ink7 组件/Markdown 管线/Kimi 主题）
-tests/        四层测试（481 用例，36 文件）
+tests/        四层测试（487 用例，38 文件）
 scripts/      TUI 冒烟（node-pty 驱动）/ cmd-sweep 全命令扫描
 ```
 

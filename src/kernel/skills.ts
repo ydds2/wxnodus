@@ -14,6 +14,8 @@ export interface SkillMeta {
   path: string;
   /** 流程节点链（frontmatter flow: "A → B"）——/flow 驱动 */
   flow?: string;
+  /** 努力度（frontmatter effort: low|medium|high，Claude Code skill 同款）——映射推理显示档位 */
+  effort?: 'low' | 'medium' | 'high';
 }
 
 export interface LoadedSkill {
@@ -78,6 +80,7 @@ export function discoverSkills(dataDir: string, cwd: string): SkillMeta[] {
         aiGenerated: meta.ai_generated === 'true',
         source,
         path: dir,
+        effort: meta.effort === 'low' || meta.effort === 'medium' || meta.effort === 'high' ? meta.effort : undefined,
       });
     }
   };
@@ -121,7 +124,11 @@ export function loadSkill(dataDir: string, cwd: string, name: string): LoadedSki
     const text = readFileSync(skillFile, 'utf8');
     const { meta, body } = parseSkillMd(text);
     return {
-      meta: { name: meta.name || name, description: meta.description || '', version: meta.version, aiGenerated: meta.ai_generated === 'true', source, path: dir },
+      meta: {
+        name: meta.name || name, description: meta.description || '', version: meta.version,
+        aiGenerated: meta.ai_generated === 'true', source, path: dir,
+        effort: meta.effort === 'low' || meta.effort === 'medium' || meta.effort === 'high' ? meta.effort : undefined,
+      },
       body,
     };
   }

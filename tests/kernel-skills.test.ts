@@ -208,3 +208,23 @@ describe('跨品牌技能目录', () => {
     } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
   });
 });
+
+// ── P3：effort frontmatter（Claude Code skill effort 对齐）──
+describe('effort frontmatter', () => {
+  it('解析 effort: high 并映射到 SkillMeta；非法值忽略', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-sk4-'));
+    try {
+      const cwd = join(d, 'proj');
+      mkdirSync(join(cwd, '.wxnodus', 'skills', 'deep'), { recursive: true });
+      writeFileSync(join(cwd, '.wxnodus', 'skills', 'deep', 'SKILL.md'), '---\nname: deep\ndescription: 深度分析\neffort: high\n---\n正文');
+      mkdirSync(join(cwd, '.wxnodus', 'skills', 'bad'), { recursive: true });
+      writeFileSync(join(cwd, '.wxnodus', 'skills', 'bad', 'SKILL.md'), '---\nname: bad\neffort: extreme\n---\n正文');
+      const list = discoverSkills(d, cwd);
+      const deep = list.find(s => s.name === 'deep');
+      expect(deep?.effort).toBe('high');
+      const bad = list.find(s => s.name === 'bad');
+      expect(bad?.effort).toBeUndefined();
+      expect(loadSkill(d, cwd, 'deep')?.meta.effort).toBe('high');
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  });
+});

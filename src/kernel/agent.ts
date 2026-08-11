@@ -348,6 +348,7 @@ export function createAgent(opts: AgentOptions) {
   const toolCtx: ToolCtx = {
     cwd: process.cwd(),
     dataDir: join(process.cwd(), 'data'),
+    db: opts.db, // cron_create 等需要持久化能力的工具
     ask: async (q) => (opts.onApproval ? opts.onApproval('ask_user', { question: q }) : false),
     clarify: async (q, choices) => (opts.onClarify ? opts.onClarify(q, choices) : ''),
     spawnSubagent: spawnSub,

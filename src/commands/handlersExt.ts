@@ -13,6 +13,7 @@ import { forgeMcpServer, forgeSkillDir } from '../forge/forge.js';
 import { discoverSkills, loadSkill, installSkill, writeSkill, skillContentForModel } from '../kernel/skills.js';
 import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
 import { buildRepoMap } from '../kernel/repoMap.js';
+import { listShadows, restoreShadow } from '../kernel/undoShadows.js';
 import { decryptKey } from '../kernel/providers.js';
 import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissions.js';
 import { unknownSettingsKeys } from '../store/config.js';
@@ -222,6 +223,24 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   //   快照含完整字段（id/archived/ts），restore 才能重建原始状态
   //   对比轮 6 补强：/undo list 列出可撤销轮次（时间 + 首句）
   bus.register('/undo', (args) => {
+    // /undo fs：文件编辑影子快照（Aider /undo 精神的零 git 依赖版）——
+    // fs_write/fs_edit 覆盖前自动备份，/undo fs list｜restore 安全撤销文件编辑
+    if (args[0] === 'fs') {
+      const sub = args[1];
+      if (sub === 'list') {
+        const shadows = listShadows(ctx.dataDir);
+        if (!shadows.length) return '无文件快照——fs_write/fs_edit 编辑文件前自动生成（/undo fs restore <编号> 恢复）';
+        return lines(' 文件快照（/undo fs restore <编号>） ', shadows.slice(0, 20).map((s, i) => {
+          const rel = s.path.startsWith(ctx.cwd) ? s.path.slice(ctx.cwd.length) : s.path;
+          return ` #${i + 1}  ${new Date(s.ts).toLocaleString('zh-CN', { hour12: false })}  ${rel}（${s.content.length} 字符）`;
+        }));
+      }
+      if (sub === 'restore') {
+        const id = args[2] ?? '1';
+        return restoreShadow(ctx.dataDir, id).message;
+      }
+      return '用法：/undo fs list｜restore [编号]（fs_write/fs_edit 编辑文件前自动快照）';
+    }
     // M4 修复：定位当前会话（UI 多会话切换后 /undo 作用于活跃会话）
     const sid = ctx.agent?.getSessionId?.() ?? 'default';
     const msgs = ctx.db.prepare(`SELECT id, role, content, ts FROM messages WHERE session_id=? AND role!='system' AND archived=0 ORDER BY id`).all(sid) as Array<{ id: number; role: string; content: string; ts: number }>;
@@ -556,8 +575,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const all = discoverSkills(ctx.dataDir, ctx.cwd);
       if (!all.length) return '技能库为空——/skill new <名> 创建，或把 SKILL.md 放到 .wxnodus/skills/<名>/';
       return lines(' 技能库 ', [
-        ...all.map(s => ` ${s.name}${s.description ? ' — ' + s.description : ''}（${s.source}）`),
-        ` 共 ${all.length} 个`,
+        ...all.map(s => ` ${s.name}${s.effort ? ` [${s.effort}]` : ''}${s.description ? ' — ' + s.description : ''}（${s.source}）`),
+        ` 共 ${all.length} 个（effort: low/medium/high 推理档位，frontmatter 声明）`,
       ]);
     }
     if (sub === 'inspect') {
