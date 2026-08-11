@@ -133,6 +133,11 @@ export const INLINE_RE = new RegExp(
 
 const indentDepth = (s: string) => Math.floor(s.replace(/\t/g, '  ').length / 2)
 
+// 标题层级 → 颜色：h1 用 accent（最强强调），h2 用正文色（常规粗体），
+// h3+ 退到 muted（弱化）——多级标题靠颜色+`#` 前缀双重区分主次
+const headingColor = (level: number, t: Theme): string =>
+  level === 1 ? t.color.accent : level === 2 ? t.color.text : t.color.muted
+
 const splitRow = (row: string) =>
   row
     .trim()
@@ -758,24 +763,35 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
         const isDiff = lang === 'diff'
         const highlighted = !isDiff && isHighlightable(lang)
 
+        // 闭合边框：宽度取块内最长行的显示宽度（钳制到可用宽度），
+        // 顶边内嵌语言标签（┌─ ts ──┐），diff 无标签（行着色已表达语义）。
+        // 前缀 `│ ` 取代原 paddingLeft 缩进，行内容与边框左对齐。
+        const langLabel = lang && !isDiff ? ` ${lang} ` : ''
+        const rawWidth = block.reduce((w, l) => Math.max(w, stringWidth(l)), 0)
+        const contentWidth = Math.max(1, cols ? Math.min(rawWidth, Math.max(4, cols - 6)) : rawWidth)
+        const topPad = Math.max(1, contentWidth - 1 - langLabel.length)
+
         nodes.push(
-          <Box flexDirection="column" key={key} paddingLeft={2}>
-            {lang && !isDiff && <Text color={t.color.muted}>{'─ ' + lang}</Text>}
+          <Box flexDirection="column" key={key}>
+            <Text color={t.color.muted}>{'┌─' + langLabel + '─'.repeat(topPad) + '┐'}</Text>
 
             {block.map((l, j) => {
               if (highlighted) {
                 return (
-                  <Text key={j}>
-                    {highlightLine(l, lang, t).map(([color, text], kk) =>
-                      color ? (
-                        <Text color={color} key={kk}>
-                          {text}
-                        </Text>
-                      ) : (
-                        <Text key={kk}>{text}</Text>
-                      )
-                    )}
-                  </Text>
+                  <Box flexDirection="row" key={j}>
+                    <Text color={t.color.muted}>│ </Text>
+                    <Text>
+                      {highlightLine(l, lang, t).map(([color, text], kk) =>
+                        color ? (
+                          <Text color={color} key={kk}>
+                            {text}
+                          </Text>
+                        ) : (
+                          <Text key={kk}>{text}</Text>
+                        )
+                      )}
+                    </Text>
+                  </Box>
                 )
               }
 
@@ -784,16 +800,22 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
               const hunk = isDiff && l.startsWith('@@')
 
               return (
-                <Text
-                  backgroundColor={add ? t.color.diffAdded : del ? t.color.diffRemoved : undefined}
-                  color={add ? t.color.diffAddedWord : del ? t.color.diffRemovedWord : hunk ? t.color.muted : undefined}
-                  dimColor={isDiff && !add && !del && !hunk && l.startsWith(' ')}
-                  key={j}
-                >
-                  {l}
-                </Text>
+                <Box flexDirection="row" key={j}>
+                  <Text color={t.color.muted}>│ </Text>
+                  <Text
+                    backgroundColor={add ? t.color.diffAdded : del ? t.color.diffRemoved : undefined}
+                    color={add ? t.color.diffAddedWord : del ? t.color.diffRemovedWord : hunk ? t.color.muted : undefined}
+                    dimColor={isDiff && !add && !del && !hunk && l.startsWith(' ')}
+                  >
+                    {l}
+                  </Text>
+                </Box>
               )
             })}
+
+            {block.length > 0 && (
+              <Text color={t.color.muted}>{'└' + '─'.repeat(Math.max(1, contentWidth)) + '┘'}</Text>
+            )}
           </Box>
         )
 
@@ -883,10 +905,11 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
 
       if (heading) {
         start('heading')
-        // 层级前缀（# / ## / ###）：多级标题在终端中可区分（此前同色同粗无法分级）
+        // 层级分级：h1 accent 粗体（最强）、h2 正文色粗体、h3+ muted——
+        // 与 `#` 数量前缀配合，多级标题一眼可分主次
         const level = Math.min(headingMatch![1]!.length, 4)
         nodes.push(
-          <Text bold color={t.color.accent} key={key} wrap="wrap-trim">
+          <Text bold color={headingColor(level, t)} key={key} wrap="wrap-trim">
             <Text color={t.color.muted}>{'#'.repeat(level)} </Text>
             <MdInline t={t} text={heading} />
           </Text>
@@ -898,8 +921,10 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
 
       if (i + 1 < lines.length && SETEXT_RE.test(lines[i + 1]!)) {
         start('heading')
+        // SETEXT：`===` 为 h1、`---` 为 h2——与 # 前缀分级同色
+        const level = lines[i + 1]!.startsWith('=') ? 1 : 2
         nodes.push(
-          <Text bold color={t.color.accent} key={key} wrap="wrap-trim">
+          <Text bold color={headingColor(level, t)} key={key} wrap="wrap-trim">
             <MdInline t={t} text={line.trim()} />
           </Text>
         )

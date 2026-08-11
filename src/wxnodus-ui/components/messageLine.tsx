@@ -167,7 +167,7 @@ export const MessageLine = memo(function MessageLine({
   const showDetails =
     (toolsMode !== 'hidden' && Boolean(msg.tools?.length)) || (thinkingMode !== 'hidden' && Boolean(thinking))
 
-  const showResponseSeparator = shouldShowResponseSeparator(msg, showDetails)
+  const showResponseSeparator = shouldShowResponseSeparator(msg, showDetails, prev)
 
   const content = (() => {
     if (msg.kind === 'slash') {
@@ -274,14 +274,28 @@ export const MessageLine = memo(function MessageLine({
           </Text>
         </NoSelect>
 
-        <Box width={transcriptBodyWidth(cols, msg.role, t.brand.prompt, TERMUX_TUI_MODE)}>{content}</Box>
+        {/* user 消息带底色块：长会话里每轮提问一眼可定位（glyph 保留在块外） */}
+        <Box
+          width={transcriptBodyWidth(cols, msg.role, t.brand.prompt, TERMUX_TUI_MODE)}
+          {...(msg.role === 'user' ? { backgroundColor: t.color.userBg, paddingX: 1 } : {})}
+        >
+          {content}
+        </Box>
       </Box>
     </Box>
   )
 })
 
-export const shouldShowResponseSeparator = (msg: Msg, showDetails: boolean): boolean =>
-  msg.role === 'assistant' && showDetails && /\S/.test(msg.text)
+// 回复起始标记（└─ Response）：
+//  1. 回复带思考/工具明细（showDetails）——原有行为
+//  2. 回复直接跟在一轮用户提问之后（prev 为 user）——纯文本回复也标记轮次边界，
+//     与 user 底色块配合，多轮消息间的起止一目了然
+export const shouldShowResponseSeparator = (
+  msg: Msg,
+  showDetails: boolean,
+  prev?: Pick<Msg, 'kind' | 'role'>
+): boolean =>
+  msg.role === 'assistant' && /\S/.test(msg.text) && (showDetails || prev?.role === 'user')
 
 interface MessageLineProps {
   cols: number

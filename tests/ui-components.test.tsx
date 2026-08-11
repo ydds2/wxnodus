@@ -12,7 +12,7 @@ import { filterCommands, isSuggesting } from '../src/wxnodus-ui/lib/suggest.js';
 describe('主题（自研明暗双主题）', () => {
   it('DARK/LIGHT 主题颜色键齐全', () => {
     for (const t of [DARK_THEME, LIGHT_THEME]) {
-      for (const k of ['text', 'muted', 'border', 'accent', 'ok', 'warn', 'error']) {
+      for (const k of ['text', 'muted', 'border', 'accent', 'ok', 'warn', 'error', 'userBg']) {
         expect(typeof t.color[k]).toBe('string');
       }
     }
@@ -38,6 +38,26 @@ describe('消息行渲染（V3 MessageLine）', () => {
   });
 });
 
+describe('消息轮次边界（V3 分隔线）', () => {
+  const t = DEFAULT_THEME;
+  it('回复直接跟在用户提问后显示 └─ Response 分隔', () => {
+    const { lastFrame } = render(
+      <MessageLine cols={80} msg={{ role: 'assistant', text: '收到' }} t={t} prev={{ role: 'user', text: '你好' }} />
+    );
+    expect(lastFrame()).toContain('Response');
+  });
+  it('首条助手消息（无前驱）不显示分隔', () => {
+    const { lastFrame } = render(<MessageLine cols={80} msg={{ role: 'assistant', text: '收到' }} t={t} />);
+    expect(lastFrame()).not.toContain('Response');
+  });
+  it('助手消息跟在助手消息后不重复分隔（段内不打断）', () => {
+    const { lastFrame } = render(
+      <MessageLine cols={80} msg={{ role: 'assistant', text: '收到' }} t={t} prev={{ role: 'assistant', text: '上一段' }} />
+    );
+    expect(lastFrame()).not.toContain('Response');
+  });
+});
+
 describe('Markdown 渲染（V3 Md）', () => {
   const t = DEFAULT_THEME;
   it('标题/列表渲染', () => {
@@ -48,6 +68,20 @@ describe('Markdown 渲染（V3 Md）', () => {
   it('代码块含 lang 标签', () => {
     const { lastFrame } = render(<Md text={'\`\`\`ts\nconst a = 1;\n\`\`\`'} t={t} />);
     expect(lastFrame()).toContain('const a');
+  });
+  it('代码块带 ┌─ lang ┐ / └─┘ 闭合边框', () => {
+    const { lastFrame } = render(<Md text={'\`\`\`ts\nconst a = 1;\n\`\`\`'} t={t} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('┌─ ts');
+    expect(frame).toContain('│');
+    expect(frame).toContain('└');
+  });
+  it('标题层级前缀 # / ## / ### 分级', () => {
+    const { lastFrame } = render(<Md text={'# 一级\n\n## 二级\n\n### 三级'} t={t} />);
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('# 一级');
+    expect(frame).toContain('## 二级');
+    expect(frame).toContain('### 三级');
   });
 });
 

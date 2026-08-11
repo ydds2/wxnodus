@@ -32,6 +32,8 @@ export interface ThemeColors {
   diffRemovedWord: string
 
   shellDollar: string
+
+  userBg: string
 }
 
 export interface ThemeBrand {
@@ -292,7 +294,11 @@ export const DARK_THEME: Theme = {
     diffRemoved: 'rgb(255,220,220)',
     diffAddedWord: 'rgb(36,138,61)',
     diffRemovedWord: 'rgb(207,34,46)',
-    shellDollar: '#4DD0E1'
+    shellDollar: '#4DD0E1',
+
+    // 用户消息块底色：深空背景向事件视界紫轻微倾斜（吸积盘辉光意象），
+    // 亮度足够低，长会话里不刺眼，仅把「用户提问」从正文中托出来
+    userBg: mix('#0B0F19', '#B388FF', 0.16)
   },
 
   brand: BRAND,
@@ -337,7 +343,10 @@ export const LIGHT_THEME: Theme = {
     diffRemoved: 'rgb(240,200,200)',
     diffAddedWord: 'rgb(27,94,32)',
     diffRemovedWord: 'rgb(183,28,28)',
-    shellDollar: '#00695C'
+    shellDollar: '#00695C',
+
+    // 浅色终端：浅紫灰（lavender tint），白底上依然能看出用户块
+    userBg: mix('#F0F6F7', '#5E35B1', 0.1)
   },
 
   brand: BRAND,
@@ -567,7 +576,9 @@ export function fromSkin(
       diffRemoved: d.color.diffRemoved,
       diffAddedWord: d.color.diffAddedWord,
       diffRemovedWord: d.color.diffRemovedWord,
-      shellDollar: c('shell_dollar') ?? d.color.shellDollar
+      shellDollar: c('shell_dollar') ?? d.color.shellDollar,
+
+      userBg: c('user_bg') ?? (hasSkinColors ? mix(completionBg, bannerAccent, 0.16) : d.color.userBg)
     },
 
     brand: {
