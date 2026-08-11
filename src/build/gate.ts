@@ -1,4 +1,4 @@
-// src/build/gate.ts — L3-1 统一质量门（上线前四门：自测/健康/证据/合规）
+// src/build/gate.ts — L3-1 统一质量门（上线前五门：自测/健康/证据/合规/测试）
 // 设计：任何产物必须过门才算完成（合规红线：授权/AI 标注/审计在 L3-3 深度接入）
 import { existsSync , readFileSync } from 'node:fs';
 import { join } from 'node:path';

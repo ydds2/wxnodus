@@ -300,7 +300,27 @@ export function coreTools(): Record<string, ToolDef> {
       return todos.length ? `待办清单（${todos.length} 项）：\n${todos.map((t, i) => `${i + 1}. ${t.slice(0, 80)}`).join('\n')}` : '待办为空——todo add <内容> 添加';
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, http_get: httpGet, memory_write: memoryWrite, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad };
+  // repo_map：仓库地图（aider repo-map 自研版）——动代码前先看项目结构，减少盲目搜索
+  const repoMap: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'repo_map',
+        description: '扫描工作区生成仓库地图（函数/类/接口符号索引，按 token 预算截断）。写代码前调用可快速了解项目结构与命名约定，避免盲目搜索。',
+        parameters: {
+          type: 'object',
+          properties: { budgetTokens: { type: 'number', description: '地图预算（token，默认 2000）' } },
+        },
+      },
+    },
+    danger: false,
+    async run(args) {
+      const { buildRepoMap } = await import('./repoMap.js');
+      const r = buildRepoMap(process.cwd(), { budgetTokens: Number(args?.budgetTokens) || 2000 });
+      return `${r.map}\n（扫描 ${r.scanned} 文件，跳过 ${r.skipped}）`;
+    },
+  };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, http_get: httpGet, memory_write: memoryWrite, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

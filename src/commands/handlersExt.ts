@@ -12,6 +12,7 @@ import { writeEvidence } from '../build/evidence.js';
 import { forgeMcpServer, forgeSkillDir } from '../forge/forge.js';
 import { discoverSkills, loadSkill, installSkill, writeSkill, skillContentForModel } from '../kernel/skills.js';
 import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
+import { buildRepoMap } from '../kernel/repoMap.js';
 import { decryptKey } from '../kernel/providers.js';
 import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissions.js';
 import { unknownSettingsKeys } from '../store/config.js';
@@ -312,6 +313,44 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       return '已清空全部快照';
     }
     return '用法：/checkpoint save｜list｜restore [id]｜clear';
+  });
+
+  // /rewind：回滚到最近快照（Claude Code /rewind 同款——等价 /checkpoint restore 最新）
+  bus.register('/rewind', () => {
+    const sid = 'default';
+    const row = ctx.db.prepare(`SELECT data FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 1`).get(sid) as { data: string } | undefined;
+    if (!row) return '无快照可回滚（/checkpoint save 保存；/undo 撤销前自动保存）';
+    const d = JSON.parse(row.data) as { messages?: Array<{ id?: number; role: string; content: string; tool_call_id?: string | null; archived?: number; ts?: number }> };
+    if (!Array.isArray(d.messages)) return '快照数据不完整';
+    ctx.db.prepare(`DELETE FROM messages WHERE session_id=?`).run(sid);
+    const ins = ctx.db.prepare(`INSERT INTO messages (id, session_id, role, content, tool_call_id, archived, ts) VALUES (?,?,?,?,?,?,?)`);
+    const now = Date.now();
+    d.messages.forEach((m, i) => {
+      const rawId = Number(m.id);
+      const mid = Number.isInteger(rawId) && rawId > 0 ? rawId : undefined;
+      ins.run(mid ?? null, sid, m.role, String(m.content ?? ''), m.tool_call_id ?? null, m.archived === 1 ? 1 : 0, Number(m.ts) || now + i);
+    });
+    return `已回滚到最近快照（${d.messages.length} 条消息，保留原始 id/archived）`;
+  });
+
+  // /reload-skills：重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini），汇报统计
+  bus.register('/reload-skills', () => {
+    const list = discoverSkills(ctx.dataDir, ctx.cwd);
+    if (!list.length) return '未发现技能（目录：.wxnodus/skills、.claude/.agents/.codex/.gemini/skills、data/skills、forge 产物）';
+    const bySource = new Map<string, number>();
+    for (const s of list) bySource.set(s.source, (bySource.get(s.source) ?? 0) + 1);
+    const summary = [...bySource.entries()].map(([k, n]) => `${k}:${n}`).join(' ');
+    return lines(' 技能已重载 ', [
+      ...list.slice(0, 20).map(s => ` ${s.name}（${s.source}${s.description ? `：${s.description.slice(0, 40)}` : ''}）`),
+      ` 共 ${list.length} 个（${summary}）`,
+    ]);
+  });
+
+  // /map：仓库地图（aider repo-map 自研版）——/map [token 预算]
+  bus.register('/map', (args) => {
+    const budget = Math.max(100, Math.floor(Number(args[0]) || 2000));
+    const r = buildRepoMap(ctx.cwd, { budgetTokens: budget });
+    return `${r.map}\n（扫描 ${r.scanned} 文件，跳过 ${r.skipped}，预算 ${budget} tokens）`;
   });
 
   // /init：本地扫描项目生成 AGENTS.md（确定性数据；--overwrite 覆盖）
@@ -830,36 +869,51 @@ export const commands = {
   });
 
   // ── 连接类 ──────────────────────────────────
-  // /mcp：本地 MCP 客户端管理（data/mcp.json）——list/add/remove/test
+  // /mcp：本地 MCP 客户端管理（两级配置：项目 .mcp.json + 用户 data/mcp.json）
+  // 生态对齐 Claude Code：项目级 mcpServers 对象格式；strictMcpConfig 仅信任项目声明
   bus.register('/mcp', async (args) => {
-    const { loadMcpConfig, saveMcpConfig, connectMcp } = await import('../kernel/mcp.js');
+    const { loadMcpConfig, saveMcpConfig, saveProjectMcpConfig, connectMcp } = await import('../kernel/mcp.js');
     const [sub, ...rest] = args;
-    const servers = loadMcpConfig(ctx.dataDir);
+    const entries = loadMcpConfig(ctx.dataDir, { cwd: ctx.cwd });
+    const tag = (s: { source: string }) => (s.source === 'project' ? ' [项目]' : ' [用户]');
     if (!sub || sub === 'list') {
-      if (!servers.length) {
-        return lines(' MCP ', [' 未配置 server', '', ' 用法：/mcp add <名称> <命令> [参数...]', '       /mcp remove <名称>', '       /mcp test <名称>', ' 配置存 data/mcp.json（本地 stdio 进程）']);
+      if (!entries.length) {
+        return lines(' MCP ', [' 未配置 server', '', ' 用法：/mcp add <名称> <命令> [参数...]（--project 写项目 .mcp.json）', '       /mcp remove <名称>', '       /mcp test <名称>', ' 配置：项目 .mcp.json（mcpServers 格式）+ 用户 data/mcp.json', ' strictMcpConfig=true 时仅信任项目声明（--strict-mcp-config 等价）']);
       }
-      return lines(' MCP ', servers.map(s => ` ${s.name} → ${s.command} ${(s.args ?? []).join(' ')}`));
+      return lines(' MCP ', entries.map(s => ` ${s.name}${tag(s)} → ${s.command} ${(s.args ?? []).join(' ')}`));
     }
     if (sub === 'add') {
-      const name = rest[0];
-      const command = rest[1];
-      if (!name || !command) return '用法：/mcp add <名称> <命令> [参数...]';
-      if (servers.some(s => s.name === name)) return `server「${name}」已存在（/mcp remove ${name} 后重加）`;
-      servers.push({ name, command, args: rest.slice(2) });
-      saveMcpConfig(ctx.dataDir, servers);
+      const isProject = rest[0] === '--project';
+      const name = rest[isProject ? 1 : 0];
+      const command = rest[isProject ? 2 : 1];
+      if (!name || !command) return '用法：/mcp add [--project] <名称> <命令> [参数...]';
+      if (entries.some(s => s.name === name)) return `server「${name}」已存在（/mcp remove ${name} 后重加）`;
+      const server = { name, command, args: rest.slice(isProject ? 3 : 2) };
+      if (isProject) {
+        const proj = loadMcpConfig(ctx.dataDir, { cwd: ctx.cwd, strict: true }).filter(s => s.source === 'project');
+        saveProjectMcpConfig(ctx.cwd, [...proj.map(s => ({ name: s.name, command: s.command, args: s.args, env: s.env })), server]);
+      } else {
+        const user = loadMcpConfig(ctx.dataDir, { strict: true }).filter(s => s.source === 'user');
+        saveMcpConfig(ctx.dataDir, [...user.map(s => ({ name: s.name, command: s.command, args: s.args, env: s.env })), server]);
+      }
       // P3：热重载接通——/mcp add 后立即重连并热换工具表（无需重启）
       try {
         const r = await ctx.reloadMcp?.();
-        return r?.ok ? `已添加并热重载 MCP server「${name}」（${r.count} 个在线，工具已并入工具表）` : `已添加 MCP server「${name}」（重启后生效）`;
+        return r?.ok ? `已添加${isProject ? '项目级' : ''}并热重载 MCP server「${name}」（${r.count} 个在线，工具已并入工具表）` : `已添加 MCP server「${name}」（重启后生效）`;
       } catch { return `已添加 MCP server「${name}」（重启后生效）`; }
     }
     if (sub === 'remove') {
       const name = rest[0];
       if (!name) return '用法：/mcp remove <名称>';
-      const next = servers.filter(s => s.name !== name);
-      if (next.length === servers.length) return `未找到 server「${name}」`;
-      saveMcpConfig(ctx.dataDir, next);
+      const next = entries.filter(s => s.name !== name);
+      if (next.length === entries.length) return `未找到 server「${name}」`;
+      const proj = next.filter(s => s.source === 'project');
+      const user = next.filter(s => s.source === 'user');
+      // 仅当原本存在项目级配置时才回写——避免在无 .mcp.json 的项目根凭空创建空文件
+      if (entries.some(s => s.source === 'project')) {
+        saveProjectMcpConfig(ctx.cwd, proj.map(s => ({ name: s.name, command: s.command, args: s.args, env: s.env })));
+      }
+      saveMcpConfig(ctx.dataDir, user.map(s => ({ name: s.name, command: s.command, args: s.args, env: s.env })));
       try {
         const r = await ctx.reloadMcp?.();
         return r?.ok ? `已移除并热重载 MCP server「${name}」（${r.count} 个在线）` : `已移除 MCP server「${name}」（重启后生效）`;
@@ -867,37 +921,38 @@ export const commands = {
     }
     if (sub === 'test') {
       const name = rest[0];
-      const cfg = servers.find(s => s.name === name);
+      const cfg = entries.find(s => s.name === name);
       if (!cfg) return `未找到 server「${name}」（/mcp list 查看）`;
       try {
         const client = await connectMcp(cfg);
         const tools = client.tools.map(t => t.name).join(', ') || '（无工具）';
         client.close();
-        return lines(` MCP 测试 ${name} `, [` 连接成功，工具：${tools}`]);
+        return lines(` MCP 测试 ${name}${tag(cfg)} `, [` 连接成功，工具：${tools}`]);
       } catch (e: any) {
         return `连接失败：${e?.message ?? e}`;
       }
     }
-    return '用法：/mcp list｜add <名称> <命令> [参数...]｜remove <名称>｜test <名称>';
+    return '用法：/mcp list｜add [--project] <名称> <命令> [参数...]｜remove <名称>｜test <名称>';
   });
 
   // /perm rule：持久化审批规则（P0-2——deny>allow>ask，data/permissions.json）
+  // reason 字段：规则的人工可读理由（Codex exec policy 同款，审计可追溯）
   bus.register('/perm rule', (args) => {
-    const [sub, tool, decision, pattern] = args;
+    const [sub, tool, decision, pattern, ...reasonRest] = args;
     const rules = loadPermRules(ctx.dataDir);
     if (sub === 'list') {
-      if (!rules.length) return '暂无规则（/perm rule add <工具> allow|deny|ask [路径glob]）';
+      if (!rules.length) return '暂无规则（/perm rule add <工具> allow|deny|ask [路径glob] [理由]）';
       return lines(' 审批规则 ', rules.map((r, i) =>
-        ` #${i + 1}  ${r.decision.toUpperCase().padEnd(5)}  ${r.tool}${r.pattern ? `  ${r.pattern}` : ''}`
+        ` #${i + 1}  ${r.decision.toUpperCase().padEnd(5)}  ${r.tool}${r.pattern ? `  ${r.pattern}` : ''}${r.reason ? `  — ${r.reason}` : ''}`
       ));
     }
     if (sub === 'add') {
       if (!tool || !['allow', 'deny', 'ask'].includes(decision)) {
-        return '用法：/perm rule add <工具名> allow|deny|ask [路径glob，如 src/**]';
+        return '用法：/perm rule add <工具名> allow|deny|ask [路径glob，如 src/**] [理由文字]';
       }
-      rules.push({ tool, decision: decision as any, pattern: pattern || undefined });
+      rules.push({ tool, decision: decision as any, pattern: pattern || undefined, reason: reasonRest.join(' ') || undefined });
       savePermRules(ctx.dataDir, rules);
-      return `已添加规则：${decision} ${tool}${pattern ? `（${pattern}）` : ''}——立即生效`;
+      return `已添加规则：${decision} ${tool}${pattern ? `（${pattern}）` : ''}${reasonRest.length ? `——${reasonRest.join(' ')}` : ''}——立即生效`;
     }
     if (sub === 'remove') {
       const n = parseInt(tool, 10);
@@ -910,7 +965,7 @@ export const commands = {
       savePermRules(ctx.dataDir, []);
       return '已清空全部审批规则';
     }
-    return '用法：/perm rule list ｜ add <工具> allow|deny|ask [glob] ｜ remove <编号> ｜ clear';
+    return '用法：/perm rule list ｜ add <工具> allow|deny|ask [glob] [理由] ｜ remove <编号> ｜ clear';
   });
 
   // /flow：技能流程图驱动（P2——Kimi /flow 能力的自研版）

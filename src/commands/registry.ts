@@ -21,6 +21,8 @@ export const SLASH: string[] = [
   '/swarm', '/duo', '/cron', '/jobs', '/task', '/delegate', '/goal', '/btw',
   // 工具（确定性）
   '/calc', '/hash', '/base64', '/uuid', '/rand', '/json', '/timer', '/sql', '/fs', '/units', '/csv',
+  // 上下文工程（P3：repo map / 快照回滚 / 技能热重载）
+  '/map', '/rewind', '/reload-skills',
 ];
 
 export const COMMAND_CAT: Record<string, string> = {
@@ -34,6 +36,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/claw': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
   '/swarm': '◈', '/duo': '◈', '/cron': '◈', '/jobs': '◈', '/task': '◈', '/delegate': '◈', '/goal': '◈', '/btw': '◈',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
+  '/map': '◆', '/rewind': '◈', '/reload-skills': '◆',
 };
 
 export const COMMAND_DESC: Record<string, string> = {
@@ -75,7 +78,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/forge': '组件锻造（MCP Server/Skill 打包）',
   '/skill': '技能管理（/skill list｜inspect｜new；/skill:名 注入）',
   '/learn': '从最近对话学习生成技能（需密钥，AI 生成标注）',
-  '/gate': '统一质量门（四门）',
+  '/gate': '统一质量门（五门：自测/健康/证据/合规/测试）',
   '/fdr': '部署后保障（五回路）',
   '/evidence': '证据链查看',
   '/perm': '权限模式（smart 确认/auto 自动编辑/goal 循环/plan 计划/yolo 全放）',
@@ -92,6 +95,9 @@ export const COMMAND_DESC: Record<string, string> = {
   '/config': '配置中心',
   '/logs': '日志查看',
   '/bench': '基准测试',
+  '/map': '仓库地图（aider repo-map 自研版——符号索引注入上下文，/map <预算>）',
+  '/rewind': '回滚到最近快照（Claude Code /rewind 同款，等价 /checkpoint restore）',
+  '/reload-skills': '重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini）并汇报',
   '/init': '分析项目生成 AGENTS.md（本地扫描，--overwrite 覆盖）',
   '/vision': 'GLM 视觉理解（/vision <图片>）',
   '/img': '图片分析（GLM-4V 多模态）',

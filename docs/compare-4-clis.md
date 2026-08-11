@@ -165,14 +165,16 @@
 | 4 | Hooks 扩充到 12 类 | P1 | ✅ 已实施（含 preCompact BLOCK/notification/subagent 生命周期） |
 | 5 | 审批回显脱敏 | P1 | ⚠️ 部分（notice 留痕已有；approval 面板脱敏未做） |
 | 6 | 退出码协议（0/1/75） | P1 | ✅ 已实施（exitCodeForError） |
-| 7 | --wire 双向化 | P1 | ❌ 未实施（客户端请求帧） |
-| 8 | Flow skills | P2 | ❌ 未实施 |
-| 9 | 工具延迟加载 | P2 | ❌ 未实施 |
+| 7 | --wire 双向化 | P1 | ✅ 已实施（stdin 请求帧 → gateway RPC 双向） |
+| 8 | Flow skills | P2 | ✅ 已实施（flow frontmatter + /flow + flow_runs 表） |
+| 9 | 工具延迟加载 | P2 | ✅ 已实施（tool_search 检索 + 动态激活） |
 | 10 | 会话导出 jsonl | P2 | ✅ 已实施（/export --jsonl 完整会话审计导出） |
 | 11 | 错误码体系（4xxx/5xxx） | P1 | ✅ 已实施（WxError + RPC {ok,code,message}） |
-| 12 | 配置分层与校验 | P2 | ❌ 未实施 |
+| 12 | 配置分层与校验 | P2 | ✅ 已实施（SETTINGS_KEYS schema + unknownSettingsKeys） |
 
-**剩余未实施（4 项）：** --wire 双向化、Flow skills、工具延迟加载、配置分层、审批面板脱敏（5 项，其中 4 项为 P2 增强）。
+**P3 增量（2026-08 网络调研后新增）：** 仓库地图（repo_map//map）、项目级 .mcp.json + strictMcpConfig、权限规则 reason 字段、跨品牌技能发现（.claude/.agents/.codex/.gemini）、/rewind 快照回滚、/reload-skills、第五门测试门。
+
+**剩余未实施：** 审批面板脱敏（notice 留痕已有）、平台级沙箱（四平台 Seatbelt/bwrap/受限令牌——需系统级能力，长期项）。
 
 ## 4. WxNodus V3 的独有领先点（对比中确认）
 
@@ -187,11 +189,12 @@
 | **零依赖自研渲染器** | React reconciler 自研，不依赖第三方 TUI 生态 |
 | **智能三件套** | 结构化系统提示（此前无系统提示）+ 模型降级链（429/5xx 自动降级）+ AI 审批预审（allow/deny/ask）——对比基线后新增 |
 | **全栈自研** | 参数解析/模糊匹配/状态引擎/渲染器/核心机制全自研，纯逻辑零第三方（依赖 34→21） |
+| **上下文工程三件套** | 仓库地图（aider repo-map 自研版）/AGENTS.md 生成（/init）/黑洞记忆——对齐 aider/Gemini 上下文管理 |
 
 ## 5. 结论
 
-- **功能广度**：WxNodus V3 与四家同代（86 命令 vs Claude 42 工具/95 命令 vs Kimi 40+ vs Hermes 95+42 vs Codex 30+ 子命令），且协作（/swarm /duo /goal /jobs /cron）与协议（ACP/A2A/gateway/webhook/wire）覆盖处于第一梯队；439 测试（32 文件）为自身最大回归网。
+- **功能广度**：WxNodus V3 与四家同代（86 命令 vs Claude 42 工具/95 命令 vs Kimi 40+ vs Hermes 95+42 vs Codex 30+ 子命令），且协作（/swarm /duo /goal /jobs /cron）与协议（ACP/A2A/gateway/webhook/wire）覆盖处于第一梯队；455+ 测试（33 文件）为自身最大回归网。
 - **安全深度（更新）**：P0 三项（危险检测升级/规则文件/环境净化）已实施；剩余平台级差距为「四平台沙箱」（Codex Seatbelt/bwrap/受限令牌）与「凭据掩码」（Claude bubblewrap MITM）——需要系统级能力，属长期项。
-- **生态标准（更新）**：Hooks 12 类已对齐 Claude 事件面；skills 跨品牌兼容（Kimi 读 ~/.claude/skills）与审批面板脱敏为剩余低成本项。
+- **生态标准（更新）**：Hooks 12 类已对齐 Claude 事件面；skills 跨品牌发现（.claude/.agents/.codex/.gemini/skills，agentskills.io 生态对齐 Cursor CLI）已实施；项目级 .mcp.json（mcpServers 对象格式 + strict 模式）对齐 Claude Code 生态标准。
 - **智能度（新增维度）**：结构化系统提示 + 模型降级链 + AI 预审 + 22 条意图路由——超越旧版自身，对齐市场 CLI 智能处理水平。
 - **工程规模**：194 文件/38.4k 行 vs 对手 6k-8k 文件——以 1/30 规模实现同代功能 + 纯逻辑零第三方依赖；单文件拆分（wxGateway.ts 1224 行）为持续关注项。

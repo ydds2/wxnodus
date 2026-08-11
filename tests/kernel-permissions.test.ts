@@ -1,6 +1,6 @@
 // tests/kernel-permissions.test.ts — L2-3 工具表 + 权限模式（危险分级/硬红线）
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { coreTools, isDangerous, type ToolDef } from '../src/kernel/tools.js';
@@ -182,5 +182,27 @@ describe('审批规则文件', () => {
     } finally {
       try { rmSync(dir, { recursive: true, force: true }); } catch {}
     }
+  });
+});
+
+// ── P3：规则 reason 字段（Codex exec policy 可读理由）──
+describe('PermRule reason 字段', () => {
+  it('保存/加载带 reason 的规则并保持', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-perm2-'));
+    try {
+      savePermRules(d, [{ tool: 'bash', decision: 'deny', reason: '公司红线：禁止生产库 DROP' }]);
+      const rules = loadPermRules(d);
+      expect(rules).toHaveLength(1);
+      expect(rules[0]).toMatchObject({ tool: 'bash', decision: 'deny', reason: '公司红线：禁止生产库 DROP' });
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  });
+  it('reason 可选——无理由规则正常（兼容旧配置）', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-perm3-'));
+    try {
+      writeFileSync(join(d, 'permissions.json'), JSON.stringify([{ tool: 'fs_write', decision: 'ask', pattern: 'src/**' }]));
+      const rules = loadPermRules(d);
+      expect(rules[0]).toMatchObject({ tool: 'fs_write', decision: 'ask', pattern: 'src/**' });
+      expect(rules[0]?.reason).toBeUndefined();
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
   });
 });

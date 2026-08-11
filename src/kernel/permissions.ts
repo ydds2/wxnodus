@@ -53,6 +53,8 @@ export interface PermRule {
   /** 路径 glob（仅对带 path 参数的工具生效；缺省匹配全部） */
   pattern?: string;
   decision: 'allow' | 'deny' | 'ask';
+  /** 人工可读理由（Codex exec policy 同款——规则为何存在，审计可追溯） */
+  reason?: string;
 }
 
 export function loadPermRules(dataDir: string): PermRule[] {

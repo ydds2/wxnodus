@@ -10,7 +10,7 @@ export interface SkillMeta {
   description: string;
   version?: string;
   aiGenerated?: boolean;
-  source: 'project' | 'user' | 'forge';
+  source: 'project' | 'brand' | 'user' | 'forge';
   path: string;
   /** 流程节点链（frontmatter flow: "A → B"）——/flow 驱动 */
   flow?: string;
@@ -45,7 +45,13 @@ export function parseSkillMd(text: string): { meta: Record<string, string>; body
   return { meta, body: (m[2] ?? '').trim() };
 }
 
-// ── 技能发现（三级目录，返回全部元信息）────────────
+// ── 技能发现（多级目录：项目 → 跨品牌 → 用户 → forge）────────────
+// 跨品牌目录（agentskills.io 生态——Cursor CLI 同款跨工具发现）：
+// 读取其他工具的技能目录，让既有生态资产直接可用
+const BRAND_SKILL_DIRS = ['.claude', '.agents', '.codex', '.gemini'];
+const brandSkillBases = (cwd: string): Array<{ base: string; source: SkillMeta['source'] }> =>
+  BRAND_SKILL_DIRS.map(d => ({ base: join(cwd, d, 'skills'), source: 'brand' as const }));
+
 export function discoverSkills(dataDir: string, cwd: string): SkillMeta[] {
   const out: SkillMeta[] = [];
   const seen = new Set<string>();
@@ -57,7 +63,9 @@ export function discoverSkills(dataDir: string, cwd: string): SkillMeta[] {
     for (const name of entries) {
       const dir = join(base, name);
       const skillFile = join(dir, SKILL_FILE);
-      if (!statSync(dir).isDirectory() || !existsSync(skillFile)) continue;
+      try {
+        if (!statSync(dir).isDirectory() || !existsSync(skillFile)) continue;
+      } catch { continue; }
       const text = readFileSync(skillFile, 'utf8');
       const { meta } = parseSkillMd(text);
       const key = (meta.name || name).toLowerCase();
@@ -74,8 +82,9 @@ export function discoverSkills(dataDir: string, cwd: string): SkillMeta[] {
     }
   };
 
-  // 优先级：项目 → 用户 → forge 产物
+  // 优先级：项目 .wxnodus → 跨品牌目录（.claude/.agents/.codex/.gemini）→ 用户 → forge
   collect(join(cwd, '.wxnodus', 'skills'), 'project');
+  for (const { base, source } of brandSkillBases(cwd)) collect(base, source);
   collect(join(dataDir, 'skills'), 'user');
   if (existsSync(join(dataDir, 'forge'))) {
     try {
@@ -93,6 +102,7 @@ export function loadSkill(dataDir: string, cwd: string, name: string): LoadedSki
   if (!needle) return null;
   const dirs: Array<{ base: string; source: SkillMeta['source'] }> = [
     { base: join(cwd, '.wxnodus', 'skills'), source: 'project' },
+    ...brandSkillBases(cwd),
     { base: join(dataDir, 'skills'), source: 'user' },
   ];
   // forge 产物（data/forge/<pkg>/<name>/SKILL.md）

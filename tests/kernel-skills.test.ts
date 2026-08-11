@@ -175,3 +175,36 @@ describe('Flow skills', () => {
     expect(parsed.meta.flow).toBe('准备 → 部署');
   });
 });
+
+// ── P3：跨品牌技能发现（agentskills.io 生态——Cursor CLI 同款）──
+describe('跨品牌技能目录', () => {
+  it('发现 .claude/.agents/.codex/.gemini/skills 技能，标注 brand 来源', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-sk2-'));
+    try {
+      const cwd = join(d, 'proj');
+      for (const brand of ['.claude', '.agents', '.codex', '.gemini']) {
+        mkdirSync(join(cwd, brand, 'skills', `sk-${brand.slice(1)}`), { recursive: true });
+        writeFileSync(join(cwd, brand, 'skills', `sk-${brand.slice(1)}`, 'SKILL.md'), `---\nname: ${brand.slice(1)}-skill\ndescription: 来自 ${brand} 的技能\n---\n正文`);
+      }
+      const list = discoverSkills(d, cwd);
+      expect(list).toHaveLength(4);
+      expect(list.every(s => s.source === 'brand')).toBe(true);
+      expect(list.map(s => s.name).sort()).toEqual(['agents-skill', 'claude-skill', 'codex-skill', 'gemini-skill']);
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  });
+  it('loadSkill 可加载品牌技能，且项目 .wxnodus 优先级更高（同名去重）', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-sk3-'));
+    try {
+      const cwd = join(d, 'proj');
+      mkdirSync(join(cwd, '.wxnodus', 'skills', 'dup'), { recursive: true });
+      writeFileSync(join(cwd, '.wxnodus', 'skills', 'dup', 'SKILL.md'), '---\nname: dup\ndescription: 项目版\n---\n项目正文');
+      mkdirSync(join(cwd, '.claude', 'skills', 'dup'), { recursive: true });
+      writeFileSync(join(cwd, '.claude', 'skills', 'dup', 'SKILL.md'), '---\nname: dup\ndescription: 品牌版\n---\n品牌正文');
+      const loaded = loadSkill(d, cwd, 'dup');
+      expect(loaded?.body).toContain('项目正文');
+      expect(loaded?.meta.source).toBe('project');
+      // discover 去重：同名只保留项目版
+      expect(discoverSkills(d, cwd).filter(s => s.name === 'dup')).toHaveLength(1);
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  });
+});

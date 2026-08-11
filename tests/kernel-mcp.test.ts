@@ -1,9 +1,9 @@
 // tests/kernel-mcp.test.ts — L2-8 MCP 客户端：mock stdio server 握手/工具发现/调用/降级
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadMcpConfig, saveMcpConfig, connectMcp, connectAllMcp, mcpClientsToTools, closeAllMcp } from '../src/kernel/mcp.js';
+import { loadMcpConfig, saveMcpConfig, saveProjectMcpConfig, loadProjectMcpConfig, connectMcp, connectAllMcp, mcpClientsToTools, closeAllMcp } from '../src/kernel/mcp.js';
 
 let dir: string;
 
@@ -136,5 +136,52 @@ describe('MCP 工具链路', () => {
     const sleeper: any = { name: 'sleeper', command: 'node', args: ['-e', 'setTimeout(()=>{}, 60000)'] };
     await expect(connectMcp(sleeper)).rejects.toThrow(/超时/);
     expect(Date.now() - t0).toBeLessThan(20_000);
+  });
+});
+
+// ── P3：项目级 .mcp.json + strict 模式（Claude Code 生态对齐）──
+describe('loadMcpConfig 两级合并与 strict', () => {
+  it('项目 mcpServers 对象格式 + 用户数组格式合并，项目同名覆盖', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-mcp2-'));
+    try {
+      const cwd = join(d, 'proj');
+      mkdirSync(cwd, { recursive: true });
+      writeFileSync(join(cwd, '.mcp.json'), JSON.stringify({ mcpServers: { git: { command: 'npx', args: ['mcp-git'] }, files: { command: 'node', args: ['files.js'] } } }));
+      writeFileSync(join(d, 'mcp.json'), JSON.stringify([{ name: 'git', command: 'OLD' }, { name: 'search', command: 'mcp-search' }]));
+      const r = loadMcpConfig(d, { cwd });
+      expect(r.map(s => `${s.name}:${s.source}`)).toEqual(['git:project', 'files:project', 'search:user']);
+      expect(r.find(s => s.name === 'git')?.command).toBe('npx'); // 项目覆盖用户
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  });
+  it('strict 模式仅信任项目声明（--strict-mcp-config 等价）', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-mcp3-'));
+    try {
+      const cwd = join(d, 'proj');
+      mkdirSync(cwd, { recursive: true });
+      writeFileSync(join(cwd, '.mcp.json'), JSON.stringify({ mcpServers: { git: { command: 'npx', args: ['mcp-git'] } } }));
+      writeFileSync(join(d, 'mcp.json'), JSON.stringify([{ name: 'search', command: 'mcp-search' }]));
+      const r = loadMcpConfig(d, { cwd, strict: true });
+      expect(r.map(s => s.name)).toEqual(['git']);
+      // 无项目文件 + strict → 空（不信任任何用户级）
+      expect(loadMcpConfig(join(d, 'empty'), { cwd: join(d, 'noproj'), strict: true })).toEqual([]);
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  });
+  it('saveProjectMcpConfig 写 mcpServers 对象格式并可回读', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-mcp4-'));
+    try {
+      saveProjectMcpConfig(d, [{ name: 'a', command: 'cmd', args: ['x'], env: { K: '1' } }]);
+      const raw = JSON.parse(readFileSync(join(d, '.mcp.json'), 'utf8'));
+      expect(raw.mcpServers.a).toEqual({ command: 'cmd', args: ['x'], env: { K: '1' } });
+      const r = loadMcpConfig(d, { cwd: d });
+      expect(r).toHaveLength(1);
+      expect(r[0]!.source).toBe('project');
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  });
+  it('非法 JSON 干净降级为空', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-mcp5-'));
+    try {
+      writeFileSync(join(d, '.mcp.json'), 'not json{{{');
+      expect(loadProjectMcpConfig(d)).toEqual([]);
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
   });
 });

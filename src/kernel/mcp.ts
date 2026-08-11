@@ -1,8 +1,10 @@
 // src/kernel/mcp.ts — L2-8 MCP 客户端（本地 stdio JSON-RPC）
-// 设计：data/mcp.json 配置本地 MCP server（command/args/env），spawn 子进程走
-//       stdio JSON-RPC（initialize → notifications/initialized → tools/list → tools/call），
-//       工具以 mcp__<server>__<tool> 命名并入 agent；连接失败干净降级不阻断主流程。
-//       全部本地进程，不依赖外部平台（本地化为准）。
+// 设计：MCP 配置两级（生态对齐 Claude Code .mcp.json）：
+//       项目级 <cwd>/.mcp.json（mcpServers 对象或数组两种格式）→ 用户级 data/mcp.json；
+//       strict 模式仅信任项目声明（--strict-mcp-config 等价）；项目同名覆盖用户。
+//       spawn 子进程走 stdio JSON-RPC（initialize → notifications/initialized →
+//       tools/list → tools/call），工具以 mcp__<server>__<tool> 命名并入 agent；
+//       连接失败干净降级不阻断主流程。全部本地进程，不依赖外部平台（本地化为准）。
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,6 +15,11 @@ export interface McpServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+}
+
+/** 带来源标注的配置项（/mcp list 展示 [项目]/[用户]） */
+export interface McpConfigEntry extends McpServerConfig {
+  source: 'project' | 'user';
 }
 
 export interface McpToolInfo {
@@ -30,18 +37,68 @@ export interface McpClient {
 }
 
 const REQUEST_TIMEOUT_MS = 15_000;
+export const PROJECT_MCP_FILE = '.mcp.json';
 
-// ── 配置读写（data/mcp.json，原子写）────────────
-export function loadMcpConfig(dataDir: string): McpServerConfig[] {
-  const file = join(dataDir, 'mcp.json');
-  if (!existsSync(file)) return [];
+// ── 配置读取（两级：项目 .mcp.json + 用户 data/mcp.json）────────
+function parseServerList(raw: string): McpServerConfig[] {
   try {
-    const arr = JSON.parse(readFileSync(file, 'utf8'));
-    if (!Array.isArray(arr)) return [];
-    return arr.filter((s: any) => s && typeof s.name === 'string' && typeof s.command === 'string');
+    const j = JSON.parse(raw);
+    // 格式一：{ "mcpServers": { "name": { command, args, env } } }（Claude Code 生态标准）
+    if (j && typeof j === 'object' && !Array.isArray(j) && j.mcpServers && typeof j.mcpServers === 'object') {
+      return Object.entries(j.mcpServers as Record<string, any>).map(([name, s]) => ({
+        name, command: String(s?.command ?? ''), args: Array.isArray(s?.args) ? s.args.map(String) : [], env: s?.env,
+      })).filter(s => s.command);
+    }
+    // 格式二：数组 [{ name, command, args, env }]（wxnodus 原生）
+    if (Array.isArray(j)) {
+      return j.filter((s: any) => s && typeof s.name === 'string' && typeof s.command === 'string');
+    }
+    return [];
   } catch {
     return [];
   }
+}
+
+/** 项目级配置：<cwd>/.mcp.json（优先，支持两种格式） */
+export function loadProjectMcpConfig(cwd: string): McpServerConfig[] {
+  const file = join(cwd, PROJECT_MCP_FILE);
+  if (!existsSync(file)) return [];
+  return parseServerList(readFileSync(file, 'utf8'));
+}
+
+/** 用户级配置：data/mcp.json（数组格式） */
+export function loadUserMcpConfig(dataDir: string): McpServerConfig[] {
+  const file = join(dataDir, 'mcp.json');
+  if (!existsSync(file)) return [];
+  return parseServerList(readFileSync(file, 'utf8'));
+}
+
+/**
+ * 合并加载 MCP 配置。
+ * @param dataDir 用户数据目录
+ * @param opts.cwd 项目根（提供则读取 .mcp.json；项目同名覆盖用户）
+ * @param opts.strict 仅信任项目声明（strictMcpConfig 设置 / --strict-mcp-config）
+ */
+export function loadMcpConfig(dataDir: string, opts: { cwd?: string; strict?: boolean } = {}): McpConfigEntry[] {
+  const entries: McpConfigEntry[] = [];
+  const project = opts.cwd ? loadProjectMcpConfig(opts.cwd) : [];
+  for (const s of project) entries.push({ ...s, source: 'project' });
+  if (!opts.strict) {
+    const user = loadUserMcpConfig(dataDir);
+    const projNames = new Set(project.map(s => s.name));
+    for (const s of user) {
+      if (projNames.has(s.name)) continue; // 项目同名覆盖用户
+      entries.push({ ...s, source: 'user' });
+    }
+  }
+  return entries;
+}
+
+/** 写入项目级 .mcp.json（Claude Code 兼容 mcpServers 对象格式） */
+export function saveProjectMcpConfig(cwd: string, servers: McpServerConfig[]): void {
+  const obj: Record<string, any> = {};
+  for (const s of servers) obj[s.name] = { command: s.command, args: s.args ?? [], ...(s.env ? { env: s.env } : {}) };
+  writeFileSync(join(cwd, PROJECT_MCP_FILE), JSON.stringify({ mcpServers: obj }, null, 2), 'utf8');
 }
 
 export function saveMcpConfig(dataDir: string, servers: McpServerConfig[]): void {
@@ -166,8 +223,8 @@ export function connectMcp(cfg: McpServerConfig): Promise<McpClient> {
 }
 
 // 并发连接所有配置的 server（失败逐个降级，返回成功列表）
-export async function connectAllMcp(dataDir: string): Promise<McpClient[]> {
-  const cfgs = loadMcpConfig(dataDir);
+export async function connectAllMcp(dataDir: string, opts: { cwd?: string; strict?: boolean } = {}): Promise<McpClient[]> {
+  const cfgs = loadMcpConfig(dataDir, opts);
   const results = await Promise.allSettled(cfgs.map(cfg => connectMcp(cfg)));
   const out: McpClient[] = [];
   for (let i = 0; i < cfgs.length; i++) {
