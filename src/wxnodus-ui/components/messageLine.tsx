@@ -93,10 +93,19 @@ export const MessageLine = memo(function MessageLine({
   const [systemOpen, setSystemOpen] = useState(false)
 
   // A12：timeline 事件消息（◈ 会话切换/委派完成等——参考 kind==='event' 同款）
+  // 输出状态按情况区分颜色：失败/异常 → 红，完成/成功 → 绿，进行中/切换 → 紫，其余灰
   if (msg.kind === 'event') {
+    const evColor = /失败|错误|异常|拒绝|无法|未成功|中断/.test(msg.text)
+      ? t.color.error
+      : /完成|成功|已保存|已删除|已切换|已恢复|已启动|就绪/.test(msg.text)
+        ? t.color.ok
+        : /开始|切换|加载|连接|等待|恢复|构建/.test(msg.text)
+          ? t.color.accent
+          : t.color.muted
+
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text color={t.color.muted} dimColor wrap="truncate-end">
+        <Text color={evColor} wrap="truncate-end">
           {' '}◈ {msg.text}
         </Text>
       </Box>

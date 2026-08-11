@@ -4,6 +4,7 @@ import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } 
 import unicodeSpinners from 'unicode-animations'
 
 import { $delegationState } from '../runtime/delegationStatus.js'
+import { STATUS_LABEL } from '../hooks/useSessionShell.js'
 import type { BatteryInfo, IndicatorStyle, Notice } from '../bridge/interfaces.js'
 import { useTurnSelector } from '../runtime/flowStore.js'
 import { DEV_CREDITS_MODE } from '../config/env.js'
@@ -576,8 +577,8 @@ export function StatusRule({
           {busy ? (
             <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} />
           ) : showNotice ? null : (
-            <Text color={statusColor} wrap="truncate-end">
-              {status}
+            <Text color={statusColor} bold={status === 'running…'} wrap="truncate-end">
+              {STATUS_LABEL[status] ?? status}
             </Text>
           )}
         </Box>

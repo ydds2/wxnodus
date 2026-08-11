@@ -60,7 +60,10 @@ const capHistory = (items: Msg[]): Msg[] => {
   return items[0]?.kind === 'intro' ? [items[0]!, ...items.slice(-(MAX_HISTORY - 1))] : items.slice(-MAX_HISTORY)
 }
 
-const statusColorOf = (status: string, t: { error: string; muted: string; ok: string; warn: string }) => {
+// 状态 → 颜色映射（输出状态按情况区分颜色）：
+//   ready 绿（就绪）｜ error 红（出错）｜ interrupted 黄（中断）
+//   running 紫（忙碌中——状态栏最醒目的时刻）｜ forging/resuming/recovering/closing 黄（过渡中）｜ 其余灰
+const statusColorOf = (status: string, t: { accent: string; error: string; muted: string; ok: string; warn: string }) => {
   if (status === 'ready') {
     return t.ok
   }
@@ -73,7 +76,28 @@ const statusColorOf = (status: string, t: { error: string; muted: string; ok: st
     return t.warn
   }
 
+  if (status === 'running…') {
+    return t.accent
+  }
+
+  if (/^(forging|resuming|recovering|closing)/.test(status)) {
+    return t.warn
+  }
+
   return t.muted
+}
+
+// 状态串显示层中文化（patchUiState 仍存英文原文，渲染处映射——中文为主）
+export const STATUS_LABEL: Record<string, string> = {
+  ready: '就绪',
+  'running…': '运行中…',
+  'closing session…': '关闭会话中…',
+  'gateway exited': '网关已退出',
+  'recovering session…': '恢复会话中…',
+  'resuming…': '恢复中…',
+  'forging session…': '构建会话中…',
+  'resuming most recent…': '恢复最近会话…',
+  interrupted: '已中断',
 }
 
 export interface PromptLiveSessionOptions {
