@@ -202,3 +202,61 @@ describe('startupTimeoutMs 配置', () => {
     } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
   });
 });
+
+// ── P3：Streamable HTTP 传输（远程 MCP server）──
+describe('connectMcpHttp 远程传输', () => {
+  it('mock HTTP MCP server：握手/工具发现/工具调用/会话头回传', async () => {
+    const { createServer } = await import('node:http');
+    const sessions = new Set<string>();
+    const calls: Array<{ method: string; body: any }> = [];
+    const srv = createServer((req, res) => {
+      let body = '';
+      req.on('data', c => { body += c; });
+      req.on('end', () => {
+        let msg: any = null;
+        try { msg = JSON.parse(body); } catch { /* 非 JSON 忽略 */ }
+        const sid = String(req.headers['mcp-session-id'] ?? '');
+        if (sid) sessions.add(sid);
+        calls.push({ method: msg?.method ?? '', body: msg });
+        res.setHeader('content-type', 'application/json');
+        if (msg?.method === 'initialize') {
+          const newSid = 'sess-' + Math.random().toString(36).slice(2);
+          sessions.add(newSid);
+          res.setHeader('mcp-session-id', newSid);
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'mock', version: '1' } } }));
+        } else if (msg?.method === 'tools/list') {
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'echo', description: '回显', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } }] } }));
+        } else if (msg?.method === 'tools/call') {
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: 'echo:' + msg.params?.arguments?.text }] } }));
+        } else {
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: msg?.id ?? 1, result: {} }));
+        }
+      });
+    });
+    await new Promise<void>(r => srv.listen(0, '127.0.0.1', r));
+    const port = (srv.address() as any).port;
+    try {
+      const { connectMcpHttp } = await import('../src/kernel/mcp.js');
+      const client = await connectMcpHttp({ name: 'remote', command: '', url: `http://127.0.0.1:${port}/mcp` } as any);
+      expect(client.tools.map(t => t.name)).toEqual(['echo']);
+      const out = await client.callTool('echo', { text: '你好' });
+      expect(out).toBe('echo:你好');
+      // 会话头回传：initialize 之后请求应带 Mcp-Session-Id
+      const withSession = calls.filter(c => c.method === 'tools/list');
+      expect(withSession.length).toBe(1);
+    } finally { srv.close(); }
+  });
+  it('server 错误响应 → 干净报错', async () => {
+    const { createServer } = await import('node:http');
+    const srv = createServer((_req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32601, message: 'method not found' } }));
+    });
+    await new Promise<void>(r => srv.listen(0, '127.0.0.1', r));
+    const port = (srv.address() as any).port;
+    try {
+      const { connectMcpHttp } = await import('../src/kernel/mcp.js');
+      await expect(connectMcpHttp({ name: 'bad', command: '', url: `http://127.0.0.1:${port}/mcp` } as any)).rejects.toThrow(/method not found|initialize/);
+    } finally { srv.close(); }
+  });
+});

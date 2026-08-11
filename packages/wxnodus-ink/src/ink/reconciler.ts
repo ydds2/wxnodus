@@ -23,9 +23,8 @@ import { getFocusManager, getRootNode } from './focus.js'
 import { LayoutDisplay } from './layout/node.js'
 import applyStyles, { type Styles, type TextStyles } from './styles.js'
 
-// We need to conditionally perform devtools connection to avoid
-// accidentally breaking other third-party code.
-// See https://github.com/vadimdemedes/ink/issues/384
+// 开发环境下按需接入 React DevTools——动态导入失败不影响主流程
+// （第三方代码可能修改 NODE_ENV，条件式连接避免意外破坏）
 if (process.env.NODE_ENV === 'development') {
   try {
     void import('./devtools.js')
@@ -34,13 +33,11 @@ if (process.env.NODE_ENV === 'development') {
       // biome-ignore lint/suspicious/noConsole: intentional warning
       console.warn(
         `
-The environment variable DEV is set to true, so Ink tried to import \`react-devtools-core\`,
-but this failed as it was not installed. Debugging with React Devtools requires it.
-
-To install use this command:
+NODE_ENV=development 时尝试导入 \`react-devtools-core\` 失败（未安装）。
+使用 React DevTools 调试需要先安装：
 
 $ npm install --save-dev react-devtools-core
-				`.trim() + '\n'
+					`.trim() + '\n'
       )
     } else {
       throw error

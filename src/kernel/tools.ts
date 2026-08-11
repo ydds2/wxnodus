@@ -190,17 +190,14 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const httpGet: ToolDef = {
-    schema: { type: 'function', function: { name: 'http_get', description: 'GET 请求（SSRF 防护：内网拦截）', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+    schema: { type: 'function', function: { name: 'http_get', description: 'GET 请求（SSRF 防护：内网/IPv6 私网/DNS 重绑定/重定向逐跳拦截）', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
     danger: false,
     async run({ url }) {
-      try {
-        const u = new URL(String(url));
-        const host = u.hostname;
-        const isPrivate = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost)/.test(host);
-        if (isPrivate) return `已拦截：内网地址 ${host}（SSRF 防护）`;
-        const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
-        return `HTTP ${resp.status}\n${(await resp.text()).slice(0, 8000)}`;
-      } catch (e: any) { return `请求失败：${e.message?.slice(0, 300)}`; }
+      // SSRF 三层防护（src/kernel/ssrf.ts）：主机名形态 + DNS 解析校验 + 重定向逐跳
+      const { safeFetchText } = await import('./ssrf.js');
+      const r = await safeFetchText(String(url));
+      if ('error' in r) return r.error;
+      return `HTTP ${r.status}\n${r.text.slice(0, 8000)}`;
     },
   };
   const memoryWrite: ToolDef = {

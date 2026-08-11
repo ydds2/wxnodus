@@ -7,7 +7,7 @@
 //   插件工具统一 danger:true（输出 untrusted 包裹，提示注入防护对插件同样生效）
 //   插件命令注册为 /<插件名>.<命令名>（如 /example.hello），防与内置命令冲突
 // 启用状态：plugin.json enabled 字段（/plugin enable|disable 修改，热生效）
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ToolDef } from './tools.js';
@@ -34,6 +34,13 @@ export interface PluginToolCtx {
   dataDir: string;
   /** 读写插件自己的数据目录（data/plugins/<name>/data/） */
   dataPath: string;
+  /** 事件订阅：on(type, cb) 订阅系统事件（agent.token/system.notice/agent.tool 等），
+   *  返回取消函数。事件面与 hooks 一致（12 类 + 消息流事件） */
+  on?: (type: string, cb: (payload: any) => void) => () => void;
+  /** 查询当前配置（只读）：getConfig(partition, key?) */
+  getConfig?: (partition: string, key?: string) => any;
+  /** 插件日志：log(level, msg) → data/plugins/<name>/plugin.log 追加 */
+  log?: (level: 'info' | 'warn' | 'error', msg: string) => void;
 }
 
 export interface LoadedPlugin {
@@ -65,7 +72,7 @@ export function parsePluginManifest(raw: string): PluginManifest {
 }
 
 // 加载单个插件目录（plugin.json + index.js）
-export async function loadPlugin(dir: string, cwd: string, dataDir: string): Promise<LoadedPlugin | null> {
+export async function loadPlugin(dir: string, cwd: string, dataDir: string, extra?: { on?: PluginToolCtx['on']; getConfig?: PluginToolCtx['getConfig'] }): Promise<LoadedPlugin | null> {
   const manifestFile = join(dir, 'plugin.json');
   const indexFile = join(dir, 'index.js');
   if (!existsSync(manifestFile) || !existsSync(indexFile)) return null;
@@ -91,7 +98,19 @@ export async function loadPlugin(dir: string, cwd: string, dataDir: string): Pro
   const cmds: Record<string, (args: string[]) => string | Promise<string>> = mod.commands ?? {};
 
   const dataPath = join(dir, 'data');
-  const toolCtx: PluginToolCtx = { cwd, dataDir, dataPath };
+  const logFile = join(dataPath, 'plugin.log');
+  const toolCtx: PluginToolCtx = {
+    cwd, dataDir, dataPath,
+    on: extra?.on,
+    getConfig: extra?.getConfig,
+    log: (level, msg) => {
+      try {
+        mkdirSync(dataPath, { recursive: true });
+        appendFileSync(logFile, `[${new Date().toISOString()}] [${level}] ${msg}
+`);
+      } catch { /* 日志失败静默 */ }
+    },
+  };
 
   const tools: Record<string, ToolDef> = {};
   for (const decl of manifest.tools ?? []) {
@@ -124,14 +143,14 @@ export async function loadPlugin(dir: string, cwd: string, dataDir: string): Pro
 }
 
 // 发现全部插件（data/plugins/*/ 含 plugin.json 的目录）
-export async function loadAllPlugins(dataDir: string, cwd: string): Promise<LoadedPlugin[]> {
+export async function loadAllPlugins(dataDir: string, cwd: string, extra?: { on?: PluginToolCtx['on']; getConfig?: PluginToolCtx['getConfig'] }): Promise<LoadedPlugin[]> {
   const base = join(dataDir, 'plugins');
   if (!existsSync(base)) return [];
   let entries: string[] = [];
   try { entries = readdirSync(base, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name); } catch { return []; }
   const out: LoadedPlugin[] = [];
   for (const name of entries) {
-    const p = await loadPlugin(join(base, name), cwd, dataDir);
+    const p = await loadPlugin(join(base, name), cwd, dataDir, extra);
     if (p) out.push(p);
   }
   return out;

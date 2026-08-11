@@ -54,7 +54,7 @@ function deepGet(obj: Record<string, any>, path: string): any {
 const SETTINGS_KEYS = new Set([
   'apiKeyEnc', 'model', 'baseURL', 'mode', 'theme', 'thinking', 'hooks', 'security',
   'lowRiskAutoApprove', 'autoResume', 'autoReview', 'webhooks', 'busy_input_mode',
-  'strictMcpConfig', 'toolLazyLoad', 'budgetTokens',
+  'strictMcpConfig', 'toolLazyLoad', 'budgetTokens', 'autoRepoMap',
 ]);
 export function unknownSettingsKeys(settings: Record<string, any>): string[] {
   return Object.keys(settings).filter(k => !SETTINGS_KEYS.has(k));

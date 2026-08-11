@@ -716,3 +716,43 @@ describe('会话 token 预算', () => {
     } finally { off(); }
   });
 });
+
+// ── 阶段 2：AI 自主触发——首轮自动注入仓库地图 + 技能清单 ──
+describe('AI 自主触发（自动注入）', () => {
+  function makeAutoInjectAgent(settings: Record<string, any>, script: Array<any>) {
+    const seen: Array<Array<{ role: string; content: string }>> = [];
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-auto-' + Math.random().toString(36).slice(2, 8),
+      dataDir: join(process.cwd(), 'data'),
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', ...settings } } as any,
+      callModel: async (req: any) => {
+        seen.push((req.messages ?? []) as any);
+        return script.shift()!;
+      },
+    } as any);
+    return { agent, seen };
+  }
+  it('首轮注入仓库地图与技能清单；第二轮不重复注入', async () => {
+    const { agent, seen } = makeAutoInjectAgent({}, [
+      { type: 'text', content: '完成1' },
+      { type: 'text', content: '完成2' },
+    ]);
+    await agent.run('你好');
+    await agent.run('再问');
+    const first = seen[0]!;
+    const second = seen[1]!;
+    // 首轮含自动仓库地图（项目目录有代码文件）
+    expect(first.some(m => String(m.content ?? '').includes('自动仓库地图'))).toBe(true);
+    // 技能清单注入（forge demo 技能存在）
+    expect(first.some(m => String(m.content ?? '').includes('可用技能'))).toBe(true);
+    // 第二轮不重复注入
+    expect(second.some(m => String(m.content ?? '').includes('自动仓库地图'))).toBe(false);
+  });
+  it('autoRepoMap=false 关闭地图注入（技能仍注入）', async () => {
+    const { agent, seen } = makeAutoInjectAgent({ autoRepoMap: false }, [{ type: 'text', content: '完成' }]);
+    await agent.run('你好');
+    const first = seen[0]!;
+    expect(first.some(m => String(m.content ?? '').includes('自动仓库地图'))).toBe(false);
+    expect(first.some(m => String(m.content ?? '').includes('可用技能'))).toBe(true);
+  });
+});

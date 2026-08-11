@@ -48,10 +48,8 @@ function parseKey(keypress: ParsedKey): [Key, string] {
     tab: keypress.name === 'tab',
     backspace: keypress.name === 'backspace',
     delete: keypress.name === 'delete',
-    // `parseKeypress` parses \u001B\u001B[A (meta + up arrow) as meta = false
-    // but with option = true, so we need to take this into account here
-    // to avoid breaking changes in Ink.
-    // TODO(vadimdemedes): consider removing this in the next major version.
+    // `parseKeypress` 把 \u001B\u001B[A（meta + 上箭头）解析为 meta=false 但 option=true，
+    // 这里合并两者以保持既有键位绑定语义稳定（兼容旧版输入序列）。
     meta: keypress.meta || keypress.name === 'escape' || keypress.option,
     // Super (Cmd on macOS / Win key) — only arrives via kitty keyboard
     // protocol CSI u sequences. Distinct from meta (Alt/Option) so
@@ -88,8 +86,7 @@ function parseKey(keypress: ParsedKey): [Key, string] {
   // watchdog flush and reassembles it on the next feed instead of force-
   // emitting the partial as input. See termio/tokenize.ts.)
 
-  // Strip meta if it's still remaining after `parseKeypress`
-  // TODO(vadimdemedes): remove this in the next major version.
+  // parseKeypress 之后若残留 ESC 前缀则剥除（CSI u 序列解析后的兜底）
   if (input.startsWith('\u001B')) {
     input = input.slice(1)
   }

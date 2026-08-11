@@ -91,6 +91,10 @@ export function createAgent(opts: AgentOptions) {
   // 会话 token 预算（Gemini general.budget 对齐）：settings.budgetTokens>0 时，
   // 会话累计用量超预算 → system.notice 告警一次（防刷屏）；0/缺省 = 不设限
   const budgetTokens = Number((opts.config?.settings as any)?.budgetTokens) || 0;
+
+  // 阶段 2（AI 自主触发）：会话首轮自动注入仓库地图 + 技能清单（仅一次）——
+  // 模型先看项目结构再动手、自主 skill_load，减少人工 /map 与 /skill list
+  let autoInjectDone = false;
   let budgetWarned = false;
   function checkBudget(): void {
     if (!budgetTokens || budgetWarned) return;
@@ -479,6 +483,27 @@ export function createAgent(opts: AgentOptions) {
     // 首个存在者进系统提示（多工具共存——一套项目规范多 CLI 消费）
     const projectRules = loadProjectRules(process.cwd());
     if (projectRules) msgs.push({ role: 'system', content: `（项目规范 ${projectRules.file}）\n${projectRules.text}` });
+    // 阶段 2（AI 自主触发）：会话首轮自动注入（仅一次，防 token 浪费）——
+    // 仓库地图（≤800 token）让模型先看结构；技能清单让模型自主 skill_load
+    if (!autoInjectDone) {
+      autoInjectDone = true;
+      if ((opts.config?.settings as any)?.autoRepoMap !== false) {
+        try {
+          const { buildRepoMap } = await import('./repoMap.js');
+          const rm = buildRepoMap(process.cwd(), { budgetTokens: 800 });
+          if (rm.files.length) {
+            msgs.push({ role: 'system', content: `（自动仓库地图——先看结构再动手，/map 手动刷新）\n${rm.map}` });
+          }
+        } catch { /* 注入失败不影响对话 */ }
+      }
+      try {
+        const { discoverSkills } = await import('./skills.js');
+        const skills = discoverSkills(opts.dataDir ?? join(process.cwd(), 'data'), process.cwd());
+        if (skills.length) {
+          msgs.push({ role: 'system', content: `（可用技能——需要时用 skill_load 加载）\n${skills.slice(0, 10).map(s => `- ${s.name}${s.description ? '：' + s.description.slice(0, 60) : ''}`).join('\n')}` });
+        }
+      } catch { /* 技能清单注入失败不影响 */ }
+    }
     // 历史进模型（修复 F1）：加载当前会话未归档历史作为上下文前缀——
     // 多轮对话必须让模型看到完整（压缩后）历史，而非仅当前问题 + 3 条召回
     try {

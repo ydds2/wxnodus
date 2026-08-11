@@ -14,6 +14,7 @@ import { discoverSkills, loadSkill, installSkill, writeSkill, skillContentForMod
 import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
 import { buildRepoMap } from '../kernel/repoMap.js';
 import { listShadows, restoreShadow } from '../kernel/undoShadows.js';
+import { parseCronExpr, describeCronExpr } from '../kernel/cronExpr.js';
 import { decryptKey } from '../kernel/providers.js';
 import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissions.js';
 import { unknownSettingsKeys } from '../store/config.js';
@@ -819,15 +820,22 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         tools: [{ name: `${name}_greet`, description: '打招呼', parameters: { who: { type: 'string', description: '对象' } } }],
         commands: ['hello'],
       }, null, 2), 'utf8');
-      writeFileSync(join(dest, 'index.js'), `// ${name} 插件实现（ESM 模块）
-// tools: Record<工具名, (args, ctx) => string | Promise<string>>
-// commands: Record<命令名, (args: string[]) => string | Promise<string>>（注册为 /${name}.<命令名>）
+      writeFileSync(join(dest, 'index.js'), `// ${name} 插件实现（ESM 模块）——完整 API 见 docs/plugin-api.md
+// ctx 可用能力：cwd/dataDir/dataPath（私有数据目录）、on(事件订阅)、getConfig(只读配置)、log(日志)
 export const tools = {
-  ${name}_greet: async (args, ctx) => \`你好，\${args?.who ?? '世界'}（插件数据目录：\${ctx.dataPath}）\`,
+  ${name}_greet: async (args, ctx) => {
+    ctx.log('info', \`greet 被调用：\${JSON.stringify(args)}\`); // 写入 data/plugins/${name}/plugin.log
+    return \`你好，\${args?.who ?? '世界'}（插件数据目录：\${ctx.dataPath}）\`;
+  },
+  ${name}_watch: async (_args, ctx) => {
+    ctx.on('system.notice', (payload) => { ctx.log('info', \`通知：\${payload?.text ?? ''}\`); });
+    return '已订阅 system.notice 事件（/plugin reload 重载）';
+  },
 }
 
 export const commands = {
   hello: async (args) => \`\${args.length ? args.join(' ') : '（空参数）'}\`,
+  model: async (_args, ctx) => \`当前模型：\${ctx.getConfig('settings', 'model') ?? '未配置'}\`,
 }
 `, 'utf8');
       return `插件骨架已生成 → ${dest}\n编辑 index.js 实现逻辑后，新开会话或 /plugin reload 生效`;
@@ -899,7 +907,27 @@ export const commands = {
       if (!entries.length) {
         return lines(' MCP ', [' 未配置 server', '', ' 用法：/mcp add <名称> <命令> [参数...]（--project 写项目 .mcp.json）', '       /mcp remove <名称>', '       /mcp test <名称>', ' 配置：项目 .mcp.json（mcpServers 格式）+ 用户 data/mcp.json', ' strictMcpConfig=true 时仅信任项目声明（--strict-mcp-config 等价）']);
       }
-      return lines(' MCP ', entries.map(s => ` ${s.name}${tag(s)} → ${s.command} ${(s.args ?? []).join(' ')}`));
+      return lines(' MCP ', entries.map(s => ` ${s.name}${tag(s)} → ${s.url ? `HTTP ${s.url}` : `${s.command} ${(s.args ?? []).join(' ')}`}`));
+    }
+    if (sub === 'add-http') {
+      // Streamable HTTP 传输（远程 MCP server）：/mcp add-http <名称> <URL> [--project]
+      const isProject = rest.includes('--project');
+      const name = rest[isProject ? 0 : 0];
+      const url = rest[isProject ? 1 : 1];
+      if (!name || !/^https?:\/\//.test(url ?? '')) return '用法：/mcp add-http <名称> <URL>（远程 MCP，Streamable HTTP 传输）';
+      if (entries.some(e => e.name === name)) return `server「${name}」已存在（/mcp remove ${name} 后重加）`;
+      const server = { name, command: '', url, args: [] };
+      if (isProject) {
+        const proj = loadMcpConfig(ctx.dataDir, { cwd: ctx.cwd, strict: true }).filter(s => s.source === 'project');
+        saveProjectMcpConfig(ctx.cwd, [...proj.map(s => ({ name: s.name, command: s.command, url: s.url, args: s.args, env: s.env })), server]);
+      } else {
+        const user = loadMcpConfig(ctx.dataDir, { strict: true }).filter(s => s.source === 'user');
+        saveMcpConfig(ctx.dataDir, [...user.map(s => ({ name: s.name, command: s.command, url: s.url, args: s.args, env: s.env })), server]);
+      }
+      try {
+        const r = await ctx.reloadMcp?.();
+        return r?.ok ? `已添加远程 MCP server「${name}」（${url}，${r.count} 个在线）` : `已添加远程 MCP server「${name}」（重启后生效）`;
+      } catch { return `已添加远程 MCP server「${name}」（重启后生效）`; }
     }
     if (sub === 'add') {
       const isProject = rest[0] === '--project';
@@ -951,7 +979,7 @@ export const commands = {
         return `连接失败：${e?.message ?? e}`;
       }
     }
-    return '用法：/mcp list｜add [--project] <名称> <命令> [参数...]｜remove <名称>｜test <名称>';
+    return '用法：/mcp list｜add [--project] <名称> <命令> [参数...]｜add-http [--project] <名称> <URL>｜remove <名称>｜test <名称>';
   });
 
   // /perm rule：持久化审批规则（P0-2——deny>allow>ask，data/permissions.json）
@@ -1062,20 +1090,15 @@ export const commands = {
     return '用法：/security status ｜ sudo on|off ｜ secret on|off ｜ all off';
   });
 
-  // /claw：网页抓取（SSRF 防护：内网/保留地址拦截）——真实 fetch + 正文文本提取
+  // /claw：网页抓取（SSRF 防护：形态/IPv6/DNS 重绑定/重定向逐跳）——真实 fetch + 正文文本提取
   bus.register('/claw', async (args) => {
     const url = args.join(' ').replace(/^["']|["']$/g, '').trim();
     if (!url) return '用法：/claw <URL>（网页抓取，SSRF 防护拦截内网）';
-    let u: URL;
-    try { u = new URL(url); } catch { return `URL 非法：${url.slice(0, 80)}`; }
-    if (!/^https?:$/.test(u.protocol)) return '仅支持 http/https';
-    const host = u.hostname;
-    if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost|0\.0\.0\.0)$/.test(host) || host === '::1') {
-      return `已拦截：内网地址 ${host}（SSRF 防护）`;
-    }
     try {
-      const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      const html = await resp.text();
+      const { safeFetchText } = await import('../kernel/ssrf.js');
+      const r = await safeFetchText(url);
+      if ('error' in r) return r.error;
+      const html = r.text;
       // 提取正文文本（去 script/style/标签/空白）
       const text = html
         .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -1084,7 +1107,7 @@ export const commands = {
         .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
         .replace(/\s+/g, ' ').trim();
       const body = text || '（页面无可提取文本，可能是 JS 渲染）';
-      return `HTTP ${resp.status}｜${html.length} 字节\n${body.slice(0, 4000)}`;
+      return `HTTP ${r.status}｜${html.length} 字节\n${body.slice(0, 4000)}`;
     } catch (e: any) {
       return `抓取失败：${e?.message?.slice(0, 300) ?? e}`;
     }
@@ -1308,11 +1331,16 @@ export const commands = {
   bus.register('/cron', (args) => {
     const [sub, ...rest] = args;
     if (sub === 'add') {
-      const interval = parseInt(rest[0] ?? '', 10);
-      const action = rest.slice(1).join(' ').trim();
-      if (!Number.isFinite(interval) || interval < 1 || !action) return '用法：/cron add <分钟间隔> <命令文本>（如 /cron add 30 检查并报告仓库状态）';
-      const r = ctx.db.prepare(`INSERT INTO cron_jobs (schedule, action, last_run, enabled) VALUES (?,?,?,1)`).run(`every ${interval}m`, action, Date.now()); // last_run=创建时刻（周期起算点）
-      return `定时任务已创建 #${r.lastInsertRowid}：每 ${interval} 分钟执行「${action.slice(0, 40)}」`;
+      // 两种格式：数字间隔（every Nm 兼容）或标准 5 字段 cron 表达式（分 时 日 月 周）
+      // 智能识别：前 5 个 token 均为合法 cron 字段（数字/星号/步进/区间/列表）→ 视为表达式
+      const isCronField = (t: string) => /^(\d+|\*|\*\/\d+|\d+-\d+|\d+(,\d+)*)$/.test(t);
+      const looksCron5 = rest.length >= 6 && /^\d+$/.test(rest[0] ?? '') && rest.slice(0, 5).every(isCronField);
+      const expr = looksCron5 ? rest.slice(0, 5).join(' ') : (/^\d+$/.test(rest[0] ?? '') ? `every ${rest[0]}m` : (rest[0] ?? ''));
+      const action = (looksCron5 ? rest.slice(5) : rest.slice(1)).join(' ').trim();
+      const parsed = parseCronExpr(expr);
+      if (!parsed.ok || !action) return `用法：/cron add <分钟间隔|cron表达式> <命令文本>（如 /cron add 30 检查仓库状态；/cron add 0 9 * * 1-5 工作日 9 点报告）——${parsed.ok ? '' : parsed.error}`;
+      const r = ctx.db.prepare(`INSERT INTO cron_jobs (schedule, action, last_run, enabled) VALUES (?,?,?,1)`).run(expr, action, Date.now()); // last_run=创建时刻（周期起算点）
+      return `定时任务已创建 #${r.lastInsertRowid}：${describeCronExpr(expr)} 执行「${action.slice(0, 40)}」`;
     }
     if (sub === 'del' || sub === 'rm') {
       const id = parseInt(rest[0] ?? '', 10);

@@ -5,6 +5,7 @@
 import { join } from 'node:path';
 import { mkdirSync, appendFileSync } from 'node:fs';
 import { createAutoReview } from '../kernel/autoReview.js';
+import { parseCronExpr, cronMatches } from '../kernel/cronExpr.js';
 
 const VERSION = '3.0.0';
 // 调试：捕获未处理异常/拒绝 → dataDir/logs/error-<日期>.log（统一日志目录，不污染工作目录）
@@ -110,7 +111,19 @@ async function main() {
   };
   // 插件系统（P0）：data/plugins/*/ 加载 → 工具并入 extraTools（命令注册在 commandBus 创建后）
   const { loadAllPlugins, pluginToolsToExtra } = await import('../kernel/plugins.js');
-  const plugins = await loadAllPlugins(dataDir, cwd);
+  // 插件 API 层（阶段 3）：事件订阅（bus）+ 配置只读访问注入插件 ctx
+  const plugins = await loadAllPlugins(dataDir, cwd, {
+    on: (type, cb) => {
+      const off = bus.on(type, (e: any) => { try { cb(e?.payload ?? {}); } catch { /* 插件回调异常不阻断 */ } });
+      return off;
+    },
+    getConfig: (partition, key) => {
+      try {
+        const obj = config.get(partition as any);
+        return key ? (obj as any)?.[key] : obj;
+      } catch { return undefined; }
+    },
+  });
   // P3 安全注入通道：敏感数据内存保险库（sudo 密码/环境变量密钥——用户亲手输入、仅内存、关闭即清）
   const { createSecretVault } = await import('../kernel/secrets.js');
   const secrets = createSecretVault();
@@ -209,15 +222,24 @@ async function main() {
   }, 5000);
 
   // 定时任务调度（对比轮 6：/cron 真实执行）——每分钟检查到期任务，后台派发 agent 执行
+  // 支持标准 5 字段 cron（分 时 日 月 周）与 every Nm/Nh/Nd 兼容格式（cronExpr.ts 解析）
   setInterval(() => {
     try {
       const jobs = db.prepare(`SELECT * FROM cron_jobs WHERE enabled=1`).all() as Array<{ id: number; schedule: string; action: string; last_run: number | null }>;
       const now = Date.now();
       for (const j of jobs) {
-        const m = /every (\d+)m/.exec(j.schedule ?? '');
-        if (!m) continue;
-        const intervalMs = parseInt(m[1]!, 10) * 60_000;
-        if (j.last_run && now - j.last_run < intervalMs) continue;
+        const schedule = String(j.schedule ?? '');
+        const nat = /^every (\d+)([mhd])$/.exec(schedule);
+        if (nat) {
+          const intervalMs = parseInt(nat[1]!, 10) * (nat[2] === 'm' ? 60_000 : nat[2] === 'h' ? 3_600_000 : 86_400_000);
+          if (j.last_run && now - j.last_run < intervalMs) continue;
+        } else {
+          // 标准 cron 表达式：按字段匹配当前分钟
+          const r = parseCronExpr(schedule);
+          if (!r.ok) continue;
+          if (!cronMatches(r.fields, new Date(now))) continue;
+          if (j.last_run && now - j.last_run < 60_000) continue; // 分钟级去重
+        }
         db.prepare(`UPDATE cron_jobs SET last_run=? WHERE id=?`).run(now, j.id);
         bus.emit('system.notice', { text: `定时任务 #${j.id} 触发：${String(j.action).slice(0, 60)}` });
         void agent.run(`（定时任务 #${j.id}）${j.action}`).catch(() => { /* 执行失败不阻断调度 */ });

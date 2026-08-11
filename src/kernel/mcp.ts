@@ -14,6 +14,8 @@ import { sanitizedEnv } from './env.js';
 export interface McpServerConfig {
   name: string;
   command: string;
+  /** Streamable HTTP 传输（与 command 二选一；url 存在时走 HTTP 客户端） */
+  url?: string;
   args?: string[];
   env?: Record<string, string>;
   /** 启动/请求超时（ms，Codex startup_timeout_ms 对齐；缺省 15s） */
@@ -231,7 +233,7 @@ export function connectMcp(cfg: McpServerConfig): Promise<McpClient> {
 // 并发连接所有配置的 server（失败逐个降级，返回成功列表）
 export async function connectAllMcp(dataDir: string, opts: { cwd?: string; strict?: boolean } = {}): Promise<McpClient[]> {
   const cfgs = loadMcpConfig(dataDir, opts);
-  const results = await Promise.allSettled(cfgs.map(cfg => connectMcp(cfg)));
+  const results = await Promise.allSettled(cfgs.map(cfg => (cfg.url ? connectMcpHttp(cfg as McpServerConfig & { url: string }) : connectMcp(cfg))));
   const out: McpClient[] = [];
   for (let i = 0; i < cfgs.length; i++) {
     const r = results[i]!;
@@ -279,4 +281,81 @@ export function mcpClientsToTools(clients: McpClient[]): Record<string, ToolDef>
 // 关闭全部客户端
 export function closeAllMcp(clients: McpClient[]): void {
   for (const c of clients) c.close();
+}
+
+// ── Streamable HTTP 传输（MCP 2025-06-18+ 协议）────────────
+// 设计：远程 MCP server（url 配置）——POST JSON-RPC，Accept 兼容 SSE/JSON 双响应；
+//       initialize 响应头 Mcp-Session-Id 后续请求回传；失败干净降级。
+//       配置形态：McpServerConfig.url（与 command 二选一，/mcp add-http <名称> <url>）
+export interface McpHttpClient extends McpClient {}
+
+const HTTP_TIMEOUT_MS = 20_000;
+
+/** 解析 SSE 或 JSON 响应体 → JSON-RPC 结果 */
+async function parseMcpResponse(resp: Response): Promise<any> {
+  const ct = resp.headers.get('content-type') ?? '';
+  const text = await resp.text();
+  if (ct.includes('text/event-stream')) {
+    // SSE：event: message\ndata: {...}\n\n（取最后一个 data 帧）
+    let last: any = null;
+    for (const chunk of text.split('\n\n')) {
+      const line = chunk.split('\n').find(l => l.startsWith('data:'));
+      if (line) {
+        try { last = JSON.parse(line.slice(5).trim()); } catch { /* 忽略坏帧 */ }
+      }
+    }
+    return last;
+  }
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+/** 连接 Streamable HTTP MCP server */
+export async function connectMcpHttp(cfg: McpServerConfig & { url: string }): Promise<McpHttpClient> {
+  const base = cfg.url.replace(/\/+$/, '');
+  let sessionId: string | null = null;
+  const rpc = async (method: string, params: unknown): Promise<any> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    };
+    if (sessionId) headers['Mcp-Session-Id'] = sessionId;
+    const resp = await fetch(base, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    });
+    const sid = resp.headers.get('mcp-session-id');
+    if (sid) sessionId = sid;
+    if (!resp.ok) throw new Error(`MCP HTTP ${method} HTTP ${resp.status}`);
+    const j = await parseMcpResponse(resp);
+    if (j?.error) throw new Error(`MCP HTTP ${method} 错误：${j.error.message ?? 'unknown'}`);
+    return j?.result ?? null;
+  };
+
+  // 握手：initialize → initialized 通知 → tools/list
+  await rpc('initialize', {
+    protocolVersion: '2025-06-18',
+    capabilities: {},
+    clientInfo: { name: 'wxnodus', version: '3.0.0' },
+  });
+  await rpc('notifications/initialized', {});
+  const list = await rpc('tools/list', {});
+  const tools: any[] = list?.tools ?? [];
+  const toolMap = new Map<string, McpToolInfo>();
+  for (const t of tools) {
+    const name = String(t?.name ?? '');
+    if (!name) continue;
+    toolMap.set(name, { server: cfg.name, name, description: String(t?.description ?? ''), inputSchema: t?.inputSchema });
+  }
+  return {
+    server: cfg,
+    tools: [...toolMap.values()],
+    async callTool(name, args) {
+      const r = await rpc('tools/call', { name, arguments: args ?? {} });
+      const content = Array.isArray(r?.content) ? r.content.map((c: any) => c?.text ?? '').join('\n') : String(r?.content ?? '');
+      return (content || `MCP ${cfg.name} 工具 ${name} 返回空`).slice(0, 8000);
+    },
+    close() { /* HTTP 无连接可关 */ },
+  };
 }

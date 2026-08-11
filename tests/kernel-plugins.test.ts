@@ -1,6 +1,6 @@
 // tests/kernel-plugins.test.ts — 插件系统：发现/加载/工具构建/命令/启停
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadAllPlugins, loadPlugin, parsePluginManifest, setPluginEnabled } from '../src/kernel/plugins.js';
@@ -133,5 +133,40 @@ describe('清单边界', () => {
   });
   it('setPluginEnabled 不存在目录返回 false', () => {
     expect(setPluginEnabled(join(dir, 'ghost'), false)).toBe(false);
+  });
+});
+
+// ── 阶段 3：插件 API 层——事件订阅/配置访问/日志 ──
+describe('插件 API 开放层', () => {
+  it('ctx.on 事件订阅、ctx.getConfig、ctx.log 真实注入', async () => {
+    const { loadPlugin } = await import('../src/kernel/plugins.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-pl2-'));
+    try {
+      const dir = join(d, 'plugins', 'api');
+      mkdirSync(join(dir, 'data'), { recursive: true });
+      writeFileSync(join(dir, 'plugin.json'), JSON.stringify({ name: 'api', description: 'API 测试', version: '1.0.0', enabled: true, tools: [{ name: 'api_probe', description: '探测', parameters: { type: 'object', properties: {} } }] }));
+      writeFileSync(join(dir, 'index.js'), `
+        export const tools = {
+          api_probe: async (_args, ctx) => {
+            const got = ctx.on('system.notice', () => {});
+            const model = ctx.getConfig('settings', 'model') ?? 'none';
+            ctx.log('info', 'probe');
+            return 'on:' + typeof got + '|model:' + model;
+          },
+        };
+      `);
+      const captured: Array<{ type: string; payload: any }> = [];
+      const plugin = await loadPlugin(dir, d, join(d, 'data'), {
+        on: (type, cb) => { captured.push({ type, payload: null }); return () => {}; },
+        getConfig: (p, k) => (p === 'settings' && k === 'model' ? 'test-model' : undefined),
+      });
+      expect(plugin).not.toBeNull();
+      const tool = plugin!.tools['api_probe']!;
+      const out = await tool.run({}, { cwd: d } as any);
+      expect(out).toBe('on:function|model:test-model');
+      // 日志文件真实写入
+      const log = readFileSync(join(dir, 'data', 'plugin.log'), 'utf8');
+      expect(log).toContain('[info] probe');
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
   });
 });
