@@ -91,12 +91,12 @@ export const resumableHistory = (history: readonly SessionListItem[], live: read
 }
 
 export const resumeRowContextHintSegments: OrchestratorHintSegment[] = [
-  { role: 'label', text: 'Resumable:' },
+  { role: 'label', text: '可恢复会话：' },
   { role: 'text', text: ' ' },
   { role: 'hotkey', text: 'Enter' },
-  { role: 'text', text: ' resume · ' },
+  { role: 'text', text: ' 恢复 · ' },
   { role: 'hotkey', text: 'd' },
-  { role: 'text', text: ' delete' }
+  { role: 'text', text: ' 删除' }
 ]
 
 export type OrchestratorHintRole = 'hotkey' | 'label' | 'text'
@@ -109,31 +109,31 @@ export interface OrchestratorHintSegment {
 export const orchestratorContextHintSegments = (newSelected: boolean): OrchestratorHintSegment[] =>
   newSelected
     ? [
-        { role: 'label', text: 'New row:' },
-        { role: 'text', text: ' type prompt · ' },
+        { role: 'label', text: '新行：' },
+        { role: 'text', text: ' 输入提示 · ' },
         { role: 'hotkey', text: 'Enter' },
-        { role: 'text', text: ' start · ' },
+        { role: 'text', text: ' 开始 · ' },
         { role: 'hotkey', text: 'Tab' },
-        { role: 'text', text: ' model' }
+        { role: 'text', text: ' 模型' }
       ]
     : [
-        { role: 'label', text: 'Session row:' },
+        { role: 'label', text: '会话行：' },
         { role: 'text', text: ' ' },
         { role: 'hotkey', text: 'Enter' },
-        { role: 'text', text: ' switch · ' },
+        { role: 'text', text: ' 切换 · ' },
         { role: 'hotkey', text: 'Ctrl+D' },
-        { role: 'text', text: ' close' }
+        { role: 'text', text: ' 关闭' }
       ]
 
 export const orchestratorGlobalHotkeyHintSegments: OrchestratorHintSegment[] = [
   { role: 'hotkey', text: '↑↓' },
-  { role: 'text', text: ' move · ' },
+  { role: 'text', text: ' 移动 · ' },
   { role: 'hotkey', text: 'Ctrl+N' },
-  { role: 'text', text: ' new · ' },
+  { role: 'text', text: ' 新建 · ' },
   { role: 'hotkey', text: 'Ctrl+R' },
-  { role: 'text', text: ' refresh · ' },
+  { role: 'text', text: ' 刷新 · ' },
   { role: 'hotkey', text: 'Esc' },
-  { role: 'text', text: ' close' }
+  { role: 'text', text: ' 关闭' }
 ]
 
 const hintText = (segments: readonly OrchestratorHintSegment[]) => segments.map(segment => segment.text).join('')
@@ -688,7 +688,7 @@ export function ActiveSessionSwitcher({
   const newRowStyle = newSelectedRow ? selectedSessionRowStyle(t) : null
   const newRowTextColor = newRowStyle?.color
   const newRowMarkerColor = newSessionMarkerColor(t, newSelectedRow)
-  const promptTitle = draftTitleFromPrompt(draft) || 'Start a new live session'
+  const promptTitle = draftTitleFromPrompt(draft) || '开始新的实时会话'
 
   return (
     <Box flexDirection="column" width={width}>

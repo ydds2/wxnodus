@@ -27,6 +27,8 @@ export interface ToolCtx {
   requestForm?: (fields: Array<{ name: string; label?: string; kind: 'text' | 'password' | 'key' }>, prompt?: string) => Promise<Record<string, string> | null>;
   /** P1-1：工具失败通知（postToolUseFailure hook） */
   hookFailure?: (name: string, err: string) => void;
+  /** AI 自主调用通道（wx_cmd 工具）：执行斜杠命令并返回文本输出（cli 装配 bus.execute 包装） */
+  runCommand?: (input: string) => Promise<string>;
 }
 
 export interface ToolDef {
@@ -481,7 +483,34 @@ export function coreTools(): Record<string, ToolDef> {
       return `已录入 ${committed.length} 个敏感字段（仅内存，不落盘）——bash 中可用 $WXNODUS_SECRET_${committed[0]} 引用；/security secret off 或进程退出即清除${missing.length ? `；未填写：${missing.join('、')}` : ''}`;
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, memory_write: memoryWrite, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm };
+  // wx_cmd：AI 自主调用通道——模型可直接执行 WxNodus 内置斜杠指令
+  // （分级裁决在 agent.executeTool：safe 直执行 / confirm 走模式确认链 / danger 强制人工确认 /
+  //   redline 直接拒绝——commandLevels.classifyCommand 是单一裁决依据）
+  const wxCmd: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'wx_cmd',
+        description: '执行 WxNodus 内置命令（斜杠指令）——如 /memory（记忆概览）、/hole <关键词>（黑洞引擎检索）、/build <需求>（概念编译）、/plan on（计划模式）、/skill list、/cron list 等。参数 command 为完整指令串（含斜杠）。注意：涉及权限/密钥/安全/退出的指令会被拒绝，需用户手动执行。',
+        parameters: {
+          type: 'object',
+          properties: {
+            command: { type: 'string', description: '完整指令串，如 "/hole 项目结构" 或 "/build 待办清单应用"' },
+          },
+          required: ['command'],
+        },
+      },
+    },
+    danger: true, // 输出经 untrusted 包裹（命令结果可能含不可信内容）；分级裁决按命令等级
+    async run(args, ctx) {
+      const command = String(args?.command ?? '').trim();
+      if (!command) return '参数错误：command 不能为空';
+      if (!ctx.runCommand) return '命令通道未装配（当前环境不支持执行指令）——请用户手动输入';
+      const out = await ctx.runCommand(command);
+      return out ? out.slice(0, 2000) : `命令已执行（无输出）：${command.slice(0, 80)}`;
+    },
+  };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, memory_write: memoryWrite, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

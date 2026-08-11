@@ -675,7 +675,7 @@ describe('工具延迟加载', () => {
     await agent.run('你好');
     const names = seenTools[0]!.map((t: any) => t.function.name);
     expect(names).not.toContain('tool_search');
-    expect(names.length).toBe(19); // 全表（20 内置含 repo_map/cron_create/credential_form/memory_search/find_files - tool_search 未注册）
+    expect(names.length).toBe(20); // 全表（20 内置含 repo_map/cron_create/credential_form/memory_search/find_files/wx_cmd - tool_search 未注册）
   });
 });
 
@@ -843,5 +843,136 @@ describe('变更即回归（auto 剧本自动重放）', () => {
       closeDB(env.db);
       rmSync(env.d, { recursive: true, force: true });
     }
+  });
+});
+
+// ── AI 自主调用通道（wx_cmd）：safe 直执行 / confirm 走模式确认链 /
+//    danger 强制人工确认 / redline 直接拒绝 ──
+describe('wx_cmd AI 自主调用通道（分级裁决）', () => {
+  function makeCmdAgent(script: Array<any>, over: any = {}) {
+    const executed: string[] = [];
+    let approvals = 0;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-wxcmd',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      mode: 'smart',
+      callModel: async () => script.shift()!,
+      onCommand: async (input) => { executed.push(String(input)); return `已执行：${String(input).slice(0, 40)}`; },
+      onApproval: async () => { approvals++; return true; },
+      ...over,
+    } as any);
+    return { agent, executed, approvals: () => approvals };
+  }
+
+  it('safe 级：直接执行不弹确认，输出回填', async () => {
+    const { agent, executed, approvals } = makeCmdAgent([
+      { type: 'tool_call', name: 'wx_cmd', args: { command: '/memory' } },
+      { type: 'text', content: '查完了' },
+    ]);
+    const r = await agent.run('查一下记忆');
+    expect(r.ok).toBe(true);
+    expect(r.text).toContain('查完了');
+    expect(executed).toEqual(['/memory']); // 命令真实执行
+    expect(approvals()).toBe(0);           // safe 不弹确认
+  });
+
+  it('confirm 级：smart 模式弹确认，批准后执行；拒绝则不执行', async () => {
+    const { agent, executed } = makeCmdAgent([
+      { type: 'tool_call', name: 'wx_cmd', args: { command: '/compact' } },
+      { type: 'text', content: '压完了' },
+    ]);
+    const r = await agent.run('压缩上下文');
+    expect(r.ok).toBe(true);
+    expect(executed).toEqual(['/compact']);
+    // 拒绝场景：工具结果回填「用户拒绝执行」，命令不执行
+    let toolMsg = '';
+    const executed2: string[] = [];
+    const agent2 = createAgent({
+      db, bus, mem, sessionId: 't-wxcmd-rj',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      mode: 'smart',
+      callModel: async (req: any) => {
+        if (req.messages.some((m: any) => m.role === 'assistant')) {
+          toolMsg = String(req.messages.find((m: any) => m.role === 'tool')?.content ?? '');
+          return { type: 'text', content: '完成' };
+        }
+        return { type: 'tool_call', name: 'wx_cmd', args: { command: '/compact' } };
+      },
+      onCommand: async (input) => { executed2.push(String(input)); return 'ok'; },
+      onApproval: async () => false,
+    } as any);
+    const r2 = await agent2.run('压缩上下文');
+    expect(r2.ok).toBe(true);
+    expect(toolMsg).toContain('拒绝'); // 拒绝结果真实回填给模型
+    expect(executed2).toEqual([]);     // 命令未执行
+  });
+
+  it('confirm 级：yolo 模式直接放行不弹确认', async () => {
+    const { agent, executed, approvals } = makeCmdAgent([
+      { type: 'tool_call', name: 'wx_cmd', args: { command: '/compact' } },
+      { type: 'text', content: '完成' },
+    ], { mode: 'yolo' });
+    const r = await agent.run('压缩');
+    expect(r.ok).toBe(true);
+    expect(executed).toEqual(['/compact']);
+    expect(approvals()).toBe(0);
+  });
+
+  it('danger 级：强制人工确认——AI 预审 allow 不放行，仍弹窗', async () => {
+    let autoReviewCalls = 0;
+    const { agent, executed, approvals } = makeCmdAgent([
+      { type: 'tool_call', name: 'wx_cmd', args: { command: '/script run demo' } },
+      { type: 'text', content: '跑完了' },
+    ], {
+      autoReview: {
+        enabled: () => true,
+        review: async () => { autoReviewCalls++; return 'allow'; },
+      },
+    });
+    const r = await agent.run('跑剧本');
+    expect(r.ok).toBe(true);
+    expect(autoReviewCalls).toBe(0);   // 高危跳过 AI 预审
+    expect(approvals()).toBe(1);       // 强制人工确认
+    expect(executed).toEqual(['/script run demo']);
+  });
+
+  it('redline 级：直接拒绝，命令不执行、不弹窗', async () => {
+    const { agent, executed, approvals } = makeCmdAgent([
+      { type: 'tool_call', name: 'wx_cmd', args: { command: '/yolo on' } },
+      { type: 'text', content: '继续' },
+    ]);
+    const r = await agent.run('开启 yolo');
+    expect(r.ok).toBe(true);
+    expect(r.text).toContain('继续');
+    expect(executed).toEqual([]);      // 红线命令未执行
+    expect(approvals()).toBe(0);       // 不弹窗
+  });
+
+  it('redline 级：/key set 与直接传密钥均拒绝', async () => {
+    const env1 = makeCmdAgent([
+      { type: 'tool_call', name: 'wx_cmd', args: { command: '/key set sk-xxx' } },
+      { type: 'text', content: 'ok1' },
+    ]);
+    await env1.agent.run('设置密钥');
+    expect(env1.executed).toEqual([]);
+    const env2 = makeCmdAgent([
+      { type: 'tool_call', name: 'wx_cmd', args: { command: '/key sk-abc' } },
+      { type: 'text', content: 'ok2' },
+    ]);
+    await env2.agent.run('设置密钥');
+    expect(env2.executed).toEqual([]);
+  });
+
+  it('批量 tool_calls：wx_cmd 与普通工具同轮执行', async () => {
+    const { agent, executed } = makeCmdAgent([
+      { type: 'tool_call', id: 'c1', name: 'wx_cmd', args: { command: '/status' }, calls: [
+        { id: 'c1', name: 'wx_cmd', args: { command: '/status' } },
+        { id: 'c2', name: 'fs_read', args: { path: 'x.txt' } },
+      ] } as any,
+      { type: 'text', content: '完成' },
+    ], { mode: 'yolo' });
+    const r = await agent.run('执行');
+    expect(r.ok).toBe(true);
+    expect(executed).toEqual(['/status']);
   });
 });

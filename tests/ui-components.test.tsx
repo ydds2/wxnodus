@@ -118,17 +118,17 @@ describe('状态条断点（statusBarSegments 纯函数）', () => {
 
 describe('审批弹层（V3 ApprovalPrompt）', () => {
   const t = DEFAULT_THEME;
-  it('allowPermanent 时含 Always allow', () => {
+  it('allowPermanent 时含「总是允许」', () => {
     const { lastFrame } = render(
       <ApprovalPrompt cols={80} req={{ command: 'rm -rf tmp', description: '运行命令', allowPermanent: true }} t={t} onChoice={() => {}} />
     );
-    expect(lastFrame()).toContain('Always allow');
+    expect(lastFrame()).toContain('总是允许');
   });
-  it('无 allowPermanent 时不渲染 Always allow', () => {
+  it('无 allowPermanent 时不渲染「总是允许」', () => {
     const { lastFrame } = render(
       <ApprovalPrompt cols={80} req={{ command: 'rm -rf tmp', description: '运行命令', allowPermanent: false }} t={t} onChoice={() => {}} />
     );
-    expect(lastFrame()).not.toContain('Always allow');
+    expect(lastFrame()).not.toContain('总是允许');
   });
 });
 

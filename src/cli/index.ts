@@ -172,6 +172,12 @@ async function main() {
     ),
     hooks: hookRunner,
     extraTools: { ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) },
+    // AI 自主调用通道（wx_cmd 工具）：闭包引用 commandBus 变量（命令注册在 agent 之后完成，
+    // 调用时才求值——与 gateway 同模式）；分级裁决在 agent.executeTool（commandLevels）
+    onCommand: async (input) => {
+      const r = await commandBus.execute(String(input));
+      return r.output || r.dispatch?.message || r.error || (r.ok ? '' : `命令执行失败：${r.error ?? ''}`);
+    },
   });
 
   // 模式/主题状态

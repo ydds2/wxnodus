@@ -1,0 +1,76 @@
+// tests/kernel-commandLevels.test.ts — 命令分级（AI 自主调用通道 wx_cmd 的裁决依据）
+import { describe, it, expect } from 'vitest';
+import { SLASH } from '../src/commands/registry.js';
+import { classifyCommand, COMMAND_LEVELS, COMMAND_LEVEL_LABEL, type CommandLevel } from '../src/kernel/commandLevels.js';
+
+describe('分级表白名单完整性', () => {
+  it('SLASH 全量命令均有等级（漏配会保守 confirm，但白名单应完整）', () => {
+    for (const cmd of SLASH) {
+      expect(COMMAND_LEVELS[cmd], `缺少分级: ${cmd}`).toBeTruthy();
+    }
+  });
+  it('等级取值合法且标签齐全', () => {
+    const levels = new Set(Object.values(COMMAND_LEVELS));
+    for (const lv of levels) {
+      expect(['safe', 'confirm', 'danger', 'redline']).toContain(lv);
+      expect(COMMAND_LEVEL_LABEL[lv as CommandLevel]).toBeTruthy();
+    }
+  });
+  it('子命令键存在（/key set、/perm rule、/security sudo on 等精确键）', () => {
+    for (const key of ['/key set', '/perm rule', '/security sudo on', '/script run', '/yolo']) {
+      expect(COMMAND_LEVELS[key], `缺少子命令分级: ${key}`).toBeTruthy();
+    }
+  });
+});
+
+describe('classifyCommand 分级命中', () => {
+  it('safe：只读/查询命令直接执行', () => {
+    expect(classifyCommand('/memory')).toBe('safe');
+    expect(classifyCommand('/hole 项目结构')).toBe('safe');
+    expect(classifyCommand('/status')).toBe('safe');
+    expect(classifyCommand('/script ci')).toBe('safe');
+    expect(classifyCommand('/calc 1+2')).toBe('safe');
+  });
+  it('confirm：常规副作用命令', () => {
+    expect(classifyCommand('/build 待办系统')).toBe('confirm');
+    expect(classifyCommand('/compact')).toBe('confirm');
+    expect(classifyCommand('/script record demo')).toBe('confirm');
+  });
+  it('danger：高危命令', () => {
+    expect(classifyCommand('/script run demo')).toBe('danger');
+    expect(classifyCommand('/deploy')).toBe('danger');
+    expect(classifyCommand('/webhook add')).toBe('danger');
+  });
+  it('redline：权限/密钥/安全/退出', () => {
+    expect(classifyCommand('/yolo on')).toBe('redline');
+    expect(classifyCommand('/key set sk-xxx')).toBe('redline');
+    expect(classifyCommand('/key abc123')).toBe('redline'); // 直接传密钥
+    expect(classifyCommand('/self-evolve')).toBe('redline');
+    expect(classifyCommand('/perm auto')).toBe('redline');
+    expect(classifyCommand('/perm rule add fs_write allow')).toBe('redline');
+    expect(classifyCommand('/security sudo on')).toBe('redline');
+    expect(classifyCommand('/plan on')).toBe('redline');
+    expect(classifyCommand('/quit')).toBe('redline');
+  });
+});
+
+describe('classifyCommand 边界', () => {
+  it('子命令最长前缀优先（/key 是 confirm，/key set 是 redline）', () => {
+    expect(classifyCommand('/key')).toBe('confirm');
+    expect(classifyCommand('/key set sk-xxx')).toBe('redline');
+    expect(classifyCommand('/security status')).toBe('safe');
+    expect(classifyCommand('/security sudo off')).toBe('confirm');
+  });
+  it('未命中表项 → 保守 confirm（用户确认后 bus 处理未知命令，无害）', () => {
+    expect(classifyCommand('/some-unknown-cmd')).toBe('confirm');
+  });
+  it('非命令输入 → redline（防任意文本注入执行）', () => {
+    expect(classifyCommand('rm -rf /')).toBe('redline');
+    expect(classifyCommand('')).toBe('redline');
+    expect(classifyCommand('   ')).toBe('redline');
+  });
+  it('带尾随参数的子命令键仍命中（/perm smart extra → redline）', () => {
+    expect(classifyCommand('/perm smart 额外参数')).toBe('redline');
+    expect(classifyCommand('/sandbox L2')).toBe('redline');
+  });
+});

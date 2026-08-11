@@ -11,7 +11,7 @@ import { TextInput } from './textInput.js'
 const APPROVAL_OPTS = ['once', 'session', 'always', 'deny'] as const
 // tirith warning present → backend downgrades "always" to session scope, so drop it.
 const APPROVAL_OPTS_NO_ALWAYS = APPROVAL_OPTS.filter(o => o !== 'always')
-const LABELS = { always: 'Always allow', deny: 'Deny', once: 'Allow once', session: 'Allow this session' } as const
+const LABELS = { always: '总是允许', deny: '拒绝', once: '允许一次', session: '本会话允许' } as const
 const CMD_PREVIEW_LINES = 10
 
 type ApprovalChoice = 'always' | 'deny' | 'once' | 'session'
@@ -94,7 +94,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
   return (
     <Box borderColor={t.color.warn} borderStyle="double" flexDirection="column" paddingX={1}>
       <Text bold color={t.color.warn}>
-        ⚠ approval required · {req.tool ?? req.command}
+        ⚠ 需要批准 · {req.tool ?? req.command}
       </Text>
       {req.icon && req.category ? (
         <Text color={t.color.muted}>
@@ -111,7 +111,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
 
         {overflow > 0 ? (
           <Text color={t.color.muted}>
-            … +{overflow} more line{overflow === 1 ? '' : 's'} (full text above)
+            … +{overflow} 行省略（完整文本见上方）
           </Text>
         ) : null}
       </Box>
@@ -128,7 +128,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
       ))}
 
       <Text color={t.color.muted}>
-        ↑/↓ select · Enter confirm · 1-{opts.length} quick pick · Esc/Ctrl+C deny
+        ↑/↓ 选择 · Enter 确认 · 1-{opts.length} 快捷选择 · Esc/Ctrl+C 拒绝
       </Text>
     </Box>
   )
@@ -142,7 +142,7 @@ export function ClarifyPrompt({ cols = 80, onAnswer, onCancel, req, t }: Clarify
 
   const heading = (
     <Text bold>
-      <Text color={t.color.accent}>ask</Text>
+      <Text color={t.color.accent}>提问</Text>
       <Text color={t.color.text}> {req.question}</Text>
     </Text>
   )

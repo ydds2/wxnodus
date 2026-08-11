@@ -105,8 +105,10 @@ export const pasteTokenLabel = (text: string, lineCount: number) => {
     : `[[ ${preview} [${fmtK(lineCount)} lines] ]]`
 }
 
-const THINKING_STATUS_RE = new RegExp(`^(?:${VERBS.join('|')})\\.{0,3}$`, 'i')
-const THINKING_STATUS_CHUNK_RE = new RegExp(`[^A-Za-z\n]+\\s*(?:${VERBS.join('|')})\\.{0,3}\\s*`, 'giu')
+// 思考状态行识别（中文为主）：匹配「思考中…」/「推理中…」等状态行并剔除——
+// 前缀字符类排除中英文字符（防止吞掉中文动词本身），行首锚定兼容无前缀情况
+const THINKING_STATUS_RE = new RegExp(`^(?:${VERBS.join('|')})\\.{0,3}$`, 'iu')
+const THINKING_STATUS_CHUNK_RE = new RegExp(`(?:^|[^\\u4e00-\\u9fa5A-Za-z\\n]+)(?:${VERBS.join('|')})\\.{0,3}\\s*`, 'giu')
 
 export const cleanThinkingText = (reasoning: string) =>
   reasoning

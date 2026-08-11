@@ -57,6 +57,8 @@ export interface AgentOptions {
   /** 工具延迟加载（P2，默认关）：开启后首轮只注入核心工具 + tool_search，
    *  模型检索到高级工具后动态激活——省工具 schema token（Codex tool_search 自研版） */
   toolLazyLoad?: boolean;
+  /** AI 自主调用通道（wx_cmd 工具）：执行斜杠指令并返回文本输出（cli 装配 bus.execute 包装） */
+  onCommand?: (input: string) => Promise<string>;
 }
 
 export interface AgentResult {
@@ -466,6 +468,8 @@ export function createAgent(opts: AgentOptions) {
     requestSecret: opts.onSecretRequest,
     // 动态内容表（credential_form 工具）：经 gateway 弹多字段表单（仅内存）
     requestForm: opts.onFormRequest,
+    // AI 自主调用通道（wx_cmd 工具）：执行斜杠指令（cli 装配 bus.execute 包装）
+    runCommand: opts.onCommand,
     hookFailure: (name, err) => hooks?.postToolUseFailure(name, err),
   };
 
@@ -500,7 +504,29 @@ export function createAgent(opts: AgentOptions) {
       // P0-2：持久化规则优先裁决（deny 直接拒绝 / allow 跳过审批 / ask 强制确认）
       const ruleHit = applyRules(name, args, permRules);
       if (ruleHit === 'deny') return `工具被规则拒绝：${name}（/perm rule remove 可移除规则）`;
-      const verdict = modeVerdict(mode, name, args, tool.danger);
+      // AI 自主调用通道（wx_cmd）分级裁决：safe 直执行 / confirm 走模式确认链 /
+      //   danger 强制人工确认（跳过 autoReview——高危不可 AI 预审放行）/ redline 直接拒绝
+      let verdict: import('./permissions.js').Verdict;
+      let cmdForceManual = false;
+      if (name === 'wx_cmd') {
+        const { classifyCommand } = await import('./commandLevels.js');
+        const cmdLevel = classifyCommand(String(args?.command ?? ''));
+        if (cmdLevel === 'redline') {
+          bus.emit('agent.tool', { name, phase: 'complete', ok: false, toolId });
+          return `命令被 AI 通道拒绝：${String(args?.command ?? '').slice(0, 80)}（涉及权限/密钥/安全/退出——请用户手动执行）`;
+        }
+        if (cmdLevel === 'safe') {
+          verdict = 'approve';
+        } else if (cmdLevel === 'danger') {
+          verdict = 'confirm';
+          cmdForceManual = true;
+        } else {
+          // confirm 级：走模式语义（smart/manual/auto/goal→确认、plan→计划审批、yolo→放行）
+          verdict = modeVerdict(mode, name, args, tool.danger);
+        }
+      } else {
+        verdict = modeVerdict(mode, name, args, tool.danger);
+      }
       if (verdict === 'reject') return `工具被拒绝：权限红线（${name}）`;
       // 简化人工操作（阶段 C）：smart 模式 + 低危文件编辑（工作区内）→ 自动放行，
       // 不再逐次弹审批（acceptEdits 语义）；工作区外/危险操作/plan 模式不受影响
@@ -510,7 +536,7 @@ export function createAgent(opts: AgentOptions) {
         && isPathWithinCwd(String((args as any).path));
       if (ruleHit === 'allow') {
         bus.emit('system.notice', { text: `规则放行：${name}（/perm rule list 查看）` });
-      } else if (opts.autoReview?.enabled() && (verdict === 'confirm' || verdict === 'plan')) {
+      } else if (opts.autoReview?.enabled() && !cmdForceManual && (verdict === 'confirm' || verdict === 'plan')) {
         // AI 审批预审（D 批次）：LLM 预审代替人工弹窗——allow 放行（留痕）/ deny 拒绝 / ask 弹窗
         const verdict2 = await opts.autoReview.review({ tool: name, args: JSON.stringify(args ?? {}).slice(0, 500), cwd: process.cwd() });
         if (verdict2 === 'allow') {

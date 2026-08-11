@@ -656,9 +656,9 @@ function DiffView({
     <Box flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       <Box flexDirection="column" marginBottom={1}>
         <Text bold color={t.color.border}>
-          Replay diff
+          回放差异
         </Text>
-        <Text color={t.color.muted}>baseline vs candidate · esc/q close</Text>
+        <Text color={t.color.muted}>基线 vs 候选 · esc/q 关闭</Text>
       </Box>
 
       <Box flexDirection="row" marginBottom={1}>
@@ -767,7 +767,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     if (historyIndex === 0 && prev > 0 && liveSubagents.length === 0 && history.length > 0) {
       setHistoryIndex(1)
       setCursor(0)
-      setFlash('turn finished · inspect freely · q to close')
+      setFlash('回合完成 · 可自由检查 · q 关闭')
     }
   }, [history.length, historyIndex, liveSubagents.length])
 
@@ -973,10 +973,10 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
   const title =
     replayMode && effectiveSnapshot
-      ? `${historyIndex > 0 ? `Replay ${historyIndex}/${history.length}` : 'Last turn'} · finished ${new Date(
+      ? `${historyIndex > 0 ? `回放 ${historyIndex}/${history.length}` : '最后一轮'} · 完成于 ${new Date(
           effectiveSnapshot.finishedAt
         ).toLocaleTimeString()}`
-      : `Spawn tree${delegation.paused ? ' · ⏸ paused' : ''}`
+      : `派生子代理树${delegation.paused ? ' · ⏸ 已暂停' : ''}`
 
   const metaLine = [formatSummary(totals), spark, capsLabel, mix ? `· ${mix}` : ''].filter(Boolean).join('  ')
 
