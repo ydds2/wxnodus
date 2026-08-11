@@ -6,6 +6,7 @@ import { createHash, randomUUID, randomBytes } from 'node:crypto';
 import { join, basename, extname, resolve, dirname } from 'node:path';
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, rmSync } from 'node:fs';
 import { searchMessages, appendAudit, saveCheckpoint, restoreCheckpoint } from '../store/db.js';
+import { parseSinceArg } from '../kernel/memory.js';
 import { estimateTokens, compactKeepHeadTail } from '../kernel/memory.js';
 import { runGate } from '../build/gate.js';
 import { writeEvidence } from '../build/evidence.js';
@@ -157,7 +158,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/fs', (args) => {
     const [op, ...rest] = args;
     const target = rest.join(' ').replace(/^["']|["']$/g, '');
-    if (!target) return '用法：/fs <ls|read|stat> <路径>';
+    if (!target) return '用法：/fs <ls|read|stat|tree|glob> <路径|模式> [--depth N]';
     try {
       const p = join(ctx.cwd, target);
       if (op === 'ls') {
@@ -180,7 +181,63 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
           ` 修改：${new Date(st.mtimeMs).toLocaleString()}`,
         ]);
       }
-      return '用法：/fs <ls|read|stat> <路径>';
+      // A21：目录树——/fs tree <路径> [--depth N]（ASCII 树，限深防爆炸）
+      if (op === 'tree') {
+        // 路径参数需剔除 --depth N（flags 不属路径）
+        const depthArgIdx = args.indexOf('--depth');
+        const treeTarget = args
+          .slice(1)
+          .filter((_, i) => depthArgIdx < 0 || (i !== depthArgIdx - 1 && i !== depthArgIdx))
+          .join(' ')
+          .replace(/^["']|["']$/g, '');
+        const treePath = treeTarget ? join(ctx.cwd, treeTarget) : ctx.cwd;
+        if (!existsSync(treePath) || !statSync(treePath).isDirectory()) return `不存在或非目录：${treePath}`;
+        const depth = depthArgIdx >= 0 ? Math.min(Math.max(Number(args[depthArgIdx + 1]) || 2, 1), 6) : 2;
+        const out: string[] = [basename(treePath) || treeTarget || '.'];
+        const walk = (dir: string, prefix: string, level: number) => {
+          if (level > depth) {
+            out.push(`${prefix}…（深度 ${depth} 截断，--depth N 调深）`);
+            return;
+          }
+          let entries: Array<{ name: string; isDir: boolean }> = [];
+          try {
+            entries = readdirSync(dir, { withFileTypes: true })
+              .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules')
+              .slice(0, 40)
+              .map(e => ({ name: e.name, isDir: e.isDirectory() }));
+          } catch { return; }          entries.forEach((e, i) => {
+            const last = i === entries.length - 1;
+            out.push(`${prefix}${last ? '└─ ' : '├─ '}${e.name}${e.isDir ? '/' : ''}`);
+            if (e.isDir) walk(join(dir, e.name), prefix + (last ? '   ' : '│  '), level + 1);
+          });
+        };
+        walk(treePath, '', 1);
+        return lines(` tree ${treeTarget || '.'} `, out.slice(0, 80));
+      }
+      // A21：glob 批量匹配——/fs glob <模式>（相对 cwd；** 递归；* 单层）
+      if (op === 'glob') {
+        const pattern = target.replace(/\\/g, '/');
+        const results: string[] = [];
+        const simpleGlob = (seg: string) => new RegExp(`^${seg.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '§§').replace(/\*/g, '[^/]*').replace(/§§/g, '.*')}$`);
+        const walk = (dir: string, rel: string, depthLeft: number) => {
+          if (depthLeft < 0) return;
+          let entries: Array<{ name: string; isDir: boolean }> = [];
+          try {
+            entries = readdirSync(dir, { withFileTypes: true })
+              .filter(e => e.name !== 'node_modules' && e.name !== '.git')
+              .map(e => ({ name: e.name, isDir: e.isDirectory() }));
+          } catch { return; }
+          for (const e of entries) {
+            const r = rel ? `${rel}/${e.name}` : e.name;
+            if (simpleGlob(pattern).test(r)) results.push(r);
+            if (e.isDir) walk(join(dir, e.name), r, depthLeft - 1);
+          }
+        };
+        walk(ctx.cwd, '', 6);
+        if (!results.length) return `未匹配：${pattern}`;
+        return lines(` glob ${pattern}（${results.length} 个） `, results.slice(0, 50));
+      }
+      return '用法：/fs <ls|read|stat|tree|glob> <路径|模式> [--depth N]';
     } catch (e: any) { return `文件操作失败：${e?.message?.slice(0, 120)}`; }
   });
 
@@ -1106,11 +1163,39 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return consented ? '同意书：已签署（本地运行、数据不出本机、凭证加密存储）' : '同意书已签署：本地运行 · 数据不出本机 · 凭证加密存储';
   });
 
-  bus.register('/audit', () => {
-    const out = join(ctx.dataDir, `audit-${Date.now().toString(36)}.json`);
-    const rows = ctx.db.prepare(`SELECT * FROM audit ORDER BY id`).all() as any[];
-    writeFileSync(out, JSON.stringify(rows, null, 2), 'utf8');
-    return `审计日志已导出（${rows.length} 条）→ ${out}`;
+  bus.register('/audit', (args) => {
+    // A21：过滤查询（--event 事件类型 / --limit N / --since 时间）——默认尾部 20 条
+    const event = (() => {
+      const i = args.indexOf('--event');
+      return i >= 0 ? args[i + 1] : undefined;
+    })();
+    const limit = (() => {
+      const i = args.indexOf('--limit');
+      const n = Number(args[i + 1]);
+      return Number.isInteger(n) && n > 0 ? Math.min(n, 100) : 20;
+    })();
+    const since = (() => {
+      const i = args.indexOf('--since');
+      return i >= 0 ? parseSinceArg(args[i + 1]) ?? undefined : undefined;
+    })();
+    const where = [
+      event ? `AND event = ?` : '',
+      since ? `AND ts >= ${Math.floor(since)}` : '',
+    ].join(' ');
+    const params = event ? [event] : [];
+    const rows = ctx.db.prepare(
+      `SELECT id, event, payload, ts FROM audit WHERE 1=1 ${where} ORDER BY id DESC LIMIT ${limit}`
+    ).all(...params) as Array<{ id: number; event: string; payload: string; ts: number }>;
+    if (!rows.length) return `审计无记录${event ? `（event=${event}）` : ''}`;
+    return lines(` 审计日志（${rows.length} 条${event ? ` · ${event}` : ''}） `, rows.reverse().map(r => {
+      let p = '';
+      try {
+        const parsed = JSON.parse(r.payload);
+        const keys = Object.keys(parsed).filter(k => !['hash'].includes(k));
+        p = keys.map(k => `${k}=${String(parsed[k]).slice(0, 60)}`).join(' ');
+      } catch { p = String(r.payload ?? '').slice(0, 80); }
+      return ` #${r.id} [${r.event}] ${p}（${new Date(r.ts).toLocaleTimeString()}）`;
+    }));
   });
 
   bus.register('/encrypt', () => {

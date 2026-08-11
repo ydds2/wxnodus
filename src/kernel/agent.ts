@@ -7,6 +7,7 @@
 //   无 key → 规则脑兜底（诚实回答）
 //   spawnSubagent：独立上下文 + 只读工具集
 import type { Db } from '../store/db.js';
+import { appendAudit } from '../store/db.js';
 import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
 import { decryptKey, REASONING_FIELDS } from './providers.js';
@@ -493,6 +494,12 @@ export function createAgent(opts: AgentOptions) {
     // 剧本录制钩子：/script record 期间每个工具调用进当前 step（跳过 AI 决策的确定性重放源）
     scriptRecorder?.(name, args);
     const t0 = Date.now();
+    // A21：审计落库（哈希链——工具裁决/执行/红线全留痕；审计表未就绪静默）
+    const auditTool = (event: string, payload: Record<string, unknown>) => {
+      try {
+        appendAudit(opts.db, event, payload);
+      } catch { /* 审计表未就绪时静默 */ }
+    };
     try {
       const tool = tools[name];
       if (!tool) return `未知工具：${name}（可用：${Object.keys(tools).slice(0, 12).join(', ')}）`;
@@ -503,15 +510,20 @@ export function createAgent(opts: AgentOptions) {
       // F12：权限模型读 tool.danger（单一事实来源）
       // P0-2：持久化规则优先裁决（deny 直接拒绝 / allow 跳过审批 / ask 强制确认）
       const ruleHit = applyRules(name, args, permRules);
-      if (ruleHit === 'deny') return `工具被规则拒绝：${name}（/perm rule remove 可移除规则）`;
+      if (ruleHit === 'deny') {
+        auditTool('tool.denied', { tool: name, rule: 'deny' });
+        return `工具被规则拒绝：${name}（/perm rule remove 可移除规则）`;
+      }
       // AI 自主调用通道（wx_cmd）分级裁决：safe 直执行 / confirm 走模式确认链 /
       //   danger 强制人工确认（跳过 autoReview——高危不可 AI 预审放行）/ redline 直接拒绝
       let verdict: import('./permissions.js').Verdict;
       let cmdForceManual = false;
+      let cmdLevel: string | undefined;
       if (name === 'wx_cmd') {
         const { classifyCommand } = await import('./commandLevels.js');
-        const cmdLevel = classifyCommand(String(args?.command ?? ''));
+        cmdLevel = classifyCommand(String(args?.command ?? ''));
         if (cmdLevel === 'redline') {
+          auditTool('tool.redline', { tool: 'wx_cmd', command: String(args?.command ?? '').slice(0, 120) });
           bus.emit('agent.tool', { name, phase: 'complete', ok: false, toolId });
           return `命令被 AI 通道拒绝：${String(args?.command ?? '').slice(0, 80)}（涉及权限/密钥/安全/退出——请用户手动执行）`;
         }
@@ -527,6 +539,13 @@ export function createAgent(opts: AgentOptions) {
       } else {
         verdict = modeVerdict(mode, name, args, tool.danger);
       }
+      // A21：权限裁决留痕（工具/裁决/命令级别/参数摘要）
+      auditTool('tool.verdict', {
+        tool: name,
+        verdict,
+        level: cmdLevel,
+        args: JSON.stringify(args ?? {}).slice(0, 200),
+      });
       if (verdict === 'reject') return `工具被拒绝：权限红线（${name}）`;
       // 简化人工操作（阶段 C）：smart 模式 + 低危文件编辑（工作区内）→ 自动放行，
       // 不再逐次弹审批（acceptEdits 语义）；工作区外/危险操作/plan 模式不受影响
@@ -591,12 +610,15 @@ export function createAgent(opts: AgentOptions) {
       }
       bus.emit('agent.tool', { name, phase: 'complete', ok: true, ms: Date.now() - t0, toolId });
       hooks?.postToolUse(name, out);
+      // A21：工具执行结果留痕（耗时/成败）
+      auditTool('tool.executed', { tool: name, ok: true, ms: Date.now() - t0 });
       // 变更即回归：文件被真实修改后调度 auto 剧本重放（防抖合并连续改动；
       // 回归重放期间的 fs_write 由 regressionRunning 守卫拦截，不会自我触发）
       if (name === 'fs_write' || name === 'fs_edit') scheduleAutoRegression();
       return out;
     } catch (e: any) {
       bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId });
+      auditTool('tool.executed', { tool: name, ok: false, ms: Date.now() - t0, error: String(e?.message ?? e).slice(0, 120) });
       return `工具执行异常：${e?.message?.slice(0, 300) ?? e}`;
     }
   }

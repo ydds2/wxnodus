@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeSpec, validateSpec, type Spec } from '../src/build/spec.js';
+import { makeSpec, validateSpec, diagnoseSpec, type Spec } from '../src/build/spec.js';
 import { makePlan, topoSort } from '../src/build/plan.js';
 import { instantiate, checkLeftover } from '../src/build/scaffold.js';
 import { writeEvidence, fingerprint } from '../src/build/evidence.js';
@@ -158,5 +158,33 @@ describe('runGate 测试门', () => {
     } finally {
       try { rmSync(dir, { recursive: true, force: true }); } catch {}
     }
+  });
+});
+
+describe('A21 diagnoseSpec 分级诊断', () => {
+  it('合法规格：info 模具命中 + 无 error', () => {
+    const good = makeSpec('帮我做一个待办系统', { key: null });
+    const diags = diagnoseSpec(good);
+    expect(diags.filter(d => d.level === 'error')).toHaveLength(0);
+    expect(diags.some(d => d.level === 'info' && d.code === 'spec.scaffold.hit')).toBe(true);
+  });
+
+  it('验收不足 3 条 → warning（可编译但提示）', () => {
+    const s: Spec = { title: '记账本', summary: '本地记账', scaffold: 'ledger', acceptance: ['能增删记录'] };
+    const diags = diagnoseSpec(s);
+    expect(diags.some(d => d.level === 'warning' && d.code === 'spec.acceptance.count')).toBe(true);
+    expect(validateSpec(s).ok).toBe(true); // warning 不阻断
+  });
+
+  it('主观词验收 → error（阻断）', () => {
+    const s: Spec = { title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['界面要美观', '好用', '数据持久化'] };
+    const diags = diagnoseSpec(s);
+    expect(diags.some(d => d.level === 'error' && d.code === 'spec.acceptance.subjective')).toBe(true);
+    expect(validateSpec(s).ok).toBe(false);
+  });
+
+  it('空验收 → error', () => {
+    const s: Spec = { title: 'x', summary: 'y', scaffold: 'ledger', acceptance: [] };
+    expect(validateSpec(s).ok).toBe(false);
   });
 });

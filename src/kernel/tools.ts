@@ -181,6 +181,7 @@ export function coreTools(): Record<string, ToolDef> {
           properties: {
             pattern: { type: 'string', description: '文件名或 glob（如 "*.test.ts"、"config.json"、"src/**/hooks/*"）' },
             max: { type: 'number', description: '最多返回条数（默认 30）' },
+            max_depth: { type: 'number', description: '最大递归深度（默认 12；大目录可调小提速）' },
           },
           required: ['pattern'],
         },
@@ -191,6 +192,8 @@ export function coreTools(): Record<string, ToolDef> {
       const pattern = String(args?.pattern ?? '').trim();
       if (!pattern) return '参数错误：pattern 不能为空';
       const max = Math.min(Math.max(Number(args?.max) || 30, 1), 100);
+      // A21：限深参数（默认 12 层——防大目录递归爆炸）
+      const maxDepth = Math.min(Math.max(Number(args?.max_depth) || 12, 1), 20);
       try {
         const { readdirSync, statSync } = await import('node:fs');
         const { join, relative, sep } = await import('node:path');
@@ -202,7 +205,8 @@ export function coreTools(): Record<string, ToolDef> {
         };
         const re = toRe(pattern);
         const out: string[] = [];
-        const walk = (dir: string): void => {
+        const walk = (dir: string, depth: number): void => {
+          if (depth > maxDepth) return;
           let entries: Array<{ name: string; isDir: boolean }> = [];
           try {
             entries = readdirSync(dir, { withFileTypes: true }).map(e => ({ name: e.name, isDir: e.isDirectory() }));
@@ -210,13 +214,13 @@ export function coreTools(): Record<string, ToolDef> {
           for (const e of entries) {
             if (e.isDir && SKIP.has(e.name)) continue;
             const abs = join(dir, e.name);
-            if (e.isDir) { walk(abs); continue; }
+            if (e.isDir) { walk(abs, depth + 1); continue; }
             const rel = relative(ctx.cwd, abs).split(sep).join('/');
             if (re.test(e.name) || re.test(rel)) out.push(rel);
             if (out.length >= max) return;
           }
         };
-        walk(ctx.cwd);
+        walk(ctx.cwd, 0);
         if (!out.length) return `未找到匹配「${pattern}」的文件（跳过 node_modules/.git/dist 等）`;
         return `找到 ${out.length} 个文件：\n${out.map(f => '  ' + f).join('\n')}`;
       } catch (e: any) {
@@ -254,6 +258,39 @@ export function coreTools(): Record<string, ToolDef> {
       // SSRF 三层防护（src/kernel/ssrf.ts）：主机名形态 + DNS 解析校验 + 重定向逐跳
       const { safeFetchText } = await import('./ssrf.js');
       const r = await safeFetchText(String(url));
+      if ('error' in r) return r.error;
+      return `HTTP ${r.status}\n${r.text.slice(0, 8000)}`;
+    },
+  };
+  // A21：http_request——多方法 HTTP（POST/PUT/DELETE/PATCH），SSRF 防护复用（方法无关）
+  const httpRequest: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'http_request',
+        description:
+          'HTTP 请求（POST/PUT/DELETE/PATCH/GET）——调用需要鉴权的 REST API、提交数据等。SSRF 三层防护（内网/重绑定/重定向拦截）+ 响应体 1MB 上限。body 传对象自动 JSON 序列化。',
+        parameters: {
+          type: 'object',
+          properties: {
+            method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], description: 'HTTP 方法（默认 GET）' },
+            url: { type: 'string', description: '请求 URL（http/https，内网被拦截）' },
+            body: { description: '请求体：JSON 对象自动序列化，或原始字符串', oneOf: [{ type: 'object' }, { type: 'string' }] },
+            headers: { type: 'object', description: '附加请求头（如 Authorization——配合 credential_form 安全录入）' },
+          },
+          required: ['url'],
+        },
+      },
+    },
+    danger: true, // 外联/写库/调度/敏感输入——需确认（POST 有副作用更需确认链）
+    async run({ method, url, body, headers }) {
+      const { safeFetchText } = await import('./ssrf.js');
+      const r = await safeFetchText(String(url), {
+        method: String(method ?? 'GET'),
+        body: body as string | Record<string, unknown> | undefined,
+        headers: (headers ?? {}) as Record<string, string>,
+        maxBytes: 1_000_000,
+      });
       if ('error' in r) return r.error;
       return `HTTP ${r.status}\n${r.text.slice(0, 8000)}`;
     },
@@ -300,22 +337,64 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const scaffoldBuild: ToolDef = {
-    schema: { type: 'function', function: { name: 'scaffold_build', description: '构建可运行项目（概念编译器：规格 → 计划 → 脚手架落地到 data/projects/）', parameters: { type: 'object', properties: { spec: { type: 'string', description: '项目规格 JSON（title/summary/scaffold/acceptance）' } }, required: ['spec'] } } },
+    schema: {
+      type: 'function',
+      function: {
+        name: 'scaffold_build',
+        description: '构建可运行项目（概念编译器：规格 → 计划 → 脚手架落地到 data/projects/）。dry_run=true 时只编译不落盘（预览计划与诊断）。',
+        parameters: {
+          type: 'object',
+          properties: {
+            spec: { type: 'string', description: '项目规格 JSON（title/summary/scaffold/acceptance）' },
+            dry_run: { type: 'boolean', description: 'true = 只编译（规格诊断+计划预览），不产生任何文件（默认 false）' },
+          },
+          required: ['spec'],
+        },
+      },
+    },
     danger: true,
-    async run({ spec }, ctx) {
+    async run({ spec, dry_run }, ctx) {
       try {
         const parsed = typeof spec === 'string' ? JSON.parse(spec) : spec;
         if (!parsed?.title || !parsed?.summary) return 'spec 不完整（需要 title/summary）';
-        const { makeSpec, validateSpec } = await import('../build/spec.js');
+        const { makeSpec, validateSpec, diagnoseSpec } = await import('../build/spec.js');
         const { makePlan } = await import('../build/plan.js');
         const { instantiate } = await import('../build/scaffold.js');
+        const { createHash } = await import('node:crypto');
         const s = makeSpec(parsed.summary, { key: null });
-        if (!validateSpec(s).ok) return `规格校验失败：${validateSpec(s).reason}`;
+        const diags = diagnoseSpec(s);
+        const errors = diags.filter(d => d.level === 'error');
         const plan = makePlan(parsed.summary, { key: null });
+        // A21：dry-run——只编译不落盘（诊断 + 计划预览，零副作用）
+        if (dry_run === true) {
+          const diagLines = diags.length
+            ? diags.map(d => ` ${d.level === 'error' ? '✗' : d.level === 'warning' ? '!' : '·'} [${d.code}] ${d.message}`)
+            : [' 无诊断问题'];
+          return [
+            `── 规格诊断（${diags.filter(d => d.level === 'error').length} error / ${diags.filter(d => d.level === 'warning').length} warning）──`,
+            ...diagLines,
+            `── 编译计划（dry-run，未落盘）──`,
+            ` 模块：${plan.order.join(' → ')}`,
+            ` 里程碑：${(plan.milestones ?? []).join('；') || '（单阶段）'}`,
+            ` 验收：${s.acceptance.join('；')}`,
+          ].join('\n');
+        }
+        if (!validateSpec(s).ok) {
+          return `规格校验失败：${errors.map(e => e.message).join('；')}`;
+        }
         const dir = join(ctx.dataDir, 'projects', parsed.title);
         const r = instantiate(s, dir);
         if (!r.ok) return `脚手架失败：${r.reason}`;
-        return `项目已生成 → ${dir}\n模块计划：${plan.order.join(' → ')}\n验收：${s.acceptance.join('；')}`;
+        // A21：规格 IR 版本化——spec.json 快照 + sha256（后续 build 可 diff/增量）
+        try {
+          const { mkdirSync, writeFileSync } = await import('node:fs');
+          mkdirSync(dir, { recursive: true });
+          const ir = { specVersion: 1, builtAt: Date.now(), spec: s, plan: { order: plan.order, milestones: plan.milestones ?? [] } };
+          const json = JSON.stringify(ir, null, 2);
+          writeFileSync(join(dir, 'spec.json'), json, 'utf8');
+          writeFileSync(join(dir, 'spec.sha256'), createHash('sha256').update(json).digest('hex'), 'utf8');
+        } catch { /* IR 落盘失败不阻断构建 */ }
+        return `项目已生成 → ${dir}\n规格 IR 已版本化（spec.json + sha256）\n模块计划：${plan.order.join(' → ')}\n验收：${s.acceptance.join('；')}`;
       } catch (e: any) {
         return `scaffold_build 异常：${e?.message?.slice(0, 300) ?? e}`;
       }
@@ -510,7 +589,7 @@ export function coreTools(): Record<string, ToolDef> {
       return out ? out.slice(0, 2000) : `命令已执行（无输出）：${command.slice(0, 80)}`;
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, memory_write: memoryWrite, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, memory_write: memoryWrite, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

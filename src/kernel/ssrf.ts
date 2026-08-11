@@ -56,12 +56,30 @@ export interface SafeFetchOptions {
   headers?: Record<string, string>;
   /** HTTP 代理（settings.proxy——A20 接入原死配置） */
   proxy?: string;
+  /** A21：HTTP 方法（默认 GET；POST/PUT/DELETE/PATCH——SSRF 防护方法无关） */
+  method?: string;
+  /** A21：请求体（对象自动 JSON 序列化并加 content-type） */
+  body?: string | Record<string, unknown>;
 }
 
 const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) WxNodus/3.0 (+local CLI search)';
 
 export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): Promise<{ status: number; text: string } | { error: string }> {
   const { maxRedirects = 5, maxBytes = 1_000_000, headers = {}, proxy } = opts;
+  const method = String(opts.method ?? 'GET').toUpperCase();
+  // A21：请求体序列化（对象 → JSON + content-type；字符串原样）
+  let bodyStr: string | undefined;
+  const mergedHeaders = { ...headers };
+  if (opts.body !== undefined) {
+    if (typeof opts.body === 'string') {
+      bodyStr = opts.body;
+    } else {
+      bodyStr = JSON.stringify(opts.body);
+      if (!Object.keys(mergedHeaders).some(k => k.toLowerCase() === 'content-type')) {
+        mergedHeaders['content-type'] = 'application/json';
+      }
+    }
+  }
   let current = url;
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
@@ -70,7 +88,7 @@ export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): P
 
     if (proxy) {
       // 代理通道：Windows 10+ 内置 curl（SSRF 逐跳校验仍在 JS 侧完成）
-      const r = await proxyFetchOnce(current, proxy, { maxBytes, headers });
+      const r = await proxyFetchOnce(current, proxy, { maxBytes, headers: mergedHeaders, method, body: bodyStr });
       if ('error' in r) return r;
       const { status, location, body } = r;
       if (status >= 300 && status < 400 && location) {
@@ -84,7 +102,9 @@ export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): P
       const resp = await fetch(current, {
         redirect: 'manual', // 手动跟随以逐跳校验
         signal: AbortSignal.timeout(15000),
-        headers: { 'user-agent': DEFAULT_UA, ...headers },
+        method,
+        body: method === 'GET' || method === 'HEAD' ? undefined : bodyStr,
+        headers: { 'user-agent': DEFAULT_UA, ...mergedHeaders },
       });
       if (resp.status >= 300 && resp.status < 400) {
         const loc = resp.headers.get('location');
@@ -109,10 +129,10 @@ export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): P
 async function proxyFetchOnce(
   url: string,
   proxy: string,
-  opts: { maxBytes: number; headers: Record<string, string> }
+  opts: { maxBytes: number; headers: Record<string, string>; method: string; body?: string }
 ): Promise<{ status: number; location: string | null; body: string } | { error: string }> {
   const { spawnSync } = await import('node:child_process');
-  const { mkdtempSync, readFileSync, unlinkSync, writeFileSync, mkdirSync } = await import('node:fs');
+  const { mkdtempSync, readFileSync, unlinkSync, mkdirSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const dir = mkdtempSync(join(tmpdir(), 'wxnodus-fetch-'));
@@ -123,11 +143,16 @@ async function proxyFetchOnce(
     '--max-filesize', String(opts.maxBytes),
     '--proxy', proxy,
     '-A', DEFAULT_UA,
+    '-X', opts.method,
     ...Object.entries(opts.headers).flatMap(([k, v]) => ['-H', `${k}: ${v}`]),
     '-D', headerFile,
     '-o', outFile,
-    url,
   ];
+  // A21：请求体（GET/HEAD 不传 body；字符串原样——二进制场景由调用方自行 base64）
+  if (opts.body !== undefined && opts.method !== 'GET' && opts.method !== 'HEAD') {
+    args.push('--data-binary', opts.body);
+  }
+  args.push(url);
   const r = spawnSync('curl', args, { encoding: 'utf8', timeout: 20000, maxBuffer: 64 * 1024 });
   let body = '';
   try {

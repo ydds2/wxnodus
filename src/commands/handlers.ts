@@ -2,7 +2,9 @@
 // 设计：每个命令访问 kernel 上下文（config/db/mem/agent/bus）；输出字符串经消息流呈现
 import type { Config } from '../store/config.js';
 import type { Db } from '../store/db.js';
-import type { Memory } from '../kernel/memory.js';
+import type { Memory, MemMsg } from '../kernel/memory.js';
+import { parseSinceArg } from '../kernel/memory.js';
+import { deleteMessage, appendAudit } from '../store/db.js';
 import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, resolveAlias } from './registry.js';
@@ -241,7 +243,10 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/perm', (args) => {
     const mode = args[0];
     if (mode && ['smart', 'auto', 'manual', 'plan', 'yolo', 'goal'].includes(mode)) {
+      const from = ctx.getMode();
       ctx.setMode(mode);
+      // A21：模式切换落审计（哈希链）
+      try { appendAudit(ctx.db, 'mode.changed', { from, to: mode, source: 'cmd' }); } catch { /* 审计表未就绪静默 */ }
       return `模式已切换：${mode}`;
     }
     return '当前模式：' + ctx.getMode() + '（可选：smart 更改前确认 / auto 自动编辑 / goal loop-goal / manual 全量确认 / plan 计划模式 / yolo 完全访问）';
@@ -302,10 +307,47 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     }));
   });
 
-  bus.register('/memory', (args) => {
+  bus.register('/memory', async (args) => {
     const rec = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default');
     const absorbed = ctx.mem.absorbCount('default');
     const sub = args[0];
+
+    // A21：检索（混合召回 + 时间过滤）——/memory search <词> [--limit N] [--since X]
+    if (sub === 'search') {
+      // 查询词剔除 flags 及其值（--limit/--since）
+      const q = args
+        .slice(1)
+        .filter((a, i, arr) => {
+          if (a.startsWith('--')) return false;
+          const prev = arr[i - 1];
+          return prev !== '--limit' && prev !== '--since';
+        })
+        .join(' ')
+        .trim();
+      if (!q) return '用法：/memory search <关键词> [--limit N] [--since 7d|2026-08-01]';
+      const limit = (() => {
+        const i = args.indexOf('--limit');
+        const n = Number(args[i + 1]);
+        return Number.isInteger(n) && n > 0 ? Math.min(n, 30) : 10;
+      })();
+      const sinceIdx = args.indexOf('--since');
+      const since = parseSinceArg(sinceIdx >= 0 ? args[sinceIdx + 1] : undefined) ?? undefined;
+      const hits = await ctx.mem.recallHybrid(q, { limit, since });
+      if (!hits.length) return `未检索到与「${q}」相关的记忆`;
+      return lines(` 记忆检索「${q}」(${hits.length} 条) `, hits.map(h => {
+        const when = new Date(h.ts ?? Date.now()).toLocaleString();
+        return ` #${h.id} ${h.content.slice(0, 70)}${h.session_id && h.session_id !== 'default' ? ` [${h.session_id.slice(0, 10)}]` : ''}（${when}）`;
+      }));
+    }
+
+    // A21：删除（物理删除 + 向量索引同步清）——/memory delete <id>
+    if (sub === 'delete') {
+      const id = Number(args[1]);
+      if (!Number.isInteger(id) || id < 1) return '用法：/memory delete <消息id>（id 见 /memory list）';
+      const ok = deleteMessage(ctx.db, id);
+      if (!ok) return `消息 #${id} 不存在`;
+      return `已删除消息 #${id}（FTS/向量索引同步清理）`;
+    }
 
     // 置顶/淡化（salience 加权召回）：/memory pin|fade|reset <id> [倍率]
     if (sub === 'pin' || sub === 'fade' || sub === 'reset') {
@@ -323,8 +365,11 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
     if (sub === 'list') {
       const n = Math.min(Number(args[1] ?? 10) || 10, 30);
+      // A21：--since 时间过滤
+      const sinceIdx = args.indexOf('--since');
+      const since = parseSinceArg(sinceIdx >= 0 ? args[sinceIdx + 1] : undefined);
       const rows = ctx.db.prepare(
-        `SELECT id, role, content, salience FROM messages WHERE archived=0 ORDER BY id DESC LIMIT ?`
+        `SELECT id, role, content, salience FROM messages WHERE archived=0 ${since ? `AND ts >= ${Math.floor(since)}` : ''} ORDER BY id DESC LIMIT ?`
       ).all(n) as Array<{ id: number; role: string; content: string; salience: number }>;
       return lines(' 记忆消息（/memory pin|fade <id> 加权） ', rows.reverse().map(m => {
         const flag = m.salience > 1.01 ? '★' : m.salience < 0.99 ? '☆' : ' ';
@@ -346,11 +391,23 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   // 概念编译（超复杂项目能力）
   bus.register('/build', async (args) => {
-    const input = args.join(' ');
-    if (!input) return '用法：/build <需求>（自然语言「做个待办系统」亦可直达）';
+    // A21：--dry-run——只编译（规格诊断 + 计划预览），零副作用
+    const dryRun = args.includes('--dry-run');
+    const input = args.filter(a => a !== '--dry-run').join(' ');
+    if (!input) return '用法：/build <需求> [--dry-run]（自然语言「做个待办系统」亦可直达）';
     const spec = makeSpec(input, { key: ctx.getModel() ? 'x' : null });
     if (spec.scaffold === 'unknown') return `需求无法编译（${input.slice(0, 30)}…）——换个说法或说「/help build」`;
     const plan = makePlan(input, { key: null });
+    const { diagnoseSpec } = await import('../build/spec.js');
+    const diags = diagnoseSpec(spec);
+    if (dryRun) {
+      return lines(` 规格诊断「${spec.title}」 `, [
+        ...diags.map(d => ` ${d.level === 'error' ? '✗' : d.level === 'warning' ? '!' : '·'} [${d.code}] ${d.message}`),
+        ` 模具：${spec.scaffold}`,
+        ` 计划：${topoSort(plan.modules).join(' → ')}（dry-run 未落盘）`,
+        ` 验收：${spec.acceptance.map(a => '✓ ' + a).join('\n       ')}`,
+      ]);
+    }
     // 项目目录
     const projName = `p${Date.now().toString(36)}`;
     const projDir = join(ctx.dataDir, 'projects', projName);
@@ -358,6 +415,14 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     // 构建（脚手架 → 真实验证 → 证据落盘 → 质量门）
     const sc = instantiate(spec, projDir);
     if (!sc.ok) return `脚手架失败：${sc.reason}`;
+    // A21：规格 IR 版本化（spec.json 快照 + sha256——后续 build 可 diff/增量重编）
+    try {
+      const { createHash } = await import('node:crypto');
+      const ir = { specVersion: 1, builtAt: Date.now(), spec, plan: { order: topoSort(plan.modules) } };
+      const json = JSON.stringify(ir, null, 2);
+      writeFileSync(join(projDir, 'spec.json'), json, 'utf8');
+      writeFileSync(join(projDir, 'spec.sha256'), createHash('sha256').update(json).digest('hex'), 'utf8');
+    } catch { /* IR 落盘失败不阻断构建 */ }
     // 审计修复：证据必须在验证之后落盘——先跑真实验证（启动→探活→重启→读回），
     // checks 填真实探活结果；验证失败则证据记录 failed（不伪造 'ok'）
     const { verifyProject } = await import('../build/verify.js');

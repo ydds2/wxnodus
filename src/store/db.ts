@@ -282,25 +282,38 @@ export function forkSession(db: Db, srcId: string, newId: string, titleSuffix = 
 }
 
 // 全文搜索（FTS5）：查询词经 bigram 转换后 OR 展开，命中返回消息行
-export function searchMessages(db: Db, query: string, opts: { limit?: number; sessionId?: string } = {}): Array<{ id: number; session_id: string; role: string; content: string; ts: number; salience: number }> {
+// A21：since 参数（ts >= since 的时间过滤——/memory search|list --since）
+export function searchMessages(db: Db, query: string, opts: { limit?: number; sessionId?: string; since?: number } = {}): Array<{ id: number; session_id: string; role: string; content: string; ts: number; salience: number }> {
   const limit = opts.limit ?? 10;
   try {
     const terms = bigramZh(query).split(/\s+/).filter(Boolean);
     if (!terms.length) return [];
     const match = terms.map(t => `"${t.replace(/"/g, '""')}"`).join(' OR ');
-    const where = opts.sessionId ? `AND m.session_id = @sid` : '';
+    const where = [
+      opts.sessionId ? `AND m.session_id = @sid` : '',
+      opts.since ? `AND m.ts >= @since` : '',
+    ].join(' ');
     return db.prepare(`
       SELECT m.id, m.session_id, m.role, m.content, m.ts, m.salience
       FROM messages m JOIN messages_fts f ON f.rowid = m.id
       WHERE messages_fts MATCH @match ${where}
       ORDER BY rank LIMIT @limit
-    `).all({ match, sid: opts.sessionId, limit }) as any[];
+    `).all({ match, sid: opts.sessionId, since: opts.since, limit }) as any[];
   } catch {
     // FTS 不可用降级：LIKE 模糊
     return db.prepare(`
       SELECT id, session_id, role, content, ts, salience FROM messages
-      WHERE content LIKE @q ${opts.sessionId ? `AND session_id = @sid` : ''}
+      WHERE content LIKE @q ${opts.sessionId ? `AND session_id = @sid` : ''} ${opts.since ? `AND ts >= @since` : ''}
       ORDER BY id DESC LIMIT @limit
-    `).all({ q: `%${query}%`, sid: opts.sessionId, limit }) as any[];
+    `).all({ q: `%${query}%`, sid: opts.sessionId, since: opts.since, limit }) as any[];
   }
+}
+
+/** A21：物理删除消息（FTS 外部内容表随行删除自动同步；向量索引手动清）。 */
+export function deleteMessage(db: Db, id: number): boolean {
+  try {
+    db.prepare(`DELETE FROM archival_vec WHERE id=?`).run(id);
+  } catch { /* 向量表缺失忽略 */ }
+  const r = db.prepare(`DELETE FROM messages WHERE id=?`).run(id);
+  return r.changes > 0;
 }

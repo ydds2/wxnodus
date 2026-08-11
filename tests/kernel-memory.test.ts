@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDB, closeDB } from '../src/store/db.js';
-import { createMemory, estimateTokens, compactKeepHeadTail } from '../src/kernel/memory.js';
+import { createMemory, estimateTokens, compactKeepHeadTail, parseSinceArg } from '../src/kernel/memory.js';
 
 let dir: string;
 let db: ReturnType<typeof openDB>;
@@ -146,5 +146,57 @@ describe('compactSmart 归档', () => {
     const all = m.recall('s-c2');
     expect(all.length).toBe(12); // 永不删
     expect(m.absorbCount('s-c2')).toBeGreaterThan(0); // 中部归档
+  });
+});
+
+describe('A21 写入去重合并', () => {
+  it('完全相同（≥20 字符）跳过插入并刷新时间戳', () => {
+    const m = createMemory(db);
+    m.append('s-dup', 'user', '这是一个超过二十个字符的重复测试消息内容');
+    const before = m.recall('s-dup').length;
+    m.append('s-dup', 'user', '这是一个超过二十个字符的重复测试消息内容');
+    expect(m.recall('s-dup').length).toBe(before); // 未新增
+  });
+
+  it('短消息（<20 字符）不参与去重（防"继续/好的"误删）', () => {
+    const m = createMemory(db);
+    m.append('s-dup2', 'user', '继续');
+    m.append('s-dup2', 'user', '继续');
+    expect(m.recall('s-dup2').length).toBe(2);
+  });
+
+  it('交错相同文本不去重（仅相邻重复合并）', () => {
+    const m = createMemory(db);
+    const long = '这是一条用于撑大上下文的长文本内容。'.repeat(20);
+    m.append('s-dup3', 'user', long);
+    m.append('s-dup3', 'assistant', long);
+    m.append('s-dup3', 'user', long);
+    expect(m.recall('s-dup3').length).toBe(3); // 相邻不相同（user/assistant 交替）→ 不合并
+  });
+
+  it('相邻完全相同的助手消息合并', () => {
+    const m = createMemory(db);
+    const long = '这是一条用于撑大上下文的长文本内容。'.repeat(20);
+    m.append('s-dup4', 'assistant', long);
+    m.append('s-dup4', 'assistant', long);
+    expect(m.recall('s-dup4').length).toBe(1);
+  });
+});
+
+describe('A21 parseSinceArg 时间过滤解析', () => {
+  const now = Date.parse('2026-08-12T00:00:00Z');
+  it('相对时间（7d/24h/30m/2w）', () => {
+    expect(parseSinceArg('7d', now)).toBe(now - 7 * 86400000);
+    expect(parseSinceArg('24h', now)).toBe(now - 24 * 3600000);
+    expect(parseSinceArg('30m', now)).toBe(now - 30 * 60000);
+    expect(parseSinceArg('2w', now)).toBe(now - 2 * 604800000);
+  });
+  it('ISO 绝对时间', () => {
+    expect(parseSinceArg('2026-08-01', now)).toBe(Date.parse('2026-08-01'));
+  });
+  it('空/无效返回 null', () => {
+    expect(parseSinceArg(undefined)).toBeNull();
+    expect(parseSinceArg('')).toBeNull();
+    expect(parseSinceArg('abc')).toBeNull();
   });
 });

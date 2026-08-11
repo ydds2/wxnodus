@@ -71,3 +71,50 @@ describe('safeFetchText 重定向与拦截', () => {
     expect('error' in r).toBe(true); // 本地地址一律拦截（安全优先）
   });
 });
+
+describe('A21 safeFetchText 多方法（POST/PUT/DELETE）', () => {
+  it('POST 传递 method/body（stub fetch 验证请求参数）', async () => {
+    const calls: Array<{ method: string; body: string | undefined; headers: Record<string, string> }> = [];
+    const origFetch = globalThis.fetch;
+    // @ts-expect-error 测试 stub
+    globalThis.fetch = async (url: string, init: any) => {
+      calls.push({ method: init?.method ?? 'GET', body: init?.body, headers: init?.headers ?? {} });
+      return { status: 200, headers: { get: () => null }, arrayBuffer: async () => Buffer.from('{"ok":true}') } as any;
+    };
+    try {
+      const r = await safeFetchText('https://api.example.com/v1/items', { method: 'POST', body: { name: 'x' } });
+      expect('error' in r).toBe(false);
+      expect(calls[0]!.method).toBe('POST');
+      expect(JSON.parse(calls[0]!.body!)).toEqual({ name: 'x' });
+      // 对象 body 自动加 content-type
+      expect((calls[0]!.headers as any)['content-type']).toBe('application/json');
+      expect((calls[0]!.headers as any)['user-agent']).toContain('WxNodus');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('GET 不携带 body；DELETE 可带', async () => {
+    const calls: Array<{ method: string; body: string | undefined }> = [];
+    const origFetch = globalThis.fetch;
+    // @ts-expect-error 测试 stub
+    globalThis.fetch = async (_url: string, init: any) => {
+      calls.push({ method: init?.method ?? 'GET', body: init?.body });
+      return { status: 204, headers: { get: () => null }, arrayBuffer: async () => Buffer.from('') } as any;
+    };
+    try {
+      await safeFetchText('https://api.example.com/x', { method: 'GET' });
+      await safeFetchText('https://api.example.com/x/1', { method: 'DELETE' });
+      expect(calls[0]!.body).toBeUndefined();
+      expect(calls[1]!.method).toBe('DELETE');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('内网拦截对 POST 同样生效（SSRF 方法无关）', async () => {
+    const r = await safeFetchText('http://127.0.0.1:9999/api', { method: 'POST', body: { a: 1 } });
+    expect('error' in r).toBe(true);
+    expect(r.error).toContain('已拦截');
+  });
+});

@@ -23,6 +23,23 @@ export function estimateTokens(text: string): number {
 // ── 消息类型 ──────────────────────────────────────────────
 export interface MemMsg { role: 'user' | 'assistant' | 'system' | 'tool'; content: string; tool_call_id?: string }
 
+// ── A21：时间过滤解析（/memory search|list --since）────────
+// 支持：ISO 日期/时间（2026-08-01 / 2026-08-01T10:00 / 时间戳）与相对（7d/24h/30m/2w）
+export function parseSinceArg(raw: string | undefined, now = Date.now()): number | null {
+  if (!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return null;
+  const iso = Date.parse(s);
+  if (!Number.isNaN(iso)) return iso;
+  const m = s.match(/^(\d+)\s*(d|h|m|w)$/);
+  if (m) {
+    const n = Number(m[1]);
+    const unit = m[2] === 'd' ? 86_400_000 : m[2] === 'h' ? 3_600_000 : m[2] === 'm' ? 60_000 : 604_800_000;
+    return now - n * unit;
+  }
+  return null;
+}
+
 // ── 压缩（确定性保头尾）───────────────────────────────────
 export function compactKeepHeadTail(msgs: MemMsg[], opts: { head: number; tail: number }): MemMsg[] {
   if (msgs.length <= opts.head + opts.tail) return msgs;
@@ -115,7 +132,7 @@ export interface Memory {
   append(sessionId: string, role: MemMsg['role'], content: string, toolCallId?: string): void;
   working(sessionId: string): Array<{ role: string; content: string }>;
   recall(sessionId: string): Array<{ id: number; role: string; content: string; ts: number }>;
-  recallHybrid(query: string, opts?: { limit?: number; sessionId?: string }): Promise<Array<{ id: number; content: string; score: number; session_id?: string }>>;
+  recallHybrid(query: string, opts?: { limit?: number; sessionId?: string; since?: number }): Promise<Array<{ id: number; content: string; score: number; session_id?: string; ts?: number }>>;
   /** 记忆置顶/淡化：salience 倍率（1=默认，>1 置顶加强，<1 淡化） */
   setSalience(messageId: number, mult: number): boolean;
   /** 全部置顶记忆（salience>1，按倍率降序）——/memory list 与召回加权共用 */
@@ -136,6 +153,9 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
   const countStmt = db.prepare(`SELECT COUNT(*) c FROM messages WHERE session_id=? AND role!='system'`);
   const oldestStmt = db.prepare(`SELECT id FROM messages WHERE session_id=? AND role!='system' AND archived=0 ORDER BY id LIMIT 1`);
   const absorbCountStmt = db.prepare(`SELECT COUNT(*) c FROM messages WHERE session_id=? AND archived=1`);
+  // A21：去重比对——仅最近 1 条消息完全相同（≥20 字符）时合并（防"继续/好的"误删、
+  // 防交错重复文本误合；连续重复提交才去重，消息序不因跳插断裂）
+  const lastMsgStmt = db.prepare(`SELECT id, role, content FROM messages WHERE session_id=? ORDER BY id DESC LIMIT 1`);
   // F5 修复：向量写入与 KNN 查询（vec 不可用时降级——prepare 抛错即禁用）
   const insertVecStmt = (() => { try { return db.prepare(`INSERT OR IGNORE INTO archival_vec (id, embedding) VALUES (?, ?)`); } catch { return null; } })();
   const knnStmt = (() => { try { return db.prepare(`SELECT id FROM archival_vec WHERE embedding MATCH ? ORDER BY distance LIMIT ?`); } catch { return null; } })();
@@ -155,6 +175,18 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
   return {
     append(sessionId, role, content, toolCallId) {
       ensureSession.run(sessionId, Date.now(), Date.now());
+      // A21 写入去重合并：仅与最近 1 条消息相邻且同角色、内容完全相同（≥20 字符）
+      // → 跳过插入、刷新原条时间戳（连续重复提交不堆积；交错对话/不同角色不受影响）
+      if (role === 'user' || role === 'assistant') {
+        const norm = String(content ?? '').trim();
+        if (norm.length >= 20) {
+          const last = lastMsgStmt.get(sessionId) as { id: number; role: string; content: string } | undefined;
+          if (last && last.role === role && String(last.content ?? '').trim() === norm) {
+            db.prepare(`UPDATE messages SET ts=? WHERE id=?`).run(Date.now(), last.id);
+            return;
+          }
+        }
+      }
       const info = appendStmt.run(sessionId, role, content, toolCallId ?? null, Date.now());
       // F5：消息异步写入向量索引（黑洞混合召回的数据源）
       if (role === 'user' || role === 'assistant') {
@@ -177,8 +209,8 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
       const limit = opts.limit ?? 10;
       // F6 置顶加权：召回分 = FTS 命中分 × salience 倍率——置顶记忆（pin）分数放大，
       // 淡化记忆（fade）自然沉底；相同权重按 FTS rank 顺序稳定
-      const fts = searchMessages(db, query, { limit: limit * 2, sessionId: opts.sessionId })
-        .map(r => ({ id: r.id, content: r.content, score: 1 * Math.max(0.05, r.salience ?? 1), session_id: r.session_id }));
+      const fts = searchMessages(db, query, { limit: limit * 2, sessionId: opts.sessionId, since: opts.since })
+        .map(r => ({ id: r.id, content: r.content, score: 1 * Math.max(0.05, r.salience ?? 1), session_id: r.session_id, ts: r.ts }));
       const seen = new Set<number>();
       const out = fts.filter(h => {
         if (seen.has(h.id)) return false;
@@ -193,10 +225,10 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
             const knn = knnStmt.all(JSON.stringify(qv), limit - out.length) as Array<{ id: number }>;
             for (const k of knn) {
               if (seen.has(k.id)) continue;
-              const row = db.prepare(`SELECT id, content, salience, session_id FROM messages WHERE id=?`).get(k.id) as { id: number; content: string; salience: number; session_id: string } | undefined;
+              const row = db.prepare(`SELECT id, content, salience, session_id, ts FROM messages WHERE id=?`).get(k.id) as { id: number; content: string; salience: number; session_id: string; ts: number } | undefined;
               if (!row) continue;
               seen.add(row.id);
-              out.push({ id: row.id, content: row.content, score: 0.8 * Math.max(0.05, row.salience ?? 1), session_id: row.session_id });
+              out.push({ id: row.id, content: row.content, score: 0.8 * Math.max(0.05, row.salience ?? 1), session_id: row.session_id, ts: row.ts });
               if (out.length >= limit) break;
             }
           } catch { /* 向量查询失败静默降级 */ }
