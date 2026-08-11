@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ToolDef } from './tools.js';
+import { sanitizedEnv } from './env.js';
 
 export interface McpServerConfig {
   name: string;
@@ -119,7 +120,9 @@ export function connectMcp(cfg: McpServerConfig): Promise<McpClient> {
   return new Promise((resolve, reject) => {
     const proc = spawn(cfg.command, cfg.args ?? [], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...(cfg.env ?? {}) },
+      // P0-3 环境净化：MCP server 子进程不继承密钥类变量（env.ts 统一策略）；
+      // cfg.env 显式配置的变量仍传入（用户主动声明）
+      env: { ...sanitizedEnv(), ...(cfg.env ?? {}) },
       windowsHide: true,
     });
     let buf = '';

@@ -1,6 +1,8 @@
 {
   "name": "@wxnodus/ink",
   "version": "0.0.1",
+  "license": "MIT",
+  "description": "基于 ink(MIT) 的派生渲染器（fork + 自研渲染管线扩展，见 LICENSE）",
   "private": true,
   "type": "module",
   "scripts": {

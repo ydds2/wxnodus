@@ -4,9 +4,12 @@
 
 Windows 本地优先的 AI agent CLI——数据不出机、模型可不出机（无 key 时对话明确引导配置，配置类命令不受影响）。
 
-**完全自研**：渲染器（@wxnodus/ink React reconciler）、状态引擎（createStore/createAtom/computed，
-零第三方状态依赖）、gateway RPC 协议、黑洞记忆（本地 embedding）、概念编译器——核心底层全部自研；
+**核心自研**：状态引擎（createStore/createAtom/computed，零第三方状态依赖）、gateway RPC 协议、
+黑洞记忆（本地 embedding）、概念编译器、agent 循环/权限/工具链——核心逻辑全部自研；
 UI 层为自研五域架构（runtime 回合流 / bridge 内核桥 / commands 命令路由 / hooks 交互 / components 组件）。
+渲染器 @wxnodus/ink 为 **ink(MIT, vadimdemedes) 的派生 fork**：组件 API 骨架继承 ink，
+渲染管线深度自研重写（自研 TS yoga 布局移植替代官方 WASM、行级差分、屏幕缓冲、DECSTBM/BSU-ESU），
+来源与版权声明见 packages/wxnodus-ink/LICENSE。
 
 ## 快速开始
 
@@ -61,7 +64,7 @@ Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器（React 19 
 
 ## 验收证据
 
-- ✅ 487 单元/契约/进程级测试全绿（38 测试文件）+ 类型检查零错误
+- ✅ 490 单元/契约/进程级测试全绿（39 测试文件）+ 类型检查零错误
 - ✅ TUI 冒烟（真实终端 node-pty）：首屏/输入/回复/命令面板/Esc/终止不挂死
 - ✅ 全命令扫描 105/105 可用（scripts/cmd-sweep.mjs 回归工具，112 命令注册表全覆盖）
 - ✅ 概念编译器端到端：「帮我做一个待办系统」→ todo 项目生成 → 启动 → API 增删查 → healthcheck 通过 → evidence.json
@@ -82,7 +85,7 @@ src/
   kernel/     领域层（agent/黑洞引擎/tools/权限/事件/providers/computer/vision/skills/hooks/mcp/projectScan/plugins/imageMeta）
   store/      基础设施（SQLite/配置中心/审计/checkpoint/fork）
   ui/         交互层（ink7 组件/Markdown 管线/Kimi 主题）
-tests/        四层测试（487 用例，38 文件）
+tests/        四层测试（490 用例，39 文件）
 scripts/      TUI 冒烟（node-pty 驱动）/ cmd-sweep 全命令扫描
 ```
 

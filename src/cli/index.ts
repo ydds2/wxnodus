@@ -34,6 +34,15 @@ const { parseArgs, USAGE } = await import('./args.js');
 const opts = parseArgs(process.argv.slice(2));
 if (opts.help) { console.log(USAGE); process.exit(0); }
 if (opts.version) { console.log(`wxnodus ${VERSION}`); process.exit(0); }
+// --cwd：切换到指定工作目录（数据/会话/项目规范均以该目录为准；Gemini/Codex 同款）
+if (opts.cwd) {
+  try {
+    process.chdir(opts.cwd);
+  } catch (e: any) {
+    console.error(`wxnodus: --cwd 目录不可用：${e?.message ?? e}`);
+    process.exit(1);
+  }
+}
 
 
 async function main() {
@@ -219,6 +228,10 @@ async function main() {
   // 非交互模式
   if (opts.prompt) {
     const text = String(opts.prompt);
+    // --session：切换到指定会话（此前仅 usage 查询使用，agent 未切换——审计修复）
+    if (opts.session) {
+      agent.setSessionId(opts.session);
+    }
     // --wire：订阅总线输出 JSONL 事件流（协议化接口，供外部工具/CI 消费）
     if (opts.wire) {
       const WIRE_EVENTS = new Set(['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'system.notice']);

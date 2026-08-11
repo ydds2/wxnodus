@@ -176,6 +176,15 @@
 
 **剩余未实施：** 审批面板脱敏（notice 留痕已有）、平台级沙箱（四平台 Seatbelt/bwrap/受限令牌——需系统级能力，长期项）。
 
+**2026-08 全面审计（三 agent 并行：抄袭/底座/功能矩阵）修正记录：**
+1. @wxnodus/ink 渲染器血缘：审计发现其为 ink(MIT) 的派生 fork（组件 API 骨架继承 + 渲染管线自研重写），
+   但此前 README 表述为「完全自研」且未附 LICENSE——已补 packages/wxnodus-ink/LICENSE（保留原作者版权）+
+   package.json license 字段 + README 表述修正为「fork + 自研扩展」。
+2. --cwd/--session 非交互语义夸大：审计实测此前仅解析未生效——已修复（process.chdir + agent.setSessionId）。
+3. sanitizedEnv 覆盖夸大：审计实测 hooks/MCP 子进程此前继承全量环境——已抽 src/kernel/env.ts 统一净化三处。
+4. computer use 浏览器域（playwright-core CDP）：头注释宣称未实现——已如实标注为桌面域先行。
+5. 其余自述（12 类 hooks/规则文件/退出码/--wire 双向/Flow skills/延迟加载/五门/错误码）均经代码验证为真。
+
 ## 4. WxNodus V3 的独有领先点（对比中确认）
 
 | 领先点 | 依据 |

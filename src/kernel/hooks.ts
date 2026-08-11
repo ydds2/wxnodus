@@ -6,6 +6,7 @@
 import { execFileSync } from 'node:child_process';
 import { platform } from 'node:os';
 import type { EventBus } from './events.js';
+import { sanitizedEnv } from './env.js';
 
 export type HookEvent =
   | 'userPromptSubmit' | 'preToolUse' | 'postToolUse' | 'stop'
@@ -41,7 +42,9 @@ export function runHook(cmd: string, event: HookEvent, data: unknown): string {
       maxBuffer: 4 * 1024 * 1024,
       windowsHide: true,
       env: {
-        ...process.env,
+        // P0-3 环境净化：hook 子进程不继承密钥类变量（env.ts 统一策略），
+        // WXNODUS_HOOK_* 为显式白名单传入（配置在 settings.hooks，非密钥）
+        ...sanitizedEnv(),
         WXNODUS_HOOK_EVENT: event,
         WXNODUS_HOOK_DATA: JSON.stringify(data ?? {}),
       },

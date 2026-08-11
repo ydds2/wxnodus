@@ -1,0 +1,23 @@
+MIT License
+
+本包（@wxnodus/ink）是 ink（https://github.com/vadimdemedes/ink）的派生作品（fork）。
+
+派生来源版权声明（必须保留）：
+Copyright (c) Vadym Demedes <vadimdemedes@hey.com> (https://github.com/vadimdemedes)
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+自研扩展部分版权声明：
+Copyright (c) WxNodus contributors
+
+本包结构说明：
+- 组件 API 骨架与若干基础模块（dom/colorize/components/events/reconciler 宿主配置等）
+  继承自 ink（MIT）——其中保留的 vadimdemedes 个人注释与 issue/README 链接即来源痕迹；
+- 渲染管线为自研深度重写：自研 TypeScript yoga 布局移植（native-ts/yoga-layout，
+  替代官方 ink 的 yoga-layout WASM 依赖）、行级差分输出（output.ts）、屏幕缓冲单元池
+  （screen.ts）、DECSTBM 硬件滚动、BSU/ESU 同步输出、鼠标/超链接命中等增量能力。
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
