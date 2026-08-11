@@ -98,6 +98,14 @@ export interface OverlayState {
   sessions: boolean
   skillsHub: boolean
   sudo: null | SudoReq
+  /** 动态内容表（多字段敏感输入） */
+  form: null | FormReq
+}
+
+export interface FormReq {
+  requestId: string
+  fields: Array<{ name: string; label?: string; kind: 'text' | 'password' | 'key' }>
+  prompt: string
 }
 
 export interface PagerState {
@@ -347,6 +355,8 @@ export interface AppLayoutActions {
   answerClarify: (answer: string) => void
   answerSecret: (value: string) => void
   answerSudo: (pw: string) => void
+  answerForm: (values: Record<string, string>) => void
+  cancelForm: () => void
   clearSelection: () => void
   activateLiveSession: (id: string) => void
   closeLiveSession: (id: string) => Promise<null | SessionCloseResponse>
@@ -419,6 +429,9 @@ export interface AppOverlaysProps {
   onResumeSelect: (sessionId: string) => void
   onSecretSubmit: (value: string) => void
   onSudoSubmit: (pw: string) => void
+  /** 动态内容表提交/取消（敏感输入——值仅内存回传） */
+  onFormSubmit: (values: Record<string, string>) => void
+  onFormCancel: () => void
   pagerPageSize: number
 }
 

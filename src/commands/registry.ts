@@ -14,7 +14,7 @@ export const SLASH: string[] = [
   // 系统
   '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init',
   // 视觉与媒体（可视化 AI 技能）
-  '/vision', '/img', '/video', '/render', '/capture',
+  '/vision', '/img', '/video', '/render', '/capture', '/site', '/input',
   // 网络与集成
   '/claw', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
   // 协作
@@ -32,7 +32,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆',
   '/perm': '🛡', '/sandbox': '🛡', '/compliance': '🛡', '/consent': '🛡', '/audit': '🛡', '/encrypt': '🛡', '/yolo': '🛡', '/afk': '🛡', '/security': '🛡',
   '/backup': '⚙', '/export': '⚙', '/theme': '⚙', '/lang': '⚙', '/config': '⚙', '/logs': '⚙', '/bench': '⚙', '/init': '⚙',
-  '/vision': '👁', '/img': '👁', '/video': '👁', '/render': '👁', '/capture': '👁',
+  '/vision': '👁', '/img': '👁', '/video': '👁', '/render': '👁', '/capture': '👁', '/site': '👁', '/input': '🔐',
   '/claw': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
   '/swarm': '◈', '/duo': '◈', '/cron': '◈', '/jobs': '◈', '/task': '◈', '/delegate': '◈', '/goal': '◈', '/btw': '◈',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
@@ -100,6 +100,8 @@ export const COMMAND_DESC: Record<string, string> = {
   '/reload-skills': '重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini）并汇报',
   '/init': '分析项目生成 AGENTS.md（本地扫描，--overwrite 覆盖）',
   '/vision': 'GLM 视觉理解（/vision <图片>）',
+  '/site': '多模态网站识别（截图 + GLM-4V 识别所需敏感输入字段）',
+  '/input': '动态内容表（多字段敏感输入——仅内存，不保存）',
   '/img': '图片分析（GLM-4V 多模态）',
   '/video': '视频人工视觉分析（不下载）',
   '/render': '脱敏实时渲染',

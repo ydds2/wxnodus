@@ -23,6 +23,8 @@ export interface ToolCtx {
   secrets?: { vault: import('./secrets.js').SecretVault; sudoEnabled: boolean; secretEnabled: boolean } | null;
   /** 敏感输入请求（用户亲手输入）：kind=sudo 返回密码；kind=secret 返回密钥值；拒绝/不可用返回 null */
   requestSecret?: (kind: 'sudo' | 'secret', prompt: string, name?: string) => Promise<string | null>;
+  /** 动态内容表（多字段敏感输入）：CLI 弹表单，用户逐字段输入；值仅内存；取消/不可用返回 null */
+  requestForm?: (fields: Array<{ name: string; label?: string; kind: 'text' | 'password' | 'key' }>, prompt?: string) => Promise<Record<string, string> | null>;
   /** P1-1：工具失败通知（postToolUseFailure hook） */
   hookFailure?: (name: string, err: string) => void;
 }
@@ -352,7 +354,42 @@ export function coreTools(): Record<string, ToolDef> {
       }
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, http_get: httpGet, memory_write: memoryWrite, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate };
+  // credential_form：模型需要敏感信息（API Key/密码/令牌）时，CLI 动态内容表多字段输入——
+  // 用户亲手输入、仅内存 vault（$WXNODUS_SECRET_<字段> 供 bash 展开）、不落盘不进历史
+  const credentialForm: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'credential_form',
+        description: '请求用户提供敏感信息（API Key/密码/令牌等）——CLI 动态内容表多字段输入，仅内存不保存。任务需要用户凭据（如调用需要鉴权的接口/网站）时调用。',
+        parameters: {
+          type: 'object',
+          properties: {
+            fields: { type: 'array', items: { type: 'string' }, description: '所需字段名数组（如 ["api_key","secret_key"]）' },
+            prompt: { type: 'string', description: '说明为何需要这些信息' },
+          },
+          required: ['fields'],
+        },
+      },
+    },
+    danger: false,
+    async run(args, ctx) {
+      const names = Array.isArray(args?.fields) ? args.fields.map(String).filter(Boolean) : [];
+      if (!names.length) return '参数错误：fields 需为非空字段名数组';
+      if (!ctx.requestForm) return '动态内容表不可用（需 TUI 会话）——请用 /key set 配置或 /input <字段> 手动录入';
+      const fields = names.map(n => ({ name: n.replace(/[^\w-]/g, '_'), label: n, kind: 'password' as const }));
+      const prompt = String(args?.prompt ?? '').slice(0, 200) || '模型请求你提供以下敏感信息（仅内存，不保存）';
+      const values = await ctx.requestForm(fields, prompt);
+      if (!values) return '用户取消/超时——未录入任何值（内容不保存）';
+      if (!ctx.secrets?.vault) return '内存保险库不可用（安全通道未装配）——/security secret on 开启';
+      const { commitFormValues, validateFormResponse } = await import('./dynamicForm.js');
+      const missing = validateFormResponse(values, fields);
+      const committed = commitFormValues(ctx.secrets.vault, values, fields);
+      if (!committed.length) return '未录入任何字段（全部为空）——内容不保存';
+      return `已录入 ${committed.length} 个敏感字段（仅内存，不落盘）——bash 中可用 $WXNODUS_SECRET_${committed[0]} 引用；/security secret off 或进程退出即清除${missing.length ? `；未填写：${missing.join('、')}` : ''}`;
+    },
+  };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, http_get: httpGet, memory_write: memoryWrite, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

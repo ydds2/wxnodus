@@ -13,6 +13,7 @@ import { ModelPicker } from './modelPicker.js'
 import { OverlayHint } from './overlayControls.js'
 import { PluginsHub } from './pluginsHub.js'
 import { ApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
+import { DynamicFormPrompt } from './dynamicFormPrompt.js'
 import { SkillsHub } from './skillsHub.js'
 
 const COMPLETION_WINDOW = 16
@@ -22,8 +23,10 @@ export function PromptZone({
   onApprovalChoice,
   onClarifyAnswer,
   onSecretSubmit,
-  onSudoSubmit
-}: Pick<AppOverlaysProps, 'cols' | 'onApprovalChoice' | 'onClarifyAnswer' | 'onSecretSubmit' | 'onSudoSubmit'>) {
+  onSudoSubmit,
+  onFormSubmit,
+  onFormCancel
+}: Pick<AppOverlaysProps, 'cols' | 'onApprovalChoice' | 'onClarifyAnswer' | 'onSecretSubmit' | 'onSudoSubmit' | 'onFormSubmit' | 'onFormCancel'>) {
   const overlay = useStore($overlayState)
   const theme = useStore($uiTheme)
 
@@ -83,6 +86,22 @@ export function PromptZone({
           label={overlay.secret.prompt}
           onSubmit={onSecretSubmit}
           sub={`for ${overlay.secret.envVar}`}
+          t={theme}
+        />
+      </Box>
+    )
+  }
+
+  // 动态内容表（多字段敏感输入——/input 与 credential_form 工具）
+  if (overlay.form) {
+    return (
+      <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
+        <DynamicFormPrompt
+          cols={cols}
+          fields={overlay.form.fields}
+          prompt={overlay.form.prompt}
+          onSubmit={onFormSubmit}
+          onCancel={onFormCancel}
           t={theme}
         />
       </Box>

@@ -946,6 +946,26 @@ export function useMainApp(gw: GatewayClient) {
     [overlay.secret, respondWith]
   )
 
+  // 动态内容表：提交（值仅内存回传 gateway——不落盘）与取消
+  const answerForm = useCallback(
+    (values: Record<string, string>) => {
+      if (!overlay.form) return
+      return respondWith('credential.respond', { request_id: overlay.form.requestId, values }, () => {
+        patchOverlayState({ form: null })
+        patchUiState({ status: 'running…' })
+      })
+    },
+    [overlay.form, respondWith]
+  )
+
+  const cancelForm = useCallback(() => {
+    if (!overlay.form) return
+    return respondWith('credential.respond', { request_id: overlay.form.requestId, values: {} }, () => {
+      patchOverlayState({ form: null })
+      patchUiState({ status: 'running…' })
+    })
+  }, [overlay.form, respondWith])
+
   const onModelSelect = useCallback((value: string) => {
     patchOverlayState({ modelPicker: false })
     slashRef.current(`/model ${value}`)
@@ -1050,6 +1070,8 @@ export function useMainApp(gw: GatewayClient) {
       answerClarify,
       answerSecret,
       answerSudo,
+      answerForm,
+      cancelForm,
       clearSelection,
       newLiveSession: () => session.newLiveSession(),
       newPromptSession,
@@ -1072,6 +1094,8 @@ export function useMainApp(gw: GatewayClient) {
       answerClarify,
       answerSecret,
       answerSudo,
+      answerForm,
+      cancelForm,
       clearSelection,
       closeLiveSession,
       newPromptSession,

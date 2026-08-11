@@ -757,6 +757,43 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // ── 视觉类 ──────────────────────────────────
+  // /site：多模态网站识别——打开页面 → 截图 → GLM-4V 识别所需敏感输入字段（DOM 兜底）
+  bus.register('/site', async (args) => {
+    const url = args.join(' ').trim();
+    if (!/^https?:\/\//i.test(url)) return '用法：/site <URL>（多模态识别网站所需敏感输入字段，配合 /input 动态录入）';
+    const apiKeyEnc = (ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined) ?? null;
+    const { identifySiteInputs } = await import('../kernel/siteIdentify.js');
+    const r = await identifySiteInputs(url, apiKeyEnc, ctx.dataDir);
+    if (!r.ok) return r.message;
+    return lines(' 网站识别（多模态） ', [
+      ` ${r.title ?? r.url}`,
+      ...(r.fields.length ? r.fields.map(f => ` ${f.name}（${f.label}·${f.kind === 'password' ? '掩码' : f.kind}·${f.source === 'vision' ? '多模态' : 'DOM'}）`) : [' 未识别到敏感输入字段']),
+      '',
+      r.fields.length ? ` 下一步：/input ${r.fields.map(f => f.name).join(' ')}` : ' 页面可能无需凭据或已登录',
+    ].filter(Boolean));
+  });
+
+  // /input：动态内容表——多字段敏感输入（仅内存，不保存；像对话时输入 key 一样）
+  bus.register('/input', async (args) => {
+    const fields = args.map(a => {
+      const [name, label, kindRaw] = a.split(':');
+      const kind = (kindRaw === 'key' || kindRaw === 'text' ? kindRaw : 'password') as 'text' | 'password' | 'key';
+      return { name, label: label ?? name, kind };
+    }).filter(f => f.name);
+    if (!fields.length) return '用法：/input <字段1> [字段2 ...]（动态内容表——多字段敏感输入，仅内存不保存；如 /input username password api_key）';
+    if (!ctx.gateway?.requestCredentialForm) return '动态内容表需 TUI 会话（-p 非交互不可用）——配置 key 请用 /key set';
+    const prompt = `动态内容表：输入以下敏感字段（仅内存，不落盘；bash 中可用 $WXNODUS_SECRET_<字段名> 引用）——${fields.map(f => f.label).join('、')}`;
+    const values = await ctx.gateway.requestCredentialForm(fields, prompt);
+    if (!values) return '输入已取消/超时——未录入任何值（内容不保存）';
+    if (!ctx.secrets) return '内存保险库不可用（安全通道未装配）';
+    const { commitFormValues, validateFormResponse } = await import('../kernel/dynamicForm.js');
+    const missing = validateFormResponse(values, fields);
+    const committed = commitFormValues(ctx.secrets, values, fields);
+    if (!committed.length) return '未录入任何字段（全部为空）——内容不保存';
+    const hint = committed.slice(0, 3).map(n => `$WXNODUS_SECRET_${n}`).join(' ');
+    return `已录入 ${committed.length} 个字段（仅内存，不落盘）——可用 ${hint} 引用；/security secret off 或进程退出即清除${missing.length ? `；未填写：${missing.join('、')}` : ''}`;
+  });
+
   bus.register('/capture', async (args) => {
     // /capture [x y width height]——用户所需切片界面信息：缺省全屏；
     // 提供 4 个数字参数则按屏幕区域切片（配合 /vision 或 /img 分析指定界面片段）

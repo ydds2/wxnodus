@@ -45,6 +45,8 @@ export interface AgentOptions {
   security?: { sudoInjection?: boolean; secretInjection?: boolean; vault?: import('./secrets.js').SecretVault | null };
   /** 敏感输入请求（用户亲手输入）：kind=sudo 返回密码；kind=secret 返回密钥值；不可用返回 null */
   onSecretRequest?: (kind: 'sudo' | 'secret', prompt: string, name?: string) => Promise<string | null>;
+  /** 动态内容表（多字段敏感输入）：CLI 弹表单用户逐字段输入；值仅内存；不可用返回 null */
+  onFormRequest?: (fields: Array<{ name: string; label?: string; kind: 'text' | 'password' | 'key' }>, prompt?: string) => Promise<Record<string, string> | null>;
   /** 简化人工操作（阶段 C）：smart 模式下工作区内文件编辑自动放行（默认开启） */
   lowRiskAutoApprove?: boolean;
   /** 数据目录（P0-2 审批规则文件 data/permissions.json 读取位置） */
@@ -363,6 +365,8 @@ export function createAgent(opts: AgentOptions) {
       ? { vault: opts.security.vault, sudoEnabled: !!opts.security.sudoInjection, secretEnabled: !!opts.security.secretInjection }
       : null,
     requestSecret: opts.onSecretRequest,
+    // 动态内容表（credential_form 工具）：经 gateway 弹多字段表单（仅内存）
+    requestForm: opts.onFormRequest,
     hookFailure: (name, err) => hooks?.postToolUseFailure(name, err),
   };
 

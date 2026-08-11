@@ -761,6 +761,19 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
 
+      case 'credential.form':
+        patchOverlayState({
+          form: {
+            requestId: ev.payload.request_id,
+            // kind 收窄为合法字面量（信任 gateway 契约）
+            fields: ev.payload.fields.map(f => ({ name: f.name, label: f.label, kind: (f.kind === 'key' || f.kind === 'text' ? f.kind : 'password') })),
+            prompt: ev.payload.prompt,
+          }
+        })
+        setStatus('动态内容表：敏感输入')
+
+        return
+
       case 'background.complete':
         dropBgTask(ev.payload.task_id)
         sys(`[bg ${ev.payload.task_id}] ${ev.payload.text}`)

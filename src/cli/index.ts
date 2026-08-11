@@ -146,6 +146,8 @@ async function main() {
       vault: secrets,
     },
     onSecretRequest: async (kind, prompt, name) => (gateway ? gateway.requestSecretInput(kind, prompt, name) : null),
+    // 动态内容表（credential_form 工具）：经 gateway 弹多字段表单——闭包引用 gateway 变量（装配后可用）
+    onFormRequest: async (fields, prompt) => (gateway ? gateway.requestCredentialForm(fields, prompt) : null),
     // 简化人工操作（阶段 C）：smart 模式工作区内文件编辑自动放行（默认开启，/perm 说明）
     lowRiskAutoApprove: (settings as any).lowRiskAutoApprove !== false,
     dataDir,
@@ -210,6 +212,8 @@ async function main() {
     setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); },
     reloadMcp,
     secrets,
+    // getter：gateway 在 TUI 装配后赋值——命令执行时动态读取（注册时快照为 null 的坑）
+    get gateway() { return gateway; },
   });
   registerCoreHandlers(commandBus, makeHandlerCtx());
   registerExtHandlers(commandBus, makeHandlerCtx());

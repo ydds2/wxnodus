@@ -40,6 +40,8 @@ export interface HandlerCtx {
   setThinking: (on: boolean) => void;
   /** MCP 热重载（/mcp add/remove 后自动接通，无需重启） */
   reloadMcp?: () => Promise<{ ok: boolean; count: number; message: string }>;
+  /** UI 网关（动态内容表 requestCredentialForm 等 UI 交互 RPC）——TUI 装配后可用 */
+  gateway?: { requestCredentialForm(fields: Array<{ name: string; label?: string; kind: string }>, prompt?: string): Promise<Record<string, string> | null> } | null;
   /** 敏感数据内存保险库（/security 关闭通道时同步清空） */
   secrets?: import('../kernel/secrets.js').SecretVault;
 }

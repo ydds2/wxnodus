@@ -429,6 +429,8 @@ export const AppLayout = memo(function AppLayout({
                 onClarifyAnswer={actions.answerClarify}
                 onSecretSubmit={actions.answerSecret}
                 onSudoSubmit={actions.answerSudo}
+                onFormSubmit={actions.answerForm}
+                onFormCancel={actions.cancelForm}
               />
             </PerfPane>
 

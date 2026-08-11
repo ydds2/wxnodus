@@ -251,6 +251,7 @@ export class GatewayClient extends EventEmitter {
       case 'clarify.respond': return this.clarifyRespond(params) as T
       case 'sudo.respond': return this.sudoRespond(params) as T
       case 'secret.respond': return this.secretRespond(params) as T
+      case 'credential.respond': return this.credentialRespond(params) as T
       case 'clipboard.paste': return this.clipboardPaste(params) as T
       case 'terminal.resize': return {} as T
       case 'input.detect_drop': return this.detectDrop(params) as T
@@ -655,6 +656,34 @@ export class GatewayClient extends EventEmitter {
     clearTimeout(p.timer)
     this.pendingSecrets.delete(id)
     p.resolve(String(params.value ?? ''))
+    return { ok: true }
+  }
+
+  // ── 动态内容表：多字段敏感输入（/input 与 credential_form 工具）──
+  // 请求表：request_id → resolve；120s 超时自动取消（不悬挂）；值仅经内存回传
+  private pendingForms = new Map<string, { resolve: (v: Record<string, string> | null) => void; timer: NodeJS.Timeout }>()
+
+  /** 向 UI 发起多字段敏感输入请求（动态内容表——像对话输入 key 一样） */
+  requestCredentialForm(fields: Array<{ name: string; label?: string; kind: string }>, prompt?: string): Promise<Record<string, string> | null> {
+    const requestId = `frm${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    return new Promise(resolve => {
+      const timer = setTimeout(() => {
+        this.pendingForms.delete(requestId)
+        resolve(null) // 超时：不悬挂
+      }, 120000)
+      this.pendingForms.set(requestId, { resolve, timer })
+      this.publish({ type: 'credential.form', payload: { request_id: requestId, fields, prompt: prompt ?? '' }, session_id: this.currentSessionId })
+    })
+  }
+
+  private credentialRespond(params: Record<string, unknown>): unknown {
+    const id = String(params.request_id ?? '')
+    const p = this.pendingForms.get(id)
+    if (!p) return { ok: false, message: '请求不存在或已超时' }
+    clearTimeout(p.timer)
+    this.pendingForms.delete(id)
+    const values = (params.values ?? {}) as Record<string, string>
+    p.resolve(values)
     return { ok: true }
   }
 
