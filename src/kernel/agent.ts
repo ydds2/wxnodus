@@ -103,6 +103,99 @@ export function createAgent(opts: AgentOptions) {
   let ctxWarned = false;
   // 剧本录制器（/script record 挂载）：executeTool 每个调用回调（name/args）
   let scriptRecorder: ((name: string, args: Record<string, any>) => void) | null = null;
+
+  // ── 变更即回归（颠覆性衍生）：fs_write/fs_edit 修改文件后，自动重放
+  // auto:true 的剧本（防抖合并 + 执行中标志防递归——剧本自身写文件不再触发）
+  let regressionTimer: ReturnType<typeof setTimeout> | null = null;
+  let regressionRunning = false;
+  const AUTO_REGRESSION_DEBOUNCE_MS = 2000;
+  function scheduleAutoRegression(): void {
+    if (regressionRunning || regressionTimer) return;
+    regressionTimer = setTimeout(() => {
+      regressionTimer = null;
+      void (async () => {
+        regressionRunning = true;
+        try {
+          const { listScripts } = await import('./scripts.js');
+          const autos = listScripts(opts.dataDir ?? '').filter(s => s.auto === true);
+          if (!autos.length) return;
+          const results: string[] = [];
+          for (const sc of autos) {
+            try {
+              const r = await runScriptInternal(sc.steps);
+              const failed = r.log.filter(l => l.kind === 'result' && /失败|异常|不存在/.test(l.text.slice(0, 200)));
+              results.push(`${r.ok && !failed.length ? '✅' : '❌'} ${sc.name}${failed.length ? `（${failed.length} 个异常输出）` : ''}`);
+            } catch {
+              results.push(`❌ ${sc.name}（执行异常）`);
+            }
+          }
+          if (results.length) {
+            bus.emit('system.notice', { text: `变更即回归：${results.join('  ')}` });
+          }
+        } catch { /* 回归失败静默（不影响主流程） */ } finally {
+          regressionRunning = false;
+        }
+      })();
+    }, AUTO_REGRESSION_DEBOUNCE_MS);
+  }
+  // 供 executeTool 与 runScript 内部共用（避免外部 runScript 与内部触发互相递归）
+  async function runScriptInternal(steps: WxStep[]): Promise<{ ok: boolean; log: WxLogEntry[] }> {
+    const log: WxLogEntry[] = [];
+    const run = async (list: WxStep[], siBase: number, depth: number): Promise<number> => {
+      let lastOut = '';
+      let si = siBase;
+      for (const step of list) {
+        if ('loop' in step) {
+          const { items, as, do: body } = step.loop;
+          log.push({ kind: 'loop', step: si, text: `循环 ${items.length} 项` });
+          for (const item of items) {
+            si = await run(substituteVars(body, as ?? 'item', item), si, depth + 1);
+          }
+          continue;
+        }
+        if ('if' in step) {
+          const hit = lastOut.includes(step.if.outputContains);
+          log.push({ kind: 'if', step: si, text: `条件「${step.if.outputContains.slice(0, 30)}」${hit ? '成立' : '不成立'}` });
+          si = await run(hit ? step.if.then : (step.if.else ?? []), si, depth + 1);
+          continue;
+        }
+        if ('parallel' in step) {
+          log.push({ kind: 'parallel', step: si, text: `并行 ${step.parallel.length} 个分支` });
+          await Promise.all(step.parallel.map(async (branch) => { await run([branch], si, depth + 1); }));
+          si++;
+          continue;
+        }
+        if ('task' in step) {
+          log.push({ kind: 'task', step: si, text: `子代理：${step.task.goal.slice(0, 60)}` });
+          const r = await spawnSub(step.task.goal);
+          log.push({ kind: 'result', step: si, name: 'delegate', text: r.output });
+          lastOut = r.output;
+          si++;
+          continue;
+        }
+        if (step.prompt.trim()) {
+          try { opts.mem.append(sessionId, 'user', step.prompt); } catch { /* 忽略 */ }
+          log.push({ kind: 'prompt', step: si, text: step.prompt });
+        }
+        for (const tc of step.tools) {
+          log.push({ kind: 'tool', step: si, name: tc.name, text: `${tc.name} ${JSON.stringify(tc.args ?? {}).slice(0, 120)}` });
+          const out = await executeTool(tc.name, tc.args ?? {});
+          log.push({ kind: 'result', step: si, name: tc.name, text: out });
+          lastOut = out;
+          try { opts.mem.append(sessionId, 'tool', `${tc.name}: ${out.slice(0, 300)}`); } catch { /* 忽略 */ }
+        }
+        si++;
+      }
+      return si;
+    };
+    try {
+      await run(steps, 0, 0);
+      return { ok: true, log };
+    } catch {
+      return { ok: false, log };
+    }
+  }
+
   function checkBudget(): void {
     if (!budgetTokens || budgetWarned) return;
     try {
@@ -472,6 +565,9 @@ export function createAgent(opts: AgentOptions) {
       }
       bus.emit('agent.tool', { name, phase: 'complete', ok: true, ms: Date.now() - t0, toolId });
       hooks?.postToolUse(name, out);
+      // 变更即回归：文件被真实修改后调度 auto 剧本重放（防抖合并连续改动；
+      // 回归重放期间的 fs_write 由 regressionRunning 守卫拦截，不会自我触发）
+      if (name === 'fs_write' || name === 'fs_edit') scheduleAutoRegression();
       return out;
     } catch (e: any) {
       bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId });
@@ -817,71 +913,9 @@ export function createAgent(opts: AgentOptions) {
       ok: boolean;
       log: WxLogEntry[];
     }> {
-      const log: WxLogEntry[] = [];
-      const run = async (list: WxStep[], siBase: number, depth: number): Promise<number> => {
-        let lastOut = '';
-        let si = siBase;
-        for (const step of list) {
-          if ('loop' in step) {
-            const { items, as, do: body } = step.loop;
-            log.push({ kind: 'loop', step: si, text: `循环 ${items.length} 项` });
-            for (const item of items) {
-              const subs = substituteVars(body, as ?? 'item', item);
-              si = await run(subs, si, depth + 1);
-            }
-            continue;
-          }
-          if ('if' in step) {
-            const cond = step.if.outputContains;
-            const hit = lastOut.includes(cond);
-            log.push({ kind: 'if', step: si, text: `条件「${cond.slice(0, 30)}」${hit ? '成立' : '不成立'}` });
-            si = await run(hit ? step.if.then : (step.if.else ?? []), si, depth + 1);
-            continue;
-          }
-          if ('parallel' in step) {
-            log.push({ kind: 'parallel', step: si, text: `并行 ${step.parallel.length} 个分支` });
-            const outs = await Promise.all(step.parallel.map(async (branch) => {
-              const branchLog: WxLogEntry[] = [];
-              await run([branch], si, depth + 1).then(() => {});
-              // 并行分支日志并入总日志（顺序拼接）
-              log.push(...branchLog);
-              return '';
-            }));
-            lastOut = outs.join('\n');
-            si++;
-            continue;
-          }
-          if ('task' in step) {
-            const goal = step.task.goal;
-            log.push({ kind: 'task', step: si, text: `子代理：${goal.slice(0, 60)}` });
-            const r = await spawnSub(goal);
-            log.push({ kind: 'result', step: si, name: 'delegate', text: r.output });
-            lastOut = r.output;
-            si++;
-            continue;
-          }
-          // 普通步骤
-          if (step.prompt.trim()) {
-            try { opts.mem.append(sessionId, 'user', step.prompt); } catch { /* 忽略 */ }
-            log.push({ kind: 'prompt', step: si, text: step.prompt });
-          }
-          for (const tc of step.tools) {
-            log.push({ kind: 'tool', step: si, name: tc.name, text: `${tc.name} ${JSON.stringify(tc.args ?? {}).slice(0, 120)}` });
-            const out = await executeTool(tc.name, tc.args ?? {});
-            log.push({ kind: 'result', step: si, name: tc.name, text: out });
-            lastOut = out;
-            try { opts.mem.append(sessionId, 'tool', `${tc.name}: ${out.slice(0, 300)}`); } catch { /* 忽略 */ }
-          }
-          si++;
-        }
-        return si;
-      };
-      try {
-        await run(steps, 0, 0);
-        return { ok: true, log };
-      } catch (e: any) {
-        return { ok: false, log };
-      }
+      // 与内部回归共用同一解释器（runScriptInternal）——避免两套逻辑漂移，
+      // 也保证 /script run 与 auto 回归行为完全一致
+      return runScriptInternal(steps);
     },
   };
 }

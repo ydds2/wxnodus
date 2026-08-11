@@ -1,9 +1,24 @@
 // tests/commands.test.ts — L4 命令层：注册表/别名/NL 路由/确定性工具/瀑布渲染
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, isSlash, resolveAlias } from '../src/commands/registry.js';
 import { nlTrigger, routeNaturalLanguage, routeInput, NL_TRIGGERS, type NlTrigger } from '../src/commands/intent.js';
 import { deterministicRun } from '../src/commands/deterministic.js';
-import { renderWaterfall } from '../src/commands/handlersExt.js';
+import { renderWaterfall, registerExtHandlers } from '../src/commands/handlersExt.js';
+import { createCommandBus } from '../src/app/CommandBus.js';
+import { openDB, closeDB } from '../src/store/db.js';
+import { createEventBus } from '../src/kernel/events.js';
+import { createMemory } from '../src/kernel/memory.js';
+
+const dirs: string[] = [];
+const tmp = () => {
+  const d = mkdtempSync(join(tmpdir(), 'wx-cmd-'));
+  dirs.push(d);
+  return d;
+};
+afterEach(() => { for (const d of dirs.splice(0)) { try { rmSync(d, { recursive: true, force: true }); } catch {} } });
 
 describe('命令注册表（单一事实来源）', () => {
   it('核心命令全覆盖', () => {
@@ -179,5 +194,56 @@ describe('token 瀑布（renderWaterfall）', () => {
   it('新命令已注册：/versions /snapshot', () => {
     expect(SLASH).toContain('/versions');
     expect(SLASH).toContain('/snapshot');
+  });
+});
+
+// ── /self-evolve --report：自我审查（只审查不修改）──
+describe('/self-evolve --report 自我审查报告', () => {
+  it('AI 审查输出建议清单并落盘 reports/（未修改任何代码）', async () => {
+    const d = tmp();
+    const bus = createCommandBus();
+    const db = openDB(d);
+    const evBus = createEventBus(d);
+    const mem = createMemory(db);
+    const reviewJson = JSON.stringify([
+      { file: 'src/kernel/env.ts', severity: 'high', issue: 'sanitizedEnv 未覆盖某密钥', suggestion: '补全过滤名单' },
+      { file: 'src/kernel/agent.ts', severity: 'medium', issue: '重复样板', suggestion: '抽取共用函数' },
+      { file: 'src/commands/handlers.ts', severity: 'low', issue: '死代码', suggestion: '删除' },
+    ]);
+    const ctx = {
+      dataDir: d,
+      cwd: process.cwd(),
+      db, mem, bus: evBus,
+      config: {
+        get: () => ({ apiKeyEnc: null, baseURL: 'https://mock' }),
+        getKey: () => undefined,
+        setKey: () => undefined,
+      },
+      // 模拟 AI 审查结果（真实模型输出同构 JSON）
+      agent: {
+        run: async () => ({ ok: true, text: reviewJson, turns: 1, interrupted: false }),
+      },
+    } as any;
+    // env 密钥使 resolveApiKey 通过（mock agent 不发网络请求）
+    const oldKey = process.env.WXNODUS_API_KEY;
+    process.env.WXNODUS_API_KEY = 'test-key';
+    try {
+      registerExtHandlers(bus, ctx);
+      const r = await bus.execute('/self-evolve --report');
+      expect(r.ok).toBe(true);
+      expect(r.output).toContain('自我审查报告');
+      expect(r.output).toContain('3 条');
+      expect(r.output).toContain('🔴 1'); // 严重度计数
+      // 落盘审计留痕
+      const files = readdirSync(join(d, 'reports'));
+      expect(files.length).toBe(1);
+      const md = readFileSync(join(d, 'reports', files[0]!), 'utf8');
+      expect(md).toContain('# WxNodus 自我审查报告');
+      expect(md).toContain('[HIGH] src/kernel/env.ts');
+      expect(md).toContain('> 建议：');
+    } finally {
+      process.env.WXNODUS_API_KEY = oldKey;
+      closeDB(db);
+    }
   });
 });

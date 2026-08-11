@@ -60,6 +60,28 @@ describe('剧本存储', () => {
   });
 });
 
+describe('自动回归标记（auto）', () => {
+  it('auto:true 保存 → 加载 → 列表保留', () => {
+    const d = tmp();
+    expect(saveScript(d, { ...sample('watch'), auto: true })).toBe(true);
+    expect(loadScript(d, 'watch')?.auto).toBe(true);
+    expect(listScripts(d).find(s => s.name === 'watch')?.auto).toBe(true);
+  });
+  it('未标记剧本 auto 为 undefined（不误标）', () => {
+    const d = tmp();
+    saveScript(d, sample());
+    expect(loadScript(d, 'deploy')?.auto).toBeUndefined();
+    expect(listScripts(d).filter(s => s.auto === true)).toHaveLength(0);
+  });
+  it('auto 可关闭（重新保存去掉标记后不再视为自动回归）', () => {
+    const d = tmp();
+    saveScript(d, { ...sample('w2'), auto: true });
+    expect(listScripts(d).filter(s => s.auto === true)).toHaveLength(1);
+    saveScript(d, { ...sample('w2') }); // 无 auto 字段覆盖
+    expect(listScripts(d).filter(s => s.auto === true)).toHaveLength(0);
+  });
+});
+
 describe('回放 CI 断言（checkScriptExpectations）', () => {
   it('step.expect 命中/未命中判定', () => {
     const script: Script = {

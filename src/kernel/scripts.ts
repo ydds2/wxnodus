@@ -22,6 +22,8 @@ export interface Script {
   steps: ScriptStep[];
   /** 全局断言：任一工具输出须包含（与 step.expect 合并检查） */
   expect?: string[];
+  /** 自动回归标记（变更即回归）：true 时 fs_write/fs_edit 修改文件后自动重放本剧本 */
+  auto?: boolean;
 }
 
 const scriptDir = (dataDir: string) => join(dataDir, 'scripts');

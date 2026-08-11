@@ -358,7 +358,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       if (!scripts.length) return '暂无剧本——/script record <名称> [描述] 开始录制（录制中的对话工具调用将进剧本）';
       return lines(' 剧本 ', scripts.map(s => {
         const st = scriptStats(s);
-        return ` ${s.name}（${st.steps} 轮 / ${st.tools} 次工具调用）${s.description ? ' · ' + s.description.slice(0, 40) : ''}`;
+        return ` ${s.auto ? '⭯' : ' '} ${s.name}（${st.steps} 轮 / ${st.tools} 次工具调用）${s.auto ? '·自动回归 ' : ''}${s.description ? '· ' + s.description.slice(0, 40) : ''}`;
       }));
     }
     if (sub === 'record') {
@@ -396,8 +396,26 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const st = scriptStats(script);
       return `剧本已保存：${script.name}（${st.steps} 轮 / ${st.tools} 次工具调用）——/script run ${script.name} 重放`;
     }
+    // 变更即回归开关：watch 标记 auto=true → fs_write/fs_edit 修改文件后自动重放
+    if (sub === 'watch') {
+      if (rest[0] === 'list') {
+        const autos = listScripts(ctx.dataDir).filter(s => s.auto === true);
+        if (!autos.length) return '无自动回归剧本——/script watch <名> 开启（fs_write/fs_edit 后自动重放）';
+        return lines(' 自动回归剧本（文件变更后自动重放） ', autos.map(s => ` ⭯ ${s.name}${s.description ? ' · ' + s.description.slice(0, 40) : ''}`));
+      }
+      const [mode, name] = (rest[0] === 'on' || rest[0] === 'off') ? [rest[0], rest[1]] : [undefined, rest[0]];
+      if (!name) return '用法：/script watch <名> ｜ on|off <名> ｜ list';
+      const sc = loadScript(ctx.dataDir, name);
+      if (!sc) return `剧本不存在：${name}（/script list 查看）`;
+      const on = mode ? mode === 'on' : !sc.auto;
+      sc.auto = on || undefined; // 关闭时清字段（undefined 不落盘）
+      if (!saveScript(ctx.dataDir, sc)) return `保存失败（数据目录不可写？）：${name}`;
+      return on
+        ? `已开启自动回归：${name}——此后 fs_write/fs_edit 修改文件将自动重放该剧本（2s 防抖合并；/script watch list 查看）`
+        : `已关闭自动回归：${name}`;
+    }
     const name = rest[0];
-    if (!name) return '用法：/script record <名> ｜ stop ｜ list ｜ show <名> ｜ run <名> ｜ dry-run <名> ｜ rm <名>';
+    if (!name) return '用法：/script record <名> ｜ stop ｜ list ｜ show <名> ｜ run <名> ｜ dry-run <名> ｜ watch <名> ｜ rm <名>';
     const script = loadScript(ctx.dataDir, name);
     if (!script) return `剧本不存在：${name}（/script list 查看）`;
     if (sub === 'show') {
@@ -458,7 +476,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         ...(r.assertions.length ? [] : [` （无断言——录制时或手工编辑剧本添加 expect 字段启用回放 CI）`]),
       ]);
     }
-    return '用法：/script record <名> ｜ stop ｜ list ｜ show <名> ｜ run <名> ｜ verify <名> ｜ ci ｜ dry-run <名> ｜ rm <名>';
+    return '用法：/script record <名> ｜ stop ｜ list ｜ show <名> ｜ run <名> ｜ verify <名> ｜ ci ｜ dry-run <名> ｜ watch <名> ｜ rm <名>';
   });
 
   // 回放 CI 执行器（verify/ci 共用）：重放 → 按步骤收集输出 → 断言检查
@@ -1375,6 +1393,49 @@ export const commands = {
   // 闭环：AI 分析自身源码 → 生成补丁（JSON）→ 真实应用（undo shadow 备份可回滚）
   //   → 跑自身测试套件 → 失败自动回滚 → 报告（绝不自动提交——用户确认）
   bus.register('/self-evolve', async (args) => {
+    // --report：自我审查报告模式（只审查不修改——AI 审查源码输出建议清单落盘，
+    //   绝不应用补丁；与默认自举模式互补：先报告后决定是否动手）
+    const first = args[0];
+    if (first === '--report' || first === 'report') {
+      const { resolveApiKey } = await import('../kernel/providers.js');
+      const keyRes = resolveApiKey(ctx.config.get('settings') as any);
+      if (!keyRes.key) return '自我审查需要模型密钥——/key set <密钥> 后可用（AI 审查自身源码输出建议）';
+      if (!ctx.agent) return '当前环境无 agent（无法审查）';
+      const scope = args.slice(1).join(' ') || 'src/kernel、src/commands、src/cli';
+      const r = await ctx.agent.run(`你是 WxNodus 的自我审查引擎。审查自身源码，输出改进建议清单（只审查，绝不修改任何文件）。
+审查范围：${scope}
+要求：
+- 用 fs_read 抽查关键文件（kernel/agent.ts、commands/handlers.ts、commands/handlersExt.ts、kernel/env.ts、kernel/permissions.ts 等）后给出结论
+- 输出必须是 JSON 数组：[{"file":"相对路径","severity":"high|medium|low","issue":"问题描述","suggestion":"具体改进建议"}]
+- 聚焦：真实 bug、重复代码、安全隐患、死代码、接口漂移；不列风格问题
+- 至少 5 条，最多 15 条；只输出 JSON，不要任何其他文字`);
+      const text = r.text.trim();
+      const m = text.match(/\[[\s\S]*\]/);
+      if (!m) return `模型未输出审查 JSON：${text.slice(0, 150)}`;
+      let items: Array<{ file?: string; severity?: string; issue?: string; suggestion?: string }>;
+      try { items = JSON.parse(m[0]); } catch { return '审查结果解析失败（模型输出非法 JSON）——重试'; }
+      if (!Array.isArray(items) || !items.length) return '审查为空——重试';
+      // 落盘 dataDir/reports/self-review-<ts>.md（审计留痕——AI 标注来源，人工复核后改进）
+      const dir = join(ctx.dataDir, 'reports');
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, `self-review-${Date.now().toString(36)}.md`);
+      const md = [
+        '# WxNodus 自我审查报告',
+        `- 时间：${new Date().toLocaleString('zh-CN', { hour12: false })}`,
+        `- 范围：${scope}`,
+        '- 来源：AI 模型审查（建议仅供参考——人工复核后按建议改进）',
+        '',
+        ...items.map((it, i) => `## ${i + 1}. [${String(it.severity ?? 'low').toUpperCase()}] ${it.file ?? '?'}\n\n${it.issue ?? ''}\n\n> 建议：${it.suggestion ?? ''}\n`),
+      ].join('\n');
+      writeFileSync(file, md, 'utf8');
+      const counts = { high: 0, medium: 0, low: 0 };
+      for (const it of items) counts[String(it.severity ?? 'low') as 'low']++;
+      return lines(` 自我审查报告（${items.length} 条——已存 ${file}） `, [
+        ` 严重度：🔴 ${counts.high} ｜ 🟡 ${counts.medium} ｜ 🟢 ${counts.low}`,
+        ...items.map((it, i) => ` ${it.severity === 'high' ? '🔴' : it.severity === 'medium' ? '🟡' : '🟢'} ${i + 1}. [${it.file ?? '?'}] ${String(it.issue ?? '').slice(0, 60)}`),
+        ` 报告仅建议、未改动任何代码（/self-evolve 可应用补丁）`,
+      ]);
+    }
     const direction = args.join(' ') || '优化代码质量、消除重复、修复潜在 bug';
     // 1. AI 分析自身源码生成补丁（无 key 诚实提示——不产生假补丁）
     const { resolveApiKey } = await import('../kernel/providers.js');

@@ -1,6 +1,6 @@
 // tests/kernel-agent.test.ts — L2-4 agent 循环：流式/工具执行/权限/重试/中断/子代理/规则脑
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDB, closeDB } from '../src/store/db.js';
@@ -755,5 +755,93 @@ describe('AI 自主触发（自动注入）', () => {
     await agent.run('你好');
     const first = seen[0]!;
     expect(first.some(m => String(m.content ?? '').includes('自动仓库地图'))).toBe(true);
+  });
+});
+
+// ── 变更即回归：fs_write/fs_edit 成功后自动重放 auto 剧本（防抖 + 防递归）──
+describe('变更即回归（auto 剧本自动重放）', () => {
+  function makeRegressionEnv() {
+    const d = mkdtempSync(join(tmpdir(), 'wxn-reg-'));
+    const marker = join(d, 'marker.txt');
+    const regBus = createEventBus(d);
+    const regDb = openDB(d);
+    const regMem = createMemory(regDb);
+    const notices: string[] = [];
+    const off = regBus.on('system.notice', (e: any) => notices.push(String(e?.payload?.text ?? '')));
+    // 模型第一轮发起 fs_write（真实触发回归），第二轮收尾
+    const agent = createAgent({
+      db: regDb, bus: regBus, mem: regMem, sessionId: 't-reg',
+      dataDir: d,
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      mode: 'yolo',
+      callModel: async (req: any) => {
+        if (!req.messages.some((m: any) => m.role === 'assistant')) {
+          return { type: 'tool_call', name: 'fs_write', args: { path: join(d, 'trigger.txt'), content: 'v1' } } as any;
+        }
+        return { type: 'text', content: '完成' };
+      },
+    } as any);
+    return { d, marker, notices, off, agent, db: regDb };
+  }
+  const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+  it('fs_write 成功后 auto 剧本自动重放（防抖 2s + notice 汇报结果）', async () => {
+    const env = makeRegressionEnv();
+    const { saveScript } = await import('../src/kernel/scripts.js');
+    saveScript(env.d, {
+      name: 'reg1', description: '', created_at: Date.now(), auto: true,
+      steps: [{ prompt: '', tools: [{ name: 'fs_write', args: { path: env.marker, content: 'replayed' } }] }],
+    });
+    try {
+      const r = await env.agent.run('写文件');
+      expect(r.ok).toBe(true);
+      expect(env.notices.some(n => n.includes('变更即回归'))).toBe(false); // 防抖期未触发
+      await wait(2600);
+      expect(env.notices.some(n => n.includes('变更即回归') && n.includes('✅ reg1'))).toBe(true);
+      expect(existsSync(env.marker)).toBe(true); // 剧本真实重放
+    } finally {
+      env.off();
+      closeDB(env.db);
+      rmSync(env.d, { recursive: true, force: true });
+    }
+  });
+
+  it('回归重放自身的写文件不再次调度（regressionRunning 防递归）', async () => {
+    const env = makeRegressionEnv();
+    const { saveScript } = await import('../src/kernel/scripts.js');
+    saveScript(env.d, {
+      name: 'reg2', description: '', created_at: Date.now(), auto: true,
+      steps: [{ prompt: '', tools: [{ name: 'fs_write', args: { path: env.marker, content: 'x' } }] }],
+    });
+    try {
+      await env.agent.run('写文件');
+      await wait(2600);
+      expect(env.notices.filter(n => n.includes('变更即回归')).length).toBe(1); // 仅初始触发一次
+      await wait(2600);
+      expect(env.notices.filter(n => n.includes('变更即回归')).length).toBe(1); // 无第二次（防循环）
+    } finally {
+      env.off();
+      closeDB(env.db);
+      rmSync(env.d, { recursive: true, force: true });
+    }
+  });
+
+  it('未标 auto 的剧本不参与自动回归', async () => {
+    const env = makeRegressionEnv();
+    const { saveScript } = await import('../src/kernel/scripts.js');
+    saveScript(env.d, {
+      name: 'plain', description: '', created_at: Date.now(), // 无 auto 标记
+      steps: [{ prompt: '', tools: [{ name: 'fs_write', args: { path: env.marker, content: 'x' } }] }],
+    });
+    try {
+      await env.agent.run('写文件');
+      await wait(2600);
+      expect(env.notices.some(n => n.includes('变更即回归'))).toBe(false);
+      expect(existsSync(env.marker)).toBe(false); // 剧本未被重放
+    } finally {
+      env.off();
+      closeDB(env.db);
+      rmSync(env.d, { recursive: true, force: true });
+    }
   });
 });
