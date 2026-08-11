@@ -51,7 +51,7 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 - **定时任务工具**（Claude Code CronCreate 对齐）：`cron_create` 工具让模型自主创建定时任务；`/cron add|list|del|pause|resume` 命令面——**标准 5 字段 cron 表达式**（分 时 日 月 周，自研解析器 cronExpr.ts：数字/星号/步进/区间/列表）与 every Nm/Nh/Nd 兼容格式
 - **AI 自主触发**（简化人工指令）：会话首轮极轻量注入——顶层结构一行 + 技能名称清单（几十字符，不挤占上下文）；系统提示第 5 条引导模型主动 `repo_map`/`skill_load`/`tool_search`（真正 AI 底层触发）；`autoRepoMap=true` 显式开启才注入完整地图（≤400 token，默认关闭防上下文膨胀）
 - **MCP Streamable HTTP 传输**：`/mcp add-http <名称> <URL>` 连接远程 MCP server（SSE/JSON 双响应解析 + Mcp-Session-Id 会话头，MCP 2025-06-18+ 协议）
-- **多模态网站识别 + 动态内容表**（敏感输入，仅内存）：`/site <URL>`——playwright 打开页面截图 → GLM-4V 识别所需敏感输入字段（DOM 提取兜底，截图临时文件即删）；`/input <字段...>`——CLI 动态生成多字段掩码表单（↑/↓ 或 Tab 切换、Enter 逐字段提交），用户像对话输入 key 一样亲手填写；值仅存内存 vault（不落盘/不进历史/不进模型上下文），bash 中 `$WXNODUS_SECRET_<字段>` 展开引用，`/security secret off` 或进程退出即清除；`credential_form` 工具让模型需要凭据时自主触发表单
+- **动态内容表**（敏感输入，仅内存）：`/input <字段...>`——CLI 动态生成多字段掩码表单（↑/↓ 或 Tab 切换、Enter 逐字段提交），用户像对话输入 key 一样亲手填写；值仅存内存 vault（不落盘/不进历史/不进模型上下文），bash 中 `$WXNODUS_SECRET_<字段>` 展开引用，`/security secret off` 或进程退出即清除；`credential_form` 工具让模型需要凭据时自主触发表单
 - **SSRF 三层防护**：主机名形态（IPv4/IPv6 私网段）+ DNS 解析逐 IP 校验（防重绑定）+ 重定向逐跳校验（≤5 跳）——http_get 与 /claw 统一走 src/kernel/ssrf.ts
 - **插件 API 开放层**：插件 ctx 新增 `on`（事件订阅）、`getConfig`（只读配置）、`log`（插件日志）——完整文档 docs/plugin-api.md；`/plugin new` 模板含订阅/配置/日志示例
 - **文件编辑影子快照**（Aider /undo 精神的零 git 依赖版）：`fs_write`/`fs_edit` 覆盖文件前自动备份原内容（上限 50 份 FIFO），`/undo fs list｜restore <编号>` 安全撤销文件编辑——任何工作区可用，不依赖 git
@@ -69,7 +69,7 @@ Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器（React 19 
 
 ## 验收证据
 
-- ✅ 513 单元/契约/进程级测试全绿（42 测试文件）+ 类型检查零错误
+- ✅ 512 单元/契约/进程级测试全绿（42 测试文件）+ 类型检查零错误
 - ✅ TUI 冒烟（真实终端 node-pty）：首屏/输入/回复/命令面板/Esc/终止不挂死
 - ✅ 全命令扫描 105/105 可用（scripts/cmd-sweep.mjs 回归工具，112 命令注册表全覆盖）
 - ✅ 概念编译器端到端：「帮我做一个待办系统」→ todo 项目生成 → 启动 → API 增删查 → healthcheck 通过 → evidence.json
@@ -90,7 +90,7 @@ src/
   kernel/     领域层（agent/黑洞引擎/tools/权限/事件/providers/computer/vision/skills/hooks/mcp/projectScan/plugins/imageMeta）
   store/      基础设施（SQLite/配置中心/审计/checkpoint/fork）
   ui/         交互层（ink7 组件/Markdown 管线/Kimi 主题）
-tests/        四层测试（513 用例，42 文件）
+tests/        四层测试（512 用例，42 文件）
 scripts/      TUI 冒烟（node-pty 驱动）/ cmd-sweep 全命令扫描
 ```
 

@@ -32,21 +32,3 @@ describe('dynamicForm 动态内容表', () => {
   });
 });
 
-describe('siteIdentify 字段解析', () => {
-  it('parseFieldsFromVision 解析模型 JSON 输出（含容错）', async () => {
-    const { parseFieldsFromVision } = await import('../src/kernel/siteIdentify.js');
-    const fields = parseFieldsFromVision('[{"name":"username","label":"用户名","kind":"text"},{"name":"password","label":"密码","kind":"password"}]');
-    expect(fields).toHaveLength(2);
-    expect(fields[0]).toMatchObject({ name: 'username', label: '用户名', kind: 'text', source: 'vision' });
-    // 前后带解释文字也能解析
-    const wrapped = parseFieldsFromVision('识别结果如下：[{"name":"api_key","label":"API密钥","kind":"key"}] 共 1 个');
-    expect(wrapped).toHaveLength(1);
-    expect(wrapped[0]!.name).toBe('api_key');
-    // 非法/空 → []
-    expect(parseFieldsFromVision('无法识别')).toEqual([]);
-    expect(parseFieldsFromVision(null)).toEqual([]);
-    // 非法字段名净化
-    const dirty = parseFieldsFromVision('[{"name":"api key!","label":"x","kind":"key"}]');
-    expect(dirty[0]!.name).toBe('api_key');
-  });
-});

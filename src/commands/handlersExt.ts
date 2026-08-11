@@ -757,22 +757,6 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // ── 视觉类 ──────────────────────────────────
-  // /site：多模态网站识别——打开页面 → 截图 → GLM-4V 识别所需敏感输入字段（DOM 兜底）
-  bus.register('/site', async (args) => {
-    const url = args.join(' ').trim();
-    if (!/^https?:\/\//i.test(url)) return '用法：/site <URL>（多模态识别网站所需敏感输入字段，配合 /input 动态录入）';
-    const apiKeyEnc = (ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined) ?? null;
-    const { identifySiteInputs } = await import('../kernel/siteIdentify.js');
-    const r = await identifySiteInputs(url, apiKeyEnc, ctx.dataDir);
-    if (!r.ok) return r.message;
-    return lines(' 网站识别（多模态） ', [
-      ` ${r.title ?? r.url}`,
-      ...(r.fields.length ? r.fields.map(f => ` ${f.name}（${f.label}·${f.kind === 'password' ? '掩码' : f.kind}·${f.source === 'vision' ? '多模态' : 'DOM'}）`) : [' 未识别到敏感输入字段']),
-      '',
-      r.fields.length ? ` 下一步：/input ${r.fields.map(f => f.name).join(' ')}` : ' 页面可能无需凭据或已登录',
-    ].filter(Boolean));
-  });
-
   // /input：动态内容表——多字段敏感输入（仅内存，不保存；像对话时输入 key 一样）
   bus.register('/input', async (args) => {
     const fields = args.map(a => {
