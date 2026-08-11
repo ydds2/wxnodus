@@ -177,7 +177,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
             const r = asRpcResult<{ provider?: ModelOptionProvider }>(raw)
 
             if (!r?.provider) {
-              setKeyError('failed to save key')
+              setKeyError('密钥保存失败')
               setKeySaving(false)
 
               return
@@ -245,7 +245,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
                         authenticated: false,
                         models: [],
                         total_models: 0,
-                        warning: p.key_env ? `paste ${p.key_env} to activate` : 'run `wxnodus model` to configure'
+                        warning: p.key_env ? `粘贴 ${p.key_env} 以激活` : '运行 `wxnodus model` 配置'
                       }
                     : p
                 )
@@ -387,14 +387,14 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   })
 
   if (loading) {
-    return <Text color={t.color.muted}>loading models…</Text>
+    return <Text color={t.color.muted}>加载模型中…</Text>
   }
 
   if (err) {
     return (
       <Box flexDirection="column">
-        <Text color={t.color.label}>error: {err}</Text>
-        <OverlayHint t={t}>Esc/q cancel</OverlayHint>
+        <Text color={t.color.label}>错误：{err}</Text>
+        <OverlayHint t={t}>Esc/q 取消</OverlayHint>
       </Box>
     )
   }
@@ -402,8 +402,8 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   if (!providers.length) {
     return (
       <Box flexDirection="column">
-        <Text color={t.color.muted}>no providers available</Text>
-        <OverlayHint t={t}>Esc/q cancel</OverlayHint>
+        <Text color={t.color.muted}>无可用提供商（/key 配置模型密钥）</Text>
+        <OverlayHint t={t}>Esc/q 取消</OverlayHint>
       </Box>
     )
   }
@@ -415,11 +415,11 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
     return (
       <Box flexDirection="column" width={width}>
         <Text bold color={t.color.accent} wrap="truncate-end">
-          Configure {provider.name}
+          🔑 配置 {provider.name}
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
-          Paste your API key below (saved to ~/.wxnodus/.env)
+          在下方粘贴你的 API 密钥（加密保存）
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
@@ -432,7 +432,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
 
         <Text color={t.color.accent} wrap="truncate-end">
           {'  '}
-          {masked || '(empty)'}
+          {masked || '（空）'}
           {keySaving ? '' : '▎'}
         </Text>
 
@@ -442,11 +442,11 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
 
         {keyError ? (
           <Text color={t.color.label} wrap="truncate-end">
-            error: {keyError}
+            错误：{keyError}
           </Text>
         ) : keySaving ? (
           <Text color={t.color.muted} wrap="truncate-end">
-            saving…
+            保存中…
           </Text>
         ) : (
           <Text color={t.color.muted} wrap="truncate-end">
@@ -454,7 +454,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
           </Text>
         )}
 
-        <OverlayHint t={t}>Enter save · Ctrl+U clear · Esc back</OverlayHint>
+        <OverlayHint t={t}>Enter 保存 · Ctrl+U 清空 · Esc 返回</OverlayHint>
       </Box>
     )
   }
@@ -488,7 +488,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
             disconnecting…
           </Text>
         ) : (
-          <OverlayHint t={t}>y/Enter confirm · n/Esc cancel</OverlayHint>
+          <OverlayHint t={t}>y/Enter 确认 · n/Esc 取消</OverlayHint>
         )}
       </Box>
     )
@@ -501,7 +501,11 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
       const modelCount = p.total_models ?? p.models?.length ?? 0
 
       const suffix =
-        p.authenticated === false ? (p.auth_type === 'api_key' ? '(no key)' : '(needs setup)') : `${modelCount} models`
+        p.authenticated === false
+          ? p.auth_type === 'api_key'
+            ? '（未配置密钥）'
+            : '（需配置）'
+          : `${modelCount} 个模型`
 
       return `${authMark} ${name} · ${suffix}`
     })
@@ -512,29 +516,29 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
     return (
       <Box flexDirection="column" width={width}>
         <Text bold color={t.color.accent} wrap="truncate-end">
-          Select provider (step 1/2)
+          🛰 选择提供商（第 1/2 步）
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
-          Full model IDs on the next step · Enter to continue
+          下一步展示完整模型 ID · Enter 继续
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
-          Current: {currentModel || '(unknown)'}
+          当前：{currentModel || '（未知）'}
         </Text>
         <Text color={filter ? t.color.accent : t.color.muted} wrap="truncate-end">
-          {filter ? `filter: ${filter}▎` : 'type to filter · ↑/↓ select'}
+          {filter ? `过滤：${filter}▎` : '输入过滤 · ↑/↓ 选择'}
         </Text>
         <Text color={t.color.label} wrap="truncate-end">
-          {provider?.warning ? `warning: ${provider.warning}` : ' '}
+          {provider?.warning ? `警告：${provider.warning}` : ' '}
         </Text>
         <Text color={t.color.muted} wrap="truncate-end">
-          {offset > 0 ? ` ↑ ${offset} more` : ' '}
+          {offset > 0 ? ` ↑ ${offset} 更多` : ' '}
         </Text>
 
         {noMatches ? (
           <Text color={t.color.muted} wrap="truncate-end">
-            no providers match
+            无匹配的提供商
           </Text>
         ) : (
           Array.from({ length: VISIBLE }, (_, i) => {
@@ -547,7 +551,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
               <Text
                 bold={providerIdx === idx}
                 color={providerIdx === idx ? t.color.accent : dimmed ? t.color.label : t.color.muted}
-                inverse={providerIdx === idx}
+                backgroundColor={providerIdx === idx ? t.color.selectionBg : undefined}
                 key={p?.slug ?? `row-${idx}`}
                 wrap="truncate-end"
               >
@@ -563,14 +567,14 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
         )}
 
         <Text color={t.color.muted} wrap="truncate-end">
-          {offset + VISIBLE < rows.length ? ` ↓ ${rows.length - offset - VISIBLE} more` : ' '}
+          {offset + VISIBLE < rows.length ? ` ↓ ${rows.length - offset - VISIBLE} 更多` : ' '}
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
-          persist: {allowPersistGlobal ? (persistGlobal ? 'global' : 'session') : 'session'}
-          {allowPersistGlobal ? ' · ^g toggle' : ' only'}
+          持久化：{allowPersistGlobal ? (persistGlobal ? '全局' : '会话') : '会话'}
+          {allowPersistGlobal ? ' · ^g 切换' : '（仅会话）'}
         </Text>
-        <OverlayHint t={t}>↑/↓ select · Enter choose · ^d disconnect · Esc clear/back · q close</OverlayHint>
+        <OverlayHint t={t}>↑/↓ 选择 · Enter 选用 · ^d 断开 · Esc 清空/返回 · q 关闭</OverlayHint>
       </Box>
     )
   }
@@ -582,20 +586,20 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   return (
     <Box flexDirection="column" width={width}>
       <Text bold color={t.color.accent} wrap="truncate-end">
-        Select model (step 2/2)
+        🛰 选择模型（第 2/2 步）
       </Text>
 
       <Text color={t.color.muted} wrap="truncate-end">
-        {filteredProviderRows[providerIdx]?.name || '(unknown provider)'} · Esc back
+        {filteredProviderRows[providerIdx]?.name || '（未知提供商）'} · Esc 返回
       </Text>
       <Text color={filter ? t.color.accent : t.color.muted} wrap="truncate-end">
-        {filter ? `filter: ${filter}▎` : 'type to filter · ↑/↓ select'}
+        {filter ? `过滤：${filter}▎` : '输入过滤 · ↑/↓ 选择'}
       </Text>
       <Text color={t.color.label} wrap="truncate-end">
-        {provider?.warning ? `warning: ${provider.warning}` : ' '}
+        {provider?.warning ? `警告：${provider.warning}` : ' '}
       </Text>
       <Text color={t.color.muted} wrap="truncate-end">
-        {offset > 0 ? ` ↑ ${offset} more` : ' '}
+        {offset > 0 ? ` ↑ ${offset} 更多` : ' '}
       </Text>
 
       {Array.from({ length: VISIBLE }, (_, i) => {
@@ -605,7 +609,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
         if (!row) {
           return (!allModels.length || noModelMatches) && i === 0 ? (
             <Text color={t.color.muted} key="empty" wrap="truncate-end">
-              {noModelMatches ? 'no models match filter' : 'no models listed for this provider'}
+              {noModelMatches ? '无匹配的模型' : '该提供商暂无模型'}
             </Text>
           ) : (
             <Text color={t.color.muted} key={`pad-${i}`} wrap="truncate-end">
@@ -620,7 +624,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
           <Text
             bold={modelIdx === idx}
             color={modelIdx === idx ? t.color.accent : t.color.muted}
-            inverse={modelIdx === idx}
+            backgroundColor={modelIdx === idx ? t.color.selectionBg : undefined}
             key={`${provider?.slug ?? 'prov'}:${idx}:${row}`}
             wrap="truncate-end"
           >
@@ -631,15 +635,15 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
       })}
 
       <Text color={t.color.muted} wrap="truncate-end">
-        {offset + VISIBLE < models.length ? ` ↓ ${models.length - offset - VISIBLE} more` : ' '}
+        {offset + VISIBLE < models.length ? ` ↓ ${models.length - offset - VISIBLE} 更多` : ' '}
       </Text>
 
       <Text color={t.color.muted} wrap="truncate-end">
-        persist: {allowPersistGlobal ? (persistGlobal ? 'global' : 'session') : 'session'}
-        {allowPersistGlobal ? ' · ^g toggle' : ' only'}
+        持久化：{allowPersistGlobal ? (persistGlobal ? '全局' : '会话') : '会话'}
+        {allowPersistGlobal ? ' · ^g 切换' : '（仅会话）'}
       </Text>
       <OverlayHint t={t}>
-        {models.length ? '↑/↓ select · Enter switch · Esc clear/back · q close' : 'Esc back · q close'}
+        {models.length ? '↑/↓ 选择 · Enter 切换 · Esc 清空/返回 · q 关闭' : 'Esc 返回 · q 关闭'}
       </OverlayHint>
     </Box>
   )

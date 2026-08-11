@@ -3,7 +3,16 @@ import { useAtom as useStore } from '../../app/stores/engine.js'
 import type { ReactNode } from 'react'
 
 import { $uiState } from '../runtime/viewStore.js'
-import type { ThemeColors } from '../theme.js'
+import type { Theme, ThemeColors } from '../theme.js'
+
+/** 键帽（赛博深空）：`[Enter]` label 色粗体——面板提示行统一用键帽标注快捷键 */
+export function Keycap({ k, t }: { k: string; t: Theme }) {
+  return (
+    <Text color={t.color.label} bold>
+      [{k}]
+    </Text>
+  )
+}
 
 export function Fg({ bold, c, children, dim, italic, literal, strikethrough, underline, wrap }: FgProps) {
   const { theme } = useStore($uiState)

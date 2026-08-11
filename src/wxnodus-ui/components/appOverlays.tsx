@@ -234,8 +234,8 @@ export function FloatingOverlays({
             <Box marginTop={1}>
               <OverlayHint t={theme}>
                 {overlay.pager.offset + pagerPageSize < overlay.pager.lines.length
-                  ? `↑↓/jk line · Enter/Space/PgDn page · b/PgUp back · g/G top/bottom · Esc/q close (${Math.min(overlay.pager.offset + pagerPageSize, overlay.pager.lines.length)}/${overlay.pager.lines.length})`
-                  : `end · ↑↓/jk · b/PgUp back · g top · Esc/q close (${overlay.pager.lines.length} lines)`}
+                  ? `↑↓/jk 行 · Enter/Space/PgDn 页 · b/PgUp 返回 · g/G 顶/底 · Esc/q 关闭 (${Math.min(overlay.pager.offset + pagerPageSize, overlay.pager.lines.length)}/${overlay.pager.lines.length})`
+                  : `已到末尾 · ↑↓/jk · b/PgUp 返回 · g 顶部 · Esc/q 关闭 (${overlay.pager.lines.length} lines)`}
               </OverlayHint>
             </Box>
           </Box>

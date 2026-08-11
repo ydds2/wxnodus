@@ -145,15 +145,18 @@ export const MessageLine = memo(function MessageLine({
     const stripped = hasAnsi(msg.text) ? stripAnsi(msg.text) : msg.text
     const safeAnsi = hasAnsi(msg.text) ? sanitizeAnsiForRender(msg.text) : msg.text
     const preview = compactPreview(stripped, maxChars) || '(empty tool result)'
+    // 工具结果卡片按结果着色：输出含失败信号 → error 边框（一眼定位失败工具）
+    const failed = /失败|错误|异常|不存在|无权限|error|failed|exception/i.test(stripped.slice(0, 200))
+    const cardColor = failed ? t.color.error : t.color.border
 
     return (
-      <Box alignSelf="flex-start" borderColor={t.color.muted} borderStyle="round" marginLeft={3} paddingX={1}>
+      <Box alignSelf="flex-start" borderColor={cardColor} borderStyle="round" marginLeft={3} paddingX={1}>
         {hasAnsi(msg.text) ? (
           <Text wrap="truncate-end">
             <Ansi>{safeAnsi}</Ansi>
           </Text>
         ) : (
-          <Text color={t.color.muted} wrap="truncate-end">
+          <Text color={failed ? t.color.error : t.color.muted} wrap="truncate-end">
             {preview}
           </Text>
         )}
@@ -257,13 +260,16 @@ export const MessageLine = memo(function MessageLine({
       )}
 
       {showResponseSeparator && (
+        // Response 徽标：accent 背景色块 + 深色粗体字——轮次回复起点一眼可辨
         <Box marginBottom={1}>
           <NoSelect flexShrink={0} fromLeftEdge width={gutterWidth}>
-            <Text color={t.color.border}>└─ </Text>
+            <Text color={t.color.accent}>└─ </Text>
           </NoSelect>
-          <Text color={t.color.muted} dim>
-            Response
-          </Text>
+          <Box backgroundColor={t.color.accent} paddingX={1}>
+            <Text color={t.color.statusBg} bold>
+              Response
+            </Text>
+          </Box>
         </Box>
       )}
 

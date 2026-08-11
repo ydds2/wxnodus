@@ -151,8 +151,10 @@ export function CommandPalette({
               <Text
                 bold={i === idx}
                 color={i === idx ? t.color.accent : undefined}
+                backgroundColor={i === idx ? t.color.selectionBg : undefined}
                 wrap="truncate-end"
               >
+                {i === idx ? <Text color={t.color.accent}>▸ </Text> : null}
                 <Text color={i === idx ? t.color.accent : t.color.muted}>{kindGlyph[e.kind]} </Text>
                 {e.label}
                 {e.desc ? <Text color={t.color.muted} dimColor>  — {e.desc}</Text> : null}

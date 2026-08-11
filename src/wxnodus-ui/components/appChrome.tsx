@@ -14,7 +14,7 @@ import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { fmtK } from '../lib/text.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
-import type { Theme } from '../theme.js'
+import { mix, type Theme } from '../theme.js'
 import type { Msg, Usage } from '../types.js'
 
 const FACE_TICK_MS = 2500
@@ -183,7 +183,7 @@ function ctxBarColor(pct: number | undefined, t: Theme) {
 }
 
 function statusSessionCountLabel(count: number) {
-  return `${count} ${count === 1 ? 'session' : 'sessions'}`
+  return `${count} 会话`
 }
 
 // Colour a credits notice by its level. The notice TEXT already carries its
@@ -211,6 +211,28 @@ function ctxBar(pct: number | undefined, w = 10) {
   const filled = Math.round((p / 100) * w)
 
   return '█'.repeat(filled) + '░'.repeat(w - filled)
+}
+
+// 渐变上下文条（赛博深空）：已填充格沿「青 → 黄 → 红」热力色带按位置插值，
+// 未填充格用 muted 暗点——占用即热、趋满即警，一眼读出水位
+function ctxGradientCells(pct: number | undefined, t: Theme, w = 10): Array<{ ch: string; color: string }> {
+  const p = Math.max(0, Math.min(100, pct ?? 0))
+  const filled = Math.round((p / 100) * w)
+  const cells: Array<{ ch: string; color: string }> = []
+  for (let i = 0; i < w; i++) {
+    if (i >= filled) {
+      cells.push({ ch: '░', color: t.color.muted })
+      continue
+    }
+    // 热力带分段插值：青(0) → 黄(0.5) → 红(1)
+    const frac = w === 1 ? 0 : i / (w - 1)
+    const color =
+      frac < 0.5
+        ? mix(t.color.statusGood, t.color.statusWarn, frac * 2)
+        : mix(t.color.statusWarn, t.color.statusCritical, (frac - 0.5) * 2)
+    cells.push({ ch: '█', color })
+  }
+  return cells
 }
 
 // `minLeftContent` is the display width of the high-priority left segments
@@ -540,13 +562,16 @@ export function StatusRule({
   )
 
   return (
-    <Box height={1}>
+    // 赛博深空底条：整行 statusBg 背景（文字自动继承背景色）——状态栏从
+    // 纯文本行升级为高亮带，与消息区形成层次
+    <Box height={1} backgroundColor={t.color.statusBg}>
       <Box flexDirection="row" flexShrink={1} overflow="hidden" width={leftWidth}>
-        {/* Leading pinned chrome: border + busy face / idle status. When a
+        {/* Leading pinned chrome: accent 锚点竖条 + busy face / idle status. When a
             notice occupies the slot the status text is dropped — the notice
             renders as a separate shrinkable box below so a long notice
             ellipsizes instead of crushing model │ ctx (R3-M7). */}
         <Box flexDirection="row" flexShrink={0}>
+          <Text color={t.color.accent} bold>{'▍'}</Text>
           <Text color={t.color.border}>{'─ '}</Text>
           {busy ? (
             <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} />
@@ -566,7 +591,8 @@ export function StatusRule({
             </Text>
           </Box>
         ) : null}
-        {/* Pinned essentials — model + context never shrink, always visible. */}
+        {/* Pinned essentials — model + context never shrink, always visible.
+            model 段徽标化：[model] 键帽感（label 色），ctx 段紧跟。 */}
         <Box flexDirection="row" flexShrink={0}>
           {DEV_CREDITS_MODE ? (
             <Text color={t.color.warn} wrap="truncate-end">
@@ -575,7 +601,7 @@ export function StatusRule({
           ) : null}
           <Text color={t.color.muted} wrap="truncate-end">
             {' │ '}
-            {modelText}
+            <Text color={t.color.label} bold>{`[${modelText}]`}</Text>
           </Text>
           {ctxLabel ? (
             <Text color={t.color.muted} wrap="truncate-end">
@@ -587,7 +613,19 @@ export function StatusRule({
         {showBar ? (
           <Text color={t.color.muted} wrap="truncate-end">
             {' │ '}
-            <Text color={barColor}>[{bar}]</Text> <Text color={barColor}>{pct != null ? `${pct}%` : ''}</Text>
+            <Text color={t.color.label}>{'['}</Text>
+            {ctxGradientCells(pct, t, bar.length).map((c, i) => (
+              <Text key={i} color={c.color}>
+                {c.ch}
+              </Text>
+            ))}
+            <Text color={t.color.label}>{']'}</Text>
+            {pct != null ? (
+              <Text color={barColor}>
+                {' '}
+                {pct}%
+              </Text>
+            ) : null}
           </Text>
         ) : null}
         {showDuration ? (

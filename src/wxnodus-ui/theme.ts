@@ -67,7 +67,7 @@ function parseHex(h: string): [number, number, number] | null {
   return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]
 }
 
-function mix(a: string, b: string, t: number) {
+export function mix(a: string, b: string, t: number) {
   const pa = parseHex(a)
   const pb = parseHex(b)
 
@@ -282,7 +282,9 @@ export const DARK_THEME: Theme = {
     sessionLabel: '#80CBC4',
     sessionBorder: '#80CBC4',
 
-    statusBg: '#0B0F19',
+    // 状态栏底条：深空背景向事件视界紫轻微倾斜（赛博深空——比纯背景亮一档，
+    // 底条与消息区有层次，但远低于 selectionBg 的选中亮度）
+    statusBg: mix('#0B0F19', '#B388FF', 0.14),
     statusFg: '#9EA7B3',
     statusGood: '#4DD0E1',
     statusWarn: '#FFD54F',

@@ -157,7 +157,7 @@ export function PluginsHub({ gw, onClose, t }: PluginsHubProps) {
     return (
       <Box flexDirection="column" width={width}>
         <Text color={t.color.label}>error: {err}</Text>
-        <OverlayHint t={t}>Esc/q close</OverlayHint>
+        <OverlayHint t={t}>Esc/q 关闭</OverlayHint>
       </Box>
     )
   }
@@ -170,7 +170,7 @@ export function PluginsHub({ gw, onClose, t }: PluginsHubProps) {
         </Text>
         <Text color={t.color.muted}>no plugins installed</Text>
         <Text color={t.color.muted}>install: wxnodus plugins install owner/repo</Text>
-        <OverlayHint t={t}>Esc/q close</OverlayHint>
+        <OverlayHint t={t}>Esc/q 关闭</OverlayHint>
       </Box>
     )
   }
@@ -226,7 +226,7 @@ export function PluginsHub({ gw, onClose, t }: PluginsHubProps) {
       {err ? <Text color={t.color.label}>error: {err}</Text> : null}
       {busy ? <Text color={t.color.accent}>updating…</Text> : null}
 
-      <OverlayHint t={t}>↑/↓ select · Enter/Space toggle · Tab user/all · 1-9,0 quick · Esc/q close</OverlayHint>
+      <OverlayHint t={t}>↑/↓ 选择 · Enter/Space 切换 · Tab 用户/全部 · 1-9,0 快捷 · Esc/q 关闭</OverlayHint>
     </Box>
   )
 }

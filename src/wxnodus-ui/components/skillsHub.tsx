@@ -186,7 +186,7 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
     return (
       <Box flexDirection="column" width={width}>
         <Text color={t.color.label}>error: {err}</Text>
-        <OverlayHint t={t}>Esc/q cancel</OverlayHint>
+        <OverlayHint t={t}>Esc/q 取消</OverlayHint>
       </Box>
     )
   }
@@ -194,8 +194,8 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
   if (!cats.length) {
     return (
       <Box flexDirection="column" width={width}>
-        <Text color={t.color.muted}>no skills available</Text>
-        <OverlayHint t={t}>Esc/q cancel</OverlayHint>
+        <Text color={t.color.muted}>无可用技能</Text>
+        <OverlayHint t={t}>Esc/q 取消</OverlayHint>
       </Box>
     )
   }
@@ -211,7 +211,7 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
         </Text>
 
         <Text color={t.color.muted}>select a category</Text>
-        {offset > 0 && <Text color={t.color.muted}> ↑ {offset} more</Text>}
+        {offset > 0 && <Text color={t.color.muted}> ↑ {offset} 更多</Text>}
 
         {items.map((row, i) => {
           const idx = offset + i
@@ -230,8 +230,8 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
           )
         })}
 
-        {offset + VISIBLE < rows.length && <Text color={t.color.muted}> ↓ {rows.length - offset - VISIBLE} more</Text>}
-        <OverlayHint t={t}>↑/↓ select · Enter open · 1-9,0 quick · Esc/q cancel</OverlayHint>
+        {offset + VISIBLE < rows.length && <Text color={t.color.muted}> ↓ {rows.length - offset - VISIBLE} 更多</Text>}
+        <OverlayHint t={t}>↑/↓ 选择 · Enter 打开 · 1-9,0 快捷 · Esc/q 取消</OverlayHint>
       </Box>
     )
   }
@@ -246,8 +246,8 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
         </Text>
 
         <Text color={t.color.muted}>{skills.length} skill(s)</Text>
-        {!skills.length ? <Text color={t.color.muted}>no skills in this category</Text> : null}
-        {offset > 0 && <Text color={t.color.muted}> ↑ {offset} more</Text>}
+        {!skills.length ? <Text color={t.color.muted}>该分类暂无技能</Text> : null}
+        {offset > 0 && <Text color={t.color.muted}> ↑ {offset} 更多</Text>}
 
         {items.map((row, i) => {
           const idx = offset + i
@@ -267,10 +267,10 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
         })}
 
         {offset + VISIBLE < skills.length && (
-          <Text color={t.color.muted}> ↓ {skills.length - offset - VISIBLE} more</Text>
+          <Text color={t.color.muted}> ↓ {skills.length - offset - VISIBLE} 更多</Text>
         )}
         <OverlayHint t={t}>
-          {skills.length ? '↑/↓ select · Enter open · 1-9,0 quick · Esc back · q close' : 'Esc back · q close'}
+          {skills.length ? '↑/↓ 选择 · Enter 打开 · 1-9,0 快捷 · Esc 返回 · q 关闭' : 'Esc 返回 · q 关闭'}
         </OverlayHint>
       </Box>
     )
@@ -289,7 +289,7 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
       {err ? <Text color={t.color.label}>error: {err}</Text> : null}
       {installing ? <Text color={t.color.accent}>installing…</Text> : null}
 
-      <OverlayHint t={t}>i reinspect · x reinstall · Enter/Esc back · q close</OverlayHint>
+      <OverlayHint t={t}>i 复查 · x 重装 · Enter/Esc 返回 · q 关闭</OverlayHint>
     </Box>
   )
 }

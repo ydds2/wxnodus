@@ -44,7 +44,7 @@ export function ArtLines({ lines }: { lines: [string, string][] }) {
 // Terminals can't scale glyphs, so "responsive" means picking a layout that
 // fits the available columns. Thresholds are picked so each tier reads
 // comfortably without forcing wrap or truncation drift on box-drawing edges.
-const TAG_FULL = 'WxNodus — 本地概念编译器'
+const TAG_FULL = '⚡ WxNodus — 本地概念编译器 ⚡'
 const TAG_MID = '本地概念编译器'
 const TAG_TINY = 'WxNodus'
 const HIDE_BELOW = 34
@@ -284,7 +284,8 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
   }
 
   return (
-    <Box borderColor={t.color.border} borderStyle="round" marginBottom={1} paddingX={2} paddingY={1}>
+    // 赛博深空：会话面板外框用 accent 提亮（与消息区的 border 边框形成层级）
+    <Box borderColor={t.color.accent} borderStyle="round" marginBottom={1} paddingX={2} paddingY={1}>
       {wide && (
         <Box flexDirection="column" marginRight={2} width={leftW}>
           <ArtLines lines={heroLines} />
@@ -301,7 +302,7 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
 
           {sid && (
             <Text>
-              <Text color={t.color.sessionLabel}>Session: </Text>
+              <Text color={t.color.sessionLabel}>会话：</Text>
               <Text color={t.color.sessionBorder}>{sid}</Text>
             </Text>
           )}

@@ -106,8 +106,11 @@ const TranscriptPane = memo(function TranscriptPane({
           {transcript.virtualRows.slice(transcript.virtualHistory.start, transcript.virtualHistory.end).map(row => (
             <Box flexDirection="column" key={row.key} ref={transcript.virtualHistory.measureRef(row.key)}>
               {row.msg.role === 'user' && firstUserIdx >= 0 && row.index > firstUserIdx && (
+                // 轮次分隔：双色规则线（border 线 + accent 中心点）——比纯 ─── 更有层次
                 <Box marginTop={1}>
-                  <Text color={ui.theme.color.border}>───</Text>
+                  <Text color={ui.theme.color.border}>──</Text>
+                  <Text color={ui.theme.color.accent}>·</Text>
+                  <Text color={ui.theme.color.border}>──────</Text>
                 </Box>
               )}
 

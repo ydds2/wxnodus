@@ -208,7 +208,7 @@ export function ClarifyPrompt({ cols = 80, onAnswer, onCancel, req, t }: Clarify
         </Text>
       ))}
 
-      <Text color={t.color.muted}>↑/↓ select · Enter confirm · 1-{choices.length} quick pick · Esc/Ctrl+C cancel</Text>
+      <Text color={t.color.muted}>↑/↓ 选择 · Enter 确认 · 1-{choices.length} 快捷 · Esc/Ctrl+C 取消</Text>
     </Box>
   )
 }
@@ -270,7 +270,7 @@ export function ConfirmPrompt({ onCancel, onConfirm, req, t }: ConfirmPromptProp
         </Text>
       ))}
 
-      <Text color={t.color.muted}>↑/↓ select · Enter confirm · Y/N quick · Esc cancel</Text>
+      <Text color={t.color.muted}>↑/↓ 选择 · Enter 确认 · Y/N 快捷 · Esc 取消</Text>
     </Box>
   )
 }

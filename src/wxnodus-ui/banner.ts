@@ -1,4 +1,4 @@
-import type { ThemeColors } from './theme.js'
+import { mix, type ThemeColors } from './theme.js'
 
 const RICH_RE = /\[(?:bold\s+)?(?:dim\s+)?(#(?:[0-9a-fA-F]{3,8}))\]([\s\S]*?)(\[\/\])/g
 
@@ -71,7 +71,14 @@ const LOGO_GRADIENT = [0, 0, 1, 1, 2, 2] as const
 const HERO_GRADIENT = [0, 1, 1, 2, 2, 2, 1, 1, 0] as const
 
 const colorize = (art: string[], gradient: readonly number[], c: ThemeColors): Line[] => {
-  const p = [c.primary, c.accent, c.border, c.muted]
+  // 赛博深空提亮：primary/accent 向白方向提亮 12-15%（吸积盘辉光更通透），
+  // 索引结构不变——主题色值变化时渐变自动跟随
+  const p = [
+    mix(c.primary, '#FFFFFF', 0.15),
+    mix(c.accent, '#FFFFFF', 0.12),
+    c.border,
+    c.muted,
+  ]
 
   return art.map((text, i) => [p[gradient[i]!] ?? c.muted, text])
 }
