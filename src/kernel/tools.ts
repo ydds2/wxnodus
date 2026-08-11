@@ -168,6 +168,60 @@ export function coreTools(): Record<string, ToolDef> {
       }
     },
   };
+  const findFiles: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'find_files',
+        description: '按文件名/glob 搜索文件（递归，跳过 node_modules/.git/dist 等）。需要定位某文件（如修改哪个文件、找配置）时调用，比逐目录 ls 高效。',
+        parameters: {
+          type: 'object',
+          properties: {
+            pattern: { type: 'string', description: '文件名或 glob（如 "*.test.ts"、"config.json"、"src/**/hooks/*"）' },
+            max: { type: 'number', description: '最多返回条数（默认 30）' },
+          },
+          required: ['pattern'],
+        },
+      },
+    },
+    danger: false,
+    async run(args, ctx) {
+      const pattern = String(args?.pattern ?? '').trim();
+      if (!pattern) return '参数错误：pattern 不能为空';
+      const max = Math.min(Math.max(Number(args?.max) || 30, 1), 100);
+      try {
+        const { readdirSync, statSync } = await import('node:fs');
+        const { join, relative, sep } = await import('node:path');
+        const SKIP = new Set(['node_modules', '.git', 'dist', 'coverage', 'build', 'out', '.next', '.venv', '__pycache__', '.wxnodus', '.zcode']);
+        // 简单 glob 转正则：** → 任意多层，* → 单层段，? → 单字符
+        const toRe = (g: string): RegExp => {
+          const esc = g.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+          return new RegExp('^' + esc.replace(/\*\*/g, '__DOUBLE__').replace(/\*/g, '[^/]*').replace(/__DOUBLE__/g, '.*') + '$');
+        };
+        const re = toRe(pattern);
+        const out: string[] = [];
+        const walk = (dir: string): void => {
+          let entries: Array<{ name: string; isDir: boolean }> = [];
+          try {
+            entries = readdirSync(dir, { withFileTypes: true }).map(e => ({ name: e.name, isDir: e.isDirectory() }));
+          } catch { return; }
+          for (const e of entries) {
+            if (e.isDir && SKIP.has(e.name)) continue;
+            const abs = join(dir, e.name);
+            if (e.isDir) { walk(abs); continue; }
+            const rel = relative(ctx.cwd, abs).split(sep).join('/');
+            if (re.test(e.name) || re.test(rel)) out.push(rel);
+            if (out.length >= max) return;
+          }
+        };
+        walk(ctx.cwd);
+        if (!out.length) return `未找到匹配「${pattern}」的文件（跳过 node_modules/.git/dist 等）`;
+        return `找到 ${out.length} 个文件：\n${out.map(f => '  ' + f).join('\n')}`;
+      } catch (e: any) {
+        return `搜索失败：${String(e?.message ?? e).slice(0, 120)}`;
+      }
+    },
+  };
   const ls: ToolDef = {
     schema: { type: 'function', function: { name: 'ls', description: '列出目录内容', parameters: { type: 'object', properties: { path: { type: 'string' } } } } },
     danger: false,
@@ -200,6 +254,39 @@ export function coreTools(): Record<string, ToolDef> {
       const r = await safeFetchText(String(url));
       if ('error' in r) return r.error;
       return `HTTP ${r.status}\n${r.text.slice(0, 8000)}`;
+    },
+  };
+  // memory_search：黑洞引擎主动检索（建议清单 P0-1 落地）——模型需要回忆历史时调用，
+  // 走 FTS5 bigram + 向量混合召回（与每轮自动召回同一引擎）
+  const memorySearch: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'memory_search',
+        description: '检索历史记忆（黑洞引擎：关键词/语义混合召回）。需要回忆之前讨论过的内容、决策、数据时调用。',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: '检索关键词（中文自动 bigram 分词）' },
+            limit: { type: 'number', description: '返回条数（默认 5）' },
+          },
+          required: ['query'],
+        },
+      },
+    },
+    danger: false,
+    async run(args, ctx) {
+      const q = String(args?.query ?? '').trim();
+      if (!q) return '参数错误：query 不能为空';
+      try {
+        const { createMemory } = await import('./memory.js');
+        const mem = createMemory(ctx.db as any);
+        const hits = await mem.recallHybrid(q, { limit: Math.min(Math.max(Number(args?.limit) || 5, 1), 20) });
+        if (!hits.length) return `未检索到与「${q.slice(0, 40)}」相关的历史记忆`;
+        return `历史记忆命中 ${hits.length} 条：\n${hits.map(h => `- [${h.id}] ${h.content.slice(0, 300)}`).join('\n')}`;
+      } catch (e: any) {
+        return `记忆检索失败：${String(e?.message ?? e).slice(0, 120)}`;
+      }
     },
   };
   const memoryWrite: ToolDef = {
@@ -394,7 +481,7 @@ export function coreTools(): Record<string, ToolDef> {
       return `已录入 ${committed.length} 个敏感字段（仅内存，不落盘）——bash 中可用 $WXNODUS_SECRET_${committed[0]} 引用；/security secret off 或进程退出即清除${missing.length ? `；未填写：${missing.join('、')}` : ''}`;
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, http_get: httpGet, memory_write: memoryWrite, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, memory_write: memoryWrite, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

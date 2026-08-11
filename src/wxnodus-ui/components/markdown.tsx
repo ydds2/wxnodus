@@ -878,12 +878,16 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
         continue
       }
 
-      const heading = line.match(HEADING_RE)?.[2]
+      const headingMatch = line.match(HEADING_RE)
+      const heading = headingMatch?.[2]
 
       if (heading) {
         start('heading')
+        // 层级前缀（# / ## / ###）：多级标题在终端中可区分（此前同色同粗无法分级）
+        const level = Math.min(headingMatch![1]!.length, 4)
         nodes.push(
           <Text bold color={t.color.accent} key={key} wrap="wrap-trim">
+            <Text color={t.color.muted}>{'#'.repeat(level)} </Text>
             <MdInline t={t} text={heading} />
           </Text>
         )

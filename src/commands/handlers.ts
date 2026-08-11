@@ -143,36 +143,6 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   // /login [平台] [密钥]：认证入口（对比轮 6 补强——平台选择 + 密钥录入 + 模型目录刷新）
   //   纯本地 API Key 认证（无 OAuth）；配置类行为，不产生 AI 对话输出
-  bus.register('/login', async (args) => {
-    const { MODEL_CATALOG } = await import('../kernel/providers.js');
-    const provider = (args[0] ?? '').toLowerCase();
-    if (!provider) {
-      const providers = [...new Set(MODEL_CATALOG.map(m => m.provider))];
-      return lines(' 登录（选择平台） ', [
-        ...providers.map(p => ` ${p}：/login ${p} <API 密钥>`),
-        '',
-        ' 本地 API Key 认证（密钥 AES-256-GCM 加密存储，绝不回显）',
-        ' 示例：/login deepseek sk-xxxxxxxx',
-      ]);
-    }
-    const hit = MODEL_CATALOG.find(m => m.provider === provider);
-    if (!hit) return `未知平台：${provider}（可用：${[...new Set(MODEL_CATALOG.map(m => m.provider))].join(' / ')}）`;
-    const key = args[1] ?? '';
-    if (!key) return `用法：/login ${provider} <API 密钥>（如 /login ${provider} sk-xxx）`;
-    ctx.config.setKey('settings', 'apiKeyEnc', encryptKey(key));
-    ctx.config.setKey('settings', 'model', hit.modelId);
-    ctx.config.setKey('settings', 'baseURL', hit.baseURL);
-    ctx.setModel(hit.modelId, hit.baseURL);
-    return `已登录 ${provider}（模型：${hit.modelId}，密钥加密存储）——可用 /model 切换或 /logout 退出`;
-  });
-
-  // /logout：清除凭证（配置类）
-  bus.register('/logout', () => {
-    ctx.config.setKey('settings', 'apiKeyEnc', '');
-    return '已退出登录（密钥已清除）——对话将提示配置，直到重新 /login 或 /key set';
-  });
-
-  // /yolo：完全访问开关（参考 yolo 命令同款；等价 /perm yolo）
   bus.register('/yolo', (args) => {
     const on = args[0] !== 'off' && args[0] !== '0';
     ctx.setMode(on ? 'yolo' : 'smart');

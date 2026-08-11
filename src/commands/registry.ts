@@ -4,7 +4,7 @@ export const SLASH: string[] = [
   // 对话
   '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint',
   // 模型
-  '/key', '/login', '/logout', '/model', '/status', '/doctor', '/version', '/thinking', '/hooks',
+  '/key', '/model', '/status', '/doctor', '/version', '/thinking', '/hooks',
   // 记忆（黑洞引擎）
   '/memory', '/hole', '/compact', '/digest', '/curator',
   // 构建（概念编译器）
@@ -27,7 +27,7 @@ export const SLASH: string[] = [
 
 export const COMMAND_CAT: Record<string, string> = {
   '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈',
-  '/key': '⚙', '/login': '⚙', '/logout': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
+  '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆',
   '/perm': '🛡', '/sandbox': '🛡', '/compliance': '🛡', '/consent': '🛡', '/audit': '🛡', '/encrypt': '🛡', '/yolo': '🛡', '/afk': '🛡', '/security': '🛡',
@@ -47,8 +47,6 @@ export const COMMAND_DESC: Record<string, string> = {
   '/quit': '退出',
   '/new': '新建空会话并切换',
   '/title': '重命名当前会话',
-  '/login': '登录平台（/login <平台> <密钥>）',
-  '/logout': '退出登录（清除凭证）',
   '/yolo': '完全访问开关（除硬红线全部放行）',
   '/afk': '无人值守自动批准开关',
   '/plan': '计划模式（on/off/save/view/clear）',

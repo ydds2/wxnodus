@@ -41,6 +41,7 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 - **生命周期 Hooks**：`settings.hooks` 配置本地命令（userPromptSubmit/preToolUse/postToolUse/stop），上下文经环境变量传入，preToolUse 输出 `DENY` 即真实拦截工具
 - **MCP 客户端**：`/mcp add｜list｜remove｜test` 管理本地 stdio server，两级配置（项目 `.mcp.json` mcpServers 对象格式 + 用户 `data/mcp.json`，Claude Code 生态标准；`--project` 写项目级）；`strictMcpConfig=true` 或 `--strict-mcp-config` 标志仅信任项目声明；per-server `startupTimeoutMs` 启动超时（Codex 对齐）；工具以 `mcp__<server>__<tool>` 并入 agent；`/mcp add/remove` 后自动热重载；连接失败干净降级
 - **插件生态**：`data/plugins/*/`（plugin.json + index.js，ESM/CJS）——`/plugin list｜install｜remove｜enable｜disable｜reload`，工具并入 agent 工具表、命令注册为 `/插件名.命令名`；`/plugin new` 模板生成；TUI pluginsHub 面板启停热更新
+- **主动检索工具**：`memory_search`（黑洞引擎 FTS5+向量混合召回——模型回忆历史时主动调用）与 `find_files`（文件名/glob 递归搜索，跳过 node_modules/.git/dist）——补齐「记忆只写不读」「文件搜索缺失」缺口
 - **分支会话**：`/fork` 复制会话（含全部消息）为分支；UI `session.fork`/`session.undo` RPC 真实实现；`/undo` 作用于当前活跃会话（软归档 + 撤销前快照，`/checkpoint restore` 可恢复）
 - **图片附加链路**：Ctrl+V 粘贴截图 / `/image <路径>` → 附件登记 → 提问时多模态注入（GLM-4V Flash 等图像模型直接看图）；文本模型优雅降级提示；零依赖图片元数据（魔数/宽高/视觉 token 估算）；**历史回显**——图片轮次经 GLM-4V 生成摘要并入历史（后续轮次可回忆看图内容，无 key 不生成）
 - **仓库地图**（aider repo-map 自研版）：`/map [token 预算]` 与 `repo_map` 工具——按语言启发式提取符号（TS/Python/Go/Rust/Java/C++/Shell）+ 黑名单过滤 + **引用权重排序**（被引用多的核心文件优先入预算，aider 依赖图排序轻量近似）+ 预算截断
@@ -69,7 +70,7 @@ Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器（React 19 
 
 ## 验收证据
 
-- ✅ 518 单元/契约/进程级测试全绿（42 测试文件）+ 类型检查零错误
+- ✅ 520 单元/契约/进程级测试全绿（42 测试文件）+ 类型检查零错误
 - ✅ TUI 冒烟（真实终端 node-pty）：首屏/输入/回复/命令面板/Esc/终止不挂死
 - ✅ 全命令扫描 105/105 可用（scripts/cmd-sweep.mjs 回归工具，112 命令注册表全覆盖）
 - ✅ 概念编译器端到端：「帮我做一个待办系统」→ todo 项目生成 → 启动 → API 增删查 → healthcheck 通过 → evidence.json
@@ -90,7 +91,7 @@ src/
   kernel/     领域层（agent/黑洞引擎/tools/权限/事件/providers/computer/vision/skills/hooks/mcp/projectScan/plugins/imageMeta）
   store/      基础设施（SQLite/配置中心/审计/checkpoint/fork）
   ui/         交互层（ink7 组件/Markdown 管线/Kimi 主题）
-tests/        四层测试（518 用例，42 文件）
+tests/        四层测试（520 用例，42 文件）
 scripts/      TUI 冒烟（node-pty 驱动）/ cmd-sweep 全命令扫描
 ```
 
