@@ -732,7 +732,7 @@ describe('AI 自主触发（自动注入）', () => {
     } as any);
     return { agent, seen };
   }
-  it('首轮注入仓库地图与技能清单；第二轮不重复注入', async () => {
+  it('首轮注入顶层结构一行 + 技能名清单；第二轮不重复注入；默认不注入地图', async () => {
     const { agent, seen } = makeAutoInjectAgent({}, [
       { type: 'text', content: '完成1' },
       { type: 'text', content: '完成2' },
@@ -741,18 +741,19 @@ describe('AI 自主触发（自动注入）', () => {
     await agent.run('再问');
     const first = seen[0]!;
     const second = seen[1]!;
-    // 首轮含自动仓库地图（项目目录有代码文件）
-    expect(first.some(m => String(m.content ?? '').includes('自动仓库地图'))).toBe(true);
-    // 技能清单注入（forge demo 技能存在）
+    // 首轮含顶层结构摘要（轻量，不挤占上下文）
+    expect(first.some(m => String(m.content ?? '').includes('项目顶层结构'))).toBe(true);
+    // 技能名清单注入
     expect(first.some(m => String(m.content ?? '').includes('可用技能'))).toBe(true);
+    // 默认不注入完整仓库地图（防上下文膨胀——体验回归修复）
+    expect(first.some(m => String(m.content ?? '').includes('自动仓库地图'))).toBe(false);
     // 第二轮不重复注入
-    expect(second.some(m => String(m.content ?? '').includes('自动仓库地图'))).toBe(false);
+    expect(second.some(m => String(m.content ?? '').includes('项目顶层结构'))).toBe(false);
   });
-  it('autoRepoMap=false 关闭地图注入（技能仍注入）', async () => {
-    const { agent, seen } = makeAutoInjectAgent({ autoRepoMap: false }, [{ type: 'text', content: '完成' }]);
+  it('autoRepoMap=true 显式开启才注入完整地图', async () => {
+    const { agent, seen } = makeAutoInjectAgent({ autoRepoMap: true }, [{ type: 'text', content: '完成' }]);
     await agent.run('你好');
     const first = seen[0]!;
-    expect(first.some(m => String(m.content ?? '').includes('自动仓库地图'))).toBe(false);
-    expect(first.some(m => String(m.content ?? '').includes('可用技能'))).toBe(true);
+    expect(first.some(m => String(m.content ?? '').includes('自动仓库地图'))).toBe(true);
   });
 });

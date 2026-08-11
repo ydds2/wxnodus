@@ -49,7 +49,7 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 - **生态规范文件链**（agents.md 标准 + 多工具共存）：运行时注入首个存在者——AGENTS.md（/init 产物）> CLAUDE.md > GEMINI.md > .cursorrules > .clinerules > .roomodes，同一套项目规范被多家 CLI 消费
 - **协作与协议（全部真实实现）**：`/swarm` 并行子代理（1-8 个）、`/duo` 双脑方案对比、`/goal` 循环目标执行、`/jobs run` 后台任务（db 持久化）、`/delegate` 派发子代理；`/gateway start` 本地 HTTP JSON-RPC 网关（command/prompt/health）、`/a2a call|serve` Agent-to-Agent 协议端点、`/acp server` ACP stdio 服务器（IDE 集成）、`/webhook add` 事件→HTTP 回调、`/claw <URL>` 网页抓取（SSRF 防护）、`/sandbox L0-L3` 分层权限沙盒、`/timer` 真实到时通知
 - **定时任务工具**（Claude Code CronCreate 对齐）：`cron_create` 工具让模型自主创建定时任务；`/cron add|list|del|pause|resume` 命令面——**标准 5 字段 cron 表达式**（分 时 日 月 周，自研解析器 cronExpr.ts：数字/星号/步进/区间/列表）与 every Nm/Nh/Nd 兼容格式
-- **AI 自主触发**（简化人工指令）：会话首轮自动注入仓库地图（≤800 token，`autoRepoMap=false` 关闭）与可用技能清单——模型先看项目结构再动手、自主 `skill_load`，无需人工 `/map` `/skill list`
+- **AI 自主触发**（简化人工指令）：会话首轮极轻量注入——顶层结构一行 + 技能名称清单（几十字符，不挤占上下文）；系统提示第 5 条引导模型主动 `repo_map`/`skill_load`/`tool_search`（真正 AI 底层触发）；`autoRepoMap=true` 显式开启才注入完整地图（≤400 token，默认关闭防上下文膨胀）
 - **MCP Streamable HTTP 传输**：`/mcp add-http <名称> <URL>` 连接远程 MCP server（SSE/JSON 双响应解析 + Mcp-Session-Id 会话头，MCP 2025-06-18+ 协议）
 - **SSRF 三层防护**：主机名形态（IPv4/IPv6 私网段）+ DNS 解析逐 IP 校验（防重绑定）+ 重定向逐跳校验（≤5 跳）——http_get 与 /claw 统一走 src/kernel/ssrf.ts
 - **插件 API 开放层**：插件 ctx 新增 `on`（事件订阅）、`getConfig`（只读配置）、`log`（插件日志）——完整文档 docs/plugin-api.md；`/plugin new` 模板含订阅/配置/日志示例

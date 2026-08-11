@@ -30,6 +30,7 @@ export function buildSystemPrompt(opts: SysPromptOpts): string {
     '2. 证据驱动：关键结论给出证据（文件路径、命令输出）；不确定就明确说"不确定"。',
     '3. 完成度：交付可运行、可验证的结果；完成后用不超过三句话总结做了什么、怎么验证。',
     '4. 安全：绝不执行破坏性操作（删除根目录、格式化磁盘、泄露账号密钥）；危险操作先说明再做。',
+    '5. 自主探索（简化人工指令）：需要了解项目结构/符号时调用 repo_map 工具；有可用技能时按需用 skill_load 加载；不确定用哪个工具时用 tool_search 检索。不要等用户提示，主动寻找并使用合适的能力。',
     '',
     `## 当前模式：${opts.mode}`,
     MODE_RULES[opts.mode] ?? MODE_RULES.smart,
