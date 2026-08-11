@@ -9,6 +9,7 @@ import type { ClickEvent } from '../events/click-event.js'
 import type { FocusEvent } from '../events/focus-event.js'
 import type { KeyboardEvent } from '../events/keyboard-event.js'
 import type { MouseEvent } from '../events/mouse-event.js'
+import type { MultiClickEvent } from '../events/multi-click-event.js'
 import type { Styles } from '../styles.js'
 import * as warn from '../warn.js'
 export type Props = Except<Styles, 'textWrap'> & {
@@ -32,6 +33,14 @@ export type Props = Except<Styles, 'textWrap'> & {
    * ancestors; call `event.stopImmediatePropagation()` to stop bubbling.
    */
   onClick?: (event: ClickEvent) => void
+  /**
+   * Fired on double/triple-click RELEASE, on top of ink's word/line
+   * selection (which stays live for drag extension). Only works inside
+   * `<AlternateScreen>`. Separate channel from onClick — a component that
+   * declares only onClick never fires it twice on a double-click. The
+   * event bubbles; call `event.stopImmediatePropagation()` to stop it.
+   */
+  onMultiClick?: (event: MultiClickEvent) => void
   onMouseDown?: (event: MouseEvent) => void
   onMouseUp?: (event: MouseEvent) => void
   onMouseDrag?: (event: MouseEvent) => void
@@ -56,7 +65,7 @@ export type Props = Except<Styles, 'textWrap'> & {
  * `<Box>` is an essential Ink component to build your layout. It's like `<div style="display: flex">` in the browser.
  */
 function Box(t0: Props) {
-  const $ = _c(48)
+  const $ = _c(49)
   let autoFocus
   let children
   let flexDirection
@@ -66,6 +75,7 @@ function Box(t0: Props) {
   let onBlur
   let onBlurCapture
   let onClick
+  let onMultiClick
   let onFocus
   let onFocusCapture
   let onKeyDown
@@ -90,6 +100,7 @@ function Box(t0: Props) {
       tabIndex: t7,
       autoFocus: t8,
       onClick: t9,
+      onMultiClick: t22,
       onFocus: t10,
       onFocusCapture: t11,
       onBlur: t12,
@@ -109,6 +120,7 @@ function Box(t0: Props) {
     tabIndex = t7
     autoFocus = t8
     onClick = t9
+    onMultiClick = t22
     onFocus = t10
     onFocusCapture = t11
     onBlur = t12
@@ -186,6 +198,7 @@ function Box(t0: Props) {
     ref = $[19]
     style = $[20]
     tabIndex = $[21]
+    onMultiClick = $[48]
   }
 
   const t1 = style.overflowX ?? style.overflow ?? 'visible'
@@ -241,7 +254,8 @@ function Box(t0: Props) {
     $[43] !== onMouseLeave ||
     $[44] !== ref ||
     $[45] !== t3 ||
-    $[46] !== tabIndex
+    $[46] !== tabIndex ||
+    $[48] !== onMultiClick
   ) {
     t4 = (
       <ink-box
@@ -249,6 +263,7 @@ function Box(t0: Props) {
         onBlur={onBlur}
         onBlurCapture={onBlurCapture}
         onClick={onClick}
+        onMultiClick={onMultiClick}
         onFocus={onFocus}
         onFocusCapture={onFocusCapture}
         onKeyDown={onKeyDown}
@@ -283,6 +298,7 @@ function Box(t0: Props) {
     $[45] = t3
     $[46] = tabIndex
     $[47] = t4
+    $[48] = onMultiClick
   } else {
     t4 = $[47]
   }

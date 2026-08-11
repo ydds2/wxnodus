@@ -38,6 +38,45 @@ const FRAME_BATCH_MS = 16
 const MULTI_CLICK_MS = 500
 type MinimalEnv = Record<string, string | undefined>
 
+// ── A19：双击选词/三击选行（输入框字符串版——参考 ink 选区同款语义）──
+// 词字符：字母/数字/下划线/斜杠/点/连字符/加号/波浪号/反斜杠（iTerm2 默认词字符）
+const WORD_CHAR = /[\p{L}\p{N}_/.\-+~\\]/u
+
+const charClass = (ch: string | undefined): number => {
+  if (ch === undefined || ch === ' ' || ch === '\t' || ch === '\n') {
+    return 0
+  }
+
+  return WORD_CHAR.test(ch) ? 1 : 2
+}
+
+/** 双击词边界：向两侧扩展同 class 连续段（词=1/标点=2；空白不扩展）。 */
+export const wordBoundsAt = (value: string, offset: number): { end: number; start: number } => {
+  const pos = Math.max(0, Math.min(value.length, offset))
+  const cls = charClass(value[pos])
+
+  if (cls === 0) {
+    return { start: pos, end: pos }
+  }
+
+  let start = pos
+  let end = pos
+
+  while (start > 0 && charClass(value[start - 1]) === cls) start--
+  while (end < value.length && charClass(value[end]) === cls) end++
+
+  return { start, end }
+}
+
+/** 三击行边界：offset 所在的 \n 逻辑行。 */
+export const lineBoundsAt = (value: string, offset: number): { end: number; start: number } => {
+  const pos = Math.max(0, Math.min(value.length, offset))
+  const start = value.lastIndexOf('\n', pos - 1) + 1
+  const end = value.indexOf('\n', pos)
+
+  return { start, end: end === -1 ? value.length : end }
+}
+
 const invert = (s: string) => INV + s + INV_OFF
 const dim = (s: string) => DIM + s + DIM_OFF
 
@@ -470,7 +509,10 @@ export function TextInput({
   const localRenderTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lineWidthRef = useRef(stringWidth(value.includes('\n') ? value.slice(value.lastIndexOf('\n') + 1) : value))
   const mouseAnchorRef = useRef<null | number>(null)
-  const lastClickRef = useRef<{ at: number; offset: number }>({ at: 0, offset: -1 })
+  const lastClickRef = useRef<{ at: number; count: number; offset: number }>({ at: 0, count: 0, offset: -1 })
+  // A19：最近一次 press 是否触发多击（选词/选行/全选）——release 的
+  // onClick 据此保留高亮，不执行"点击定位+清选区"。
+  const lastMultiClickRef = useRef(false)
   const undo = useRef<{ cursor: number; value: string }[]>([])
   const redo = useRef<{ cursor: number; value: string }[]>([])
 
@@ -790,6 +832,19 @@ export function TextInput({
     setSel(null)
   }
 
+  /** A19：设置选区（start===end 时等价于清除——双击空白不产生选区）。 */
+  const setSelRange = (start: number, end: number) => {
+    if (start === end) {
+      clearSel()
+
+      return
+    }
+
+    const next = { start, end }
+    selRef.current = next
+    setSel(next)
+  }
+
   const selectAll = () => {
     const end = vRef.current.length
 
@@ -893,12 +948,21 @@ export function TextInput({
   const offsetAt = (e: { localCol?: number; localRow?: number }) =>
     offsetFromPosition(display, e.localRow ?? 0, e.localCol ?? 0, columns)
 
-  const isMultiClickAt = (offset: number) => {
+  /** A19：多击计数（同偏移 500ms 窗口内递增，cap 4=全选）。press 调用。 */
+  const clickCountAt = (offset: number): number => {
     const now = Date.now()
     const last = lastClickRef.current
-    lastClickRef.current = { at: now, offset }
 
-    return now - last.at < MULTI_CLICK_MS && offset === last.offset
+    if (now - last.at < MULTI_CLICK_MS && offset === last.offset) {
+      const count = Math.min(4, last.count + 1)
+      lastClickRef.current = { at: now, offset, count }
+
+      return count
+    }
+
+    lastClickRef.current = { at: now, offset, count: 1 }
+
+    return 1
   }
 
   if (mouseApiRef) {
@@ -1212,6 +1276,15 @@ export function TextInput({
         }
 
         e.stopImmediatePropagation?.()
+
+        // A19：多击（选词/选行/全选）后的释放保留高亮——onClick 不再
+        // 执行"点击定位+清选区"（否则双击/三击选区在释放瞬间消失）。
+        if (lastMultiClickRef.current) {
+          lastMultiClickRef.current = false
+
+          return
+        }
+
         clearSel()
         const next = offsetAt(e)
         setCur(next)
@@ -1244,10 +1317,22 @@ export function TextInput({
 
         e.stopImmediatePropagation?.()
         const offset = offsetAt(e)
+        const count = clickCountAt(offset)
 
-        if (isMultiClickAt(offset)) {
+        // A19：macOS 语义——双击选词 / 三击选行 / 四击全选（原"双击=全选"升级）。
+        if (count >= 2) {
+          lastMultiClickRef.current = true
           mouseAnchorRef.current = null
-          selectAll()
+
+          if (count === 2) {
+            const { start, end } = wordBoundsAt(vRef.current, offset)
+            setSelRange(start, end)
+          } else if (count === 3) {
+            const { start, end } = lineBoundsAt(vRef.current, offset)
+            setSelRange(start, end)
+          } else {
+            selectAll()
+          }
 
           return
         }

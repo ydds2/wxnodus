@@ -1,6 +1,35 @@
 import { Event } from './event.js'
 
 /**
+ * Modifier keys observed at press time. Decoded from the SGR mouse button
+ * code (0x04 = shift, 0x08 = alt, 0x10 = ctrl). metaKey is always false —
+ * the SGR encoding has no meta bit (xterm.js drops metaKey before encoding).
+ */
+export interface ClickModifiers {
+  readonly shiftKey: boolean
+  readonly ctrlKey: boolean
+  readonly altKey: boolean
+  readonly metaKey: boolean
+}
+
+export const NO_MODIFIERS: ClickModifiers = {
+  shiftKey: false,
+  ctrlKey: false,
+  altKey: false,
+  metaKey: false
+}
+
+/** Decode SGR button-code modifier bits (0x04 shift / 0x08 alt / 0x10 ctrl). */
+export function modifiersFromButton(button: number): ClickModifiers {
+  return {
+    shiftKey: (button & 0x04) !== 0,
+    ctrlKey: (button & 0x10) !== 0,
+    altKey: (button & 0x08) !== 0,
+    metaKey: false
+  }
+}
+
+/**
  * Mouse click event. Fired on left-button release without drag, only when
  * mouse tracking is enabled (i.e. inside <AlternateScreen>).
  *
@@ -29,10 +58,23 @@ export class ClickEvent extends Event {
    */
   readonly cellIsBlank: boolean
 
-  constructor(col: number, row: number, cellIsBlank: boolean) {
+  /** Shift was held at press time (SGR bit 0x04). */
+  readonly shiftKey: boolean
+  /** Ctrl was held at press time (SGR bit 0x10). */
+  readonly ctrlKey: boolean
+  /** Alt was held at press time (SGR bit 0x08). */
+  readonly altKey: boolean
+  /** Always false — the SGR encoding has no meta bit. */
+  readonly metaKey: boolean
+
+  constructor(col: number, row: number, cellIsBlank: boolean, modifiers: ClickModifiers = NO_MODIFIERS) {
     super()
     this.col = col
     this.row = row
     this.cellIsBlank = cellIsBlank
+    this.shiftKey = modifiers.shiftKey
+    this.ctrlKey = modifiers.ctrlKey
+    this.altKey = modifiers.altKey
+    this.metaKey = modifiers.metaKey
   }
 }

@@ -1,12 +1,15 @@
 import { Ansi, Box, NoSelect, Text } from '@wxnodus/ink'
 import { memo, useState, type ReactNode } from 'react'
 
+import { useAtom as useStore } from '../../app/stores/engine.js'
+
 import { TERMUX_TUI_MODE } from '../config/env.js'
 import { LONG_MSG } from '../config/limits.js'
 import { hasLeadGap } from '../domain/blockLayout.js'
 import { sectionMode } from '../domain/details.js'
 import { userDisplay } from '../domain/messages.js'
 import { ROLE } from '../domain/roles.js'
+import { writeClipboardText } from '../lib/clipboard.js'
 import { transcriptBodyWidth, transcriptGutterWidth } from '../lib/inputMetrics.js'
 import {
   boundedLiveRenderText,
@@ -16,8 +19,16 @@ import {
   sanitizeAnsiForRender,
   stripAnsi
 } from '../lib/text.js'
+import {
+  $selectedMessage,
+  clearSelectedMessage,
+  getUiState,
+  patchUiState,
+  selectMessage,
+  showSelectionHint
+} from '../runtime/viewStore.js'
 import type { Theme } from '../theme.js'
-import type { ActiveTool, DetailsMode, Msg, SectionVisibility } from '../types.js'
+import type { ActiveTool, DetailsMode, Msg, Role, SectionVisibility } from '../types.js'
 
 import { Md } from './markdown.js'
 import { StreamingMd } from './streamingMarkdown.js'
@@ -26,6 +37,36 @@ import { TodoPanel } from './todoPanel.js'
 
 // Collapse threshold for long system messages (system prompt etc.)
 const SYSTEM_COLLAPSE_CHARS = 400
+
+// A19：悬停提示文案（onMouseLeave 据此识别并清除，避免误伤选中/复制反馈）
+const HOVER_HINT = '单击选中 · 双击复制'
+
+// ── A19：消息行鼠标意图（纯函数——测试直接覆盖，组件闭包只做副作用）──
+export type MessageClickIntent =
+  | { type: 'clear' }
+  | { type: 'none' }
+  | { key: string; role: Role; text: string; type: 'select' }
+
+/** 单击意图：空白格→取消；无 key（不可点消息）→无动作；否则选中该消息。 */
+export const messageClickIntent = (
+  e: { cellIsBlank?: boolean },
+  msgKey: string | undefined,
+  msg: Msg
+): MessageClickIntent => {
+  if (e.cellIsBlank) {
+    return { type: 'clear' }
+  }
+
+  if (!msgKey) {
+    return { type: 'none' }
+  }
+
+  return { type: 'select', key: msgKey, text: msg.text, role: msg.role }
+}
+
+/** 双击意图：count===2 且可点 → 复制整条消息（三击保持 ink 选行高亮）。 */
+export const messageMultiClickIntent = (e: { clickCount?: number }, msgKey: string | undefined): boolean =>
+  e.clickCount === 2 && !!msgKey
 
 // A8：已发消息中 /skill:名 引用高亮（参考 splitSlashSkillRefs 同款）
 const SKILL_REF_RE = /(\/skill:[^\s，。！？,.;]+)/g
@@ -63,6 +104,7 @@ export const MessageLine = memo(function MessageLine({
   detailsModeCommandOverride = false,
   isStreaming = false,
   msg,
+  msgKey,
   prev,
   sections,
   t,
@@ -91,6 +133,62 @@ export const MessageLine = memo(function MessageLine({
   // Collapse toggle for long system messages
   const systemIsLong = msg.role === 'system' && msg.text.length > SYSTEM_COLLAPSE_CHARS
   const [systemOpen, setSystemOpen] = useState(false)
+
+  // ── A19：鼠标点选辅助 ────────────────────────────────────────────────
+  // 消息行只订阅 $selectedMessage（hint 变化不重渲染全部消息行）。
+  const selected = useStore($selectedMessage)
+  const isSelected = !!msgKey && selected?.key === msgKey
+  const [hovered, setHovered] = useState(false)
+
+  const copyMessageText = async () => {
+    const ok = await writeClipboardText(msg.text)
+    clearSelectedMessage()
+
+    if (ok) {
+      showSelectionHint(`✓ 已复制 ${msg.text.length} 字符`)
+    } else {
+      showSelectionHint('⚠ 复制失败：无可用剪贴板通道')
+    }
+  }
+
+  // 单击：选中该消息（内容区点击同样生效——cellIsBlank 才走取消）。
+  // 双击：复制整条消息（onMultiClick 是独立通道，单击 handler 不会重复触发）。
+  const handleMessageClick = (e: { cellIsBlank?: boolean }) => {
+    const intent = messageClickIntent(e, msgKey, msg)
+
+    if (intent.type === 'clear') {
+      clearSelectedMessage()
+
+      return
+    }
+
+    if (intent.type === 'select') {
+      selectMessage(intent.key, intent.text, intent.role)
+      showSelectionHint('已选中 · Ctrl+C 复制 · Esc 取消')
+    }
+  }
+
+  const handleMessageMultiClick = (e: { clickCount?: number }) => {
+    if (messageMultiClickIntent(e, msgKey)) {
+      void copyMessageText()
+    }
+  }
+
+  const handleMessageEnter = () => {
+    setHovered(true)
+
+    if (!getUiState().selectedMessage) {
+      showSelectionHint('单击选中 · 双击复制')
+    }
+  }
+
+  const handleMessageLeave = () => {
+    setHovered(false)
+
+    if (getUiState().selectionHint === HOVER_HINT) {
+      patchUiState({ selectionHint: null })
+    }
+  }
 
   // A12：timeline 事件消息（◈ 会话切换/委派完成等——参考 kind==='event' 同款）
   // 输出状态按情况区分颜色：失败/异常 → 红，完成/成功 → 绿，进行中/切换 → 紫，其余灰
@@ -258,6 +356,10 @@ export const MessageLine = memo(function MessageLine({
       flexDirection="column"
       marginBottom={msg.role === 'user' || isDiffSegment ? 1 : 0}
       marginTop={msg.role === 'user' || msg.kind === 'slash' || isDiffSegment || leadGap ? 1 : 0}
+      onClick={handleMessageClick}
+      onMultiClick={handleMessageMultiClick}
+      onMouseEnter={handleMessageEnter}
+      onMouseLeave={handleMessageLeave}
     >
       {showDetails && (
         <Box flexDirection="column" marginBottom={1}>
@@ -290,15 +392,20 @@ export const MessageLine = memo(function MessageLine({
 
       <Box>
         <NoSelect flexShrink={0} fromLeftEdge width={gutterWidth}>
-          <Text bold={msg.role === 'user'} color={prefix}>
+          <Text bold={msg.role === 'user'} color={isSelected || (hovered && !isSelected) ? t.color.accent : prefix}>
             {glyph}{' '}
           </Text>
         </NoSelect>
 
-        {/* user 消息带底色块：长会话里每轮提问一眼可定位（glyph 保留在块外） */}
+        {/* user 消息带底色块：长会话里每轮提问一眼可定位（glyph 保留在块外）。
+            选中时整块换 selectionBg 高亮；assistant 不加 paddingX（避免换行跳动）。 */}
         <Box
           width={transcriptBodyWidth(cols, msg.role, t.brand.prompt, TERMUX_TUI_MODE)}
-          {...(msg.role === 'user' ? { backgroundColor: t.color.userBg, paddingX: 1 } : {})}
+          {...(isSelected
+            ? { backgroundColor: t.color.selectionBg, ...(msg.role === 'user' ? { paddingX: 1 } : {}) }
+            : msg.role === 'user'
+              ? { backgroundColor: t.color.userBg, paddingX: 1 }
+              : {})}
         >
           {content}
         </Box>
@@ -325,6 +432,8 @@ interface MessageLineProps {
   detailsModeCommandOverride?: boolean
   isStreaming?: boolean
   msg: Msg
+  /** A19：虚拟行 key（appLayout row.key）——鼠标点选的唯一标识。 */
+  msgKey?: string
   // The block rendered directly above this one. Drives the group-boundary
   // lead gap (see domain/blockLayout.ts::hasLeadGap). Undefined at the top of
   // the transcript or when spacing is irrelevant.

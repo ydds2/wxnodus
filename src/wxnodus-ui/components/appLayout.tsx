@@ -5,7 +5,7 @@ import { Fragment, memo, useMemo, useRef } from 'react'
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { AppLayoutProps } from '../bridge/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../runtime/promptStore.js'
-import { $uiState } from '../runtime/viewStore.js'
+import { clearSelectedMessage, $uiState } from '../runtime/viewStore.js'
 import { INLINE_MODE, SHOW_FPS, TERMUX_TUI_MODE } from '../config/env.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
 import { prevRenderedMsg } from '../domain/blockLayout.js'
@@ -95,6 +95,8 @@ const TranscriptPane = memo(function TranscriptPane({
         onClick={(e: { cellIsBlank?: boolean }) => {
           if (e.cellIsBlank) {
             actions.clearSelection()
+            // A19：点空白同时取消消息选中（与"点击空白清选区"约定一致）
+            clearSelectedMessage()
           }
         }}
         ref={transcript.scrollRef}
@@ -129,6 +131,7 @@ const TranscriptPane = memo(function TranscriptPane({
                   detailsMode={ui.detailsMode}
                   detailsModeCommandOverride={ui.detailsModeCommandOverride}
                   msg={row.msg}
+                  msgKey={row.key}
                   prev={prevRenderedMsg(
                     i => transcript.virtualRows[i]?.msg,
                     row.index,
@@ -382,6 +385,7 @@ const StatusRulePane = memo(function StatusRulePane({
         modelReasoningEffort={ui.info?.reasoning_effort}
         notice={ui.notice}
         onSessionCountClick={() => patchOverlayState({ sessions: true })}
+        selectionHint={ui.selectionHint}
         sessionStartedAt={status.sessionStartedAt}
         showCost={ui.showCost}
         status={ui.status}

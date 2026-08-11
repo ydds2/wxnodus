@@ -438,6 +438,7 @@ export function StatusRule({
   modelReasoningEffort,
   indicatorStyle = 'kaomoji',
   notice,
+  selectionHint,
   usage,
   bgCount,
   lastTurnEndedAt,
@@ -466,6 +467,13 @@ export function StatusRule({
   const bar = !segs.compactCtx && usage.context_max ? ctxBar(pct) : ''
   const modelText = modelLabel(model, modelReasoningEffort, modelFast)
 
+  // A19：鼠标辅助提示占位（选中/悬停/复制反馈）——优先级高于 notice 与
+  // status，busy 时也让 FaceTicker 让位（提示是即时操作反馈，3s 自动清）。
+  // 宽度封顶，超长截断，不挤压 model │ ctx。
+  const HINT_RESERVE_MAX = 32
+  const showHint = !!selectionHint
+  const hintReserve = showHint ? Math.min(stringWidth(selectionHint), HINT_RESERVE_MAX) : 0
+
   // A credits notice replaces the status/verb slot, but only when idle —
   // while busy the FaceTicker always wins (R1 render priority). The notice
   // text carries its own glyph; we only tint it (R1) and let it shrink (R3-M7).
@@ -483,11 +491,13 @@ export function StatusRule({
   // yields first. The busy face width depends on the active /indicator style
   // (kaomoji is wide + verb; unicode is a bare 1-col spinner). When a notice
   // occupies the slot it reserves only `noticeReserve` (it shrinks/truncates).
-  const slotWidth = busy
-    ? busyIndicatorWidth(indicatorStyle, turnStartedAt != null)
-    : showNotice
-      ? noticeReserve
-      : stringWidth(status)
+  const slotWidth = showHint
+    ? hintReserve
+    : busy
+      ? busyIndicatorWidth(indicatorStyle, turnStartedAt != null)
+      : showNotice
+        ? noticeReserve
+        : stringWidth(status)
 
   const essentialWidth =
     stringWidth('─ ') +
@@ -575,9 +585,9 @@ export function StatusRule({
         <Box flexDirection="row" flexShrink={0}>
           <Text color={t.color.accent} bold>{'▍'}</Text>
           <Text color={t.color.border}>{'─ '}</Text>
-          {busy ? (
+          {busy && !showHint ? (
             <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} />
-          ) : showNotice ? null : (
+          ) : showHint || showNotice ? null : (
             <Text color={statusColor} bold={status === 'running…'} wrap="truncate-end">
               {STATUS_LABEL[status] ?? status}
             </Text>
@@ -585,8 +595,15 @@ export function StatusRule({
         </Box>
         {/* Notice slot — the only shrinkable left element (R3-M7). Sits in a
             flexShrink={1} box with truncate-end so it yields/ellipsizes
-            before the pinned model │ ctx box ever clips. */}
-        {showNotice ? (
+            before the pinned model │ ctx box ever clips. A19: the mouse
+            selection hint shares this slot and OUTRANKS the notice. */}
+        {showHint ? (
+          <Box flexDirection="row" flexShrink={1} overflow="hidden">
+            <Text color={t.color.accent} wrap="truncate-end">
+              {selectionHint}
+            </Text>
+          </Box>
+        ) : showNotice ? (
           <Box flexDirection="row" flexShrink={1} overflow="hidden">
             <Text color={noticeColor(notice!.level, t)} wrap="truncate-end">
               {notice!.text}
@@ -847,6 +864,8 @@ interface StatusRuleProps {
   modelReasoningEffort?: string
   indicatorStyle?: IndicatorStyle
   notice?: Notice | null
+  /** A19：鼠标辅助提示（选中/悬停/复制反馈）——优先于 notice 与 status。 */
+  selectionHint?: null | string
   sessionStartedAt?: null | number
   showCost: boolean
   status: string

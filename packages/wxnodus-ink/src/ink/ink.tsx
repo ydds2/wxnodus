@@ -22,9 +22,10 @@ import { FRAME_INTERVAL_MS } from './constants.js'
 import * as dom from './dom.js'
 import { markDirty } from './dom.js'
 import { KeyboardEvent } from './events/keyboard-event.js'
+import type { ClickModifiers } from './events/click-event.js'
 import { FocusManager } from './focus.js'
 import { emptyFrame, type Frame, type FrameEvent } from './frame.js'
-import { dispatchClick, dispatchHover, dispatchMouse } from './hit-test.js'
+import { dispatchClick, dispatchHover, dispatchMouse, dispatchMultiClick } from './hit-test.js'
 import { applyHyperlinkHoverHighlight } from './hyperlinkHover.js'
 import instances from './instances.js'
 import { LogUpdate } from './log-update.js'
@@ -1830,14 +1831,26 @@ export default class Ink {
    * altScreenActive — clicks only make sense with a fixed viewport where
    * nodeCache rects map 1:1 to terminal cells (no scrollback offset).
    */
-  dispatchClick(col: number, row: number): boolean {
+  dispatchClick(col: number, row: number, modifiers?: ClickModifiers): boolean {
     if (!this.altScreenActive) {
       return false
     }
 
     const blank = isEmptyCellAt(this.frontFrame.screen, col, row)
 
-    return dispatchClick(this.rootNode, col, row, blank)
+    return dispatchClick(this.rootNode, col, row, blank, modifiers)
+  }
+  /**
+   * Hit-test and bubble a MultiClickEvent (double/triple-click release) to
+   * onMultiClick handlers. Separate channel from dispatchClick — single
+   * clicks never reach here. Gated on altScreenActive like dispatchClick.
+   */
+  dispatchMultiClick(col: number, row: number, count: 2 | 3, modifiers?: ClickModifiers): boolean {
+    if (!this.altScreenActive) {
+      return false
+    }
+
+    return dispatchMultiClick(this.rootNode, col, row, count, isEmptyCellAt(this.frontFrame.screen, col, row), modifiers)
   }
   dispatchMouseDown(col: number, row: number, button: number): dom.DOMElement | undefined {
     if (!this.altScreenActive) {
@@ -2347,6 +2360,7 @@ export default class Ink {
         onMouseDragAt={this.dispatchMouseDrag}
         onMouseUpAt={this.dispatchMouseUp}
         onMultiClick={this.handleMultiClick}
+        onMultiClickAt={this.dispatchMultiClick}
         onOpenHyperlink={this.openHyperlink}
         onSelectionChange={this.notifySelectionChange}
         onSelectionDrag={this.handleSelectionDrag}

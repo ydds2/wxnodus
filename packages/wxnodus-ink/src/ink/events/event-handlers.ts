@@ -2,6 +2,7 @@ import type { ClickEvent } from './click-event.js'
 import type { FocusEvent } from './focus-event.js'
 import type { KeyboardEvent } from './keyboard-event.js'
 import type { MouseEvent } from './mouse-event.js'
+import type { MultiClickEvent } from './multi-click-event.js'
 import type { PasteEvent } from './paste-event.js'
 import type { ResizeEvent } from './resize-event.js'
 
@@ -11,6 +12,7 @@ type PasteEventHandler = (event: PasteEvent) => void
 type ResizeEventHandler = (event: ResizeEvent) => void
 type ClickEventHandler = (event: ClickEvent) => void
 type MouseEventHandler = (event: MouseEvent) => void
+type MultiClickEventHandler = (event: MultiClickEvent) => void
 type HoverEventHandler = () => void
 
 /**
@@ -35,6 +37,7 @@ export type EventHandlerProps = {
   onResize?: ResizeEventHandler
 
   onClick?: ClickEventHandler
+  onMultiClick?: MultiClickEventHandler
   onMouseDown?: MouseEventHandler
   onMouseUp?: MouseEventHandler
   onMouseDrag?: MouseEventHandler
@@ -56,6 +59,7 @@ export const HANDLER_FOR_EVENT: Record<
   paste: { bubble: 'onPaste', capture: 'onPasteCapture' },
   resize: { bubble: 'onResize' },
   click: { bubble: 'onClick' },
+  multiclick: { bubble: 'onMultiClick' },
   mousedown: { bubble: 'onMouseDown' },
   mouseup: { bubble: 'onMouseUp' },
   mousedrag: { bubble: 'onMouseDrag' }
@@ -76,6 +80,7 @@ export const EVENT_HANDLER_PROPS = new Set<string>([
   'onPasteCapture',
   'onResize',
   'onClick',
+  'onMultiClick',
   'onMouseDown',
   'onMouseUp',
   'onMouseDrag',

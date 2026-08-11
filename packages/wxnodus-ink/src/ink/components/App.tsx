@@ -6,6 +6,8 @@ import { stopCapturingEarlyInput } from '../../utils/earlyInput.js'
 import { isMouseClicksDisabled } from '../../utils/fullscreen.js'
 import { logError } from '../../utils/log.js'
 import type { DOMElement } from '../dom.js'
+import type { ClickModifiers } from '../events/click-event.js'
+import { modifiersFromButton, NO_MODIFIERS } from '../events/click-event.js'
 import { EventEmitter } from '../events/emitter.js'
 import { InputEvent } from '../events/input-event.js'
 import { TerminalFocusEvent } from '../events/terminal-focus-event.js'
@@ -69,10 +71,14 @@ type Props = {
   // onClick handlers. Returns true if a DOM handler consumed the click.
   // No-op (returns false) outside fullscreen mode (Ink.dispatchClick
   // gates on altScreenActive).
-  readonly onClickAt: (col: number, row: number) => boolean
+  readonly onClickAt: (col: number, row: number, modifiers?: ClickModifiers) => boolean
   readonly onMouseDownAt: (col: number, row: number, button: number) => DOMElement | undefined
   readonly onMouseUpAt: (target: DOMElement, col: number, row: number, button: number) => void
   readonly onMouseDragAt: (target: DOMElement, col: number, row: number, button: number) => void
+  // Dispatch a DOM multi-click (double/triple-click release) to
+  // onMultiClick handlers. Separate channel from onClickAt — fired on top
+  // of ink's word/line selection without disturbing it.
+  readonly onMultiClickAt: (col: number, row: number, count: 2 | 3, modifiers?: ClickModifiers) => boolean
   // Dispatch hover (onMouseEnter/onMouseLeave) as the pointer moves over
   // DOM elements. Called for mode-1003 motion events with no button held.
   // No-op outside fullscreen (Ink.dispatchHover gates on altScreenActive).
@@ -167,6 +173,10 @@ export default class App extends PureComponent<Props, State> {
   lastClickCol = -1
   lastClickRow = -1
   clickCount = 0
+  // Modifier keys observed at the last left-press (SGR bits 0x04/0x08/0x10).
+  // Handed to DOM onClick/onMultiClick so handlers can distinguish
+  // Shift/Ctrl/Alt+click (the SGR encoding has no meta bit).
+  lastPressModifiers: ClickModifiers = NO_MODIFIERS
   // Deferred hyperlink-open timer — cancelled if a second click arrives
   // within MULTI_CLICK_TIMEOUT_MS (so double-clicking a hyperlink selects
   // the word without also opening the browser). DOM onClick dispatch is
@@ -766,6 +776,8 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
     // receiving alt means macOptionClickForcesSelection is OFF (otherwise
     // xterm.js would have consumed the event for native selection).
     sel.lastPressHadAlt = (m.button & 0x08) !== 0
+    // Keep the full modifier set for DOM onClick/onMultiClick dispatch.
+    app.lastPressModifiers = modifiersFromButton(m.button)
     app.props.onSelectionChange()
 
     return
@@ -797,6 +809,21 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
 
   finishSelection(sel)
 
+  // Multi-click release: ink's word/line selection is already live (the
+  // press set anchor, so hasSelection is true and the single-click branch
+  // below is skipped). Dispatch the DOM multi-click on this separate
+  // channel so components with onMultiClick can act on double/triple
+  // clicks (copy a message, expand all, ...) without the single-click
+  // handlers firing twice — and without disturbing the highlight, which a
+  // subsequent drag can still extend by word/line.
+  if (app.clickCount >= 2 && sel.anchor) {
+    const count = app.clickCount === 2 ? 2 : 3
+    app.props.onMultiClickAt(col, row, count, app.lastPressModifiers)
+    app.props.onSelectionChange()
+
+    return
+  }
+
   // NOTE: unlike the old release-based detection we do NOT reset clickCount
   // on release-after-drag. This aligns with NSEvent.clickCount semantics:
   // an intervening drag doesn't break the click chain. Practical upside:
@@ -813,7 +840,7 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
     // Single click: dispatch DOM click immediately (cursor repositioning
     // etc. are latency-sensitive). If no DOM handler consumed it, defer
     // the hyperlink check so a second click can cancel it.
-    if (!app.props.onClickAt(col, row)) {
+    if (!app.props.onClickAt(col, row, app.lastPressModifiers)) {
       // Resolve the hyperlink URL synchronously while the screen buffer
       // still reflects what the user clicked — deferring only the
       // browser-open so double-click can cancel it.

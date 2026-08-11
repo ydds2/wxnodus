@@ -18,6 +18,8 @@ import { getInputSelection } from '../runtime/selectionStore.js'
 import type { InputHandlerContext, InputHandlerResult } from '../bridge/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../runtime/promptStore.js'
 import { turnController } from '../runtime/flowController.js'
+import { clearSelectedMessage, showSelectionHint } from '../runtime/viewStore.js'
+import { writeClipboardText } from '../lib/clipboard.js'
 import { patchTurnState } from '../runtime/flowStore.js'
 import { getUiState } from '../runtime/viewStore.js'
 
@@ -263,6 +265,12 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   useInput((ch, key) => {
     const live = getUiState()
 
+    // A19：开始输入（可打印字符/编辑键）即取消消息选中——选中态只在
+    // 空闲交互时有效，避免 stale 选中截胡后续 Ctrl+C 语义。
+    if (live.selectedMessage && (ch || key.enter || key.backspace || key.delete || key.tab)) {
+      clearSelectedMessage()
+    }
+
     // Ctrl+K 命令面板：全局最高优先级（面板开着时再按一次即关闭——toggle）
     if (isCtrl(key, ch, 'k')) {
       patchOverlayState(prev => ({ ...prev, commandPalette: !prev.commandPalette }))
@@ -455,6 +463,11 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       return clearSelection()
     }
 
+    // A19：Esc 取消消息选中（优先级低于 ink 选区——最近动作先清）。
+    if (key.escape && getUiState().selectedMessage) {
+      return clearSelectedMessage()
+    }
+
     if (key.upArrow && !cState.inputBuf.length) {
       const inputSel = getInputSelection()
       const cursor = inputSel && inputSel.start === inputSel.end ? inputSel.start : null
@@ -484,6 +497,23 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     if (isCopyShortcut(key, ch)) {
       if (terminal.hasSelection) {
         return copySelection()
+      }
+
+      // A19：消息选中 → 复制整条消息。优先级：ink 选区 > 消息选中 > 输入框选区。
+      const selMsg = getUiState().selectedMessage
+
+      if (selMsg) {
+        void writeClipboardText(selMsg.text).then(ok => {
+          clearSelectedMessage()
+
+          if (ok) {
+            showSelectionHint(`✓ 已复制 ${selMsg.text.length} 字符`)
+          } else {
+            showSelectionHint('⚠ 复制失败：无可用剪贴板通道')
+          }
+        })
+
+        return
       }
 
       const inputSel = getInputSelection()

@@ -1,7 +1,9 @@
 import type { DOMElement } from './dom.js'
+import type { ClickModifiers } from './events/click-event.js'
 import { ClickEvent } from './events/click-event.js'
 import type { EventHandlerProps } from './events/event-handlers.js'
 import { MouseEvent } from './events/mouse-event.js'
+import { MultiClickEvent } from './events/multi-click-event.js'
 import { nodeCache } from './node-cache.js'
 
 function hitTestAbsoluteDescendants(node: DOMElement, col: number, row: number): DOMElement | null {
@@ -83,7 +85,13 @@ export function hitTest(node: DOMElement, col: number, row: number): DOMElement 
  * fire. Stops when a handler calls stopImmediatePropagation(). Returns
  * true if at least one onClick handler fired.
  */
-export function dispatchClick(root: DOMElement, col: number, row: number, cellIsBlank = false): boolean {
+export function dispatchClick(
+  root: DOMElement,
+  col: number,
+  row: number,
+  cellIsBlank = false,
+  modifiers?: ClickModifiers
+): boolean {
   let target: DOMElement | undefined = hitTest(root, col, row) ?? undefined
 
   if (!target) {
@@ -106,11 +114,60 @@ export function dispatchClick(root: DOMElement, col: number, row: number, cellIs
     }
   }
 
-  const event = new ClickEvent(col, row, cellIsBlank)
+  const event = new ClickEvent(col, row, cellIsBlank, modifiers)
   let handled = false
 
   while (target) {
     const handler = target._eventHandlers?.onClick as ((event: ClickEvent) => void) | undefined
+
+    if (handler) {
+      handled = true
+      const rect = nodeCache.get(target)
+
+      if (rect) {
+        event.localCol = col - rect.x
+        event.localRow = row - rect.y
+      }
+
+      handler(event)
+
+      if (event.didStopImmediatePropagation()) {
+        return true
+      }
+    }
+
+    target = target.parentNode
+  }
+
+  return handled
+}
+
+/**
+ * Hit-test the root at (col, row) and bubble a MultiClickEvent from the
+ * deepest containing node up through parentNode. Only nodes with an
+ * onMultiClick handler fire — this is a separate channel from onClick, so
+ * double-clicking an onClick-only component never fires its handler twice.
+ * Stops when a handler calls stopImmediatePropagation().
+ */
+export function dispatchMultiClick(
+  root: DOMElement,
+  col: number,
+  row: number,
+  count: 2 | 3,
+  cellIsBlank = false,
+  modifiers?: ClickModifiers
+): boolean {
+  let target: DOMElement | undefined = hitTest(root, col, row) ?? undefined
+
+  if (!target) {
+    return false
+  }
+
+  const event = new MultiClickEvent(col, row, cellIsBlank, count, modifiers)
+  let handled = false
+
+  while (target) {
+    const handler = target._eventHandlers?.onMultiClick as ((event: MultiClickEvent) => void) | undefined
 
     if (handler) {
       handled = true

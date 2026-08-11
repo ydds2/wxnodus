@@ -14,6 +14,7 @@ import type {
   DetailsMode,
   Msg,
   PanelSection,
+  Role,
   SecretReq,
   SectionVisibility,
   SessionInfo,
@@ -149,6 +150,23 @@ export interface UiState {
   usage: Usage
   /** A7：系统电池（system.battery RPC 轮询；无电池/不可用 → null） */
   battery: BatteryInfo | null
+  /**
+   * A19：鼠标单击选中的消息快照（点击时固定——流式更新不影响副本）。
+   * null 表示无选中。Esc / Ctrl+C / 点击空白 / 再次单击取消。
+   */
+  selectedMessage: null | SelectedMessage
+  /** A19：鼠标辅助提示（选中/悬停/复制反馈，3s 自动清除）。 */
+  selectionHint: null | string
+}
+
+/**
+ * A19：消息区鼠标点选的快照。`key` 是虚拟行 key（appLayout row.key），
+ * 用于选中高亮匹配；`text` 是点击瞬间的整条消息文本（复制用）。
+ */
+export interface SelectedMessage {
+  key: string
+  text: string
+  role: Role
 }
 
 // A7：电池状态（参考 SystemBatteryResponse 同款形状）
