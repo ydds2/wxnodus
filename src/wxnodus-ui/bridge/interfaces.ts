@@ -90,6 +90,7 @@ export interface OverlayState {
   agentsInitialHistoryIndex: number
   approval: ApprovalReq | null
   clarify: ClarifyReq | null
+  commandPalette: boolean
   confirm: ConfirmReq | null
   modelPicker: boolean
   pager: null | PagerState
@@ -426,6 +427,8 @@ export interface AppOverlaysProps {
   onModelSelect: (value: string) => void
   onNewLiveSession: () => void
   onNewPromptSession: (prompt: string, modelArg?: string) => void
+  /** Ctrl+K 命令面板执行（命令/技能 → 提交输入流） */
+  onPaletteSubmit: (text: string) => void
   onResumeSelect: (sessionId: string) => void
   onSecretSubmit: (value: string) => void
   onSudoSubmit: (pw: string) => void

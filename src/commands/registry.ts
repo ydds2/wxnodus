@@ -2,7 +2,7 @@
 // 设计：核心命令面（自然语言主线）+ 分类符号 + 全量描述 + 别名表
 export const SLASH: string[] = [
   // 对话
-  '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint',
+  '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint', '/versions', '/snapshot',
   // 模型
   '/key', '/model', '/status', '/doctor', '/version', '/thinking', '/hooks',
   // 记忆（黑洞引擎）
@@ -26,7 +26,7 @@ export const SLASH: string[] = [
 ];
 
 export const COMMAND_CAT: Record<string, string> = {
-  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈',
+  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈', '/versions': '◈', '/snapshot': '◈',
   '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆',
@@ -43,7 +43,9 @@ export const COMMAND_DESC: Record<string, string> = {
   '/help': '查看帮助（/help <命令> 展开单个）',
   '/clear': '清空会话视图',
   '/undo': '撤销最近 N 轮（/undo list 查看可撤销轮次）',
-  '/usage': '用量统计（token/成本）',
+  '/versions': '文件时间机器（/versions <文件> 查看历史版本，restore 回滚）',
+  '/snapshot': '目录级快照（建档/整体回滚，/snapshot restore）',
+  '/usage': '用量统计（token/成本；--waterfall 瀑布）',
   '/quit': '退出',
   '/new': '新建空会话并切换',
   '/title': '重命名当前会话',

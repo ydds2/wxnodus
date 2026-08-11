@@ -5,6 +5,7 @@ import React from 'react';
 import { DARK_THEME, LIGHT_THEME, DEFAULT_THEME } from '../src/wxnodus-ui/theme.js';
 import { MessageLine } from '../src/wxnodus-ui/components/messageLine.js';
 import { Md } from '../src/wxnodus-ui/components/markdown.js';
+import { CommandPalette } from '../src/wxnodus-ui/components/commandPalette.js';
 import { statusBarSegments } from '../src/wxnodus-ui/components/appChrome.js';
 import { ApprovalPrompt } from '../src/wxnodus-ui/components/prompts.js';
 import { filterCommands, isSuggesting } from '../src/wxnodus-ui/lib/suggest.js';
@@ -128,5 +129,34 @@ describe('审批弹层（V3 ApprovalPrompt）', () => {
       <ApprovalPrompt cols={80} req={{ command: 'rm -rf tmp', description: '运行命令', allowPermanent: false }} t={t} onChoice={() => {}} />
     );
     expect(lastFrame()).not.toContain('Always allow');
+  });
+});
+
+describe('命令面板（V3 Ctrl+K CommandPalette）', () => {
+  const gw = {
+    request: async (method: string) => {
+      if (method === 'commands.catalog') {
+        return { pairs: [['/help', '查看帮助'], ['/usage', '用量统计']] as Array<[string, string]> };
+      }
+      if (method === 'skills.manage') {
+        return { skills: { 工具: ['repo-map'] } };
+      }
+      if (method === 'session.active_list') {
+        return { sessions: [{ id: 's1', title: '测试会话' }] };
+      }
+      return {};
+    }
+  } as any;
+  it('三路数据渲染：命令/技能/会话条目', async () => {
+    const { lastFrame, unmount } = render(
+      <CommandPalette cols={80} currentSessionId="s1" gw={gw} onClose={() => {}} onSessionSelect={() => {}} onSubmit={() => {}} t={DEFAULT_THEME} />
+    );
+    await new Promise(r => setTimeout(r, 120));
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('命令面板');
+    expect(frame).toContain('/help');
+    expect(frame).toContain('repo-map');
+    expect(frame).toContain('测试会话');
+    unmount();
   });
 });

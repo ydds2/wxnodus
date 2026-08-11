@@ -264,6 +264,10 @@ const ComposerPane = memo(function ComposerPane({
           onModelSelect={actions.onModelSelect}
           onNewLiveSession={actions.newLiveSession}
           onNewPromptSession={actions.newPromptSession}
+          onPaletteSubmit={(text) => {
+            composer.updateInput(text)
+            composer.submit(text)
+          }}
           onResumeSelect={actions.resumeById}
           pagerPageSize={composer.pagerPageSize}
         />

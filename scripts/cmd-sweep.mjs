@@ -29,7 +29,7 @@ const groups = {
   '记忆': ['/memory', '/hole 测试', '/compact', '/digest', '/curator', '/task show'],
   '计划': ['/plan', '/flow 用户注册流程', '/import'],
   '构建': ['/build', '/deploy', '/forge', '/skill', '/skill list', '/skill inspect demo', '/skill new sweep-tmp', '/learn test-skill', '/gate', '/fdr', '/evidence', '/plugin', '/plugin list'],
-  '会话': ['/fork', '/init', '/checkpoint list', '/checkpoint'],
+  '会话': ['/fork', '/init', '/checkpoint list', '/checkpoint', '/versions', '/snapshot', '/memory list', '/usage --waterfall'],
   '钩子': ['/hooks'],
   '安全': ['/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt'],
   '系统': ['/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench'],

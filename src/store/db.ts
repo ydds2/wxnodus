@@ -79,7 +79,8 @@ export function openDB(dataDir: string): Db {
       content TEXT NOT NULL,
       tool_call_id TEXT,
       archived INTEGER NOT NULL DEFAULT 0,
-      ts INTEGER NOT NULL
+      ts INTEGER NOT NULL,
+      salience REAL NOT NULL DEFAULT 1.0
     );
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
     CREATE TABLE IF NOT EXISTS settings (
@@ -166,6 +167,12 @@ export function openDB(dataDir: string): Db {
   }
 
   // 幂等迁移 + schema_version
+  // V2：messages.salience（记忆置顶/淡化）——旧库无此列，ALTER 补列（幂等：已存在即跳过）
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN salience REAL NOT NULL DEFAULT 1.0`);
+  } catch {
+    // 列已存在（新库建表已含）——忽略
+  }
   const ver = db.prepare(`SELECT value FROM settings WHERE key='schema_version'`).get() as any;
   if (!ver) {
     db.prepare(`INSERT INTO settings (key, value) VALUES ('schema_version', ?)`).run(String(SCHEMA_VERSION));
@@ -240,7 +247,7 @@ export function forkSession(db: Db, srcId: string, newId: string, titleSuffix = 
 }
 
 // 全文搜索（FTS5）：查询词经 bigram 转换后 OR 展开，命中返回消息行
-export function searchMessages(db: Db, query: string, opts: { limit?: number; sessionId?: string } = {}): Array<{ id: number; session_id: string; role: string; content: string; ts: number }> {
+export function searchMessages(db: Db, query: string, opts: { limit?: number; sessionId?: string } = {}): Array<{ id: number; session_id: string; role: string; content: string; ts: number; salience: number }> {
   const limit = opts.limit ?? 10;
   try {
     const terms = bigramZh(query).split(/\s+/).filter(Boolean);
@@ -248,7 +255,7 @@ export function searchMessages(db: Db, query: string, opts: { limit?: number; se
     const match = terms.map(t => `"${t.replace(/"/g, '""')}"`).join(' OR ');
     const where = opts.sessionId ? `AND m.session_id = @sid` : '';
     return db.prepare(`
-      SELECT m.id, m.session_id, m.role, m.content, m.ts
+      SELECT m.id, m.session_id, m.role, m.content, m.ts, m.salience
       FROM messages m JOIN messages_fts f ON f.rowid = m.id
       WHERE messages_fts MATCH @match ${where}
       ORDER BY rank LIMIT @limit
@@ -256,7 +263,7 @@ export function searchMessages(db: Db, query: string, opts: { limit?: number; se
   } catch {
     // FTS 不可用降级：LIKE 模糊
     return db.prepare(`
-      SELECT id, session_id, role, content, ts FROM messages
+      SELECT id, session_id, role, content, ts, salience FROM messages
       WHERE content LIKE @q ${opts.sessionId ? `AND session_id = @sid` : ''}
       ORDER BY id DESC LIMIT @limit
     `).all({ q: `%${query}%`, sid: opts.sessionId, limit }) as any[];

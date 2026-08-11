@@ -3,7 +3,7 @@
 //       /undo fs list｜restore <编号> 安全撤销编辑（不依赖 git，任何工作区可用）。
 //       最多保留 SHADOW_MAX 份（FIFO 淘汰），快照为本地数据（数据不出机红线）
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 
 export interface UndoShadow {
@@ -84,4 +84,66 @@ export function restoreShadow(dataDir: string, idOrIndex: string): { ok: boolean
   } catch (e: any) {
     return { ok: false, message: `恢复失败：${String(e?.message ?? e).slice(0, 120)}` };
   }
+}
+
+// ── 文件时间机器 ────────────────────────────────────────────
+// /versions 与 /snapshot 的数据源：快照链本身就是「版本时间线」——
+// 同一文件的多份快照按 ts 排序即历史版本，无需额外存储。
+
+/** 某文件的历史版本（新的在前）：/versions <file> 的数据源 */
+export function versionsOfFile(dataDir: string, absPath: string): UndoShadow[] {
+  const norm = (p: string) => p.replace(/\\/g, '/');
+  const target = norm(absPath);
+  return listShadows(dataDir).filter(s => norm(s.path) === target);
+}
+
+/** 目录级快照：递归备份目录内文本文件（跳过 node_modules/.git/dist 等与二进制/大文件）；返回快照数 */
+export function snapshotDir(dataDir: string, dir: string, opts: { maxBytes?: number } = {}): { count: number; files: string[]; skipped: string[] } {
+  const maxBytes = opts.maxBytes ?? 1024 * 1024; // 1MB 上限（快照体积控制）
+  const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage', 'build', 'out', '.next', '.venv', '__pycache__', '.wxnodus', '.zcode', 'undo-shadows']);
+  const count = { n: 0, files: [] as string[], skipped: [] as string[] };
+  const walk = (cur: string) => {
+    let entries: string[] = [];
+    try { entries = readdirSync(cur, { withFileTypes: true }).map(e => e.name); } catch { return; }
+    for (const name of entries) {
+      const full = join(cur, name);
+      let isDir = false;
+      try { isDir = statSync(full).isDirectory(); } catch { /* 无权限 */ }
+      if (isDir) {
+        if (!SKIP_DIRS.has(name)) walk(full);
+        continue;
+      }
+      try {
+        const st = statSync(full);
+        if (!st.isFile() || st.size > maxBytes || st.size === 0) { count.skipped.push(full); continue; }
+        const buf = readFileSync(full);
+        // NUL 字节判定二进制（png/exe 等）——文本文件不应含 \0
+        if (buf.includes(0)) { count.skipped.push(full); continue; }
+        if (snapshotFile(dataDir, full, buf.toString('utf8'))) {
+          count.n++;
+          count.files.push(full);
+        }
+      } catch { count.skipped.push(full); }
+    }
+  };
+  walk(dir);
+  return { count: count.n, files: count.files, skipped: count.skipped };
+}
+
+/** 恢复目录内全部快照（每文件恢复到最新版本）；返回恢复的文件数 */
+export function restoreDirShadows(dataDir: string, dir: string): { ok: number; failed: string[] } {
+  const norm = (p: string) => p.replace(/\\/g, '/');
+  const target = norm(dir);
+  const shadows = listShadows(dataDir).filter(s => norm(s.path).startsWith(target + '/'));
+  let ok = 0;
+  const failed: string[] = [];
+  for (const s of shadows) {
+    try {
+      if (!existsSync(s.path)) mkdirSync(dirname(s.path), { recursive: true });
+      writeFileSync(s.path, s.content, 'utf8');
+      try { rmSync(shadowFile(dataDir, s.id), { force: true }); } catch { /* 忽略 */ }
+      ok++;
+    } catch { failed.push(s.path); }
+  }
+  return { ok, failed };
 }

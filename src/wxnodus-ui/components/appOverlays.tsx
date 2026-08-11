@@ -7,6 +7,7 @@ import { $overlayState, patchOverlayState } from '../runtime/promptStore.js'
 import { $uiSessionId, $uiTheme } from '../runtime/viewStore.js'
 
 import { ActiveSessionSwitcher } from './activeSessionSwitcher.js'
+import { CommandPalette } from './commandPalette.js'
 import { FloatBox } from './appChrome.js'
 import { MaskedPrompt } from './maskedPrompt.js'
 import { ModelPicker } from './modelPicker.js'
@@ -120,6 +121,7 @@ export function FloatingOverlays({
   onModelSelect,
   onNewLiveSession,
   onNewPromptSession,
+  onPaletteSubmit,
   onResumeSelect,
   pagerPageSize
 }: Pick<
@@ -132,6 +134,7 @@ export function FloatingOverlays({
   | 'onModelSelect'
   | 'onNewLiveSession'
   | 'onNewPromptSession'
+  | 'onPaletteSubmit'
   | 'onResumeSelect'
   | 'pagerPageSize'
 >) {
@@ -146,6 +149,7 @@ export function FloatingOverlays({
     overlay.sessions ||
     overlay.skillsHub ||
     overlay.pluginsHub ||
+    overlay.commandPalette ||
     completions.length
 
   // Fixed viewport centered on compIdx — previously the slice end was
@@ -192,6 +196,20 @@ export function FloatingOverlays({
 
       <FloatBox color={theme.color.border} display={overlay.skillsHub ? undefined : 'none'}>
         {overlay.skillsHub && <SkillsHub gw={gw} onClose={() => patchOverlayState({ skillsHub: false })} t={theme} />}
+      </FloatBox>
+
+      <FloatBox color={theme.color.border} display={overlay.commandPalette ? undefined : 'none'}>
+        {overlay.commandPalette && (
+          <CommandPalette
+            cols={cols}
+            currentSessionId={sid}
+            gw={gw}
+            onClose={() => patchOverlayState({ commandPalette: false })}
+            onSessionSelect={onActiveSessionSelect}
+            onSubmit={onPaletteSubmit}
+            t={theme}
+          />
+        )}
       </FloatBox>
 
       <FloatBox color={theme.color.border} display={overlay.pluginsHub ? undefined : 'none'}>

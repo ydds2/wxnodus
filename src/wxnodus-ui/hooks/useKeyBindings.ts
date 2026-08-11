@@ -151,6 +151,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       return patchOverlayState({ skillsHub: false })
     }
 
+    if (overlay.commandPalette) {
+      return patchOverlayState({ commandPalette: false })
+    }
+
     if (overlay.pluginsHub) {
       return patchOverlayState({ pluginsHub: false })
     }
@@ -258,6 +262,12 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
   useInput((ch, key) => {
     const live = getUiState()
+
+    // Ctrl+K 命令面板：全局最高优先级（面板开着时再按一次即关闭——toggle）
+    if (isCtrl(key, ch, 'k')) {
+      patchOverlayState(prev => ({ ...prev, commandPalette: !prev.commandPalette }))
+      return
+    }
 
     if (isBlocked) {
       // When approval/clarify/confirm overlays are active, their own useInput

@@ -267,13 +267,45 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return lines(` 黑洞检索「${q}」 `, hits.map(h => ` [${h.role}] ${h.content.slice(0, 80)}`));
   });
 
-  bus.register('/memory', () => {
+  bus.register('/memory', (args) => {
     const rec = ctx.mem.recall('default');
     const absorbed = ctx.mem.absorbCount('default');
+    const sub = args[0];
+
+    // 置顶/淡化（salience 加权召回）：/memory pin|fade|reset <id> [倍率]
+    if (sub === 'pin' || sub === 'fade' || sub === 'reset') {
+      const id = Number(args[1]);
+      if (!Number.isInteger(id) || id < 1) {
+        return '用法：/memory pin|fade|reset <消息id> [倍率]（id 见 /memory list；/hole 检索结果亦可定位）';
+      }
+      const mult = sub === 'reset' ? 1 : Number(args[2] ?? (sub === 'pin' ? 3 : 0.3));
+      if (!Number.isFinite(mult) || mult <= 0) return '倍率需为正数（pin 建议 3，fade 建议 0.3，范围 0.05-10）';
+      const ok = ctx.mem.setSalience(id, mult);
+      if (!ok) return `消息 #${id} 不存在（/memory list 查看可用 id）`;
+      const label = sub === 'pin' ? '置顶' : sub === 'fade' ? '淡化' : '还原';
+      return `已${label}消息 #${id}（salience ×${mult}，召回加权生效）——/memory list 查看置顶项`;
+    }
+
+    if (sub === 'list') {
+      const n = Math.min(Number(args[1] ?? 10) || 10, 30);
+      const rows = ctx.db.prepare(
+        `SELECT id, role, content, salience FROM messages WHERE archived=0 ORDER BY id DESC LIMIT ?`
+      ).all(n) as Array<{ id: number; role: string; content: string; salience: number }>;
+      return lines(' 记忆消息（/memory pin|fade <id> 加权） ', rows.reverse().map(m => {
+        const flag = m.salience > 1.01 ? '★' : m.salience < 0.99 ? '☆' : ' ';
+        return ` ${flag} #${m.id} [${m.role}] ${String(m.content).slice(0, 60)}${m.salience > 1.01 ? `（×${m.salience}）` : ''}`;
+      }));
+    }
+
+    const salient = ctx.mem.listSalient();
     return lines(' 记忆 ', [
       ` 全量消息：${rec.length} 条`,
       ` 已吸附归档：${absorbed} 条（黑洞引擎）`,
       ` 窗口：${Math.min(rec.length, 20)}/20`,
+      ...(salient.length
+        ? [` 置顶记忆：${salient.length} 条（召回加权优先）`,
+           ...salient.slice(0, 8).map(s => `   ★ #${s.id} ×${s.salience} ${s.content.slice(0, 40)}`)]
+        : [` 置顶记忆：无（/memory pin <id> 可把核心约束置顶，召回恒优先）`]),
     ]);
   });
 

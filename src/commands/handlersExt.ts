@@ -3,7 +3,7 @@
 //       系统/视觉/连接/协作。每个命令真实可用（查询现有数据或执行确定性操作），
 //       输出统一 lines() 面板或单行。红线：只读工具不写库；路径操作限制在 dataDir。
 import { createHash, randomUUID, randomBytes } from 'node:crypto';
-import { join, basename, extname, resolve } from 'node:path';
+import { join, basename, extname, resolve, dirname } from 'node:path';
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, rmSync } from 'node:fs';
 import { searchMessages, appendAudit, saveCheckpoint, restoreCheckpoint } from '../store/db.js';
 import { estimateTokens, compactKeepHeadTail } from '../kernel/memory.js';
@@ -13,7 +13,7 @@ import { forgeMcpServer, forgeSkillDir } from '../forge/forge.js';
 import { discoverSkills, loadSkill, installSkill, writeSkill, skillContentForModel } from '../kernel/skills.js';
 import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
 import { buildRepoMap } from '../kernel/repoMap.js';
-import { listShadows, restoreShadow } from '../kernel/undoShadows.js';
+import { listShadows, restoreShadow, versionsOfFile, snapshotDir, restoreDirShadows } from '../kernel/undoShadows.js';
 import { parseCronExpr, describeCronExpr } from '../kernel/cronExpr.js';
 import { decryptKey } from '../kernel/providers.js';
 import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissions.js';
@@ -26,6 +26,26 @@ const lines = (title: string, body: string[]): string => {
   const w = Math.max(...body.map(l => l.length), title.length) + 4;
   return [`┌${'─'.repeat(w)}┐`, `│ ${title}${' '.repeat(w - title.length - 2)} │`, ...body.map(l => `│ ${l}${' '.repeat(Math.max(0, w - l.length - 2))} │`), `└${'─'.repeat(w)}┘`].join('\n');
 };
+
+// /usage --waterfall 的条形瀑布渲染（纯函数可单测）：
+// 每行 = 一次 API 调用（轮），条长按总 token 缩放——input 段用 ░、output 段用 █，
+// 一眼看出「哪轮烧 token、输入输出比」。宽度固定（后端无终端宽度，面板自洽即可）。
+export function renderWaterfall(
+  rows: Array<{ model: string; input_tokens: number; output_tokens: number; ts: number }>,
+  width = 40
+): string {
+  const max = Math.max(...rows.map(r => r.input_tokens + r.output_tokens), 1);
+  const scale = (n: number) => Math.max(1, Math.round((n / max) * width));
+  const out = rows.map(r => {
+    const total = r.input_tokens + r.output_tokens;
+    const inLen = Math.max(1, Math.round((r.input_tokens / total) * scale(total)));
+    const outLen = Math.max(1, scale(total) - inLen + 1);
+    const bar = '░'.repeat(inLen) + '█'.repeat(outLen);
+    const t = new Date(r.ts).toLocaleTimeString('zh-CN', { hour12: false });
+    return ` ${t} ${r.model.slice(0, 14).padEnd(14)} ${bar} ${total.toLocaleString()} tok（入 ${r.input_tokens.toLocaleString()} / 出 ${r.output_tokens.toLocaleString()}）`;
+  });
+  return lines(' Token 瀑布（最近 ' + rows.length + ' 轮 · ░输入 █输出） ', out);
+}
 
 // ── Webhook 引擎（事件 → HTTP POST 回调；本地化为准，默认全部核心事件）──
 const WEBHOOK_EVENTS = ['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'system.notice', 'ui.confirm'];
@@ -272,6 +292,57 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return `已撤销 ${n} 轮（${dropIds.length} 条消息移入历史存档，仍可检索）——/checkpoint restore 可恢复到撤销前`;
   });
 
+  // /versions：文件时间机器——同一文件的快照链即版本时间线（/undo fs 数据源复用）
+  bus.register('/versions', (args) => {
+    const target = args[0];
+    if (!target) return '用法：/versions <文件>（列出该文件的历史版本）｜/versions restore <文件> <版本号>（回滚到指定版本）';
+    const abs = resolve(ctx.cwd, target);
+    const all = versionsOfFile(ctx.dataDir, abs);
+    if (args[0] === 'restore') {
+      const fileArg = args[1];
+      const idx = Number(args[2] ?? 1);
+      if (!fileArg || !Number.isInteger(idx) || idx < 1) return '用法：/versions restore <文件> <版本号 1=最新>';
+      const versions = versionsOfFile(ctx.dataDir, resolve(ctx.cwd, fileArg));
+      const v = versions[idx - 1];
+      if (!v) return `文件「${fileArg}」共 ${versions.length} 个版本（版本号超范围）`;
+      const r = restoreShadow(ctx.dataDir, v.id);
+      return r.message;
+    }
+    const rel = abs.startsWith(ctx.cwd) ? abs.slice(ctx.cwd.length) : abs;
+    if (!all.length) return `「${rel}」暂无版本记录（fs_write/fs_edit 编辑前自动快照；/snapshot <目录> 可手动建档）`;
+    return lines(` 版本时间线「${rel}」`, all.map((v, i) => {
+      return ` #${i + 1}  ${new Date(v.ts).toLocaleString('zh-CN', { hour12: false })}  ${v.content.length} 字符${i === 0 ? '（最新）' : ''}`;
+    }));
+  });
+
+  // /snapshot：目录级快照——整目录文本文件建档，可一键整体回滚
+  bus.register('/snapshot', (args) => {
+    if (args[0] === 'list') {
+      const shadows = listShadows(ctx.dataDir);
+      const byDir = new Map<string, number>();
+      for (const s of shadows) {
+        const d = s.path.startsWith(ctx.cwd) ? dirname(s.path).slice(ctx.cwd.length) : s.path;
+        byDir.set(d, (byDir.get(d) ?? 0) + 1);
+      }
+      if (!byDir.size) return '无快照（/undo fs 编辑文件前自动生成；/snapshot <目录> 手动建档）';
+      return lines(' 快照分布（/undo fs list 看明细） ', [...byDir.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([d, n]) => ` ${d}（${n} 份）`));
+    }
+    if (args[0] === 'restore') {
+      const dir = args[1] ? resolve(ctx.cwd, args[1]) : ctx.cwd;
+      const r = restoreDirShadows(ctx.dataDir, dir);
+      if (!r.ok && !r.failed.length) return `「${dir}」无快照可恢复`;
+      return `已恢复 ${r.ok} 个文件${r.failed.length ? `，失败 ${r.failed.length} 个：${r.failed.slice(0, 3).join('; ')}` : ''}`;
+    }
+    const dir = args[0] ? resolve(ctx.cwd, args[0]) : ctx.cwd;
+    const r = snapshotDir(ctx.dataDir, dir);
+    if (!r.count) return `「${dir}」无可快照文本文件（${r.skipped.length} 个跳过：二进制/超大/空）`;
+    return lines(' 目录快照 ', [
+      ` 已建档：${r.count} 个文本文件`,
+      ` 跳过：${r.skipped.length} 个（二进制/超大/空/忽略目录）`,
+      ` 回滚：/snapshot restore ${args[0] ?? '.'}（整体恢复到建档时刻）`,
+    ]);
+  });
+
   // /fork：复制当前会话（含全部消息）为分支会话
   bus.register('/fork', (args) => {
     const target = args[0] ?? ctx.agent?.getSessionId?.() ?? 'default';
@@ -385,12 +456,22 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return `已生成 ${target}（项目类型：${profile.type}，顶层 ${profile.structure.length} 项）`;
   });
 
-  bus.register('/usage', () => {
+  bus.register('/usage', (args) => {
     // B2 修复：定位当前活跃会话（不再硬编码 'default'）+ 真实 token 统计（usage_stats）
     const sid = ctx.agent?.getSessionId?.() ?? 'default';
     const real = ctx.db.prepare(
       `SELECT COUNT(*) AS c, COALESCE(SUM(input_tokens),0) AS it, COALESCE(SUM(output_tokens),0) AS ot, COUNT(DISTINCT model) AS models FROM usage_stats WHERE session_id=?`
     ).get(sid) as { c: number; it: number; ot: number; models: number };
+
+    // --waterfall：每次 API 调用（轮）的 token 瀑布——input ░ / output █ 横向条形
+    if (args[0] === '--waterfall') {
+      const rows = ctx.db.prepare(
+        `SELECT model, input_tokens, output_tokens, ts FROM usage_stats WHERE session_id=? ORDER BY id DESC LIMIT 12`
+      ).all(sid) as Array<{ model: string; input_tokens: number; output_tokens: number; ts: number }>;
+      if (!rows.length) return '暂无 API 用量记录（--waterfall 需真实调用后查看；当前会话消息 token 可看 /context）';
+      return renderWaterfall(rows.reverse(), 40);
+    }
+
     const rows = ctx.db.prepare(`SELECT role, content FROM messages WHERE session_id=?`).all(sid) as any[];
     const est = rows.reduce((a, r) => a + estimateTokens(r.content), 0);
     const realTotal = real.it + real.ot;
@@ -402,6 +483,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ` 消息：${rows.length} 条`,
       tokenLine,
       ` 成本：本地运行，无 API 计费`,
+      ` 瀑布：/usage --waterfall（最近 12 轮 input/output 条形图）`,
     ]);
   });
 

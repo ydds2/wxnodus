@@ -1,8 +1,9 @@
-// tests/commands.test.ts — L4 命令层：注册表/别名/NL 路由/确定性工具
+// tests/commands.test.ts — L4 命令层：注册表/别名/NL 路由/确定性工具/瀑布渲染
 import { describe, it, expect } from 'vitest';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, isSlash, resolveAlias } from '../src/commands/registry.js';
 import { nlTrigger, routeNaturalLanguage, routeInput, NL_TRIGGERS, type NlTrigger } from '../src/commands/intent.js';
 import { deterministicRun } from '../src/commands/deterministic.js';
+import { renderWaterfall } from '../src/commands/handlersExt.js';
 
 describe('命令注册表（单一事实来源）', () => {
   it('核心命令全覆盖', () => {
@@ -154,5 +155,29 @@ describe('NL 触发矩阵（参数化）', () => {
     const r = await routeInput('/HELP');
     expect(r.kind).toBe('command');
     expect(r.cmd).toBe('/help');
+  });
+});
+
+describe('token 瀑布（renderWaterfall）', () => {
+  const rows = [
+    { model: 'kimi-k2', input_tokens: 8000, output_tokens: 2000, ts: 1700000000000 },
+    { model: 'glm-4v', input_tokens: 1000, output_tokens: 9000, ts: 1700000001000 },
+  ];
+  it('每行含时间/模型/token 总量与输入输出', () => {
+    const out = renderWaterfall(rows, 30);
+    expect(out).toContain('kimi-k2');
+    expect(out).toContain('glm-4v');
+    expect(out).toContain('10,000 tok');
+    expect(out).toContain('入 8,000 / 出 2,000');
+    expect(out).toContain('░'); // 输入段
+    expect(out).toContain('█'); // 输出段
+  });
+  it('单行/空输入不崩', () => {
+    expect(renderWaterfall([rows[0]!], 30)).toContain('1');
+    expect(renderWaterfall([], 30)).toContain('0 轮');
+  });
+  it('新命令已注册：/versions /snapshot', () => {
+    expect(SLASH).toContain('/versions');
+    expect(SLASH).toContain('/snapshot');
   });
 });

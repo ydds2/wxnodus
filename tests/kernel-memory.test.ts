@@ -63,6 +63,41 @@ describe('混合召回（FTS5 中文）', () => {
   });
 });
 
+describe('记忆置顶/淡化（salience 加权召回）', () => {
+  it('pin 置顶后召回分数放大、排序提前', async () => {
+    const m = createMemory(db, { workingLimit: 20 });
+    m.append('s3', 'user', '项目红线：密钥必须加密存储');
+    m.append('s3', 'assistant', '普通回复内容');
+    const rec = m.recall('s3');
+    const target = rec[0]!; // 第一条（红线）
+    expect(m.setSalience(target.id, 3)).toBe(true);
+    const salient = m.listSalient();
+    expect(salient.some(s => s.id === target.id && s.salience === 3)).toBe(true);
+    // 召回：置顶的红线命中的 score 应高于未置顶的同词命中
+    const hits = await m.recallHybrid('密钥 加密', { limit: 5 });
+    const pinned = hits.find(h => h.id === target.id);
+    expect(pinned).toBeDefined();
+    expect(pinned!.score).toBeGreaterThan(1); // 1（FTS 基准）× 3（salience）
+  });
+  it('fade 淡化后权重压低；reset 还原', async () => {
+    const m = createMemory(db, { workingLimit: 20 });
+    m.append('s4', 'user', '一次性的临时内容');
+    const rec = m.recall('s4');
+    const target = rec[0]!;
+    expect(m.setSalience(target.id, 0.3)).toBe(true);
+    expect(m.listSalient().some(s => s.id === target.id)).toBe(false); // <1 不进置顶列表
+    const hits = await m.recallHybrid('临时内容', { limit: 5 });
+    const faded = hits.find(h => h.id === target.id);
+    expect(faded).toBeDefined();
+    expect(faded!.score).toBeLessThan(1); // 0.3 × 1
+    expect(m.setSalience(target.id, 1)).toBe(true);
+    expect(m.listSalient().some(s => s.id === target.id)).toBe(false);
+  });
+  it('不存在的消息 id → false', () => {
+    expect(mem.setSalience(999999, 3)).toBe(false);
+  });
+});
+
 describe('压缩（上下文窗口管理）', () => {
   it('compactKeepHeadTail 保头尾丢中部', () => {
     const msgs = Array.from({ length: 10 }, (_, i) => ({ role: (i % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant', content: `消息${i}` }));
