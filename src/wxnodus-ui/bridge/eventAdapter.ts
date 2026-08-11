@@ -440,25 +440,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'thinking.delta': {
-        if (!getUiState().busy) {
-          return
-        }
-
-        const text = ev.payload?.text
-
-        if (text !== undefined) {
-          const value = String(text)
-          scheduleThinkingStatus(value || statusFromBusy())
-
-          if (value) {
-            turnController.recordReasoningDelta(value)
-          }
-        }
-
-        return
-      }
-
       case 'message.start':
         resetAgentsNudgeTurnState()
         turnController.startMessage()
@@ -546,16 +527,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         const line = String(ev.payload.line).slice(0, 120)
 
         turnController.pushActivity(line, 'info')
-
-        return
-      }
-
-      case 'browser.progress': {
-        const message = String(ev.payload?.message ?? '').trim()
-
-        if (message) {
-          sys(message)
-        }
 
         return
       }

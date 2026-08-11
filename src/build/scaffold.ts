@@ -55,7 +55,7 @@ export function checkLeftover(projectDir: string): boolean {
   return true;
 }
 
-export function instantiate(spec: Spec, projectDir: string, _opts: { checkLeftover?: boolean } = {}): InstantiateResult {
+export function instantiate(spec: Spec, projectDir: string): InstantiateResult {
   try {
     for (const sub of ['server', 'public']) mkdirSync(join(projectDir, sub), { recursive: true });
     const title = spec.title || '项目';

@@ -247,7 +247,7 @@ export function coreTools(): Record<string, ToolDef> {
   };
   const httpGet: ToolDef = {
     schema: { type: 'function', function: { name: 'http_get', description: 'GET 请求（SSRF 防护：内网/IPv6 私网/DNS 重绑定/重定向逐跳拦截）', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
-    danger: false,
+    danger: true, // 外联/写库/调度/敏感输入——需确认
     async run({ url }) {
       // SSRF 三层防护（src/kernel/ssrf.ts）：主机名形态 + DNS 解析校验 + 重定向逐跳
       const { safeFetchText } = await import('./ssrf.js');
@@ -291,7 +291,7 @@ export function coreTools(): Record<string, ToolDef> {
   };
   const memoryWrite: ToolDef = {
     schema: { type: 'function', function: { name: 'memory_write', description: '写入长期记忆（黑洞引擎 archival）', parameters: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] } } },
-    danger: false,
+    danger: true, // 外联/写库/调度/敏感输入——需确认
     async run({ content }, ctx) {
       try { writeFileSync(join(ctx.dataDir, 'memory-notes.md'), String(content) + '\n', { flag: 'a' }); return '已写入记忆'; }
       catch (e: any) { return `记忆写入失败：${e.message}`; }
@@ -311,7 +311,7 @@ export function coreTools(): Record<string, ToolDef> {
         if (!validateSpec(s).ok) return `规格校验失败：${validateSpec(s).reason}`;
         const plan = makePlan(parsed.summary, { key: null });
         const dir = join(ctx.dataDir, 'projects', parsed.title);
-        const r = instantiate(s, dir, { checkLeftover: false });
+        const r = instantiate(s, dir);
         if (!r.ok) return `脚手架失败：${r.reason}`;
         return `项目已生成 → ${dir}\n模块计划：${plan.order.join(' → ')}\n验收：${s.acceptance.join('；')}`;
       } catch (e: any) {
@@ -425,7 +425,7 @@ export function coreTools(): Record<string, ToolDef> {
         },
       },
     },
-    danger: false,
+    danger: true, // 外联/写库/调度/敏感输入——需确认
     async run(args, ctx) {
       const interval = Math.floor(Number(args?.intervalMinutes));
       const action = String(args?.action ?? '').trim();
@@ -459,7 +459,7 @@ export function coreTools(): Record<string, ToolDef> {
         },
       },
     },
-    danger: false,
+    danger: true, // 外联/写库/调度/敏感输入——需确认
     async run(args, ctx) {
       const names = Array.isArray(args?.fields) ? args.fields.map(String).filter(Boolean) : [];
       if (!names.length) return '参数错误：fields 需为非空字段名数组';

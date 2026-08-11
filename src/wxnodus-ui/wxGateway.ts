@@ -14,6 +14,7 @@ import { MODEL_CATALOG, encryptKey, hasImageIn } from '../kernel/providers.js'
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js'
 import { loadSkinFile } from '../kernel/skin.js'
 import { checkVoice } from '../kernel/voice.js'
+import { coreTools } from '../kernel/tools.js'
 import { classifyToolAction } from '../kernel/permissions.js'
 import { redactSecrets } from '../kernel/redact.js'
 import { discoverSkills } from '../kernel/skills.js'
@@ -260,10 +261,15 @@ export class GatewayClient extends EventEmitter {
       case 'session.delete': return this.sessionDelete(params) as T
       case 'session.fork': return this.sessionFork(params) as T
       case 'session.active_list': return this.sessionActiveList(params) as T
+      case 'session.list': return this.sessionList(params) as T
       case 'session.most_recent': return this.sessionMostRecent() as T
       case 'session.title': return this.sessionTitle(params) as T
       case 'session.steer': return this.sessionSteer(params) as T
       case 'session.interrupt': return this.sessionInterrupt() as T
+      case 'session.compress': return this.sessionCompress(params) as T
+      case 'session.branch': return this.sessionBranch(params) as T
+      case 'prompt.background': return this.promptBackground(params) as T
+      case 'process.stop': return this.processStop() as T
       case 'config.get': return this.configGet(params) as T
       case 'config.set': return this.configSet(params) as T
       case 'setup.status': return this.setupStatus() as T
@@ -287,8 +293,18 @@ export class GatewayClient extends EventEmitter {
       case 'spawn_tree.save': return this.spawnTreeSave(params) as T
       case 'spawn_tree.list': return this.spawnTreeList(params) as T
       case 'spawn_tree.load': return this.spawnTreeLoad(params) as T
+      case 'subagent.interrupt': return this.subagentInterrupt(params) as T
+      case 'delegation.pause': return this.delegationPause(params) as T
       case 'skills.manage': return this.skillsManage(params) as T
-      case 'skills.reload': return { output: '技能缓存已清空（发现目录即时扫描）' } as T
+      case 'skills.reload':
+        // 审计修复：不再假成功文案——清空技能名缓存并真实重扫
+        this.skillNamesCache = null
+        try {
+          const n = this.discoverSkillNames().length
+          return { output: `技能目录已重扫：${n} 个可用（/skill list 查看）` } as T
+        } catch {
+          return { output: '技能目录重扫完成（0 个可用）' } as T
+        }
       case 'plugins.manage': return this.pluginsManage(params) as T
       case 'reload.mcp': return this.reloadMcp(params) as T
       case 'voice.toggle': return this.voiceToggle(params) as T
@@ -577,7 +593,7 @@ export class GatewayClient extends EventEmitter {
       return { status: 'reloaded', message: '当前环境无 MCP 配置（data/mcp.json 为空或不支持重载）' }
     }
     const r = await this.kernel.reloadMcp()
-    return { status: r.ok ? 'reloaded' : 'reloaded', message: r.message }
+    return { status: r.ok ? 'reloaded' : 'error', message: r.message }
   }
 
   // spawn_tree 持久化（/replay list|load 磁盘档案）：data/spawns/*.json
@@ -619,6 +635,24 @@ export class GatewayClient extends EventEmitter {
     } catch (e: any) {
       return { entries: [], message: String(e?.message ?? e).slice(0, 120) }
     }
+  }
+
+
+  // 审计修复：此前 UI 调用无后端分支（/agents kill、/agents pause 必失败）——真实实现
+  private async subagentInterrupt(params: Record<string, unknown>): Promise<unknown> {
+    // 中止当前回合（含运行中的子代理——agent 单实例，abort 作用于活动 turn）
+    this.kernel.agent.abort()
+    this.running = false
+    return { ok: true, interrupted: true }
+  }
+
+  private async delegationPause(params: Record<string, unknown>): Promise<unknown> {
+    // 暂停委派：中止活动回合 + 标记暂停（后续 delegate 由状态条可见暂停态）
+    this.kernel.agent.abort()
+    this.running = false
+    const paused = params.pause !== false
+    this.publish({ type: 'notification.show', payload: { text: paused ? '委派已暂停' : '委派已恢复', level: 'info' } })
+    return { paused }
   }
 
   private async spawnTreeLoad(params: Record<string, unknown>): Promise<unknown> {
@@ -843,7 +877,6 @@ export class GatewayClient extends EventEmitter {
     } catch {
       rows = []
     }
-
     const sessions = rows.map((r: any) => ({
       id: String(r.id),
       title: String(r.title ?? ''),
@@ -854,6 +887,32 @@ export class GatewayClient extends EventEmitter {
       status: 'idle' as const,
     }))
 
+    return { sessions }
+  }
+
+  // 审计修复：session.list 真实实现（此前 UI 调用无后端分支——可恢复会话区恒报错）
+  // 与 session.active_list 同源（DB 查询），历史会话也可恢复
+  private async sessionList(params: Record<string, unknown>): Promise<unknown> {
+    const current = String(params.current_session_id ?? '')
+    const limit = Math.min(Number(params.limit ?? 200) || 200, 500)
+    let rows: any[] = []
+    try {
+      rows = this.kernel.db.prepare(
+        `SELECT s.id, s.title, s.created_at, s.updated_at,
+                (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
+         FROM sessions s ORDER BY s.updated_at DESC LIMIT ?`
+      ).all(limit)
+    } catch {
+      rows = []
+    }
+    const sessions = rows.map((r: any) => ({
+      id: String(r.id),
+      title: String(r.title ?? ''),
+      current: String(r.id) === current,
+      created_at: Number(r.created_at ?? 0) / 1000,
+      updated_at: Number(r.updated_at ?? 0) / 1000,
+      message_count: Number(r.message_count ?? 0),
+    }))
     return { sessions }
   }
 
@@ -895,6 +954,69 @@ export class GatewayClient extends EventEmitter {
     return { ok: true }
   }
 
+  // ── 审计修复：此前 UI 命令（/compress /branch /background /stop）调用的
+  // RPC 无后端分支——slashRegistry 被迫移除命令导致「未知命令」；现全部真实实现 ──
+  private async sessionCompress(params: Record<string, unknown>): Promise<unknown> {
+    // 内核真实压缩（当前会话；有 key 时 LLM 总结，无 key 规则降级——与 /compact 同路径）
+    try {
+      await this.kernel.commandBus.execute('/compact')
+    } catch { /* 压缩失败不阻断返回 */ }
+    const sid = String(params.session_id ?? this.currentSessionId)
+    const rows = this.loadMessages(sid)
+    return { messages: rows, info: this.buildInfo(), usage: {} }
+  }
+
+  private async sessionBranch(params: Record<string, unknown>): Promise<unknown> {
+    const src = String(params.session_id ?? this.currentSessionId)
+    const name = String(params.name ?? '').trim()
+    const newId = `s${Date.now()}b`
+    try {
+      const row = this.kernel.db.prepare(`SELECT COUNT(*) AS c FROM sessions WHERE id=?`).get(src) as { c: number } | undefined
+      if (!row?.c) return { error: '会话不存在' }
+      this.kernel.db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`)
+        .run(newId, name || `${src} branch`, Date.now(), Date.now())
+      this.kernel.db.prepare(`
+        INSERT INTO messages (session_id, role, content, tool_call_id, archived, ts)
+        SELECT ?, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=?
+      `).run(newId, src)
+    } catch (e: any) {
+      return { error: String(e?.message ?? e).slice(0, 120) }
+    }
+    this.currentSessionId = newId
+    this.kernel.agent.setSessionId(newId)
+    return { session_id: newId, title: name || `${src} branch`, messages: this.loadMessages(newId), info: this.buildInfo() }
+  }
+
+  private async promptBackground(params: Record<string, unknown>): Promise<unknown> {
+    const text = String(params.text ?? '').trim()
+    if (!text) return { task_id: null }
+    const taskId = `bg${Date.now().toString(36)}`
+    try {
+      this.kernel.db.prepare(`INSERT INTO tasks (id, goal, status, created_at) VALUES (?,?,?,?)`)
+        .run(taskId, text.slice(0, 200), 'running', Date.now())
+    } catch { /* 任务表不可用：仅内存执行 */ }
+    // 后台执行（不阻塞 RPC）：agent.run 完成后发 background.complete（UI 移除 bg 徽标）
+    void this.kernel.agent.run(text).then(r => {
+      try {
+        this.kernel.db.prepare(`UPDATE tasks SET status='done', output=?, done_at=? WHERE id=?`)
+          .run(String(r.text ?? '').slice(0, 2000), Date.now(), taskId)
+      } catch { /* 忽略 */ }
+      this.publish({ type: 'background.complete', payload: { task_id: taskId, text: String(r.text ?? '') } })
+    })
+    return { task_id: taskId }
+  }
+
+  private async processStop(): Promise<unknown> {
+    // 停止全部后台任务：中止当前回合 + 任务表标记 done（/jobs 可见）
+    this.kernel.agent.abort()
+    let killed = 0
+    try {
+      const r = this.kernel.db.prepare(`UPDATE tasks SET status='done', done_at=? WHERE status='running'`).run(Date.now())
+      killed = r.changes
+    } catch { /* 任务表不可用 */ }
+    return { killed }
+  }
+
   private configGet(params: Record<string, unknown>): unknown {
     const key = String(params.key ?? '')
 
@@ -902,39 +1024,43 @@ export class GatewayClient extends EventEmitter {
       return { mtime: 0 }
     }
 
-    const s = this.kernel.settings
+    const s = this.kernel.settings as Record<string, any>
 
-    // 皮肤/语言/主题按真实键返回（此前任意键都返回 'interrupt'——/skin 读取假值）
-    if (key === 'skin') {
-      return { value: (s as any).skin ?? 'default' }
+    // 审计修复：单键查询按真实 settings 返回（此前任意 key 都返回 'interrupt' 假值）
+    if (key) {
+      if (key === 'skin') return { value: s.skin ?? 'default' }
+      if (key === 'lang') return { value: s.lang ?? 'zh' }
+      if (key === 'theme') return { value: s.theme ?? 'wxnodus' }
+      if (key === 'busy' || key === 'busy_input_mode') return { value: s.busy_input_mode ?? 'interrupt' }
+      if (key === 'thinking' || key === 'reasoning') return { value: s.thinking !== false }
+      if (key === 'mode') return { value: s.mode ?? 'smart' }
+      if (key === 'model') return { value: s.model ?? resolveDefaultModel(s) }
+      return { value: s[key] ?? undefined } // 未知键如实返回 undefined（不再伪造）
     }
-    if (key === 'lang') {
-      return { value: (s as any).lang ?? 'zh' }
+
+    // 审计修复：display 从真实配置生成（此前全硬编码——/busy 等设置永不读回，
+    // 且 'bottom' 会覆盖 UI 默认 'top'）；缺省项省略而非硬编码
+    const display: Record<string, unknown> = {
+      bell_on_complete: false,
+      details_mode: 'collapsed',
+      inline_diffs: true,
+      mouse_tracking: 'all',
+      show_cost: false,
+      show_reasoning: s.thinking !== false,
+      streaming: true,
+      tui_compact: false,
+      tui_status_indicator: s.tui_status_indicator ?? 'kaomoji',
     }
-    if (key === 'theme') {
-      return { value: (s as any).theme ?? 'wxnodus' }
-    }
+    if (s.busy_input_mode) display.busy_input_mode = s.busy_input_mode
+    if (s.tui_statusbar) display.tui_statusbar = s.tui_statusbar
 
     return {
       config: {
-        display: {
-          bell_on_complete: false,
-          // C7 修复：busy 时输入默认中断（参考默认 interrupt——Ctrl+C 总是打断）
-          busy_input_mode: 'interrupt',
-          details_mode: 'collapsed',
-          inline_diffs: true,
-          mouse_tracking: 'all',
-          show_cost: false,
-          show_reasoning: Boolean(s.thinking),
-          streaming: true,
-          tui_compact: false,
-          tui_status_indicator: 'kaomoji',
-          tui_statusbar: 'bottom',
-        },
+        display,
         paste_collapse_threshold: 5,
         paste_collapse_char_threshold: 2000,
       },
-      value: 'interrupt', // C7：/busy 命令显示实际值（与默认一致）
+      value: s.busy_input_mode ?? 'interrupt',
     }
   }
 
@@ -965,6 +1091,16 @@ export class GatewayClient extends EventEmitter {
       // C7：/busy 命令接入（queue/interrupt/steer 三模式；写入 settings 供状态条显示）
       // 键名与配置白名单归一（busy_input_mode，snake_case 单一事实源）
       ;(s as Record<string, any>).busy_input_mode = ['queue', 'interrupt', 'steer'].includes(value) ? value : 'interrupt'
+      this.kernel.config.setKey('settings', 'busy_input_mode', (s as Record<string, any>).busy_input_mode)
+    } else if (key === 'busy_input_mode') {
+      ;(s as Record<string, any>).busy_input_mode = ['queue', 'interrupt', 'steer'].includes(value) ? value : 'interrupt'
+      this.kernel.config.setKey('settings', 'busy_input_mode', (s as Record<string, any>).busy_input_mode)
+    } else if (key === 'indicator') {
+      ;(s as Record<string, any>).tui_status_indicator = value
+      this.kernel.config.setKey('settings', 'tui_status_indicator', value)
+    } else if (key === 'statusbar') {
+      ;(s as Record<string, any>).tui_statusbar = value
+      this.kernel.config.setKey('settings', 'tui_statusbar', value)
     } else if (key === 'skin') {
       // 开放兼容：/skin <名称> 真实生效——落盘 settings.skin + 广播 skin.changed
       // （前端 eventAdapter applySkin 已有，缺数据源——此处分发皮肤对象）
@@ -1088,7 +1224,9 @@ export class GatewayClient extends EventEmitter {
       audio_available: check.sttAvailable,
       stt_available: check.sttAvailable,
       details: check.details.join('\n'),
-      record_key: 'ctrl+b',
+      // 审计修复：record_key 从配置读（settings.voice.recordKey，缺省 ctrl+b）——
+      // 前端 /voice status 与热键绑定保持一致
+      record_key: (settings?.voice as Record<string, any> | undefined)?.recordKey ?? 'ctrl+b',
     }
   }
 
@@ -1144,13 +1282,21 @@ export class GatewayClient extends EventEmitter {
       const cat = COMMAND_CAT[cmd] ?? '◈'
       if (!categories.has(cat)) categories.set(cat, [])
       categories.get(cat)!.push([cmd, COMMAND_DESC[cmd] ?? ''])
+      // 审计修复：canon 真实构建（此前恒空——slashHandler 别名解析永久失效）
+      canon[cmd.replace(/^\//, '')] = cmd
     }
+
+    // 技能计数真实统计（/help 展示技能数）
+    let skillCount = 0
+    try {
+      skillCount = discoverSkills(this.kernel.dataDir, this.kernel.cwd).length
+    } catch { /* 技能扫描失败按 0 */ }
 
     return {
       canon,
       categories: [...categories.entries()].map(([name, pairs]) => ({ name, pairs })),
       pairs: SLASH.map((cmd) => [cmd, COMMAND_DESC[cmd] ?? ''] as [string, string]),
-      skill_count: 0,
+      skill_count: skillCount,
       sub: {},
     }
   }
@@ -1358,12 +1504,31 @@ export class GatewayClient extends EventEmitter {
   private buildInfo(): SessionInfo {
     const s = this.kernel.settings
 
+    // 审计修复：skills/tools/usage 从空对象改为真实数据（此前硬编码空——假数据）
+    let skills: Record<string, string[]> = {}
+    try {
+      const names = discoverSkills(this.kernel.dataDir, this.kernel.cwd).map(s => s.name)
+      skills = names.length ? { '可用技能': names.slice(0, 20) } : {}
+    } catch { /* 技能扫描失败按空 */ }
+    let tools: Record<string, string[]> = {}
+    try {
+      const names = Object.keys(coreTools())
+      tools = names.length ? { '内置工具': names.slice(0, 30) } : {}
+    } catch { /* 工具枚举失败按空 */ }
+    let usage = { ...ZERO }
+    try {
+      const row = this.kernel.db.prepare(
+        `SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=?`
+      ).get(this.currentSessionId) as { calls: number; input: number; output: number } | undefined
+      if (row) usage = { calls: row.calls ?? 0, input: row.input ?? 0, output: row.output ?? 0, total: (row.input ?? 0) + (row.output ?? 0) }
+    } catch { /* 用量统计失败按零 */ }
+
     return {
       model: s.model ?? '',
       cwd: this.kernel.cwd,
-      skills: {},
-      tools: {},
-      usage: { ...ZERO },
+      skills,
+      tools,
+      usage,
       version: '3.0.0',
     }
   }

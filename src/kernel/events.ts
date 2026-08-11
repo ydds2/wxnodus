@@ -29,7 +29,6 @@ export interface EventBus {
   on(type: string, fn: Listener): () => void;
   emit(type: EventType | string, payload: any): WxEvent;
   history(): WxEvent[];
-  flush(): void;
 }
 
 let seq = 0;
@@ -58,6 +57,5 @@ export function createEventBus(dataDir: string): EventBus {
       return e;
     },
     history: () => [...history],
-    flush() { /* 预留：批量落盘（当前同步 append 已即时） */ },
   };
 }

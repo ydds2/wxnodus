@@ -159,14 +159,6 @@ export function ruleBrain(input: string): string {
   return '未配置模型密钥，超出规则脑能力。配置方式：/key <密钥> 或 /key set <密钥>。';
 }
 
-// ── 关键词路由（多端点降级链）───────────────────────────────
-export interface Route { match: RegExp; endpoint: string; model: string }
-
-export function routeByKeywords(text: string, routes: Route[]): Route | null {
-  for (const r of routes) if (r.match.test(text)) return r;
-  return null;
-}
-
 // ── 请求构造（OpenAI 兼容 /chat/completions）────────────────
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';

@@ -1,7 +1,7 @@
 // tests/kernel-providers.test.ts — L2-1 模型提供商：密钥加密/规则脑/路由/流式请求/错误映射
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { encryptKey, decryptKey } from '../src/kernel/providers.js';
-import { ruleBrain, routeByKeywords, mapHttpError, buildChatRequest } from '../src/kernel/providers.js';
+import { ruleBrain, mapHttpError, buildChatRequest } from '../src/kernel/providers.js';
 import { MODEL_CATALOG, capabilityBadges, filterModels, REASONING_FIELDS, detectProvider } from '../src/kernel/providers.js';
 
 afterEach(() => { vi.restoreAllMocks(); });
@@ -43,19 +43,6 @@ describe('规则脑（无 key 兜底：诚实回答不假装智能）', () => {
     expect(r.toLowerCase()).not.toContain('已执行');
   });
 });
-
-describe('关键词路由（多端点降级链）', () => {
-  it('关键词命中端点', () => {
-    const routes = [{ match: /glm|视觉|图片/i, endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4v-flash' }];
-    const hit = routeByKeywords('分析这张图片', routes);
-    expect(hit?.endpoint).toContain('bigmodel');
-  });
-  it('无命中返回 null（走默认）', () => {
-    const routes = [{ match: /视频/i, endpoint: 'https://x', model: 'm' }];
-    expect(routeByKeywords('写代码', routes)).toBeNull();
-  });
-});
-
 describe('请求构造（OpenAI 兼容）', () => {
   it('buildChatRequest 生成正确 body', () => {
     const req = buildChatRequest({
@@ -237,13 +224,5 @@ describe('模型目录能力', () => {
     expect(capabilityBadges({ maxContext: 256_000 })).toContain('256k');
     expect(capabilityBadges(undefined)).toBe('');
   });
-  it('routeByKeywords 确定性路由', async () => {
-    const { routeByKeywords } = await import('../src/kernel/providers.js');
-    const routes = [
-      { match: /部署|上线/, cmd: '/deploy' },
-      { match: /备份/, cmd: '/backup' },
-    ];
-    expect(routeByKeywords('帮我部署到服务器', routes)?.cmd).toBe('/deploy');
-    expect(routeByKeywords('随便聊聊', routes)).toBeNull();
-  });
+
 });

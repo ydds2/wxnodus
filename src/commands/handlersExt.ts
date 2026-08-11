@@ -583,7 +583,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   // /context：上下文占用可视化（P2b 增强——工作窗口真实 token 分布 + 预算占用条）
   bus.register('/context', () => {
-    const rec = ctx.mem.recall('default');
+    const rec = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default');
     const working = ctx.mem.working('default');
     const BUDGET = 48000; // 默认上下文预算（与 agent maxContextTokens 默认一致）
     const byRole: Record<string, number> = {};
@@ -618,7 +618,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // ── 记忆类 ──────────────────────────────────
   // /compact：上下文压缩（对比轮 6 修复：有密钥时 LLM 真实总结，无密钥降级规则摘要）
   bus.register('/compact', async () => {
-    const before = ctx.mem.recall('default').length;
+    const before = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default').length;
     const summarize = async (text: string): Promise<string> => {
       try {
         const { resolveApiKey } = await import('../kernel/providers.js');
@@ -643,14 +643,14 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         return summary || `（规则压缩）${text.slice(0, 400)}`;
       } catch { return `（规则压缩）${text.slice(0, 400)}${text.length > 400 ? '…' : ''}`; }
     };
-    await ctx.mem.compactSmart('default', summarize);
-    const after = ctx.mem.recall('default').length;
+    await ctx.mem.compactSmart(ctx.agent?.getSessionId?.() ?? 'default', summarize);
+    const after = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default').length;
     return `压缩完成：${before} → ${after} 条（LLM 摘要，无密钥时规则降级）`;
   });
 
   // /digest：最近对话摘要（对比轮 6 修复：有密钥时 LLM 真实提炼，无密钥规则摘要）
   bus.register('/digest', async () => {
-    const rec = ctx.mem.recall('default');
+    const rec = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default');
     if (!rec.length) return '暂无记忆';
     const last = rec.slice(-10);
     const transcript = last.filter((m: any) => m.role !== 'system').map((m: any) => `${m.role}: ${String(m.content ?? '').slice(0, 200)}`).join('\n');
@@ -716,15 +716,45 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // ── 构建类 ──────────────────────────────────
-  bus.register('/deploy', () => {
+  // /deploy：真实本地部署（审计修复——此前只是项目列表，「部署/上线/落地」NL 直达
+  //  却得不到部署动作；现在：验证项目完整性 → 后台启动 server → 探活端口 → 输出地址）
+  bus.register('/deploy', async (args) => {
     const dir = join(ctx.dataDir, 'projects');
     const projects = existsSync(dir) ? readdirSync(dir) : [];
     if (!projects.length) return '暂无编译项目（说「做个待办系统」触发概念编译）';
-    return lines(' 项目 ', projects.map(p => {
-      const health = join(dir, p, 'health.json');
-      const ok = existsSync(health);
-      return ` ${ok ? '✓' : '○'} ${p}${ok ? '（healthcheck 通过）' : ''}`;
-    }));
+    const target = args[0];
+    if (!target) {
+      return lines(' 项目（/deploy <名称> 部署） ', projects.map(p => ` ${p}`));
+    }
+    if (!projects.includes(target)) return `项目不存在：${target}（/deploy 查看列表）`;
+    const projDir = join(dir, target);
+    // 1. 验证完整性（真实探活：启动→探活→重启→读回）
+    const { verifyProject } = await import('../build/verify.js');
+    const vr = await verifyProject(projDir);
+    if (vr.status !== 'ok') return `部署前置验证失败：${vr.detail}——修复后重试`;
+    // 2. 后台启动（独立进程，不阻塞 CLI；端口 4321 与验证一致）
+    const entry = join(projDir, 'server', 'index.js');
+    const { spawn } = await import('node:child_process');
+    const { sanitizedEnv } = await import('../kernel/env.js');
+    const srv = spawn(process.execPath, [entry], {
+      cwd: projDir,
+      env: { ...sanitizedEnv(), PORT: '4321' },
+      stdio: 'ignore',
+      detached: true,
+    });
+    srv.unref();
+    // 3. 探活确认（最多 5s）
+    let reachable = false;
+    try {
+      const r = await fetch('http://127.0.0.1:4321/health', { signal: AbortSignal.timeout(5000) });
+      reachable = r.ok || r.status === 404;
+    } catch { /* 探活失败按不可达 */ }
+    return lines(` 部署「${target}」 `, [
+      ` 验证：✅ ${vr.detail}`,
+      ` 进程：PID ${srv.pid ?? '?'}（后台运行，detached）`,
+      ` 地址：http://127.0.0.1:4321${reachable ? '（探活确认可达）' : '（健康端点未响应——应用可能无 /health 路由）'}`,
+      ` 停止：/jobs 查看 或 taskkill /PID ${srv.pid ?? '?'} /F`,
+    ]);
   });
 
   bus.register('/forge', (args) => {
@@ -783,7 +813,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (!keyRes.key) return '当前未配置模型密钥——/key set <密钥> 后 /learn 才能用 AI 总结生成技能（不产生假内容）';
     if (keyRes.error === 'decrypt-failed') return '密钥无法解密（机器环境变化或数据损坏？）——请用 /key set <密钥> 重新配置。';
     const key = keyRes.key;
-    const recent = ctx.mem.recall('default').slice(-8);
+    const recent = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default').slice(-8);
     if (!recent.length) return '暂无对话记忆可学习——先对话几轮再 /learn';
     const desc = args.slice(1).join(' ') || `${name} 技能`;
     const transcript = recent.map(r => `${r.role}: ${String(r.content ?? '').slice(0, 300)}`).join('\n');
@@ -816,24 +846,65 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return runGate({ projectDir: dir, dataDir: ctx.dataDir }).then(r => lines(' 门禁评估 ', r.gates.map(g => ` ${g.ok ? '✓' : '✗'} ${g.name}：${g.detail.slice(0, 50)}`)));
   });
 
-  bus.register('/fdr', (args) => {
+  // /fdr：部署后保障文档（审计修复——不再只写空白模板：
+  // 有 key 时用模型真实审查最近对话/项目并生成 FDR，无 key 诚实提示不产生假内容）
+  bus.register('/fdr', async (args) => {
     const name = args[0] ?? `fdr-${Date.now().toString(36)}`;
-    const out = join(ctx.dataDir, 'forge', name, 'FDR.md');
-    mkdirSync(join(ctx.dataDir, 'forge', name), { recursive: true });
-    const doc = `# FDR — ${name}\n\n## 需求\n\n## 设计\n\n## 实现\n\n## 验证\n`;
-    writeFileSync(out, doc, 'utf8');
-    return `FDR 文档已生成 → ${out}`;
+    const outDir = join(ctx.dataDir, 'forge', name);
+    mkdirSync(outDir, { recursive: true });
+    const out = join(outDir, 'FDR.md');
+    const { resolveApiKey } = await import('../kernel/providers.js');
+    const keyRes = resolveApiKey(ctx.config.get('settings') as any);
+    if (!keyRes.key) {
+      // 无 key：生成待补全模板但明确标注未审查（不假装已审查）
+      const doc = `# FDR — ${name}\n\n> ⚠ 未配置模型密钥——本模板未经过 AI 审查（/key set 后 /fdr 重跑生成真实审查）\n\n## 需求\n\n## 设计\n\n## 实现\n\n## 验证\n`;
+      writeFileSync(out, doc, 'utf8');
+      return `FDR 模板已生成 → ${out}（未配置密钥，未审查——/key set 后重跑）`;
+    }
+    // 有 key：模型真实审查最近对话（需求/设计/实现/验证四段）
+    const recent = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default').slice(-12);
+    if (!recent.length) return '暂无对话记忆可审查——先对话几轮再 /fdr';
+    const transcript = recent.map(r => `${r.role}: ${String(r.content ?? '').slice(0, 300)}`).join('\n');
+    const { buildChatRequest, mapHttpError } = await import('../kernel/providers.js');
+    const baseURL = resolveDefaultBaseURL(ctx.config.get('settings') as any);
+    const model = resolveDefaultModel(ctx.config.get('settings') as any);
+    const req = buildChatRequest({
+      baseURL, model, key: keyRes.key,
+      messages: [
+        { role: 'system', content: '你是部署后保障评审员。基于对话片段生成 FDR（Markdown：需求/设计/实现/验证四段，中文，指出风险与未验证项），只输出文档正文。' },
+        { role: 'user', content: `项目：${name}\n对话片段：\n${transcript}` },
+      ],
+      stream: false,
+    });
+    try {
+      const resp = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body, signal: AbortSignal.timeout(60000) });
+      if (!resp.ok) throw new Error(mapHttpError(resp.status));
+      const j = await resp.json() as any;
+      const doc = String(j?.choices?.[0]?.message?.content ?? '').trim() || `# FDR — ${name}\n\n（模型未返回内容）`;
+      writeFileSync(out, doc, 'utf8');
+      return `FDR 已生成（AI 审查最近 ${recent.length} 条对话）→ ${out}`;
+    } catch (e: any) {
+      return `FDR 生成失败：${String(e?.message ?? e).slice(0, 120)}`;
+    }
   });
 
-  bus.register('/evidence', (args) => {
+  // /evidence：真实验证并落盘证据（审计修复——不再读不存在的 health.json 伪造 'verified'）
+  bus.register('/evidence', async (args) => {
     const name = args[0] ?? 'default';
     const dir = join(ctx.dataDir, 'projects', name);
     if (!existsSync(dir)) return `项目不存在：${name}`;
-    const health = join(dir, 'health.json');
-    let checks: string[] = [];
-    try { checks = existsSync(health) ? (JSON.parse(readFileSync(health, 'utf8')).checks ?? []) : []; } catch { /* 无 health 时空列表 */ }
-    writeEvidence(dir, { status: 'verified', checks, port: null });
-    return `证据已写入 → ${join(dir, 'evidence.json')}`;
+    // 真实验证：启动→探活→重启→读回；结果如实落盘（失败记 failed，不伪造）
+    const { verifyProject } = await import('../build/verify.js');
+    const vr = await verifyProject(dir);
+    const ev = writeEvidence(dir, {
+      status: vr.status,
+      checks: vr.status === 'ok' ? ['verify:start-probe-restart-readback'] : [],
+      detail: vr.detail,
+      port: null,
+    });
+    return ev
+      ? `证据已写入 → ${join(dir, 'evidence.json')}（状态：${vr.status}${vr.status === 'ok' ? ' ✅' : ' —— ' + vr.detail}）`
+      : '证据写入失败';
   });
 
   // ── 安全类 ──────────────────────────────────
@@ -860,13 +931,25 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     ]);
   });
 
-  bus.register('/compliance', () => {
+  bus.register('/compliance', async () => {
     const ledger = ctx.db.prepare(`SELECT COUNT(*) c FROM audit`).get() as any;
+    // 审计修复：许可扫描从静态文案改为真实扫描（激活 compliance.ts 模块——
+    // 此前「许可扫描：AGPL/BUSL 检测」是声称，scanLicenses 从未被调用）
+    let licenseLine = ' 许可扫描：未检测到 node_modules（依赖许可未评估）';
+    try {
+      const { scanLicenses } = await import('../compliance/compliance.js');
+      const nm = join(ctx.cwd, 'node_modules');
+      if (existsSync(nm)) {
+        const hits = scanLicenses(nm);
+        const blocks = hits.filter(h => h.risk === 'block');
+        licenseLine = ` 许可扫描：${hits.length} 个依赖（${blocks.length} 个需人工确认${blocks.length ? '：' + blocks.slice(0, 3).map(b => b.pkg).join('、') : ''}）`;
+      }
+    } catch { /* 扫描失败保持未检测提示 */ }
     return lines(' 合规 ', [
-      ` 同意书：已建（数据本地、凭证加密）`,
-      ` AI 生成标注：消息流标记 ✦`,
+      ` 同意书：${existsSync(join(ctx.dataDir, 'consent.json')) ? '已签署' : '未签署（/consent）'}`,
+      ' AI 生成标注：消息流标记 ✦',
       ` 审计日志：${ledger?.c ?? 0} 条（/audit 导出）`,
-      ` 许可扫描：AGPL/BUSL 检测`,
+      licenseLine,
     ]);
   });
 
@@ -981,8 +1064,19 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/render', (args) => {
     const target = args.join(' ');
-    if (!target) return '用法：/render <文本>（终端渲染为 Markdown 预览）';
-    return lines(' 渲染预览 ', target.split('\n').map(l => ` ${l}`));
+    if (!target) return '用法：/render <文本>（Markdown 排版预览：标题/代码块/列表/分隔线）';
+    // 审计修复：真实 Markdown 基础排版（此前仅包盒子冒充渲染）
+    const out = target.split('\n').map(l => {
+      const t = l.trim();
+      if (/^#{1,6}\s/.test(t)) return t; // 标题保留 # 前缀
+      if (/^```/.test(t)) return '┌ ' + t.slice(3);
+      if (/^```$/.test(t)) return '└──'; // 代码块闭合
+      if (/^[-*]\s/.test(t)) return ' • ' + t.slice(2);
+      if (/^\d+[.)]\s/.test(t)) return t;
+      if (/^[-_*]{3,}$/.test(t)) return '─'.repeat(24);
+      return t;
+    });
+    return lines(' Markdown 预览 ', out);
   });
 
   bus.register('/video', async (args) => {
@@ -1094,7 +1188,13 @@ export const commands = {
           writeFileSync(join(dest, 'data', f), readFileSync(join(srcData, f), 'utf8'), 'utf8');
         }
       }
-      return `插件已安装：${pluginName} → ${dest}（重启后工具/命令生效；本会话可用 /plugin list 查看）`;
+      // 审计修复：安装后立即热更新（不再提示重启后生效）
+      const { loadAllPlugins, pluginToolsToExtra, registerPluginCommands, registerPluginNlTriggers } = await import('../kernel/plugins.js');
+      const reloaded = await loadAllPlugins(ctx.dataDir, ctx.cwd);
+      if (ctx.commandBus) registerPluginCommands(ctx.commandBus, reloaded);
+      registerPluginNlTriggers(reloaded);
+      ctx.agent?.updateTools?.(pluginToolsToExtra(reloaded));
+      return `插件已安装并热生效：${pluginName} → ${dest}（/plugin list 查看）`;
     }
 
     const target = all.find(p => p.manifest.name === name);
@@ -1106,7 +1206,14 @@ export const commands = {
     }
     if (sub === 'enable' || sub === 'disable') {
       const ok = setPluginEnabled(target.dir, sub === 'enable');
-      return ok ? `插件已${sub === 'enable' ? '启用' : '禁用'}：${name}（重启后生效）` : `状态修改失败：${name}`;
+      if (!ok) return `状态修改失败：${name}`;
+      // 审计修复：不再提示「重启后生效」——立即热更新（工具表 + 命令 + NL 触发）
+      const { loadAllPlugins, pluginToolsToExtra, registerPluginCommands, registerPluginNlTriggers } = await import('../kernel/plugins.js');
+      const reloaded = await loadAllPlugins(ctx.dataDir, ctx.cwd);
+      if (ctx.commandBus) registerPluginCommands(ctx.commandBus, reloaded);
+      registerPluginNlTriggers(reloaded);
+      ctx.agent?.updateTools?.(pluginToolsToExtra(reloaded));
+      return `插件已${sub === 'enable' ? '启用' : '禁用'}：${name}（热生效，无需重启）`;
     }
     return '用法：/plugin install <目录> ｜ list ｜ remove｜enable｜disable <名称>';
   });
@@ -1233,40 +1340,8 @@ export const commands = {
 
   // /flow：技能流程图驱动（P2——Kimi /flow 能力的自研版）
   // frontmatter flow: "准备 → 构建 → 部署"；正文每节点：## 节点: <名>
-  bus.register('/flow', async (args) => {
-    const { loadSkill, parseFlow } = await import('../kernel/skills.js');
-    const [sub, ...rest] = args;
-    if (sub === 'cancel') {
-      ctx.db.prepare(`UPDATE flow_runs SET finished=1 WHERE finished=0`).run();
-      return '已取消全部进行中的流程';
-    }
-    if (sub === 'status') {
-      const rows = ctx.db.prepare(`SELECT skill, nodes, current, finished FROM flow_runs ORDER BY id DESC LIMIT 1`).get() as any;
-      if (!rows) return '当前无流程';
-      const nodes = JSON.parse(rows.nodes) as Array<{ name: string }>;
-      return lines(` 流程 ${rows.skill} `, [
-        ...nodes.map((n, i) => ` ${i === rows.current && !rows.finished ? '▶' : i < rows.current || rows.finished ? '✓' : '·'} ${n.name}`),
-        rows.finished ? '' : ` 下一步：/flow next（${rows.current + 1}/${nodes.length}）`,
-      ]);
-    }
-    const name = sub ?? '';
-    if (!name) return '用法：/flow <技能名> ｜ /flow next ｜ /flow status ｜ /flow cancel';
-    const skill = loadSkill(ctx.dataDir, ctx.cwd, name);
-    if (!skill) return `技能不存在：${name}（/skill list 查看）`;
-    const flow = parseFlow(skill.body, skill.meta.flow);
-    if (!flow) return `技能「${name}」未定义流程（frontmatter 需 flow: "节点A → 节点B"）`;
-    // 已有进行中流程则继续，否则新建
-    let run = ctx.db.prepare(`SELECT id, current FROM flow_runs WHERE skill=? AND finished=0 ORDER BY id DESC LIMIT 1`).get(name) as { id: number; current: number } | undefined;
-    if (!run) {
-      const r = ctx.db.prepare(`INSERT INTO flow_runs (skill, nodes, current, finished, ts) VALUES (?,?,?,?,?)`)
-        .run(name, JSON.stringify(flow), 0, 0, Date.now());
-      run = { id: Number(r.lastInsertRowid), current: 0 };
-    }
-    const node = flow[run.current]!;
-    const step = `${run.current + 1}/${flow.length}`;
-    void ctx.agent?.run(`（流程「${name}」步骤 ${step}：${node.name}）执行以下步骤并完成后简要汇报：\n${node.instruction}`).catch(() => {});
-    return `▶ 流程「${name}」步骤 ${step}：${node.name}——已交给助手执行（/flow next 推进下一步，/flow status 查看进度）`;
-  });
+  // /flow：双语义合一（审计修复——此前两个 /flow 注册互相覆盖，技能流程驱动
+  //  不可达；现在子命令走技能流程（next/status/cancel），其余走 AI Mermaid 生成）
 
   // /security：安全注入通道管理（红线：关闭通道即同步清除内存敏感缓存）
   bus.register('/security', (args) => {
@@ -1803,8 +1878,59 @@ export const commands = {
 
   // /flow <需求>：AI 生成流程图（Mermaid）写入 data/flow/（参考 flow 技能的落地替代）
   bus.register('/flow', async (args) => {
+    // ── 技能流程驱动（frontmatter flow: "准备 → 构建 → 部署"）──
+    const [sub] = args;
+    if (sub === 'status') {
+      const rows = ctx.db.prepare(`SELECT skill, nodes, current, finished FROM flow_runs ORDER BY id DESC LIMIT 1`).get() as any;
+      if (!rows) return '当前无流程——/flow <技能名> 启动技能流程';
+      const nodes = JSON.parse(rows.nodes) as Array<{ name: string; instruction: string }>;
+      return lines(` 流程 ${rows.skill} `, [
+        ...nodes.map((n, i) => ` ${i === rows.current && !rows.finished ? '▶' : i < rows.current || rows.finished ? '✓' : '·'} ${n.name}`),
+        rows.finished ? ' 已完成' : ` 下一步：/flow next（${rows.current + 1}/${nodes.length}）`,
+      ]);
+    }
+    if (sub === 'cancel') {
+      ctx.db.prepare(`UPDATE flow_runs SET finished=1 WHERE finished=0`).run();
+      return '已取消全部进行中的流程';
+    }
+    if (sub === 'next') {
+      // 推进当前流程到下一步（审计修复：status 提示 /flow next 但此前无 next 分支）
+      const run = ctx.db.prepare(`SELECT id, skill, nodes, current FROM flow_runs WHERE finished=0 ORDER BY id DESC LIMIT 1`).get() as any;
+      if (!run) return '当前无进行中的流程——/flow <技能名> 启动';
+      const nodes = JSON.parse(run.nodes) as Array<{ name: string; instruction: string }>;
+      const next = run.current + 1;
+      if (next >= nodes.length) {
+        ctx.db.prepare(`UPDATE flow_runs SET finished=1 WHERE id=?`).run(run.id);
+        return `流程「${run.skill}」全部完成 ✓`;
+      }
+      ctx.db.prepare(`UPDATE flow_runs SET current=? WHERE id=?`).run(next, run.id);
+      const node = nodes[next]!;
+      void ctx.agent?.run(`（流程「${run.skill}」步骤 ${next + 1}/${nodes.length}：${node.name}）执行以下步骤并完成后简要汇报：\n${node.instruction}`).catch(() => {});
+      return `▶ 流程「${run.skill}」推进到步骤 ${next + 1}/${nodes.length}：${node.name}（/flow next 继续，/flow status 查看进度）`;
+    }
+    const skillName = sub ?? '';
+    if (skillName && skillName !== 'mermaid' && !/[\s，。]/.test(skillName)) {
+      // 技能名 → 技能流程启动（技能未定义流程时回落到 AI 生成）
+      const { loadSkill, parseFlow } = await import('../kernel/skills.js');
+      const skill = loadSkill(ctx.dataDir, ctx.cwd, skillName);
+      if (skill) {
+        const flow = parseFlow(skill.body, skill.meta.flow);
+        if (flow) {
+          let run = ctx.db.prepare(`SELECT id, current FROM flow_runs WHERE skill=? AND finished=0 ORDER BY id DESC LIMIT 1`).get(skillName) as { id: number; current: number } | undefined;
+          if (!run) {
+            const r = ctx.db.prepare(`INSERT INTO flow_runs (skill, nodes, current, finished, ts) VALUES (?,?,?,?,?)`)
+              .run(skillName, JSON.stringify(flow), 0, 0, Date.now());
+            run = { id: Number(r.lastInsertRowid), current: 0 };
+          }
+          const node = flow[run.current]!;
+          void ctx.agent?.run(`（流程「${skillName}」步骤 ${run.current + 1}/${flow.length}：${node.name}）执行以下步骤并完成后简要汇报：\n${node.instruction}`).catch(() => {});
+          return `▶ 流程「${skillName}」步骤 ${run.current + 1}/${flow.length}：${node.name}（/flow next 推进，/flow status 查看进度）`;
+        }
+      }
+    }
+    // ── AI 生成 Mermaid 流程图（默认路径）──
     const goal = args.join(' ').trim();
-    if (!goal) return '用法：/flow <流程需求>（如 /flow 用户注册流程）——AI 生成 Mermaid 流程图';
+    if (!goal) return '用法：/flow <流程需求> ｜ /flow <技能名>（技能流程）｜ /flow next｜status｜cancel';
     const { resolveApiKey } = await import('../kernel/providers.js');
     const keyRes = resolveApiKey(ctx.config.get('settings') as any);
     if (!keyRes.key) return '未配置模型密钥——/key set <密钥> 后 /flow 才能生成流程图';

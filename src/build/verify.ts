@@ -4,6 +4,7 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { sanitizedEnv } from '../kernel/env.js';
 
 export interface VerifyResult { status: 'ok' | 'failed' | 'skipped'; detail: string }
 
@@ -16,7 +17,8 @@ export async function verifyProject(projectDir: string, opts: { timeoutMs?: numb
 
   const run = (script: string, env: Record<string, string> = {}): Promise<{ code: number | null; out: string }> =>
     new Promise(resolve => {
-      const child = spawn(process.execPath, [script], { cwd: projectDir, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], shell: false });
+      // 子进程环境净化（密钥类变量不透传——与 bash/hooks/MCP 同一策略）
+      const child = spawn(process.execPath, [script], { cwd: projectDir, env: { ...sanitizedEnv(), ...env }, stdio: ['ignore', 'pipe', 'pipe'], shell: false });
       let out = '';
       child.stdout.on('data', c => out += c);
       child.stderr.on('data', c => out += c);
@@ -32,7 +34,13 @@ export async function verifyProject(projectDir: string, opts: { timeoutMs?: numb
     const hcRes = await run(hc);
     try { srv.kill(); } catch {}
     if (hcRes.code !== 0) return { status: 'failed', detail: hcRes.out.slice(0, 300) };
-    return { status: 'ok', detail: hcRes.out.slice(0, 200) };
+    // 3. 重启读回（声明流程真实化）：杀 → 重启 → 再探活 → 读回一致才算完成
+    const srv2 = spawn(process.execPath, [entry], { cwd: projectDir, env: { ...process.env, PORT: '4321' }, stdio: 'ignore' });
+    await new Promise(r => setTimeout(r, 1200));
+    const hcRes2 = await run(hc);
+    try { srv2.kill(); } catch {}
+    if (hcRes2.code !== 0) return { status: 'failed', detail: `重启后探活失败：${hcRes2.out.slice(0, 300)}` };
+    return { status: 'ok', detail: `启动→探活→重启→读回全部通过：${hcRes2.out.slice(0, 160)}` };
   } catch (e: any) {
     return { status: 'failed', detail: String(e?.message ?? e) };
   }

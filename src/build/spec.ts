@@ -49,13 +49,3 @@ export function makeSpec(input: string, opts: { key: string | null }): Spec {
   return { title: '', summary: '', scaffold: 'unknown', acceptance: [] };
 }
 
-// 标准验收模板（按模具）
-export function acceptanceFor(scaffold: string): string[] {
-  switch (scaffold) {
-    case 'ledger': return ['能增删改查记账记录', '能统计总数/合计/分类', '数据持久化重启不丢'];
-    case 'todo': return ['能添加/勾选/删除任务', '能按状态筛选', '数据持久化重启不丢'];
-    case 'note': return ['能创建/编辑/删除笔记', '支持 Markdown 渲染', '能全文搜索'];
-    case 'anim': return ['能播放分镜序列', '支持关键帧参数调整', '能导出预览'];
-    default: return ['核心功能可操作', '数据本地持久化', '有清晰入口'];
-  }
-}

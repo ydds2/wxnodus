@@ -16,18 +16,25 @@ export async function runGate(ctx: GateCtx): Promise<GateResult> {
     },
     {
       name: '健康门',
-      ok: existsSync(join(ctx.projectDir, 'healthcheck.js')),
-      detail: 'healthcheck 脚本存在（真实探活由 verify 引擎执行）',
+      // 审计修复：不再只查文件存在——真实探活（启动→探活→重启→读回）
+      ok: await (async () => {
+        try {
+          const { verifyProject } = await import('./verify.js');
+          const r = await verifyProject(ctx.projectDir, { timeoutMs: 15000 });
+          return r.status === 'ok';
+        } catch { return false; }
+      })(),
+      detail: '真实验证：启动→探活→重启→读回（verify 引擎）',
     },
     {
       name: '证据门',
-      ok: readEvidence(ctx.projectDir) !== null,
-      detail: 'evidence.json 存在',
+      ok: (readEvidence(ctx.projectDir)?.status ?? 'missing') === 'ok',
+      detail: 'evidence.json 存在且 status=ok（验证通过才落盘）',
     },
     {
       name: '合规门',
-      ok: complianceCheck(ctx.projectDir).ok,
-      detail: 'README/证据/清单齐全',
+      ok: complianceCheck(ctx.projectDir, ctx.dataDir).ok,
+      detail: '授权声明/AI 标注/证据链/审计留痕',
     },
     // 测试门（P2 概念编译器增强）：产物声明 test 脚本则真实执行 npm test——
     // 通过才算完成（无测试脚本则跳过并注明，不误判失败）
@@ -38,11 +45,12 @@ export async function runGate(ctx: GateCtx): Promise<GateResult> {
         const testCmd = pkg.scripts?.test;
         if (!testCmd) return { name: '测试门', ok: true, detail: '无 test 脚本（跳过——建议产物含冒烟测试）' };
         const { execFileSync } = await import('node:child_process');
+        const { sanitizedEnv } = await import('../kernel/env.js');
         const t0 = Date.now();
         // Windows 下 .cmd 无法被 execFileSync 直接创建进程（EINVAL），需经 shell 启动
         execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['test', '--silent'], {
           cwd: ctx.projectDir, timeout: 120_000, stdio: 'pipe', windowsHide: true,
-          shell: process.platform === 'win32',
+          shell: process.platform === 'win32', env: sanitizedEnv(),
         });
         return { name: '测试门', ok: true, detail: `npm test 通过（${((Date.now() - t0) / 1000).toFixed(1)}s）` };
       } catch (e: any) {

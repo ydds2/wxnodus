@@ -280,7 +280,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   bus.register('/memory', (args) => {
-    const rec = ctx.mem.recall('default');
+    const rec = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default');
     const absorbed = ctx.mem.absorbCount('default');
     const sub = args[0];
 
@@ -332,18 +332,29 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const projName = `p${Date.now().toString(36)}`;
     const projDir = join(ctx.dataDir, 'projects', projName);
     mkdirSync(projDir, { recursive: true });
-    // 构建（脚手架 + 验证 + 证据）
+    // 构建（脚手架 → 真实验证 → 证据落盘 → 质量门）
     const sc = instantiate(spec, projDir);
     if (!sc.ok) return `脚手架失败：${sc.reason}`;
-    const ev = writeEvidence(projDir, { status: 'ok', checks: ['scaffold'], port: null });
+    // 审计修复：证据必须在验证之后落盘——先跑真实验证（启动→探活→重启→读回），
+    // checks 填真实探活结果；验证失败则证据记录 failed（不伪造 'ok'）
+    const { verifyProject } = await import('../build/verify.js');
+    const vr = await verifyProject(projDir);
+    const ev = writeEvidence(projDir, {
+      status: vr.status,
+      checks: vr.status === 'ok' ? ['scaffold', 'verify:start-probe-restart-readback'] : ['scaffold'],
+      detail: vr.detail,
+      port: null,
+    });
     const fp = fingerprint(projDir);
     const gate = await runGate({ projectDir: projDir, dataDir: ctx.dataDir });
     const order = topoSort(plan.modules);
+    const gateFail = gate.gates.filter(g => !g.ok);
     return lines(` 构建完成「${spec.title}」 `, [
       ` 模具：${spec.scaffold} · 模块：${order.join(' → ')}`,
       ` 验收：${spec.acceptance.map(a => '✓ ' + a).join('\n       ')}`,
       ` 位置：${projDir}`,
-      ` 证据：${ev ? `evidence.json（指纹 ${fp}）` : '失败'} · 质量门：${gate.pass ? '✅ 通过' : '⚠ ' + gate.gates.filter(g => !g.ok).map(g => g.name).join(',')}`,
+      ` 验证：${vr.status === 'ok' ? '✅ 启动→探活→重启→读回' : `⚠ ${vr.detail}`}`,
+      ` 证据：${ev ? `evidence.json（${vr.status}，指纹 ${fp}）` : '失败'} · 质量门：${gate.pass ? '✅ 通过' : '⚠ ' + gateFail.map(g => g.name).join(',')}`,
       ` 启动：cd ${projDir} && node server/index.js`,
     ]);
   });

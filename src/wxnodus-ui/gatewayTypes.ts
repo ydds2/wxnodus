@@ -513,7 +513,6 @@ export type GatewayEvent =
   | { payload?: GatewaySkin; session_id?: string; type: 'skin.changed' }
   | { payload?: { name?: string }; session_id?: string; type: 'theme.changed' }
   | { payload: SessionInfo; session_id?: string; type: 'session.info' }
-  | { payload?: { text?: string }; session_id?: string; type: 'thinking.delta' }
   | { payload?: undefined; session_id?: string; type: 'message.start' }
   | { payload?: { kind?: string; text?: string }; session_id?: string; type: 'status.update' }
   | {
@@ -532,11 +531,6 @@ export type GatewayEvent =
   | { payload?: { state?: 'idle' | 'listening' | 'transcribing' }; session_id?: string; type: 'voice.status' }
   | { payload?: { no_speech_limit?: boolean; text?: string }; session_id?: string; type: 'voice.transcript' }
   | { payload: { line: string }; session_id?: string; type: 'gateway.stderr' }
-  | {
-      payload?: { level?: 'info' | 'warn' | 'error'; message?: string }
-      session_id?: string
-      type: 'browser.progress'
-    }
   | {
       payload?: { cwd?: string; python?: string; stderr_tail?: string }
       session_id?: string

@@ -147,10 +147,6 @@ function classifyBashSingle(seg: string): BashCategory {
   if (BASH_WRITE.test(unwrapped)) return 'write';
   if (BASH_NETWORK.test(unwrapped)) return 'network';
   if (BASH_READONLY.test(unwrapped)) return 'readonly';
-  return 'danger';
-  if (BASH_WRITE.test(seg)) return 'write';
-  if (BASH_NETWORK.test(seg)) return 'network';
-  if (BASH_READONLY.test(seg)) return 'readonly';
   return 'danger'; // 未知命令保守确认
 }
 
@@ -220,7 +216,7 @@ export function modeVerdict(mode: Mode, tool: string, args: Record<string, any>,
       // 自动编辑（Claude acceptEdits）：文件编辑自动接受；bash 写/网络/危险按分级确认；只读放行
       if (tool === 'fs_write' || tool === 'fs_edit') return 'approve';
       return isDanger ? 'confirm' : 'approve';
-    case 'manual': return isDanger ? 'confirm' : 'approve';
+    case 'manual': return 'confirm'; // 全量确认：所有动作（含只读查询）都先征求用户同意
     case 'smart':
     default:
       return isDanger ? 'confirm' : 'approve';

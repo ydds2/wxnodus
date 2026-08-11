@@ -72,7 +72,6 @@ export interface HookRunner {
   subagentStop(result: { ok: boolean; output: string; turns: number }): void;
   /** 后台任务/定时任务完成通知 */
   notification(kind: string, text: string): void;
-  enabled: boolean;
 }
 
 // 构建 hook 运行器（订阅配置快照——每次读取当前 settings，热生效）
@@ -87,7 +86,6 @@ export function createHookRunner(getSettings: () => Record<string, any> | undefi
   };
 
   return {
-    enabled: true,
     async preToolUse(name, args) {
       const out = fire('preToolUse', { tool: name, args });
       // DENY: 开头（或包含 DENY 行）→ 真实拦截工具执行

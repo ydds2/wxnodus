@@ -42,3 +42,15 @@ describe('sanitizedEnv 环境净化', () => {
     expect(out.WXNODUS_HOOK_DATA).toBe('{}');
   });
 });
+
+describe('WXNODUS_ 命名空间内密钥过滤（安全审计修复）', () => {
+  it('WXNODUS_API_KEY / WXNODUS_<厂商>_KEY 不透传子进程', () => {
+    process.env.WXNODUS_API_KEY = 'sk-test';
+    process.env.WXNODUS_DEEPSEEK_KEY = 'ds-test';
+    process.env.WXNODUS_MODEL = 'kimi-k3'; // 非密钥 WXNODUS_ 变量仍透传
+    const out = sanitizedEnv();
+    expect(out.WXNODUS_API_KEY).toBeUndefined();
+    expect(out.WXNODUS_DEEPSEEK_KEY).toBeUndefined();
+    expect(out.WXNODUS_MODEL).toBe('kimi-k3');
+  });
+});

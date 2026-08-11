@@ -57,6 +57,8 @@ const SETTINGS_KEYS = new Set([
   'strictMcpConfig', 'toolLazyLoad', 'budgetTokens', 'autoRepoMap',
   // 开放兼容：实际读写的键全部入白名单（此前 lang/skin/curator 被误报未知键）
   'lang', 'skin', 'curator',
+  // UI 显示配置（/busy /indicator /statusbar 持久化）
+  'tui_status_indicator', 'tui_statusbar',
 ]);
 export function unknownSettingsKeys(settings: Record<string, any>): string[] {
   return Object.keys(settings).filter(k => !SETTINGS_KEYS.has(k));
@@ -99,4 +101,3 @@ export function createConfig(dataDir: string): Config {
   };
 }
 
-export { existsSync as configExists };

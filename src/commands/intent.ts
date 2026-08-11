@@ -34,10 +34,9 @@ export const NL_TRIGGERS: NlTrigger[] = [
   // ── 智能度扩充（全方面自研化·B）：编程/运维/会话类触发 ──
   { re: /审查|审阅|review.*代码|代码.*review|检查.*(?:代码|逻辑|bug)|找.*(?:bug|缺陷)/i, cmd: '/fdr' },
   { re: /写测试|补测试|测试(?:一下|这个|代码)|单测/i, cmd: '/fdr' },
-  { re: /重构|整理代码|代码整理/i, cmd: '/build' },
-  { re: /写文档|生成文档|README/i, cmd: '/evidence' },
+  // 审计修复：NL 触发与命令语义对齐（此前「写文档→/evidence（不生成文档）」
+  // 「提交代码→/build（不提交 git）」「重构→/build」均错配——删除误导词，让 AI 对话层接管）
   { re: /数据库|执行.*sql|sql.*查询/i, cmd: '/sql' },
-  { re: /提交代码|git.*提交|commit/i, cmd: '/build' },
   { re: /导出.*(?:会话|历史|对话)|导出数据/i, cmd: '/export' },
   { re: /恢复(?:上次|之前)?会话|继续上次|resume/i, cmd: '/resume' },
   { re: /压缩(?:上下文|记忆)|清理上下文/i, cmd: '/compact' },

@@ -129,7 +129,7 @@ describe('runGate 测试门', () => {
       writeFileSync(join(dir, 'server', 'index.js'), 'console.log("ok")');
       writeFileSync(join(dir, 'healthcheck.js'), 'console.log("ok")');
       writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'g', scripts: { test: 'node -e "console.log(\'pass\')"' } }));
-      writeFileSync(join(dir, 'evidence.json'), JSON.stringify({ ok: true }));
+      writeFileSync(join(dir, 'evidence.json'), JSON.stringify({ status: 'ok', checks: [], port: null }));
       writeFileSync(join(dir, 'README.md'), '# g');
       const { runGate } = await import('../src/build/gate.js');
       const r = await runGate({ projectDir: dir, dataDir: dir });
@@ -148,7 +148,7 @@ describe('runGate 测试门', () => {
       writeFileSync(join(dir, 'server', 'index.js'), 'console.log("ok")');
       writeFileSync(join(dir, 'healthcheck.js'), 'console.log("ok")');
       writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'g' }));
-      writeFileSync(join(dir, 'evidence.json'), JSON.stringify({ ok: true }));
+      writeFileSync(join(dir, 'evidence.json'), JSON.stringify({ status: 'ok', checks: [], port: null }));
       writeFileSync(join(dir, 'README.md'), '# g');
       const { runGate } = await import('../src/build/gate.js');
       const r = await runGate({ projectDir: dir, dataDir: dir });
