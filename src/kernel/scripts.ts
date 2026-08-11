@@ -1,0 +1,79 @@
+// src/kernel/scripts.ts — 可执行剧本（开放兼容：会话 → 可重放脚本）
+// 剧本 = 用户输入序列 + 每轮工具调用序列（跳过 AI 决策，确定性重放）。
+// 录制源：bus 'agent.start'（用户输入）+ 'agent.tool'（工具调用）——
+// 重放器（agent.runScript）直接执行固定调用序列，输出可经 AI 总结（有 key 时）。
+// 文件：<dataDir>/scripts/<name>.json（本地数据，数据不出机红线）
+import { mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+export interface ScriptStep {
+  /** 该轮用户输入（重放时注入消息流） */
+  prompt: string;
+  /** 该轮工具调用序列（按序执行，跳过 AI 决策） */
+  tools: Array<{ name: string; args: Record<string, any> }>;
+}
+
+export interface Script {
+  name: string;
+  description: string;
+  created_at: number;
+  steps: ScriptStep[];
+}
+
+const scriptDir = (dataDir: string) => join(dataDir, 'scripts');
+
+const scriptFile = (dataDir: string, name: string) => join(scriptDir(dataDir), `${name}.json`);
+
+const NAME_RE = /^[a-zA-Z0-9_-]{1,40}$/;
+
+export function isValidScriptName(name: string): boolean {
+  return NAME_RE.test(name);
+}
+
+export function listScripts(dataDir: string): Script[] {
+  let entries: string[] = [];
+  try { entries = readdirSync(scriptDir(dataDir)); } catch { return []; }
+  const out: Script[] = [];
+  for (const e of entries) {
+    if (!e.endsWith('.json')) continue;
+    try {
+      const j = JSON.parse(readFileSync(join(scriptDir(dataDir), e), 'utf8')) as Script;
+      if (j && typeof j.name === 'string' && Array.isArray(j.steps)) out.push(j);
+    } catch { /* 损坏剧本跳过 */ }
+  }
+  return out.sort((a, b) => b.created_at - a.created_at);
+}
+
+export function loadScript(dataDir: string, name: string): Script | null {
+  if (!NAME_RE.test(name)) return null;
+  try {
+    const j = JSON.parse(readFileSync(scriptFile(dataDir, name), 'utf8')) as Script;
+    return j && Array.isArray(j.steps) ? j : null;
+  } catch { return null; }
+}
+
+export function saveScript(dataDir: string, script: Script): boolean {
+  if (!NAME_RE.test(script.name)) return false;
+  try {
+    mkdirSync(scriptDir(dataDir), { recursive: true });
+    writeFileSync(scriptFile(dataDir, script.name), JSON.stringify(script, null, 2), 'utf8');
+    return true;
+  } catch { return false; }
+}
+
+export function deleteScript(dataDir: string, name: string): boolean {
+  if (!NAME_RE.test(name)) return false;
+  try {
+    if (!existsSync(scriptFile(dataDir, name))) return false;
+    rmSync(scriptFile(dataDir, name), { force: true });
+    return true;
+  } catch { return false; }
+}
+
+/** 剧本统计（/script list 展示用） */
+export function scriptStats(s: Script): { steps: number; tools: number } {
+  return {
+    steps: s.steps.length,
+    tools: s.steps.reduce((a, st) => a + st.tools.length, 0),
+  };
+}

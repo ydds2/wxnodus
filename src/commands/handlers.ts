@@ -27,7 +27,7 @@ export interface HandlerCtx {
   config: Config;
   bus: EventBus;
   /** agent 实例（/delegate 派生子代理等） */
-  agent?: { run(prompt: string): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>; spawnSubagent(goal: string): Promise<{ ok: boolean; output: string; turns: number }>; abort(): void; setMode(m: string): void; getMode(): string; setSessionId(id: string): void; getSessionId?(): string; updateTools?(extra: Record<string, any>): void };
+  agent?: { run(prompt: string): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>; spawnSubagent(goal: string): Promise<{ ok: boolean; output: string; turns: number }>; abort(): void; setMode(m: string): void; getMode(): string; setSessionId(id: string): void; getSessionId?(): string; updateTools?(extra: Record<string, any>): void; setScriptRecorder?(fn: ((name: string, args: Record<string, any>) => void) | null): void; runScript?(steps: Array<{ prompt: string; tools: Array<{ name: string; args: Record<string, any> }> }>): Promise<{ ok: boolean; log: Array<{ kind: 'prompt' | 'tool' | 'result'; text: string; name?: string }> }> };
   getModel: () => string;
   getMode: () => string;
   setMode: (m: string) => void;
@@ -266,13 +266,17 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return `当前主题：${ctx.getThemeName()}（可选：wxnodus 黑洞/dark/light）`;
   });
 
-  // 黑洞检索
+  // 黑洞检索（FTS + 向量语义融合：/hole 上次怎么解决的 也能命中）
   bus.register('/hole', async (args) => {
     const q = args.join(' ');
     if (!q) return '用法：/hole <关键词>（自然语言「搜一下…」亦可直达）';
-    const hits = searchMessages(ctx.db, q, { limit: 5 });
+    const hits = await ctx.mem.recallHybrid(q, { limit: 5 });
     if (!hits.length) return `黑洞检索「${q}」：无命中`;
-    return lines(` 黑洞检索「${q}」 `, hits.map(h => ` [${h.role}] ${h.content.slice(0, 80)}`));
+    const sid = ctx.agent?.getSessionId?.() ?? 'default';
+    return lines(` 黑洞检索「${q}」 `, hits.map(h => {
+      const fromOther = Boolean(h.session_id) && h.session_id !== sid;
+      return ` [${fromOther ? `会话 ${h.session_id!.slice(0, 10)}` : '当前'}] ${h.content.slice(0, 70)}${fromOther ? `（/resume ${h.session_id} 跳转）` : ''}`;
+    }));
   });
 
   bus.register('/memory', (args) => {

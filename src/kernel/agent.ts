@@ -99,6 +99,10 @@ export function createAgent(opts: AgentOptions) {
   // 模型先看项目结构再动手、自主 skill_load，减少人工 /map 与 /skill list
   let autoInjectDone = false;
   let budgetWarned = false;
+  // 上下文水位预警标记（会话级一次——75% 阈值提示主动压缩）
+  let ctxWarned = false;
+  // 剧本录制器（/script record 挂载）：executeTool 每个调用回调（name/args）
+  let scriptRecorder: ((name: string, args: Record<string, any>) => void) | null = null;
   function checkBudget(): void {
     if (!budgetTokens || budgetWarned) return;
     try {
@@ -389,6 +393,8 @@ export function createAgent(opts: AgentOptions) {
     // C3 修复：工具调用稳定 id（start/complete 同 id，UI 工具卡可正确闭合）
     const toolId = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     bus.emit('agent.tool', { name, args, phase: 'start', toolId });
+    // 剧本录制钩子：/script record 期间每个工具调用进当前 step（跳过 AI 决策的确定性重放源）
+    scriptRecorder?.(name, args);
     const t0 = Date.now();
     try {
       const tool = tools[name];
@@ -606,6 +612,12 @@ export function createAgent(opts: AgentOptions) {
       // （默认 max×0.85 或 +reserved>=max）→ 自动压缩内存消息后继续当前回合
       const ctxLimit = opts2.subagent ? 64_000 : (opts.maxContextTokens ?? 64_000);
       const used = estimateMessagesTokens(msgs);
+      // 水位预警（会话级一次）：75% 阈值提前告知——用户可主动 /compact，
+      // 避免 85% 自动压缩「被动发生」（压缩会丢中间细节，主动压缩可选保留策略）
+      if (used > ctxLimit * 0.75 && !ctxWarned) {
+        ctxWarned = true;
+        bus.emit('system.notice', { text: `上下文已用 ${Math.round((used / ctxLimit) * 100)}%（${used.toLocaleString()} token）——达到 85% 将自动压缩，可提前 /compact 主动压缩` });
+      }
       if (used > ctxLimit * 0.85 && msgs.length > 10) {
         // P1-1：preCompact hook 可阻止压缩（输出 BLOCK）
         if (hooks?.preCompact(`auto: ${used}/${ctxLimit}`)) {
@@ -788,6 +800,37 @@ export function createAgent(opts: AgentOptions) {
     setSessionId(id: string) { sessionId = id; },
     // M4：当前会话读取——命令层（/undo /fork 等）定位真实会话，不再硬编码 'default'
     getSessionId(): string { return sessionId; },
+    // ── 可执行剧本（/script）──────────────
+    // 挂载/卸载录制器：录制期间每个工具调用回调（name/args），供 /script record 归集
+    setScriptRecorder(fn: ((name: string, args: Record<string, any>) => void) | null) {
+      scriptRecorder = fn;
+    },
+    // 剧本重放：跳过 AI 决策，按序执行固定调用序列（确定性——每次结果可复现）。
+    // 每个 step：注入用户输入（mem 落库）→ 依序执行该 step 的工具序列；
+    // 工具输出经 untrusted 包裹安全执行（同正常对话路径）
+    async runScript(steps: Array<{ prompt: string; tools: Array<{ name: string; args: Record<string, any> }> }>): Promise<{
+      ok: boolean;
+      log: Array<{ kind: 'prompt' | 'tool' | 'result'; text: string; name?: string }>;
+    }> {
+      const log: Array<{ kind: 'prompt' | 'tool' | 'result'; text: string; name?: string }> = [];
+      try {
+        for (const step of steps) {
+          if (step.prompt.trim()) {
+            try { opts.mem.append(sessionId, 'user', step.prompt); } catch { /* 忽略 */ }
+            log.push({ kind: 'prompt', text: step.prompt });
+          }
+          for (const tc of step.tools) {
+            log.push({ kind: 'tool', name: tc.name, text: `${tc.name} ${JSON.stringify(tc.args ?? {}).slice(0, 120)}` });
+            const out = await executeTool(tc.name, tc.args ?? {});
+            log.push({ kind: 'result', name: tc.name, text: out.slice(0, 300) });
+            try { opts.mem.append(sessionId, 'tool', `${tc.name}: ${out.slice(0, 300)}`); } catch { /* 忽略 */ }
+          }
+        }
+        return { ok: true, log };
+      } catch (e: any) {
+        return { ok: false, log, };
+      }
+    },
   };
 }
 

@@ -115,7 +115,7 @@ export interface Memory {
   append(sessionId: string, role: MemMsg['role'], content: string, toolCallId?: string): void;
   working(sessionId: string): Array<{ role: string; content: string }>;
   recall(sessionId: string): Array<{ id: number; role: string; content: string; ts: number }>;
-  recallHybrid(query: string, opts?: { limit?: number; sessionId?: string }): Promise<Array<{ id: number; content: string; score: number }>>;
+  recallHybrid(query: string, opts?: { limit?: number; sessionId?: string }): Promise<Array<{ id: number; content: string; score: number; session_id?: string }>>;
   /** 记忆置顶/淡化：salience 倍率（1=默认，>1 置顶加强，<1 淡化） */
   setSalience(messageId: number, mult: number): boolean;
   /** 全部置顶记忆（salience>1，按倍率降序）——/memory list 与召回加权共用 */
@@ -178,7 +178,7 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
       // F6 置顶加权：召回分 = FTS 命中分 × salience 倍率——置顶记忆（pin）分数放大，
       // 淡化记忆（fade）自然沉底；相同权重按 FTS rank 顺序稳定
       const fts = searchMessages(db, query, { limit: limit * 2, sessionId: opts.sessionId })
-        .map(r => ({ id: r.id, content: r.content, score: 1 * Math.max(0.05, r.salience ?? 1) }));
+        .map(r => ({ id: r.id, content: r.content, score: 1 * Math.max(0.05, r.salience ?? 1), session_id: r.session_id }));
       const seen = new Set<number>();
       const out = fts.filter(h => {
         if (seen.has(h.id)) return false;
@@ -193,10 +193,10 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
             const knn = knnStmt.all(JSON.stringify(qv), limit - out.length) as Array<{ id: number }>;
             for (const k of knn) {
               if (seen.has(k.id)) continue;
-              const row = db.prepare(`SELECT id, content, salience FROM messages WHERE id=?`).get(k.id) as { id: number; content: string; salience: number } | undefined;
+              const row = db.prepare(`SELECT id, content, salience, session_id FROM messages WHERE id=?`).get(k.id) as { id: number; content: string; salience: number; session_id: string } | undefined;
               if (!row) continue;
               seen.add(row.id);
-              out.push({ id: row.id, content: row.content, score: 0.8 * Math.max(0.05, row.salience ?? 1) });
+              out.push({ id: row.id, content: row.content, score: 0.8 * Math.max(0.05, row.salience ?? 1), session_id: row.session_id });
               if (out.length >= limit) break;
             }
           } catch { /* 向量查询失败静默降级 */ }

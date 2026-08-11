@@ -14,6 +14,7 @@ import { discoverSkills, loadSkill, installSkill, writeSkill, skillContentForMod
 import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
 import { buildRepoMap } from '../kernel/repoMap.js';
 import { listShadows, restoreShadow, versionsOfFile, snapshotDir, restoreDirShadows } from '../kernel/undoShadows.js';
+import { listScripts, loadScript, saveScript, deleteScript, isValidScriptName, scriptStats, type Script, type ScriptStep } from '../kernel/scripts.js';
 import { parseCronExpr, describeCronExpr } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { decryptKey } from '../kernel/providers.js';
@@ -27,6 +28,9 @@ const lines = (title: string, body: string[]): string => {
   const w = Math.max(...body.map(l => l.length), title.length) + 4;
   return [`┌${'─'.repeat(w)}┐`, `│ ${title}${' '.repeat(w - title.length - 2)} │`, ...body.map(l => `│ ${l}${' '.repeat(Math.max(0, w - l.length - 2))} │`), `└${'─'.repeat(w)}┘`].join('\n');
 };
+
+// /script 录制状态（模块级——bus 处理器共享；/script record 挂 agent recorder）
+let scriptRecording: { name: string; description: string; buffer: ScriptStep[]; current: ScriptStep | null; offStart?: () => void } | null = null;
 
 // /usage --waterfall 的条形瀑布渲染（纯函数可单测）：
 // 每行 = 一次 API 调用（轮），条长按总 token 缩放——input 段用 ░、output 段用 █，
@@ -342,6 +346,95 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ` 跳过：${r.skipped.length} 个（二进制/超大/空/忽略目录）`,
       ` 回滚：/snapshot restore ${args[0] ?? '.'}（整体恢复到建档时刻）`,
     ]);
+  });
+
+  // /script：可执行剧本（开放兼容——会话 → 可重放脚本，跳过 AI 决策确定性执行）
+  //   record <名> [描述]：开始录制（此后每轮用户输入 + 工具调用序列进剧本）
+  //   stop：结束录制并保存 ｜ list ｜ show <名> ｜ run <名> ｜ dry-run <名> ｜ rm <名>
+  bus.register('/script', async (args) => {
+    const [sub, ...rest] = args;
+    if (!sub || sub === 'list') {
+      const scripts = listScripts(ctx.dataDir);
+      if (!scripts.length) return '暂无剧本——/script record <名称> [描述] 开始录制（录制中的对话工具调用将进剧本）';
+      return lines(' 剧本 ', scripts.map(s => {
+        const st = scriptStats(s);
+        return ` ${s.name}（${st.steps} 轮 / ${st.tools} 次工具调用）${s.description ? ' · ' + s.description.slice(0, 40) : ''}`;
+      }));
+    }
+    if (sub === 'record') {
+      const name = rest[0];
+      if (!name) return '用法：/script record <名称> [描述]——此后对话的工具调用序列将被录制';
+      if (!isValidScriptName(name)) return '剧本名非法（仅字母/数字/_/-，≤40 字符）';
+      if (scriptRecording) return `已在录制（${scriptRecording.name}）——先 /script stop`;
+      // 每轮对话开始（agent.start）→ 新 step（用户输入入册）；工具调用由 recorder 归集
+      const offStart = ctx.bus.on('agent.start', (e: any) => {
+        if (scriptRecording) {
+          scriptRecording.current = { prompt: String(e?.payload?.prompt ?? ''), tools: [] };
+          scriptRecording.buffer.push(scriptRecording.current);
+        }
+      });
+      scriptRecording = { name, description: rest.slice(1).join(' ') || `${name} 剧本`, buffer: [], current: null, offStart };
+      ctx.agent?.setScriptRecorder?.((toolName, toolArgs) => {
+        if (scriptRecording?.current) scriptRecording.current.tools.push({ name: toolName, args: toolArgs });
+      });
+      return `开始录制剧本「${name}」——下一轮对话起工具调用序列入册；/script stop 保存`;
+    }
+    if (sub === 'stop') {
+      if (!scriptRecording) return '当前未在录制——/script record <名称> 开始';
+      const rec = scriptRecording;
+      scriptRecording = null;
+      try { rec.offStart?.(); } catch { /* 忽略 */ }
+      ctx.agent?.setScriptRecorder?.(null);
+      const script: Script = {
+        name: rec.name,
+        description: rec.description,
+        created_at: Date.now(),
+        steps: rec.buffer.filter(s => s.prompt.trim() || s.tools.length),
+      };
+      if (!script.steps.length) return `剧本「${rec.name}」为空——录制期间没有对话轮次`;
+      if (!saveScript(ctx.dataDir, script)) return '保存失败（数据目录不可写？）';
+      const st = scriptStats(script);
+      return `剧本已保存：${script.name}（${st.steps} 轮 / ${st.tools} 次工具调用）——/script run ${script.name} 重放`;
+    }
+    const name = rest[0];
+    if (!name) return '用法：/script record <名> ｜ stop ｜ list ｜ show <名> ｜ run <名> ｜ dry-run <名> ｜ rm <名>';
+    const script = loadScript(ctx.dataDir, name);
+    if (!script) return `剧本不存在：${name}（/script list 查看）`;
+    if (sub === 'show') {
+      return lines(` 剧本「${script.name}」 `, [
+        ` 描述：${script.description || '（无）'} · 创建：${new Date(script.created_at).toLocaleString('zh-CN', { hour12: false })}`,
+        ...script.steps.flatMap((s, i) => [
+          ` #${i + 1} ❯ ${s.prompt.slice(0, 50) || '（无输入，纯工具轮）'}`,
+          ...s.tools.map(t => `    ⚡ ${t.name} ${JSON.stringify(t.args ?? {}).slice(0, 80)}`),
+        ]),
+      ]);
+    }
+    if (sub === 'dry-run') {
+      const st = scriptStats(script);
+      return lines(` 剧本 dry-run「${script.name}」 `, [
+        ` 将执行：${st.steps} 轮输入 + ${st.tools} 次工具调用（跳过 AI 决策，确定性重放）`,
+        ...script.steps.flatMap((s, i) => [
+          ` #${i + 1} ❯ ${s.prompt.slice(0, 50) || '（无输入）'}`,
+          ...s.tools.map(t => `    ⚡ ${t.name} ${JSON.stringify(t.args ?? {}).slice(0, 80)}`),
+        ]),
+        ` 确认执行：/script run ${name}`,
+      ]);
+    }
+    if (sub === 'rm') {
+      return deleteScript(ctx.dataDir, name) ? `剧本已删除：${name}` : `删除失败（不存在或无权限）：${name}`;
+    }
+    if (sub === 'run') {
+      if (!ctx.agent?.runScript) return '当前环境不支持剧本重放（agent 未装配）';
+      const r = await ctx.agent.runScript(script.steps);
+      if (!r.ok) return '剧本执行中断（工具异常）——查看上方执行日志';
+      const st = scriptStats(script);
+      return lines(` 剧本执行完成「${script.name}」 `, [
+        ` 重放：${st.steps} 轮 / ${st.tools} 次工具调用（确定性执行，无 AI 决策）`,
+        ...r.log.filter(l => l.kind !== 'result').map(l => ` ${l.kind === 'prompt' ? '❯' : '⚡'} ${l.text.slice(0, 80)}`),
+        ` 结果已写入会话记忆（/memory 可检索）`,
+      ]);
+    }
+    return '用法：/script record <名> ｜ stop ｜ list ｜ show <名> ｜ run <名> ｜ dry-run <名> ｜ rm <名>';
   });
 
   // /fork：复制当前会话（含全部消息）为分支会话
