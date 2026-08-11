@@ -124,13 +124,32 @@ export function buildRepoMap(cwd: string, opts: { budgetTokens?: number; maxFile
   const skipped = { n: 0 };
   walk(cwd, cwd, files, skipped);
 
-  // 提取符号并排序：符号数降序 → 路径字典序（确定性输出）
-  const mapped: RepoMapFile[] = files.slice(0, maxFiles).map(f => {
-    let content = '';
-    try { content = readFileSync(f.abs, 'utf8').slice(0, MAX_FILE_BYTES); } catch { /* 不可读跳过 */ }
-    return { path: f.rel, symbols: extractSymbols(f.rel, content), weight: 0 };
-  }).map(f => ({ ...f, weight: f.symbols.length }))
-    .sort((a, b) => b.weight - a.weight || (a.path < b.path ? -1 : 1));
+  // 先读内容提取符号；再统计符号名全仓引用次数（aider 依赖图排序的轻量近似——
+  // 被引用越多的符号所在文件越核心，如入口/工具层优先入预算）
+  const readContent = (f: { abs: string; rel: string }): string => {
+    try { return readFileSync(f.abs, 'utf8').slice(0, MAX_FILE_BYTES); } catch { return ''; }
+  };
+  const firstIdentifier = (line: string): string => {
+    const m = /[A-Za-z_$][\w$]*/.exec(line.replace(/^(export\s+(default\s+)?|async\s+|function\s+|class\s+|interface\s+|type\s+|enum\s+|const\s+|def\s+|pub\s+|fn\s+|func\s+)/, ''));
+    return m ? m[0] : '';
+  };
+  const contents = files.slice(0, maxFiles).map(f => ({ f, content: readContent(f) }));
+  const refCount = new Map<string, number>();
+  for (const { content } of contents) {
+    for (const m of content.matchAll(/\b[A-Za-z_$][\w$]{2,}\b/g)) {
+      refCount.set(m[0], (refCount.get(m[0]) ?? 0) + 1);
+    }
+  }
+  const mapped: RepoMapFile[] = contents.map(({ f, content }) => {
+    const symbols = extractSymbols(f.rel, content);
+    // 权重 = 符号数 × 10 + 本文件符号的全仓引用次数（图排序近似）
+    let refs = 0;
+    for (const s of symbols) {
+      const id = firstIdentifier(s);
+      if (id) refs += refCount.get(id) ?? 0;
+    }
+    return { path: f.rel, symbols, weight: symbols.length * 10 + refs };
+  }).sort((a, b) => b.weight - a.weight || (a.path < b.path ? -1 : 1));
 
   // 渲染 + 预算截断
   const linesOut: string[] = ['# 仓库地图（符号索引，token 预算内）'];

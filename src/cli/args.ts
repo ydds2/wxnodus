@@ -8,6 +8,8 @@ export interface CliOptions {
   version: boolean;
   cwd: string | null;
   session: string | null;
+  /** --strict-mcp-config：仅信任项目声明 MCP server（Claude Code 同款） */
+  strictMcpConfig: boolean;
   positional: string[];
 }
 
@@ -19,10 +21,11 @@ const SPEC: Array<{ long: string; short?: string; key: keyof CliOptions; takeVal
   { long: '--version', short: '-v', key: 'version', type: 'bool' },
   { long: '--cwd', short: '-C', key: 'cwd', takeValue: true, type: 'string' },
   { long: '--session', short: '-s', key: 'session', takeValue: true, type: 'string' },
+  { long: '--strict-mcp-config', key: 'strictMcpConfig', type: 'bool' },
 ];
 
 export function parseArgs(argv: string[]): CliOptions {
-  const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, positional: [] };
+  const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, positional: [] };
   let i = 0;
   const findSpec = (tok: string): { spec: (typeof SPEC)[number]; inline?: string } | null => {
     for (const spec of SPEC) {
@@ -65,11 +68,13 @@ export const USAGE = `WxNodus V3 — 本地概念编译器 CLI
   wxnodus -p "<需求>" --wire  总线事件流 JSONL
   wxnodus -C <目录>          指定工作目录
   wxnodus -s <会话ID>        指定会话
+  wxnodus -p "需求" --strict-mcp-config  仅信任项目声明 MCP
 
 选项：
   -p, --prompt <text>  非交互单次执行
       --json           -p 模式下输出 JSON
       --wire           -p 模式下输出 JSONL 事件流
+      --strict-mcp-config 仅信任项目 .mcp.json 声明
   -C, --cwd <dir>      工作目录
   -s, --session <id>   会话 ID
   -h, --help           帮助

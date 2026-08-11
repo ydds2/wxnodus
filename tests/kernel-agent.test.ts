@@ -678,3 +678,41 @@ describe('工具延迟加载', () => {
     expect(names.length).toBe(15); // 全表（16 内置含 repo_map - tool_search 未注册）
   });
 });
+
+
+// ── P3：会话 token 预算（Gemini general.budget 对齐）──
+describe('会话 token 预算', () => {
+  it('超预算 → system.notice 告警一次（防刷屏）', async () => {
+    // 预先写入超预算用量
+    db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`).run('t-budget-1', 'mock', 300, 300, Date.now());
+    const notices: string[] = [];
+    const off = bus.on('system.notice', (e: any) => notices.push(String(e?.payload?.text ?? '')));
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-budget-1',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', budgetTokens: 500 } } as any,
+      callModel: async () => ({ type: 'text', content: '完成' }) as any,
+    } as any);
+    try {
+      const r = await agent.run('你好');
+      expect(r.ok).toBe(true);
+      expect(notices.some(n => n.includes('预算已达上限'))).toBe(true);
+      expect(notices.filter(n => n.includes('预算已达上限')).length).toBe(1); // 仅一次
+      // 再跑一轮：仍只告警一次
+      await agent.run('再问');
+      expect(notices.filter(n => n.includes('预算已达上限')).length).toBe(1);
+    } finally { off(); }
+  });
+  it('未超预算（budgetTokens=0 不设限）→ 无告警', async () => {
+    const notices: string[] = [];
+    const off = bus.on('system.notice', (e: any) => notices.push(String(e?.payload?.text ?? '')));
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-budget-2',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async () => ({ type: 'text', content: '完成' }) as any,
+    } as any);
+    try {
+      await agent.run('你好');
+      expect(notices.some(n => n.includes('预算'))).toBe(false);
+    } finally { off(); }
+  });
+});

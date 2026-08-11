@@ -85,7 +85,7 @@ async function main() {
   // MCP 客户端（本地 stdio）：项目级 .mcp.json + 用户级 data/mcp.json 合并；
   // strictMcpConfig 开启时仅信任项目声明（生态对齐 Claude Code --strict-mcp-config）
   const { connectAllMcp, mcpClientsToTools, closeAllMcp } = await import('../kernel/mcp.js');
-  const mcpOpts = { cwd, strict: (settings as any).strictMcpConfig === true };
+  const mcpOpts = { cwd, strict: (settings as any).strictMcpConfig === true || opts.strictMcpConfig === true };
   let mcpClients = await connectAllMcp(dataDir, mcpOpts);
   // MCP 热重载（/reload-mcp）：断开 → 重连 → updateTools 热换工具表（不重启进程）
   const reloadMcp = async (): Promise<{ ok: boolean; count: number; message: string }> => {
@@ -270,7 +270,13 @@ async function main() {
       try {
         const result = await agent.run(text);
         if (opts.json) {
-          console.log(JSON.stringify({ ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted }));
+          // Gemini --output-format json 的 stats 对齐：usage 为会话累计 token
+          let usage: number | null = null;
+          try {
+            const row = db.prepare(`SELECT COALESCE(SUM(input_tokens + output_tokens),0) t FROM usage_stats WHERE session_id=?`).get(opts.session ?? 'default') as { t: number } | undefined;
+            usage = row?.t ?? null;
+          } catch { /* 统计失败静默 */ }
+          console.log(JSON.stringify({ ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted, usage }));
         } else {
           console.log(result.text);
         }

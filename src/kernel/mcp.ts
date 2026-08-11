@@ -15,6 +15,8 @@ export interface McpServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  /** 启动/请求超时（ms，Codex startup_timeout_ms 对齐；缺省 15s） */
+  startupTimeoutMs?: number;
 }
 
 /** 带来源标注的配置项（/mcp list 展示 [项目]/[用户]） */
@@ -137,10 +139,11 @@ export function connectMcp(cfg: McpServerConfig): Promise<McpClient> {
     const send = (method: string, params: unknown): Promise<any> => {
       const id = nextId++;
       return new Promise((res, rej) => {
-        const timer = setTimeout(() => {
+        const timeoutMs = cfg.startupTimeoutMs && cfg.startupTimeoutMs > 0 ? cfg.startupTimeoutMs : REQUEST_TIMEOUT_MS;
+    const timer = setTimeout(() => {
           pending.delete(id);
-          rej(new Error(`MCP ${cfg.name} ${method} 超时（${REQUEST_TIMEOUT_MS}ms）`));
-        }, REQUEST_TIMEOUT_MS);
+          rej(new Error(`MCP ${cfg.name} ${method} 超时（${timeoutMs}ms）`));
+        }, timeoutMs);
         pending.set(id, { resolve: res, reject: rej, timer });
         proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
       });

@@ -100,3 +100,22 @@ describe('buildRepoMap 扫描与预算', () => {
     expect(r.files.length + r.truncated).toBe(8);
   });
 });
+
+// ── P3：引用权重（aider 依赖图排序轻量近似）──
+describe('buildRepoMap 引用权重', () => {
+  it('被引用多的核心文件优先入预算', () => {
+    const d = tmp();
+    mkdirSync(join(d, 'src'), { recursive: true });
+    // util.ts 的 utilFn 被 3 个文件引用；孤立文件仅 1 个符号
+    writeFileSync(join(d, 'src', 'util.ts'), 'export function utilFn() {}\nexport function utilFn2() {}');
+    writeFileSync(join(d, 'src', 'a.ts'), "import { utilFn } from './util';\nexport function aFn() { utilFn(); }");
+    writeFileSync(join(d, 'src', 'b.ts'), "import { utilFn } from './util';\nexport function bFn() { utilFn(); }");
+    writeFileSync(join(d, 'src', 'c.ts'), "import { utilFn } from './util';\nexport function cFn() { utilFn(); }");
+    writeFileSync(join(d, 'src', 'solo.ts'), 'export function soloFn() {}');
+    const r = buildRepoMap(d, { budgetTokens: 100000 });
+    // 权重排序：util.ts（2 符号 ×10 + 引用 3×4 文件内出现…）应排最前
+    expect(r.files[0]!.path).toBe('src/util.ts');
+    // 确定性：重复构建一致
+    expect(buildRepoMap(d).map).toBe(r.map);
+  });
+});

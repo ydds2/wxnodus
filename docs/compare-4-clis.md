@@ -172,7 +172,7 @@
 | 11 | 错误码体系（4xxx/5xxx） | P1 | ✅ 已实施（WxError + RPC {ok,code,message}） |
 | 12 | 配置分层与校验 | P2 | ✅ 已实施（SETTINGS_KEYS schema + unknownSettingsKeys） |
 
-**P3 增量（2026-08 网络调研后新增）：** 仓库地图（repo_map//map）、项目级 .mcp.json + strictMcpConfig、权限规则 reason 字段、跨品牌技能发现（.claude/.agents/.codex/.gemini）、/rewind 快照回滚、/reload-skills、第五门测试门。
+**P3 增量（2026-08 网络调研后新增，两轮）：** 仓库地图（repo_map//map，含引用权重排序）、项目级 .mcp.json + strictMcpConfig + --strict-mcp-config 标志、权限规则 reason 字段、跨品牌技能发现（.claude/.agents/.codex/.gemini）、/rewind 快照回滚、/reload-skills、第五门测试门、生态规范文件链（AGENTS/CLAUDE/GEMINI/.cursorrules 等）、会话 token 预算（budgetTokens + --json usage stats）、MCP startupTimeoutMs。
 
 **剩余未实施：** 审批面板脱敏（notice 留痕已有）、平台级沙箱（四平台 Seatbelt/bwrap/受限令牌——需系统级能力，长期项）。
 

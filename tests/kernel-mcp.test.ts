@@ -185,3 +185,20 @@ describe('loadMcpConfig 两级合并与 strict', () => {
     } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
   });
 });
+
+// ── P3：startupTimeoutMs（Codex startup_timeout_ms 对齐）──
+describe('startupTimeoutMs 配置', () => {
+  it('server 不响应 initialize → 按配置超时快速失败', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-mcp6-'));
+    try {
+      // 永不响应的 mock server：读 stdin 但无输出
+      const script = join(d, 'silent.js');
+      writeFileSync(script, 'process.stdin.on("data", () => {}); setInterval(() => {}, 1000);');
+      const t0 = Date.now();
+      await expect(connectMcp({ name: 'silent', command: process.execPath, args: [script], startupTimeoutMs: 400 })).rejects.toThrow(/超时/);
+      const elapsed = Date.now() - t0;
+      expect(elapsed).toBeLessThan(3000); // 远小于默认 15s
+      expect(elapsed).toBeGreaterThanOrEqual(350);
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  });
+});

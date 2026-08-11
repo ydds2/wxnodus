@@ -16,6 +16,7 @@ import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions
 import type { HookRunner } from './hooks.js';
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import { readFileSync, statSync } from 'node:fs';
+import { loadProjectRules } from './projectRules.js';
 
 export interface ModelCall { type: 'text'; content: string; reasoning?: string; reasoningField?: string }
 export interface ToolCallMsg { type: 'tool_call'; name: string; args: Record<string, any>; id?: string; reasoning?: string; reasoningField?: string; calls?: Array<{ id: string; name: string; args: Record<string, any>; reasoning?: string; reasoningField?: string }> }
@@ -67,20 +68,7 @@ const RETRY_DELAY_MS = 800;
 const MAX_CONSECUTIVE_FAIL = 5;
 const MAX_UNKNOWN_TOOL_ROUNDS = 3;
 
-// 项目引导注入（对比轮 5 修复）：运行时加载 <cwd>/AGENTS.md 进系统提示（kimi 对齐——
-// 只生成不消费是缺口）。32KiB 预算，不存在/超限静默跳过；mtime 缓存避免每轮重复读盘
-let agentsMdCache: { path: string; mtime: number; text: string } | null = null;
-function loadAgentsMd(cwd: string): string | null {
-  try {
-    const p = join(cwd, 'AGENTS.md');
-    const st = statSync(p);
-    if (st.size > 32768) return null;
-    if (agentsMdCache && agentsMdCache.path === p && agentsMdCache.mtime === st.mtimeMs) return agentsMdCache.text;
-    const text = readFileSync(p, 'utf8').slice(0, 32000);
-    agentsMdCache = { path: p, mtime: st.mtimeMs, text };
-    return text;
-  } catch { return null; }
-}
+
 
 /** 可重建的 abort 信号：Promise.race 一次性语义要求每轮新建 promise。
  *  abortController 供真 AbortSignal（fetch/子进程中断）使用。 */
@@ -99,6 +87,23 @@ export function createAgent(opts: AgentOptions) {
   const bus = opts.bus;
   let sessionId = opts.sessionId; // 可变：setSessionId 热切换（多会话）
   let mode = opts.mode ?? 'smart'; // 可变：/perm 切换经 setMode 热更新
+
+  // 会话 token 预算（Gemini general.budget 对齐）：settings.budgetTokens>0 时，
+  // 会话累计用量超预算 → system.notice 告警一次（防刷屏）；0/缺省 = 不设限
+  const budgetTokens = Number((opts.config?.settings as any)?.budgetTokens) || 0;
+  let budgetWarned = false;
+  function checkBudget(): void {
+    if (!budgetTokens || budgetWarned) return;
+    try {
+      const row = opts.db.prepare(`SELECT COALESCE(SUM(input_tokens + output_tokens),0) t FROM usage_stats WHERE session_id=?`).get(sessionId) as { t: number } | undefined;
+      const total = row?.t ?? 0;
+      if (total > budgetTokens) {
+        budgetWarned = true;
+        bus.emit('system.notice', { text: `会话 token 预算已达上限（${total}/${budgetTokens}）——建议 /compact 压缩或 /new 开启新会话控制成本` });
+      }
+    } catch { /* 统计失败静默 */ }
+  }
+
   // C1 修复（中断竞态）：回合级状态——abort() 只操作当前回合（turn 引用），
   // 旧回合在收尾时读取自己的 st 快照，不会被新回合的重置标志污染而"复活"
   let turn: { aborted: boolean; interrupted: boolean; signal: { promise: Promise<void>; resolve: () => void; abortController: AbortController } } | null = null;
@@ -275,6 +280,10 @@ export function createAgent(opts: AgentOptions) {
         opts.db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`)
           .run(sessionId, model, usageData.prompt_tokens ?? 0, usageData.completion_tokens ?? 0, Date.now());
       } catch { /* 统计失败不影响对话 */ }
+      // 会话 token 预算（Gemini general.budget 对齐）：settings.budgetTokens>0 时，
+      // 会话累计用量（usage_stats 实时 SUM）超预算 → 通知一次（防刷屏），
+      // 上下文自动压缩仍按窗口阈值独立触发——预算只做成本告警
+      void checkBudget();
     }
 
     // 批量 tool_calls 全量返回（修复对比轮 5 缺口：同回合多工具调用不得丢弃——
@@ -465,9 +474,10 @@ export function createAgent(opts: AgentOptions) {
     msgs.push({ role: 'system', content: buildSystemPrompt({
       mode, cwd: process.cwd(), model: modelName, hasImageIn: hasImageIn(modelName), sessionId,
     }) });
-    // 项目引导注入（对比轮 5 修复）：AGENTS.md 存在时进系统提示（kimi 运行时注入对齐）
-    const agentsMd = loadAgentsMd(process.cwd());
-    if (agentsMd) msgs.push({ role: 'system', content: `（项目引导 AGENTS.md）\n${agentsMd}` });
+    // 项目规范注入（生态规范文件链）：AGENTS.md/CLAUDE.md/GEMINI.md/.cursorrules 等
+    // 首个存在者进系统提示（多工具共存——一套项目规范多 CLI 消费）
+    const projectRules = loadProjectRules(process.cwd());
+    if (projectRules) msgs.push({ role: 'system', content: `（项目规范 ${projectRules.file}）\n${projectRules.text}` });
     // 历史进模型（修复 F1）：加载当前会话未归档历史作为上下文前缀——
     // 多轮对话必须让模型看到完整（压缩后）历史，而非仅当前问题 + 3 条召回
     try {
@@ -519,6 +529,8 @@ export function createAgent(opts: AgentOptions) {
     while (turns < (opts.maxTurns ?? MAX_TURNS)) {
       if (st.aborted) { st.interrupted = true; break; }
       turns++;
+      // 会话 token 预算（Gemini general.budget 对齐）：每轮开始检查累计用量（不依赖当轮 usage）
+      void checkBudget();
       // F7：steer 注入——运行中队列消息并入当前回合上下文
       while (steerQueue.length) {
         const s = steerQueue.shift()!;
