@@ -7,7 +7,11 @@
 import { join } from 'node:path';
 import { mkdirSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
+
+// ESM 下加载 CJS 扩展（sqlite-vec 为 CommonJS 包——require 在 ESM 不可用）
+const requireCjs = createRequire(import.meta.url);
 
 export type Db = InstanceType<typeof Database>;
 
@@ -149,7 +153,7 @@ export function openDB(dataDir: string): Db {
 
   // sqlite-vec 向量扩展（容错：加载失败仅无向量检索，纯 FTS5 兜底）
   try {
-    const vec = require('sqlite-vec') as { load(db: InstanceType<typeof Database>): void };
+    const vec = requireCjs('sqlite-vec') as { load(db: InstanceType<typeof Database>): void };
     vec.load(db);
     db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS archival_vec USING vec0(

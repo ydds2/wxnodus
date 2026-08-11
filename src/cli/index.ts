@@ -4,6 +4,7 @@
 
 import { join } from 'node:path';
 import { mkdirSync, appendFileSync } from 'node:fs';
+import { createAutoReview } from '../kernel/autoReview.js';
 
 const VERSION = '3.0.0';
 // 调试：捕获未处理异常/拒绝 → dataDir/logs/error-<日期>.log（统一日志目录，不污染工作目录）
@@ -126,16 +127,13 @@ async function main() {
     dataDir,
     toolLazyLoad: (settings as any).toolLazyLoad === true,
     // D 批次：AI 审批预审（settings.autoReview=true 开启）——用主模型单轮判断 allow/deny/ask
-    autoReview: (() => {
-      const { createAutoReview } = require('../kernel/autoReview.js') as typeof import('../kernel/autoReview.js');
-      return createAutoReview(
-        () => (settings as any).autoReview === true,
-        async (prompt) => {
-          const r = await agent.run(`（安全预审任务）请直接回答审查结论：${prompt}`);
-          return r.ok ? r.text : 'ask';
-        },
-      );
-    })(),
+    autoReview: createAutoReview(
+      () => (settings as any).autoReview === true,
+      async (prompt) => {
+        const r = await agent.run(`（安全预审任务）请直接回答审查结论：${prompt}`);
+        return r.ok ? r.text : 'ask';
+      },
+    ),
     hooks: hookRunner,
     extraTools: { ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) },
   });

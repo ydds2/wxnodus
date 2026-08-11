@@ -4,13 +4,17 @@
 //   截屏：node-screenshots（DPI 感知多显示器）
 import { ActionGuard } from './guards.js';
 import { validateAction, convertCoords, type CuAction } from './actionLayer.js';
+import { createRequire } from 'node:module';
+
+// robotjs 为 CommonJS 包——ESM 下经 createRequire 加载（Node-API 预编译，Unicode 中文支持）
+const requireCjs = createRequire(import.meta.url);
 
 export interface ScreenShot { png: Buffer; width: number; height: number; scale: number }
 
 // 桌面控制（robotjs 0.9.1 封装——Node-API 预编译，Unicode 中文支持）
 let robot: any = null;
 function getRobot(): any {
-  if (!robot) { robot = require('robotjs'); }
+  if (!robot) { robot = requireCjs('robotjs'); }
   return robot;
 }
 

@@ -9,6 +9,7 @@
 //    yolo 完全访问：除红线全放
 //  硬红线：任何模式不可绕过——扩展自 hermes 的 HARDLINE/DANGEROUS_PATTERNS 结构
 import { join } from 'node:path';
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 
 export type Mode = 'smart' | 'auto' | 'manual' | 'plan' | 'yolo' | 'goal';
 export type Verdict = 'approve' | 'reject' | 'confirm' | 'plan';
@@ -56,7 +57,6 @@ export interface PermRule {
 
 export function loadPermRules(dataDir: string): PermRule[] {
   try {
-    const { readFileSync, existsSync } = require('node:fs') as typeof import('node:fs');
     const f = join(dataDir, 'permissions.json');
     if (!existsSync(f)) return [];
     const raw = JSON.parse(readFileSync(f, 'utf8')) as PermRule[];
@@ -65,7 +65,6 @@ export function loadPermRules(dataDir: string): PermRule[] {
 }
 
 export function savePermRules(dataDir: string, rules: PermRule[]): void {
-  const { writeFileSync, mkdirSync } = require('node:fs') as typeof import('node:fs');
   mkdirSync(dataDir, { recursive: true });
   writeFileSync(join(dataDir, 'permissions.json'), JSON.stringify(rules, null, 2), 'utf8');
 }

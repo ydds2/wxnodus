@@ -13,7 +13,8 @@ import { forgeMcpServer, forgeSkillDir } from '../forge/forge.js';
 import { discoverSkills, loadSkill, installSkill, writeSkill, skillContentForModel } from '../kernel/skills.js';
 import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
 import { decryptKey } from '../kernel/providers.js';
-import { HARD_REDLINES } from '../kernel/permissions.js';
+import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissions.js';
+import { unknownSettingsKeys } from '../store/config.js';
 import { runCuratorReview, curatorConfigFrom, readCuratorState } from '../kernel/curator.js';
 import type { HandlerCtx } from './handlers.js';
 import type { CommandBus, StructuredCommand } from '../app/CommandBus.js';
@@ -663,7 +664,6 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/config', (args) => {
     const s = ctx.config.get('settings') as Record<string, any>;
     // P2 配置校验：未知键警告（防拼写错误静默无效）
-    const { unknownSettingsKeys } = require('../store/config.js') as typeof import('../store/config.js');
     const unknown = unknownSettingsKeys(s);
     if (args[0] === 'set' && args[1]) {
       const key = args[1];
@@ -883,7 +883,6 @@ export const commands = {
 
   // /perm rule：持久化审批规则（P0-2——deny>allow>ask，data/permissions.json）
   bus.register('/perm rule', (args) => {
-    const { loadPermRules, savePermRules } = require('../kernel/permissions.js') as typeof import('../kernel/permissions.js');
     const [sub, tool, decision, pattern] = args;
     const rules = loadPermRules(ctx.dataDir);
     if (sub === 'list') {

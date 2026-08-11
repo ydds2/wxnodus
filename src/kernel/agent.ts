@@ -14,7 +14,7 @@ import { estimateMessagesTokens, compactMessages } from './memory.js';
 import { coreTools, isDangerous, toolsToOpenAI, wrapDanger, type ToolCtx } from './tools.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
 import type { HookRunner } from './hooks.js';
-import { join } from 'node:path';
+import { join, resolve, relative, isAbsolute } from 'node:path';
 import { readFileSync, statSync } from 'node:fs';
 
 export interface ModelCall { type: 'text'; content: string; reasoning?: string; reasoningField?: string }
@@ -717,7 +717,6 @@ export function createAgent(opts: AgentOptions) {
 // 路径是否在工作目录内（低危自动放行的安全边界）
 function isPathWithinCwd(p: string): boolean {
   try {
-    const { resolve, relative, isAbsolute } = require('node:path') as typeof import('node:path');
     const rel = relative(resolve(process.cwd()), resolve(p));
     return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
   } catch { return false; }

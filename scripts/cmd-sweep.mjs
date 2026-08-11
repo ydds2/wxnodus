@@ -14,8 +14,15 @@ const submit = async s => { await typeKeys(s); await sleep(100); p.write('\r'); 
 
 await sleep(2800)
 
+// 启动健全性：CLI 崩溃（如 ESM require 错误）会输出「启动失败」——立即中止而非误报全绿
+if (strip(out).includes('启动失败')) {
+  console.log('✗✗ CLI 启动崩溃：' + strip(out).slice(0, 200))
+  try { p.kill() } catch {}
+  process.exit(2)
+}
+
 // ── 分组命令扫描：执行 + 检查「可用」信号 ──
-const BROKEN = /不支持|未实现|unknown rpc|unsupported|not implemented|内部错误|异常：/
+const BROKEN = /不支持|未实现|unknown rpc|unsupported|not implemented|内部错误|异常：|启动失败/
 const groups = {
   '对话': ['/help', '/clear', '/undo', '/usage', '/quit', '/context', '/resume', '/new', '/title', '/undo list'],
   '模型': ['/key', '/login', '/logout', '/model', '/status', '/doctor', '/version', '/thinking on', '/thinking off'],
