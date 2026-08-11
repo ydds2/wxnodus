@@ -14,6 +14,7 @@ import type {
   SessionUndoResponse
 } from '../../gatewayTypes.js'
 import { writeClipboardText } from '../../lib/clipboard.js'
+import { isPaneTab, PANE_TABS } from '../../lib/paneLayout.js'
 import { writeOsc52Clipboard } from '../../lib/osc52.js'
 import { configureDetectedTerminalKeybindings, configureTerminalKeybindings } from '../../lib/terminalSetup.js'
 import type { Msg, PanelSection } from '../../types.js'
@@ -531,6 +532,37 @@ export const coreCommands: SlashCommand[] = [
       ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'statusbar', value: next }).catch(() => {})
 
       queueMicrotask(() => ctx.transcript.sys(`status bar ${next}`))
+    }
+  },
+
+  {
+    help: 'right detail pane (on|off|toggle|tab <todo|tools|context|subagents>)',
+    name: 'pane',
+    run: (arg, ctx) => {
+      const [sub, tab] = arg.trim().split(/\s+/)
+      const mode = sub?.toLowerCase()
+
+      if (mode === 'tab') {
+        if (tab && isPaneTab(tab)) {
+          patchUiState({ paneTab: tab })
+
+          return ctx.transcript.sys(`pane tab: ${tab}`)
+        }
+
+        return ctx.transcript.sys(`usage: /pane tab <${PANE_TABS.join('|')}>`)
+      }
+
+      const next: null | boolean =
+        !mode || mode === 'toggle' ? !ctx.ui.dualPane : mode === 'on' ? true : mode === 'off' ? false : null
+
+      if (next === null) {
+        return ctx.transcript.sys('usage: /pane [on|off|toggle|tab <name>]')
+      }
+
+      patchUiState({ dualPane: next })
+      ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'dual_pane', value: next ? 1 : 0 }).catch(() => {})
+
+      queueMicrotask(() => ctx.transcript.sys(`detail pane ${next ? 'on' : 'off'}`))
     }
   },
 

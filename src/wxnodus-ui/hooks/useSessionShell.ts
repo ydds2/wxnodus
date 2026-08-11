@@ -23,6 +23,7 @@ import { useGitBranch } from './useGitBranch.js'
 import { useVirtualHistory } from './useVirtualHistory.js'
 import { composerPromptWidth } from '../lib/inputMetrics.js'
 import { appendTranscriptMessage } from '../lib/messages.js'
+import { dualPaneWidths } from '../lib/paneLayout.js'
 import { DEFAULT_VOICE_RECORD_KEY, isMac, type ParsedVoiceRecordKey } from '../lib/platform.js'
 import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
 import { terminalParityHints } from '../lib/terminalParity.js'
@@ -347,6 +348,12 @@ export function useMainApp(gw: GatewayClient) {
     return next
   }, [])
 
+  // A23 双栏布局：消息渲染宽度 = 面板开启且终端足够宽时的主区宽度。
+  // 纳入 virtualRows key / heightCacheKey / 高度估算——面板开关即全量
+  // remount 重测（与 resize 同策略：宽度依赖的布局不缓存陈旧值）。
+  const pane = dualPaneWidths(cols)
+  const msgCols = ui.dualPane && pane.show ? pane.left : cols
+
   // Wrapped row heights are width-dependent. Cached layout outlives a resize
   // and lands sticky-scroll at the stale max, cutting off the tail. The
   // hook's "scale heights by oldCols/newCols" path is too approximate for
@@ -354,8 +361,8 @@ export function useMainApp(gw: GatewayClient) {
   // off live geometry. Cost: per-row local state (e.g. systemOpen toggles)
   // resets on resize; small UX hit for a hard correctness win.
   const virtualRows = useMemo<TranscriptRow[]>(
-    () => historyItems.map((msg, index) => ({ index, key: `${messageId(msg)}:c${cols}`, msg })),
-    [cols, historyItems, messageId]
+    () => historyItems.map((msg, index) => ({ index, key: `${messageId(msg)}:c${msgCols}`, msg })),
+    [historyItems, messageId, msgCols]
   )
 
   const detailsLayoutKey = useMemo(() => {
@@ -370,7 +377,7 @@ export function useMainApp(gw: GatewayClient) {
   const toolsDetailsVisible = toolsDetailsMode !== 'hidden'
   const detailsVisible = thinkingDetailsVisible || toolsDetailsVisible
   const userPromptWidth = composerPromptWidth(ui.theme.brand.prompt)
-  const heightCacheKey = `${ui.sid ?? 'draft'}:${cols}:${userPromptWidth}:${ui.compact ? '1' : '0'}:${detailsLayoutKey}`
+  const heightCacheKey = `${ui.sid ?? 'draft'}:${msgCols}:${userPromptWidth}:${ui.compact ? '1' : '0'}:${detailsLayoutKey}`
 
   const heightCache = useMemo(() => {
     let cache = heightCachesRef.current.get(heightCacheKey)
@@ -394,7 +401,7 @@ export function useMainApp(gw: GatewayClient) {
 
   const estimateRowHeight = useCallback(
     (index: number) =>
-      estimatedMsgHeight(virtualRows[index]!.msg, cols, {
+      estimatedMsgHeight(virtualRows[index]!.msg, msgCols, {
         compact: ui.compact,
         details: detailsVisible,
         leadGap: hasLeadGap(
@@ -411,7 +418,7 @@ export function useMainApp(gw: GatewayClient) {
         withSeparator: virtualRows[index]!.msg.role === 'user' && firstUserIdx >= 0 && index > firstUserIdx
       }),
     [
-      cols,
+      msgCols,
       detailsVisible,
       firstUserIdx,
       thinkingDetailsVisible,

@@ -21,6 +21,7 @@ export const HOTKEYS: [string, string][] = [
   [action + '+G / Alt+G', '打开 $EDITOR（VSCode/Cursor 用 Alt+G 兜底）'],
   [action + '+L', '重绘界面'],
   [action + '+O', '打开模型选择器（保留草稿）'],
+  ['Alt+D / Option+D', '切换右侧详情面板（双栏布局：清单/工具/上下文/子代理）'],
   [paste + '+V / /paste', '粘贴文本；/paste 附带剪贴板图片'],
   ['Tab', '应用补全'],
   ['↑/↓', '补全候选 / 队列编辑 / 历史'],

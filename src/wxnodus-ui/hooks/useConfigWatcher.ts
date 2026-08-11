@@ -207,6 +207,8 @@ export const applyDisplay = (
     compact: !!d.tui_compact,
     detailsMode: resolveDetailsMode(d),
     detailsModeCommandOverride: false,
+    // A23 双栏布局：display.tui_dual_pane 持久化（'1'/'true'/'on' → 开）
+    dualPane: !!d.tui_dual_pane,
     indicatorStyle: normalizeIndicatorStyle(d.tui_status_indicator),
     inlineDiffs: d.inline_diffs !== false,
     mouseTracking: normalizeMouseTracking(d),

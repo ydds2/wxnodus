@@ -22,9 +22,11 @@ import { AgentsOverlay } from './agentsOverlay.js'
 import { GoodVibesHeart, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { Banner, Panel, SessionPanel } from './branding.js'
+import { DetailPane } from './detailPane.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
 import { MessageLine } from './messageLine.js'
+import { dualPaneWidths } from '../lib/paneLayout.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
@@ -61,6 +63,12 @@ const TranscriptPane = memo(function TranscriptPane({
   transcript
 }: Pick<AppLayoutProps, 'actions' | 'composer' | 'progress' | 'transcript'>) {
   const ui = useStore($uiState)
+
+  // A23 双栏布局：面板开启且终端足够宽时，消息渲染宽度 = 主区宽度
+  // （扣除面板本体 + 边框）；过窄时面板不渲染、消息用全宽。
+  const pane = dualPaneWidths(composer.cols)
+  const paneVisible = ui.dualPane && pane.show
+  const msgCols = paneVisible ? pane.left : composer.cols
 
   // LiveTodoPanel rides as a child of the latest user-message row so it
   // visually belongs to the prompt and follows it during scroll. -1 when
@@ -118,15 +126,15 @@ const TranscriptPane = memo(function TranscriptPane({
 
               {row.msg.kind === 'intro' ? (
                 <Box flexDirection="column" paddingTop={1}>
-                  <Banner maxWidth={Math.max(1, composer.cols - 2)} t={ui.theme} />
+                  <Banner maxWidth={Math.max(1, msgCols - 2)} t={ui.theme} />
 
-                  {row.msg.info && <SessionPanel info={row.msg.info} maxWidth={Math.max(1, composer.cols - 2)} sid={ui.sid} t={ui.theme} />}
+                  {row.msg.info && <SessionPanel info={row.msg.info} maxWidth={Math.max(1, msgCols - 2)} sid={ui.sid} t={ui.theme} />}
                 </Box>
               ) : row.msg.kind === 'panel' && row.msg.panelData ? (
                 <Panel sections={row.msg.panelData.sections} t={ui.theme} title={row.msg.panelData.title} />
               ) : (
                 <MessageLine
-                  cols={composer.cols}
+                  cols={msgCols}
                   compact={ui.compact}
                   detailsMode={ui.detailsMode}
                   detailsModeCommandOverride={ui.detailsModeCommandOverride}
@@ -142,14 +150,15 @@ const TranscriptPane = memo(function TranscriptPane({
                 />
               )}
 
-              {row.index === lastUserIdx && <LiveTodoPanel />}
+              {/* A23：面板开启时清单由右侧面板接管（避免同一清单两处显示） */}
+              {!paneVisible && row.index === lastUserIdx && <LiveTodoPanel />}
             </Box>
           ))}
 
           {transcript.virtualHistory.bottomSpacer > 0 ? <Box height={transcript.virtualHistory.bottomSpacer} /> : null}
 
           <StreamingAssistant
-            cols={composer.cols}
+            cols={msgCols}
             compact={ui.compact}
             detailsMode={ui.detailsMode}
             detailsModeCommandOverride={ui.detailsModeCommandOverride}
@@ -438,6 +447,12 @@ export const AppLayout = memo(function AppLayout({
           ) : (
             <PerfPane id="transcript">
               <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
+            </PerfPane>
+          )}
+          {/* A23 双栏布局：右侧详情面板（固定宽；过窄终端自动隐藏；agents 全屏时让位） */}
+          {!overlay.agents && ui.dualPane && dualPaneWidths(composer.cols).show && (
+            <PerfPane id="detail">
+              <DetailPane cols={composer.cols} />
             </PerfPane>
           )}
         </Box>

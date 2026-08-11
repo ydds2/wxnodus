@@ -14,6 +14,9 @@ const buildUiState = (): UiState => ({
   compact: false,
   detailsMode: 'collapsed',
   detailsModeCommandOverride: false,
+  // A23 双栏布局：右侧详情面板（Ctrl+D 或 /pane 切换；paneTab 当前标签）
+  dualPane: false,
+  paneTab: 'todo',
   indicatorStyle: DEFAULT_INDICATOR_STYLE,
   info: null,
   liveSessionCount: 0,

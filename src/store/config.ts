@@ -59,6 +59,8 @@ const SETTINGS_KEYS = new Set([
   'lang', 'skin', 'curator',
   // UI 显示配置（/busy /indicator /statusbar 持久化）
   'tui_status_indicator', 'tui_statusbar',
+  // A23 双栏布局（右侧详情面板开关——Ctrl+D / /pane 持久化）
+  'tui_dual_pane',
   // A22 语音配置（voice.recordKey/vad.{silenceMs,silenceThreshold,minSpeechMs}/wakeWords/continuous）
   'voice',
 ]);

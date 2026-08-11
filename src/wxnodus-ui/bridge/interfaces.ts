@@ -14,6 +14,7 @@ import type {
   DetailsMode,
   Msg,
   PanelSection,
+  PaneTab,
   Role,
   SecretReq,
   SectionVisibility,
@@ -129,6 +130,10 @@ export interface UiState {
   compact: boolean
   detailsMode: DetailsMode
   detailsModeCommandOverride: boolean
+  /** A23 双栏布局：右侧详情面板开关（Ctrl+D / /pane；配置记忆） */
+  dualPane: boolean
+  /** A23 双栏布局：当前面板标签（todo/tools/context/subagents） */
+  paneTab: PaneTab
   info: null | SessionInfo
   liveSessionCount: number
   inlineDiffs: boolean
