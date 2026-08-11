@@ -50,6 +50,39 @@ export function detectProvider(baseURL: string | undefined): string {
   return 'openai-compatible';
 }
 
+// ── 密钥解析（开放兼容：per-provider env 优先，UI 已展示的 WXNODUS_<厂商>_KEY 真实生效）──
+// 读取顺序（文档化）：
+//   1. WXNODUS_<PROVIDER>_KEY（provider 由 baseURL 推断大写：WXNODUS_DEEPSEEK_KEY 等，
+//      已知厂商才生成该名，openai-compatible 跳过）
+//   2. WXNODUS_API_KEY（通用 env）
+//   3. settings.apiKeyEnc 解密（AES-256-GCM 加密槽位）
+// env 密钥为用户亲手设置（非注入通道）；decrypt 失败返回 error 标记供调用方明确提示
+const KNOWN_PROVIDER_KEYS = new Set(['deepseek', 'kimi', 'zhipu']);
+
+export interface ApiKeyResolution {
+  key: string | null;
+  source: 'env' | 'enc' | 'none';
+  /** enc 解密失败（机器指纹变化等）时标记，调用方提示重新配置 */
+  error?: 'decrypt-failed';
+}
+
+export function resolveApiKey(
+  settings: { apiKeyEnc?: string | null; baseURL?: string },
+  env: NodeJS.ProcessEnv = process.env
+): ApiKeyResolution {
+  const provider = detectProvider(settings.baseURL);
+  const providerKey = KNOWN_PROVIDER_KEYS.has(provider) ? env[`WXNODUS_${provider.toUpperCase()}_KEY`] : undefined;
+  const genericKey = env.WXNODUS_API_KEY;
+  const fromEnv = (providerKey ?? genericKey)?.trim();
+  if (fromEnv) return { key: fromEnv, source: 'env' };
+  if (settings.apiKeyEnc) {
+    const dec = decryptKey(settings.apiKeyEnc);
+    if (dec) return { key: dec, source: 'enc' };
+    return { key: null, source: 'enc', error: 'decrypt-failed' };
+  }
+  return { key: null, source: 'none' };
+}
+
 // ── 模型目录（/model 选择器与直接切换共用）────────────────
 export interface ModelCapabilities {
   imageIn?: boolean;   // 支持图片输入（视觉）

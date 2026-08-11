@@ -11,6 +11,8 @@ import { join, resolve, basename } from 'node:path'
 import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
 import { MODEL_CATALOG, encryptKey, hasImageIn } from '../kernel/providers.js'
+import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js'
+import { loadSkinFile } from '../kernel/skin.js'
 import { classifyToolAction } from '../kernel/permissions.js'
 import { redactSecrets } from '../kernel/redact.js'
 import { discoverSkills } from '../kernel/skills.js'
@@ -201,6 +203,10 @@ export class GatewayClient extends EventEmitter {
       'system.notice': (p) => {
         this.publish({ type: 'notification.show', payload: { text: String(p?.text ?? ''), level: 'info' } })
       },
+      // 开放兼容：后端 /theme 命令（bus）→ UI theme.changed（此前仅存字符串无 UI 效果）
+      'theme.changed': (p) => {
+        this.publish({ type: 'theme.changed', payload: { name: String(p?.name ?? 'wxnodus') } })
+      },
     }
 
     for (const [type, fn] of Object.entries(map)) {
@@ -212,7 +218,9 @@ export class GatewayClient extends EventEmitter {
     this.attachBus()
     this.currentSessionId = 'default'
     this.kernel.agent.setSessionId(this.currentSessionId)
-    this.publish({ type: 'gateway.ready' })
+    // 开放兼容：gateway.ready 携带已配置皮肤（此前 skin 管道空转——数据源接上）
+    const skin = loadSkinFile(this.kernel.dataDir, (this.kernel.settings as any)?.skin)
+    this.publish({ type: 'gateway.ready', ...(skin ? { payload: { skin } } : {}) })
   }
 
   async request<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
@@ -884,6 +892,17 @@ export class GatewayClient extends EventEmitter {
 
     const s = this.kernel.settings
 
+    // 皮肤/语言/主题按真实键返回（此前任意键都返回 'interrupt'——/skin 读取假值）
+    if (key === 'skin') {
+      return { value: (s as any).skin ?? 'default' }
+    }
+    if (key === 'lang') {
+      return { value: (s as any).lang ?? 'zh' }
+    }
+    if (key === 'theme') {
+      return { value: (s as any).theme ?? 'wxnodus' }
+    }
+
     return {
       config: {
         display: {
@@ -932,7 +951,19 @@ export class GatewayClient extends EventEmitter {
       this.kernel.setThinking(value === 'true' || value === 'on' || value === '1')
     } else if (key === 'busy') {
       // C7：/busy 命令接入（queue/interrupt/steer 三模式；写入 settings 供状态条显示）
-      ;(s as any).busyInputMode = ['queue', 'interrupt', 'steer'].includes(value) ? value : 'interrupt'
+      // 键名与配置白名单归一（busy_input_mode，snake_case 单一事实源）
+      ;(s as Record<string, any>).busy_input_mode = ['queue', 'interrupt', 'steer'].includes(value) ? value : 'interrupt'
+    } else if (key === 'skin') {
+      // 开放兼容：/skin <名称> 真实生效——落盘 settings.skin + 广播 skin.changed
+      // （前端 eventAdapter applySkin 已有，缺数据源——此处分发皮肤对象）
+      ;(s as Record<string, any>).skin = value
+      this.kernel.config.setKey('settings', 'skin', value)
+      const skin = loadSkinFile(this.kernel.dataDir, value)
+      this.publish({ type: 'skin.changed', payload: skin ?? {} })
+    } else if (key === 'theme') {
+      // 开放兼容：/theme dark|light|wxnodus 真实生效（此前仅存字符串无 UI 效果）
+      this.kernel.setTheme(value)
+      this.publish({ type: 'theme.changed', payload: { name: value } })
     }
 
     return { value: s[key as keyof typeof s] ?? value }
@@ -945,7 +976,7 @@ export class GatewayClient extends EventEmitter {
     const configured = Boolean(s.apiKeyEnc)
 
     if (configured) {
-      const fallback = MODEL_CATALOG.find((m) => m.modelId === (s.model ?? 'deepseek-v4-flash')) ?? MODEL_CATALOG[2]
+      const fallback = MODEL_CATALOG.find((m) => m.modelId === resolveDefaultModel(s)) ?? MODEL_CATALOG[2]
       // model 缺失或非法（遗留命令串）→ 回退默认 modelId
       if (!s.model || !MODEL_CATALOG.some((m) => m.modelId === s.model)) s.model = fallback.modelId
       if (!s.baseURL) s.baseURL = fallback.baseURL
@@ -1145,8 +1176,8 @@ export class GatewayClient extends EventEmitter {
       this.kernel.config.setKey('settings', 'apiKeyEnc', this.kernel.settings.apiKeyEnc)
       // 补默认模型/端点：有 key 但 model/baseURL 缺失时 agent 会降级规则脑
       // （提示「未配置」）——与 /key set 行为一致
-      if (!this.kernel.config.getKey('settings', 'model')) this.kernel.config.setKey('settings', 'model', 'deepseek-v4-flash')
-      if (!this.kernel.config.getKey('settings', 'baseURL')) this.kernel.config.setKey('settings', 'baseURL', 'https://api.deepseek.com/v1')
+      if (!this.kernel.config.getKey('settings', 'model')) this.kernel.config.setKey('settings', 'model', resolveDefaultModel({}))
+      if (!this.kernel.config.getKey('settings', 'baseURL')) this.kernel.config.setKey('settings', 'baseURL', resolveDefaultBaseURL({}))
     }
     if (baseURL) {
       this.kernel.settings.baseURL = baseURL

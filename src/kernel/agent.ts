@@ -10,6 +10,7 @@ import type { Db } from '../store/db.js';
 import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
 import { decryptKey, REASONING_FIELDS } from './providers.js';
+import { resolveDataDir } from './paths.js';
 import { estimateMessagesTokens, compactMessages } from './memory.js';
 import { coreTools, isDangerous, toolsToOpenAI, wrapDanger, type ToolCtx } from './tools.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
@@ -157,18 +158,16 @@ export function createAgent(opts: AgentOptions) {
     streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal },
   ): Promise<ModelCall | ToolCallMsg> => {
     const s = opts.config.settings;
-    let key: string | null = null;
+    const { resolveApiKey } = await import('./providers.js');
+    const keyRes = resolveApiKey(s);
 
-    if (s.apiKeyEnc) {
-      key = decryptKey(s.apiKeyEnc);
-      // 有 enc 但解密失败（机器指纹变化/数据损坏）——明确提示重新配置，
-      // 而不是误导性的「未配置」
-      if (!key) {
-        return { type: 'text', content: '密钥无法解密（机器环境变化或数据损坏？）——请用 /key set <密钥> 重新配置。' };
-      }
+    // enc 存在但解密失败（机器指纹变化/数据损坏）——明确提示重新配置，
+    // 而不是误导性的「未配置」
+    if (keyRes.source === 'enc' && !keyRes.key) {
+      return { type: 'text', content: '密钥无法解密（机器环境变化或数据损坏？）——请用 /key set <密钥> 重新配置。' };
     }
 
-    if (!key) {
+    if (!keyRes.key) {
       // 无 key：所有对话输出必须经 AI 模型——不做规则脑假装回答，
       // 明确引导配置（配置类命令 /key 等仍本地可用）
       const q = (() => { const c = req.messages[req.messages.length - 1]?.content ?? ''; return typeof c === 'string' ? c : ''; })();
@@ -180,11 +179,14 @@ export function createAgent(opts: AgentOptions) {
       };
     }
 
+    const key = keyRes.key;
+
     const { buildChatRequest, mapHttpError, MODEL_CATALOG } = await import('./providers.js');
+    const { resolveDefaultModel, resolveDefaultBaseURL } = await import('./defaults.js');
     // 有 key 即视为已配置：model/baseURL 缺失或非法（遗留命令串）时用默认，
     // 不降级规则脑——否则 /key 配置后仍提示「未配置」或 API 模型名非法
-    const baseURL = s.baseURL || 'https://api.deepseek.com/v1';
-    const model = MODEL_CATALOG.some(m => m.modelId === s.model) ? s.model! : 'deepseek-v4-flash';
+    const baseURL = resolveDefaultBaseURL(s);
+    const model = MODEL_CATALOG.some(m => m.modelId === s.model) ? s.model! : resolveDefaultModel(s);
     const httpReq = buildChatRequest({ baseURL, model, key, messages: req.messages as any, stream: true, tools: req.tools });
     // 修复 F3：abort 信号接入真实 fetch（AbortSignal.any 合并超时与用户中断）
     const fetchSignal = streamCtx?.signal
@@ -353,7 +355,7 @@ export function createAgent(opts: AgentOptions) {
 
   const toolCtx: ToolCtx = {
     cwd: process.cwd(),
-    dataDir: join(process.cwd(), 'data'),
+    dataDir: resolveDataDir(process.cwd()), // 开放兼容：WXNODUS_DATA_DIR 覆盖数据目录
     db: opts.db, // cron_create 等需要持久化能力的工具
     ask: async (q) => (opts.onApproval ? opts.onApproval('ask_user', { question: q }) : false),
     clarify: async (q, choices) => (opts.onClarify ? opts.onClarify(q, choices) : ''),
@@ -373,7 +375,7 @@ export function createAgent(opts: AgentOptions) {
   const onApproval = opts.onApproval ?? (async () => true);
 
   // P0-2 审批规则文件：启动加载 data/permissions.json，工具执行前应用（deny>allow>ask）
-  const permRules = loadPermRules(opts.dataDir ?? join(process.cwd(), 'data'));
+  const permRules = loadPermRules(opts.dataDir ?? resolveDataDir(process.cwd()));
 
   // F7：steer 注入队列（运行中向当前回合注入用户消息）
   const steerQueue: string[] = [];
@@ -454,7 +456,7 @@ export function createAgent(opts: AgentOptions) {
             const shot = await captureScreen();
             if (!shot) return;
             const { mkdirSync, writeFileSync } = await import('node:fs');
-            const dir = join(opts.dataDir ?? join(process.cwd(), 'data'), 'captures');
+            const dir = join(opts.dataDir ?? resolveDataDir(process.cwd()), 'captures');
             mkdirSync(dir, { recursive: true });
             const file = join(dir, `${Date.now().toString(36)}-${name.replace(/[^\w-]/g, '_')}.png`);
             writeFileSync(file, shot.png);
@@ -503,6 +505,9 @@ export function createAgent(opts: AgentOptions) {
     const { hasImageIn } = await import('./providers.js');
     msgs.push({ role: 'system', content: buildSystemPrompt({
       mode, cwd: process.cwd(), model: modelName, hasImageIn: hasImageIn(modelName), sessionId,
+      // 开放兼容：/lang 设置生效（输出语言）+ dataDir 支持外部 prompts/system.md 覆盖
+      lang: (opts.config?.settings as any)?.lang,
+      dataDir: opts.dataDir,
     }) });
     // 项目规范注入（生态规范文件链）：AGENTS.md/CLAUDE.md/GEMINI.md/.cursorrules 等
     // 首个存在者进系统提示（多工具共存——一套项目规范多 CLI 消费）
@@ -523,7 +528,7 @@ export function createAgent(opts: AgentOptions) {
       } catch { /* 结构注入失败不影响 */ }
       try {
         const { discoverSkills } = await import('./skills.js');
-        const skills = discoverSkills(opts.dataDir ?? join(process.cwd(), 'data'), process.cwd());
+        const skills = discoverSkills(opts.dataDir ?? resolveDataDir(process.cwd()), process.cwd());
         if (skills.length) {
           msgs.push({ role: 'system', content: `（可用技能：${skills.slice(0, 10).map(s => s.name).join('、')}——需要时用 skill_load 加载）` });
         }

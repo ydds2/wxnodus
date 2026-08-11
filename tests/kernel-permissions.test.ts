@@ -206,3 +206,34 @@ describe('PermRule reason 字段', () => {
     } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
   });
 });
+
+describe('只读工具名单自动推导（开放兼容 M2.1）', () => {
+  const { deriveReadonlyTools, setReadonlyTools, isReadonlyTool } = (globalThis as any).__perm ?? {};
+  it('danger!==true 的工具推导为只读；不含幽灵名', async () => {
+    const { deriveReadonlyTools } = await import('../src/kernel/permissions.js');
+    const tools = {
+      fs_read: { danger: false },
+      fs_write: { danger: true },
+      bash: { danger: true },
+      grep: { danger: false },
+      find_files: { danger: false },
+      memory_search: { danger: false },
+      http_get: { danger: true },
+      skill_search: { danger: false },
+    };
+    const names = deriveReadonlyTools(tools);
+    expect(names).toContain('find_files');
+    expect(names).toContain('memory_search');
+    expect(names).not.toContain('fs_write');
+    expect(names).not.toContain('bash');
+  });
+  it('setReadonlyTools 注入后 isReadonlyTool 生效（修漂移：旧幽灵名不再放行）', async () => {
+    const { deriveReadonlyTools, setReadonlyTools, isReadonlyTool } = await import('../src/kernel/permissions.js');
+    setReadonlyTools(deriveReadonlyTools({ fs_read: { danger: false }, fs_write: { danger: true } }));
+    expect(isReadonlyTool('fs_read')).toBe(true);
+    expect(isReadonlyTool('fs_write')).toBe(false);
+    expect(isReadonlyTool('skill_search')).toBe(false); // 幽灵名自动消失
+    // 恢复默认（避免污染其他测试）
+    setReadonlyTools(deriveReadonlyTools({ fs_read: {}, ls: {}, grep: {}, skill_load: {}, repo_map: {} }));
+  });
+});

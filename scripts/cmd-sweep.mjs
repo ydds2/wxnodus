@@ -25,14 +25,14 @@ if (strip(out).includes('启动失败')) {
 const BROKEN = /不支持|未实现|unknown rpc|unsupported|not implemented|内部错误|异常：|启动失败/
 const groups = {
   '对话': ['/help', '/clear', '/undo', '/usage', '/quit', '/context', '/resume', '/new', '/title', '/undo list'],
-  '模型': ['/key', '/login', '/logout', '/model', '/status', '/doctor', '/version', '/thinking on', '/thinking off'],
+  '模型': ['/key', '/model', '/status', '/doctor', '/version', '/thinking on', '/thinking off'],
   '记忆': ['/memory', '/hole 测试', '/compact', '/digest', '/curator', '/task show'],
   '计划': ['/plan', '/flow 用户注册流程', '/import'],
   '构建': ['/build', '/deploy', '/forge', '/skill', '/skill list', '/skill inspect demo', '/skill new sweep-tmp', '/learn test-skill', '/gate', '/fdr', '/evidence', '/plugin', '/plugin list'],
   '会话': ['/fork', '/init', '/checkpoint list', '/checkpoint', '/versions', '/snapshot', '/memory list', '/usage --waterfall'],
   '钩子': ['/hooks'],
   '安全': ['/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt'],
-  '系统': ['/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench'],
+  '系统': ['/backup', '/export', '/theme dark', '/theme light', '/lang en', '/lang zh', '/config', '/config set lang en', '/logs', '/bench'],
   '视觉': ['/vision', '/img', '/video', '/render', '/capture'],
   '网络': ['/claw', '/mcp', '/gateway', '/proxy', '/webhook', '/a2a', '/acp'],
   '协作': ['/swarm', '/duo', '/cron', '/cron list', '/jobs', '/task', '/delegate', '/goal 测试目标'],

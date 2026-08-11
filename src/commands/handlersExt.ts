@@ -15,9 +15,10 @@ import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
 import { buildRepoMap } from '../kernel/repoMap.js';
 import { listShadows, restoreShadow, versionsOfFile, snapshotDir, restoreDirShadows } from '../kernel/undoShadows.js';
 import { parseCronExpr, describeCronExpr } from '../kernel/cronExpr.js';
+import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { decryptKey } from '../kernel/providers.js';
 import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissions.js';
-import { unknownSettingsKeys } from '../store/config.js';
+import { unknownSettingsKeys, knownSettingsKeys } from '../store/config.js';
 import { runCuratorReview, curatorConfigFrom, readCuratorState } from '../kernel/curator.js';
 import type { HandlerCtx } from './handlers.js';
 import type { CommandBus, StructuredCommand } from '../app/CommandBus.js';
@@ -527,13 +528,13 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const before = ctx.mem.recall('default').length;
     const summarize = async (text: string): Promise<string> => {
       try {
-        const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
-        if (!enc) return `（规则压缩）${text.slice(0, 400)}${text.length > 400 ? '…' : ''}`;
-        const key = decryptKey(enc);
-        if (!key) return `（规则压缩）${text.slice(0, 400)}${text.length > 400 ? '…' : ''}`;
+        const { resolveApiKey } = await import('../kernel/providers.js');
+        const keyRes = resolveApiKey(ctx.config.get('settings') as any);
+        if (!keyRes.key) return `（规则压缩）${text.slice(0, 400)}${text.length > 400 ? '…' : ''}`;
+        const key = keyRes.key;
         const { buildChatRequest } = await import('../kernel/providers.js');
-        const baseURL = (ctx.config.getKey('settings', 'baseURL') as string) || 'https://api.deepseek.com/v1';
-        const model = (ctx.config.getKey('settings', 'model') as string) || 'deepseek-v4-flash';
+        const baseURL = resolveDefaultBaseURL(ctx.config.get('settings') as any);
+        const model = resolveDefaultModel(ctx.config.get('settings') as any);
         const req = buildChatRequest({
           baseURL, model, key,
           messages: [
@@ -562,27 +563,26 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const transcript = last.filter((m: any) => m.role !== 'system').map((m: any) => `${m.role}: ${String(m.content ?? '').slice(0, 200)}`).join('\n');
     // LLM 提炼（有密钥时）
     try {
-      const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
-      if (enc) {
-        const key = decryptKey(enc);
-        if (key) {
-          const { buildChatRequest } = await import('../kernel/providers.js');
-          const baseURL = (ctx.config.getKey('settings', 'baseURL') as string) || 'https://api.deepseek.com/v1';
-          const model = (ctx.config.getKey('settings', 'model') as string) || 'deepseek-v4-flash';
-          const req = buildChatRequest({
-            baseURL, model, key,
-            messages: [
-              { role: 'system', content: '你是对话摘要器。把对话提炼为要点（中文，≤200 字），只输出要点。' },
-              { role: 'user', content: transcript },
-            ],
-            stream: false,
-          });
-          const resp = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body, signal: AbortSignal.timeout(60000) });
-          if (resp.ok) {
-            const j = await resp.json() as any;
-            const summary = String(j?.choices?.[0]?.message?.content ?? '').trim();
-            if (summary) return lines(' 对话摘要（LLM） ', summary.split('\n').map(l => ` ${l}`));
-          }
+      const { resolveApiKey } = await import('../kernel/providers.js');
+      const keyRes = resolveApiKey(ctx.config.get('settings') as any);
+      if (keyRes.key) {
+        const key = keyRes.key;
+        const { buildChatRequest } = await import('../kernel/providers.js');
+        const baseURL = resolveDefaultBaseURL(ctx.config.get('settings') as any);
+        const model = resolveDefaultModel(ctx.config.get('settings') as any);
+        const req = buildChatRequest({
+          baseURL, model, key,
+          messages: [
+            { role: 'system', content: '你是对话摘要器。把对话提炼为要点（中文，≤200 字），只输出要点。' },
+            { role: 'user', content: transcript },
+          ],
+          stream: false,
+        });
+        const resp = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body, signal: AbortSignal.timeout(60000) });
+        if (resp.ok) {
+          const j = await resp.json() as any;
+          const summary = String(j?.choices?.[0]?.message?.content ?? '').trim();
+          if (summary) return lines(' 对话摘要（LLM） ', summary.split('\n').map(l => ` ${l}`));
         }
       }
     } catch { /* 降级规则摘要 */ }
@@ -685,17 +685,18 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/learn', async (args): Promise<string> => {
     const name = args[0];
     if (!name) return '用法：/learn <技能名> [描述]——用最近对话总结生成 SKILL.md';
-    const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
-    if (!enc) return '当前未配置模型密钥——/key set <密钥> 后 /learn 才能用 AI 总结生成技能（不产生假内容）';
-    const key = decryptKey(enc);
-    if (!key) return '密钥无法解密（机器环境变化或数据损坏？）——请用 /key set <密钥> 重新配置。';
+    const { resolveApiKey } = await import('../kernel/providers.js');
+    const keyRes = resolveApiKey(ctx.config.get('settings') as any);
+    if (!keyRes.key) return '当前未配置模型密钥——/key set <密钥> 后 /learn 才能用 AI 总结生成技能（不产生假内容）';
+    if (keyRes.error === 'decrypt-failed') return '密钥无法解密（机器环境变化或数据损坏？）——请用 /key set <密钥> 重新配置。';
+    const key = keyRes.key;
     const recent = ctx.mem.recall('default').slice(-8);
     if (!recent.length) return '暂无对话记忆可学习——先对话几轮再 /learn';
     const desc = args.slice(1).join(' ') || `${name} 技能`;
     const transcript = recent.map(r => `${r.role}: ${String(r.content ?? '').slice(0, 300)}`).join('\n');
     const { buildChatRequest } = await import('../kernel/providers.js');
-    const baseURL = (ctx.config.getKey('settings', 'baseURL') as string) || 'https://api.deepseek.com/v1';
-    const model = (ctx.config.getKey('settings', 'model') as string) || 'deepseek-v4-flash';
+    const baseURL = resolveDefaultBaseURL(ctx.config.get('settings') as any);
+    const model = resolveDefaultModel(ctx.config.get('settings') as any);
     const req = buildChatRequest({
       baseURL, model, key,
       messages: [
@@ -808,8 +809,9 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const unknown = unknownSettingsKeys(s);
     if (args[0] === 'set' && args[1]) {
       const key = args[1];
-      if (!['model', 'theme', 'mode', 'thinking', 'autoResume', 'autoReview', 'lowRiskAutoApprove', 'busy_input_mode'].includes(key)) {
-        return `未知配置键「${key}」——支持：model/theme/mode/thinking/autoResume/autoReview/lowRiskAutoApprove/busy_input_mode`;
+      // 开放兼容：/config set 放开为白名单全键（密钥槽位除外——密钥走 /key）
+      if (!knownSettingsKeys().includes(key)) {
+        return `未知配置键「${key}」——支持全部已知键（/config 查看），密钥用 /key set 配置`;
       }
       const raw = args.slice(2).join(' ');
       const value: any = raw === 'true' ? true : raw === 'false' ? false : raw === 'null' ? null : !Number.isNaN(Number(raw)) && raw !== '' ? Number(raw) : raw;
@@ -958,17 +960,21 @@ export const commands = {
       return `插件骨架已生成 → ${dest}\n编辑 index.js 实现逻辑后，新开会话或 /plugin reload 生效`;
     }
 
-    // P1b：/plugin reload —— 热重载（重建 agent 工具表，不重启进程）
+    // P1b：/plugin reload —— 热重载（重建 agent 工具表 + 重注册命令/NL 触发，不重启进程）
     if (sub === 'reload') {
-      const { loadAllPlugins, pluginToolsToExtra } = await import('../kernel/plugins.js');
+      const { loadAllPlugins, pluginToolsToExtra, registerPluginCommands, registerPluginNlTriggers } = await import('../kernel/plugins.js');
       const reloaded = await loadAllPlugins(ctx.dataDir, ctx.cwd);
       const toolCount = Object.keys(pluginToolsToExtra(reloaded)).length;
+      const cmdCount = Object.keys(reloaded.flatMap(p => Object.keys(p.commands))).length;
       const enabled = reloaded.filter(p => p.manifest.enabled !== false).length;
+      // 开放兼容：命令与 NL 触发随 reload 重注册（bus.register 同名覆盖 = 热更新）
+      if (ctx.commandBus) registerPluginCommands(ctx.commandBus, reloaded);
+      registerPluginNlTriggers(reloaded);
       if (ctx.agent?.updateTools) {
         ctx.agent.updateTools(pluginToolsToExtra(reloaded));
-        return `插件已热重载：${enabled} 个启用（${toolCount} 工具）——无需重启`;
+        return `插件已热重载：${enabled} 个启用（${toolCount} 工具 + ${cmdCount} 命令）——无需重启`;
       }
-      return `已重新扫描：${enabled} 个启用（${toolCount} 工具）——当前环境不支持热更新，重启后生效`;
+      return `已重新扫描：${enabled} 个启用（${toolCount} 工具 + ${cmdCount} 命令）——当前环境不支持热更新，重启后生效`;
     }
 
     if (sub === 'install') {
@@ -1639,16 +1645,17 @@ export const commands = {
       return '计划文件已清除';
     }
     if (sub === 'save') {
-      const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
-      if (!enc) return '未配置模型密钥——/key set <密钥> 后 /plan save 才能生成计划（不产生假内容）';
-      const key = decryptKey(enc);
-      if (!key) return '密钥无法解密——请 /key set <密钥> 重新配置';
+      const { resolveApiKey } = await import('../kernel/providers.js');
+      const keyRes = resolveApiKey(ctx.config.get('settings') as any);
+      if (!keyRes.key) return '未配置模型密钥——/key set <密钥> 后 /plan save 才能生成计划（不产生假内容）';
+      if (keyRes.error === 'decrypt-failed') return '密钥无法解密——请 /key set <密钥> 重新配置';
+      const key = keyRes.key;
       const goal = rest.join(' ').trim() || String(ctx.mem.recall(sid).filter(m => m.role === 'user').at(-1)?.content ?? '').slice(0, 500);
       if (!goal) return '没有可规划的需求——/plan save <需求描述> 或先对话几轮';
       try {
         const { buildChatRequest } = await import('../kernel/providers.js');
-        const baseURL = (ctx.config.getKey('settings', 'baseURL') as string) || 'https://api.deepseek.com/v1';
-        const model = (ctx.config.getKey('settings', 'model') as string) || 'deepseek-v4-flash';
+        const baseURL = resolveDefaultBaseURL(ctx.config.get('settings') as any);
+        const model = resolveDefaultModel(ctx.config.get('settings') as any);
         const req = buildChatRequest({
           baseURL, model, key,
           messages: [
@@ -1705,14 +1712,15 @@ export const commands = {
   bus.register('/flow', async (args) => {
     const goal = args.join(' ').trim();
     if (!goal) return '用法：/flow <流程需求>（如 /flow 用户注册流程）——AI 生成 Mermaid 流程图';
-    const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
-    if (!enc) return '未配置模型密钥——/key set <密钥> 后 /flow 才能生成流程图';
-    const key = decryptKey(enc);
-    if (!key) return '密钥无法解密——请 /key set <密钥> 重新配置';
+    const { resolveApiKey } = await import('../kernel/providers.js');
+    const keyRes = resolveApiKey(ctx.config.get('settings') as any);
+    if (!keyRes.key) return '未配置模型密钥——/key set <密钥> 后 /flow 才能生成流程图';
+    if (keyRes.error === 'decrypt-failed') return '密钥无法解密——请 /key set <密钥> 重新配置';
+    const key = keyRes.key;
     try {
       const { buildChatRequest } = await import('../kernel/providers.js');
-      const baseURL = (ctx.config.getKey('settings', 'baseURL') as string) || 'https://api.deepseek.com/v1';
-      const model = (ctx.config.getKey('settings', 'model') as string) || 'deepseek-v4-flash';
+      const baseURL = resolveDefaultBaseURL(ctx.config.get('settings') as any);
+      const model = resolveDefaultModel(ctx.config.get('settings') as any);
       const req = buildChatRequest({
         baseURL, model, key,
         messages: [

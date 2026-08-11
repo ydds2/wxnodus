@@ -11,12 +11,18 @@ import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, append
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ToolDef } from './tools.js';
+import type { CommandBus } from '../app/CommandBus.js';
+import { SLASH, COMMAND_DESC } from '../commands/registry.js';
+import { registerNlTrigger } from '../commands/intent.js';
 
 export interface PluginToolDecl {
   name: string;
-  description: string;
+  description?: string;
   /** OpenAI 参数 schema 的 properties 部分 */
   parameters?: Record<string, any>;
+  /** 危险声明（开放兼容）：缺省 true（插件视为外部代码），声明 false 则
+   *  只读语义（smart/manual/plan 下不再恒需确认） */
+  danger?: boolean;
 }
 
 export interface PluginManifest {
@@ -27,6 +33,8 @@ export interface PluginManifest {
   tools?: PluginToolDecl[];
   /** 插件命令名（handler 在 index.js 的 commands 中实现） */
   commands?: string[];
+  /** 自然语言触发注册（开放兼容）：{ re: 正则字符串, cmd: 命令名 }——加载后进意图路由 */
+  nlTriggers?: Array<{ re: string; cmd: string }>;
 }
 
 export interface PluginToolCtx {
@@ -65,9 +73,16 @@ export function parsePluginManifest(raw: string): PluginManifest {
           name: String(t?.name ?? '').trim(),
           description: String(t?.description ?? ''),
           parameters: t?.parameters ?? {},
+          danger: t?.danger !== false,
         })).filter(t => t.name)
       : [],
     commands: Array.isArray(j.commands) ? j.commands.map(String).filter(Boolean) : [],
+    nlTriggers: Array.isArray(j.nlTriggers)
+      ? j.nlTriggers.map((t: any) => ({
+          re: String(t?.re ?? ''),
+          cmd: String(t?.cmd ?? '').trim(),
+        })).filter(t => t.re && t.cmd)
+      : [],
   };
 }
 
@@ -112,6 +127,12 @@ export async function loadPlugin(dir: string, cwd: string, dataDir: string, extr
     },
   };
 
+  // onLoad 生命周期（docs/plugin-api.md 已声明——真正实现）：
+  // 模块导出 onLoad(ctx) 时调用（可做初始化/注册清理器）；异常不阻断加载
+  if (typeof mod.onLoad === 'function') {
+    try { mod.onLoad(toolCtx); } catch { /* onLoad 异常静默（加载继续） */ }
+  }
+
   const tools: Record<string, ToolDef> = {};
   for (const decl of manifest.tools ?? []) {
     const name = decl.name;
@@ -126,8 +147,9 @@ export async function loadPlugin(dir: string, cwd: string, dataDir: string, extr
           parameters: { type: 'object', properties: decl.parameters ?? {}, required: [] },
         },
       },
-      // 插件工具视为外部代码：输出统一 untrusted 包裹（提示注入防护）
-      danger: true,
+      // 插件工具默认视为外部代码（输出 untrusted 包裹，提示注入防护）；
+      // 开放兼容：manifest 声明 danger:false 的插件工具获得只读语义
+      danger: decl.danger !== false,
       run: async (args, ctx) => {
         try {
           const out = await handler(args, toolCtx);
@@ -176,4 +198,30 @@ export function setPluginEnabled(dir: string, enabled: boolean): boolean {
     writeFileSync(file, JSON.stringify({ ...m, enabled }, null, 2), 'utf8');
     return true;
   } catch { return false; }
+}
+
+// ── 插件命令注册（开放兼容：启动与 /plugin reload 共用；bus.register 同名覆盖 = 热更新）──
+export function registerPluginCommands(bus: CommandBus, plugins: LoadedPlugin[]): void {
+  for (const p of plugins) {
+    for (const [cmdName, fn] of Object.entries(p.commands)) {
+      const full = `/${p.manifest.name}.${cmdName}`;
+      bus.register(full, (args) => Promise.resolve(fn(args)));
+      if (!SLASH.includes(full)) {
+        SLASH.push(full);
+        COMMAND_DESC[full] = `插件命令（${p.manifest.name}）`;
+      }
+    }
+  }
+}
+
+// 插件 NL 触发注册（开放兼容）：manifest.nlTriggers 进意图路由（运行时生效）
+// reload 时重复注册无害（routeNaturalLanguage 首个命中即返回）
+export function registerPluginNlTriggers(plugins: LoadedPlugin[]): void {
+  for (const p of plugins) {
+    for (const t of p.manifest.nlTriggers ?? []) {
+      try {
+        registerNlTrigger(new RegExp(t.re), t.cmd);
+      } catch { /* 非法正则跳过（不阻断插件加载） */ }
+    }
+  }
 }

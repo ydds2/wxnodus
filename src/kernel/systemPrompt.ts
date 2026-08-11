@@ -1,6 +1,10 @@
 // src/kernel/systemPrompt.ts — 结构化系统提示（智能度基础，自研）
 // 文案规范：专业术语保留（agent/工具/模式/凭据），首次出现附一句通俗解释——
 // 专业但不晦涩，易懂但不失严谨（docs/copy-guide.md 规范）
+// 开放兼容：lang 参数使 /lang 设置真实生效（en → 英文输出规范）；
+// dataDir 下 prompts/system.md 存在时整体替换内置提示（外部自定义人格/工作流，热生效）
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Mode } from './permissions.js';
 
 const MODE_RULES: Record<Mode, string> = {
@@ -18,10 +22,61 @@ export interface SysPromptOpts {
   model: string;
   hasImageIn: boolean;
   sessionId?: string;
+  /** /lang 设置：'en' 时输出规范切英文（其余保持中文） */
+  lang?: string;
+  /** dataDir：存在 prompts/system.md 时整体替换内置提示 */
+  dataDir?: string;
+}
+
+/** 外部提示覆盖：<dataDir>/prompts/system.md 存在则整体替换（热生效——每次构建时读） */
+function externalPromptOverride(dataDir: string | undefined): string | null {
+  if (!dataDir) return null;
+  try {
+    const text = readFileSync(join(dataDir, 'prompts', 'system.md'), 'utf8').trim();
+    return text || null;
+  } catch {
+    return null;
+  }
 }
 
 export function buildSystemPrompt(opts: SysPromptOpts): string {
   const now = new Date();
+  const lang = opts.lang === 'en' ? 'en' : 'zh';
+  const locale = lang === 'en' ? 'en-US' : 'zh-CN';
+  const external = externalPromptOverride(opts.dataDir);
+
+  // 环境段始终追加（外部提示也带上——模型需要知道工作目录/模型/时间）
+  const envBlock = [
+    '## 环境',
+    `- 工作目录：${opts.cwd}`,
+    `- 当前模型：${opts.model}${opts.hasImageIn ? '（支持图像输入）' : ''}`,
+    `- 会话：${opts.sessionId ?? 'default'}`,
+    `- 时间：${now.toLocaleString(locale, { hour12: false })}`,
+  ].join('\n');
+
+  if (external) {
+    return `${external}\n\n${envBlock}`;
+  }
+
+  const outputRules = lang === 'en'
+    ? [
+        '1. Reply in English (keep code and commands verbatim).',
+        '2. Annotate code blocks with their language; explain each file when changing several.',
+        '3. Conclusion first, then details; use lists or tables for long content.',
+        '4. Terminal layout: headings with ## (### for deeper levels); numbered steps 1. 2.;',
+        '   conclusion paragraphs start with **Conclusion:**; wrap key numbers/paths/commands in backticks;',
+        '   keep lines ≤ 80 chars.',
+      ]
+    : [
+        '1. 用中文回复（代码与命令保留原文）。',
+        '2. 代码块标注语言；改动多个文件时逐个说明。',
+        '3. 先结论后细节；长内容用列表或表格组织，方便快速浏览。',
+        '4. 终端排版：标题用 ##（多级用 ###，避免 # 占行）；步骤用 1. 2. 编号；',
+        '   结论段以 **结论：** 开头；关键数字/路径/命令用反引号包裹；',
+        '   话题间用空行分隔（避免 --- 水平线在窄终端浪费行）；',
+        '   列表每项一行，长项拆行保持每行 ≤80 字符。',
+      ];
+
   const lines: string[] = [
     '你是 WxNodus——本地概念编译器（把自然语言需求"编译"为可运行系统的智能助手），完全自研的 CLI 产品。',
     '',
@@ -36,19 +91,9 @@ export function buildSystemPrompt(opts: SysPromptOpts): string {
     MODE_RULES[opts.mode] ?? MODE_RULES.smart,
     '',
     '## 输出规范',
-    '1. 用中文回复（代码与命令保留原文）。',
-    '2. 代码块标注语言；改动多个文件时逐个说明。',
-    '3. 先结论后细节；长内容用列表或表格组织，方便快速浏览。',
-    '4. 终端排版：标题用 ##（多级用 ###，避免 # 占行）；步骤用 1. 2. 编号；',
-    '   结论段以 **结论：** 开头；关键数字/路径/命令用反引号包裹；',
-    '   话题间用空行分隔（避免 --- 水平线在窄终端浪费行）；',
-    '   列表每项一行，长项拆行保持每行 ≤80 字符。',
+    ...outputRules,
     '',
-    '## 环境',
-    `- 工作目录：${opts.cwd}`,
-    `- 当前模型：${opts.model}${opts.hasImageIn ? '（支持图像输入）' : ''}`,
-    `- 会话：${opts.sessionId ?? 'default'}`,
-    `- 时间：${now.toLocaleString('zh-CN', { hour12: false })}`,
+    envBlock,
   ];
   return lines.join('\n');
 }

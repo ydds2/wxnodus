@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { mkdirSync, appendFileSync } from 'node:fs';
 import { createAutoReview } from '../kernel/autoReview.js';
 import { parseCronExpr, cronMatches } from '../kernel/cronExpr.js';
+import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
+import { resolveDataDir } from '../kernel/paths.js';
 
 const VERSION = '3.0.0';
 // 调试：捕获未处理异常/拒绝 → dataDir/logs/error-<日期>.log（统一日志目录，不污染工作目录）
@@ -48,7 +50,7 @@ if (opts.cwd) {
 
 async function main() {
   const cwd = process.cwd();
-  const dataDir = join(cwd, 'data');
+  const dataDir = resolveDataDir(cwd);
   _initErrorLog(dataDir);
   mkdirSync(dataDir, { recursive: true });
 
@@ -77,12 +79,15 @@ async function main() {
   if (settings.apiKeyEnc) {
     const { MODEL_CATALOG } = await import('../kernel/providers.js');
     if (!settings.model || !MODEL_CATALOG.some(m => m.modelId === settings.model)) {
-      settings.model = 'deepseek-v4-flash';
+      settings.model = resolveDefaultModel({});
       config.setKey('settings', 'model', settings.model);
     }
-    if (!settings.baseURL) { settings.baseURL = 'https://api.deepseek.com/v1'; config.setKey('settings', 'baseURL', settings.baseURL); }
+    if (!settings.baseURL) {
+      settings.baseURL = resolveDefaultBaseURL({});
+      config.setKey('settings', 'baseURL', settings.baseURL);
+    }
   }
-  let model = settings.model ?? (settings.apiKeyEnc ? 'deepseek-v4-flash' : '');
+  let model = settings.model ?? (settings.apiKeyEnc ? resolveDefaultModel({}) : '');
 
   // 审批桥：agent 工具确认 → GatewayClient.requestApproval（审批 overlay）
   let gateway: any = null;
@@ -127,6 +132,11 @@ async function main() {
   // P3 安全注入通道：敏感数据内存保险库（sudo 密码/环境变量密钥——用户亲手输入、仅内存、关闭即清）
   const { createSecretVault } = await import('../kernel/secrets.js');
   const secrets = createSecretVault();
+  // 开放兼容：只读工具名单由内置工具表自动推导（danger!==true 即只读）——
+  // 不再手工双写（旧名单已漂移：幽灵名/缺 find_files），新增工具自动生效
+  const { deriveReadonlyTools, setReadonlyTools } = await import('../kernel/permissions.js');
+  const { coreTools } = await import('../kernel/tools.js');
+  setReadonlyTools(deriveReadonlyTools(coreTools()));
   const agent = createAgent({
     db, bus, mem, sessionId: 'default', config: { settings },
     mode: (config.get('settings') as any).mode ?? 'smart',
@@ -173,18 +183,11 @@ async function main() {
   // 命令注册
   const commandBus = createCommandBus();
   // 插件命令注册为 /<插件名>.<命令名>（如 /example.hello），防与内置命令冲突；
-  // 同时动态注册进 SLASH 命令表——routeInput 白名单校验与 UI 补全才能识别
-  const { SLASH, COMMAND_DESC } = await import('../commands/registry.js');
-  for (const p of plugins) {
-    for (const [cmdName, fn] of Object.entries(p.commands)) {
-      const full = `/${p.manifest.name}.${cmdName}`;
-      commandBus.register(full, (args) => Promise.resolve(fn(args)));
-      if (!SLASH.includes(full)) {
-        SLASH.push(full);
-        COMMAND_DESC[full] = `插件命令（${p.manifest.name}）`;
-      }
-    }
-  }
+  // 同时动态注册进 SLASH 命令表——routeInput 白名单校验与 UI 补全才能识别。
+  // 开放兼容：注册逻辑在 plugins.ts（registerPluginCommands），/plugin reload 复用（热更新）
+  const { registerPluginCommands, registerPluginNlTriggers } = await import('../kernel/plugins.js');
+  registerPluginCommands(commandBus, plugins);
+  registerPluginNlTriggers(plugins);
   const { registerCoreHandlers } = await import('../commands/handlers.js');
   const { registerExtHandlers } = await import('../commands/handlersExt.js');
 
@@ -197,7 +200,7 @@ async function main() {
     model = modelId;
   };
   const makeHandlerCtx = () => ({
-    dataDir, cwd, db, mem, config, bus,
+    dataDir, cwd, db, mem, config, bus, commandBus,
     agent,
     getModel: () => model,
     getMode: () => mode,

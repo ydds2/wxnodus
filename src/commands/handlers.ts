@@ -7,6 +7,7 @@ import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, resolveAlias } from './registry.js';
 import { capabilityBadges, decryptKey, encryptKey, filterModels, maskKey, MODEL_CATALOG } from '../kernel/providers.js';
+import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { makeSpec } from '../build/spec.js';
 import { makePlan, topoSort } from '../build/plan.js';
@@ -40,6 +41,8 @@ export interface HandlerCtx {
   setThinking: (on: boolean) => void;
   /** MCP 热重载（/mcp add/remove 后自动接通，无需重启） */
   reloadMcp?: () => Promise<{ ok: boolean; count: number; message: string }>;
+  /** 命令总线（/plugin reload 重注册插件命令） */
+  commandBus?: CommandBus;
   /** UI 网关（动态内容表 requestCredentialForm 等 UI 交互 RPC）——TUI 装配后可用 */
   gateway?: { requestCredentialForm(fields: Array<{ name: string; label?: string; kind: string }>, prompt?: string): Promise<Record<string, string> | null> } | null;
   /** 敏感数据内存保险库（/security 关闭通道时同步清空） */
@@ -184,15 +187,15 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ctx.config.setKey('settings', 'apiKeyEnc', encryptKey(args[1]));
       // 补默认模型/端点：有 key 但 model/baseURL 缺失时 agent 会降级规则脑
       // （提示「未配置」）——配置密钥即视为已配置，补齐默认并持久化
-      if (!ctx.config.getKey('settings', 'model')) ctx.config.setKey('settings', 'model', 'deepseek-v4-flash');
-      if (!ctx.config.getKey('settings', 'baseURL')) ctx.config.setKey('settings', 'baseURL', 'https://api.deepseek.com/v1');
+      if (!ctx.config.getKey('settings', 'model')) ctx.config.setKey('settings', 'model', resolveDefaultModel({}));
+      if (!ctx.config.getKey('settings', 'baseURL')) ctx.config.setKey('settings', 'baseURL', resolveDefaultBaseURL({}));
       return '密钥已配置（AES-256-GCM 加密存储，绝不回显）';
     }
     // 兼容规则脑提示里的用法：/key <密钥> 直接配置（非已知子命令视为密钥）
     if (!['status', 'set', 'off'].includes(sub) && args.length >= 1) {
       ctx.config.setKey('settings', 'apiKeyEnc', encryptKey(args[0]));
-      if (!ctx.config.getKey('settings', 'model')) ctx.config.setKey('settings', 'model', 'deepseek-v4-flash');
-      if (!ctx.config.getKey('settings', 'baseURL')) ctx.config.setKey('settings', 'baseURL', 'https://api.deepseek.com/v1');
+      if (!ctx.config.getKey('settings', 'model')) ctx.config.setKey('settings', 'model', resolveDefaultModel({}));
+      if (!ctx.config.getKey('settings', 'baseURL')) ctx.config.setKey('settings', 'baseURL', resolveDefaultBaseURL({}));
       return '密钥已配置（AES-256-GCM 加密存储，绝不回显）';
     }
     if (sub === 'off') {
@@ -254,7 +257,12 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/theme', (args) => {
     const name = args[0];
-    if (name) { ctx.setTheme(name); return `主题已切换：${name}`; }
+    if (name) {
+      ctx.setTheme(name);
+      // 开放兼容：广播 theme.changed——UI 监听真实切换（dark/light/wxnodus）
+      ctx.bus.emit('theme.changed', { name });
+      return `主题已切换：${name}`;
+    }
     return `当前主题：${ctx.getThemeName()}（可选：wxnodus 黑洞/dark/light）`;
   });
 

@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadAllPlugins, loadPlugin, parsePluginManifest, setPluginEnabled } from '../src/kernel/plugins.js';
+import { registerNlTrigger, routeNaturalLanguage } from '../src/commands/intent.js';
 
 let dir: string;
 
@@ -168,5 +169,21 @@ describe('插件 API 开放层', () => {
       const log = readFileSync(join(dir, 'data', 'plugin.log'), 'utf8');
       expect(log).toContain('[info] probe');
     } finally { try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  });
+});
+
+describe('插件开放兼容（M2.2：onLoad/NL 触发/命令注册）', () => {
+  it('registerNlTrigger 运行时生效（新意图词直达命令）', () => {
+    const off = registerNlTrigger(/帮我(?:倒|泡)杯咖啡/i, '/coffee');
+    expect(routeNaturalLanguage('帮我泡杯咖啡')).toBe('/coffee');
+    off();
+    expect(routeNaturalLanguage('帮我泡杯咖啡')).toBeNull();
+  });
+  it('manifest.nlTriggers 解析进清单', () => {
+    const m = parsePluginManifest(JSON.stringify({
+      name: 'nl-test', nlTriggers: [{ re: '/测试意图/i', cmd: '/test' }, { re: '', cmd: '/skip' }],
+    }));
+    expect(m.nlTriggers).toHaveLength(1);
+    expect(m.nlTriggers![0]!.cmd).toBe('/test');
   });
 });

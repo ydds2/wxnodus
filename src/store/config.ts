@@ -55,9 +55,16 @@ const SETTINGS_KEYS = new Set([
   'apiKeyEnc', 'model', 'baseURL', 'mode', 'theme', 'thinking', 'hooks', 'security',
   'lowRiskAutoApprove', 'autoResume', 'autoReview', 'webhooks', 'busy_input_mode',
   'strictMcpConfig', 'toolLazyLoad', 'budgetTokens', 'autoRepoMap',
+  // 开放兼容：实际读写的键全部入白名单（此前 lang/skin/curator 被误报未知键）
+  'lang', 'skin', 'curator',
 ]);
 export function unknownSettingsKeys(settings: Record<string, any>): string[] {
   return Object.keys(settings).filter(k => !SETTINGS_KEYS.has(k));
+}
+
+/** 已知配置键全表（开放兼容：/config set 放开为白名单全键，仅排除密钥槽位） */
+export function knownSettingsKeys(): string[] {
+  return [...SETTINGS_KEYS].filter(k => k !== 'apiKeyEnc');
 }
 
 export function createConfig(dataDir: string): Config {

@@ -20,6 +20,9 @@ export interface McpServerConfig {
   env?: Record<string, string>;
   /** 启动/请求超时（ms，Codex startup_timeout_ms 对齐；缺省 15s） */
   startupTimeoutMs?: number;
+  /** 工具级危险声明（开放兼容）：{ <toolName>: true } 的 MCP 工具走确认门；
+   *  缺省 false（MCP 工具默认无确认放行） */
+  toolDanger?: Record<string, boolean>;
 }
 
 /** 带来源标注的配置项（/mcp list 展示 [项目]/[用户]） */
@@ -268,7 +271,7 @@ export function mcpClientsToTools(clients: McpClient[]): Record<string, ToolDef>
             parameters: (t.inputSchema && t.inputSchema.type === 'object' ? t.inputSchema : { type: 'object', properties: {}, required: [] }) as ToolDef['schema']['function']['parameters'],
           },
         },
-        danger: false,
+        danger: c.server.toolDanger?.[t.name] === true,
         async run(args) {
           return c.callTool(t.name, args);
         },

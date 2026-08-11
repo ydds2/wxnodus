@@ -110,3 +110,41 @@ export const commands = {
   hello: async (args) => `插件命令 /demo.hello 收到：${args.join(' ')}`,
 };
 ```
+
+## 开放兼容扩展（V3 插件 API 增强）
+
+### 4. onLoad 生命周期（index.js 导出 `onLoad(ctx)`——加载成功时调用）
+
+```js
+export const onLoad = (ctx) => {
+  ctx.log('info', `插件已加载（dataDir: ${ctx.dataDir}）`);
+  // 可在此做初始化；异常不会阻断加载
+};
+```
+
+### 5. 自然语言触发注册（plugin.json 的 `nlTriggers`——新意图词直达命令）
+
+```json
+{
+  "name": "my-plugin",
+  "nlTriggers": [
+    { "re": "/帮我(?:倒|泡)杯咖啡/i", "cmd": "/my-plugin.brew" }
+  ]
+}
+```
+
+输入「帮我泡杯咖啡」时直接触发 `/my-plugin.brew`（与内置意图词同通道）。
+
+### 6. 工具危险声明（plugin.json 的 `danger` 字段）
+
+插件工具默认 `danger: true`（外部代码恒需确认）。声明 `"danger": false` 的只读工具
+获得只读语义（smart/manual/plan 模式不再恒需审批）：
+
+```json
+{ "name": "my_reader", "description": "只读查询", "danger": false }
+```
+
+### 7. 命令热更新
+
+`/plugin reload` 现在完整重载：工具表重建 + 命令重注册（bus.register 同名覆盖）+ NL
+触发注册——编辑插件后无需重启进程。

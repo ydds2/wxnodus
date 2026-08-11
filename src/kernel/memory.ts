@@ -79,20 +79,31 @@ export async function compactMessages(
   return [...keepHead, { role: 'system', content: `（压缩省略 ${mid.length} 条中间消息）` }, ...condensed.slice(-10), ...keepTail];
 }
 
-// ── embedding（transformers.js all-MiniLM-L6-v2，384 维；失败/冷却降级）──
+// ── embedding（transformers.js 本地模型，默认 all-MiniLM-L6-v2 384 维；失败/冷却降级）──
+// 开放兼容：WXNODUS_EMBED_MODEL 可换本地模型（如 Xenova/bge-small-zh-v1.5）；
+// 输出维度 ≠384（向量表固定维度）时禁用向量索引降级纯 FTS——换模型不崩库。
+// WXN_NO_EMBED 保留兼容，WXNODUS_EMBED=off 为新名。
+const EMBED_DIM = 384;
 let embedder: any = null;
 let embedFailTs = 0;
 async function embed(text: string): Promise<number[] | null> {
-  if (process.env.WXN_NO_EMBED) return null;
+  if (process.env.WXNODUS_EMBED === 'off' || process.env.WXN_NO_EMBED) return null;
   const now = Date.now();
   if (embedFailTs && now - embedFailTs < 10 * 60 * 1000) return null; // 失败冷却 10 分钟
   try {
     if (!embedder) {
       const { pipeline } = await import('@huggingface/transformers');
-      embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { dtype: 'q8' });
+      const model = process.env.WXNODUS_EMBED_MODEL?.trim() || 'Xenova/all-MiniLM-L6-v2';
+      embedder = await pipeline('feature-extraction', model, { dtype: 'q8' });
     }
     const out = await embedder(text, { pooling: 'mean', normalize: true });
-    return Array.from(out.data as Float32Array);
+    const vec = Array.from(out.data as Float32Array);
+    // 维度校验：非 384 维与 archival_vec 表不匹配——禁用向量写入（调用方降级 FTS）
+    if (vec.length !== EMBED_DIM) {
+      embedFailTs = Date.now();
+      return null;
+    }
+    return vec;
   } catch {
     embedFailTs = Date.now();
     return null;

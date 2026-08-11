@@ -91,9 +91,26 @@ export function applyRules(tool: string, args: Record<string, any>, rules: PermR
 }
 function escapeRe(s: string): string { return s.replace(/[.+?^${}()|[\]\\]/g, '\\$&'); }
 
-// 只读工具名单（危险语义修复 F12：与 tools.danger 单一事实来源——danger:false 且无副作用的工具）
-// 注意：memory_write/http_get 有副作用/外联，移出只读名单
-const READONLY_TOOLS = new Set(['fs_read', 'ls', 'grep', 'skill_search', 'skill_load', 'code_symbols', 'repo_map', 'rag_search', 'hole_recall']);
+// 只读工具名单（开放兼容：装配时由工具表自动推导 setReadonlyTools——
+// danger!==true 的内置工具即只读；不再手工双写，杜绝名单漂移）
+// 注意：memory_write/http_get 有副作用/外联（danger 语义已标注），推导时自动排除
+let READONLY_TOOLS = new Set<string>(['fs_read', 'ls', 'grep', 'skill_load', 'repo_map']);
+
+/** 由工具表推导只读名单：danger 未标 true 的即为只读（与 modeVerdict 的 toolDanger 语义一致） */
+export function deriveReadonlyTools(tools: Record<string, { danger?: boolean }>): string[] {
+  return Object.entries(tools)
+    .filter(([, t]) => t.danger !== true)
+    .map(([name]) => name);
+}
+
+/** 装配时注入推导结果（cli/index.ts：coreTools() + 内置工具集） */
+export function setReadonlyTools(names: Iterable<string>): void {
+  READONLY_TOOLS = new Set(names);
+}
+
+export function isReadonlyTool(tool: string): boolean {
+  return READONLY_TOOLS.has(tool);
+}
 
 // ── bash 命令分级（参考 Claude Code read-only 命令白名单 + Kimi auto_approve_actions）──
 // 只读命令（pwd/ls/cat/git status 等）smart/auto/plan 下直接放行不弹确认；

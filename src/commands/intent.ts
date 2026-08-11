@@ -5,6 +5,16 @@ import { deterministicRun } from './deterministic.js';
 
 export interface NlTrigger { re: RegExp; cmd: string }
 
+/** 自然语言触发注册 API（开放兼容：插件/外部代码可注册新意图词，运行时生效） */
+export function registerNlTrigger(re: RegExp, cmd: string): () => void {
+  const trigger: NlTrigger = { re, cmd };
+  NL_TRIGGERS.push(trigger);
+  return () => {
+    const i = NL_TRIGGERS.indexOf(trigger);
+    if (i >= 0) NL_TRIGGERS.splice(i, 1);
+  };
+}
+
 // ③ NL 正则路由：自然语言 → 命令（不占用 AI 意图层）
 // F16 修复：误劫持防御——长句必须祈使动词开头（"把代码备份到U盘" ✓ / "我之前备份过" ✗ 叙述），
 // 疑问/陈述式长句一律交 AI 对话层；触发正则排除完成态（备份过/部署后/上线了）

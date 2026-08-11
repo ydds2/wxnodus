@@ -12,7 +12,7 @@ import type {
 import { rpcErrorMessage } from '../lib/rpc.js'
 import { topLevelSubagents } from '../lib/subagentTree.js'
 import { formatAbandonedClarify, formatToolCall, stripAnsi } from '../lib/text.js'
-import { fromSkin } from '../theme.js'
+import { fromSkin, DARK_THEME, LIGHT_THEME, DEFAULT_THEME } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
 import { applyDelegationStatus, getDelegationState } from '../runtime/delegationStatus.js'
@@ -416,6 +416,15 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         }
 
         return
+      case 'theme.changed': {
+        // 开放兼容：/theme dark|light|wxnodus 真实生效（此前仅存字符串无 UI 效果）
+        const name = (ev.payload as { name?: string } | undefined)?.name
+        if (name === 'dark') patchUiState({ theme: DARK_THEME })
+        else if (name === 'light') patchUiState({ theme: LIGHT_THEME })
+        else patchUiState({ theme: DEFAULT_THEME })
+
+        return
+      }
       case 'session.info': {
         const info = ev.payload
 
