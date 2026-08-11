@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createSecretVault } from '../src/kernel/secrets.js';
+import { createSecretVault, SECRET_TTL_MS } from '../src/kernel/secrets.js';
 import { coreTools } from '../src/kernel/tools.js';
 
 let dir: string;
@@ -117,5 +117,42 @@ describe('bash 工具安全注入', () => {
     const c = { cwd: process.cwd(), dataDir: dir, signal: undefined as any };
     const r = await bash.run({ command: 'sudo echo hi' }, c);
     expect(String(r)).toContain('通道未开启');
+  });
+});
+
+// ── P0：TTL 空闲过期（注入时钟）──
+describe('vault TTL 空闲过期', () => {
+  it('10 分钟未用自动清除（惰性）；使用即刷新', () => {
+    let t = 1_000_000;
+    const vault = createSecretVault({ now: () => t });
+    vault.setSecret('api_key', 'sk-test');
+    expect(vault.getSecret('api_key')).toBe('sk-test');
+    expect(vault.secretTTL('api_key')).toBeGreaterThan(590);
+    // 使用即刷新：读取后剩余回到满值
+    t += 5 * 60 * 1000; // 5 分钟后
+    expect(vault.getSecret('api_key')).toBe('sk-test'); // 未过期，且刷新
+    expect(vault.secretTTL('api_key')).toBeGreaterThan(590);
+    // 超过 10 分钟未用 → 惰性过期清除
+    t += SECRET_TTL_MS + 1000;
+    expect(vault.getSecret('api_key')).toBeUndefined();
+    expect(vault.secretTTL('api_key')).toBe(0);
+    expect(vault.secretNames()).not.toContain('api_key');
+  });
+  it('sudo 密码同样 TTL 过期', () => {
+    let t = 2_000_000;
+    const vault = createSecretVault({ now: () => t });
+    vault.setSudoPassword('pw');
+    expect(vault.getSudoPassword()).toBe('pw');
+    t += SECRET_TTL_MS + 1000;
+    expect(vault.getSudoPassword()).toBeNull(); // 惰性过期
+    expect(vault.hasSudo()).toBe(false);
+  });
+  it('clearAll 立即清空（含过期前）', () => {
+    const vault = createSecretVault();
+    vault.setSecret('a', '1');
+    vault.setSudoPassword('p');
+    vault.clearAll();
+    expect(vault.secretNames()).toEqual([]);
+    expect(vault.getSudoPassword()).toBeNull();
   });
 });

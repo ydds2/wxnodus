@@ -759,14 +759,20 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // ── 视觉类 ──────────────────────────────────
   // /input：动态内容表——多字段敏感输入（仅内存，不保存；像对话时输入 key 一样）
   bus.register('/input', async (args) => {
+    // 字段语法：<字段名>[:<标签>[:<用途>]]——用途显示在表单提示中（减少误输入）
     const fields = args.map(a => {
-      const [name, label, kindRaw] = a.split(':');
+      const [name, label, purpose, kindRaw] = a.split(':');
       const kind = (kindRaw === 'key' || kindRaw === 'text' ? kindRaw : 'password') as 'text' | 'password' | 'key';
-      return { name, label: label ?? name, kind };
+      return { name, label: label ?? name, kind, purpose };
     }).filter(f => f.name);
     if (!fields.length) return '用法：/input <字段1> [字段2 ...]（动态内容表——多字段敏感输入，仅内存不保存；如 /input username password api_key）';
     if (!ctx.gateway?.requestCredentialForm) return '动态内容表需 TUI 会话（-p 非交互不可用）——配置 key 请用 /key set';
-    const prompt = `动态内容表：输入以下敏感字段（仅内存，不落盘；bash 中可用 $WXNODUS_SECRET_<字段名> 引用）——${fields.map(f => f.label).join('、')}`;
+    // P0-1 审计留痕：记录字段名与来源（不含值——值绝不落盘）
+    try {
+      const { appendAudit } = await import('../store/db.js');
+      appendAudit(ctx.db, 'credential.form_request', { source: 'cmd_input', fields: fields.map(f => f.name) });
+    } catch { /* 审计失败不阻断 */ }
+    const prompt = `动态内容表：输入以下敏感字段（仅内存，不落盘；bash 中可用 $WXNODUS_SECRET_<字段名> 引用）——${fields.map(f => `${f.label}${f.purpose ? `（用途：${f.purpose}）` : ''}`).join('、')}`;
     const values = await ctx.gateway.requestCredentialForm(fields, prompt);
     if (!values) return '输入已取消/超时——未录入任何值（内容不保存）';
     if (!ctx.secrets) return '内存保险库不可用（安全通道未装配）';
@@ -1093,7 +1099,7 @@ export const commands = {
         ` sudo 注入：${sudoOn ? '开启' : '关闭'} ｜ 内存密码：${vault?.hasSudo() ? '已缓存（仅内存）' : '无'}`,
         ` secret 注入：${secretOn ? '开启' : '关闭'} ｜ 内存密钥：${vault?.secretNames().length ? `${vault.secretNames().length} 个（仅内存）` : '无'}`,
         '',
-        ' 用法：/security sudo on|off ｜ /security secret on|off ｜ /security all off',
+        ' 用法：/security sudo on|off ｜ /security secret on|off ｜ /security all off ｜ /security secrets list',
         ' 红线：敏感内容仅用户亲手输入、仅内存使用；关闭通道即同步清除缓存',
       ]);
     }
@@ -1101,6 +1107,17 @@ export const commands = {
       ctx.config.setKey('settings', 'security', { ...sec, ...next });
       return next;
     };
+    if (sub === 'secrets' && state === 'list') {
+      // P0-3：列出内存密钥字段名与剩余有效期（绝不显示值）
+      const vault = ctx.secrets;
+      if (!vault) return '内存保险库不可用';
+      const names = vault.secretNames();
+      if (!names.length) return '内存密钥为空（/input <字段...> 或 credential_form 录入；10 分钟未用自动过期）';
+      return lines(' 内存密钥（仅字段名，不显示值） ', [
+        ...names.map(n => ` ${n}（剩余 ${vault.secretTTL(n)}s——未使用即自动清除）`),
+        ` 共 ${names.length} 个；/security secret off 或进程退出即全部清除`,
+      ]);
+    }
     if (sub === 'sudo') {
       if (state === 'on') { set({ sudoInjection: true }); return 'sudo 注入通道已开启——密码仅内存使用，/security sudo off 关闭即清除'; }
       if (state === 'off') { set({ sudoInjection: false }); ctx.secrets?.clearSudoPassword(); return '已关闭 sudo 注入通道，并同步清除内存密码缓存'; }

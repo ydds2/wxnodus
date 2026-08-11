@@ -1,5 +1,8 @@
 // tests/kernel-dynamicForm.test.ts — 动态内容表：提交校验/引用提取/仅内存 vault
 import { describe, it, expect } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createSecretVault } from '../src/kernel/secrets.js';
 import { commitFormValues, validateFormResponse, extractSecretRefs } from '../src/kernel/dynamicForm.js';
 
@@ -32,3 +35,20 @@ describe('dynamicForm 动态内容表', () => {
   });
 });
 
+
+// ── P0：审计留痕（字段名不含值）──
+describe('表单请求审计', () => {
+  it('credential.form_request 写入 audit 且不含值', async () => {
+    const { openDB, closeDB } = await import('../src/store/db.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-audit-'));
+    const db = openDB(d);
+    try {
+      const { appendAudit } = await import('../src/store/db.js');
+      appendAudit(db, 'credential.form_request', { source: 'test', fields: ['api_key', 'password'] });
+      const row = db.prepare(`SELECT event, payload FROM audit ORDER BY id DESC LIMIT 1`).get() as any;
+      expect(row.event).toBe('credential.form_request');
+      expect(row.payload).toContain('api_key');
+      expect(row.payload).not.toContain('sk-'); // 值绝不入审计
+    } finally { closeDB(db); try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  });
+});

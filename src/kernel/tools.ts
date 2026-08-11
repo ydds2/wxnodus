@@ -377,6 +377,11 @@ export function coreTools(): Record<string, ToolDef> {
       const names = Array.isArray(args?.fields) ? args.fields.map(String).filter(Boolean) : [];
       if (!names.length) return '参数错误：fields 需为非空字段名数组';
       if (!ctx.requestForm) return '动态内容表不可用（需 TUI 会话）——请用 /key set 配置或 /input <字段> 手动录入';
+      // P0-1 审计留痕：记录谁在何时请求了哪些字段（不含值——值绝不落盘）
+      try {
+        const { appendAudit } = await import('../store/db.js');
+        appendAudit(ctx.db as any, 'credential.form_request', { source: 'agent_tool', fields: names });
+      } catch { /* 审计失败不阻断 */ }
       const fields = names.map(n => ({ name: n.replace(/[^\w-]/g, '_'), label: n, kind: 'password' as const }));
       const prompt = String(args?.prompt ?? '').slice(0, 200) || '模型请求你提供以下敏感信息（仅内存，不保存）';
       const values = await ctx.requestForm(fields, prompt);

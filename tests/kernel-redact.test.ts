@@ -1,5 +1,6 @@
 // tests/kernel-redact.test.ts — P1 审批脱敏：凭据形状打码
 import { describe, it, expect } from 'vitest';
+import { redactVaultValues } from '../src/kernel/redact.js';
 import { redactSecrets } from '../src/kernel/redact.js';
 
 describe('redactSecrets 脱敏', () => {
@@ -29,5 +30,20 @@ describe('redactSecrets 脱敏', () => {
   it('命中记录含标签（审计留痕）', () => {
     const r = redactSecrets('x sk-abc1234567890 y');
     expect(r.hits[0]?.label).toBe('密钥');
+  });
+});
+
+// ── P0：vault 值精确脱敏（工具输出回填前最后防线）──
+describe('redactVaultValues 按值脱敏', () => {
+  it('vault 值出现即替换为 ***（不依赖形状）', () => {
+        const out = redactVaultValues('调用成功，token=abc12345xyz 响应正常', ['abc12345xyz']);
+    expect(out).toContain('token=***');
+    expect(out).not.toContain('abc12345xyz');
+  });
+  it('多值替换；短值（<4 字符）跳过；无值原样返回', () => {
+        expect(redactVaultValues('a=SECRET1 b=SECRET2', ['SECRET1', 'SECRET2'])).toBe('a=*** b=***');
+    expect(redactVaultValues('k=ab', ['ab'])).toBe('k=ab'); // 短值跳过
+    expect(redactVaultValues('原文', [])).toBe('原文');
+    expect(redactVaultValues('', ['x'])).toBe('');
   });
 });

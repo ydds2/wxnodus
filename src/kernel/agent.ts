@@ -440,7 +440,11 @@ export function createAgent(opts: AgentOptions) {
       }
       // F4：危险/外部工具输出统一 untrusted 包裹（提示注入防护）
       const raw = await tool.run(args, toolCtx);
-      const out = tool.danger ? wrapDanger(raw) : raw;
+      // P0-2：vault 值输出脱敏——工具输出回填模型前，按内存敏感值精确替换（最后防线）
+      const v = toolCtx.secrets?.vault;
+      const vaultValues = v ? v.secretNames().map(n => v.getSecret(n)).filter((x): x is string => !!x) : [];
+      const safe = vaultValues.length ? (await import('./redact.js')).redactVaultValues(raw, vaultValues) : raw;
+      const out = tool.danger ? wrapDanger(safe) : safe;
       // 敏感操作自动截图留证（计算机视觉存证）：危险工具执行成功后，后台截屏
       // 存 dataDir/captures/ 供审计追溯（无图形环境自动降级静默；不阻断主流程）
       if (tool.danger) {

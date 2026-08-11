@@ -23,6 +23,20 @@ export interface RedactResult {
   hits: Array<{ label: string; index: number }>;
 }
 
+/**
+ * 按 vault 值精确脱敏（P0 完善）：把文本中出现的敏感值替换为 ***——
+ * 比形状匹配更强（形状匹配可能漏自定义值）；用于工具输出回填模型前的最后防线。
+ */
+export function redactVaultValues(text: string, values: string[]): string {
+  if (!text || !values?.length) return text;
+  let out = text;
+  for (const v of values) {
+    if (!v || v.length < 4) continue; // 过短的值替换会破坏可读性且价值低
+    out = out.split(v).join('***');
+  }
+  return out;
+}
+
 /** 对文本中的疑似凭据形状打码；返回脱敏文本与命中记录（审计留痕） */
 export function redactSecrets(text: string): RedactResult {
   if (!text) return { text: '', hits: [] };
