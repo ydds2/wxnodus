@@ -13,6 +13,7 @@ import type { CommandBus } from '../app/CommandBus.js'
 import { MODEL_CATALOG, encryptKey, hasImageIn } from '../kernel/providers.js'
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js'
 import { loadSkinFile } from '../kernel/skin.js'
+import { checkVoice } from '../kernel/voice.js'
 import { classifyToolAction } from '../kernel/permissions.js'
 import { redactSecrets } from '../kernel/redact.js'
 import { discoverSkills } from '../kernel/skills.js'
@@ -98,6 +99,11 @@ export class GatewayClient extends EventEmitter {
   private running = false
   private currentSessionId = 'default'
   private finalText = ''
+  // ── 语音模式（本地 whisper：/voice on 后 Ctrl+B 推按对话）──
+  private voiceEnabled = false
+  private voiceTts = false
+  private voiceRecordingSession: import('../kernel/voice.js').RecordingSession | null = null
+  private voiceTranscribing = false
 
   constructor(kernel: WxGatewayKernel) {
     super()
@@ -140,6 +146,12 @@ export class GatewayClient extends EventEmitter {
           this.finalText = content
           // C9 修复：token 已逐块经 agent.token→message.delta 推送——此处不再重推全文
           // （否则 turnController bufRef 翻倍，直播渲染尾部闪现重复文本）
+          // TTS（/voice tts 开启时）：Windows SAPI 本地朗读最终回复（异步不阻断）
+          if (this.voiceTts) {
+            void import('../kernel/voice.js').then(({ speakTts }) => {
+              try { speakTts(content) } catch { /* TTS 失败静默（语音输出是附加能力） */ }
+            })
+          }
         }
       },
       // C5 修复：思考分片实时转发（UI reasoning.delta 事件，thinking 面板实时可见）
@@ -279,8 +291,8 @@ export class GatewayClient extends EventEmitter {
       case 'skills.reload': return { output: '技能缓存已清空（发现目录即时扫描）' } as T
       case 'plugins.manage': return this.pluginsManage(params) as T
       case 'reload.mcp': return this.reloadMcp(params) as T
-      case 'voice.toggle': return { enabled: false, audio_available: false, message: '语音输入当前不可用' } as T
-      case 'voice.record': return { ok: false, audio_available: false, message: '语音输入当前不可用' } as T
+      case 'voice.toggle': return this.voiceToggle(params) as T
+      case 'voice.record': return this.voiceRecord(params) as T
       case 'image.attach': return this.imageAttach(params) as T
       default:
         this.pushLog(`[rpc] unsupported method: ${method}`)
@@ -1045,6 +1057,83 @@ export class GatewayClient extends EventEmitter {
         })
       })
     })
+  }
+
+  // ── 语音模式（本地 whisper：真实实现，非占位）──────────────
+  private voiceToggle(params: Record<string, unknown>): unknown {
+    const action = String(params.action ?? 'status')
+    const settings = this.kernel.config.get('settings') as Record<string, any> | undefined
+    const check = checkVoice(settings, this.kernel.dataDir)
+
+    if (action === 'on') {
+      this.voiceEnabled = true
+      if (!check.sttAvailable) {
+        this.publish({ type: 'notification.show', payload: { text: '语音模式已开启，但 STT 组件缺失（/voice status 查看）', level: 'warn' } })
+      }
+    } else if (action === 'off') {
+      this.voiceEnabled = false
+      // 录制中关闭：停止采集
+      if (this.voiceRecordingSession) {
+        this.voiceRecordingSession.proc.kill('SIGKILL')
+        this.voiceRecordingSession = null
+        this.publish({ type: 'voice.status', payload: { state: 'idle' } })
+      }
+    } else if (action === 'tts') {
+      this.voiceTts = !this.voiceTts
+    }
+
+    return {
+      enabled: this.voiceEnabled,
+      tts: this.voiceTts,
+      audio_available: check.sttAvailable,
+      stt_available: check.sttAvailable,
+      details: check.details.join('\n'),
+      record_key: 'ctrl+b',
+    }
+  }
+
+  private async voiceRecord(params: Record<string, unknown>): Promise<unknown> {
+    const action = String(params.action ?? '')
+    const settings = this.kernel.config.get('settings') as Record<string, any> | undefined
+
+    if (action === 'start') {
+      if (this.voiceTranscribing) return { status: 'busy' }
+      if (this.voiceRecordingSession) return { status: 'recording' }
+      const { startRecording } = await import('../kernel/voice.js')
+      const r = startRecording(this.kernel.dataDir, settings)
+      if (!r.ok) {
+        this.publish({ type: 'notification.show', payload: { text: `录音启动失败：${r.error}`, level: 'error' } })
+        return { status: 'stopped', text: '' }
+      }
+      this.voiceRecordingSession = r.rec
+      this.publish({ type: 'voice.status', payload: { state: 'listening' } })
+      return { status: 'recording' }
+    }
+
+    // stop：结束采集 → whisper 本地转写 → 事件广播（前端自动注入 composer 提交）
+    if (action === 'stop') {
+      const rec = this.voiceRecordingSession
+      if (!rec) return { status: 'stopped', text: '' }
+      this.voiceRecordingSession = null
+      this.voiceTranscribing = true
+      this.publish({ type: 'voice.status', payload: { state: 'transcribing' } })
+      const { stopAndTranscribe } = await import('../kernel/voice.js')
+      const r = await stopAndTranscribe(rec, this.kernel.dataDir, settings)
+      this.voiceTranscribing = false
+      this.publish({ type: 'voice.status', payload: { state: 'idle' } })
+      if (!r.ok) {
+        this.publish({ type: 'notification.show', payload: { text: `转写失败：${r.error}`, level: 'error' } })
+        return { status: 'stopped', text: '' }
+      }
+      if (r.text) {
+        // 前端 voice.transcript 处理：文本注入 composer 作为下一轮提交（语音直达对话）
+        this.publish({ type: 'voice.transcript', payload: { text: r.text } })
+        return { status: 'stopped', text: r.text }
+      }
+      return { status: 'stopped', text: '' }
+    }
+
+    return { status: 'stopped', text: '' }
   }
 
   private commandsCatalog(): unknown {

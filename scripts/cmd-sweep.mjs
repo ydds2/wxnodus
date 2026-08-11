@@ -37,7 +37,7 @@ const groups = {
   '网络': ['/claw', '/mcp', '/gateway', '/proxy', '/webhook', '/a2a', '/acp'],
   '协作': ['/swarm', '/duo', '/cron', '/cron list', '/jobs', '/task', '/delegate', '/goal 测试目标'],
   '工具': ['/calc 2+3*4', '/hash abc', '/base64 abc', '/uuid', '/rand', '/json {"a":1}', '/timer', '/units 1km to m', '/csv a,b\\nc,d', '/fs ls', '/sql select 1'],
-  '设置': ['/statusbar', '/indicator', '/reasoning', '/fast', '/busy', '/verbose', '/title', '/details', '/fortune', '/history', '/queue', '/redraw', '/mouse', '/skin', '/sessions']
+  '设置': ['/statusbar', '/indicator', '/reasoning', '/fast', '/busy', '/verbose', '/title', '/details', '/fortune', '/history', '/queue', '/redraw', '/mouse', '/skin', '/sessions', '/voice status', '/voice on', '/voice off']
 }
 
 const results = []
