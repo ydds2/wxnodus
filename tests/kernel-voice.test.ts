@@ -46,12 +46,25 @@ describe('resolveVoiceConfig（开放兼容：settings/env/自动发现）', () 
     const cfg = resolveVoiceConfig({}, d, {});
     expect(cfg.whisperBin).toBe(join(d, 'voice', 'bin', 'whisper-cli.exe'));
   });
-  it('无配置时全 null', () => {
+  it('dataDir 自有组件优先于 CLI 安装目录（运行时数据覆盖随包分发）', () => {
     const d = tmp();
+    mkdirSync(join(d, 'voice', 'models'), { recursive: true });
+    writeFileSync(join(d, 'voice', 'models', 'ggml-custom.bin'), 'x', 'utf8');
     const cfg = resolveVoiceConfig({}, d, {});
-    expect(cfg.whisperBin).toBeNull();
-    expect(cfg.modelPath).toBeNull();
-    expect(cfg.device).toBeNull();
+    expect(cfg.modelPath).toBe(join(d, 'voice', 'models', 'ggml-custom.bin'));
+  });
+});
+
+// A25 修复：CLI 安装目录组件发现（组件随包分发——用户从任意目录启动 CLI 时
+// dataDir=cwd/data 与安装目录不同，此前只搜 dataDir 导致「已安装却报 MISSING」）
+describe('resolveVoiceConfig：CLI 安装目录回退', () => {
+  it('dataDir 无组件时回退 CLI 安装目录（随包分发，任意 cwd 可找到）', () => {
+    const cfg = resolveVoiceConfig({}, join(tmp(), 'nonexistent'), {});
+    // 项目 data/voice 下已安装真实组件——从任意 dataDir 都应发现
+    expect(cfg.whisperBin).toBeTruthy();
+    expect(cfg.modelPath).toBeTruthy();
+    expect(String(cfg.whisperBin)).toContain('whisper-cli');
+    expect(String(cfg.modelPath)).toContain('ggml-');
   });
 });
 

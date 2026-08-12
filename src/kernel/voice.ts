@@ -10,7 +10,8 @@
 //      静音达阈值自动停止（免提闭环：说话→静音→自动转写→提交）。
 import { spawnSync, spawn } from 'node:child_process';
 import { mkdirSync, existsSync, readdirSync, readFileSync, openSync, writeSync, closeSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
 import { DEFAULT_VAD, VadTracker, pcmToInt16, type VadConfig } from './vad.js';
@@ -21,35 +22,55 @@ export interface VoiceConfig {
   device: string | null;
 }
 
+/**
+ * CLI 安装目录的 data/voice（随包分发的组件——与运行时 dataDir 并列搜索）。
+ * 根因修复：组件装在项目 data/voice/，但运行时 dataDir = cwd/data（用户从任意
+ * 目录启动 CLI 时二者不同）——此前只搜 dataDir 导致「已安装却报 MISSING」。
+ * 经 import.meta.url 从 dist/kernel/voice.js 回溯包根（dist/kernel → 包根 data/）。
+ */
+function installVoiceDir(): string | null {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    // src/kernel 或 dist/kernel → 上一级再上一级 = 包根
+    const root = dirname(dirname(here));
+    return join(root, 'data', 'voice');
+  } catch { return null; }
+}
+
+function findModelsIn(dir: string): string | null {
+  try {
+    const modelsDir = join(dir, 'models');
+    if (!existsSync(modelsDir)) return null;
+    const found = readdirSync(modelsDir).find(f => f.endsWith('.bin'));
+    return found ? join(modelsDir, found) : null;
+  } catch { return null; }
+}
+
+function findCliIn(dir: string): string | null {
+  try {
+    for (const sub of ['Release', '.']) {
+      const binDir = join(dir, 'bin', sub === '.' ? '' : sub);
+      if (!existsSync(binDir)) continue;
+      const exe = readdirSync(binDir).find(f => /^whisper-cli\.exe$/i.test(f));
+      if (exe) return join(binDir, exe);
+    }
+  } catch { /* 忽略 */ }
+  return null;
+}
+
 export function resolveVoiceConfig(settings: Record<string, any> | undefined, dataDir: string, env: NodeJS.ProcessEnv = process.env): VoiceConfig {
   const v = (settings?.voice ?? {}) as Record<string, any>;
   const modelFromEnv = env.WXNODUS_VOICE_MODEL?.trim() || null;
-  // 模型自动发现：<dataDir>/voice/models/ggml-*.bin
+  // 模型自动发现：<dataDir>/voice/models → CLI 安装目录（随包分发，任意 cwd 可找到）
   let modelPath = v.modelPath ?? modelFromEnv ?? null;
   if (!modelPath) {
-    try {
-      const modelsDir = join(dataDir, 'voice', 'models');
-      if (existsSync(modelsDir)) {
-        const found = readdirSync(modelsDir).find(f => f.endsWith('.bin'));
-        if (found) modelPath = join(modelsDir, found);
-      }
-    } catch { /* 忽略 */ }
+    modelPath = findModelsIn(join(dataDir, 'voice')) ?? findModelsIn(installVoiceDir() ?? '') ?? null;
   }
-  // A25：whisper-cli 自动发现——配置路径 → 环境变量 → <dataDir>/voice/bin/Release（官方
-  // release 包解压结构）→ <dataDir>/voice/bin → PATH（findWhisperBin 兜底）
+  // A25：whisper-cli 自动发现——配置路径 → 环境变量 → <dataDir>/voice/bin/Release
+  // → <dataDir>/voice/bin → CLI 安装目录 → PATH（findWhisperBin 兜底）
   let whisperBin = v.whisperBin ?? env.WXNODUS_VOICE_BIN?.trim() ?? null;
   if (!whisperBin) {
-    try {
-      for (const sub of ['Release', '.']) {
-        const dir = join(dataDir, 'voice', 'bin', sub === '.' ? '' : sub);
-        if (!existsSync(dir)) continue;
-        const exe = readdirSync(dir).find(f => /^whisper-cli\.exe$/i.test(f));
-        if (exe) {
-          whisperBin = join(dir, exe);
-          break;
-        }
-      }
-    } catch { /* 忽略 */ }
+    whisperBin = findCliIn(join(dataDir, 'voice')) ?? findCliIn(installVoiceDir() ?? '') ?? null;
   }
   return {
     whisperBin,
