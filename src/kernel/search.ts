@@ -175,7 +175,7 @@ const searchCache = new Map<string, { ts: number; results: SearchResult[]; engin
 
 export async function searchWeb(
   query: string,
-  opts: { maxResults?: number; proxy?: string } = {}
+  opts: { maxResults?: number; proxy?: string; engine?: 'auto' | 'duckduckgo' | 'bing' } = {}
 ): Promise<{ ok: true; results: SearchResult[]; engine: string } | { ok: false; error: string }> {
   const q = String(query ?? '').trim();
 
@@ -184,33 +184,37 @@ export async function searchWeb(
   }
 
   const max = opts.maxResults ?? 8;
-  const cacheKey = `${q}|${max}|${opts.proxy ?? ''}`;
+  const engine = opts.engine ?? 'auto';
+  const cacheKey = `${q}|${max}|${engine}|${opts.proxy ?? ''}`;
   const cached = searchCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < SEARCH_CACHE_TTL) {
     return { ok: true, results: cached.results.slice(0, max), engine: cached.engine };
   }
 
-  // 引擎 1：DuckDuckGo（隐私友好）
-  const ddg = await searchDuckDuckGo(q, opts);
+  // 引擎 1：DuckDuckGo（隐私友好；engine='bing' 时跳过）
+  const ddg = engine !== 'bing' ? await searchDuckDuckGo(q, opts) : null;
 
-  if (ddg.ok) {
+  if (ddg?.ok) {
     const out = { ok: true as const, results: ddg.results, engine: 'duckduckgo' as const };
     setSearchCache(cacheKey, out.results, out.engine);
     return out;
   }
 
-  // 引擎 2：Bing（国内可达）——DDG 失败/反爬时自动回退
+  // 引擎 2：Bing（国内可达；engine='duckduckgo' 时失败即返回）
+  if (engine === 'duckduckgo') {
+    return { ok: false, error: ddg!.error };
+  }
   const bingUrl = `https://cn.bing.com/search?q=${encodeURIComponent(q)}`;
   const r = await safeFetchText(bingUrl, { maxBytes: 600_000, proxy: opts.proxy });
 
   if ('error' in r) {
-    return { ok: false, error: `${ddg.error}；Bing 回退失败：${r.error}` };
+    return { ok: false, error: `${ddg?.error ?? 'DDG 未尝试'}；Bing 回退失败：${r.error}` };
   }
 
   const results = parseBingHtml(r.text);
 
   if (!results.length) {
-    return { ok: false, error: `DDG：${ddg.error}；Bing 无结果（HTTP ${r.status}）` };
+    return { ok: false, error: `DDG：${ddg?.error ?? '未尝试'}；Bing 无结果（HTTP ${r.status}）` };
   }
 
   const out = { ok: true as const, results, engine: 'bing' as const };

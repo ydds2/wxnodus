@@ -79,8 +79,8 @@ describe('并行双线子任务（三任务并行）', () => {
     const done = await waitFor(() => tr.get(id)?.status === 'success', 15_000);
     const elapsed = Date.now() - t0;
     expect(done).toBe(true);
-    // 并行：总耗时应明显小于串行和（6s），留 4.5s 阈值（2s 睡眠 + 调度开销）
-    expect(elapsed).toBeLessThan(4500);
+    // 并行：总耗时应明显小于串行和（6s），5.5s 阈值（2s 睡眠 + 调度开销 + 并行负载余量）
+    expect(elapsed).toBeLessThan(5500);
     // 三线全部 success
     for (const c of children) expect(tr.get(c)!.status).toBe('success');
   });

@@ -105,8 +105,24 @@ export function cronMatches(fields: CronFields, date: Date = new Date()): boolea
   return true;
 }
 
+/** 解析自然语言间隔（every Ns/Nm/Nh/Nd）→ 毫秒；非间隔格式返回 null（调度层秒级任务用） */
+export function parseIntervalExpr(expr: string): { intervalMs: number } | null {
+  const m = /^every (\d+)([smhd])$/.exec(String(expr ?? '').trim());
+  if (!m) return null;
+  const n = parseInt(m[1]!, 10);
+  if (n < 1) return null;
+  const unit = m[2]!;
+  const mult = unit === 's' ? 1000 : unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
+  return { intervalMs: n * mult };
+}
+
 /** 表达式描述（人类可读） */
 export function describeCronExpr(expr: string): string {
+  const iv = parseIntervalExpr(expr);
+  if (iv) {
+    const sec = iv.intervalMs / 1000;
+    return sec < 60 ? `每 ${sec} 秒` : sec < 3600 ? `每 ${sec / 60} 分钟` : sec < 86400 ? `每 ${sec / 3600} 小时` : `每 ${sec / 86400} 天`;
+  }
   const r = parseCronExpr(expr);
   if (!r.ok) return expr;
   const f = r.fields;

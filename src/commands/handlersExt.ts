@@ -1745,6 +1745,8 @@ export const commands = {
       const proxy = (ctx.config.get('settings') as any)?.proxy as string | undefined;
       const r = await safeFetchText(url, { maxBytes: 1_000_000, proxy });
       if ('error' in r) return r.error;
+      // 状态码归因：4xx/5xx 页面正文（如 404 Not Found）不当作有效内容
+      if (r.status >= 400) return `抓取失败：HTTP ${r.status}（${url}）——页面不可用或反爬拦截`;
       const html = r.text;
       // 提取正文文本（共享解码器：完整实体解码——根治 &#236; 类乱码）
       const text = htmlToText(html);
@@ -1757,12 +1759,19 @@ export const commands = {
 
   // A20：联网搜索（自研 DDG+Bing 双引擎解析，无 API key；SSRF 防护复用）
   bus.register('/search', async (args) => {
-    const q = args.join(' ').trim();
-    if (!q) return '用法：/search <查询词>（DuckDuckGo/Bing 网页搜索，自研解析）';
+    // --engine auto|duckduckgo|bing：指定搜索引擎（默认 auto 双引擎回退）
+    const engIdx = args.indexOf('--engine');
+    let engine: 'auto' | 'duckduckgo' | 'bing' = 'auto';
+    if (engIdx >= 0) {
+      const e = String(args[engIdx + 1] ?? 'auto').toLowerCase();
+      if (e === 'duckduckgo' || e === 'bing') engine = e;
+    }
+    const q = args.filter((a, i) => a !== '--engine' && args[i - 1] !== '--engine').join(' ').trim();
+    if (!q) return '用法：/search <查询词> [--engine auto|duckduckgo|bing]（DuckDuckGo/Bing 网页搜索，自研解析）';
     try {
       const { searchWeb } = await import('../kernel/search.js');
       const proxy = (ctx.config.get('settings') as any)?.proxy as string | undefined;
-      const r = await searchWeb(q, { proxy });
+      const r = await searchWeb(q, { proxy, engine });
 
       if (!r.ok) {
         return `搜索失败：${r.error}`;
@@ -2010,14 +2019,19 @@ export const commands = {
   bus.register('/cron', (args) => {
     const [sub, ...rest] = args;
     if (sub === 'add') {
-      // 两种格式：数字间隔（every Nm 兼容）或标准 5 字段 cron 表达式（分 时 日 月 周）
+      // 两种格式：数字间隔（every Nm 兼容；显式 Ns 秒级）或标准 5 字段 cron 表达式（分 时 日 月 周）
       // 智能识别：前 5 个 token 均为合法 cron 字段（数字/星号/步进/区间/列表）→ 视为表达式
       const isCronField = (t: string) => /^(\d+|\*|\*\/\d+|\d+-\d+|\d+(,\d+)*)$/.test(t);
       const looksCron5 = rest.length >= 6 && /^\d+$/.test(rest[0] ?? '') && rest.slice(0, 5).every(isCronField);
-      const expr = looksCron5 ? rest.slice(0, 5).join(' ') : (/^\d+$/.test(rest[0] ?? '') ? `every ${rest[0]}m` : (rest[0] ?? ''));
+      const expr = looksCron5
+        ? rest.slice(0, 5).join(' ')
+        : /^(\d+)[sm]$/.test(rest[0] ?? '') ? `every ${rest[0]}` : (/^\d+$/.test(rest[0] ?? '') ? `every ${rest[0]}m` : (rest[0] ?? ''));
       const action = (looksCron5 ? rest.slice(5) : rest.slice(1)).join(' ').trim();
       const parsed = parseCronExpr(expr);
-      if (!parsed.ok || !action) return `用法：/cron add <分钟间隔|cron表达式> <命令文本>（如 /cron add 30 检查仓库状态；/cron add 0 9 * * 1-5 工作日 9 点报告）——${parsed.ok ? '' : parsed.error}`;
+      // 秒级间隔（every Ns）不走 5 字段解析——单独校验（≥1 秒）
+      const seconds = /^every (\d+)s$/.exec(expr);
+      if (seconds && parseInt(seconds[1]!, 10) < 1) return '间隔需 ≥1 秒';
+      if ((!parsed.ok && !seconds) || !action) return `用法：/cron add <分钟间隔|cron表达式> <命令文本>（如 /cron add 30 检查仓库状态；/cron add 30s 每 30 秒；/cron add 0 9 * * 1-5 工作日 9 点报告）——${parsed.ok ? '' : parsed.error}`;
       const r = ctx.db.prepare(`INSERT INTO cron_jobs (schedule, action, last_run, enabled) VALUES (?,?,?,1)`).run(expr, action, Date.now()); // last_run=创建时刻（周期起算点）
       return `定时任务已创建 #${r.lastInsertRowid}：${describeCronExpr(expr)} 执行「${action.slice(0, 40)}」`;
     }

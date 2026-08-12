@@ -1,6 +1,6 @@
 // tests/kernel-cronExpr.test.ts — 标准 cron 5 字段：解析/匹配/every 兼容/描述
 import { describe, it, expect } from 'vitest';
-import { parseCronExpr, cronMatches, describeCronExpr } from '../src/kernel/cronExpr.js';
+import { parseCronExpr, parseIntervalExpr, cronMatches, describeCronExpr } from '../src/kernel/cronExpr.js';
 
 describe('parseCronExpr 解析', () => {
   it('通配/数字/步进/区间/列表', () => {
@@ -82,5 +82,21 @@ describe('describeCronExpr 描述', () => {
     expect(describeCronExpr('0 9 * * 1-5')).toContain('时:9');
     expect(describeCronExpr('0 9 * * 1-5')).toContain('周:1,2,3,4,5');
     expect(describeCronExpr('*/5 * * * *')).toContain('分:0,5,10,15,20,25,30,35,40,45,50,55');
+  });
+});
+
+describe('parseIntervalExpr / describeCronExpr（巩固：秒级间隔）', () => {
+  it('every Ns 解析为毫秒；N<1 拒绝', () => {
+    expect(parseIntervalExpr('every 30s')).toEqual({ intervalMs: 30_000 });
+    expect(parseIntervalExpr('every 5m')).toEqual({ intervalMs: 300_000 });
+    expect(parseIntervalExpr('every 2h')).toEqual({ intervalMs: 7_200_000 });
+    expect(parseIntervalExpr('every 1d')).toEqual({ intervalMs: 86_400_000 });
+    expect(parseIntervalExpr('every 0s')).toBeNull();
+    expect(parseIntervalExpr('*/5 * * * *')).toBeNull();
+  });
+
+  it('describeCronExpr 秒级人类可读', () => {
+    expect(describeCronExpr('every 30s')).toBe('每 30 秒');
+    expect(describeCronExpr('every 5m')).toBe('每 5 分钟');
   });
 });

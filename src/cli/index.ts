@@ -5,7 +5,7 @@
 import { join } from 'node:path';
 import { mkdirSync, appendFileSync } from 'node:fs';
 import { createAutoReview } from '../kernel/autoReview.js';
-import { parseCronExpr, cronMatches } from '../kernel/cronExpr.js';
+import { parseCronExpr, parseIntervalExpr, cronMatches } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { resolveDataDir } from '../kernel/paths.js';
 // A24 第三类修复：buildInfo system_prompt 数据源（kernel 实时构建；ESM 静态引用缓存）
@@ -266,17 +266,16 @@ async function main() {
   }
 
   // 定时任务调度（对比轮 6：/cron 真实执行）——每分钟检查到期任务，后台派发 agent 执行
-  // 支持标准 5 字段 cron（分 时 日 月 周）与 every Nm/Nh/Nd 兼容格式（cronExpr.ts 解析）
+  // 支持标准 5 字段 cron（分 时 日 月 周）与 every Ns/Nm/Nh/Nd 间隔格式（cronExpr.ts 解析）
   setInterval(() => {
     try {
       const jobs = db.prepare(`SELECT * FROM cron_jobs WHERE enabled=1`).all() as Array<{ id: number; schedule: string; action: string; last_run: number | null }>;
       const now = Date.now();
       for (const j of jobs) {
         const schedule = String(j.schedule ?? '');
-        const nat = /^every (\d+)([mhd])$/.exec(schedule);
-        if (nat) {
-          const intervalMs = parseInt(nat[1]!, 10) * (nat[2] === 'm' ? 60_000 : nat[2] === 'h' ? 3_600_000 : 86_400_000);
-          if (j.last_run && now - j.last_run < intervalMs) continue;
+        const interval = parseIntervalExpr(schedule);
+        if (interval) {
+          if (j.last_run && now - j.last_run < interval.intervalMs) continue;
         } else {
           // 标准 cron 表达式：按字段匹配当前分钟
           const r = parseCronExpr(schedule);
@@ -296,7 +295,7 @@ async function main() {
         });
       }
     } catch { /* 任务表未就绪静默 */ }
-  }, 60_000);
+  }, 10_000);
 
   // AI 网关模式（颠覆性改造）：wxnodus --serve —— 本地 HTTP 服务，
   // 多前端共享同一 agent/记忆/权限面（IDE 插件/浏览器/第二个终端等）

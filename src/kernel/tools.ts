@@ -284,6 +284,8 @@ export function coreTools(): Record<string, ToolDef> {
       const { htmlToText, looksLikeHtml } = await import('./html.js');
       const r = await safeFetchText(String(url));
       if ('error' in r) return r.error;
+      // 状态码归因：4xx/5xx 正文不当作有效内容（404 页误导）
+      if (r.status >= 400) return `请求失败：HTTP ${r.status}（页面不可用或反爬拦截）`;
       // HTML 页面 → 正文文本（完整实体解码），否则原始响应——AI 拿到干净可消费的文本
       if (looksLikeHtml(r.text)) {
         const body = htmlToText(r.text, 8000);
@@ -306,18 +308,20 @@ export function coreTools(): Record<string, ToolDef> {
           properties: {
             query: { type: 'string', description: '搜索查询词（中文/英文均可，建议具体）' },
             max_results: { type: 'number', description: '返回条数（默认 5，最大 8）' },
+            engine: { type: 'string', enum: ['auto', 'duckduckgo', 'bing'], description: '搜索引擎（默认 auto：DDG 优先失败回退 Bing；可指定）' },
           },
           required: ['query'],
         },
       },
     },
     danger: true, // 外联——需确认
-    async run({ query, max_results }) {
+    async run({ query, max_results, engine }) {
       const { searchWeb } = await import('./search.js');
       const q = String(query ?? '').trim();
       if (!q) return '搜索词为空';
       const max = Math.min(Math.max(Number(max_results) || 5, 1), 8);
-      const r = await searchWeb(q, { maxResults: max });
+      const eng = (engine === 'duckduckgo' || engine === 'bing') ? engine : 'auto';
+      const r = await searchWeb(q, { maxResults: max, engine: eng });
       if (!r.ok) return `搜索失败：${r.error}`;
       if (!r.results.length) return '搜索无结果（可换关键词重试）';
       return `引擎：${r.engine}｜共 ${r.results.length} 条\n` +
@@ -393,11 +397,19 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const memoryWrite: ToolDef = {
-    schema: { type: 'function', function: { name: 'memory_write', description: '写入长期记忆（黑洞引擎 archival）', parameters: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] } } },
+    schema: { type: 'function', function: { name: 'memory_write', description: '写入长期记忆（黑洞引擎 archival——写入专用记忆会话，FTS+向量双索引，/hole 与 /memory search 可检索）', parameters: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] } } },
     danger: true, // 外联/写库/调度/敏感输入——需确认
     async run({ content }, ctx) {
-      try { writeFileSync(join(ctx.dataDir, 'memory-notes.md'), String(content) + '\n', { flag: 'a' }); return '已写入记忆'; }
-      catch (e: any) { return `记忆写入失败：${e.message}`; }
+      const c = String(content ?? '').trim();
+      if (!c) return '记忆内容为空';
+      try {
+        // 修复：此前写 memory-notes.md 文件——黑洞检索（recallHybrid 查 messages 表）
+        // 永远召回不到，AI 记忆闭环断裂。改为 append 到专用记忆会话（FTS+向量自动索引）。
+        const { createMemory } = await import('./memory.js');
+        const mem = createMemory(ctx.db as any);
+        mem.append('memory-archive', 'assistant', c);
+        return '已写入黑洞记忆（/hole 或 /memory search 可检索）';
+      } catch (e: any) { return `记忆写入失败：${e.message}`; }
     },
   };
   // P0-2：记忆删改闭环——memory_search（查）/memory_write（增）已有，补 update/delete：
@@ -480,11 +492,21 @@ export function coreTools(): Record<string, ToolDef> {
       try {
         const parsed = typeof spec === 'string' ? JSON.parse(spec) : spec;
         if (!parsed?.title || !parsed?.summary) return 'spec 不完整（需要 title/summary）';
-        const { makeSpec, validateSpec, diagnoseSpec } = await import('../build/spec.js');
+        const { makeSpec, validateSpec, diagnoseSpec, SCAFFOLDS } = await import('../build/spec.js');
         const { makePlan } = await import('../build/plan.js');
         const { instantiate } = await import('../build/scaffold.js');
         const { createHash } = await import('node:crypto');
-        const s = makeSpec(parsed.summary, { key: null });
+        // 修复：优先采用 AI 传入的结构化 spec（title/scaffold/acceptance 不再被丢弃）；
+        // 非法模具/空验收回退规则脑（按 summary 兜底），不静默降级
+        const ruleFallback = makeSpec(parsed.summary, { key: null });
+        const s = {
+          title: String(parsed.title ?? '').slice(0, 30).trim() || ruleFallback.title,
+          summary: String(parsed.summary ?? '').slice(0, 500).trim(),
+          scaffold: (SCAFFOLDS as readonly string[]).includes(String(parsed.scaffold ?? '')) ? String(parsed.scaffold) : ruleFallback.scaffold,
+          acceptance: Array.isArray(parsed.acceptance) && parsed.acceptance.length
+            ? parsed.acceptance.slice(0, 3).map((a: unknown) => String(a).slice(0, 120))
+            : ruleFallback.acceptance,
+        };
         const diags = diagnoseSpec(s);
         const errors = diags.filter(d => d.level === 'error');
         const plan = makePlan(parsed.summary, { key: null });

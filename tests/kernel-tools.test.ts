@@ -80,3 +80,59 @@ describe('memory_search 黑洞检索', () => {
     } finally { closeDB(db); try { rmSync(d, { recursive: true, force: true }); } catch {} }
   });
 });
+
+// ── P0-2 巩固：memory_write 写入黑洞（不再写孤儿 md 文件）──
+describe('memory_write 黑洞记忆闭环', () => {
+  it('写入后 recallHybrid 可检索（AI 记忆闭环不断裂）', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-mw-'));
+    const db = openDB(d);
+    try {
+      const { createMemory } = await import('../src/kernel/memory.js');
+      const tools = coreTools();
+      const t = tools.memory_write!;
+      const tag = `闭环验证${Date.now()}`;
+      const out = await t.run({ content: `${tag}：用户偏好 TypeScript 严格模式` }, { db, dataDir: d } as any);
+      expect(out).toContain('已写入黑洞记忆');
+
+      // 关键断言：写入内容能被黑洞混合召回命中（此前写 md 文件永远召不回）
+      const mem = createMemory(db);
+      const hits = await mem.recallHybrid(tag, { limit: 5 });
+      expect(hits.some(h => h.content.includes('TypeScript 严格模式'))).toBe(true);
+
+      // 空内容拒绝
+      expect(await t.run({ content: '   ' }, { db } as any)).toContain('记忆内容为空');
+    } finally {
+      closeDB(db);
+      try { rmSync(d, { recursive: true, force: true }); } catch {}
+    }
+  });
+});
+
+// ── 巩固：scaffold_build 采用 AI 传入结构化 spec（不丢弃）──
+describe('scaffold_build 规格优先级', () => {
+  it('AI 传入的 scaffold/acceptance 生效；非法模具回退规则脑', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-sb-'));
+    const db = openDB(d);
+    try {
+      const tools = coreTools();
+      const t = tools.scaffold_build!;
+      // AI 传入完整 spec → dry-run 输出应含自定义验收（此前被丢弃、显示规则脑默认验收）
+      const out = await t.run({
+        spec: JSON.stringify({ title: '待办系统', summary: '做一个待办系统', scaffold: 'todo', acceptance: ['自定义验收A', '自定义验收B', '自定义验收C'] }),
+        dry_run: true,
+      }, { db, dataDir: d } as any);
+      expect(out).toContain('自定义验收A');
+      expect(out).toContain('模块：');
+
+      // 非法模具（calculator 不在白名单）→ 回退规则脑不崩溃
+      const out2 = await t.run({
+        spec: JSON.stringify({ title: '计算器', summary: '做一个计算器', scaffold: 'calculator', acceptance: ['a', 'b', 'c'] }),
+        dry_run: true,
+      }, { db, dataDir: d } as any);
+      expect(out2).toContain('generic');
+    } finally {
+      closeDB(db);
+      try { rmSync(d, { recursive: true, force: true }); } catch {}
+    }
+  });
+});
