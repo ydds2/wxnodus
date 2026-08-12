@@ -758,6 +758,25 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       }
     }
     rows.push(` 黑洞全量：${rec.length} 条 · 吸附归档 ${ctx.mem.absorbCount('default')} 条（/hole 可检索）`);
+    // 架构 P4：parts 消息模型——工具消息错误/截断分段统计（消息粒度可审计）
+    try {
+      const sid = ctx.agent?.getSessionId?.() ?? 'default';
+      const partsRows = ctx.db.prepare(`SELECT parts FROM messages WHERE session_id=? AND parts IS NOT NULL ORDER BY id DESC LIMIT 100`).all(sid) as Array<{ parts: string }>;
+      let errParts = 0;
+      let truncParts = 0;
+      for (const r of partsRows) {
+        try {
+          const ps = JSON.parse(r.parts) as Array<{ kind?: string; truncated?: boolean }>;
+          for (const p of ps) {
+            if (p.kind === 'error') errParts++;
+            if (p.truncated) truncParts++;
+          }
+        } catch { /* 忽略坏行 */ }
+      }
+      if (errParts || truncParts) {
+        rows.push(` parts 分段（近 100 条）：错误 ${errParts} · 截断 ${truncParts}（消息粒度状态可审计）`);
+      }
+    } catch { /* parts 列缺失（旧库）静默 */ }
     if (total > BUDGET * 0.85) {
       rows.push(' ⚠ 接近预算上限——建议 /compact 压缩上下文');
     }

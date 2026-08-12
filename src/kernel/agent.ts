@@ -888,7 +888,16 @@ export function createAgent(opts: AgentOptions) {
           const out = await executeTool(c.name, c.args);
           if (out.includes('失败') || out.includes('异常')) anyFail = true;
           executed.push({ id: c.id, name: c.name, args: c.args, out, reasoning: c.reasoning, reasoningField: c.reasoningField });
-          try { opts.mem.append(sessionId, 'tool', `${c.name}: ${out.slice(0, 300)}`); } catch { /* 忽略 */ }
+          // 架构 P4：工具消息写 parts 分段（错误标记/截断标记独立 part——消息粒度可审计）
+          try {
+            const failed = out.includes('失败') || out.includes('异常');
+            const truncated = out.includes('已截断');
+            const parts = [
+              { kind: 'tool', name: c.name, ok: !failed },
+              { kind: failed ? 'error' : 'text', text: out.slice(0, 300), truncated: truncated || undefined },
+            ];
+            opts.mem.append(sessionId, 'tool', `${c.name}: ${out.slice(0, 300)}`, undefined, parts);
+          } catch { /* 忽略 */ }
         }
         consecutiveFail = anyFail ? consecutiveFail + 1 : 0;
         if (consecutiveFail >= MAX_CONSECUTIVE_FAIL) {

@@ -81,7 +81,8 @@ export function openDB(dataDir: string): Db {
       archived INTEGER NOT NULL DEFAULT 0,
       ts INTEGER NOT NULL,
       salience REAL NOT NULL DEFAULT 1.0,
-      run_no INTEGER NOT NULL DEFAULT 0
+      run_no INTEGER NOT NULL DEFAULT 0,
+      parts TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
     CREATE TABLE IF NOT EXISTS settings (
@@ -213,6 +214,14 @@ export function openDB(dataDir: string): Db {
   // 新消息写入时递增）
   try {
     db.exec(`ALTER TABLE messages ADD COLUMN run_no INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    // 列已存在——忽略
+  }
+  // V4（架构）：messages.parts——消息分段结构（OpenCode parts 模型渐进对齐）：
+  // JSON 数组 [{kind:'text'|'tool'|'reasoning', ...}]——工具输出截断/错误/推理分 part；
+  // 空（NULL）表示整段即 content（旧数据兼容，查询主源不变）
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN parts TEXT`);
   } catch {
     // 列已存在——忽略
   }

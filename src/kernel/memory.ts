@@ -129,7 +129,8 @@ async function embed(text: string): Promise<number[] | null> {
 
 // ── 黑洞引擎 ──────────────────────────────────────────────
 export interface Memory {
-  append(sessionId: string, role: MemMsg['role'], content: string, toolCallId?: string): void;
+  /** append：content 为展示文本；parts 可选（架构 P4 parts 模型——分段结构 JSON 数组） */
+  append(sessionId: string, role: MemMsg['role'], content: string, toolCallId?: string, parts?: unknown[] | null): void;
   working(sessionId: string): Array<{ role: string; content: string }>;
   recall(sessionId: string): Array<{ id: number; role: string; content: string; ts: number }>;
   recallHybrid(query: string, opts?: { limit?: number; sessionId?: string; since?: number }): Promise<Array<{ id: number; content: string; score: number; session_id?: string; ts?: number }>>;
@@ -146,7 +147,7 @@ export interface Memory {
 export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memory {
   const workingLimit = opts.workingLimit ?? 20;
   const ensureSession = db.prepare(`INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES (?, '', ?, ?)`);
-  const appendStmt = db.prepare(`INSERT INTO messages (session_id, role, content, tool_call_id, ts, run_no) VALUES (?,?,?,?,?,?)`);
+  const appendStmt = db.prepare(`INSERT INTO messages (session_id, role, content, tool_call_id, ts, run_no, parts) VALUES (?,?,?,?,?,?,?)`);
   const runNoStmt = db.prepare(`SELECT COALESCE(MAX(run_no),0) m FROM messages WHERE session_id=? AND role='user'`);
   const absorbStmt = db.prepare(`UPDATE messages SET archived=1 WHERE id=?`);
   const workingStmt = db.prepare(`SELECT role, content FROM messages WHERE session_id=? AND archived=0 ORDER BY id DESC LIMIT ?`);
@@ -182,7 +183,7 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
   };
 
   return {
-    append(sessionId, role, content, toolCallId) {
+    append(sessionId, role, content, toolCallId, parts) {
       ensureSession.run(sessionId, Date.now(), Date.now());
       // A21 写入去重合并：仅与最近 1 条消息相邻且同角色、内容完全相同（≥20 字符）
       // → 跳过插入、刷新原条时间戳（连续重复提交不堆积；交错对话/不同角色不受影响）
@@ -196,7 +197,7 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
           }
         }
       }
-      const info = appendStmt.run(sessionId, role, content, toolCallId ?? null, Date.now(), runNo(sessionId, role));
+      const info = appendStmt.run(sessionId, role, content, toolCallId ?? null, Date.now(), runNo(sessionId, role), parts?.length ? JSON.stringify(parts) : null);
       // F5：消息异步写入向量索引（黑洞混合召回的数据源）
       if (role === 'user' || role === 'assistant') {
         embedAndStore(Number(info.lastInsertRowid), String(content));
