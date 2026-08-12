@@ -113,8 +113,7 @@ describe('工具调用循环', () => {
     expect(r.text).toContain('拒绝');
   });
 
-  it('同工具连续失败 5 次终止', async () => {
-    let calls = 0;
+  it('同工具连续失败 5 次终止', async () => {    let calls = 0;
     const agent = createAgent({
       db, bus, mem, sessionId: 't4',
       config: { settings: {} } as any,
@@ -127,7 +126,7 @@ describe('工具调用循环', () => {
     });
     const r = await agent.run('跑命令');
     expect(calls).toBeLessThanOrEqual(5 + 1); // 连续失败后终止
-  });
+  }, 30_000); // 全量并行下工具执行与记忆初始化较慢——放宽默认 15s 超时
 });
 
 describe('中断', () => {

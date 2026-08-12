@@ -694,7 +694,7 @@ function genPackageJson(mold: string, _title: string, summary: string): string {
       description: summary,
       scripts: {
         start: 'node server/index.js',
-        test: 'node --test server/',
+        test: 'node --test server/*.test.js',
         build: 'esbuild public/src/main.jsx --bundle --outfile=public/dist/bundle.js --minify',
         'build:watch': 'esbuild public/src/main.jsx --bundle --outfile=public/dist/bundle.js --watch',
       },

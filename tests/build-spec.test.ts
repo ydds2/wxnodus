@@ -97,7 +97,7 @@ describe('脚手架（scaffold）', () => {
     expect(existsSync(join(p, 'public', 'src', 'main.jsx'))).toBe(true);
     expect(existsSync(join(p, 'public', 'src', 'App.jsx'))).toBe(true);
     const pkg = JSON.parse(readFileSync(join(p, 'package.json'), 'utf8'));
-    expect(pkg.scripts.test).toBe('node --test server/'); // 零依赖冒烟（质量门真跑）
+    expect(pkg.scripts.test).toBe('node --test server/*.test.js'); // 零依赖冒烟（质量门真跑；只跑 *.test.js——目录模式会把 index.js 当测试、顶层 listen 冲突）
     expect(pkg.scripts.build).toContain('esbuild');
     expect(pkg.dependencies.react).toMatch(/^\^19/);
     expect(pkg.devDependencies.esbuild).toBeDefined();

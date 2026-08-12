@@ -27,17 +27,20 @@ export async function verifyProject(projectDir: string, opts: { timeoutMs?: numb
     });
 
   try {
-    // 1. 启动（固定端口 4321，healthcheck 探活同一端口）
-    const srv = spawn(process.execPath, [entry], { cwd: projectDir, env: { ...process.env, PORT: '4321' }, stdio: 'ignore' });
+    // 动态端口（4321+随机偏移）：固定端口会被外部/遗留进程占用——探活会误连
+    // 老进程（假验证通过）；随机端口保证探活对象必为本次启动的新进程
+    const port = String(4321 + Math.floor(Math.random() * 1000));
+    // 1. 启动（随机端口，healthcheck 探活同一端口）
+    const srv = spawn(process.execPath, [entry], { cwd: projectDir, env: { ...process.env, PORT: port }, stdio: 'ignore' });
     await new Promise(r => setTimeout(r, 1200));
-    // 2. 探活
-    const hcRes = await run(hc);
+    // 2. 探活（PORT 显式传递——此前漏传会探默认 4321，端口被占时误连外部进程）
+    const hcRes = await run(hc, { PORT: port });
     try { srv.kill(); } catch {}
     if (hcRes.code !== 0) return { status: 'failed', detail: hcRes.out.slice(0, 300) };
     // 3. 重启读回（声明流程真实化）：杀 → 重启 → 再探活 → 读回一致才算完成
-    const srv2 = spawn(process.execPath, [entry], { cwd: projectDir, env: { ...process.env, PORT: '4321' }, stdio: 'ignore' });
+    const srv2 = spawn(process.execPath, [entry], { cwd: projectDir, env: { ...process.env, PORT: port }, stdio: 'ignore' });
     await new Promise(r => setTimeout(r, 1200));
-    const hcRes2 = await run(hc);
+    const hcRes2 = await run(hc, { PORT: port });
     try { srv2.kill(); } catch {}
     if (hcRes2.code !== 0) return { status: 'failed', detail: `重启后探活失败：${hcRes2.out.slice(0, 300)}` };
     return { status: 'ok', detail: `启动→探活→重启→读回全部通过：${hcRes2.out.slice(0, 160)}` };
