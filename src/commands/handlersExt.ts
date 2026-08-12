@@ -314,7 +314,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         const shadows = listShadows(ctx.dataDir);
         if (!shadows.length) return '无文件快照——fs_write/fs_edit 编辑文件前自动生成（/undo fs restore <编号> 恢复）';
         return lines(' 文件快照（/undo fs restore <编号>） ', shadows.slice(0, 20).map((s, i) => {
-          const rel = s.path.startsWith(ctx.cwd) ? s.path.slice(ctx.cwd.length) : s.path;
+          // 相对路径展示：去 cwd 前缀 + 开头分隔符（Windows 下 slice 残留反斜杠）
+          const rel = s.path.startsWith(ctx.cwd) ? s.path.slice(ctx.cwd.length).replace(/^[\\/]/, '') : s.path;
           return ` #${i + 1}  ${new Date(s.ts).toLocaleString('zh-CN', { hour12: false })}  ${rel}（${s.content.length} 字符）`;
         }));
       }
@@ -334,10 +335,12 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (!userIdx.length) return '没有可撤销的轮次';
     if (args[0] === 'list') {
       const recent = userIdx.slice(-5).reverse();
-      return lines(' 可撤销轮次（/undo <n> 撤销） ', recent.map((ui, _k) => {
+      // 修复：轮次编号 = 从尾部数的序号（1=最新）——此前用 userIdx.length-ui
+      // （消息下标 - user 计数，不可减）在含 assistant/tool 消息的会话中必然出现负编号
+      return lines(' 可撤销轮次（/undo <n> 撤销） ', recent.map((ui, k) => {
         const m = msgs[ui]!;
         const firstLine = String(m.content ?? '').split('\n')[0]!.slice(0, 30);
-        return ` #${userIdx.length - ui}  ${new Date(m.ts).toLocaleString('zh-CN', { hour12: false })}  ${firstLine}`;
+        return ` #${k + 1}  ${new Date(m.ts).toLocaleString('zh-CN', { hour12: false })}  ${firstLine}`;
       }));
     }
     const n = parseInt(args[0] ?? '1', 10);
@@ -370,7 +373,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const r = restoreShadow(ctx.dataDir, v.id);
       return r.message;
     }
-    const rel = abs.startsWith(ctx.cwd) ? abs.slice(ctx.cwd.length) : abs;
+    const rel = abs.startsWith(ctx.cwd) ? abs.slice(ctx.cwd.length).replace(/^[\\/]/, '') : abs;
     if (!all.length) return `「${rel}」暂无版本记录（fs_write/fs_edit 编辑前自动快照；/snapshot <目录> 可手动建档）`;
     return lines(` 版本时间线「${rel}」`, all.map((v, i) => {
       return ` #${i + 1}  ${new Date(v.ts).toLocaleString('zh-CN', { hour12: false })}  ${v.content.length} 字符${i === 0 ? '（最新）' : ''}`;

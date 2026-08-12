@@ -297,6 +297,21 @@ async function main() {
     } catch { /* 任务表未就绪静默 */ }
   }, 10_000);
 
+  // P2-3：cron 结果回执——定时任务（tags 含 cron:<id>）完成时系统通知，
+  // 用户不再需要主动 /jobs 查询才知道后台定时任务的结果
+  bus.on('jobs.complete', (e: any) => {
+    try {
+      const row = db.prepare(`SELECT tags FROM tasks WHERE id=?`).get(e?.payload?.id) as { tags: string } | undefined;
+      const cronId = /cron:(\d+)/.exec(String(row?.tags ?? ''))?.[1];
+      if (!cronId) return;
+      const status = e?.payload?.status;
+      const icon = status === 'success' ? '✅' : '⚠️';
+      bus.emit('system.notice', {
+        text: `${icon} 定时任务 #${cronId} ${status === 'success' ? '已完成' : `失败（${status ?? '未知'}）`}——/jobs show ${e?.payload?.id} 查看结果`,
+      });
+    } catch { /* 回执失败静默 */ }
+  });
+
   // AI 网关模式（颠覆性改造）：wxnodus --serve —— 本地 HTTP 服务，
   // 多前端共享同一 agent/记忆/权限面（IDE 插件/浏览器/第二个终端等）
   if (opts.serve) {

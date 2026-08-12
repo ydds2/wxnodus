@@ -403,9 +403,10 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   // 概念编译（超复杂项目能力）
   bus.register('/build', async (args) => {
-    // A21：--dry-run——只编译（规格诊断 + 计划预览），零副作用
+    // A21：--dry-run——只编译（规格诊断 + 计划预览），零副作用；P2-2：--strict——门禁未过标记失败
     const dryRun = args.includes('--dry-run');
-    const input = args.filter(a => a !== '--dry-run').join(' ');
+    const strict = args.includes('--strict');
+    const input = args.filter(a => a !== '--dry-run' && a !== '--strict').join(' ');
     if (!input) return '用法：/build <需求> [--dry-run]（自然语言「做个待办系统」亦可直达）';
     // P0-1：规格化双通道——规则脑优先（快/零 token）；未命中且有密钥 → LLM 开放域
     const settings = ctx.config.get('settings') as { apiKeyEnc?: string | null; baseURL?: string; model?: string };
@@ -466,13 +467,15 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const order = topoSort(plan.modules);
     const gateFail = gate.gates.filter(g => !g.ok);
     // A22 诚实交付：标题按真实验证结果——「构建完成」仅验证通过才写；
-    // 失败如实报「未通过验证」（不假装 100% 完成）
+    // 失败如实报「未通过验证」（不假装 100% 完成）；P2-2 --strict：门禁未过同样标记失败
     const head =
-      vr.status === 'ok'
+      vr.status === 'ok' && (!strict || gate.pass)
         ? ` 构建完成「${spec.title}」 `
         : vr.status === 'failed'
           ? ` 构建未通过验证「${spec.title}」 `
-          : ` 构建完成（验证跳过）「${spec.title}」 `;
+          : strict && !gate.pass
+            ? ` 构建未通过质量门「${spec.title}」 `  // 严格模式：验证过了但门禁未过
+            : ` 构建完成（验证跳过）「${spec.title}」 `;
     return lines(head, [
       ` 模具：${spec.scaffold}（${specSource === 'ai' ? 'AI 规格化' : '规则模板'}）· 模块：${order.join(' → ')}`,
       ` 验收：${spec.acceptance.map(a => '✓ ' + a).join('\n       ')}`,
