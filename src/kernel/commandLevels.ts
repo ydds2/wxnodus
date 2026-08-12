@@ -59,6 +59,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/arena': 'confirm',
   // 深度：/review 任务自查——只读子代理执行，需确认（AI 调用）
   '/review': 'confirm',
+  '/session-stream': 'safe', '/session-stream list': 'safe', '/session-stream show': 'safe',
   // ── danger：高危，强制人工确认（AI 预审不可放行）──
   '/deploy': 'danger', '/script run': 'danger',
   '/webhook add': 'danger', '/webhook del': 'danger',

@@ -2427,6 +2427,35 @@ export const commands = {
     ]);
   });
 
+  // 架构 P3：/session-stream——会话事件流查看/导出（可重放/审计；Claude Code 会话流对齐）
+  bus.register('/session-stream', async (args) => {
+    const { listSessionStreams, readSessionEvents } = await import('../kernel/sessionStream.js');
+    const sub = String(args[0] ?? '').toLowerCase();
+    const sid = args[1] ?? ctx.agent?.getSessionId?.() ?? 'default';
+    if (sub === 'list' || !sub) {
+      const streams = listSessionStreams(ctx.dataDir);
+      if (!streams.length) return '暂无会话事件流（agent 回合后自动生成——用户消息/工具/压缩/审批完整时间线）';
+      return lines(' 会话事件流 ', streams.slice(0, 15).map(s => ` ${s.sessionId.padEnd(20)} ${s.events} 事件｜${(s.size / 1024).toFixed(1)} KB`));
+    }
+    if (sub === 'show') {
+      const events = readSessionEvents(ctx.dataDir, sid);
+      if (!events.length) return `会话 ${sid} 无事件流`;
+      return lines(` 会话流「${sid}」（${events.length} 事件） `, events.slice(-30).map(e => {
+        switch (e.type) {
+          case 'user': return ` 👤 ${String(e.content).slice(0, 60)}`;
+          case 'model': return e.role === 'tool_call' ? ` 🤖 工具调用 ×${e.toolCalls?.length ?? 0}` : ` 🤖 ${String(e.content ?? '').slice(0, 60)}`;
+          case 'tool': return ` ⛭ ${e.name} ${e.phase === 'start' ? '开始' : `完成${e.ok ? '' : '（失败）'}${e.ms ? ` ${e.ms}ms` : ''}`}`;
+          case 'approval': return ` ⛨ ${e.tool} → ${e.verdict}`;
+          case 'compact': return ` ▤ 压缩：${e.before} → ${e.after} token`;
+          case 'end': return ` ✔ 回合结束（${e.turns} 轮${e.ok ? '' : '，未完成'}）`;
+          case 'stage': return ` · ${e.stage.slice(0, 50)}`;
+          default: return ` ? ${JSON.stringify(e).slice(0, 60)}`;
+        }
+      }));
+    }
+    return '用法：/session-stream list｜show [会话ID]（事件流 = 用户消息/模型回复/工具/压缩/审批时间线）';
+  });
+
   // /delegate：派发只读子代理（P0-2：--agent <name> 指定自定义 agent 定义）
   bus.register('/delegate', async (args) => {
     const agentIdx = args.indexOf('--agent');

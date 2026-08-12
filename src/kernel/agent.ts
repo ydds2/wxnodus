@@ -451,6 +451,11 @@ export function createAgent(opts: AgentOptions) {
     // A25：事件带 session_id 标记（子代理会话为 <主>:sub 后缀——gateway 据此
     // 分流为 subagent.tool 富事件；此前子代理工具事件混入主面板或直接丢失）
     bus.emit('agent.tool', { name, args, phase: 'start', toolId, session_id: sessionId });
+    // 架构 P3：工具调用入事件流（start）
+    try {
+      const { appendSessionEvent } = await import('./sessionStream.js');
+      appendSessionEvent(opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, { type: 'tool', name, phase: 'start', ts: Date.now() });
+    } catch { /* 静默 */ }
     // A22：实时状态一句话——正在做什么（基于工具名/参数动态生成，UI 状态行显示）
     const ctxBrief = briefToolContext(name, args);
     bus.emit('agent.stage', { stage: `正在${ctxBrief}` });
@@ -585,6 +590,11 @@ export function createAgent(opts: AgentOptions) {
       hooks?.postToolUse(name, out);
       // A21：工具执行结果留痕（耗时/成败）
       auditTool('tool.executed', { tool: name, ok: true, ms: Date.now() - t0 });
+      // 架构 P3：工具完成入事件流
+      try {
+        const { appendSessionEvent } = await import('./sessionStream.js');
+        appendSessionEvent(opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, { type: 'tool', name, phase: 'complete', ok: true, ms: Date.now() - t0, ts: Date.now() });
+      } catch { /* 静默 */ }
       // 变更即回归：文件被真实修改后调度 auto 剧本重放（防抖合并连续改动；
       // 回归重放期间的 fs_write 由 regressionRunning 守卫拦截，不会自我触发）
       if (name === 'fs_write' || name === 'fs_edit') scheduleAutoRegression();
@@ -625,6 +635,11 @@ export function createAgent(opts: AgentOptions) {
   }
 
   async function loop(sessionId: string, prompt: string, opts2: { subagent?: boolean; images?: Array<{ dataUrl: string; mime: string }> } = {}): Promise<AgentResult> {
+    // 架构 P3：会话事件流（可重放/审计）——用户消息入流
+    try {
+      const { appendSessionEvent } = await import('./sessionStream.js');
+      appendSessionEvent(opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, { type: 'user', content: prompt.slice(0, 500), ts: Date.now() });
+    } catch { /* 静默 */ }
     // 多模态注入（P3 图片附加链路）：用户消息构建为 OpenAI parts 数组（text + image_url）——
     // 仅本次 API 调用的内存消息；DB append 仍存纯文本（消息库文本化）
     const imgParts = (opts2.images ?? []).map(img => ({ type: 'image_url', image_url: { url: img.dataUrl } }));
@@ -786,14 +801,20 @@ export function createAgent(opts: AgentOptions) {
         msgs.splice(0, msgs.length, ...condensed);
         // DB 联动（深化）：compactSmart 归档 DB 中部消息——摘要复用已生成文本
         // （不重复调 LLM）；recall 全量保留，working 窗口与内存一致收缩
+        let summaryText = '';
         try {
           const summaryMsg = condensed.find(m => m.role === 'system' && String(m.content ?? '').includes('压缩摘要'));
-          const summaryText = summaryMsg ? String(summaryMsg.content) : '';
+          summaryText = summaryMsg ? String(summaryMsg.content) : '';
           if (summaryText) {
             void opts.mem.compactSmart(sessionId, async () => summaryText).catch(() => { /* DB 同步失败不影响对话 */ });
           }
         } catch { /* 忽略 */ }
         const nextTokens = estimateMessagesTokens(msgs);
+        // 架构 P3：压缩入事件流（时间线可审计）
+        try {
+          const { appendSessionEvent } = await import('./sessionStream.js');
+          appendSessionEvent(opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, { type: 'compact', summary: summaryText.slice(0, 200), before: used, after: nextTokens, ts: Date.now() });
+        } catch { /* 静默 */ }
         bus.emit('system.notice', { text: `自动压缩完成（${used} → ${nextTokens} token）` });
         hooks?.postCompact(used, nextTokens);
         }
@@ -829,6 +850,11 @@ export function createAgent(opts: AgentOptions) {
       }
       if (res.type === 'text') {
         finalText = res.content;
+        // 架构 P3：模型文本回复入事件流
+        try {
+          const { appendSessionEvent } = await import('./sessionStream.js');
+          appendSessionEvent(opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, { type: 'model', role: 'text', content: res.content.slice(0, 1000), ts: Date.now() });
+        } catch { /* 静默 */ }
         // 思考模式回传：用模型返回的原始字段名（reasoning_content/thinking_content 等）
         // 多 provider 适配——deepseek 实测必须回传否则 400；原字段名回传各家兼容
         msgs.push(res.reasoning
@@ -900,6 +926,11 @@ export function createAgent(opts: AgentOptions) {
     }
     // C8 修复：错误路径也发 agent.end（ok:false）——事件契约对齐参考（错误也完成回合）
     bus.emit('agent.end', { ok: finalText.length > 0, turns });
+    // 架构 P3：回合结束入事件流
+    try {
+      const { appendSessionEvent } = await import('./sessionStream.js');
+      appendSessionEvent(opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, { type: 'end', ok: finalText.length > 0, turns, ts: Date.now() });
+    } catch { /* 静默 */ }
     hooks?.sessionEnd({ ok: finalText.length > 0, turns });
     // P2-全方面：自动 checkpoint（Claude Code 每 prompt 快照对齐）——回合结束自动快照，
     // 保留最近 10 个（saveCheckpoint 内部循环清理）；/rewind 可回滚任意自动快照
