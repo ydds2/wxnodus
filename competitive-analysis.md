@@ -60,3 +60,18 @@
 ```
 P0-1 浏览器工具 → P0-2 agent 定义 → P1-3 四要素 → P1-4 checkpoint compare → 验证提交
 ```
+
+---
+
+## 实施状态更新
+
+| 路线项 | 状态 | 证据 |
+|---|---|---|
+| P0-1 浏览器工具 | ✅ | 6 工具 + /browser，实测导航 example.com |
+| P0-2 自定义 agent | ✅ | .wxnodus/agents/*.md + /agent + /delegate --agent，实测加载 |
+| P1-3 四要素 | ✅ | Done-when 进 systemPrompt 准则 6 |
+| P1-4 checkpoint compare | ✅ | 三态对比实测（387→767：新增 380/修改 3） |
+| 策略文件 | ✅ 审计达标 | permissions.json：tool/pattern/decision/reason + deny>allow>ask（与 Codex 同构） |
+| 导出脱敏 | ✅ | /export --sanitize（OpenCode --sanitize 对齐），实测打码 |
+| 键位自定义 | ⏸ 降级 | 绑定硬编码多处，完整重映射风险>收益——记录为 P2 后续（可做配置驱动重构） |
+| LSP / Agent Teams | ⏸ P2 | 成本高，后续迭代 |

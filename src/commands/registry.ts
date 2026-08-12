@@ -66,7 +66,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/resume': '切换会话（真正加载历史并继续）',
   '/context': '上下文占用可视化',
   '/fork': '分支会话（复制当前会话为副本）',
-  '/checkpoint': '会话快照（save/list/restore/clear，undo 前自动保存）',
+  '/checkpoint': '会话快照（save/list/compare/restore/clear，undo 前自动保存）',
   '/key': '配置/查看模型密钥（加密存储）',
   '/model': '切换模型（打开选择器或 /model <名称>）',
   '/thinking': '推理显示开关（on/off）',

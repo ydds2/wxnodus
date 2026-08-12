@@ -598,6 +598,44 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       replaceSessionMessages(ctx.db, sid, d.messages);
       return `已从快照${id ? ` #${id}` : ''}恢复 ${d.messages.length} 条消息（保留原始 id/archived）`;
     }
+    if (sub === 'compare') {
+      // P1-4：快照 vs 当前三态对比（Claude Code checkpoint 三态语义补全）——
+      // 新增/删除/修改条数 + 变更预览，恢复前先看差异
+      const id = rest[0];
+      const row = id
+        ? ctx.db.prepare(`SELECT data FROM checkpoints WHERE id=? AND session_id=?`).get(id, sid) as { data: string } | undefined
+        : ctx.db.prepare(`SELECT data FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 1`).get(sid) as { data: string } | undefined;
+      if (!row) return `未找到快照${id ? ` #${id}` : ''}（/checkpoint list 查看）`;
+      const snap = JSON.parse(row.data) as { kind?: string; messages?: Array<{ id?: number; role: string; content: string; archived?: number }> };
+      if (!Array.isArray(snap.messages)) return '快照数据不完整';
+      const cur = ctx.db.prepare(`SELECT id, role, content, archived FROM messages WHERE session_id=? ORDER BY id`).all(sid) as Array<{ id: number; role: string; content: string; archived: number }>;
+      const snapById = new Map(snap.messages.map(m => [m.id, m]));
+      const curById = new Map(cur.map(m => [m.id, m]));
+      const added: Array<{ id: number; content: string }> = [];
+      const removed: Array<{ id?: number; content?: string }> = [];
+      const modified: Array<{ id: number; from: string; to: string }> = [];
+      for (const c of cur) {
+        if (!snapById.has(c.id)) added.push({ id: c.id, content: c.content });
+      }
+      for (const s of snap.messages) {
+        if (!curById.has(s.id!)) removed.push({ id: s.id, content: s.content });
+      }
+      for (const s of snap.messages) {
+        const c = curById.get(s.id!);
+        if (c && (c.content !== s.content || c.archived !== (s.archived ?? 0))) {
+          modified.push({ id: s.id!, from: String(s.content ?? '').slice(0, 40), to: String(c.content ?? '').slice(0, 40) });
+        }
+      }
+      const preview = (list: Array<{ id?: number; content?: string }>, n: number) =>
+        list.slice(0, n).map(x => ` #${x.id} ${String(x.content ?? '').slice(0, 50)}`).join('\n');
+      return lines(` 快照对比 #${id ?? '最新'}（${snap.kind ?? 'checkpoint'}） `, [
+        ` 新增 ${added.length} 条｜删除 ${removed.length} 条｜修改 ${modified.length} 条（快照 ${snap.messages.length} → 当前 ${cur.length}）`,
+        added.length ? `— 新增预览 —\n${preview(added, 5)}` : '',
+        removed.length ? `— 删除预览 —\n${preview(removed, 5)}` : '',
+        modified.length ? `— 修改预览 —\n${modified.map(m => ` #${m.id} ${m.from} → ${m.to}`).slice(0, 5).join('\n')}` : '',
+        ` 恢复：/checkpoint restore ${id ?? ''}`.trim(),
+      ]);
+    }
     if (sub === 'clear') {
       ctx.db.prepare(`DELETE FROM checkpoints WHERE session_id=?`).run(sid);
       return '已清空全部快照';
