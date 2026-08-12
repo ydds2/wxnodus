@@ -2404,29 +2404,41 @@ export const commands = {
   // /import <文件>：导入消息（JSON [{role,content}] 或纯文本 → user 消息）回填会话
   bus.register('/import', (args) => {
     const path = args[0];
-    if (!path) return '用法：/import <文件路径>（JSON [{role,content}] 或文本）';
+    if (!path) return '用法：/import <文件路径>（JSON [{role,content}] 或 JSONL/文本）';
     let text = '';
     try { text = readFileSync(resolve(process.cwd(), path), 'utf8'); } catch { return `无法读取文件：${path}`; }
     let imported = 0;
+    const ins = ctx.db.prepare(`INSERT INTO messages (session_id, role, content, tool_call_id, ts) VALUES (?,?,?,?,?)`);
+    const now = Date.now();
+    const push = (role: string, content: string) => {
+      if (!['user', 'assistant', 'system'].includes(role)) return;
+      ins.run('default', role, content, null, now + imported);
+      imported++;
+    };
     try {
       const data = JSON.parse(text);
       if (Array.isArray(data)) {
-        const ins = ctx.db.prepare(`INSERT INTO messages (session_id, role, content, tool_call_id, ts) VALUES (?,?,?,?,?)`);
-        const now = Date.now();
-        for (const m of data) {
-          const role = String(m?.role ?? 'user');
-          if (!['user', 'assistant', 'system'].includes(role)) continue;
-          ins.run('default', role, String(m?.content ?? ''), null, now + imported);
-          imported++;
-        }
+        // JSON 数组 [{role,content}]
+        for (const m of data) push(String(m?.role ?? 'user'), String(m?.content ?? ''));
       } else {
-        ctx.mem.append('default', 'user', text);
-        imported = 1;
+        // 单对象 → 单条
+        push(String(data?.role ?? 'user'), String(data?.content ?? text));
+        if (!imported) { ctx.mem.append('default', 'user', text); imported = 1; }
       }
     } catch {
-      // 非 JSON：整体作为 user 消息导入
-      ctx.mem.append('default', 'user', text);
-      imported = 1;
+      // 非 JSON 数组：尝试 JSONL（/export --jsonl 的输出——每行一个 JSON 对象；
+      // 此前整体 JSON.parse 失败被当 1 条大文本导入，387 条导出只能导回 1 条）
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      const allLinesJson = lines.length > 1 && lines.every(l => l.startsWith('{'));
+      if (allLinesJson) {
+        for (const line of lines) {
+          try {
+            const m = JSON.parse(line);
+            push(String(m?.role ?? 'user'), String(m?.content ?? ''));
+          } catch { /* 坏行跳过 */ }
+        }
+      }
+      if (!imported) { ctx.mem.append('default', 'user', text); imported = 1; }
     }
     return `已导入 ${imported} 条消息到当前会话（/resume 或直接继续对话）`;
   });
