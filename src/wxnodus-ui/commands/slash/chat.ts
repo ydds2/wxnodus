@@ -2,48 +2,23 @@ import { forceRedraw, type MouseTrackingMode } from '@wxnodus/ink'
 
 import { NO_CONFIRM_DESTRUCTIVE } from '../../config/env.js'
 import { dailyFortune, randomFortune } from '../../content/fortunes.js'
-import { HOTKEYS } from '../../content/hotkeys.js'
 import { isSectionName, nextDetailsMode, parseDetailsMode, SECTION_NAMES } from '../../domain/details.js'
 import type {
   ConfigGetValueResponse,
   ConfigSetResponse,
   SessionSaveResponse,
-  SessionStatusResponse,
   SessionSteerResponse,
   SessionTitleResponse,
   SessionUndoResponse
 } from '../../gatewayTypes.js'
 import { writeClipboardText } from '../../lib/clipboard.js'
-import { isPaneTab, PANE_TABS } from '../../lib/paneLayout.js'
 import { writeOsc52Clipboard } from '../../lib/osc52.js'
 import { configureDetectedTerminalKeybindings, configureTerminalKeybindings } from '../../lib/terminalSetup.js'
-import type { Msg, PanelSection } from '../../types.js'
+import type { Msg } from '../../types.js'
 import type { StatusBarMode } from '../../bridge/interfaces.js'
 import { patchOverlayState } from '../../runtime/promptStore.js'
 import { patchUiState } from '../../runtime/viewStore.js'
 import type { SlashCommand } from '../slashTypes.js'
-
-const flagFromArg = (arg: string, current: boolean): boolean | null => {
-  if (!arg) {
-    return !current
-  }
-
-  const mode = arg.trim().toLowerCase()
-
-  if (mode === 'on') {
-    return true
-  }
-
-  if (mode === 'off') {
-    return false
-  }
-
-  if (mode === 'toggle') {
-    return !current
-  }
-
-  return null
-}
 
 // `/mouse` toggles between full tracking and off when called bare so the
 // old binary muscle-memory still works. Explicit presets (wheel / buttons /
@@ -78,38 +53,6 @@ const DETAILS_USAGE =
 const DETAILS_SECTION_USAGE = 'usage: /details <section> [hidden|collapsed|expanded|reset]'
 
 export const coreCommands: SlashCommand[] = [
-  {
-    help: 'list commands + hotkeys',
-    name: 'help',
-    run: (_arg, ctx) => {
-      const sections: PanelSection[] = (ctx.local.catalog?.categories ?? []).map(cat => ({
-        rows: cat.pairs,
-        title: cat.name
-      }))
-
-      if (ctx.local.catalog?.skillCount) {
-        sections.push({ text: `${ctx.local.catalog.skillCount} skill commands available — /skills to browse` })
-      }
-
-      sections.push(
-        {
-          rows: [
-            ['/details [hidden|collapsed|expanded|cycle]', 'set global agent detail visibility mode'],
-            [
-              '/details <section> [hidden|collapsed|expanded|reset]',
-              'override one section (thinking/tools/subagents/activity)'
-            ],
-            ['/fortune [random|daily]', 'show a random or daily local fortune']
-          ],
-          title: 'TUI'
-        },
-        { rows: HOTKEYS, title: 'Hotkeys' }
-      )
-
-      ctx.transcript.panel(ctx.ui.theme.brand.helpHeader, sections)
-    }
-  },
-
   {
     aliases: ['exit'],
     help: 'exit wxnodus',
@@ -191,21 +134,6 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'show live session info',
-    name: 'status',
-    run: (_arg, ctx) => {
-      if (!ctx.sid) {
-        return ctx.transcript.sys('no active session')
-      }
-
-      ctx.gateway
-        .rpc<SessionStatusResponse>('session.status', { session_id: ctx.sid })
-        .then(ctx.guarded<SessionStatusResponse>(r => ctx.transcript.page(r.output || '(no status)', 'Status')))
-        .catch(ctx.guardedErr)
-    }
-  },
-
-  {
     help: 'set or show current session title',
     name: 'title',
     run: (arg, ctx) => {
@@ -243,23 +171,6 @@ export const coreCommands: SlashCommand[] = [
           })
         )
         .catch(ctx.guardedErr)
-    }
-  },
-
-  {
-    help: 'toggle compact transcript',
-    name: 'compact',
-    run: (arg, ctx) => {
-      const next = flagFromArg(arg, ctx.ui.compact)
-
-      if (next === null) {
-        return ctx.transcript.sys('usage: /compact [on|off|toggle]')
-      }
-
-      patchUiState({ compact: next })
-      ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'compact', value: next ? 'on' : 'off' }).catch(() => {})
-
-      queueMicrotask(() => ctx.transcript.sys(`compact ${next ? 'on' : 'off'}`))
     }
   },
 
@@ -437,16 +348,6 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'view gateway logs',
-    name: 'logs',
-    run: (arg, ctx) => {
-      const text = ctx.gateway.gw.getLogTail(Math.min(80, Math.max(1, parseInt(arg, 10) || 20)))
-
-      text ? ctx.transcript.page(text, 'Logs') : ctx.transcript.sys('no gateway logs')
-    }
-  },
-
-  {
     help: 'view current transcript (user + assistant messages)',
     name: 'history',
     run: (arg, ctx) => {
@@ -532,37 +433,6 @@ export const coreCommands: SlashCommand[] = [
       ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'statusbar', value: next }).catch(() => {})
 
       queueMicrotask(() => ctx.transcript.sys(`status bar ${next}`))
-    }
-  },
-
-  {
-    help: 'right detail pane (on|off|toggle|tab <todo|tools|context|subagents>)',
-    name: 'pane',
-    run: (arg, ctx) => {
-      const [sub, tab] = arg.trim().split(/\s+/)
-      const mode = sub?.toLowerCase()
-
-      if (mode === 'tab') {
-        if (tab && isPaneTab(tab)) {
-          patchUiState({ paneTab: tab })
-
-          return ctx.transcript.sys(`pane tab: ${tab}`)
-        }
-
-        return ctx.transcript.sys(`usage: /pane tab <${PANE_TABS.join('|')}>`)
-      }
-
-      const next: null | boolean =
-        !mode || mode === 'toggle' ? !ctx.ui.dualPane : mode === 'on' ? true : mode === 'off' ? false : null
-
-      if (next === null) {
-        return ctx.transcript.sys('usage: /pane [on|off|toggle|tab <name>]')
-      }
-
-      patchUiState({ dualPane: next })
-      ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'dual_pane', value: next ? 1 : 0 }).catch(() => {})
-
-      queueMicrotask(() => ctx.transcript.sys(`detail pane ${next ? 'on' : 'off'}`))
     }
   },
 

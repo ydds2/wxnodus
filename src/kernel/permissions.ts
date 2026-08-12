@@ -81,7 +81,6 @@ export function applyRules(tool: string, args: Record<string, any>, rules: PermR
   for (const r of hit) {
     if (r.pattern) {
       if (!pathArg) continue;
-      const { minimatch } = {} as any; // 不用外部依赖：简单通配转正则
       const re = new RegExp('^' + r.pattern.split('*').map(escapeRe).join('.*') + '$', 'i');
       if (!re.test(pathArg)) continue;
     }

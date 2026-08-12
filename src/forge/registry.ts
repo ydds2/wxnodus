@@ -1,7 +1,7 @@
 // src/forge/registry.ts — L3-2 组件注册表（单一事实来源 + 持久化）
 // 设计：组件三态（quarantine 检疫 / verified 已验证 / installed 已安装）；JSON 落盘
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 export type ComponentStatus = 'quarantine' | 'verified' | 'installed';
 

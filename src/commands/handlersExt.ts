@@ -3,22 +3,21 @@
 //       系统/视觉/连接/协作。每个命令真实可用（查询现有数据或执行确定性操作），
 //       输出统一 lines() 面板或单行。红线：只读工具不写库；路径操作限制在 dataDir。
 import { createHash, randomUUID, randomBytes } from 'node:crypto';
-import { join, basename, extname, resolve, dirname } from 'node:path';
+import { join, basename, resolve, dirname } from 'node:path';
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, rmSync } from 'node:fs';
-import { searchMessages, appendAudit, saveCheckpoint, restoreCheckpoint, replaceSessionMessages } from '../store/db.js';
+import { appendAudit, saveCheckpoint, restoreCheckpoint, replaceSessionMessages } from '../store/db.js';
 import { parseSinceArg } from '../kernel/memory.js';
-import { estimateTokens, compactKeepHeadTail } from '../kernel/memory.js';
+import { estimateTokens } from '../kernel/memory.js';
 import { runGate } from '../build/gate.js';
 import { writeEvidence } from '../build/evidence.js';
 import { forgeMcpServer, forgeSkillDir } from '../forge/forge.js';
-import { discoverSkills, loadSkill, installSkill, writeSkill, skillContentForModel } from '../kernel/skills.js';
+import { discoverSkills, loadSkill, writeSkill, skillContentForModel } from '../kernel/skills.js';
 import { scanProject, renderAgentsMd } from '../kernel/projectScan.js';
 import { buildRepoMap } from '../kernel/repoMap.js';
 import { listShadows, restoreShadow, versionsOfFile, snapshotDir, restoreDirShadows } from '../kernel/undoShadows.js';
 import { listScripts, loadScript, saveScript, deleteScript, isValidScriptName, scriptStats, checkScriptExpectations, type Script, type ScriptStep } from '../kernel/scripts.js';
 import { parseCronExpr, describeCronExpr } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
-import { decryptKey } from '../kernel/providers.js';
 import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissions.js';
 import { unknownSettingsKeys, knownSettingsKeys } from '../store/config.js';
 import { runCuratorReview, curatorConfigFrom, readCuratorState } from '../kernel/curator.js';
@@ -335,7 +334,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (!userIdx.length) return '没有可撤销的轮次';
     if (args[0] === 'list') {
       const recent = userIdx.slice(-5).reverse();
-      return lines(' 可撤销轮次（/undo <n> 撤销） ', recent.map((ui, k) => {
+      return lines(' 可撤销轮次（/undo <n> 撤销） ', recent.map((ui, _k) => {
         const m = msgs[ui]!;
         const firstLine = String(m.content ?? '').split('\n')[0]!.slice(0, 30);
         return ` #${userIdx.length - ui}  ${new Date(m.ts).toLocaleString('zh-CN', { hour12: false })}  ${firstLine}`;
@@ -1838,7 +1837,7 @@ export const commands = {
       await new Promise<void>((resolve, reject) => {
         gatewayServer!.once('error', reject);
         gatewayServer!.listen(port, '127.0.0.1', resolve);
-      }).catch((e: any) => { gatewayServer = null; return; });
+      }).catch(() => { gatewayServer = null; return; });
       if (!gatewayServer) return `启动失败：端口 ${port} 可能被占用（/gateway start <其他端口>）`;
       return `__KEEPALIVE__\n网关已启动：http://127.0.0.1:${port}（POST /rpc，method=command|prompt|health；仅本机监听，SIGINT 停止）`;
     }

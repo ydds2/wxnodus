@@ -2,7 +2,7 @@
 // 设计：每个命令访问 kernel 上下文（config/db/mem/agent/bus）；输出字符串经消息流呈现
 import type { Config } from '../store/config.js';
 import type { Db } from '../store/db.js';
-import type { Memory, MemMsg } from '../kernel/memory.js';
+import type { Memory } from '../kernel/memory.js';
 import { parseSinceArg } from '../kernel/memory.js';
 import { deleteMessage, appendAudit } from '../store/db.js';
 import type { EventBus } from '../kernel/events.js';
@@ -13,9 +13,8 @@ import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.j
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { makeSpec } from '../build/spec.js';
 import { makePlan, topoSort } from '../build/plan.js';
-import { instantiate, checkLeftover } from '../build/scaffold.js';
+import { instantiate } from '../build/scaffold.js';
 import { writeEvidence, fingerprint } from '../build/evidence.js';
-import { verifyProject } from '../build/verify.js';
 import { runGate } from '../build/gate.js';
 import { searchMessages } from '../store/db.js';
 import { join } from 'node:path';

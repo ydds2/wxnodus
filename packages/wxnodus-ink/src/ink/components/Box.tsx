@@ -1,6 +1,6 @@
 import '../global.d.ts'
 
-import React, { type ReactNode, type Ref } from 'react'
+import { type ReactNode, type Ref } from 'react'
 import { c as _c } from 'react/compiler-runtime'
 import type { Except } from 'type-fest'
 

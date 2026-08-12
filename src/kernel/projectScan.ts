@@ -3,7 +3,7 @@
 //       内容是真实扫描结果（构建命令/测试命令/目录结构），非假数据。
 //       有 key 时可经 /init --ai 用模型润色（可选，默认纯本地）。
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join } from 'node:path';
 
 export interface ProjectProfile {
   type: string;

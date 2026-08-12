@@ -19,11 +19,7 @@
   "dependencies": {
     "@wxnodus/ink": "file:packages/wxnodus-ink",
     "@huggingface/transformers": "^3.0.0",
-    "@modelcontextprotocol/sdk": "^1.0.0",
     "better-sqlite3": "^11.3.0",
-    "esbuild": "^0.25.12",
-    "ink": "^7.1.1",
-    "koffi": "^3.1.4",
     "mdast-util-from-markdown": "^2.0.3",
     "mdast-util-gfm": "^3.1.0",
     "mdast-util-math": "^3.0.0",
@@ -31,14 +27,13 @@
     "micromark-extension-gfm": "^3.0.0",
     "micromark-extension-math": "^3.1.0",
     "node-screenshots": "^0.2.8",
-    "playwright-core": "^1.62.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.8",
     "robotjs": "^0.9.1",
     "sqlite-vec": "^0.1.6",
-    "typescript": "^5.5.4",
     "unicode-animations": "^1.0.3",
-    "node-pty": "^1.1.0"
+    "node-pty": "^1.1.0",
+    "undici": "^7.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",

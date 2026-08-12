@@ -6,7 +6,7 @@
 //       tools/list → tools/call），工具以 mcp__<server>__<tool> 命名并入 agent；
 //       连接失败干净降级不阻断主流程。全部本地进程，不依赖外部平台（本地化为准）。
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ToolDef } from './tools.js';
 import { sanitizedEnv } from './env.js';

@@ -4,7 +4,7 @@
 //       wxnodus agent 事件 → GatewayEvent（message.delta/tool.*/status.update 等）
 // 参考：gateway 客户端接口契约（业界通用） + wxnodus kernel/events 事件流
 import { EventEmitter } from 'node:events'
-import { execFile, execFileSync } from 'node:child_process'
+import { execFile, execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, unlinkSync, statSync } from 'node:fs'
 import { join, resolve, basename, isAbsolute } from 'node:path'
 
@@ -103,7 +103,6 @@ interface PendingClarify {
 
 export class GatewayClient extends EventEmitter {
   private kernel: WxGatewayKernel
-  private ready = false
   private subscribed = false
   private bufferedEvents: GatewayEvent[] = []
   private logs: string[] = []
@@ -145,10 +144,6 @@ export class GatewayClient extends EventEmitter {
   }
 
   private publish(ev: GatewayEvent) {
-    if (ev.type === 'gateway.ready') {
-      this.ready = true
-    }
-
     if (this.subscribed) {
       return void this.emit('event', ev)
     }
@@ -303,7 +298,7 @@ export class GatewayClient extends EventEmitter {
           },
         })
       },
-      'agent.end': (p) => {
+      'agent.end': () => {
         this.running = false
         // A22：骨架是预判不是工作——整回合无真实工具落地（纯文本回答）时
         // 骨架不归档（避免「未完成骨架」噪音）；message.complete 携带最终
@@ -784,8 +779,7 @@ export class GatewayClient extends EventEmitter {
     return { output: r.output ?? '', warning: r.error }
   }
 
-  private async sessionCreate(params: Record<string, unknown>): Promise<unknown> {
-    const cols = Number(params.cols ?? 80)
+  private async sessionCreate(_params: Record<string, unknown>): Promise<unknown> {
     const id = `s${Date.now()}${++this.sessionSeq}`
     const now = Date.now()
 
@@ -917,7 +911,7 @@ export class GatewayClient extends EventEmitter {
 
 
   // 审计修复：此前 UI 调用无后端分支（/agents kill、/agents pause 必失败）——真实实现
-  private async subagentInterrupt(params: Record<string, unknown>): Promise<unknown> {
+  private async subagentInterrupt(_params: Record<string, unknown>): Promise<unknown> {
     // 中止当前回合（含运行中的子代理——agent 单实例，abort 作用于活动 turn）
     this.kernel.agent.abort()
     this.running = false
@@ -1242,7 +1236,7 @@ export class GatewayClient extends EventEmitter {
   }
 
   // /reload：重读 .env 到 process.env（真实合并计数——不伪造）
-  private async reloadEnv(params: Record<string, unknown>): Promise<unknown> {
+  private async reloadEnv(_params: Record<string, unknown>): Promise<unknown> {
     try {
       const { readFileSync, existsSync } = await import('node:fs')
       const { join: joinPath } = await import('node:path')
@@ -1297,7 +1291,7 @@ export class GatewayClient extends EventEmitter {
     // A25：会话状态真实化——当前会话且回合运行中 → working；后台任务表存在该
     // 会话运行/排队任务 → waiting；否则 idle（此前恒 idle——working/waiting
     // 字形与配色分支永不出现）
-    let sessionHasBgTask = (sid: string): boolean => false
+    let sessionHasBgTask = (_sid: string): boolean => false
     try {
       const bgRows = this.kernel.db.prepare(
         `SELECT COUNT(*) AS c FROM tasks WHERE parent_id = ? AND status IN ('running','queued')`
@@ -1719,6 +1713,19 @@ export class GatewayClient extends EventEmitter {
       }
     } else if (action === 'tts') {
       this.voiceTts = !this.voiceTts
+      // A25 复查：开启 TTS 时一次性探测 Windows SAPI（powershell + System.Speech）——
+      // 失败如实通知（此前无条件返回 true，用户以为有播报实际从未出声）
+      if (this.voiceTts) {
+        try {
+          const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Add-Type -AssemblyName System.Speech'], {
+            stdio: 'pipe', timeout: 8000, windowsHide: true,
+          })
+          if (r.status !== 0) throw new Error(`exit ${r.status}`)
+        } catch {
+          this.voiceTts = false
+          this.publish({ type: 'notification.show', payload: { text: 'TTS 不可用：Windows 语音组件（System.Speech）缺失或 powershell 不可用——播报已关闭', level: 'warn' } })
+        }
+      }
     } else if (action === 'wake') {
       // 异步启停（动态 import）；当前状态先翻转展示，失败会回滚
       this.voiceWake = !this.voiceWake

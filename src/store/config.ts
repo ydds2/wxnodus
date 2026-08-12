@@ -2,7 +2,7 @@
 // 设计：每个分区（settings/aliases/routes/...）一个 json 文件；原子写（tmp+rename）；
 //       set 增量合并；getKey/setKey 支持点路径。参考：Gemini CLI 分层配置、Claude Code settings 分区
 import { join } from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 
 export type Partition = string;
 

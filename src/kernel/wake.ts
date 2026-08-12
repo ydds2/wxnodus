@@ -88,6 +88,14 @@ export class WakeListener {
     if (!whisperBin || !modelPath) {
       return { ok: false, error: '唤醒模式需要 whisper-cli 与模型（/voice status 查看缺失项）' };
     }
+    // A25 复查：whisper 路径存在性校验（此前只查非空——配置路径失效时到首次
+    // 转写才报 ENOENT，无安装指引）
+    if (!existsSync(whisperBin)) {
+      return { ok: false, error: `whisper-cli 路径不存在：${whisperBin}（设置 WXNODUS_VOICE_BIN 或运行 node scripts/install-stt.mjs）` };
+    }
+    if (!existsSync(modelPath)) {
+      return { ok: false, error: `whisper 模型不存在：${modelPath}（运行 node scripts/install-stt.mjs 下载）` };
+    }
     if (!this.cfg.device) {
       // 懒加载避免循环依赖：device 由调用方（gateway）经 resolveVoiceConfig 传入
       return { ok: false, error: '未指定录音设备（WXNODUS_VOICE_DEVICE 或自动枚举失败）' };

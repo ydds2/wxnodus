@@ -11,7 +11,7 @@
 // 并发池 maxConcurrent（默认 2）；启动恢复：遗留 running/queued → failed(orphaned)
 // 事件：jobs.created / jobs.complete（payload: id/kind/parent_id/status/exit_code/duration_ms）
 import { spawn } from 'node:child_process';
-import { appendFileSync, closeSync, createWriteStream, existsSync, mkdirSync, openSync, readFileSync } from 'node:fs';
+import { createWriteStream, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { sanitizedEnv } from './env.js';
 

@@ -9,6 +9,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 import type { PasteEvent } from '../components/textInput.js'
 import type { ImageAttachResponse, InputDetectDropResponse } from '../gatewayTypes.js'
+import { showSelectionHint } from '../runtime/viewStore.js'
 import { useCompletion } from './useCompletion.js'
 import { useInputHistory } from './useInputHistory.js'
 import { useQueue } from './useQueue.js'
@@ -275,13 +276,22 @@ export function useComposerState({
     writeFileSync(file, [...inputBuf, input].join('\n'))
 
     let exitCode: null | number = null
+    let editorMissing = false
 
     await withInkSuspended(async () => {
-      exitCode = spawnSync(cmd!, [...args, file], { stdio: 'inherit' }).status
+      // spawnSync 不抛异常——二进制缺失时返回 { status: null, error: ENOENT }
+      const r = spawnSync(cmd!, [...args, file], { stdio: 'inherit' })
+      exitCode = r.status
+      editorMissing = (r.error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT'
     })
 
     try {
       if (exitCode !== 0) {
+        // A25 复查：编辑器二进制缺失时如实反馈（此前静默 return——按编辑热键
+        // 毫无反应也无指引）
+        if (editorMissing) {
+          showSelectionHint(`⚠ 编辑器不可用：${cmd} 未找到（设置 $EDITOR / $VISUAL 后重试）`)
+        }
         return
       }
 

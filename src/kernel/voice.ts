@@ -314,7 +314,7 @@ function sanitizeTts(text: string): string {
     .slice(0, 300);
 }
 
-function speakOnce(text: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+function speakOnce(text: string): Promise<boolean> {
   return new Promise(resolve => {
     const ps = `Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('${text.replace(/'/g, "''")}')`;
     const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { stdio: 'ignore' });
@@ -333,13 +333,13 @@ function speakOnce(text: string, env: NodeJS.ProcessEnv): Promise<boolean> {
   });
 }
 
-async function pumpTts(env: NodeJS.ProcessEnv): Promise<void> {
+async function pumpTts(): Promise<void> {
   if (ttsRunning) return;
   ttsRunning = true;
   try {
     while (ttsQueue.length > 0) {
       const text = ttsQueue.shift()!;
-      await speakOnce(text, env);
+      await speakOnce(text);
       // 被打断（新播报清空了队列）→ 停止；队列有新内容则继续
     }
   } finally {
@@ -351,7 +351,7 @@ async function pumpTts(env: NodeJS.ProcessEnv): Promise<void> {
  * 播报文本（入队 + 打断旧播报）。返回 true 表示已入队（非 Windows 恒 false）。
  * 播报是附加能力——失败静默，绝不阻塞主流程。
  */
-export function speakTts(text: string, env: NodeJS.ProcessEnv = process.env): boolean {
+export function speakTts(text: string, _env: NodeJS.ProcessEnv = process.env): boolean {
   if (!isWindows()) return false;
   const safe = sanitizeTts(text);
   if (!safe) return false;
@@ -362,6 +362,6 @@ export function speakTts(text: string, env: NodeJS.ProcessEnv = process.env): bo
     ttsProc = null;
   }
   ttsQueue.push(safe);
-  void pumpTts(env);
+  void pumpTts();
   return true;
 }

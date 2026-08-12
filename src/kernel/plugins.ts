@@ -150,7 +150,7 @@ export async function loadPlugin(dir: string, cwd: string, dataDir: string, extr
       // 插件工具默认视为外部代码（输出 untrusted 包裹，提示注入防护）；
       // 开放兼容：manifest 声明 danger:false 的插件工具获得只读语义
       danger: decl.danger !== false,
-      run: async (args, ctx) => {
+      run: async (args) => {
         try {
           const out = await handler(args, toolCtx);
           return String(out ?? '');

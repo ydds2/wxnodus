@@ -1,4 +1,3 @@
-import React from 'react'
 import { c as _c } from 'react/compiler-runtime'
 
 import Box from './Box.js'

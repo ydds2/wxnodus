@@ -1,6 +1,6 @@
 // src/app/TurnController.ts — L5 回合状态机（流式分片/工具生命周期/中断/错误）
 // 设计（参考业界 turn 控制器思想，自有实现）：token 累积 → 段边界 flush → 工具生命周期 → 回合归档
-import { patchTurn, pushSegment, upsertTool, pushTrail, getTurn } from './stores/turnStore.js';
+import { patchTurn, pushSegment, upsertTool, pushTrail } from './stores/turnStore.js';
 import { patchUi } from './stores/uiStore.js';
 
 let buf = '';
@@ -40,7 +40,7 @@ export const turnController = {
     upsertTool({ name, ctx, startedAt: toolStart[`${name}::${ctx}`] ?? Date.now(), detail, done: true, ok });
     pushTrail(`${name}("${ctx}") (${(ms / 1000).toFixed(1)}s) :: ${detail} ${ok ? '✓' : '✗'}`);
   },
-  recordMessageComplete(ms: number) {
+  recordMessageComplete(_ms: number) {
     if (buf.trim()) this.flushSegment();
     patchTurn({ busy: false, tools: [] });
     patchUi({ busy: false, stage: 'idle' });

@@ -670,7 +670,7 @@ function writeCellWithStyleStr(screen: VirtualScreen, cell: Cell, styleStr: stri
   return true
 }
 
-function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, viewportY = 0) {
+function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, _viewportY = 0) {
   screen.txn(prev => {
     const dx = targetX - prev.x
     const dy = targetY - prev.y

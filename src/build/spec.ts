@@ -59,7 +59,7 @@ export function validateSpec(s: Spec): { ok: boolean; reason?: string } {
   return { ok: true };
 }
 
-export function makeSpec(input: string, opts: { key: string | null }): Spec {
+export function makeSpec(input: string, _opts: { key: string | null }): Spec {
   // 规则脑优先
   for (const r of RULES) {
     if (r.re.test(input)) {

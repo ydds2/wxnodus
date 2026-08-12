@@ -154,7 +154,7 @@ function EmptyHint({ text, t }: { text: string; t: Theme }) {
 
 // ── 清单：复用 TodoPanel（面板接管——内联 LiveTodoPanel 已隐藏）────────
 
-function TodoTab({ innerWidth, t }: { innerWidth: number; t: Theme }) {
+function TodoTab({ innerWidth: _innerWidth, t }: { innerWidth: number; t: Theme }) {
   const todos = useTurnSelector(s => s.todos)
   const todoCollapsed = useTurnSelector(s => s.todoCollapsed)
 

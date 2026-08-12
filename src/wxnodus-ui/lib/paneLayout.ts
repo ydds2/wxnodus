@@ -40,8 +40,3 @@ export function dualPaneWidths(cols: number): DualPaneWidths {
   // 2 = 面板左右边框各 1 列
   return { left: Math.max(1, width - right - 2), right, show: true }
 }
-
-/** 是否为合法面板标签（/pane tab <name> 校验） */
-export function isPaneTab(v: unknown): v is PaneTab {
-  return typeof v === 'string' && (PANE_TABS as readonly string[]).includes(v)
-}

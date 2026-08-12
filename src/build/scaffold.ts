@@ -686,7 +686,7 @@ ${fallback}
 </body></html>`;
 }
 
-function genPackageJson(mold: string, title: string, summary: string): string {
+function genPackageJson(mold: string, _title: string, summary: string): string {
   return JSON.stringify(
     {
       name: `wxnodus-gen-${mold}`,

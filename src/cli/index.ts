@@ -186,7 +186,6 @@ async function main() {
   // 模式/主题状态
   let mode = (config.get('settings') as any).mode ?? 'smart';
   let themeName = (config.get('settings') as any).theme ?? 'wxnodus';
-  let thinking = (config.get('settings') as any).thinking ?? true;
   let exitRequested = false;
 
   // 并行任务系统（/jobs）：shell 真进程 / agent 子代理 / 并行双线子任务——
@@ -235,7 +234,7 @@ async function main() {
     setModel: applyModel,
     openModelPicker: () => { /* WxNodus UI: /model 打开选择器 */ },
     openSessions: () => { /* WxNodus UI: /sessions 打开列表 */ },
-    setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); },
+    setThinking: (on: boolean) => { config.setKey('settings', 'thinking', on); },
     reloadMcp,
     secrets,
     // 并行任务系统（/jobs：shell 真进程 / agent 子代理 / 并行双线子任务）
@@ -454,7 +453,7 @@ async function main() {
     applyModel,
     setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
     setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },
-    setThinking: (on: boolean) => { thinking = on; config.setKey('settings', 'thinking', on); },
+    setThinking: (on: boolean) => { config.setKey('settings', 'thinking', on); },
     requestExit: () => { exitRequested = true; shutdown(); setTimeout(() => process.exit(0), 50); },
   });
   gateway.start();

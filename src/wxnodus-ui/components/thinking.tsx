@@ -1065,9 +1065,9 @@ export const ToolTrail = memo(function ToolTrail({
       ),
       key: 'tools',
       open: openTools,
-      render: rails => (
+      render: _rails => (
         <Box flexDirection="column">
-          {groups.map((group, index) => {
+          {groups.map((group, _index) => {
             const hasInlineSubagents = inlineDelegateKey === group.key
             // Surface the /agents hint the moment a delegate group appears —
             // while it's still in-flight and before any subagent has

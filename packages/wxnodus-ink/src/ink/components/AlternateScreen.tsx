@@ -1,4 +1,4 @@
-import React, { type PropsWithChildren, useContext, useInsertionEffect } from 'react'
+import { type PropsWithChildren, useContext, useInsertionEffect } from 'react'
 import { c as _c } from 'react/compiler-runtime'
 
 import instances from '../instances.js'

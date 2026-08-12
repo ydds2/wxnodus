@@ -1,11 +1,9 @@
 import { STARTUP_IMAGE, STARTUP_QUERY } from '../config/env.js'
-import { STREAM_BATCH_MS } from '../config/timing.js'
 import { buildSetupRequiredSections, SETUP_REQUIRED_TITLE } from '../content/setup.js'
 import type {
   ApprovalRespondResponse,
   CommandsCatalogResponse,
   ConfigFullResponse,
-  DelegationStatusResponse,
   GatewayEvent,
   GatewaySkin,
   SessionMostRecentResponse
@@ -17,7 +15,6 @@ import { CONFIRM_WORDS, REJECT_WORDS, voiceConfirmChoice } from '../lib/voiceInt
 import { fromSkin, DARK_THEME, LIGHT_THEME, DEFAULT_THEME } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
-import { applyDelegationStatus, getDelegationState } from '../runtime/delegationStatus.js'
 import { patchBgState } from '../runtime/backgroundStore.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
 import { getOverlayState, patchOverlayState } from '../runtime/promptStore.js'
@@ -54,7 +51,6 @@ const pushUnique =
     xs.at(-1) === x ? xs : [...xs, x].slice(-max)
 
 const pushThinking = pushUnique(6)
-const pushNote = pushUnique(6)
 const pushTool = pushUnique(8)
 
 const KNOWN_SUBAGENT_STATUSES = new Set<SubagentStatus>([
@@ -86,8 +82,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   const { submitRef } = ctx.submission
   const { setProcessing: setVoiceProcessing, setRecording: setVoiceRecording, setVoiceEnabled } = ctx.voice
 
-  let pendingThinkingStatus = ''
-  let thinkingStatusTimer: null | ReturnType<typeof setTimeout> = null
   let startupPromptSubmitted = false
 
   // Request IDs of clarify prompts we've already flushed to the transcript as
@@ -150,10 +144,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       // same-session source.  A write failure doesn't block the turn.
     }
   }
-
-  // Refresh delegation caps at most every 5s so the status bar HUD can
-  // render a /warning close to the configured cap without spamming the RPC.
-  let lastDelegationFetchAt = 0
 
   // ── Shared full-config read ──────────────────────────────────────────
   //
@@ -222,41 +212,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     agentsNudgedThisTurn = false
   }
 
-  const refreshDelegationStatus = (force = false) => {
-    const now = Date.now()
-
-    if (!force && now - lastDelegationFetchAt < 5000) {
-      return
-    }
-
-    lastDelegationFetchAt = now
-    rpc<DelegationStatusResponse>('delegation.status', {})
-      .then(r => applyDelegationStatus(r))
-      .catch(() => {})
-  }
-
   const setStatus = (status: string) => {
-    pendingThinkingStatus = ''
-
-    if (thinkingStatusTimer) {
-      clearTimeout(thinkingStatusTimer)
-      thinkingStatusTimer = null
-    }
-
     patchUiState({ status })
-  }
-
-  const scheduleThinkingStatus = (status: string) => {
-    pendingThinkingStatus = status
-
-    if (thinkingStatusTimer) {
-      return
-    }
-
-    thinkingStatusTimer = setTimeout(() => {
-      thinkingStatusTimer = null
-      patchUiState({ status: pendingThinkingStatus || statusFromBusy() })
-    }, STREAM_BATCH_MS)
   }
 
   const restoreStatusAfter = (ms: number) => {
@@ -524,12 +481,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'notification.clear':
-        // Key-matched clear only — a stale/late clear must not wipe a newer
-        // notice (turnController guards the key match).
-        turnController.clearNotice(ev.payload?.key)
-
-        return
       case 'gateway.stderr': {
         const line = String(ev.payload.line).slice(0, 120)
 
@@ -664,25 +615,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
 
-      case 'reasoning.available':
-        turnController.recordReasoningAvailable(String(ev.payload?.text ?? ''), Boolean(ev.payload?.verbose))
-
-        return
-
-      case 'tool.progress':
-        if (ev.payload?.preview && ev.payload.name) {
-          turnController.recordToolProgress(ev.payload.name, ev.payload.preview)
-        }
-
-        return
-
-      case 'tool.generating':
-        if (ev.payload?.name) {
-          turnController.pushTrail(`drafting ${ev.payload.name}…`)
-        }
-
-        return
-
       case 'tool.start':
         turnController.recordTodos(ev.payload.todos)
         turnController.recordToolStart(
@@ -813,39 +745,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
       }
-      case 'review.summary': {
-        // Self-improvement background review emitted a persistent summary
-        // of what it saved to memory/skills. Surface it as a system line
-        // in the transcript so it never gets lost to a transient status
-        // flash. Python-side already formats it as "💾 Self-improvement
-        // review: …".
-        const text = String(ev.payload?.text ?? '').trim()
-
-        if (text) {
-          sys(text)
-        }
-
-        return
-      }
-
-      case 'subagent.spawn_requested':
-        // Child built but not yet running (waiting on ThreadPoolExecutor slot).
-        // Preserve completed state if a later event races in before this one.
-        turnController.upsertSubagent(ev.payload, c => (isTerminalStatus(c.status) ? {} : { status: 'queued' }))
-
-        // First sign of delegation this turn → nudge toward /agents.
-        maybeNudgeAgents()
-
-        // Prime the status-bar HUD: fetch caps (once every 5s) so we can
-        // warn as depth/concurrency approaches the configured ceiling.
-        if (getDelegationState().maxSpawnDepth === null) {
-          refreshDelegationStatus(true)
-        } else {
-          refreshDelegationStatus()
-        }
-
-        return
-
       case 'subagent.start':
         turnController.upsertSubagent(ev.payload, c => (isTerminalStatus(c.status) ? {} : { status: 'running' }))
 
@@ -888,25 +787,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           c => ({
             status: keepTerminalElseRunning(c.status),
             tools: pushTool(c.tools, line)
-          }),
-          { createIfMissing: false }
-        )
-
-        return
-      }
-
-      case 'subagent.progress': {
-        const text = String(ev.payload.text ?? '').trim()
-
-        if (!text) {
-          return
-        }
-
-        turnController.upsertSubagent(
-          ev.payload,
-          c => ({
-            notes: pushNote(c.notes, text),
-            status: keepTerminalElseRunning(c.status)
           }),
           { createIfMissing: false }
         )

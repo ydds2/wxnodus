@@ -1,4 +1,4 @@
-import React, { createContext, type ReactNode, useEffect, useState } from 'react'
+import { createContext, type ReactNode, useEffect, useState } from 'react'
 import { c as _c } from 'react/compiler-runtime'
 
 import { BLURRED_FRAME_INTERVAL_MS, FRAME_INTERVAL_MS } from '../constants.js'

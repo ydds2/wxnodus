@@ -6,7 +6,7 @@
 //   压缩 compactKeepHeadTail（确定性保头尾）/ compactSmart（LLM 总结中部，失败降级）
 //   参考：MemGPT 分层记忆、Claude Code autocompact、Gemini GEMINI.md JIT
 import type { Db } from '../store/db.js';
-import { bigramZh, searchMessages } from '../store/db.js';
+import { searchMessages } from '../store/db.js';
 
 // ── token 估算（CJK=1/字，ASCII≈1/4）───────────────────────
 export function estimateTokens(text: string): number {

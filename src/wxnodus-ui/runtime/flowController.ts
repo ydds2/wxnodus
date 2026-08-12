@@ -523,24 +523,6 @@ class TurnController {
     })
   }
 
-  pushTrail(line: string) {
-    if (this.interrupted) {
-      return
-    }
-
-    patchTurnState(state => {
-      if (state.turnTrail.at(-1) === line) {
-        return state
-      }
-
-      const next = [...state.turnTrail.filter(item => !isTransientTrailLine(item)), line].slice(-TRAIL_LIMIT)
-
-      this.turnTools = next
-
-      return { ...state, turnTrail: next }
-    })
-  }
-
   recordError() {
     this.idle()
     this.clearReasoning()
@@ -675,31 +657,6 @@ class TurnController {
     if (getUiState().streaming) {
       this.scheduleStreaming()
     }
-  }
-
-  recordReasoningAvailable(text: string, force = false) {
-    if (this.interrupted) {
-      return
-    }
-
-    if (!force && !getUiState().showReasoning) {
-      // A20：showReasoning 关时仍点亮"思考中"指示灯（防卡死误判），不累积文本
-      this.pulseReasoningStreaming()
-
-      return
-    }
-
-    const incoming = text.trim()
-
-    if (!incoming || this.reasoningText.trim()) {
-      return
-    }
-
-    this.reasoningText = incoming
-    this.activeReasoningText = incoming
-    this.scheduleReasoning()
-    this.syncReasoningSegment()
-    this.pulseReasoningStreaming()
   }
 
   recordReasoningDelta(text: string, force = false) {

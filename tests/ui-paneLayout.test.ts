@@ -1,7 +1,7 @@
 // tests/ui-paneLayout.test.ts — A23 双栏布局宽度分配（纯函数）
 import { describe, expect, it } from 'vitest'
 
-import { dualPaneWidths, isPaneTab, PANE_MIN_COLS, PANE_TABS } from '../src/wxnodus-ui/lib/paneLayout.js'
+import { dualPaneWidths, PANE_MIN_COLS, PANE_TABS } from '../src/wxnodus-ui/lib/paneLayout.js'
 
 describe('dualPaneWidths — 双栏宽度分配', () => {
   it('过窄终端（< 110 列）不渲染面板，对话区占满', () => {
@@ -42,12 +42,8 @@ describe('dualPaneWidths — 双栏宽度分配', () => {
   })
 })
 
-describe('isPaneTab / PANE_TABS', () => {
-  it('六标签合法，非法值拒绝', () => {
+describe('PANE_TABS 标签表', () => {
+  it('六标签齐全', () => {
     expect(PANE_TABS).toEqual(['todo', 'tools', 'context', 'subagents', 'bg', 'features'])
-    for (const t of PANE_TABS) expect(isPaneTab(t)).toBe(true)
-    expect(isPaneTab('nope')).toBe(false)
-    expect(isPaneTab(undefined)).toBe(false)
-    expect(isPaneTab(42)).toBe(false)
   })
 })

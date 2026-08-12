@@ -212,27 +212,6 @@ export interface SessionUndoResponse {
   removed?: number
 }
 
-export interface SessionUsageResponse {
-  cache_read?: number
-  cache_write?: number
-  calls?: number
-  compressions?: number
-  context_max?: number
-  context_percent?: number
-  context_used?: number
-  cost_status?: 'estimated' | 'exact'
-  cost_usd?: number
-  credits_lines?: string[]
-  input?: number
-  model?: string
-  output?: number
-  total?: number
-}
-
-export interface SessionStatusResponse {
-  output?: string
-}
-
 export interface SessionCompressResponse {
   after_messages?: number
   after_tokens?: number
@@ -401,12 +380,6 @@ export interface ProcessStopResponse {
   killed?: number
 }
 
-export interface BrowserManageResponse {
-  connected?: boolean
-  messages?: string[]
-  url?: string
-}
-
 export interface RollbackCheckpoint {
   hash: string
   message?: string
@@ -560,7 +533,6 @@ export type GatewayEvent =
       session_id?: string
       type: 'notification.show'
     }
-  | { payload?: { key?: string }; session_id?: string; type: 'notification.clear' }
   | { payload?: { state?: 'idle' | 'listening' | 'transcribing' }; session_id?: string; type: 'voice.status' }
   | { payload?: { no_speech_limit?: boolean; text?: string }; session_id?: string; type: 'voice.transcript' }
   | { payload: { line: string }; session_id?: string; type: 'gateway.stderr' }
@@ -570,9 +542,7 @@ export type GatewayEvent =
       type: 'gateway.start_timeout'
     }
   | { payload?: { preview?: string }; session_id?: string; type: 'gateway.protocol_error' }
-  | { payload?: { text?: string; verbose?: boolean }; session_id?: string; type: 'reasoning.delta' | 'reasoning.available' }
-  | { payload: { name?: string; preview?: string }; session_id?: string; type: 'tool.progress' }
-  | { payload: { name?: string }; session_id?: string; type: 'tool.generating' }
+  | { payload?: { text?: string; verbose?: boolean }; session_id?: string; type: 'reasoning.delta' }
   | {
       payload: { args_text?: string; context?: string; name?: string; tool_id: string; todos?: unknown[] }
       session_id?: string
@@ -616,12 +586,9 @@ export type GatewayEvent =
       session_id?: string
       type: 'background.jobs'
     }
-  | { payload?: { text?: string }; session_id?: string; type: 'review.summary' }
-  | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.spawn_requested' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.start' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.thinking' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.tool' }
-  | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.progress' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.complete' }
   | { payload: { rendered?: string; text?: string }; session_id?: string; type: 'message.delta' }
   | {

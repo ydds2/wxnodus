@@ -10,14 +10,13 @@ import type { Db } from '../store/db.js';
 import { appendAudit } from '../store/db.js';
 import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
-import { decryptKey, REASONING_FIELDS } from './providers.js';
+import { REASONING_FIELDS } from './providers.js';
 import { resolveDataDir } from './paths.js';
 import { estimateMessagesTokens, compactMessages } from './memory.js';
-import { coreTools, isDangerous, toolsToOpenAI, wrapDanger, type ToolCtx } from './tools.js';
+import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx } from './tools.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
 import type { HookRunner } from './hooks.js';
 import { join, resolve, relative, isAbsolute } from 'node:path';
-import { readFileSync, statSync } from 'node:fs';
 import { loadProjectRules } from './projectRules.js';
 
 export interface ModelCall { type: 'text'; content: string; reasoning?: string; reasoningField?: string }
@@ -471,7 +470,7 @@ export function createAgent(opts: AgentOptions) {
     tools['tool_search'] = {
       schema: { type: 'function', function: { name: 'tool_search', description: '检索高级工具（按关键词，如 "图片" "网络" "视频"）——命中后该工具立即可用', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
       danger: false,
-      async run({ query }, ctx) {
+      async run({ query }) {
         const hits = searchTools(String(query ?? ''), tools);
         if (!hits.length) return '未找到匹配工具（可用核心工具：' + [...CORE_TOOL_NAMES].filter(n => n !== 'tool_search').join('、') + '）';
         for (const h of hits) activeToolNames?.add(h.name);

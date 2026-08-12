@@ -19,6 +19,14 @@ export function hasFfmpeg(): boolean {
   } catch { return false; }
 }
 
+/** A25 复查：ffprobe 存在性探测（时长读取依赖；缺失时给安装指引而非静默 null） */
+export function hasFfprobe(): boolean {
+  try {
+    const r = spawnSync('ffprobe', ['-version'], { stdio: 'pipe', timeout: 10000 });
+    return r.status === 0;
+  } catch { return false; }
+}
+
 export function videoDuration(path: string): number | null {
   try {
     const r = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path], { stdio: 'pipe', timeout: 30000 });
@@ -86,7 +94,7 @@ export function textSimilarity(a: string, b: string): number {
   const ma = set(ca), mb = set(cb);
   let inter = 0, total = 0;
   for (const [c, n] of ma) { inter += Math.min(n, mb.get(c) ?? 0); total += n; }
-  for (const [c, n] of mb) total += n;
+  for (const [, n] of mb) total += n;
   return total ? (inter * 2) / total : 0;
 }
 
@@ -161,6 +169,8 @@ export async function synthesizeProjectReport(notes: FrameNote[], scenes: Array<
 // 完整项目级分析入口（/video 调用）
 export async function analyzeVideoAsProject(target: string, apiKeyEnc: string | null, opts?: { intervalSec?: number; maxFrames?: number }): Promise<string> {
   if (!hasFfmpeg()) return '未检测到 ffmpeg——请先安装（winget install ffmpeg 或 choco install ffmpeg）后重试';
+  // A25 复查：ffprobe 缺失时给指引（此前静默 null → 「时长未知」无安装提示）
+  if (!hasFfprobe()) return '未检测到 ffprobe（时长读取依赖，随 ffmpeg 一并安装：winget install ffmpeg）——请安装后重试';
   // 无 key：本地确定性场景分析（真实数据，不做「帧分析失败」假输出）
   if (!apiKeyEnc) return localSceneTimeline(target);
   const dur = videoDuration(target);
@@ -203,6 +213,8 @@ export async function analyzeVideoAsProject(target: string, apiKeyEnc: string | 
 export async function analyzeVideo(target: string, apiKeyEnc: string | null, opts?: { intervalSec?: number; maxFrames?: number }): Promise<string> {
   if (!apiKeyEnc) return '视频分析需要 GLM key（/key set <key> 配置后使用）';
   if (!hasFfmpeg()) return '未检测到 ffmpeg——请先安装（winget install ffmpeg 或 choco install ffmpeg）后重试';
+  // A25 复查：ffprobe 缺失时给指引（此前静默 null → 「时长未知」无安装提示）
+  if (!hasFfprobe()) return '未检测到 ffprobe（时长读取依赖，随 ffmpeg 一并安装：winget install ffmpeg）——请安装后重试';
   const dur = videoDuration(target);
   const outDir = join(tmpdir(), `wxnodus-frames-${Date.now().toString(36)}`);
   const frames = extractFrames(target, outDir, opts ?? { intervalSec: 2, maxFrames: 12 });

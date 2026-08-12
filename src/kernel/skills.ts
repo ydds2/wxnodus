@@ -185,7 +185,7 @@ export function parseFlow(skillBody: string, flowField: string | undefined): Flo
   // 按 ## 节点: <名> 分段提取指令
   const sections = new Map<string, string>();
   const re = /^##\s*节点\s*[:：]\s*(.+)$/gm;
-  let m: RegExpExecArray | null;
+
   let lastKey: string | null = null;
   const lines = skillBody.split(/\r?\n/);
   for (const line of lines) {

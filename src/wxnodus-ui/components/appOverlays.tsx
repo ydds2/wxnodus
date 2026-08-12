@@ -165,15 +165,6 @@ export function FloatingOverlays({
   const sid = useStore($uiSessionId)
   const theme = useStore($uiTheme)
 
-  const hasAny =
-    overlay.modelPicker ||
-    overlay.pager ||
-    overlay.sessions ||
-    overlay.skillsHub ||
-    overlay.pluginsHub ||
-    overlay.commandPalette ||
-    completions.length
-
   // Fixed viewport centered on compIdx — previously the slice end was
   // compIdx + 8 so the dropdown grew from 8 rows to 16 as the user scrolled
   // down, bouncing the height on every keystroke.

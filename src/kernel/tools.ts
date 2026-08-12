@@ -206,7 +206,7 @@ export function coreTools(): Record<string, ToolDef> {
       // A21：限深参数（默认 12 层——防大目录递归爆炸）
       const maxDepth = Math.min(Math.max(Number(args?.max_depth) || 12, 1), 20);
       try {
-        const { readdirSync, statSync } = await import('node:fs');
+        const { readdirSync } = await import('node:fs');
         const { join, relative, sep } = await import('node:path');
         const SKIP = new Set(['node_modules', '.git', 'dist', 'coverage', 'build', 'out', '.next', '.venv', '__pycache__', '.wxnodus', '.zcode']);
         // 简单 glob 转正则：** → 任意多层，* → 单层段，? → 单字符
@@ -632,7 +632,7 @@ export function coreTools(): Record<string, ToolDef> {
       },
     },
     danger: false,
-    async run({ query }, ctx) {
+    async run({ query }) {
       const { searchCommandCatalog } = await import('../commands/registry.js');
       const hits = searchCommandCatalog(String(query ?? ''), 8);
       if (!hits.length) return `未找到匹配命令（关键词：${String(query ?? '').slice(0, 40)}）——换关键词或 /help 查看全目录`;
