@@ -1210,11 +1210,57 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     ]);
   });
 
-  bus.register('/consent', () => {
+  bus.register('/consent', async (args) => {
+    // 审查接线：ConsentLedger（授权存证六元组：授权人/时间/范围/目的/方式/到期）此前
+    // 全仓库零实例化——/consent 只落一个 json 标志文件（宣传与实现脱节）。
+    // 现为真实存证簿：grant/revoke/list/status；外部访问（http_get/claw/browser）自动存证
+    const { ConsentLedger } = await import('../compliance/compliance.js');
+    const ledger = new ConsentLedger(ctx.db);
+    const sub = args[0];
+    if (sub === 'grant') {
+      const scope = String(args[1] ?? '').trim();
+      if (!scope) return '用法：/consent grant <范围> [--purpose 目的] [--hours N（默认 24）]';
+      const purposeIdx = args.indexOf('--purpose');
+      const purpose = purposeIdx >= 0 ? args.slice(purposeIdx + 1, args.indexOf('--hours') >= 0 ? args.indexOf('--hours') : undefined).join(' ') : '';
+      const hoursIdx = args.indexOf('--hours');
+      const hours = hoursIdx >= 0 ? Number(args[hoursIdx + 1]) || 24 : 24;
+      const rec = ledger.grant({ grantor: 'user', scope, purpose: purpose.slice(0, 120), method: '/consent', expiresAt: Date.now() + hours * 3600_000, evidenceRef: '' });
+      return `已存证授权 #${rec.id}：${scope}${purpose ? `（${purpose}）` : ''}——${hours} 小时后到期，/consent list 查看`;
+    }
+    if (sub === 'revoke') {
+      const id = Number(args[1]);
+      const recs = ledger.export();
+      if (!recs.some(r => r.id === id)) return `授权 #${id} 不存在（/consent list 查看）`;
+      ledger.revoke(id);
+      return `已撤销授权 #${id}（即刻生效，后续访问将重新要求存证）`;
+    }
+    if (sub === 'list') {
+      const recs = ledger.export();
+      if (!recs.length) return '授权存证簿为空——外部访问自动存证，或 /consent grant 显式授权';
+      return lines(` 授权存证簿（${recs.length} 条） `, recs.map(r => {
+        const revoked = (r as any).revoked_at;
+        const state = revoked ? `⛔ 已撤销` : ((r as any).expires_at > 0 && (r as any).expires_at < Date.now() ? '⌛ 已过期' : '✅ 有效');
+        return ` #${r.id} [${state}] ${r.scope}（${r.grantor} · ${r.method} · ${new Date(r.ts).toLocaleString()}）${r.purpose ? ` 目的：${r.purpose}` : ''}`;
+      }));
+    }
+    if (sub === 'status') {
+      const scope = String(args[1] ?? '').trim();
+      if (!scope) return '用法：/consent status <范围>';
+      const r = ledger.isAuthorized(scope);
+      return r.ok ? `✅ ${scope}：已授权` : `⛔ ${scope}：${r.reason}`;
+    }
+    // 无参：兼容原「签署同意书」语义 + 存证簿概览
     const cp = restoreCheckpoint(ctx.db, 'default');
     const consented = !!cp || existsSync(join(ctx.dataDir, 'consent.json'));
     if (!consented) writeFileSync(join(ctx.dataDir, 'consent.json'), JSON.stringify({ agreed: true, ts: Date.now() }), 'utf8');
-    return consented ? '同意书：已签署（本地运行、数据不出本机、凭证加密存储）' : '同意书已签署：本地运行 · 数据不出本机 · 凭证加密存储';
+    const recs = ledger.export();
+    return lines(' 授权存证 ', [
+      ` 同意书：${consented ? '已签署（本地运行、数据不出本机、凭证加密存储）' : '已签署'}`,
+      ` 存证簿：${recs.length} 条授权（有效 ${recs.filter(r => !(r as any).revoked_at && (!(r as any).expires_at || (r as any).expires_at > Date.now())).length}）`,
+      ` 外部访问自动存证：http_get / /claw / browser_navigate 每次成功访问自动留痕`,
+      ``,
+      ` 用法：/consent grant <范围> [--purpose 目的] [--hours N]｜revoke <id>｜list｜status <范围>`,
+    ]);
   });
 
   bus.register('/audit', (args) => {
@@ -1350,6 +1396,51 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         ? `区域切片已捕获（${region.width}×${region.height} @ ${region.x},${region.y}）→ ${out}（/img <路径> 分析）`
         : `屏幕已捕获 → ${out}（可用 /img <路径> 分析）`;
     } catch (e: any) { return `截图失败：${e?.message?.slice(0, 120)}（需要图形环境）`; }
+  });
+
+  bus.register('/computer', async (args) => {
+    // Computer Use 手动入口（审查接线：computer/index.ts 此前零命令/零工具——README 宣传但无入口）。
+    // 用法：/computer [click <x> <y> [right|double] | type <文本> | open <url>]——无参=截图+视口信息
+    const { join } = await import('node:path');
+    const { writeFileSync } = await import('node:fs');
+    const { captureScreen, ComputerUse } = await import('../kernel/computer/index.js');
+    const { ActionGuard } = await import('../kernel/computer/guards.js');
+    const { convertCoords } = await import('../kernel/computer/actionLayer.js');
+    const shot = await captureScreen();
+    if (!shot) return 'Computer Use 不可用：原生模块缺失或无图形环境（CI/远程会话）';
+    const cu = new ComputerUse(new ActionGuard({ width: shot.width, height: shot.height }));
+    const sub = args[0];
+    if (sub === 'click') {
+      const x = Number(args[1]), y = Number(args[2]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return '用法：/computer click <x> <y> [right|double]';
+      const btn = args[3] === 'right' || args[3] === 'double' ? args[3] : 'left';
+      const { x: lx, y: ly } = convertCoords(x, y, { scale: shot.scale });
+      const r = await cu.act({ type: 'click', x: lx, y: ly, button: btn as any });
+      return `${r}（视口 ${shot.width}x${shot.height}，scale ${shot.scale}）`;
+    }
+    if (sub === 'type') {
+      const text = args.slice(1).join(' ');
+      if (!text) return '用法：/computer type <文本>';
+      return await cu.act({ type: 'type', text });
+    }
+    if (sub === 'open') {
+      const url = args.slice(1).join(' ');
+      if (!url) return '用法：/computer open <URL|路径>';
+      return await cu.act({ type: 'open', url });
+    }
+    // 无参/未知子命令：截图 + 视口信息
+    const out = join(ctx.dataDir, `computer-${Date.now().toString(36)}.png`);
+    writeFileSync(out, shot.png, 'utf8');
+    return lines(' Computer Use ', [
+      `视口：${shot.width}x${shot.height}（DPI scale ${shot.scale}）——坐标按像素输入，自动换算`,
+      `截图已保存 → ${out}（/img <路径> 或 GLM-4V 分析后按坐标操作）`,
+      ``,
+      `用法：`,
+      `  /computer click <x> <y> [right|double]  — 点击屏幕坐标`,
+      `  /computer type <文本>                   — 键入文本（中文走剪贴板）`,
+      `  /computer open <URL|路径>               — 系统默认浏览器/资源管理器打开`,
+      `模型侧：computer_screenshot → 视觉分析 → computer_click/type/open 工具自动完成同链路`,
+    ]);
   });
 
   bus.register('/render', (args) => {
@@ -1819,13 +1910,17 @@ export const commands = {
       const proxy = (ctx.config.get('settings') as any)?.proxy as string | undefined;
       const r = await safeFetchText(url, { maxBytes: 1_000_000, proxy });
       if ('error' in r) return r.error;
+      // 审查接线（自动化护栏）：robots.txt 禁止路径拦截 + 验证码页面提示
+      const { robotsGuard } = await import('../kernel/robotsGuard.js');
+      const guard = await robotsGuard(url, r.text);
+      if (guard.block) return guard.block;
       // 状态码归因：4xx/5xx 页面正文（如 404 Not Found）不当作有效内容
       if (r.status >= 400) return `抓取失败：HTTP ${r.status}（${url}）——页面不可用或反爬拦截`;
       const html = r.text;
       // 提取正文文本（共享解码器：完整实体解码——根治 &#236; 类乱码）
       const text = htmlToText(html);
       const body = text || '（页面无可提取文本，可能是 JS 渲染）';
-      return `HTTP ${r.status}｜${html.length} 字节\n${body.slice(0, 4000)}`;
+      return `HTTP ${r.status}｜${html.length} 字节${guard.captcha ? '\n⚠ 检测到验证码页面（站点反爬——内容可能不可用）' : ''}\n${body.slice(0, 4000)}`;
     } catch (e: any) {
       return `抓取失败：${e?.message?.slice(0, 300) ?? e}`;
     }

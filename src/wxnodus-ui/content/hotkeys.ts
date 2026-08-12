@@ -17,6 +17,7 @@ const copyHotkeys: [string, string][] = isMac
 
 export const HOTKEYS: [string, string][] = [
   ...copyHotkeys,
+  [action + '+K', '命令面板（搜索执行任意命令——含 /understand 逆向编译等全目录）'],
   [action + '+D', '退出'],
   [action + '+G / Alt+G', '打开 $EDITOR（VSCode/Cursor 用 Alt+G 兜底）'],
   [action + '+L', '重绘界面'],

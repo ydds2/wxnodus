@@ -170,7 +170,9 @@ export function SessionPanel({ info, maxWidth, onCommand, sid, t }: SessionPanel
   const strip = (s: string) => (s.endsWith('_tools') ? s.slice(0, -6) : s)
 
   // ── Local collapse state for each section ──
-  const [toolsOpen, setToolsOpen] = useState(true)
+  // 审查修复：工具墙默认折叠——新用户第一眼是几十个工具名（工具墙）而非「我能做什么」；
+  // 特色能力（✅ 已默认展开）承担引导角色，工具名按需展开（行内提示 + 点击）
+  const [toolsOpen, setToolsOpen] = useState(false)
   const [skillsOpen, setSkillsOpen] = useState(false)
   const [systemOpen, setSystemOpen] = useState(false)
   const [mcpOpen, setMcpOpen] = useState(false)

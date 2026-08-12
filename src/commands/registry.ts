@@ -16,7 +16,7 @@ export const SLASH: string[] = [
   // 系统
   '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init',
   // 视觉与媒体（可视化 AI 技能）
-  '/vision', '/img', '/video', '/render', '/capture', '/input',
+  '/vision', '/img', '/video', '/render', '/capture', '/input', '/computer',
   // 网络与集成
   '/claw', '/web', '/search', '/browser', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
   // 协作
@@ -36,7 +36,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆', '/assimilate': '◆',
   '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨',
   '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉',
-  '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿',
+  '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿', '/computer': '⛭',
   '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
   '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/arena': '◍', '/review': '◍', '/understand': '◍', '/session-stream': '◍', '/goal': '◍', '/btw': '◍',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
@@ -112,6 +112,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/video': '视频人工视觉分析（不下载）',
   '/render': 'Markdown 排版预览',
   '/capture': '屏幕截屏（当前界面留证）',
+  '/computer': '桌面控制（Computer Use：截图/点击/键入/打开——robotjs 动作层 + GLM-4V 屏幕理解）',
   '/claw': '网页抓取（SSRF 防护）',
   '/web': '抓取网页（/claw 别名）',
   '/search': '联网搜索（DuckDuckGo）',

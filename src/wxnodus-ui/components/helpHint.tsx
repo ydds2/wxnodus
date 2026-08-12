@@ -9,6 +9,7 @@ const COMMON_COMMANDS: [string, string][] = [
   ['/resume', '切换或恢复历史会话'],
   ['/details', '控制对话详细程度'],
   ['/copy', '复制所选或最后一条助手消息'],
+  ['/understand', '逆向编译（代码 → 概念规格，与 /build 双向闭环）'],
   ['/quit', '退出 wxnodus']
 ]
 

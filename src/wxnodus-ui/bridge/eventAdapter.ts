@@ -21,7 +21,9 @@ import { getOverlayState, patchOverlayState } from '../runtime/promptStore.js'
 import { turnController } from '../runtime/flowController.js'
 import { getUiState, patchUiState } from '../runtime/viewStore.js'
 
-const NO_PROVIDER_RE = /\bNo (?:LLM|inference) provider configured\b/i
+// 审查修复：匹配中文「未配置模型密钥」——内核 agent.ts 返回中文文案（非英文 provider 错误），
+// 此前「需要配置模型提供方」面板永不触发（死代码）；双语言覆盖
+const NO_PROVIDER_RE = /\bNo (?:LLM|inference) provider configured\b|未配置模型密钥/i
 
 const statusFromBusy = () => (getUiState().busy ? 'running…' : 'ready')
 
@@ -367,6 +369,14 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     switch (ev.type) {
       case 'gateway.ready':
         handleReady(ev.payload?.skin)
+        // 审查修复：无 key 首屏告警——此前无 key 启动零提示，用户必须发消息才看到引导。
+        // 启动即查配置并提示；本地能力（/build /search /calc /hole）不受影响
+        void getFullConfigOnce().then(cfg => {
+          const settings = (cfg?.config as any)?.settings as Record<string, any> | undefined
+          if (!settings?.apiKeyEnc) {
+            turnController.pushActivity('⚠ 未配置模型密钥——/key set <密钥> 配置后解锁 AI 对话；无 key 也能用 /build /search /calc /hole 等本地能力', 'warn')
+          }
+        })
 
         return
 

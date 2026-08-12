@@ -18,6 +18,26 @@ function hasGrep(): boolean {
   return grepChecked;
 }
 
+// ── 授权存证（审查接线：ConsentLedger 此前零实例化）──
+// 外部访问（http_get/browser_navigate）成功时自动留痕：scope=目标 host、method=工具名、
+// grantor=system（系统代记）；显式授权走 /consent grant。/consent list 可查全簿。
+const consentLedgers = new WeakMap<object, any>();
+async function recordConsent(db: any, scope: string, method: string): Promise<void> {
+  try {
+    if (!db) return;
+    let ledger = consentLedgers.get(db);
+    if (!ledger) {
+      const { ConsentLedger } = await import('../compliance/compliance.js');
+      ledger = new ConsentLedger(db);
+      consentLedgers.set(db, ledger);
+    }
+    ledger.grant({ grantor: 'system', scope, purpose: `工具 ${method} 外部访问`, method, expiresAt: 0, evidenceRef: '' });
+  } catch { /* 存证失败静默（不阻断访问） */ }
+}
+function hostOf(url: string): string {
+  try { return new URL(String(url ?? '')).host || String(url ?? '').slice(0, 80); } catch { return String(url ?? '').slice(0, 80); }
+}
+
 export interface ToolCtx {
   cwd: string;
   dataDir: string;
@@ -329,18 +349,24 @@ export function coreTools(): Record<string, ToolDef> {
   const httpGet: ToolDef = {
     schema: { type: 'function', function: { name: 'http_get', description: 'GET 请求（SSRF 防护：内网/IPv6 私网/DNS 重绑定/重定向逐跳拦截）。HTML 页面自动提取正文文本；API/JSON 响应返回原始内容。', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
     danger: true, // 外联/写库/调度/敏感输入——需确认
-    async run({ url }) {
+    async run({ url }, ctx) {
       // SSRF 三层防护（src/kernel/ssrf.ts）：主机名形态 + DNS 解析校验 + 重定向逐跳
       const { safeFetchText } = await import('./ssrf.js');
       const { htmlToText, looksLikeHtml } = await import('./html.js');
       const r = await safeFetchText(String(url));
       if ('error' in r) return r.error;
+      // 审查接线（授权存证）：外部访问自动留痕——scope=host，/consent list 可查
+      try { await recordConsent(ctx.db, hostOf(String(url)), 'http_get'); } catch { /* 存证失败静默 */ }
+      // 审查接线（自动化护栏）：robots.txt 禁止路径拦截 + 验证码页面提示
+      const { robotsGuard } = await import('./robotsGuard.js');
+      const guard = await robotsGuard(String(url), r.text);
+      if (guard.block) return guard.block;
       // 状态码归因：4xx/5xx 正文不当作有效内容（404 页误导）
       if (r.status >= 400) return `请求失败：HTTP ${r.status}（页面不可用或反爬拦截）`;
       // HTML 页面 → 正文文本（完整实体解码），否则原始响应——AI 拿到干净可消费的文本
       if (looksLikeHtml(r.text)) {
         const body = htmlToText(r.text, 8000);
-        return `HTTP ${r.status}｜页面正文\n${body || '（页面无可提取文本，可能是 JS 渲染）'}`;
+        return `HTTP ${r.status}｜页面正文${guard.captcha ? '\n⚠ 检测到验证码页面（站点反爬——内容可能不可用）' : ''}\n${body || '（页面无可提取文本，可能是 JS 渲染）'}`;
       }
       return `HTTP ${r.status}\n${r.text.slice(0, 8000)}`;
     },
@@ -527,9 +553,11 @@ export function coreTools(): Record<string, ToolDef> {
   const browserNavigate: ToolDef = {
     schema: { type: 'function', function: { name: 'browser_navigate', description: '打开网页（系统浏览器 + SSRF 三层防护：内网/DNS 重绑定/重定向逐跳拦截）。返回页面标题/地址/正文快照——模型据此决定下一步点击或输入。', parameters: { type: 'object', properties: { url: { type: 'string', description: 'http/https 公网 URL' } }, required: ['url'] } } },
     danger: true, // 外联/副作用——需确认
-    async run({ url }) {
+    async run({ url }, ctx) {
       const { browserNavigate } = await import('./browser.js');
       const r = await browserNavigate(String(url ?? ''));
+      // 审查接线（授权存证）：导航成功即留痕（scope=host；SSRF 已放行的公网目标）
+      if (r.ok) { try { await recordConsent(ctx.db, hostOf(String(url ?? '')), 'browser_navigate'); } catch { /* 静默 */ } }
       return r.text;
     },
   };
@@ -893,7 +921,75 @@ export function coreTools(): Record<string, ToolDef> {
         .join('\n');
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
+  // ── Computer Use（审查接线：computer/index.ts 整套此前零调用者——README 宣传但无入口）──
+  // 工具链：computer_screenshot（截图→/img 或视觉模型分析）→ computer_click/type/open 按结果操作；
+  // 动作经 ActionGuard 护栏（坐标越界拒绝 + 串行队列防抢鼠标）；click 坐标自动 DPI 换算
+  let computerUseCache: { cu: any; width: number; height: number } | null = null;
+  const getComputerUse = async (): Promise<{ cu: any; shot: any } | { error: string }> => {
+    try {
+      const mod = await import('./computer/index.js');
+      const shot = await mod.captureScreen();
+      if (!shot) return { error: '桌面捕获不可用（无桌面环境或原生模块缺失）——/doctor 查看' };
+      if (!computerUseCache) {
+        const { ActionGuard } = await import('./computer/guards.js');
+        computerUseCache = {
+          cu: new mod.ComputerUse(new ActionGuard({ width: shot.width, height: shot.height })),
+          width: shot.width, height: shot.height,
+        };
+      }
+      return { cu: computerUseCache.cu, shot };
+    } catch (e: any) {
+      return { error: `Computer Use 不可用：${String(e?.message ?? e).slice(0, 120)}` };
+    }
+  };
+  const computerScreenshot: ToolDef = {
+    schema: { type: 'function', function: { name: 'computer_screenshot', description: '截取当前屏幕保存为 PNG（返回文件路径；/img <路径> 或视觉模型分析后，按坐标用 computer_click 操作屏幕）。', parameters: { type: 'object', properties: {} } } },
+    danger: false,
+    async run(_a, ctx) {
+      const r = await getComputerUse();
+      if ('error' in r) return r.error;
+      try {
+        const { join } = await import('node:path');
+        const { mkdirSync, writeFileSync } = await import('node:fs');
+        const dir = join(ctx.dataDir, 'captures');
+        mkdirSync(dir, { recursive: true });
+        const file = join(dir, `screen-${Date.now().toString(36)}.png`);
+        writeFileSync(file, r.shot.png);
+        return `截图已保存：${file}（${r.shot.width}x${r.shot.height}——坐标按像素输入，内部自动 DPI 换算）`;
+      } catch (e: any) { return `截图保存失败：${String(e?.message ?? e).slice(0, 120)}`; }
+    },
+  };
+  const computerClick: ToolDef = {
+    schema: { type: 'function', function: { name: 'computer_click', description: '在屏幕坐标 (x,y) 点击（像素坐标——先 computer_screenshot + 视觉分析确定坐标；按钮 left/right/double）。', parameters: { type: 'object', properties: { x: { type: 'number', description: 'X 像素坐标' }, y: { type: 'number', description: 'Y 像素坐标' }, button: { type: 'string', description: 'left|right|double（默认 left）' } }, required: ['x', 'y'] } } },
+    danger: true,
+    async run({ x, y, button }, _ctx) {
+      const r = await getComputerUse();
+      if ('error' in r) return r.error;
+      const { convertCoords } = await import('./computer/actionLayer.js');
+      const { x: lx, y: ly } = convertCoords(Number(x), Number(y), { scale: r.shot.scale });
+      const btn = button === 'right' || button === 'double' ? button : 'left';
+      return await r.cu.act({ type: 'click', x: lx, y: ly, button: btn });
+    },
+  };
+  const computerType: ToolDef = {
+    schema: { type: 'function', function: { name: 'computer_type', description: '向当前聚焦输入框键入文本（中文走剪贴板粘贴）。', parameters: { type: 'object', properties: { text: { type: 'string', description: '要键入的文本' } }, required: ['text'] } } },
+    danger: true,
+    async run({ text }, _ctx) {
+      const r = await getComputerUse();
+      if ('error' in r) return r.error;
+      return await r.cu.act({ type: 'type', text: String(text ?? '') });
+    },
+  };
+  const computerOpen: ToolDef = {
+    schema: { type: 'function', function: { name: 'computer_open', description: '用系统默认浏览器打开 URL 或资源管理器打开路径。', parameters: { type: 'object', properties: { url: { type: 'string', description: 'URL 或本地路径' } }, required: ['url'] } } },
+    danger: true,
+    async run({ url }, _ctx) {
+      const r = await getComputerUse();
+      if ('error' in r) return r.error;
+      return await r.cu.act({ type: 'open', url: String(url ?? '') });
+    },
+  };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

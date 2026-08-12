@@ -441,7 +441,13 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const projName = `p${Date.now().toString(36)}`;
     const projDir = join(ctx.dataDir, 'projects', projName);
     mkdirSync(projDir, { recursive: true });
+    // 审查修复：进度流——此前 /build 全程静默（脚手架+验证+质量门 15-30s 无任何中间输出，
+    // 用户不知道是卡住还是在构建）；每阶段经 system.notice 实时汇报（TUI 显示为状态行）
+    const progress = (stage: string) => {
+      try { ctx.bus.emit('system.notice', { text: `⛏ /build「${spec.title}」：${stage}` }); } catch { /* 静默 */ }
+    };
     // 构建（脚手架 → 真实验证 → 证据落盘 → 质量门）
+    progress('脚手架生成…');
     const sc = instantiate(spec, projDir);
     if (!sc.ok) return `脚手架失败：${sc.reason}`;
     // A21：规格 IR 版本化（spec.json 快照 + sha256——后续 build 可 diff/增量重编）
@@ -455,6 +461,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     // 审计修复：证据必须在验证之后落盘——先跑真实验证（启动→探活→重启→读回），
     // checks 填真实探活结果；验证失败则证据记录 failed（不伪造 'ok'）
     const { verifyProject } = await import('../build/verify.js');
+    progress('验证（启动→探活→重启→读回）…');
     const vr = await verifyProject(projDir);
     const ev = writeEvidence(projDir, {
       status: vr.status,
@@ -463,9 +470,11 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       port: null,
     });
     const fp = fingerprint(projDir);
+    progress(`证据已落盘（${vr.status}）· 质量门五门…`);
     const gate = await runGate({ projectDir: projDir, dataDir: ctx.dataDir });
     const order = topoSort(plan.modules);
     const gateFail = gate.gates.filter(g => !g.ok);
+    progress(gate.pass ? '五门质量门通过 ✓' : `质量门未过：${gateFail.map(g => g.name).join(',')}`);
     // A22 诚实交付：标题按真实验证结果——「构建完成」仅验证通过才写；
     // 失败如实报「未通过验证」（不假装 100% 完成）；P2-2 --strict：门禁未过同样标记失败
     const head =
