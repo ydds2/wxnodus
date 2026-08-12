@@ -148,19 +148,10 @@ export const COMMAND_DESC: Record<string, string> = {
   '/csv': 'CSV 摘要',
 };
 
-// 别名表（中文自然语言）
-const ALIASES: Record<string, string> = {
-  '/帮助': '/help', '/退出': '/quit', '/清空': '/clear', '/会话': '/sessions', '/恢复': '/resume',
-  '/体检': '/doctor', '/状态': '/status', '/模型': '/model', '/密钥': '/key', '/版本': '/version',
-  '/记忆': '/memory', '/黑洞': '/hole', '/压缩': '/compact', '/构建': '/build', '/部署': '/deploy',
-  '/锻造': '/forge', '/技能': '/skill', '/权限': '/perm', '/沙盒': '/sandbox', '/合规': '/compliance',
-  '/授权': '/consent', '/备份': '/backup', '/导出': '/export', '/主题': '/theme', '/语言': '/lang',
-  '/视觉': '/vision', '/图片': '/img', '/视频': '/video', '/抓取': '/claw', '/定时': '/cron',
-  '/计算': '/calc', '/哈希': '/hash', '/换算': '/units', '/同化': '/assimilate',
-  // A22 指令融合（保守全并）：语义完全一致的旧命令名分发重定向到目标命令，
-  // 旧命令仍可输入（参数原样透传）——/help 标注「（=目标命令）」
-  '/task': '/jobs', '/vision': '/img',
-};
+// 别名表（中文自然语言）与 resolveAlias 已移至 kernel/commandLevels.ts（审查修复：
+// registry 依赖 commandLevels，原位置使分级侧无法引用别名——中文命令在 wx_cmd
+// AI 通道分级中漏网；本文件 re-export 保持调用方（intent.ts/CommandBus）兼容）
+export { ALIASES, resolveAlias } from '../kernel/commandLevels.js';
 
 // A22 指令融合标注：命令 → 合并去向（仅标注，不改变旧命令行为——
 // 语义有差异的（/afk 开关、/evidence 验证落盘）保留原命令，/help 与
@@ -179,10 +170,6 @@ export const COMMAND_MERGE: Record<string, string> = {
 
 export function isSlash(text: string): boolean {
   return /^\/[^\s/]*(?:\s|$)/.test(text);
-}
-
-export function resolveAlias(cmd: string): string {
-  return ALIASES[cmd] ?? cmd;
 }
 
 // ── A22 command_search 数据源：命令目录检索 ─────────────────────────

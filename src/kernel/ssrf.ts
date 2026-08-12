@@ -2,18 +2,48 @@
 // 设计：三层校验——① 主机名形态（IPv4 私网/保留段、IPv6 私网段、localhost、0.0.0.0）
 //       ② DNS 解析后逐 IP 校验（防 DNS 重绑定：公网域名解析到内网 IP）
 //       ③ 重定向逐跳校验（防 3xx 跳转进入内网；最多 5 跳）
+// 安全审查修复：IPv6 变体归一化——::ffff:a.b.c.d（含 hex 形式 7f00:1）与
+// 64:ff9b::/96 NAT64 前缀映射回 IPv4 后复用私网校验（防云元数据/本机绕过）
 import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 
 // IPv4 私网/保留段（正则形态校验）
 const IPV4_PRIVATE_RE =
   /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|0\.0\.0\.0|169\.254\.\d{1,3}\.\d{1,3}|100\.(6[4-9]|[7-9]\d)\.\d{1,3}\.\d{1,3})$/;
 // IPv6 私网/保留段（前缀校验）
-const IPV6_PRIVATE_PREFIXES = ['::1', 'fc', 'fd', 'fe80', 'fe8', 'fe9', 'fea', 'feb', '0:0:0:0:0:0:0:1', '::ffff:127.', '::ffff:10.', '::ffff:192.168.', '::ffff:172.'];
+const IPV6_PRIVATE_PREFIXES = ['::1', 'fc', 'fd', 'fe80', 'fe8', 'fe9', 'fea', 'feb', '0:0:0:0:0:0:0:1'];
+
+/** IPv6 → IPv4 归一化：::ffff:a.b.c.d（含 hex 变体）与 64:ff9b::/96 NAT64 → IPv4 点分；非映射形式返回 null */
+function v6ToV4(ip: string): string | null {
+  const low = ip.toLowerCase();
+  // IPv4-mapped: ::ffff:a.b.c.d 或 ::ffff:7f00:1（hex）
+  let m = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(low);
+  if (m) return m[1]!;
+  m = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(low);
+  if (m) {
+    const a = parseInt(m[1]!, 16);
+    const b = parseInt(m[2]!, 16);
+    return `${a >> 8}.${a & 255}.${b >> 8}.${b & 255}`;
+  }
+  // NAT64: 64:ff9b::/96 —— 末尾 32 位为 IPv4（hex 形式）
+  m = /^64:ff9b::([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(low);
+  if (m) {
+    const a = parseInt(m[1]!, 16);
+    const b = parseInt(m[2]!, 16);
+    return `${a >> 8}.${a & 255}.${b >> 8}.${b & 255}`;
+  }
+  return null;
+}
 
 function isPrivateIpLiteral(ip: string): boolean {
   const low = ip.toLowerCase();
-  if (IPV4_PRIVATE_RE.test(low)) return true;
+  if (isIP(low) === 4) {
+    return IPV4_PRIVATE_RE.test(low);
+  }
   if (low === '::1' || low === '0:0:0:0:0:0:0:1') return true;
+  // IPv4-mapped / NAT64 归一化后复用 IPv4 校验（防 hex 变体绕过）
+  const v4 = v6ToV4(low);
+  if (v4) return IPV4_PRIVATE_RE.test(v4);
   for (const p of IPV6_PRIVATE_PREFIXES) {
     if (low.startsWith(p)) return true;
   }
@@ -134,12 +164,15 @@ async function proxyFetchOnce(
   opts: { maxBytes: number; headers: Record<string, string>; method: string; body?: string; timeoutMs: number }
 ): Promise<{ status: number; location: string | null; body: string } | { error: string }> {
   const { spawnSync } = await import('node:child_process');
-  const { mkdtempSync, readFileSync, unlinkSync, mkdirSync } = await import('node:fs');
+  const { mkdtempSync, readFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const dir = mkdtempSync(join(tmpdir(), 'wxnodus-fetch-'));
   const outFile = join(dir, 'body.bin');
   const headerFile = join(dir, 'headers.txt');
+  // 审查修复：临时目录整体清理（try/finally）——此前只 unlink 两个文件、目录本体
+  // 与异常路径（ENOENT/错误返回）均残留，崩溃时含抓取内容的 body.bin 长留系统临时目录
+  try {
   const args = [
     '-s', '-m', String(Math.ceil(opts.timeoutMs / 1000)),
     '--max-filesize', String(opts.maxBytes),
@@ -160,11 +193,6 @@ async function proxyFetchOnce(
   try {
     if (r.status === 0) body = readFileSync(outFile, 'utf8');
   } catch { /* 文件未生成（错误响应） */ }
-  // 清临时文件
-  for (const f of [outFile, headerFile]) {
-    try { unlinkSync(f); } catch { /* 忽略 */ }
-  }
-  try { mkdirSync(dir, { recursive: true }); } catch { /* 忽略 */ }
   if (r.status !== 0 && !body) {
     // A25：curl 缺失时如实归因（此前 ENOENT 裸抛到上层，与网络失败混为一谈）
     const err = r.error as NodeJS.ErrnoException | undefined
@@ -182,6 +210,8 @@ async function proxyFetchOnce(
     const locMatch = headers.match(/^location: (.+)$/im);
     if (locMatch) location = locMatch[1]!.trim();
   } catch { /* 头解析失败按 200 */ }
-  try { unlinkSync(headerFile); } catch { /* 忽略 */ }
   return { status, location, body };
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* 忽略 */ }
+  }
 }

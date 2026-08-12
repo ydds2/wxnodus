@@ -11,6 +11,15 @@ let browser: any = null;
 let page: any = null;
 let launchError: string | null = null;
 
+// 审查修复：操作互斥——并行剧本分支/多任务会并发调用 browser_*，而 page 是模块级单例；
+// 不经串行化时导航中点击、截图与导航交错（竞态错位）。全部操作经此链排队。
+let opChain: Promise<unknown> = Promise.resolve();
+function serialized<T>(fn: () => Promise<T>): Promise<T> {
+  const run = opChain.then(fn, fn);
+  opChain = run.then(() => undefined, () => undefined); // 前序失败不阻塞后续
+  return run;
+}
+
 /** 浏览器可用性探测（不启动）：系统 Edge/Chrome 可执行文件或 playwright 内置 */
 export function browserProbe(): { ok: boolean; browser?: string; error?: string } {
   try {
@@ -70,12 +79,14 @@ async function ensureBrowser(): Promise<{ ok: true } | { ok: false; error: strin
 }
 
 /** 关闭浏览器会话（/browser close 或工具调用；释放进程） */
-export async function browserClose(): Promise<string> {
-  try { if (page) await page.close(); } catch { /* 忽略 */ }
-  try { if (browser) await browser.close(); } catch { /* 忽略 */ }
-  browser = null;
-  page = null;
-  return '浏览器会话已关闭';
+export function browserClose(): Promise<string> {
+  return serialized(async () => {
+    try { if (page) await page.close(); } catch { /* 忽略 */ }
+    try { if (browser) await browser.close(); } catch { /* 忽略 */ }
+    browser = null;
+    page = null;
+    return '浏览器会话已关闭';
+  });
 }
 
 /** 可交互元素清单（深度：AI 精准选择器的依据——按钮/链接/输入框/下拉的稳定选择器建议） */
@@ -142,83 +153,95 @@ async function takeShot(): Promise<{ ok: true; path: string } | { ok: false; err
 export interface BrowserToolResult { ok: boolean; text: string }
 
 /** browser_navigate：打开 URL（SSRF 三层防护——内网/重绑定/重定向逐跳）→ 页面快照 */
-export async function browserNavigate(url: string): Promise<BrowserToolResult> {
-  const target = String(url ?? '').trim();
-  if (!target) return { ok: false, text: '参数错误：url 必填' };
-  const safe = await checkUrlSafety(target);
-  if (!safe.ok) return { ok: false, text: `已拦截：${safe.reason}` };
-  const boot = await ensureBrowser();
-  if (!boot.ok) return { ok: false, text: boot.error };
-  try {
-    await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    const snap = await snapshotText();
-    return { ok: true, text: `已打开 ${target}\n${snap}` };
-  } catch (e: any) {
-    return { ok: false, text: `导航失败：${String(e?.message ?? e).slice(0, 300)}` };
-  }
+export function browserNavigate(url: string): Promise<BrowserToolResult> {
+  return serialized(async () => {
+    const target = String(url ?? '').trim();
+    if (!target) return { ok: false, text: '参数错误：url 必填' };
+    const safe = await checkUrlSafety(target);
+    if (!safe.ok) return { ok: false, text: `已拦截：${safe.reason}` };
+    const boot = await ensureBrowser();
+    if (!boot.ok) return { ok: false, text: boot.error };
+    try {
+      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      const snap = await snapshotText();
+      return { ok: true, text: `已打开 ${target}\n${snap}` };
+    } catch (e: any) {
+      return { ok: false, text: `导航失败：${String(e?.message ?? e).slice(0, 300)}` };
+    }
+  });
 }
 
 /** browser_click：CSS 选择器点击 */
-export async function browserClick(selector: string): Promise<BrowserToolResult> {
-  const boot = await ensureBrowser();
-  if (!boot.ok) return { ok: false, text: boot.error };
-  if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
-  try {
-    await page.locator(String(selector ?? '')).first().click({ timeout: 10000 });
-    const url = page.url();
-    return { ok: true, text: `已点击「${selector}」→ ${url}\n${(await snapshotText()).slice(0, 1500)}` };
-  } catch (e: any) {
-    return { ok: false, text: `点击失败（选择器「${selector}」未命中？）：${String(e?.message ?? e).slice(0, 200)}` };
-  }
+export function browserClick(selector: string): Promise<BrowserToolResult> {
+  return serialized(async () => {
+    const boot = await ensureBrowser();
+    if (!boot.ok) return { ok: false, text: boot.error };
+    if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
+    try {
+      await page.locator(String(selector ?? '')).first().click({ timeout: 10000 });
+      const url = page.url();
+      return { ok: true, text: `已点击「${selector}」→ ${url}\n${(await snapshotText()).slice(0, 1500)}` };
+    } catch (e: any) {
+      return { ok: false, text: `点击失败（选择器「${selector}」未命中？）：${String(e?.message ?? e).slice(0, 200)}` };
+    }
+  });
 }
 
 /** browser_type：输入文本（可回车提交） */
-export async function browserType(selector: string, text: string, submit = false): Promise<BrowserToolResult> {
-  const boot = await ensureBrowser();
-  if (!boot.ok) return { ok: false, text: boot.error };
-  if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
-  try {
-    const loc = page.locator(String(selector ?? '')).first();
-    await loc.fill(String(text ?? ''), { timeout: 10000 });
-    if (submit) await loc.press('Enter');
-    return { ok: true, text: `已输入「${String(text ?? '').slice(0, 60)}」${submit ? '并回车' : ''}` };
-  } catch (e: any) {
-    return { ok: false, text: `输入失败（选择器「${selector}」未命中？）：${String(e?.message ?? e).slice(0, 200)}` };
-  }
+export function browserType(selector: string, text: string, submit = false): Promise<BrowserToolResult> {
+  return serialized(async () => {
+    const boot = await ensureBrowser();
+    if (!boot.ok) return { ok: false, text: boot.error };
+    if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
+    try {
+      const loc = page.locator(String(selector ?? '')).first();
+      await loc.fill(String(text ?? ''), { timeout: 10000 });
+      if (submit) await loc.press('Enter');
+      return { ok: true, text: `已输入「${String(text ?? '').slice(0, 60)}」${submit ? '并回车' : ''}` };
+    } catch (e: any) {
+      return { ok: false, text: `输入失败（选择器「${selector}」未命中？）：${String(e?.message ?? e).slice(0, 200)}` };
+    }
+  });
 }
 
 /** browser_screenshot：截图落盘（/img 可分析；返回路径） */
-export async function browserScreenshot(): Promise<BrowserToolResult> {
-  const boot = await ensureBrowser();
-  if (!boot.ok) return { ok: false, text: boot.error };
-  if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
-  const shot = await takeShot();
-  if (!shot.ok) return { ok: false, text: shot.error };
-  return { ok: true, text: `截图已保存：${shot.path}（/img <路径> 可视觉分析）` };
+export function browserScreenshot(): Promise<BrowserToolResult> {
+  return serialized(async () => {
+    const boot = await ensureBrowser();
+    if (!boot.ok) return { ok: false, text: boot.error };
+    if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
+    const shot = await takeShot();
+    if (!shot.ok) return { ok: false, text: shot.error };
+    return { ok: true, text: `截图已保存：${shot.path}（/img <路径> 可视觉分析）` };
+  });
 }
 
 /** browser_snapshot：当前页面可访问性快照（深度：含可交互元素清单） */
-export async function browserSnapshot(): Promise<BrowserToolResult> {
-  const boot = await ensureBrowser();
-  if (!boot.ok) return { ok: false, text: boot.error };
-  if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
-  return { ok: true, text: await snapshotText() };
+export function browserSnapshot(): Promise<BrowserToolResult> {
+  return serialized(async () => {
+    const boot = await ensureBrowser();
+    if (!boot.ok) return { ok: false, text: boot.error };
+    if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
+    return { ok: true, text: await snapshotText() };
+  });
 }
 
 /** browser_wait：等待元素出现（SPA 动态加载）或固定毫秒——交互前确保页面就绪 */
-export async function browserWait(selector: string, timeoutMs = 15000): Promise<BrowserToolResult> {
-  const boot = await ensureBrowser();
-  if (!boot.ok) return { ok: false, text: boot.error };
-  if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
-  const sel = String(selector ?? '').trim();
-  try {
-    if (!sel) {
-      await new Promise(r => setTimeout(r, Math.min(Number(timeoutMs) || 2000, 15000)));
-      return { ok: true, text: `已等待 ${Math.min(Number(timeoutMs) || 2000, 15000)}ms` };
+export function browserWait(selector: string, timeoutMs = 15000): Promise<BrowserToolResult> {
+  return serialized(async () => {
+    const boot = await ensureBrowser();
+    if (!boot.ok) return { ok: false, text: boot.error };
+    if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
+    const sel = String(selector ?? '').trim();
+    try {
+      if (!sel) {
+        await new Promise(r => setTimeout(r, Math.min(Number(timeoutMs) || 2000, 15000)));
+        return { ok: true, text: `已等待 ${Math.min(Number(timeoutMs) || 2000, 15000)}ms` };
+      }
+      await page.locator(sel).first().waitFor({ state: 'visible', timeout: Number(timeoutMs) || 15000 });
+      return { ok: true, text: `元素已出现：${sel}` };
+    } catch (e: any) {
+      return { ok: false, text: `等待超时（${sel} 未出现）：${String(e?.message ?? e).slice(0, 150)}` };
     }
-    await page.locator(sel).first().waitFor({ state: 'visible', timeout: Number(timeoutMs) || 15000 });
-    return { ok: true, text: `元素已出现：${sel}` };
-  } catch (e: any) {
-    return { ok: false, text: `等待超时（${sel} 未出现）：${String(e?.message ?? e).slice(0, 150)}` };
-  }
+  });
 }

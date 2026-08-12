@@ -415,6 +415,12 @@ async function main() {
       } else {
         console.log(out);
       }
+      // 审查修复：命令分支退出码遵循 P1-2 协议（0 成功｜1 失败）——此前恒 0，
+      // 命令失败/未知命令 CI 无法感知；agent 分支已正确用 r.ok 决定
+      if (!r.ok) {
+        cleanupEphemeral();
+        process.exit(1);
+      }
     } else if (routed.kind === 'tool' && routed.value) {
       console.log(routed.value);
     } else {

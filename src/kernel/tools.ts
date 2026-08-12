@@ -3,8 +3,8 @@
 //      危险工具结果包裹 <untrusted_tool_result>（防提示注入——模型把工具输出当指令）
 // 参考：Claude Code tools-reference（15 工具）、aider 工具集、Codex function call
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, realpathSync } from 'node:fs';
+import { join, resolve, relative, sep } from 'node:path';
 import { sanitizedEnv } from './env.js';
 
 /** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性） */
@@ -59,16 +59,44 @@ export const wrapDanger = (s: string) =>
   `<untrusted_tool_result>\n${s.slice(0, 8000).replace(/<\/untrusted_tool_result>/g, '<\\/untrusted_tool_result>')}\n</untrusted_tool_result>`;
 
 export function coreTools(): Record<string, ToolDef> {
+  // 安全审查修复：fs_read 工作区边界——realpath 校验目标必须在 cwd 内（拒绝 ../ 逃逸与
+  // 任意系统文件路径被静默读进模型上下文；fs_read 是 danger:false 无确认的）。
+  // 写路径不设此守卫：fs_write/fs_edit 走审批链（工作区外弹审批、批准即生效——既有契约），
+  // 凭据/配置类文件由 SENSITIVE_WRITE 硬红线兜底（permissions.ts）
+  const withinWorkspace = (cwd: string, p: string): string | null => {
+    try {
+      const root = realpathSync(cwd);
+      const target = realpathSync(p);
+      const rel = relative(root, target);
+      if (rel === '..' || rel.startsWith(`..${sep}`)) return `路径超出工作区：${target}`;
+      if (/^[a-zA-Z]:/.test(rel)) return `路径超出工作区：${target}`; // Windows 跨盘
+      return null;
+    } catch {
+      // realpath 失败（目标不存在——写入场景）——回退 resolve 相对校验
+      const rootAbs = resolve(cwd);
+      const abs = resolve(p);
+      const rel2 = relative(rootAbs, abs);
+      if (rel2 === '..' || rel2.startsWith(`..${sep}`)) return `路径超出工作区：${abs}`;
+      if (/^[a-zA-Z]:/.test(rel2)) return `路径超出工作区：${abs}`;
+      return null;
+    }
+  };
+
   const fsRead: ToolDef = {
-    schema: { type: 'function', function: { name: 'fs_read', description: '读取文件内容', parameters: { type: 'object', properties: { path: { type: 'string', description: '文件路径' } }, required: ['path'] } } },
+    schema: { type: 'function', function: { name: 'fs_read', description: '读取文件内容', parameters: { type: 'object', properties: { path: { type: 'string', description: '文件路径（工作区内）' } }, required: ['path'] } } },
     danger: false,
     async run({ path }, ctx) {
-      try { return readFileSync(resolve(ctx.cwd, path), 'utf8').slice(0, 20000); }
+      try {
+        const p = resolve(ctx.cwd, path);
+        const guard = withinWorkspace(ctx.cwd, p);
+        if (guard) return guard;
+        return readFileSync(p, 'utf8').slice(0, 20000);
+      }
       catch (e: any) { return `读取失败：${e.message}`; }
     },
   };
   const fsWrite: ToolDef = {
-    schema: { type: 'function', function: { name: 'fs_write', description: '写入文件（覆盖）', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } },
+    schema: { type: 'function', function: { name: 'fs_write', description: '写入文件（整体覆盖——path 已有内容会被完全替换）。新建文件或整体重写时用本工具；只改文件局部用 fs_edit（更安全）。不确定当前内容先 fs_read。', parameters: { type: 'object', properties: { path: { type: 'string', description: '文件路径（工作区内）' }, content: { type: 'string', description: '完整新内容（覆盖旧内容）' } }, required: ['path', 'content'] } } },
     danger: true,
     async run({ path, content }, ctx) {
       try {
@@ -87,7 +115,7 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const fsEdit: ToolDef = {
-    schema: { type: 'function', function: { name: 'fs_edit', description: '编辑文件（替换文本）', parameters: { type: 'object', properties: { path: { type: 'string' }, oldText: { type: 'string' }, newText: { type: 'string' } }, required: ['path', 'oldText', 'newText'] } } },
+    schema: { type: 'function', function: { name: 'fs_edit', description: '编辑文件（替换文本）', parameters: { type: 'object', properties: { path: { type: 'string', description: '文件路径（工作区内）' }, oldText: { type: 'string', description: '要替换的原文（需与文件内容完全一致且唯一）' }, newText: { type: 'string', description: '替换后的新文本' } }, required: ['path', 'oldText', 'newText'] } } },
     danger: true,
     async run({ path, oldText, newText }, ctx) {
       try {

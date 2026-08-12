@@ -33,8 +33,8 @@ export interface AgentOptions {
   /** C6：文字提问回调（clarify 工具）——返回用户文本答案 */
   onClarify?: (question: string, choices?: string[]) => Promise<string>;
   maxTurns?: number;
-  /** 生命周期 hooks（本地命令执行）；缺省关闭 */
-  hooks?: HookRunner | null;
+  /** 生命周期 hooks（本地命令执行）；缺省关闭。Partial：子代理可只继承安全钩子（preToolUse） */
+  hooks?: Partial<HookRunner> | null;
   /** 附加工具（如 MCP 客户端工具表 mcp__<server>__<tool>） */
   extraTools?: Record<string, import('./tools.js').ToolDef>;
   /** 上下文窗口上限（自动压缩触发阈值基准，默认 64k） */
@@ -351,7 +351,9 @@ export function createAgent(opts: AgentOptions) {
   const callModel = opts.callModel ?? defaultCallModel;
 
   // 子代理（F9 修复）：独立 agent 实例（独立 abort 状态）+ 深度限制 + 收窄工具集
-  // 工具集排除：写文件/执行/委派/记忆写入/外联/提问（只读探索）
+  // 工具集排除：写文件/执行/委派/记忆写入/外联/提问（只读探索）+ 全部 danger 工具——
+  // 审查修复：extraTools（MCP/插件）此前不在名单内，MCP 默认 danger:false 却在 smart 下
+  // 无确认执行任意副作用（与 delegate「只读工具集」描述不符）；现按 danger 标志动态剔除
   const SUBAGENT_EXCLUDE = ['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate', 'memory_write', 'http_get', 'ask_user'];
   const MAX_SUBAGENT_DEPTH = 3;
   // A24 第四类修复：委派暂停真实生效（delegation.pause → setDelegationPaused）——
@@ -367,19 +369,23 @@ export function createAgent(opts: AgentOptions) {
     // 子代理生命周期事件（独立实例，手动发事件保持 UI 可见）
     // C4 修复：subagent_id 稳定（start/complete 同 id，/agents 面板可正确闭合）
     bus.emit('agent.subagent', { goal, phase: 'start', session_id: sessionId + ':sub', subagent_id: sessionId + ':sub' });
-    hooks?.subagentStart(goal);
+    hooks?.subagentStart?.(goal);
     bus.emit('agent.stage', { stage: `子代理执行中（深度 ${depth}）…` }); // 对比轮 5：状态条可见中间态
     const sub = createAgent({
       ...opts,
       sessionId: sessionId + ':sub',
       maxTurns: Math.min(opts.maxTurns ?? MAX_TURNS, 8),
       // P0-2：自定义 agent 定义生效——mode/指令覆盖/工具白名单（缺省保持只读子代理）
-      mode: def?.mode ?? 'smart',
+      // 审查修复：mode 继承父会话当前模式（/perm 切换后热生效）——此前恒 'smart'，
+      // manual（全量确认）父会话委派后子代理 non-danger 工具自动放行，确认语义被静默降级
+      mode: def?.mode ?? mode,
       systemPromptOverride: def?.systemPromptOverride,
       excludeTools: def?.tools
         ? [...new Set([...CORE_TOOL_NAMES, ...Object.keys(tools)])].filter(n => !def.tools!.includes(n))
-        : SUBAGENT_EXCLUDE,
-      hooks: null,
+        : [...new Set([...SUBAGENT_EXCLUDE, ...Object.entries(tools).filter(([, t]) => t.danger).map(([n]) => n)])],
+      // 审查修复：保留 preToolUse 安全钩子（DENY 拦截）——此前 hooks:null 使子代理
+      // 工具调用绕过用户配置的安全钩子；sessionStart 等主会话钩子仍不继承（子代理不触发）
+      hooks: hooks ? { preToolUse: hooks.preToolUse } : null,
     });
     // 白名单声明的工具在懒加载模式下也要激活（否则 schema 不可见）
     if (def?.tools && activeToolNames) {
@@ -387,7 +393,7 @@ export function createAgent(opts: AgentOptions) {
     }
     const r = await sub.run(goal);
     bus.emit('agent.subagent', { goal, phase: 'complete', ok: r.ok, turns: r.turns, session_id: sessionId + ':sub', subagent_id: sessionId + ':sub' });
-    hooks?.subagentStop({ ok: r.ok, output: r.text, turns: r.turns });
+    hooks?.subagentStop?.({ ok: r.ok, output: r.text, turns: r.turns });
     return { ok: r.ok, output: r.text, turns: r.turns };
   };
 
@@ -429,7 +435,7 @@ export function createAgent(opts: AgentOptions) {
     requestForm: opts.onFormRequest,
     // AI 自主调用通道（wx_cmd 工具）：执行斜杠指令（cli 装配 bus.execute 包装）
     runCommand: opts.onCommand,
-    hookFailure: (name, err) => hooks?.postToolUseFailure(name, err),
+    hookFailure: (name, err) => hooks?.postToolUseFailure?.(name, err),
   };
 
   const onApproval = opts.onApproval ?? (async () => true);
@@ -555,9 +561,10 @@ export function createAgent(opts: AgentOptions) {
         if (!ok) return `用户拒绝执行 ${name}`;
       }
       // PreToolUse hook：输出 DENY 即真实拦截（权限门之后、执行之前）
+      // 审查修复：Partial hooks 下 preToolUse 可能未配置——undefined 视为放行（allowed===false 才拦）
       if (hooks) {
-        const allowed = await hooks.preToolUse(name, args);
-        if (!allowed) {
+        const allowed = await hooks.preToolUse?.(name, args);
+        if (allowed === false) {
           bus.emit('agent.tool', { name, phase: 'complete', ok: false, toolId, session_id: sessionId });
           return `工具被 hook 拒绝（${name}）`;
         }
@@ -587,7 +594,7 @@ export function createAgent(opts: AgentOptions) {
         })();
       }
       bus.emit('agent.tool', { name, phase: 'complete', ok: true, ms: Date.now() - t0, toolId, session_id: sessionId });
-      hooks?.postToolUse(name, out);
+      hooks?.postToolUse?.(name, out);
       // A21：工具执行结果留痕（耗时/成败）
       auditTool('tool.executed', { tool: name, ok: true, ms: Date.now() - t0 });
       // 架构 P3：工具完成入事件流
@@ -600,7 +607,9 @@ export function createAgent(opts: AgentOptions) {
       if (name === 'fs_write' || name === 'fs_edit') scheduleAutoRegression();
       // 深度（Aider auto_commit 对齐）：git 仓库内文件编辑后自动提交本次文件
       // （commit 消息标注 [wxnodus]；settings.autoGitCommit=false 可关；失败静默不阻断）
-      if (name === 'fs_write' || name === 'fs_edit' && !out.startsWith('工具被规则拒绝')) {
+      // 审查修复：运算符优先级——本意 (fs_write||fs_edit) && !被拒绝；&& 优先于 || 导致
+      // fs_write 被规则拒绝时仍触发自动提交（把未发生的改动提交进 git 历史）
+      if ((name === 'fs_write' || name === 'fs_edit') && !out.startsWith('工具被规则拒绝')) {
         try { await maybeAutoGitCommit(name, args, ctxCwd); } catch { /* 静默 */ }
       }
       return out;
@@ -716,7 +725,10 @@ export function createAgent(opts: AgentOptions) {
     try {
       const history = opts.mem.working(sessionId);
       for (const h of history) {
-        if (h.role === 'user' || h.role === 'assistant') {
+        // 审查修复：压缩摘要（role=system 带「压缩摘要」标记）跨轮保留——
+        // 此前只放行 user/assistant，/compact 或自动压缩写入 DB 的摘要下一轮被过滤，
+        // 压缩过的中间细节彻底丢失（压缩白做，长会话跨轮智能度衰减）
+        if (h.role === 'user' || h.role === 'assistant' || (h.role === 'system' && String(h.content ?? '').includes('压缩摘要'))) {
           msgs.push({ role: h.role, content: h.content });
         }
       }
@@ -757,8 +769,10 @@ export function createAgent(opts: AgentOptions) {
     let unknownRounds = 0;
     let finalText = '';
     bus.emit('agent.start', { sessionId, prompt });
-    hooks?.userPromptSubmit(prompt, sessionId);
-    if (turns === 1) hooks?.sessionStart(sessionId);
+    hooks?.userPromptSubmit?.(prompt, sessionId);
+    // 审查修复：turns===0 时首轮尚未开始——此前 ===1 恒假（turns 在 while 内才 ++），
+    // sessionStart hook 永不触发（死分支）
+    if (turns === 0) hooks?.sessionStart?.(sessionId);
 
     try {
     while (turns < (opts.maxTurns ?? MAX_TURNS)) {
@@ -784,7 +798,7 @@ export function createAgent(opts: AgentOptions) {
       }
       if (used > ctxLimit * 0.85 && msgs.length > 10) {
         // P1-1：preCompact hook 可阻止压缩（输出 BLOCK）
-        if (hooks?.preCompact(`auto: ${used}/${ctxLimit}`)) {
+        if (hooks?.preCompact?.(`auto: ${used}/${ctxLimit}`)) {
           bus.emit('system.notice', { text: '压缩被 hook 阻止（preCompact BLOCK）' });
         } else {
         bus.emit('system.notice', { text: `上下文已达 ${Math.round((used / ctxLimit) * 100)}%（${used} token）——自动压缩…` });
@@ -816,7 +830,7 @@ export function createAgent(opts: AgentOptions) {
           appendSessionEvent(opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, { type: 'compact', summary: summaryText.slice(0, 200), before: used, after: nextTokens, ts: Date.now() });
         } catch { /* 静默 */ }
         bus.emit('system.notice', { text: `自动压缩完成（${used} → ${nextTokens} token）` });
-        hooks?.postCompact(used, nextTokens);
+        hooks?.postCompact?.(used, nextTokens);
         }
       }
       let res: ModelCall | ToolCallMsg;
@@ -940,7 +954,7 @@ export function createAgent(opts: AgentOptions) {
       const { appendSessionEvent } = await import('./sessionStream.js');
       appendSessionEvent(opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, { type: 'end', ok: finalText.length > 0, turns, ts: Date.now() });
     } catch { /* 静默 */ }
-    hooks?.sessionEnd({ ok: finalText.length > 0, turns });
+    hooks?.sessionEnd?.({ ok: finalText.length > 0, turns });
     // P2-全方面：自动 checkpoint（Claude Code 每 prompt 快照对齐）——回合结束自动快照，
     // 保留最近 10 个（saveCheckpoint 内部循环清理）；/rewind 可回滚任意自动快照
     if (!opts2.subagent) {
@@ -954,7 +968,7 @@ export function createAgent(opts: AgentOptions) {
     } finally {
       if (turn === st) turn = null; // C1：当前回合结束，释放 turn 引用
       // Stop hook：无论正常结束/中断/提前 return 都触发（不改 agent.end 总线语义）
-      hooks?.stop({ ok: finalText.length > 0, turns });
+      hooks?.stop?.({ ok: finalText.length > 0, turns });
       if (opts2.subagent) {
         bus.emit('agent.subagent', { goal: prompt, phase: 'complete', ok: finalText.length > 0, turns, session_id: sessionId, subagent_id: sessionId });
       }

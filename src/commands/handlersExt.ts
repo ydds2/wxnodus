@@ -3,7 +3,7 @@
 //       系统/视觉/连接/协作。每个命令真实可用（查询现有数据或执行确定性操作），
 //       输出统一 lines() 面板或单行。红线：只读工具不写库；路径操作限制在 dataDir。
 import { createHash, randomUUID, randomBytes } from 'node:crypto';
-import { join, basename, resolve, dirname } from 'node:path';
+import { join, basename, resolve, dirname, relative, normalize, sep } from 'node:path';
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, rmSync } from 'node:fs';
 import { appendAudit, saveCheckpoint, restoreCheckpoint, replaceSessionMessages } from '../store/db.js';
 import { parseSinceArg } from '../kernel/memory.js';
@@ -1702,6 +1702,13 @@ export const commands = {
     for (const p of patches) {
       const rel = String(p.file ?? '');
       const file = resolve(ctx.cwd, rel);
+      // 审查修复：补丁路径强约束——「仅 src/kernel 与 src/commands」此前只是 prompt 文本，
+      // 代码直接 resolve+writeFileSync 落盘（绕过 fs_write 的 SENSITIVE_WRITE 红线与审批链），
+      // 可写 data/permissions.json、settings.json、.env 或任意绝对路径；现与声明强制一致
+      const relNorm = normalize(relative(ctx.cwd, file));
+      const allowedDir = relNorm === `src${sep}kernel` || relNorm.startsWith(`src${sep}kernel${sep}`)
+        || relNorm === `src${sep}commands` || relNorm.startsWith(`src${sep}commands${sep}`);
+      if (!allowedDir) { applied.push({ file: rel, ok: false, reason: '路径超出允许范围（仅 src/kernel 与 src/commands 内）' }); continue; }
       if (!existsSync(file)) { applied.push({ file: rel, ok: false, reason: '文件不存在' }); continue; }
       const content = readFileSync(file, 'utf8');
       const oldText = String(p.old ?? '');

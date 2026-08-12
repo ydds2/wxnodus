@@ -76,9 +76,23 @@ export async function compactMessages(
   const head = opts.head ?? 3;
   const tail = opts.tail ?? 3;
   if (msgs.length <= head + tail + 2) return msgs;
+  // 审查修复：保尾从「最后一条 assistant.tool_calls」之后开始——多工具批量轮后
+  // 尾部 3 条可能是 [tool,tool,tool]，其配对的 assistant.tool_calls 被摘要/截断丢弃，
+  // 下一次模型调用违反 OpenAI 协议（tool 消息无配对）确定性 400，长会话被压缩杀死
+  let tailStart = msgs.length - tail;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]!;
+    const hasToolCalls = m.role === 'assistant' && (m as any).tool_calls?.length;
+    if (m.role === 'tool' || hasToolCalls) {
+      tailStart = Math.min(tailStart, i);
+    } else {
+      break;
+    }
+  }
+  if (tailStart < head) tailStart = Math.max(head, msgs.length - tail);
   const keepHead = msgs.slice(0, head);
-  const keepTail = msgs.slice(-tail);
-  const mid = msgs.slice(head, -tail);
+  const keepTail = msgs.slice(tailStart);
+  const mid = msgs.slice(head, tailStart);
   const summary = await summarize(mid.map(m => `${m.role}: ${contentToText(m.content).slice(0, 300)}`).join('\n')).catch(() => '');
   if (summary) {
     return [...keepHead, { role: 'system', content: `（自动压缩摘要）${summary.slice(0, 500)}` }, ...keepTail];

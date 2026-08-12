@@ -18,14 +18,14 @@ export interface Redline { pattern: RegExp; desc: string }
 
 // 硬红线清单（任何模式不可绕过——安全底线；修复 F13：扩展覆盖）
 export const HARD_REDLINES: Redline[] = [
-  // 文件系统破坏
-  { pattern: /rm\s+-rf\s+\/|rm\s+-rf\s+[a-zA-Z]:\\|rm\s+-rf\s+~(?:\s|$)/i, desc: '删除根目录/家目录' },
+  // 文件系统破坏（安全审查修复：~ 后跟 / 的变体、正斜杠系统盘）
+  { pattern: /rm\s+-rf\s+\/|rm\s+-rf\s+[a-zA-Z]:[\\/]|rm\s+-rf\s+~(?=[\\/]|\s|$)|rm\s+-rf\s+~\/*/i, desc: '删除根目录/家目录' },
   { pattern: /rm\s+-rf\s+(?:\$HOME|%USERPROFILE%|\/home\/|\/root)(?:\s|$)/i, desc: '删除家目录（变量变体）' },
   { pattern: /\bformat\s+[a-zA-Z]:/i, desc: '格式化磁盘' },
   { pattern: /\bdiskpart\b/i, desc: '磁盘分区操作' },
   { pattern: /\bmkfs(?:\s|$)/i, desc: '创建文件系统' },
   { pattern: /\bdd\s+.*\bof=\/dev\/(?:sd|nvme|hd)/i, desc: 'dd 写入裸设备' },
-  { pattern: /del\s+\/f\s+\/s\s+[a-zA-Z]:\\|Remove-Item\s+-Recurse\s+-Force\s+[a-zA-Z]:\\/i, desc: '递归删除系统盘' },
+  { pattern: /del\s+\/f\s+\/s\s+[a-zA-Z]:[\\/]|Remove-Item\s+-Recurse\s+-Force\s+[a-zA-Z]:[\\/]/i, desc: '递归删除系统盘' },
   // 系统/进程破坏
   { pattern: /\breg\s+delete\s+HKLM/i, desc: '修改系统注册表' },
   { pattern: /\b(shutdown|reboot|poweroff|halt|init\s+0|telinit\s+0|systemctl\s+(poweroff|reboot))\b/i, desc: '关机/重启' },
@@ -43,7 +43,9 @@ function hitRedline(tool: string, args: Record<string, any>): Redline | null {
 }
 
 // 敏感路径写保护（修复 F13）：fs_write/fs_edit 写入凭据/配置/密钥文件直接拒绝
-const SENSITIVE_WRITE = /(^|[\\/])(\.bashrc|\.zshrc|\.profile|\.bash_profile|\.ssh[\\/].*|\.env|\.env\.local|id_rsa|id_ed25519|authorized_keys|known_hosts|\.git[\\/]config|\.npmrc|\.pypirc)(\s|$)/i;
+// 审查修复：settings/permissions 原子写临时名（.tmp）纳入——此前锚点 (\s|$) 匹配不到
+// settings.json.tmp，临时文件可被写入（config.ts 原子写 next 覆盖，影响低但属红线缺口）
+const SENSITIVE_WRITE = /(^|[\\/])(\.bashrc|\.zshrc|\.profile|\.bash_profile|\.ssh[\\/].*|\.env|\.env\.local|id_rsa|id_ed25519|authorized_keys|known_hosts|\.git[\\/]config|\.npmrc|\.pypirc|settings\.json(?:\.tmp)?|permissions\.json(?:\.tmp)?)(\s|$)/i;
 
 // ── P0-2 审批规则文件（持久化 allow/deny/ask）──
 // data/permissions.json：[{ tool: 'fs_write', pattern: 'src/**', decision: 'allow' }]

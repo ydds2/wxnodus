@@ -202,6 +202,8 @@ export function createTaskRunner(opts: TaskRunnerOptions): TaskRunner {
     let code = await attempt();
     let tries = 0;
     while (code !== 0 && tries < (t.retries || 0)) {
+      // 审查修复：kill 后不得重试——取消的任务状态为 cancelled，重试会「复活」被取消的命令
+      if (row(t.id)?.status === 'cancelled') return;
       tries++;
       setStatus(t.id, 'running', { retries: tries });
       const backoff = 3 * 2 ** (tries - 1) * 1000;
@@ -210,6 +212,8 @@ export function createTaskRunner(opts: TaskRunnerOptions): TaskRunner {
       code = await attempt();
     }
     writer.end();
+    // 审查修复：kill 后收口幂等——cancelled 状态不被后续 finish 覆盖
+    if (row(t.id)?.status === 'cancelled') return;
     if (code === 124) finish(t.id, 'failed', 124, buffer, '执行超时（已 kill）');
     else if (code === 0) finish(t.id, 'success', 0, buffer, '');
     else finish(t.id, 'failed', code, buffer, `退出码 ${code}`);
@@ -218,6 +222,8 @@ export function createTaskRunner(opts: TaskRunnerOptions): TaskRunner {
   // ── agent 线：独立子代理会话（不污染主对话）──
   async function runAgent(t: TaskRow): Promise<void> {
     const r = await spawnSubagent(t.goal);
+    // 审查修复：kill 后不得覆盖状态（cancelled 保持）
+    if (row(t.id)?.status === 'cancelled') return;
     if (r.ok) finish(t.id, 'success', 0, r.output.slice(0, 4000), '');
     else finish(t.id, 'failed', 1, r.output.slice(0, 4000), '子代理执行失败');
   }
