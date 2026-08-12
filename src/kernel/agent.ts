@@ -10,7 +10,6 @@ import type { Db } from '../store/db.js';
 import { appendAudit } from '../store/db.js';
 import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
-import { REASONING_FIELDS } from './providers.js';
 import { resolveDataDir } from './paths.js';
 import { estimateMessagesTokens, compactMessages } from './memory.js';
 import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx } from './tools.js';
@@ -271,10 +270,6 @@ export function createAgent(opts: AgentOptions) {
     return scored.sort((a, b) => b.score - a.score).slice(0, limit);
   }
 
-  // 模型降级链（智能度增强）：429/5xx → 同 provider 备选模型自动降级重试
-  // 会话级保持（degradedModel 非空即不再逐轮重试）；/model 手动切换后重置
-  let degradedModel: string | null = null;
-
   const defaultCallModel = async (
     req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[] },
     streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal },
@@ -303,112 +298,34 @@ export function createAgent(opts: AgentOptions) {
 
     const key = keyRes.key;
 
-    const { buildChatRequest, mapHttpError, MODEL_CATALOG } = await import('./providers.js');
+    const { MODEL_CATALOG } = await import('./providers.js');
     const { resolveDefaultModel, resolveDefaultBaseURL } = await import('./defaults.js');
     // 有 key 即视为已配置：model/baseURL 缺失或非法（遗留命令串）时用默认，
     // 不降级规则脑——否则 /key 配置后仍提示「未配置」或 API 模型名非法
     const baseURL = resolveDefaultBaseURL(s);
     const model = MODEL_CATALOG.some(m => m.modelId === s.model) ? s.model! : resolveDefaultModel(s);
-    const httpReq = buildChatRequest({ baseURL, model, key, messages: req.messages as any, stream: true, tools: req.tools });
-    // 修复 F3：abort 信号接入真实 fetch（AbortSignal.any 合并超时与用户中断）
-    const fetchSignal = streamCtx?.signal
-      ? AbortSignal.any([AbortSignal.timeout(120000), streamCtx.signal])
-      : AbortSignal.timeout(120000);
-    let resp = await fetch(httpReq.url, { method: 'POST', headers: httpReq.headers, body: httpReq.body, signal: fetchSignal });
-    // 模型降级链：429/5xx 且未降级 → 同 provider 备选模型重试（单 key 语义，/model 可复位）
-    if (!resp.ok && (resp.status === 429 || resp.status >= 500) && !degradedModel) {
-      const provider = MODEL_CATALOG.find(m => m.modelId === model)?.provider ?? '';
-      const fallbacks = MODEL_CATALOG.filter(m => m.provider === provider && m.modelId !== model && !m.capabilities?.imageIn).slice(0, 2);
-      for (const fb of fallbacks) {
-        bus.emit('system.notice', { text: `模型 ${model} 不可用（HTTP ${resp.status}）——降级到 ${fb.modelId} 重试` });
-        const fbReq = buildChatRequest({ baseURL, model: fb.modelId, key, messages: req.messages as any, stream: true, tools: req.tools });
-        const r2 = await fetch(fbReq.url, { method: 'POST', headers: fbReq.headers, body: fbReq.body, signal: fetchSignal }).catch(() => null);
-        if (r2?.ok) { degradedModel = fb.modelId; resp = r2; break; }
-      }
-    }
-    if (!resp.ok) {
-      const err = new Error(mapHttpError(resp.status)) as Error & { status?: number };
-      err.status = resp.status;
+    // 架构 P2：LLM 流式调用服务化（llmStream.ts）——SSE 解析/降级链/用量提取
+    // 已抽离；agent 循环只消费结构化结果
+    const { callLlmStream } = await import('./llmStream.js');
+    const r = await callLlmStream({
+      baseURL, model, key,
+      messages: req.messages as any,
+      tools: req.tools,
+      signal: streamCtx?.signal,
+      onToken: streamCtx?.onToken,
+      onReasoning: streamCtx?.onReasoning,
+      onDegrade: (from, to, status) => bus.emit('system.notice', { text: `模型 ${from} 不可用（HTTP ${status}）——降级到 ${to} 重试` }),
+    });
+    if (!r.ok) {
+      const err = new Error(r.error) as Error & { status?: number };
+      err.status = r.status;
       throw err;
     }
-
-    // SSE 流式解析：delta.content 逐块推送 / delta.tool_calls 按 index 累积
-    // 思考模式字段多 provider 适配：按别名表识别「首个命中的字段」（deepseek/kimi/GLM
-    // 共用 reasoning_content，未来厂商可能用 thinking_content），回传时用同名字段——
-    // 思考模式必须回传（deepseek 实测否则 400），原字段名回传保证各家兼容
-    const reader = resp.body!.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    let full = '';
-    let fullReasoning = '';
-    let reasoningField: string | null = null;
-    const toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
-    let finished = false;
-    // B2 真实用量统计：OpenAI 兼容流最后一条数据携带 usage（prompt/completion tokens）
-    let usageData: { prompt_tokens?: number; completion_tokens?: number } | null = null;
-
-    while (!finished) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      let idx: number;
-      while ((idx = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, idx).trim();
-        buf = buf.slice(idx + 1);
-        if (!line.startsWith('data:')) continue;
-        const data = line.slice(5).trim();
-        if (data === '[DONE]') { finished = true; break; }
-        let j: any;
-        try { j = JSON.parse(data); } catch { continue; }
-        // C2 修复：SSE 错误对象（OpenAI/DeepSeek 流中报错如上下文超限）不得静默吞掉——
-        // 识别 j.error / finish_reason=error，抛带消息的 Error 走错误反馈路径
-        if (j?.error) {
-          const msg = j.error?.message ?? j.error?.code ?? 'SSE 流错误';
-          throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg).slice(0, 300));
-        }
-        if (j?.usage) usageData = j.usage;
-        const delta = j?.choices?.[0]?.delta;
-        const finishReason = j?.choices?.[0]?.finish_reason;
-        if (delta?.content) {
-          full += delta.content;
-          streamCtx?.onToken?.(delta.content);
-        }
-        // 思考字段别名探测（reasoning_content / thinking_content / reasoning）
-        for (const f of REASONING_FIELDS) {
-          const v = delta?.[f];
-          if (typeof v === 'string' && v) {
-            reasoningField ??= f;
-            fullReasoning += v;
-            // C5 修复：思考分片实时推送（UI reasoning.delta 事件，参考 CLI 流式思考同款）
-            streamCtx?.onReasoning?.(v);
-            break;
-          }
-        }
-        if (Array.isArray(delta?.tool_calls)) {
-          for (const tc of delta.tool_calls) {
-            const i = tc?.index ?? 0;
-            toolCalls[i] ??= { id: '', name: '', arguments: '' };
-            if (tc.id) toolCalls[i]!.id = tc.id;
-            if (tc.function?.name) toolCalls[i]!.name += tc.function.name;
-            if (tc.function?.arguments) toolCalls[i]!.arguments += tc.function.arguments;
-          }
-        }
-        // C2：finish_reason=error 且无内容 → 视为错误
-        if (finishReason === 'error' && !full) {
-          throw new Error('模型流结束于错误状态（无输出）');
-        }
-      }
-    }
-    // C2：正常结束但空内容（无 token 无工具调用）→ 错误而非静默空消息
-    if (!full && !toolCalls.length) {
-      throw new Error('模型返回空响应');
-    }
-
-    // B2 真实用量统计：异步写库（失败静默，不阻断对话）
-    if (usageData?.prompt_tokens || usageData?.completion_tokens) {
+    // B2 真实用量统计：异步写库（失败静默，不阻断对话）——model 用实际调用模型（降级后）
+    if (r.usage && (r.usage.promptTokens || r.usage.completionTokens)) {
       try {
         opts.db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`)
-          .run(sessionId, model, usageData.prompt_tokens ?? 0, usageData.completion_tokens ?? 0, Date.now());
+          .run(sessionId, r.model, r.usage.promptTokens, r.usage.completionTokens, Date.now());
       } catch { /* 统计失败不影响对话 */ }
       // 会话 token 预算（Gemini general.budget 对齐）：settings.budgetTokens>0 时，
       // 会话累计用量（usage_stats 实时 SUM）超预算 → 通知一次（防刷屏），
@@ -418,19 +335,18 @@ export function createAgent(opts: AgentOptions) {
 
     // 批量 tool_calls 全量返回（修复对比轮 5 缺口：同回合多工具调用不得丢弃——
     // OpenAI 流式按 index 累积全部 tool_calls，模型一次可并行请求多个工具）
-    const valid = toolCalls.filter(tc => tc.name || tc.arguments);
-    if (valid.length) {
-      const calls = valid.map(tc => ({
-        id: tc.id || `call_${Date.now().toString(36)}_${toolCalls.indexOf(tc)}`,
+    if (r.toolCalls.length) {
+      const calls = r.toolCalls.map(tc => ({
+        id: tc.id || `call_${Date.now().toString(36)}_${r.toolCalls.indexOf(tc)}`,
         name: tc.name,
         args: safeJson(tc.arguments),
-        reasoning: fullReasoning || undefined,
-        reasoningField: reasoningField ?? undefined,
+        reasoning: r.reasoning,
+        reasoningField: r.reasoningField,
       }));
       const first = calls[0]!;
       return { type: 'tool_call', id: first.id, name: first.name, args: first.args, reasoning: first.reasoning, reasoningField: first.reasoningField, calls };
     }
-    return { type: 'text', content: full, reasoning: fullReasoning || undefined, reasoningField: reasoningField ?? undefined };
+    return { type: 'text', content: r.content, reasoning: r.reasoning, reasoningField: r.reasoningField };
   };
   const callModel = opts.callModel ?? defaultCallModel;
 
@@ -1035,7 +951,12 @@ export function createAgent(opts: AgentOptions) {
 
   // 降级状态按会话隔离：切换会话即复位（避免跨会话错误保持降级模型）
   let degradedForSession = sessionId;
-  const resetDegradeIfNeeded = () => { if (degradedForSession !== sessionId) { degradedModel = null; degradedForSession = sessionId; } };
+  const resetDegradeIfNeeded = () => {
+    if (degradedForSession !== sessionId) {
+      void import('./llmStream.js').then(({ resetDegradedModel }) => resetDegradedModel());
+      degradedForSession = sessionId;
+    }
+  };
 
   return {
     async run(prompt: string, opts?: { images?: Array<{ dataUrl: string; mime: string }> }): Promise<AgentResult> {
