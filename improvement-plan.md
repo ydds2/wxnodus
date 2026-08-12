@@ -119,3 +119,22 @@ P1-5 错误归因分诊    → 全 AI 命令一致体验
 P1-6 MSYS 提示       → 半小时快赢
 P2-7~11             → 有密钥环境迭代
 ```
+
+---
+
+## 实施状态（2026-08-12 更新）
+
+| 项 | 状态 | 提交 |
+|---|---|---|
+| P0-1 /build LLM 化 | ✅ 完成 | 9f84aa7 后（spec 扩充 26 规则 + llmSpec.ts） |
+| P0-2 记忆删改闭环 | ✅ 完成 | updateMessage + memory_update/delete 工具 + /memory update |
+| P0-3 搜索缓存 | ✅ 完成 | 同查询 5 分钟（8861ms→0ms 实测） |
+| P1-4 冷启动预热 | ✅ 完成 | 常驻模式后台预载 embedder |
+| P1-5 错误归因分诊 | ✅ 审计确认 | 25 处密钥归因已全覆盖，无需改动 |
+| P1-6 MSYS 提示 | ✅ 完成 | args.ts 检测 + 修正指引 |
+| P2-1 web_search 引擎参数 | ✅ 完成 | engine=auto/ddg/bing + /search --engine |
+| P2-4 cron 秒级 | ✅ 完成 | every Ns + 10s 轮询 |
+| 巩固：memory_write 黑洞化 | ✅ 完成 | 孤儿 md → 专用记忆会话（闭环断裂修复） |
+| 巩固：scaffold_build 规格优先级 | ✅ 完成 | AI 传入 spec 不再被丢弃 |
+| 巩固：状态码归因 | ✅ 完成 | /claw + http_get 4xx/5xx 明确报错 |
+| P2-2 /gate 严格模式、P2-3 cron 结果回执、P2-5 /term 管道、P2-6 TUI 折叠 | ⬜ 未实施 | 后续迭代 |
