@@ -2395,6 +2395,31 @@ export const commands = {
     ]);
   });
 
+  // 深度：/review——任务自查（Codex /review 对齐）——AI 以审查者视角复查刚完成的工作
+  // 内置审查指令（不依赖用户 agent 文件）；可指定审查范围（文件/目录/最近改动）
+  bus.register('/review', async (args) => {
+    const scope = args.join(' ').trim();
+    if (!ctx.agent) return 'review 不可用：当前环境未提供 agent';
+    const REVIEW_PROMPT = `你是资深代码审查专家（审查者视角——不修改任何文件，只审查）。
+审查对象：用户指定的改动/文件/任务结果（本次子代理上下文独立，先读相关文件再下结论）。
+审查要点：①逻辑错误与边界条件 ②安全漏洞（注入/密钥泄露/权限越界）③性能瓶颈 ④可维护性 ⑤与需求的一致性。
+输出格式：
+## 问题清单（按严重度排序）
+- [P0/P1/P2] 文件:行号 — 问题描述与修复建议
+## 总体评价（3-5 句）
+未发现 P0/P1 级问题时明确说「未发现 P0/P1 级问题」。`;
+    ctx.bus.emit('system.notice', { text: `自查开始：「${(scope || '最近工作').slice(0, 50)}」…` });
+    const r = await ctx.agent.spawnSubagent(scope || '审查当前工作目录最近的改动（git diff 或最近修改的文件）', undefined, {
+      systemPromptOverride: REVIEW_PROMPT,
+      mode: 'plan', // 只读审查——plan 模式禁止写
+      tools: ['fs_read', 'grep', 'ls', 'find_files', 'repo_map', 'memory_search'],
+    });
+    return lines(` 自查结果（${r.turns} 轮） `, [
+      ...String(r.output ?? '').split('\n').slice(0, 40).map(l => ` ${l.slice(0, 110)}`),
+      r.ok ? '' : ' ⚠ 审查未完整执行（无密钥时需 /key set 后使用 AI 审查）',
+    ]);
+  });
+
   // /delegate：派发只读子代理（P0-2：--agent <name> 指定自定义 agent 定义）
   bus.register('/delegate', async (args) => {
     const agentIdx = args.indexOf('--agent');

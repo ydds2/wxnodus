@@ -57,6 +57,8 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/agent': 'confirm', '/agent list': 'safe', '/agent run': 'confirm',
   // 全方面：/arena 多模型对战——执行任务（消耗 token 与模型调用），需确认
   '/arena': 'confirm',
+  // 深度：/review 任务自查——只读子代理执行，需确认（AI 调用）
+  '/review': 'confirm',
   // ── danger：高危，强制人工确认（AI 预审不可放行）──
   '/deploy': 'danger', '/script run': 'danger',
   '/webhook add': 'danger', '/webhook del': 'danger',

@@ -78,14 +78,46 @@ export async function browserClose(): Promise<string> {
   return '浏览器会话已关闭';
 }
 
-/** 可访问性树 → 紧凑文本快照（AI 理解页面结构；对齐 browser_snapshot 语义） */
+/** 可交互元素清单（深度：AI 精准选择器的依据——按钮/链接/输入框/下拉的稳定选择器建议） */
+async function interactiveElements(): Promise<string> {
+  try {
+    // 字符串函数在浏览器上下文执行（Node tsconfig 无 DOM lib，避免类型报错）
+    const els = await page.evaluate(`(() => {
+      const out = [];
+      const seen = new Set();
+      for (const el of document.querySelectorAll('a, button, input, select, textarea, [role="button"], [role="link"]')) {
+        if (out.length >= 40) break;
+        const tag = el.tagName.toLowerCase();
+        const text = (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 60);
+        const id = el.id ? '#' + el.id : '';
+        const name = el.name ? '[name="' + el.name + '"]' : '';
+        const ph = el.placeholder ? '[placeholder="' + el.placeholder + '"]' : '';
+        const type = tag === 'input' ? ' type=' + (el.type || 'text') : '';
+        const href = el.href ? ' → ' + el.href.slice(0, 80) : '';
+        const key = tag + id + name + ph + text;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push('<' + tag + id + name + ph + type + '> ' + (text || '(无文本)') + href);
+      }
+      return out;
+    })()`);
+    if (!Array.isArray(els) || !els.length) return '';
+    return `可交互元素（选择器建议：<tag>#id / <tag>[name=…] / <tag>:has-text("文本")）：
+${els.join('\n')}`;
+  } catch {
+    return '';
+  }
+}
+
+/** 可访问性树 → 紧凑文本快照（AI 理解页面结构；深度：含可交互元素清单） */
 async function snapshotText(): Promise<string> {
   try {
     const title = await page.title();
     const url = page.url();
     const body = await page.locator('body').innerText({ timeout: 8000 }).catch(() => '');
-    const clean = String(body ?? '').replace(/\s+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').slice(0, 3000);
-    return `标题：${title}\n地址：${url}\n正文：\n${clean}`;
+    const clean = String(body ?? '').replace(/\s+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').slice(0, 2500);
+    const els = await interactiveElements();
+    return `标题：${title}\n地址：${url}\n正文：\n${clean}${els ? `\n\n${els}` : ''}`;
   } catch (e: any) {
     return `快照失败：${String(e?.message ?? e).slice(0, 200)}`;
   }
@@ -165,10 +197,28 @@ export async function browserScreenshot(): Promise<BrowserToolResult> {
   return { ok: true, text: `截图已保存：${shot.path}（/img <路径> 可视觉分析）` };
 }
 
-/** browser_snapshot：当前页面可访问性快照 */
+/** browser_snapshot：当前页面可访问性快照（深度：含可交互元素清单） */
 export async function browserSnapshot(): Promise<BrowserToolResult> {
   const boot = await ensureBrowser();
   if (!boot.ok) return { ok: false, text: boot.error };
   if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
   return { ok: true, text: await snapshotText() };
+}
+
+/** browser_wait：等待元素出现（SPA 动态加载）或固定毫秒——交互前确保页面就绪 */
+export async function browserWait(selector: string, timeoutMs = 15000): Promise<BrowserToolResult> {
+  const boot = await ensureBrowser();
+  if (!boot.ok) return { ok: false, text: boot.error };
+  if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
+  const sel = String(selector ?? '').trim();
+  try {
+    if (!sel) {
+      await new Promise(r => setTimeout(r, Math.min(Number(timeoutMs) || 2000, 15000)));
+      return { ok: true, text: `已等待 ${Math.min(Number(timeoutMs) || 2000, 15000)}ms` };
+    }
+    await page.locator(sel).first().waitFor({ state: 'visible', timeout: Number(timeoutMs) || 15000 });
+    return { ok: true, text: `元素已出现：${sel}` };
+  } catch (e: any) {
+    return { ok: false, text: `等待超时（${sel} 未出现）：${String(e?.message ?? e).slice(0, 150)}` };
+  }
 }

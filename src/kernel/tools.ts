@@ -161,9 +161,11 @@ export function coreTools(): Record<string, ToolDef> {
         }
         let out = '';
         // C12 修复：流式截断——长输出（如 dir /s）在命令结束前无界累积会撑爆内存
+        let truncated = false;
         const appendOut = (d: Buffer) => {
+          if (out.length >= 20000) { truncated = true; return; }
           out += d.toString();
-          if (out.length > 20000) out = out.slice(0, 20000); // 保留 8000 截断余量
+          if (out.length > 20000) { out = out.slice(0, 20000); truncated = true; } // 保留 8000 截断余量
         };
         child.stdout?.on('data', appendOut);
         child.stderr?.on('data', appendOut);
@@ -176,7 +178,8 @@ export function coreTools(): Record<string, ToolDef> {
             return rejectP(new Error(`退出码 ${code}${out.trim() ? `：\n${out.slice(0, 2000)}` : ''}`));
           });
         });
-        return wrapDanger(out.slice(0, 8000) || '（无输出）');
+        // 截断诚实标注：模型知道输出不完整（避免基于残缺输出下结论）
+        return wrapDanger(`${out.slice(0, 8000) || '（无输出）'}${truncated ? '\n…[输出过长已截断，请用更精确的命令分段获取]' : ''}`);
       } catch (e: any) {
         ctx.hookFailure?.('bash', String(e?.message ?? e).slice(0, 500));
         return wrapDanger(`命令失败：${e.message?.slice(0, 500)}`);
@@ -512,11 +515,20 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const browserSnapshot: ToolDef = {
-    schema: { type: 'function', function: { name: 'browser_snapshot', description: '当前页面可访问性快照（标题/地址/正文文本）——理解页面当前状态。', parameters: { type: 'object', properties: {} } } },
+    schema: { type: 'function', function: { name: 'browser_snapshot', description: '当前页面快照（标题/地址/正文 + 可交互元素清单——按钮/链接/输入框的选择器建议）。交互前先调用本工具确定选择器。', parameters: { type: 'object', properties: {} } } },
     danger: false,
     async run() {
       const { browserSnapshot } = await import('./browser.js');
       const r = await browserSnapshot();
+      return r.text;
+    },
+  };
+  const browserWait: ToolDef = {
+    schema: { type: 'function', function: { name: 'browser_wait', description: '等待元素出现（SPA 动态加载后交互前调用）或固定毫秒。selector 为空时按毫秒等待（默认 2s）。', parameters: { type: 'object', properties: { selector: { type: 'string', description: 'CSS 选择器（空则按 timeout_ms 等待）' }, timeout_ms: { type: 'number', description: '超时毫秒（默认 15000）' } } } } },
+    danger: false,
+    async run({ selector, timeout_ms }) {
+      const { browserWait } = await import('./browser.js');
+      const r = await browserWait(String(selector ?? ''), Number(timeout_ms) || 15000);
       return r.text;
     },
   };
@@ -835,7 +847,7 @@ export function coreTools(): Record<string, ToolDef> {
         .join('\n');
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_close: browserClose, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {
