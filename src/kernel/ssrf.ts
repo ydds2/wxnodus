@@ -164,6 +164,11 @@ async function proxyFetchOnce(
   }
   try { mkdirSync(dir, { recursive: true }); } catch { /* 忽略 */ }
   if (r.status !== 0 && !body) {
+    // A25：curl 缺失时如实归因（此前 ENOENT 裸抛到上层，与网络失败混为一谈）
+    const err = r.error as NodeJS.ErrnoException | undefined
+    if (err?.code === 'ENOENT') {
+      return { error: '代理请求不可用：未找到 curl（Windows 10+ 内置 curl.exe；如被移除请重新安装或改用直连）' };
+    }
     return { error: `代理请求失败（curl 退出码 ${r.status ?? '?'}）：${String(r.stderr ?? '').slice(0, 200)}` };
   }
   let status = 200;

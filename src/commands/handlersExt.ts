@@ -5,7 +5,7 @@
 import { createHash, randomUUID, randomBytes } from 'node:crypto';
 import { join, basename, extname, resolve, dirname } from 'node:path';
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, rmSync } from 'node:fs';
-import { searchMessages, appendAudit, saveCheckpoint, restoreCheckpoint } from '../store/db.js';
+import { searchMessages, appendAudit, saveCheckpoint, restoreCheckpoint, replaceSessionMessages } from '../store/db.js';
 import { parseSinceArg } from '../kernel/memory.js';
 import { estimateTokens, compactKeepHeadTail } from '../kernel/memory.js';
 import { runGate } from '../build/gate.js';
@@ -591,15 +591,9 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       if (!row) return `未找到快照${id ? ` #${id}` : ''}`;
       const d = JSON.parse(row.data) as { messages?: Array<{ id?: number; role: string; content: string; tool_call_id?: string | null; archived?: number; ts?: number }> };
       if (!Array.isArray(d.messages)) return '快照数据不完整';
-      // 恢复：清空当前消息 → 重插快照消息（F20：保留原始 id/ts/archived——向量索引关联与黑洞状态不丢）
-      ctx.db.prepare(`DELETE FROM messages WHERE session_id=?`).run(sid);
-      const ins = ctx.db.prepare(`INSERT INTO messages (id, session_id, role, content, tool_call_id, archived, ts) VALUES (?,?,?,?,?,?,?)`);
-      const now = Date.now();
-      d.messages.forEach((m, i) => {
-        const rawId = Number(m.id);
-        const mid = Number.isInteger(rawId) && rawId > 0 ? rawId : undefined;
-        ins.run(mid ?? null, sid, m.role, String(m.content ?? ''), m.tool_call_id ?? null, m.archived === 1 ? 1 : 0, Number(m.ts) || now + i);
-      });
+      // A25：统一恢复函数——清理 FTS 旧行 + 重置 AUTOINCREMENT 序列再重插
+      // （此前手写 DELETE+重插：FTS5 触发器使同 rowid 重插 constraint failed）
+      replaceSessionMessages(ctx.db, sid, d.messages);
       return `已从快照${id ? ` #${id}` : ''}恢复 ${d.messages.length} 条消息（保留原始 id/archived）`;
     }
     if (sub === 'clear') {
@@ -616,14 +610,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (!row) return '无快照可回滚（/checkpoint save 保存；/undo 撤销前自动保存）';
     const d = JSON.parse(row.data) as { messages?: Array<{ id?: number; role: string; content: string; tool_call_id?: string | null; archived?: number; ts?: number }> };
     if (!Array.isArray(d.messages)) return '快照数据不完整';
-    ctx.db.prepare(`DELETE FROM messages WHERE session_id=?`).run(sid);
-    const ins = ctx.db.prepare(`INSERT INTO messages (id, session_id, role, content, tool_call_id, archived, ts) VALUES (?,?,?,?,?,?,?)`);
-    const now = Date.now();
-    d.messages.forEach((m, i) => {
-      const rawId = Number(m.id);
-      const mid = Number.isInteger(rawId) && rawId > 0 ? rawId : undefined;
-      ins.run(mid ?? null, sid, m.role, String(m.content ?? ''), m.tool_call_id ?? null, m.archived === 1 ? 1 : 0, Number(m.ts) || now + i);
-    });
+    // A25：统一恢复函数（清理 FTS + 重置序列——此前同 rowid 重插 constraint failed）
+    replaceSessionMessages(ctx.db, sid, d.messages);
     return `已回滚到最近快照（${d.messages.length} 条消息，保留原始 id/archived）`;
   });
 
@@ -1285,8 +1273,13 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     try {
       const { captureScreen } = await import('../kernel/computer/index.js');
       const shot = await captureScreen(region ? { region } : {});
-      const out = shot ? join(ctx.dataDir, `capture-${Date.now().toString(36)}.png`) : null;
-      if (shot && out) writeFileSync(out, shot.png, 'utf8');
+      // A25：原生模块/图形环境缺失时 captureScreen 返回 null——如实报失败，
+      // 不再输出「屏幕已捕获 → null」的假成功文案（此前 /img null 必然报文件不存在）
+      if (!shot) {
+        return '截图不可用：原生截图模块缺失或无图形环境（CI/远程会话）——请改用 /img <本地图片路径> 分析';
+      }
+      const out = join(ctx.dataDir, `capture-${Date.now().toString(36)}.png`);
+      writeFileSync(out, shot.png, 'utf8');
       return region
         ? `区域切片已捕获（${region.width}×${region.height} @ ${region.x},${region.y}）→ ${out}（/img <路径> 分析）`
         : `屏幕已捕获 → ${out}（可用 /img <路径> 分析）`;

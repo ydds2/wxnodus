@@ -4,7 +4,6 @@ import type { ScrollBoxHandle } from '@wxnodus/ink'
 import { evictInkCaches } from '@wxnodus/ink'
 import { type RefObject, useCallback } from 'react'
 
-import { buildSetupRequiredSections, SETUP_REQUIRED_TITLE } from '../content/setup.js'
 import { introMsg, toTranscriptMessages } from '../domain/messages.js'
 import { ZERO } from '../domain/usage.js'
 import { type GatewayClient } from '../gatewayClient.js'
@@ -156,11 +155,10 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
     async (msg?: string, title?: string, keepCurrent = false) => {
       const setup = await rpc<SetupStatusResponse>('setup.status', {})
 
+      // A25：未配置时提示继续（规则脑兜底可用——不阻塞，哲学不变）；
+      // 此前 gateway 硬编码 true 掩盖真实状态，这里按真实值走提示路径
       if (setup?.provider_configured === false) {
-        panel(SETUP_REQUIRED_TITLE, buildSetupRequiredSections())
-        patchUiState({ status: 'setup required' })
-
-        return null
+        sys('未配置模型密钥——规则脑模式可用（/key set <key> 配置完整能力）')
       }
 
       if (!keepCurrent) {
@@ -295,11 +293,9 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       patchUiState({ status: 'resuming…' })
 
       rpc<SetupStatusResponse>('setup.status', {}).then(setup => {
+        // A25：未配置时提示继续（规则脑兜底可用——与 startNewSession 同策略）
         if (setup?.provider_configured === false) {
-          panel(SETUP_REQUIRED_TITLE, buildSetupRequiredSections())
-          patchUiState({ status: 'setup required' })
-
-          return
+          sys('未配置模型密钥——规则脑模式可用（/key set <key> 配置完整能力）')
         }
 
         const previousSid = getUiState().sid

@@ -46,6 +46,8 @@ export interface WxGatewayKernel {
     /** A24 第四类修复：委派暂停真实生效（暂停后新委派被内核拒绝） */
     setDelegationPaused?(paused: boolean): void
     getDelegationPaused?(): boolean
+    /** A25：委派深度上限（delegation.status caps 真实数据源） */
+    getMaxSpawnDepth?(): number
   }
   commandBus: CommandBus
   dataDir: string
@@ -109,6 +111,9 @@ export class GatewayClient extends EventEmitter {
   private pendingClarify: PendingClarify | null = null
   // delegation.status 数据源（活跃子代理集合，agent.subagent 事件驱动）
   private activeSubagents = new Set<string>()
+  /** A25：活跃子代理详情（subagent_id → goal/status，subagent.start/complete 事件维护）——
+   *  delegation.status active 真实结构（此前 gateway 发 string[] 与类型 object[] 错配） */
+  private activeSubagentDetail = new Map<string, { goal: string; started_at: number; status: string }>()
   // A12：会话切换 timeline 事件（loadMessages 一次性注入）
   private lastSessionEvent: { sid: string; text: string } | null = null
   private sessionSeq = 0
@@ -116,6 +121,8 @@ export class GatewayClient extends EventEmitter {
   private running = false
   private currentSessionId = 'default'
   private finalText = ''
+  /** A25：/tools disable 禁用集（进程内真实状态——updateTools 热生效） */
+  private toolDisableSet: Set<string> | null = null
   // ── 语音模式（本地 whisper：/voice on 后 Ctrl+B 推按对话）──
   private voiceEnabled = false
   private voiceTts = false
@@ -178,14 +185,43 @@ export class GatewayClient extends EventEmitter {
         }
       },
       // C5 修复：思考分片实时转发（UI reasoning.delta 事件，thinking 面板实时可见）
+      // A25：子代理思考分流（session_id 以 :sub 结尾 → subagent.thinking 富事件——
+      // 此前子代理推理混入主面板或直接丢失，agentsOverlay 思考区恒空）
       'reasoning.delta': (p) => {
         const text = String(p?.text ?? '')
-        if (text) this.publish({ type: 'reasoning.delta', payload: { text } })
+        if (!text) return
+        const sid = String(p?.session_id ?? '')
+        if (sid.endsWith(':sub')) {
+          this.publish({
+            type: 'subagent.thinking',
+            payload: { subagent_id: sid, text, goal: '', task_index: 0 },
+          })
+          return
+        }
+        this.publish({ type: 'reasoning.delta', payload: { text } })
       },
       'agent.tool': (p) => {
         const name = String(p?.name ?? 'tool')
         // C3 修复：工具调用稳定 id（内核生成，start/complete 同 id——UI 工具卡正确闭合）
         const toolId = String(p?.toolId ?? `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
+        // A25：子代理工具分流（session_id 以 :sub 结尾 → subagent.tool 富事件——
+        // agentsOverlay 工具/笔记区此前恒空）
+        const sid = String(p?.session_id ?? '')
+        if (sid.endsWith(':sub')) {
+          if (p?.phase === 'start') {
+            this.publish({
+              type: 'subagent.tool',
+              payload: {
+                subagent_id: sid,
+                tool_name: name,
+                tool_preview: String(p?.args ? JSON.stringify(p.args).slice(0, 160) : ''),
+                goal: '',
+                task_index: 0,
+              },
+            })
+          }
+          return
+        }
         // A22：实时任务清单同步（工具序列 → ✓/[>] 清单，随事件送 UI）
         this.turnTodos = syncToolTodo(this.turnTodos, name, toolId, p?.phase === 'start', p?.args, Boolean(p?.ok))
         if (p?.phase === 'start') {
@@ -241,11 +277,30 @@ export class GatewayClient extends EventEmitter {
         // C4 修复：subagent_id 稳定（内核生成——/agents 面板 complete 事件可匹配闭合）
         const subagentId = String(p?.subagent_id ?? `sub-${Date.now().toString(36)}`)
         // delegation.status 数据源：维护活跃子代理列表
-        if (phase === 'start') this.activeSubagents.add(subagentId)
-        else this.activeSubagents.delete(subagentId)
+        if (phase === 'start') {
+          this.activeSubagents.add(subagentId)
+          this.activeSubagentDetail.set(subagentId, { goal: String(p?.goal ?? ''), started_at: Date.now(), status: 'running' })
+        } else {
+          this.activeSubagents.delete(subagentId)
+          const d = this.activeSubagentDetail.get(subagentId)
+          if (d) this.activeSubagentDetail.set(subagentId, { ...d, status: p?.ok ? 'completed' : 'error' })
+        }
         this.publish({
           type: phase === 'start' ? 'subagent.start' : 'subagent.complete',
-          payload: { subagent_id: subagentId, goal: String(p?.goal ?? ''), status: p?.ok ? 'completed' : 'error', task_index: 0 },
+          // A25：complete 补真实字段（turns/summary——此前仅 status，面板完成
+          // 态缺轮次与摘要信息）
+          payload: {
+            subagent_id: subagentId,
+            goal: String(p?.goal ?? ''),
+            status: p?.ok ? 'completed' : 'error',
+            task_index: 0,
+            ...(phase === 'complete'
+              ? {
+                  summary: String(p?.text ?? p?.output ?? '').slice(0, 400) || undefined,
+                  api_calls: Number(p?.turns ?? 0) || undefined,
+                }
+              : {}),
+          },
         })
       },
       'agent.end': (p) => {
@@ -329,6 +384,14 @@ export class GatewayClient extends EventEmitter {
       case 'session.interrupt': return this.sessionInterrupt() as T
       case 'session.compress': return this.sessionCompress(params) as T
       case 'session.branch': return this.sessionBranch(params) as T
+      // A25 第四类修复：死 RPC 真实实现（/save /rollback 此前可达但必失败）
+      case 'session.save': return this.sessionSave(params) as T
+      case 'rollback.list': return this.rollbackList(params) as T
+      case 'rollback.diff': return this.rollbackDiff(params) as T
+      case 'rollback.restore': return this.rollbackRestore(params) as T
+      case 'tools.configure': return this.toolsConfigure(params) as T
+      case 'reload.env': return this.reloadEnv(params) as T
+      case 'paste.collapse': return this.pasteCollapse(params) as T
       case 'prompt.background': return this.promptBackground(params) as T
       case 'process.stop': return this.processStop() as T
       case 'config.get': return this.configGet(params) as T
@@ -527,11 +590,16 @@ export class GatewayClient extends EventEmitter {
   // delegation.status 真实数据：活跃子代理（agent.subagent start/complete 事件驱动）
   // A24 第四类修复：paused 读内核真实状态（此前硬编码 false——/delegate pause 后
   // 状态条只见瞬时闪烁，下一次 status 轮询即被覆盖回 false）
+  // A25：caps 读内核真实限制（taskRunner 并发上限 + agent 委派深度上限——
+  // 此前并发硬编码 4，与真实默认 2 不符）
   private delegationStatus(): unknown {
     return {
-      active: [...this.activeSubagents],
-      max_concurrent_children: 4,
-      max_spawn_depth: 3,
+      active: [...this.activeSubagents].map(id => {
+        const d = this.activeSubagentDetail.get(id)
+        return d ? { subagent_id: id, goal: d.goal, started_at: d.started_at, status: d.status } : { subagent_id: id }
+      }),
+      max_concurrent_children: this.kernel.taskRunner?.getMaxConcurrent?.() ?? 2,
+      max_spawn_depth: this.kernel.agent.getMaxSpawnDepth?.() ?? 3,
       paused: this.kernel.agent.getDelegationPaused?.() ?? false,
     }
   }
@@ -1055,6 +1123,164 @@ export class GatewayClient extends EventEmitter {
   // A24 第四类修复：session.fork 死 RPC 已移除——UI 只用 session.branch
   // （/branch 同链路，无 UI 调用方）；gatewayTypes 同步清理（见 gatewayTypes.ts）
 
+  // ── A25 第四类修复：死 RPC 真实实现（/save /rollback /tools /reload /paste.collapse）──
+  private async sessionSave(params: Record<string, unknown>): Promise<unknown> {
+    const sid = String(params.session_id ?? this.currentSessionId)
+    try {
+      const { mkdirSync, writeFileSync } = await import('node:fs')
+      const { join: joinPath } = await import('node:path')
+      const dir = joinPath(this.kernel.dataDir, 'exports')
+      mkdirSync(dir, { recursive: true })
+      const rows = this.loadMessages(sid)
+      const lines = rows.map(m => {
+        const role = m.role === 'user' ? '### 用户' : m.role === 'assistant' ? '### 助手' : m.role === 'tool' ? '### 工具' : '### 系统'
+        const body = String(m.text ?? '').trim()
+        return body ? `${role}\n\n${body}\n` : null
+      }).filter(Boolean)
+      if (!lines.length) return { ok: false, error: '会话为空——没有可导出的消息' }
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const file = joinPath(dir, `session-${sid.slice(0, 8)}-${stamp}.md`)
+      writeFileSync(file, `# 会话导出 ${sid}\n\n${lines.join('\n---\n\n')}\n`, 'utf8')
+      return { ok: true, file }
+    } catch (e: any) {
+      return { ok: false, error: `导出失败：${String(e?.message ?? e).slice(0, 120)}` }
+    }
+  }
+
+  // /rollback：桥接内核 checkpoints 表（与 /checkpoint 同源数据——真实快照）
+  private async rollbackList(params: Record<string, unknown>): Promise<unknown> {
+    try {
+      const sid = String(params.session_id ?? this.currentSessionId)
+      const rows = this.kernel.db.prepare(
+        `SELECT id, data, ts FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 20`
+      ).all(sid) as Array<{ id: number; data: string; ts: number }>
+      return {
+        enabled: true,
+        checkpoints: rows.map(r => {
+          const d = JSON.parse(r.data) as { kind?: string; messages?: unknown[] }
+          const n = Array.isArray(d.messages) ? d.messages.length : 0
+          return {
+            hash: `#${r.id}`,
+            message: `${d.kind ?? 'checkpoint'}（${n} 条消息）`,
+            timestamp: new Date(r.ts).toLocaleString('zh-CN', { hour12: false }),
+          }
+        }),
+      }
+    } catch { return { enabled: false, checkpoints: [] } }
+  }
+
+  private async rollbackDiff(params: Record<string, unknown>): Promise<unknown> {
+    try {
+      const sid = String(params.session_id ?? this.currentSessionId)
+      const id = Number(String(params.hash ?? '').replace(/^#/, ''))
+      if (!Number.isInteger(id) || id <= 0) return { error: `无效的快照编号：${params.hash}` }
+      const row = this.kernel.db.prepare(`SELECT data FROM checkpoints WHERE id=? AND session_id=?`).get(id, sid) as { data: string } | undefined
+      if (!row) return { error: `快照 #${id} 不存在（/rollback list 查看）` }
+      const d = JSON.parse(row.data) as { messages?: Array<{ role: string; content: string }> }
+      const msgs = Array.isArray(d.messages) ? d.messages : []
+      const current = this.loadMessages(sid)
+      const stat = `快照 ${msgs.length} 条消息 · 当前 ${current.length} 条`
+      const a = msgs.map(m => `${m.role}: ${String(m.content ?? '').slice(0, 80)}`).join('\n')
+      const b = current.map(m => `${m.role}: ${String(m.text ?? '').slice(0, 80)}`).join('\n')
+      const rendered = a === b ? '（与当前一致）' : `快照：\n${a.slice(0, 2000)}\n\n当前：\n${b.slice(0, 2000)}`
+      return { rendered, stat }
+    } catch (e: any) {
+      return { error: String(e?.message ?? e).slice(0, 120) }
+    }
+  }
+
+  private async rollbackRestore(params: Record<string, unknown>): Promise<unknown> {
+    try {
+      const sid = String(params.session_id ?? this.currentSessionId)
+      const id = Number(String(params.hash ?? '').replace(/^#/, ''))
+      if (!Number.isInteger(id) || id <= 0) return { success: false, error: `无效的快照编号：${params.hash}` }
+      const row = this.kernel.db.prepare(`SELECT data FROM checkpoints WHERE id=? AND session_id=?`).get(id, sid) as { data: string } | undefined
+      if (!row) return { success: false, error: `快照 #${id} 不存在（/rollback list 查看）` }
+      const d = JSON.parse(row.data) as { messages?: Array<{ id?: number; role: string; content: string; tool_call_id?: string | null; archived?: number; ts?: number }> }
+      if (!Array.isArray(d.messages)) return { success: false, error: '快照数据不完整' }
+      const before = (this.kernel.db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(sid) as { c: number }).c
+      // A25：统一恢复函数——清理 FTS 旧行 + 重置 AUTOINCREMENT 序列再重插
+      // （此前手写 DELETE+重插：FTS5 触发器使同 rowid 重插 constraint failed）
+      const { replaceSessionMessages } = await import('../store/db.js')
+      replaceSessionMessages(this.kernel.db, sid, d.messages)
+      this.publish({ type: 'session.info', payload: this.buildInfo() })
+      return { success: true, restored_to: `#${id}`, history_removed: before, reason: `已从快照 #${id} 恢复 ${d.messages.length} 条消息` }
+    } catch (e: any) {
+      return { success: false, error: String(e?.message ?? e).slice(0, 120) }
+    }
+  }
+
+  // /tools enable|disable：内置工具集启用/禁用（updateTools 热生效——真实状态持久于进程内）
+  private async toolsConfigure(params: Record<string, unknown>): Promise<unknown> {
+    const action = String(params.action ?? '')
+    const names = Array.isArray(params.names) ? params.names.map(String) : []
+    if (!names.length) return { unknown: ['（未指定工具集）'] }
+    try {
+      const { coreTools } = await import('../kernel/tools.js')
+      const all = Object.keys(coreTools())
+      const disabled = new Set<string>(this.toolDisableSet ?? [])
+      const changed: string[] = []
+      const unknown: string[] = []
+      for (const name of names) {
+        const tools = all.filter(t => t.startsWith(name.replace(/-/g, '_')))
+        if (!tools.length) { unknown.push(name); continue }
+        for (const t of tools) {
+          if (action === 'disable') disabled.add(t)
+          else disabled.delete(t)
+          changed.push(t)
+        }
+      }
+      this.toolDisableSet = disabled
+      const base = { ...coreTools() }
+      for (const t of disabled) delete base[t]
+      this.kernel.agent.updateTools?.(base)
+      this.publish({ type: 'session.info', payload: this.buildInfo() })
+      return { changed: [...new Set(changed)], unknown }
+    } catch (e: any) {
+      return { unknown: [`配置失败：${String(e?.message ?? e).slice(0, 120)}`] }
+    }
+  }
+
+  // /reload：重读 .env 到 process.env（真实合并计数——不伪造）
+  private async reloadEnv(params: Record<string, unknown>): Promise<unknown> {
+    try {
+      const { readFileSync, existsSync } = await import('node:fs')
+      const { join: joinPath } = await import('node:path')
+      const candidates = [joinPath(this.kernel.dataDir, '.env'), joinPath(this.kernel.cwd, '.env')]
+      let updated = 0
+      for (const p of candidates) {
+        if (!existsSync(p)) continue
+        const raw = readFileSync(p, 'utf8')
+        for (const line of raw.split(/\r?\n/)) {
+          const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line)
+          if (!m || line.trim().startsWith('#')) continue
+          const key = m[1]!
+          const value = m[2]!.replace(/^["']|["']$/g, '')
+          if (process.env[key] !== value) { process.env[key] = value; updated++ }
+        }
+      }
+      return { updated }
+    } catch (e: any) {
+      return { updated: 0, error: String(e?.message ?? e).slice(0, 120) }
+    }
+  }
+
+  // paste.collapse：大段粘贴落盘为临时文件（路径回显——模型可读长文本；
+  // 此前 RPC 不存在导致静默失败、snippet 永不标注路径）
+  private async pasteCollapse(params: Record<string, unknown>): Promise<unknown> {
+    const text = String(params.text ?? '')
+    if (!text.trim()) return { path: undefined }
+    try {
+      const { mkdirSync, writeFileSync } = await import('node:fs')
+      const { join: joinPath } = await import('node:path')
+      const dir = joinPath(this.kernel.dataDir, 'paste')
+      mkdirSync(dir, { recursive: true })
+      const file = joinPath(dir, `paste-${Date.now().toString(36)}.txt`)
+      writeFileSync(file, text, 'utf8')
+      return { path: file }
+    } catch { return { path: undefined } }
+  }
+
   private async sessionActiveList(params: Record<string, unknown>): Promise<unknown> {
     const current = String(params.current_session_id ?? '')
     let rows: any[] = []
@@ -1068,6 +1294,19 @@ export class GatewayClient extends EventEmitter {
     } catch {
       rows = []
     }
+    // A25：会话状态真实化——当前会话且回合运行中 → working；后台任务表存在该
+    // 会话运行/排队任务 → waiting；否则 idle（此前恒 idle——working/waiting
+    // 字形与配色分支永不出现）
+    let sessionHasBgTask = (sid: string): boolean => false
+    try {
+      const bgRows = this.kernel.db.prepare(
+        `SELECT COUNT(*) AS c FROM tasks WHERE parent_id = ? AND status IN ('running','queued')`
+      ).get(current) as { c: number } | undefined
+      sessionHasBgTask = sid => {
+        if (sid !== current) return false
+        return Number(bgRows?.c ?? 0) > 0
+      }
+    } catch { /* 任务表不可用按无 */ }
     const sessions = rows.map((r: any) => ({
       id: String(r.id),
       title: String(r.title ?? ''),
@@ -1075,7 +1314,12 @@ export class GatewayClient extends EventEmitter {
       started_at: Number(r.started_at ?? 0) / 1000,
       message_count: Number(r.message_count ?? 0),
       model: this.kernel.settings.model ?? '',
-      status: 'idle' as const,
+      status:
+        String(r.id) === current && this.running
+          ? ('working' as const)
+          : sessionHasBgTask(String(r.id))
+            ? ('waiting' as const)
+            : ('idle' as const),
     }))
 
     return { sessions }
@@ -1215,7 +1459,15 @@ export class GatewayClient extends EventEmitter {
     const key = String(params.key ?? '')
 
     if (key === 'mtime') {
-      return { mtime: 0 }
+      // A25：真实配置文件 mtime（此前硬编码 0——useConfigWatcher 的配置热生效
+      // 轮询被永久禁用，手工改 settings.json 永不触发 reload MCP）
+      try {
+        const f = join(this.kernel.dataDir, 'settings.json')
+        const st = statSync(f)
+        return { mtime: Math.floor(st.mtimeMs) }
+      } catch {
+        return { mtime: 0 }
+      }
     }
 
     const s = this.kernel.settings as Record<string, any>
@@ -1317,8 +1569,9 @@ export class GatewayClient extends EventEmitter {
 
   private setupStatus(): unknown {
     const s = this.kernel.settings
-    // wxnodus 哲学：无 key 时规则脑兜底（诚实回答 + /key 提示），无需强制配置——
-    // 始终放行，避免 Setup Required 门禁阻塞本地可用的规则脑模式
+    // A25：诚实返回真实配置状态（此前硬编码 true——UI 的「setup required」门禁
+    // 永不触发是设计意图，但返回值造假）。无 key 时规则脑兜底仍可用（哲学不变），
+    // 由 UI 端改为提示继续而非阻塞。
     const configured = Boolean(s.apiKeyEnc)
 
     if (configured) {
@@ -1328,7 +1581,7 @@ export class GatewayClient extends EventEmitter {
       if (!s.baseURL) s.baseURL = fallback.baseURL
     }
 
-    return { provider_configured: true }
+    return { provider_configured: configured }
   }
 
   private approvalRespond(params: Record<string, unknown>): unknown {

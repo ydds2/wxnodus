@@ -53,7 +53,13 @@ export function runHook(cmd: string, event: HookEvent, data: unknown): string {
   } catch (e: any) {
     // 命令本身失败（非零退出）也回传 stdout 供 DENY 判断；超时/其他异常返回空
     if (e?.stdout) return String(e.stdout).trim().slice(0, 4000);
-    return '';
+    // A25：hook 执行失败（shell 缺失/超时）如实通知——此前静默返回空，
+    // 配置了 hooks 的用户以为 hook 生效了，实际从未执行
+    const code = (e as NodeJS.ErrnoException)?.code
+    if (code === 'ENOENT') {
+      return `[hook:${event}] 执行失败：未找到 ${isWin ? 'powershell.exe' : '/bin/bash'}（hook 未运行——请检查 PATH）`;
+    }
+    return `[hook:${event}] 执行失败：${String(e?.message ?? e).slice(0, 100)}（hook 未运行）`;
   }
 }
 

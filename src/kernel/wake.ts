@@ -2,13 +2,21 @@
 // 链路：ffmpeg 持续采集 PCM 管道 → 滑动窗口（默认 2.5s）→ 窗口能量低于阈值跳过转写
 //       （省 CPU）→ whisper tiny 本地转写 → 唤醒词匹配（wxnodus/唤醒/wake）→ onWake 回调。
 // 纯自研（复用 voice.ts 的采集器与 WavWriter、vad.ts 的能量工具）；音频仅内存不落盘（临时 wav 用后即删）。
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import { pcmToInt16, rmsOfBlock } from './vad.js';
 import { WavWriter } from './voice.js';
+
+/** A25：ffmpeg 存在性探测（与 voice.ts 同款——wake 启动前置检查） */
+function hasFfmpeg(): boolean {
+  try {
+    const r = spawnSync('ffmpeg', ['-version'], { stdio: 'pipe', timeout: 10000 });
+    return r.status === 0;
+  } catch { return false; }
+}
 
 /** 唤醒词变体（大小写不敏感、容忍前后缀——"hey wxnodus" 也能命中）。 */
 export const WAKE_WORDS = ['wxnodus', '唤醒', 'wake', '沃克斯诺德斯'];
@@ -84,6 +92,11 @@ export class WakeListener {
       // 懒加载避免循环依赖：device 由调用方（gateway）经 resolveVoiceConfig 传入
       return { ok: false, error: '未指定录音设备（WXNODUS_VOICE_DEVICE 或自动枚举失败）' };
     }
+    // A25：前置 ffmpeg 探测（与 voice.ts 同款）——缺失时立即诚实失败 + 安装指引，
+    // 而非 spawn 异步 error 后把「ffmpeg 缺失」误报成「麦克风被占用」
+    if (!hasFfmpeg()) {
+      return { ok: false, error: '唤醒模式缺少 ffmpeg——请安装并加入 PATH（winget install ffmpeg）' };
+    }
     try {
       const args = [
         '-y', '-f', 'dshow', '-i', `audio=${this.cfg.device}`,
@@ -91,8 +104,15 @@ export class WakeListener {
         '-f', 's16le', 'pipe:1',
       ];
       this.proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'ignore'] });
-      this.proc.on('error', () => {
-        if (!this.stopped) this.cfg.onError?.('ffmpeg 采集启动失败（麦克风被占用？）');
+      this.proc.on('error', (e: Error) => {
+        if (!this.stopped) {
+          // spawn 异步 error：区分「二进制缺失（ENOENT——启动时已探测，属竞态）」
+          // 与「设备占用/驱动失败」——如实归因，不冒充成功
+          const code = (e as NodeJS.ErrnoException)?.code;
+          this.cfg.onError?.(code === 'ENOENT'
+            ? 'ffmpeg 采集启动失败：未找到 ffmpeg（请安装并加入 PATH：winget install ffmpeg）'
+            : `ffmpeg 采集启动失败（麦克风被占用？）：${String(e?.message ?? e).slice(0, 80)}`);
+        }
       });
       this.proc.stdout!.on('data', (chunk: Buffer) => {
         this.chunks.push(chunk);

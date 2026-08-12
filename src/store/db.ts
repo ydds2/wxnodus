@@ -253,6 +253,43 @@ export function restoreCheckpoint<T = unknown>(db: Db, sessionId: string): T | n
   return row ? JSON.parse(row.data) as T : null;
 }
 
+export interface SnapshotMessage {
+  id?: number;
+  role: string;
+  content: string;
+  tool_call_id?: string | null;
+  archived?: number;
+  ts?: number;
+}
+
+/**
+ * A25：以快照消息替换会话消息（/checkpoint restore /rewind /rollback.restore 共用）。
+ * 此前各处手写 DELETE+重插——AUTOINCREMENT 的 sqlite_sequence 与 FTS5 触发器
+ * messages_ai（AFTER INSERT 同步 messages_fts）会导致重插同 rowid 时
+ * 「constraint failed」：DELETE messages 不清理 FTS 行，重插撞 FTS UNIQUE。
+ * 统一修复：先删 FTS 旧行 + 重置 sequence，再按快照重插（保留原始 id/ts/archived）。
+ */
+export function replaceSessionMessages(db: Db, sessionId: string, messages: SnapshotMessage[]): number {
+  const oldIds = (db.prepare(`SELECT id FROM messages WHERE session_id=?`).all(sessionId) as Array<{ id: number }>).map(r => r.id);
+  db.prepare(`DELETE FROM messages WHERE session_id=?`).run(sessionId);
+  // FTS5 清理旧行（触发器只 AFTER INSERT——DELETE 不会自动清 FTS）
+  try {
+    if (oldIds.length) {
+      db.prepare(`DELETE FROM messages_fts WHERE rowid IN (${oldIds.map(() => '?').join(',')})`).run(...oldIds);
+    }
+    // AUTOINCREMENT 序列重置——让快照原始 id 可恢复
+    db.prepare(`DELETE FROM sqlite_sequence WHERE name='messages'`).run();
+  } catch { /* FTS/序列不可用：降级重插 */ }
+  const ins = db.prepare(`INSERT INTO messages (id, session_id, role, content, tool_call_id, archived, ts) VALUES (?,?,?,?,?,?,?)`);
+  const now = Date.now();
+  messages.forEach((m, i) => {
+    const rawId = Number(m.id);
+    const mid = Number.isInteger(rawId) && rawId > 0 ? rawId : undefined;
+    ins.run(mid ?? null, sessionId, m.role, String(m.content ?? ''), m.tool_call_id ?? null, m.archived === 1 ? 1 : 0, Number(m.ts) || now + i);
+  });
+  return messages.length;
+}
+
 // 会话 fork：复制会话（含全部消息）到新会话——分支会话不回写源
 // 自动恢复候选：最后一条非 system 消息是 user（回合未完成）的最新会话——null 则无
 export function pickResumeSession(db: Db): string | null {

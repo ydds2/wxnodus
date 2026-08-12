@@ -2,10 +2,21 @@
 // 设计：工具 = { schema(OpenAI function calling 格式), danger, run(args, ctx) }
 //      危险工具结果包裹 <untrusted_tool_result>（防提示注入——模型把工具输出当指令）
 // 参考：Claude Code tools-reference（15 工具）、aider 工具集、Codex function call
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { sanitizedEnv } from './env.js';
+
+/** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性） */
+let grepChecked: boolean | null = null;
+function hasGrep(): boolean {
+  if (grepChecked !== null) return grepChecked;
+  try {
+    const r = spawnSync('grep', ['--version'], { stdio: 'pipe', timeout: 5000 });
+    grepChecked = r.status === 0;
+  } catch { grepChecked = false; }
+  return grepChecked;
+}
 
 export interface ToolCtx {
   cwd: string;
@@ -245,10 +256,23 @@ export function coreTools(): Record<string, ToolDef> {
     danger: false,
     async run({ pattern, path = '.' }, ctx) {
       // 修复 F14：execFileSync 参数数组（不经 shell），消除命令注入
+      // A25：Windows 无 grep 时诚实报错——此前 ENOENT 被 catch 成「（无匹配）」，
+      // 模型拿到假阴性结论（工具假装可用）
+      if (!hasGrep()) {
+        return 'grep 工具不可用：未找到 grep 二进制（Windows 请安装 Git for Windows 或配置 PATH；或改用 find_files）';
+      }
       try {
         const out = execFileSync('grep', ['-rn', String(pattern), resolve(ctx.cwd, path)], { encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
         return out.slice(0, 8000) || '（无匹配）';
-      } catch { return '（无匹配）'; }
+      } catch (e: any) {
+        // 退出码 1 = 无匹配（grep 语义）；其余（如 2=文件错误）如实报错
+        const code = (e as NodeJS.ErrnoException & { status?: number })?.status;
+        if (code === 1) return '（无匹配）';
+        const msg = (e as NodeJS.ErrnoException)?.code === 'ENOENT'
+          ? 'grep 工具不可用：未找到 grep 二进制（Windows 请安装 Git for Windows 或配置 PATH）'
+          : `grep 失败：${String(e?.message ?? e).slice(0, 120)}`;
+        return msg;
+      }
     },
   };
   const httpGet: ToolDef = {

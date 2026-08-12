@@ -80,6 +80,8 @@ export interface TaskRunner {
   recoverOrphans(): number;
   /** 清理已结束任务（默认保留 100 条最近） */
   clean(keep?: number): number;
+  /** A25：并发上限读取（delegation.status caps 真实数据源——此前 UI 硬编码 4） */
+  getMaxConcurrent(): number;
 }
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
@@ -345,6 +347,11 @@ export function createTaskRunner(opts: TaskRunnerOptions): TaskRunner {
          )`
       ).run(keep);
       return r.changes ?? 0;
+    },
+
+    // A25：并发上限读取（delegation.status caps 真实数据源——此前 UI 硬编码 4）
+    getMaxConcurrent(): number {
+      return maxConcurrent;
     },
   };
 }

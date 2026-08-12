@@ -20,7 +20,9 @@ export type EventType =
   | 'agent.subagent'
   | 'agent.error'
   | 'agent.end'
-  | 'ui.confirm'
+  | 'agent.goal'
+  | 'reasoning.delta'
+  | 'theme.changed'
   | 'system.notice'
   // 并行任务系统（taskRunner）：任务创建/完成（payload: id/kind/parent_id/status/exit_code/duration_ms）
   | 'jobs.created'

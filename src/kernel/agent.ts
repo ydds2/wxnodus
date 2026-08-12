@@ -522,7 +522,9 @@ export function createAgent(opts: AgentOptions) {
   async function executeTool(name: string, args: Record<string, any>): Promise<string> {
     // C3 修复：工具调用稳定 id（start/complete 同 id，UI 工具卡可正确闭合）
     const toolId = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-    bus.emit('agent.tool', { name, args, phase: 'start', toolId });
+    // A25：事件带 session_id 标记（子代理会话为 <主>:sub 后缀——gateway 据此
+    // 分流为 subagent.tool 富事件；此前子代理工具事件混入主面板或直接丢失）
+    bus.emit('agent.tool', { name, args, phase: 'start', toolId, session_id: sessionId });
     // A22：实时状态一句话——正在做什么（基于工具名/参数动态生成，UI 状态行显示）
     const ctxBrief = briefToolContext(name, args);
     bus.emit('agent.stage', { stage: `正在${ctxBrief}` });
@@ -559,7 +561,7 @@ export function createAgent(opts: AgentOptions) {
         cmdLevel = classifyCommand(String(args?.command ?? ''));
         if (cmdLevel === 'redline') {
           auditTool('tool.redline', { tool: 'wx_cmd', command: String(args?.command ?? '').slice(0, 120) });
-          bus.emit('agent.tool', { name, phase: 'complete', ok: false, toolId });
+          bus.emit('agent.tool', { name, phase: 'complete', ok: false, toolId, session_id: sessionId });
           return `命令被 AI 通道拒绝：${String(args?.command ?? '').slice(0, 80)}（涉及权限/密钥/安全/退出——请用户手动执行）`;
         }
         if (cmdLevel === 'safe') {
@@ -615,7 +617,7 @@ export function createAgent(opts: AgentOptions) {
       if (hooks) {
         const allowed = await hooks.preToolUse(name, args);
         if (!allowed) {
-          bus.emit('agent.tool', { name, phase: 'complete', ok: false, toolId });
+          bus.emit('agent.tool', { name, phase: 'complete', ok: false, toolId, session_id: sessionId });
           return `工具被 hook 拒绝（${name}）`;
         }
       }
@@ -643,7 +645,7 @@ export function createAgent(opts: AgentOptions) {
           } catch { /* 留证失败静默（无桌面环境等） */ }
         })();
       }
-      bus.emit('agent.tool', { name, phase: 'complete', ok: true, ms: Date.now() - t0, toolId });
+      bus.emit('agent.tool', { name, phase: 'complete', ok: true, ms: Date.now() - t0, toolId, session_id: sessionId });
       hooks?.postToolUse(name, out);
       // A21：工具执行结果留痕（耗时/成败）
       auditTool('tool.executed', { tool: name, ok: true, ms: Date.now() - t0 });
@@ -652,7 +654,7 @@ export function createAgent(opts: AgentOptions) {
       if (name === 'fs_write' || name === 'fs_edit') scheduleAutoRegression();
       return out;
     } catch (e: any) {
-      bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId });
+      bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId, session_id: sessionId });
       auditTool('tool.executed', { tool: name, ok: false, ms: Date.now() - t0, error: String(e?.message ?? e).slice(0, 120) });
       return `工具执行异常：${e?.message?.slice(0, 300) ?? e}`;
     }
@@ -674,7 +676,8 @@ export function createAgent(opts: AgentOptions) {
       // C5：onReasoning 实时转发思考分片（UI reasoning.delta）
       const racing = callModel(req, {
         onToken: (t) => bus.emit('agent.token', { text: t }),
-        onReasoning: (r) => bus.emit('reasoning.delta', { text: r }),
+        // A25：reasoning 带 session_id 标记（子代理 → gateway 分流 subagent.thinking）
+        onReasoning: (r) => bus.emit('reasoning.delta', { text: r, session_id: sessionId }),
         signal: st.signal.abortController.signal,
       });
       racing.catch(() => { /* race 输家静默（abort 后模型 reject 不再 unhandled） */ });
@@ -980,6 +983,8 @@ export function createAgent(opts: AgentOptions) {
     // A24 第四类修复：委派暂停真实状态（delegation.pause RPC → 内核生效）
     setDelegationPaused(paused: boolean) { delegationPaused = paused; },
     getDelegationPaused(): boolean { return delegationPaused; },
+    // A25：委派深度上限读取（delegation.status caps 真实数据源——此前 UI 硬编码 3）
+    getMaxSpawnDepth(): number { return MAX_SUBAGENT_DEPTH; },
     // F7：运行中注入消息（busy_input_mode: steer）
     steer(text: string): boolean { return steer(text); },
     // P1b：插件热重载——重建工具表（extraTools 合并 + excludeTools 过滤）

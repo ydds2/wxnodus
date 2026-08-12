@@ -84,9 +84,11 @@ describe('runHook 边界', () => {
     const out = runHook('node -e "console.log(\\"x\\".repeat(9000))"', 'stop', {});
     expect(out.length).toBeLessThanOrEqual(4000);
   });
-  it('命令崩溃返回空串（不抛）', () => {
-    expect(runHook('node -e "process.exit(3)"', 'preToolUse', {})).toBe('');
-    expect(runHook('不存在的命令xyz', 'preToolUse', {})).toBe('');
+  // A25：命令失败如实返回失败信息（此前静默空串——配置了 hooks 的用户
+  // 以为 hook 生效了，实际从未执行）
+  it('命令崩溃返回失败说明（不抛、不静默）', () => {
+    expect(runHook('node -e "process.exit(3)"', 'preToolUse', {})).toContain('[hook:preToolUse] 执行失败');
+    expect(runHook('不存在的命令xyz', 'preToolUse', {})).toContain('[hook:preToolUse] 执行失败');
   });
   it('HOOK_EVENTS 枚举 12 类', () => {
     expect(HOOK_EVENTS).toEqual(['userPromptSubmit', 'preToolUse', 'postToolUse', 'stop', 'sessionStart', 'sessionEnd', 'preCompact', 'postCompact', 'subagentStart', 'subagentStop', 'postToolUseFailure', 'notification']);

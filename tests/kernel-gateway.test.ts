@@ -530,3 +530,241 @@ describe('buildInfo 死数据接线', () => {
     expect(info.update_behind).toBe(3)
   })
 })
+
+// A25 第五轮审计：死 RPC 真实实现 + 假数据消除
+describe('死 RPC 真实实现（/save /rollback /tools /reload /paste.collapse）', () => {
+  function makeKernel(extra: Record<string, any> = {}) {
+    const bus = createEventBus(dir)
+    return {
+      dataDir: dir,
+      cwd: process.cwd(),
+      db,
+      mem,
+      config: { get: () => ({}), getKey: () => undefined },
+      bus,
+      settings: { model: 'glm-4v-flash' },
+      commandBus: createCommandBus(),
+      agent: {
+        run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
+        abort() {},
+        setMode() {},
+        getMode: () => 'smart',
+        setSessionId() {},
+        getSessionId: () => 's1',
+        steer: () => true,
+        updateTools() {},
+        setDelegationPaused() {},
+        getDelegationPaused: () => false,
+        getMaxSpawnDepth: () => 3,
+      },
+      applyModel() {},
+      setMode() {},
+      setTheme() {},
+      setThinking() {},
+      requestExit() {},
+      ...extra,
+    }
+  }
+
+  it('session.save 导出会话为 markdown（真实落盘）', async () => {
+    db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES ('s1','t',1,1)`).run()
+    db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES ('s1','user','你好',1)`).run()
+    const g = new GatewayClient(makeKernel() as any)
+    const r = await g.request('session.save', { session_id: 's1' })
+    expect(r.ok).toBe(true)
+    const { existsSync, readFileSync } = await import('node:fs')
+    expect(existsSync(r.file)).toBe(true)
+    expect(readFileSync(r.file, 'utf8')).toContain('你好')
+  })
+
+  it('session.save 空会话诚实报错', async () => {
+    const g = new GatewayClient(makeKernel() as any)
+    const r = await g.request('session.save', { session_id: 's1' })
+    expect(r.ok).toBe(false)
+  })
+
+  it('rollback list/diff/restore 桥接 checkpoints 表（真实往返）', async () => {
+    db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES ('s1','t',1,1)`).run()
+    db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES ('s1','user','旧消息',1)`).run()
+    // 保存快照（与内核 /checkpoint save 同路径）
+    const { saveCheckpoint } = await import('../src/store/db.js')
+    const rows = db.prepare(`SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id='s1'`).all()
+    saveCheckpoint(db, 's1', { kind: 'manual', messages: rows })
+    const g = new GatewayClient(makeKernel() as any)
+    // list
+    const list = await g.request('rollback.list', { session_id: 's1' })
+    expect(list.enabled).toBe(true)
+    expect(list.checkpoints.length).toBe(1)
+    expect(list.checkpoints[0].hash).toBe('#1')
+    // diff
+    const diff = await g.request('rollback.diff', { hash: '#1', session_id: 's1' })
+    expect(diff.stat).toContain('快照 1 条消息')
+    // restore（先改坏会话再回滚）
+    db.prepare(`UPDATE messages SET content='被改坏' WHERE session_id='s1'`).run()
+    const restore = await g.request('rollback.restore', { hash: '#1', session_id: 's1' })
+    expect(restore.success).toBe(true)
+    expect(restore.history_removed).toBe(1)
+    const after = db.prepare(`SELECT content FROM messages WHERE session_id='s1'`).get() as { content: string }
+    expect(after.content).toBe('旧消息')
+  })
+
+  it('tools.configure enable/disable 调用 updateTools（真实热生效）', async () => {
+    const updated: Array<Record<string, unknown>> = []
+    const g = new GatewayClient(makeKernel({ agent: {
+      run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
+      abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true,
+      updateTools: (t: Record<string, unknown>) => updated.push(t),
+    } }) as any)
+    const r = await g.request('tools.configure', { action: 'disable', names: ['fs_'] })
+    expect(r.changed.length).toBeGreaterThan(0)
+    expect(updated.length).toBe(1)
+    expect(updated[0]).not.toHaveProperty('fs_read')
+    // 再 enable 恢复
+    await g.request('tools.configure', { action: 'enable', names: ['fs_'] })
+    expect(updated[1]).toHaveProperty('fs_read')
+  })
+
+  it('reload.env 合并 .env 到 process.env（真实计数）', async () => {
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync(`${dir}/.env`, 'WXNODUS_TEST_RELOAD=abc\n', 'utf8')
+    delete process.env.WXNODUS_TEST_RELOAD
+    const g = new GatewayClient(makeKernel() as any)
+    const r = await g.request('reload.env', {})
+    expect(r.updated).toBe(1)
+    expect(process.env.WXNODUS_TEST_RELOAD).toBe('abc')
+    // 二次加载无变化 → 0
+    const r2 = await g.request('reload.env', {})
+    expect(r2.updated).toBe(0)
+  })
+
+  it('paste.collapse 大段粘贴落盘并返回路径', async () => {
+    const g = new GatewayClient(makeKernel() as any)
+    const r = await g.request('paste.collapse', { text: 'x'.repeat(5000) })
+    expect(r.path).toBeTruthy()
+    const { existsSync, readFileSync } = await import('node:fs')
+    expect(existsSync(r.path)).toBe(true)
+    expect(readFileSync(r.path, 'utf8').length).toBe(5000)
+  })
+})
+
+describe('假数据消除（A25）', () => {
+  it('config.get mtime 返回真实 settings.json mtime（非恒 0）', async () => {
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync(`${dir}/settings.json`, '{"model":"x"}', 'utf8')
+    const bus = createEventBus(dir)
+    const g = new GatewayClient({
+      dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
+      settings: { model: 'x' }, commandBus: createCommandBus(),
+      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
+    } as any)
+    const r = await g.request('config.get', { key: 'mtime' })
+    expect(r.mtime).toBeGreaterThan(0)
+  })
+
+  it('setup.status 返回真实 provider_configured（有 key → true）', async () => {
+    const bus = createEventBus(dir)
+    const g = new GatewayClient({
+      dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
+      settings: { model: 'x', apiKeyEnc: 'enc1:abc' }, commandBus: createCommandBus(),
+      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
+    } as any)
+    const r = await g.request('setup.status', {})
+    expect(r.provider_configured).toBe(true)
+  })
+
+  it('setup.status 无 key → provider_configured false（诚实）', async () => {
+    const bus = createEventBus(dir)
+    const g = new GatewayClient({
+      dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
+      settings: { model: 'x' }, commandBus: createCommandBus(),
+      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
+    } as any)
+    const r = await g.request('setup.status', {})
+    expect(r.provider_configured).toBe(false)
+  })
+
+  it('delegation.status caps 读内核真实限制（并发 2/深度 3）', async () => {
+    const bus = createEventBus(dir)
+    const g = new GatewayClient({
+      dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
+      settings: { model: 'x' }, commandBus: createCommandBus(),
+      agent: {
+        run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart',
+        setSessionId() {}, getSessionId: () => 's1', steer: () => true,
+        setDelegationPaused() {}, getDelegationPaused: () => true, getMaxSpawnDepth: () => 3,
+      },
+      taskRunner: { getMaxConcurrent: () => 2 },
+      applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
+    } as any)
+    const r = await g.request('delegation.status', {})
+    expect(r.max_concurrent_children).toBe(2)
+    expect(r.max_spawn_depth).toBe(3)
+    expect(r.paused).toBe(true)
+  })
+
+  it('session.active_list 当前运行会话 status=working（非恒 idle）', async () => {
+    const bus = createEventBus(dir)
+    db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES ('s1','t',1,1)`).run()
+    const g = new GatewayClient({
+      dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
+      settings: { model: 'x' }, commandBus: createCommandBus(),
+      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
+    } as any)
+    ;(g as any).running = true
+    const r = await g.request('session.active_list', { current_session_id: 's1' })
+    expect(r.sessions[0].status).toBe('working')
+  })
+})
+
+describe('子代理富事件分流（A25）', () => {
+  it('reasoning.delta 带 :sub 后缀 → subagent.thinking 事件', async () => {
+    const bus = createEventBus(dir)
+    const g = new GatewayClient({
+      dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
+      settings: { model: 'x' }, commandBus: createCommandBus(),
+      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
+    } as any)
+    const events: any[] = []
+    g.on('event', e => events.push(e))
+    g.start()
+    g.drain()
+    bus.emit('reasoning.delta', { text: '子代理思考中', session_id: 's1:sub' })
+    expect(events.some(e => e.type === 'subagent.thinking')).toBe(true)
+    const ev = events.find(e => e.type === 'subagent.thinking')
+    expect(ev.payload.subagent_id).toBe('s1:sub')
+    expect(ev.payload.text).toContain('子代理思考中')
+    // 主代理 reasoning 不误分流
+    events.length = 0
+    bus.emit('reasoning.delta', { text: '主代理思考', session_id: 's1' })
+    expect(events.some(e => e.type === 'subagent.thinking')).toBe(false)
+    expect(events.some(e => e.type === 'reasoning.delta')).toBe(true)
+  })
+
+  it('agent.tool 带 :sub 后缀 → subagent.tool 事件', async () => {
+    const bus = createEventBus(dir)
+    const g = new GatewayClient({
+      dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
+      settings: { model: 'x' }, commandBus: createCommandBus(),
+      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
+    } as any)
+    const events: any[] = []
+    g.on('event', e => events.push(e))
+    g.start()
+    g.drain()
+    bus.emit('agent.tool', { name: 'fs_read', args: { path: 'x' }, phase: 'start', toolId: 't1', session_id: 's1:sub' })
+    const ev = events.find(e => e.type === 'subagent.tool')
+    expect(ev).toBeTruthy()
+    expect(ev.payload.tool_name).toBe('fs_read')
+    // 主代理工具不误分流（仍发 tool.start）
+    events.length = 0
+    bus.emit('agent.tool', { name: 'fs_read', args: { path: 'x' }, phase: 'start', toolId: 't2', session_id: 's1' })
+    expect(events.some(e => e.type === 'subagent.tool')).toBe(false)
+    expect(events.some(e => e.type === 'tool.start')).toBe(true)
+  })
+})

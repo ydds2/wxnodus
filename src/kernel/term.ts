@@ -85,7 +85,12 @@ export function createTerminalManager(opts: { dataDir: string; cwd: string }): T
 
         return { ok: true, id };
       } catch (e: any) {
-        return { ok: false, error: `终端启动失败：${String(e?.message ?? e).slice(0, 120)}` };
+        // A25：node-pty 原生模块缺失时给安装指引（此前裸报模块加载错误）
+        const msg = String(e?.message ?? e)
+        const hint = /node-pty|Cannot find module|NODE_MODULE_VERSION|was compiled against/i.test(msg)
+          ? '（node-pty 原生模块缺失/不匹配——运行 npm install node-pty 或重装依赖后重试）'
+          : ''
+        return { ok: false, error: `终端启动失败：${msg.slice(0, 120)}${hint}` };
       }
     },
 
