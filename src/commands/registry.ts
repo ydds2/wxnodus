@@ -12,7 +12,7 @@ export const SLASH: string[] = [
   // 构建（概念编译器）
   '/build', '/deploy', '/forge', '/skill', '/learn', '/gate', '/fdr', '/evidence', '/plan', '/flow', '/import', '/assimilate',
   // 安全（合规红线）
-  '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt', '/yolo', '/afk', '/security',
+  '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt', '/yolo', '/afk', '/security', '/offline',
   // 系统
   '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init',
   // 视觉与媒体（可视化 AI 技能）
@@ -34,7 +34,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆', '/assimilate': '◆',
-  '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨',
+  '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨', '/offline': '⬇',
   '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉',
   '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿', '/computer': '⛭',
   '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
@@ -92,6 +92,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/sandbox': '分层沙盒（L0-L3）',
   '/compliance': '合规五项',
   '/security': '安全注入通道（sudo/secret，关闭即清缓存）',
+  '/offline': '离线 token 包（本地 LLM：pack status/download + 切换，断网可用）',
   '/consent': '授权存证',
   '/audit': '审计导出',
   '/encrypt': '加密工具',

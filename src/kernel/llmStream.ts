@@ -46,6 +46,20 @@ export type LlmStreamResult =
 
 /** 流式单轮调用（直连 fetch；失败返回错误对象不抛出——调用方决定语义） */
 export async function callLlmStream(opts: LlmStreamOpts): Promise<LlmStreamResult> {
+  // 离线 token 包：model 前缀 offline: → 本地 LLM 通道（transformers.js，断网可用；
+  // 无工具调用——agent 离线模式为纯文本对话，工具类任务由规则脑/确定性工具兜底）
+  if (opts.model.startsWith('offline:')) {
+    const { callOfflineLlm } = await import('./offlineModel.js');
+    const r = await callOfflineLlm(opts.model, {
+      messages: opts.messages,
+      signal: opts.signal,
+      timeoutMs: opts.timeoutMs,
+      onToken: opts.onToken,
+      onReasoning: opts.onReasoning,
+    });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, content: r.content, toolCalls: [], usage: r.usage, model: opts.model };
+  }
   const timeoutMs = opts.timeoutMs ?? 120_000;
   const fetchSignal = opts.signal
     ? AbortSignal.any([AbortSignal.timeout(timeoutMs), opts.signal])

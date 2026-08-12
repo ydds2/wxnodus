@@ -301,8 +301,60 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return `会话已重命名：${name.slice(0, 50)}`;
   });
 
-  // /undo：轮级回滚（机制补强）——撤销最近 N 轮（默认 1 轮），撤销前自动保存 checkpoint
-  //   F20 修复：软撤销（UPDATE archived=1 而非 DELETE——recall 全量永不丢，黑洞可检索）；
+  // /offline：离线 token 包管理（审查完善：本地 LLM 通道——离线拼图最后一块）
+  //   /offline pack status  —— 各离线组件就绪状态 + 缓存占用
+  //   /offline pack download [模型] —— 预下载文本 LLM（之后完全断网可用）
+  //   /offline pack dir     —— 模型缓存路径
+  //   /offline on           —— 切换离线模型（= /model 离线 Qwen2.5-1.5B）
+  bus.register('/offline', async (args) => {
+    const { OFFLINE_MODELS, offlineModelId, isOfflineModelReady, offlineCacheBytes, downloadOfflineModel } = await import('../kernel/offlineModel.js');
+    const { resolveDataDir } = await import('../kernel/paths.js');
+    const sub = args[0];
+    if (sub === 'pack' && args[1] === 'status') {
+      const models = ['offline:Qwen2.5-1.5B', 'offline:Qwen2.5-3B'];
+      const mb = (offlineCacheBytes() / 1024 / 1024).toFixed(0);
+      return lines(' 离线 token 包 ', [
+        ` 文本 LLM（transformers.js + onnxruntime-node，随包零新增依赖）：`,
+        ...models.map(m => {
+          const info = OFFLINE_MODELS[m]!;
+          return `   ${isOfflineModelReady(m) ? '✅' : '⬇'} ${m}（${info.sizeGB}，${info.speed}）${isOfflineModelReady(m) ? '已就绪' : '未下载——/offline pack download ' + m.replace('offline:', '')}`;
+        }),
+        ` 缓存占用：${mb} MB @ ${resolveDataDir(process.cwd())}`,
+        ` 其他离线组件：记忆 embedding（本地）/ 视觉 moondream2（visionLocal）/ 语音 whisper——见各自命令`,
+        ``,
+        ` 边界（诚实）：离线模型无工具调用（对话为纯文本）、1.5B 质量有限（对话/规格化/摘要够用）、`,
+        ` CPU ~15-30 tok/s。工具类任务离线由规则脑（48 模板）/确定性工具兜底。`,
+      ]);
+    }
+    if (sub === 'pack' && args[1] === 'download') {
+      const model = args[2] ? `offline:${args[2]}` : 'offline:Qwen2.5-1.5B';
+      if (!offlineModelId(model)) return `未知离线模型：${model}（可选 Qwen2.5-1.5B / Qwen2.5-3B）`;
+      if (isOfflineModelReady(model)) return `${model} 已就绪——直接 /model 切换使用`;
+      const r = await downloadOfflineModel(model);
+      return r.message;
+    }
+    if (sub === 'pack' && args[1] === 'dir') {
+      return `模型缓存：${resolveDataDir(process.cwd())}（WXNODUS_DATA_DIR 可改）`;
+    }
+    if (sub === 'on') {
+      const { MODEL_CATALOG } = await import('../kernel/providers.js');
+      const hit = MODEL_CATALOG.find(m => m.modelId === 'offline:Qwen2.5-1.5B');
+      if (hit) ctx.setModel(hit.modelId, hit.baseURL);
+      return isOfflineModelReady('offline:Qwen2.5-1.5B')
+        ? '已切换离线模型：Qwen2.5-1.5B（本地）——对话断网可用'
+        : '已切换离线模型：Qwen2.5-1.5B（本地）——但模型未下载：/offline pack download';
+    }
+    return lines(' 离线 token 包 ', [
+      ' 用法：',
+      '  /offline pack status                — 组件就绪状态 + 缓存占用',
+      '  /offline pack download [模型]       — 预下载文本 LLM（默认 Qwen2.5-1.5B）',
+      '  /offline pack dir                   — 模型缓存路径',
+      '  /offline on                         — 切换离线模型（=/model 离线 Qwen2.5-1.5B）',
+      ` 边界：无工具调用、1.5B 质量有限、CPU ~15-30 tok/s——对话/规格化/摘要可用`,
+    ]);
+  });
+
+  // /undo：轮级回滚（机制补强）——撤销最近 N 轮（默认 1 轮），撤销前自动保存 checkpoint  //   F20 修复：软撤销（UPDATE archived=1 而非 DELETE——recall 全量永不丢，黑洞可检索）；
   //   快照含完整字段（id/archived/ts），restore 才能重建原始状态
   //   对比轮 6 补强：/undo list 列出可撤销轮次（时间 + 首句）
   bus.register('/undo', (args) => {

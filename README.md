@@ -11,8 +11,8 @@ Windows 本地优先的 AI agent CLI。把「需求」当源代码一样编译�
 
 **离线能力分层**（「离线」的精确边界）：
 - **完全断网 + 无 key**：核心闭环完整可用——规则脑 48 模板 → 一句话编译 → 启动级验证 → 证据 → 五门（产物零依赖，连 `npm test` 都不联网）；确定性工具 /calc /hash /base64；记忆 FTS5 中文检索；/doctor /compliance /audit /map；文件/终端/后台任务/定时/剧本/回滚；UIA 桌面控制。验证与证据是纯本地进程操作（spawn → localhost 探活 → kill → 重启 → 读回），**验证对象是本地进程不是云服务——AI 可以断，责任链不断**
-- **首次联网一次**（之后断网）：向量记忆（embedding ~90MB 缓存）、本地视觉（moondream2 ~1.7GB 缓存）——下载后全离线
-- **必须有网 + key**：AI 对话、开放域需求规格化（规则脑未命中）、云视觉、/search /claw 抓公网
+- **下载一次即离线**（/offline pack download，之后断网全可用）：文本 LLM（Qwen2.5-1.5B q4 ~1.2GB，`/offline on` 或 `/model` 切换——对话/规格化/摘要离线跑，CPU ~15-30 tok/s，无工具调用由规则脑兜底）、向量记忆（embedding ~90MB）、本地视觉（moondream2 ~1.7GB）、语音（whisper）——**四模态全离线拼图**
+- **必须有网 + key**：云端大模型对话（更高智能）、开放域需求规格化（规则脑未命中且离线模型不足时）、云视觉、/search /claw 抓公网
 
 验证全部能力在断网等价环境实测：`scripts/core-demo.mjs`（说一句话 → 编译 → 验证 → 证据 → 五门，无 key 全程通过）。
 

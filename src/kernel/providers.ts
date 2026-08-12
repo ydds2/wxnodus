@@ -109,6 +109,11 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { name: 'K3-256k', provider: 'kimi', modelId: 'kimi-k3-256k', baseURL: 'https://api.moonshot.cn/v1', capabilities: { maxContext: 256_000 } },
   { name: 'GLM-4.5', provider: 'zhipu', modelId: 'glm-4.5', baseURL: 'https://open.bigmodel.cn/api/paas/v4', capabilities: { thinking: true, maxContext: 128_000 } },
   { name: 'GLM-4V Flash', provider: 'zhipu', modelId: 'glm-4v-flash', baseURL: 'https://open.bigmodel.cn/api/paas/v4', capabilities: { imageIn: true, maxContext: 32_000 } },
+  // ── 离线 token 包：本地 LLM（transformers.js + onnxruntime-node，零新增依赖）──
+  // 选择后 llmStream/llmOnce 自动走本地通道；模型经 /offline pack download 预下载，
+  // 下载后完全断网可用。边界：无工具调用（agent 离线为纯文本对话）、质量/速度有限
+  { name: '离线 Qwen2.5-1.5B（本地）', provider: 'offline', modelId: 'offline:Qwen2.5-1.5B', baseURL: 'local://transformers', capabilities: { maxContext: 32_000 } },
+  { name: '离线 Qwen2.5-3B（本地）', provider: 'offline', modelId: 'offline:Qwen2.5-3B', baseURL: 'local://transformers', capabilities: { maxContext: 32_000 } },
 ];
 
 // 能力徽标（/model 列表与 UI 显示）

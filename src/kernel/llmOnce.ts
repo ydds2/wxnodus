@@ -16,6 +16,13 @@ export type LlmOnceResult = { ok: true; content: string } | { ok: false; error: 
 
 /** 单轮非流式调用（模型直连 fetch，与 agent 流式同语义；失败返回错误不抛出） */
 export async function callModelOnce(opts: LlmOnceOpts): Promise<LlmOnceResult> {
+  // 离线 token 包：model 前缀 offline: → 本地 LLM 通道（/compact 摘要、llmSpec 规格化
+  // 等全部单轮调用断网可用）
+  if (opts.model.startsWith('offline:')) {
+    const { callOfflineLlm } = await import('./offlineModel.js');
+    const r = await callOfflineLlm(opts.model, { messages: opts.messages, timeoutMs: opts.timeoutMs });
+    return r.ok ? { ok: true, content: r.content } : { ok: false, error: r.error };
+  }
   const httpReq = buildChatRequest({
     baseURL: opts.baseURL,
     model: opts.model,

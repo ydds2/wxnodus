@@ -20,7 +20,7 @@ describe('filterModels 模型过滤', () => {
 describe('groupByProvider 分组', () => {
   it('按提供商聚合且保持目录顺序', () => {
     const g = groupByProvider(MODEL_CATALOG);
-    expect(g.map(x => x.provider)).toEqual(['deepseek', 'kimi', 'zhipu']);
+    expect(g.map(x => x.provider)).toEqual(['deepseek', 'kimi', 'zhipu', 'offline']);
     expect(g[0]!.models.length).toBe(4);
   });
 });
