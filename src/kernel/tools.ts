@@ -276,14 +276,54 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const httpGet: ToolDef = {
-    schema: { type: 'function', function: { name: 'http_get', description: 'GET 请求（SSRF 防护：内网/IPv6 私网/DNS 重绑定/重定向逐跳拦截）', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+    schema: { type: 'function', function: { name: 'http_get', description: 'GET 请求（SSRF 防护：内网/IPv6 私网/DNS 重绑定/重定向逐跳拦截）。HTML 页面自动提取正文文本；API/JSON 响应返回原始内容。', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
     danger: true, // 外联/写库/调度/敏感输入——需确认
     async run({ url }) {
       // SSRF 三层防护（src/kernel/ssrf.ts）：主机名形态 + DNS 解析校验 + 重定向逐跳
       const { safeFetchText } = await import('./ssrf.js');
+      const { htmlToText, looksLikeHtml } = await import('./html.js');
       const r = await safeFetchText(String(url));
       if ('error' in r) return r.error;
+      // HTML 页面 → 正文文本（完整实体解码），否则原始响应——AI 拿到干净可消费的文本
+      if (looksLikeHtml(r.text)) {
+        const body = htmlToText(r.text, 8000);
+        return `HTTP ${r.status}｜页面正文\n${body || '（页面无可提取文本，可能是 JS 渲染）'}`;
+      }
       return `HTTP ${r.status}\n${r.text.slice(0, 8000)}`;
+    },
+  };
+  // web_search：AI 主动联网搜索（DDG/Bing 双引擎自动回退）——「查」的主动工具。
+  // 模型需要实时信息/最新资料时调用，返回结构化标题/URL/摘要，配合 http_get 读正文、
+  // memory_write 存档，形成「搜索→抓取→沉淀」的自主联网闭环。
+  const webSearch: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'web_search',
+        description: '联网搜索（DuckDuckGo/Bing 双引擎自动回退，SSRF 防护）。需要实时信息、最新资料、外部数据、或用户问题涉及网络内容时调用——比凭空编造更可靠。返回结构化结果（标题/URL/摘要），再配合 http_get 抓取正文。',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: '搜索查询词（中文/英文均可，建议具体）' },
+            max_results: { type: 'number', description: '返回条数（默认 5，最大 8）' },
+          },
+          required: ['query'],
+        },
+      },
+    },
+    danger: true, // 外联——需确认
+    async run({ query, max_results }) {
+      const { searchWeb } = await import('./search.js');
+      const q = String(query ?? '').trim();
+      if (!q) return '搜索词为空';
+      const max = Math.min(Math.max(Number(max_results) || 5, 1), 8);
+      const r = await searchWeb(q, { maxResults: max });
+      if (!r.ok) return `搜索失败：${r.error}`;
+      if (!r.results.length) return '搜索无结果（可换关键词重试）';
+      return `引擎：${r.engine}｜共 ${r.results.length} 条\n` +
+        r.results
+          .map((x, i) => `${i + 1}. ${x.title}\n   链接：${x.url}${x.snippet ? `\n   摘要：${x.snippet}` : ''}`)
+          .join('\n');
     },
   };
   // A21：http_request——多方法 HTTP（POST/PUT/DELETE/PATCH），SSRF 防护复用（方法无关）
@@ -641,7 +681,7 @@ export function coreTools(): Record<string, ToolDef> {
         .join('\n');
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, memory_write: memoryWrite, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, memory_write: memoryWrite, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

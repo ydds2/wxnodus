@@ -70,7 +70,7 @@ describe('parseBingHtml — Bing 回退引擎解析', () => {
   const BING_FIXTURE = `
 <ol id="b_results">
 <li class="b_algo">
-  <h2><a href="https://example.com/bing-page">Bing 结果标题</a></h2>
+  <h2><a href="https://example.com/bing-page?q=1&amp;lang=zh">Bing 结果标题</a></h2>
   <div class="b_caption"><p>这是 Bing 摘要，说明页面内容。</p></div>
 </li>
 <li class="b_algo">
@@ -84,10 +84,34 @@ describe('parseBingHtml — Bing 回退引擎解析', () => {
     expect(results.length).toBe(2)
     expect(results[0]).toEqual({
       title: 'Bing 结果标题',
-      url: 'https://example.com/bing-page',
+      url: 'https://example.com/bing-page?q=1&lang=zh',
       snippet: '这是 Bing 摘要，说明页面内容。'
     })
     expect(results[1]!.title).toBe('第二条标题')
+  })
+
+  it('URL 实体解码（&amp; → &）', () => {
+    const r = parseBingHtml(BING_FIXTURE)
+    expect(r[0]!.url).toBe('https://example.com/bing-page?q=1&lang=zh')
+    expect(r[0]!.url).not.toContain('&amp;')
+  })
+
+  it('标题数字实体解码（&#236; → ì）', () => {
+    const html = '<li class="b_algo"><h2><a href="https://example.com/z">拼音 z&#236; x&#237;ng</a></h2><div class="b_caption"><p>摘要</p></div></li>'
+    expect(parseBingHtml(html)[0]!.title).toBe('拼音 zì xíng')
+  })
+
+  it('摘要时间戳噪声清理（「8 小时之前 ·」前缀）', () => {
+    const html = '<li class="b_algo"><h2><a href="https://example.com/t">标题</a></h2><div class="b_caption"><p>8 小时之前 · 网络解释 1. 拼音zì xíng</p></div></li>'
+    expect(parseBingHtml(html)[0]!.snippet).toBe('网络解释 1. 拼音zì xíng')
+  })
+
+  it('按 URL 去重', () => {
+    const html = `<li class="b_algo"><h2><a href="https://example.com/dup">一</a></h2><div class="b_caption"><p>a</p></div></li>
+<li class="b_algo"><h2><a href="https://example.com/dup">二</a></h2><div class="b_caption"><p>b</p></div></li>`
+    const r = parseBingHtml(html)
+    expect(r.length).toBe(1)
+    expect(r[0]!.title).toBe('一')
   })
 
   it('非 http 链接跳过；无结果空数组', () => {

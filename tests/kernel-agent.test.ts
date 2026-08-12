@@ -676,7 +676,7 @@ describe('工具延迟加载', () => {
     await agent.run('你好');
     const names = seenTools[0]!.map((t: any) => t.function.name);
     expect(names).not.toContain('tool_search');
-    expect(names.length).toBe(22); // 全表（21 内置含 repo_map/cron_create/credential_form/memory_search/find_files/wx_cmd/command_search - tool_search 未注册）
+    expect(names.length).toBe(23); // 全表（22 内置含 web_search/repo_map/cron_create/credential_form/memory_search/find_files/wx_cmd/command_search - tool_search 未注册）
   });
 });
 

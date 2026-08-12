@@ -1,8 +1,10 @@
 // src/kernel/search.ts — 自研网页搜索（DuckDuckGo HTML 端点，无需 API key）
 // 链路：safeFetchText（复用 SSRF 三层防护）抓取 html.duckduckgo.com/html/?q=...
 //       → 自研 HTML 解析（result__a 标题/链接 + result__snippet 摘要 + DDG 跳转解码）
+// 实体解码走 src/kernel/html.ts 共享解码器（完整数字引用 + 递归——根治 &amp;#236; 乱码）。
 // 纯函数解析器直接单测（fixture HTML）；网络层可 mock。
 
+import { decodeHtmlEntities } from './html.js';
 import { safeFetchText } from './ssrf.js';
 
 export interface SearchResult {
@@ -12,29 +14,19 @@ export interface SearchResult {
 }
 
 const stripTags = (s: string): string =>
-  String(s ?? '')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&#0?39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&ensp;/g, ' ')
-    .replace(/&emsp;/g, ' ')
-    .replace(/&#0?183;/g, '·')
-    .replace(/&#0?8226;/g, '·')
-    .replace(/&middot;/g, '·')
-    .replace(/&hellip;/g, '…')
-    .replace(/&mdash;/g, '—')
-    .replace(/&ndash;/g, '–')
-    .replace(/\s+/g, ' ')
-    .trim();
+  decodeHtmlEntities(
+    String(s ?? '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+
+/** 清理 Bing 摘要噪声前缀：「8 小时之前 ·」「3 天前 ·」「2 分钟 ago ·」等 */
+const BING_TS_PREFIX_RE = /^(?:\d+\s*(?:秒|分钟|小时|天|周|月|年)(?:之前|前|ago)?\s*[·•]\s*)+/i;
 
 /** DDG 跳转解码：//duckduckgo.com/l/?uddg=<encoded> → 目标 URL；普通链接原样（相对转绝对需 base）。 */
 export function decodeDdgUrl(href: string, base?: string): string {
-  const h = String(href ?? '').trim()
+  const h = decodeHtmlEntities(String(href ?? '').trim());
 
   if (!h) {
     return ''
@@ -62,6 +54,7 @@ export function parseDuckDuckGoHtml(html: string): SearchResult[] {
   const anchors = [...String(html ?? '').matchAll(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gis)];
   const snippets = [...String(html ?? '').matchAll(/<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(.*?)<\/a>/gis)];
   const results: SearchResult[] = [];
+  const seen = new Set<string>();
 
   for (let i = 0; i < anchors.length; i++) {
     const m = anchors[i]!;
@@ -76,6 +69,12 @@ export function parseDuckDuckGoHtml(html: string): SearchResult[] {
     if (!url || url.includes('duckduckgo.com/l/')) {
       continue;
     }
+
+    // 按 URL 去重（同页重复条目只保留首个）
+    if (seen.has(url)) {
+      continue;
+    }
+    seen.add(url);
 
     results.push({
       title,
@@ -94,6 +93,7 @@ export function parseBingHtml(html: string): SearchResult[] {
     ...String(html ?? '').matchAll(/<li class="b_algo"[\s\S]*?<h2[^>]*><a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a><\/h2>([\s\S]*?)<\/li>/gis)
   ];
   const results: SearchResult[] = [];
+  const seen = new Set<string>();
 
   for (const m of blocks) {
     const title = stripTags(m[2]!);
@@ -102,18 +102,26 @@ export function parseBingHtml(html: string): SearchResult[] {
       continue;
     }
 
-    const url = String(m[1] ?? '').trim();
+    // href 属性里的 &amp; 等实体必须解码（否则 URL 显示乱码且跳转参数错乱）
+    const url = decodeHtmlEntities(String(m[1] ?? '').trim());
 
     if (!url || !/^https?:\/\//i.test(url)) {
       continue;
     }
 
+    // 按 URL 去重
+    if (seen.has(url)) {
+      continue;
+    }
+    seen.add(url);
+
     const snippetMatch = m[3]!.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-    results.push({
-      title,
-      url,
-      snippet: stripTags(snippetMatch?.[1] ?? ''),
-    });
+    const snippet = stripTags(snippetMatch?.[1] ?? '')
+      // 去掉「N 小时之前 ·」类时间戳噪声前缀
+      .replace(BING_TS_PREFIX_RE, '')
+      .trim();
+
+    results.push({ title, url, snippet });
   }
 
   return results.slice(0, 8);
@@ -131,7 +139,13 @@ export async function searchDuckDuckGo(
   }
 
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
-  const r = await safeFetchText(url, { maxBytes: 500_000, proxy: opts.proxy });
+  // 瞬时网络抖动重试 1 次（反爬/无结果不重试——重试无意义且放大请求）
+  let r = await safeFetchText(url, { maxBytes: 500_000, proxy: opts.proxy });
+
+  if ('error' in r && !String(r.error).includes('已拦截')) {
+    const retry = await safeFetchText(url, { maxBytes: 500_000, proxy: opts.proxy });
+    if (!('error' in retry)) r = retry;
+  }
 
   if ('error' in r) {
     return { ok: false, error: r.error };

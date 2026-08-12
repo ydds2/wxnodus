@@ -1740,18 +1740,14 @@ export const commands = {
     if (!url) return '用法：/claw <URL>（网页抓取，SSRF 防护拦截内网）';
     try {
       const { safeFetchText } = await import('../kernel/ssrf.js');
+      const { htmlToText } = await import('../kernel/html.js');
       // A20：消费 settings.proxy（原死配置接入）+ 响应体上限 1MB + 默认 UA
       const proxy = (ctx.config.get('settings') as any)?.proxy as string | undefined;
       const r = await safeFetchText(url, { maxBytes: 1_000_000, proxy });
       if ('error' in r) return r.error;
       const html = r.text;
-      // 提取正文文本（去 script/style/标签/空白）
-      const text = html
-        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-        .replace(/\s+/g, ' ').trim();
+      // 提取正文文本（共享解码器：完整实体解码——根治 &#236; 类乱码）
+      const text = htmlToText(html);
       const body = text || '（页面无可提取文本，可能是 JS 渲染）';
       return `HTTP ${r.status}｜${html.length} 字节\n${body.slice(0, 4000)}`;
     } catch (e: any) {
