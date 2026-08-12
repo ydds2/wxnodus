@@ -20,7 +20,7 @@ export const SLASH: string[] = [
   // 网络与集成
   '/claw', '/web', '/search', '/browser', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
   // 协作
-  '/swarm', '/duo', '/cron', '/jobs', '/term', '/task', '/delegate', '/agent', '/arena', '/review', '/session-stream', '/goal', '/btw',
+  '/swarm', '/duo', '/cron', '/jobs', '/term', '/task', '/delegate', '/agent', '/arena', '/review', '/understand', '/session-stream', '/goal', '/btw',
   // 工具（确定性）
   '/calc', '/hash', '/base64', '/uuid', '/rand', '/json', '/timer', '/sql', '/fs', '/units', '/csv',
   // 上下文工程（P3：repo map / 快照回滚 / 技能热重载）
@@ -38,7 +38,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉',
   '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿',
   '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
-  '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/arena': '◍', '/review': '◍', '/session-stream': '◍', '/goal': '◍', '/btw': '◍',
+  '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/arena': '◍', '/review': '◍', '/understand': '◍', '/session-stream': '◍', '/goal': '◍', '/btw': '◍',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
   '/map': '⬡', '/rewind': '⬡', '/reload-skills': '⬡',
 };
@@ -132,6 +132,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/arena': '多模型对战（双模型执行同一任务对比选优）',
   '/review': '任务自查（AI 审查视角复查改动，只读不修改）',
   '/session-stream': '会话事件流（list/show——用户消息/工具/压缩/审批可重放时间线）',
+  '/understand': '逆向编译（代码→概念规格，与 /build 形成双向编译闭环——竞品无此设计）',
   '/goal': '循环目标执行',
   '/btw': '侧边提问（隔离只读上下文，不打断主对话）',
   '/calc': '计算器（自然语言直达）',

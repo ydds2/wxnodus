@@ -2475,6 +2475,114 @@ export const commands = {
     return '用法：/session-stream list｜show [会话ID]（事件流 = 用户消息/模型回复/工具/压缩/审批时间线）';
   });
 
+  // 原创能力：/understand——逆向编译（代码 → 概念规格）
+  // 与 /build（概念 → 代码）形成「概念双向编译」闭环——竞品无此设计。
+  // 输出概念文档落盘 data/understand/<name>.md，可喂回 /build 重新编译为可运行项目。
+  bus.register('/understand', async (args) => {
+    const target = args.filter(a => !a.startsWith('--')).join(' ').trim() || ctx.cwd;
+    const { resolve, dirname, basename } = await import('node:path');
+    const { existsSync, statSync } = await import('node:fs');
+    const abs = resolve(ctx.cwd, target);
+    if (!existsSync(abs)) return `路径不存在：${target}`;
+    const dir = statSync(abs).isFile() ? dirname(abs) : abs;
+    const name = basename(dir) || 'project';
+    // 1. 证据采集：项目扫描 + 仓库地图（先看结构再下结论——编译学派第一步）
+    const { scanProject } = await import('../kernel/projectScan.js');
+    const { buildRepoMap } = await import('../kernel/repoMap.js');
+    const profile = scanProject(dir);
+    const map = buildRepoMap(dir, { budgetTokens: 1500 });
+    const evidence = [
+      `类型：${profile.type}｜构建：${profile.buildCmd || '—'}｜测试：${profile.testCmd || '—'}｜运行：${profile.runCmd || '—'}`,
+      `顶层：${profile.structure.slice(0, 12).join(' / ')}`,
+      `地图（${map.scanned} 文件扫描）：\n${map.map.slice(0, 1200)}`,
+    ].join('\n');
+    // 2. 概念规格生成：有 key → LLM 逆向编译（概念化/领域建模/验收建议）；
+    //    无 key → 规则提炼（诚实降级，标注来源）
+    const settings = ctx.config.get('settings') as { apiKeyEnc?: string | null; baseURL?: string; model?: string };
+    const { resolveApiKey, MODEL_CATALOG } = await import('../kernel/providers.js');
+    const { resolveDefaultModel, resolveDefaultBaseURL } = await import('../kernel/defaults.js');
+    const keyRes = resolveApiKey(settings);
+    let concept: { title: string; summary: string; modules: string[]; domain: string[]; acceptance: string[] } | null = null;
+    let source = '规则提炼';
+    if (keyRes.key) {
+      const { callModelOnce, extractJson } = await import('../kernel/llmOnce.js');
+      const model = settings.model && MODEL_CATALOG.some(m => m.modelId === settings.model) ? settings.model : resolveDefaultModel(settings);
+      const r = await callModelOnce({
+        baseURL: resolveDefaultBaseURL(settings), model, key: keyRes.key,
+        messages: [
+          { role: 'system', content: '你是逆向编译器：把代码仓库编译为概念规格 JSON（人类可理解的产品/领域视角）。严格只输出 JSON：{"title":"项目名","summary":"一句话定位","modules":["模块1","模块2"],"domain":["核心概念1","核心概念2"],"acceptance":["可验证验收1","可验证验收2","可验证验收3"]}' },
+          { role: 'user', content: `以下是对仓库 ${name} 的扫描证据：\n${evidence}` },
+        ],
+        temperature: 0.3,
+      });
+      if (r.ok) {
+        const j = extractJson(r.content);
+        if (j) {
+          concept = {
+            title: String(j.title ?? name).slice(0, 40),
+            summary: String(j.summary ?? '').slice(0, 200),
+            modules: Array.isArray(j.modules) ? j.modules.slice(0, 8).map(String) : [],
+            domain: Array.isArray(j.domain) ? j.domain.slice(0, 8).map(String) : [],
+            acceptance: Array.isArray(j.acceptance) ? j.acceptance.slice(0, 3).map(String) : [],
+          };
+          source = 'AI 逆向编译';
+        }
+      }
+    }
+    if (!concept) {
+      // 规则提炼（无 key 兜底——诚实标注）
+      const mods = profile.structure.filter(s => !/\.(md|json|lock)$/i.test(s)).slice(0, 6);
+      concept = {
+        title: name,
+        summary: profile.readme.split('\n')[0]?.slice(0, 120) || `${name}（${profile.type} 项目，${profile.structure.length} 个顶层条目）`,
+        modules: mods,
+        domain: map.map.split('\n').filter(l => l.startsWith('## ')).slice(0, 5).map(l => l.slice(3)),
+        acceptance: [
+          `项目可构建（${profile.buildCmd || '未声明构建命令'}）`,
+          `测试可运行（${profile.testCmd || '未声明测试命令'}）`,
+          '核心模块结构可识别',
+        ],
+      };
+    }
+    // 3. 概念文档落盘（可喂回 /build——双向编译闭环）
+    const outFile = join(ctx.dataDir, 'understand', `${name.replace(/[^\w-]/g, '_')}.md`);
+    try {
+      mkdirSync(join(ctx.dataDir, 'understand'), { recursive: true });
+      writeFileSync(outFile, [
+        `# ${concept.title}（概念规格——逆向编译，${source}）`,
+        '',
+        `> 来源：${dir}`,
+        '',
+        `## 摘要`,
+        concept.summary,
+        '',
+        `## 模块分解`,
+        ...concept.modules.map(m => `- ${m}`),
+        '',
+        `## 核心概念/领域模型`,
+        ...concept.domain.map(d => `- ${d}`),
+        '',
+        `## 验收建议（可验证）`,
+        ...concept.acceptance.map(a => `- [ ] ${a}`),
+        '',
+        `## 来源证据`,
+        `- 项目类型：${profile.type}`,
+        `- 构建：${profile.buildCmd || '—'}｜测试：${profile.testCmd || '—'}｜运行：${profile.runCmd || '—'}`,
+        `- 扫描文件：${map.scanned}｜跳过：${map.skipped}`,
+        '',
+        `> 双向编译：把本文喂回 /build 可重新编译为可运行项目（概念 ↔ 代码闭环）`,
+      ].join('\n'), 'utf8');
+    } catch { /* 落盘失败不阻断 */ }
+    return lines(` 概念规格「${concept.title}」（${source}） `, [
+      ` 摘要：${concept.summary.slice(0, 100)}`,
+      ` 模块：${concept.modules.join(' → ') || '—'}`,
+      ` 概念：${concept.domain.join(' / ') || '—'}`,
+      ` 验收：${concept.acceptance.map(a => '✓ ' + a.slice(0, 40)).join('\n       ')}`,
+      ` 证据：${dir}（${map.scanned} 文件扫描）`,
+      ` 落盘：${outFile}（/build 可反向编译回可运行项目——概念双向编译闭环）`,
+    ]);
+  });
+
   // /delegate：派发只读子代理（P0-2：--agent <name> 指定自定义 agent 定义）
   bus.register('/delegate', async (args) => {
     const agentIdx = args.indexOf('--agent');
