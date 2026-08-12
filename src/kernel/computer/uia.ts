@@ -78,7 +78,7 @@ foreach ($w in $wins) {
     }
   }
 }
-$list | ConvertTo-Json -Compress -Depth 3
+,@($list) | ConvertTo-Json -Compress -Depth 3
 `.trim(),
   tree: `
 $maxDepth = 10
@@ -91,7 +91,7 @@ if ($script:args[1] -and $script:args[1] -ne '') {
 }
 if ($win -eq $null) { $win = [System.Windows.Automation.AutomationElement]::FocusedElement }
 Get-ElementTree $win 0 $maxDepth $maxItems
-$script:out | ConvertTo-Json -Compress -Depth 3
+,@($script:out) | ConvertTo-Json -Compress -Depth 3
 `.trim(),
   find: `
 $root = [System.Windows.Automation.AutomationElement]::RootElement
@@ -204,6 +204,12 @@ export function uiaClick(query: string, handle?: string): UiaResult {
 
 /** 元素级输入：ValuePattern.SetValue——中文原生（无剪贴板 hack） */
 export function uiaType(text: string, query: string, handle?: string): UiaResult {
+  // 审查修复（P3）：参数内嵌进 -Command 命令行，CreateProcess 上限 32767 字符——
+  // 超长输入截断并明确提示（避免「UIA 桥不可用」的误导归因）
+  const t = String(text ?? '');
+  if (t.length > 16000) {
+    return { ok: false, reason: `输入过长（${t.length} 字符 > 16k 上限）——分段输入或改用剪贴板粘贴` };
+  }
   const parts = String(query ?? '').split('|');
-  return runPs('type', [String(text ?? ''), parts[0] ?? '', parts[1] ?? '', handle ?? '']);
+  return runPs('type', [t, parts[0] ?? '', parts[1] ?? '', handle ?? '']);
 }

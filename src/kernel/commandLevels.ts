@@ -32,7 +32,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/theme': 'safe', '/lang': 'safe', '/config': 'safe', '/versions': 'safe',
   '/skill list': 'safe', '/skill inspect': 'safe', '/fs': 'safe',
   '/checkpoint list': 'safe', '/snapshot list': 'safe', '/undo list': 'safe',
-  '/computer': 'confirm', '/offline': 'confirm',
+  '/computer': 'confirm', '/offline': 'confirm', '/voice': 'confirm', '/fortune': 'safe',
   // ── confirm：常规副作用，走现有模式确认链 ──
   '/clear': 'confirm', '/undo': 'confirm', '/resume': 'confirm', '/new': 'confirm', '/title': 'confirm',
   '/fork': 'confirm', '/checkpoint': 'confirm', '/snapshot': 'confirm', '/model': 'confirm',

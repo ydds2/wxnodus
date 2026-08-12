@@ -7,10 +7,10 @@ Windows 本地优先的 AI agent CLI。把「需求」当源代码一样编译�
 三个限定词（经竞品官方文档校准，缺一不可）：
 - **启动级验证**——不是 lint/测试通过：对新生成的项目真实执行 启动 → 探活 → 杀进程 → 重启 → 读回
 - **证据文件**——不是终端日志：验证结果沉淀为 `evidence.json`（状态/检查项/指纹/时间），`/evidence list` 全量可查
-- **零配置离线可用**——不是「支持本地模型」：不配置任何 key/模型，规则脑（48 个需求模板）也能离线编译、确定性计算毫秒级响应
+- **零配置离线可用**——不是「支持本地模型」：不配置任何 key/模型，规则脑（47 个需求模板）也能离线编译、确定性计算毫秒级响应
 
 **离线能力分层**（「离线」的精确边界）：
-- **完全断网 + 无 key**：核心闭环完整可用——规则脑 48 模板 → 一句话编译 → 启动级验证 → 证据 → 五门（产物零依赖，连 `npm test` 都不联网）；确定性工具 /calc /hash /base64；记忆 FTS5 中文检索；/doctor /compliance /audit /map；文件/终端/后台任务/定时/剧本/回滚；UIA 桌面控制。验证与证据是纯本地进程操作（spawn → localhost 探活 → kill → 重启 → 读回），**验证对象是本地进程不是云服务——AI 可以断，责任链不断**
+- **完全断网 + 无 key**：核心闭环完整可用——规则脑 47 模板 → 一句话编译 → 启动级验证 → 证据 → 五门（产物零依赖，连 `npm test` 都不联网）；确定性工具 /calc /hash /base64；记忆 FTS5 中文检索；/doctor /compliance /audit /map；文件/终端/后台任务/定时/剧本/回滚；UIA 桌面控制。验证与证据是纯本地进程操作（spawn → localhost 探活 → kill → 重启 → 读回），**验证对象是本地进程不是云服务——AI 可以断，责任链不断**
 - **下载一次即离线**（/offline pack download，之后断网全可用）：文本 LLM（Qwen2.5-1.5B q4 ~1.2GB，`/offline on` 或 `/model` 切换——对话/规格化/摘要离线跑，CPU ~15-30 tok/s，无工具调用由规则脑兜底）、向量记忆（embedding ~90MB）、本地视觉（moondream2 ~1.7GB）、语音（whisper）——**四模态全离线拼图**
 - **必须有网 + key**：云端大模型对话（更高智能）、开放域需求规格化（规则脑未命中且离线模型不足时）、云视觉、/search /claw 抓公网
 
@@ -70,7 +70,7 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 
 **副线 3：本地能力**（无 key 全可用）——`/search` 自研 DDG/Bing 双引擎联网搜索（免 key）· `/claw` 网页抓取（SSRF 三层防护：内网/IPv6/NAT64 变体 + DNS 重绑定 + 重定向逐跳）· `/browser` 浏览器自动化（有头 Edge/Chrome，AI 可导航/点击/输入/截图）· `/computer` 桌面控制：**UIA 元素级**（Windows UI Automation 零依赖桥：窗口枚举/控件树/按名称或 AutomationId 定位/原生 Invoke 点击/ValuePattern 中文输入）+ robotjs 坐标层（DPI 换算 + 动作护栏），`computer_observe` 截图理解闭环 · `/video` 视频抽帧分析 · `/vision`/`/img` 图片理解 · `/capture` 截屏留证。**视觉开放通道**：默认智谱 glm-4v-flash（免费），`settings.visionBaseURL/visionModel/visionKey` 或环境变量可换任意 OpenAI 兼容端点（ollama 本地 qwen2.5-vl / OpenRouter / 自建网关），`visionLocal=true` 启用 transformers.js 本地 VLM（moondream2，完全离线无 key），失败可归因（无 key/端点被拒/网络）。
 
-**工具与自动化**——36 个内核工具（含 `computer_*` 四件套、`browser_*` 七件套、`memory_search`、`repo_map`、`cron_create`、`credential_form`）；`/jobs` 并行后台任务（db 持久化，kill 幂等）· `/term` 后台终端 · `/cron` 定时任务（标准 5 字段 cron）· `/goal` 目标循环 · `/delegate` 子代理（只读工具集 + 危险工具剔除 + 安全钩子继承）· `/swarm` 1-8 并行子代理 · `/script` 剧本录制/回放（WxScript DSL，回放 CI；fs 修改后 auto 剧本**自动回归重放**）· `/self-evolve` 自举（AI 分析自身源码 → 补丁 → 自测 → 自动回滚，仅限 src/kernel 与 src/commands）· `/fork`/`/checkpoint`/`/undo` 分支与回滚（影子快照，零 git 依赖）· `/map` 仓库地图（aider repo-map 自研版）· `/arena` 多模型对战 · `/review` 自查。
+**工具与自动化**——43 个内核工具（含 `computer_*` 十件套（坐标+UIA）、`browser_*` 七件套、`memory_search`、`repo_map`、`cron_create`、`credential_form`）；`/jobs` 并行后台任务（db 持久化，kill 幂等）· `/term` 后台终端 · `/cron` 定时任务（标准 5 字段 cron）· `/goal` 目标循环 · `/delegate` 子代理（只读工具集 + 危险工具剔除 + 安全钩子继承）· `/swarm` 1-8 并行子代理 · `/script` 剧本录制/回放（WxScript DSL，回放 CI；fs 修改后 auto 剧本**自动回归重放**）· `/self-evolve` 自举（AI 分析自身源码 → 补丁 → 自测 → 自动回滚，仅限 src/kernel 与 src/commands）· `/fork`/`/checkpoint`/`/undo` 分支与回滚（影子快照，零 git 依赖）· `/map` 仓库地图（aider repo-map 自研版）· `/arena` 多模型对战 · `/review` 自查。
 
 **生态与协议**——`/skill` 本地技能（agentskills.io 兼容，`/learn` 从对话学习生成）· `/forge` 组件化构建（可运行 MCP Server + 技能打包）· `/mcp` 客户端（stdio + Streamable HTTP，热重载）· `/plugin` 插件（事件订阅/配置/日志 API）· `/gateway` HTTP JSON-RPC 网关 · `/a2a`/`/acp` 智能体协议 · `/webhook` 事件回调 · `/sandbox` L0-L3 分层沙盒 · 生态规范文件链（AGENTS.md > CLAUDE.md > GEMINI.md > .cursorrules > .clinerules > .roomodes）。
 
@@ -85,7 +85,7 @@ Node 22 + TypeScript 严格 ESM · 自研状态引擎（createStore/createAtom/c
 - ✅ 838 单元/契约/进程级测试全绿（71 测试文件）+ 类型检查零错误
 - ✅ NL 路由契约测试：README「说人话」六行承诺锁定（tests/commands-intent.test.ts）
 - ✅ TUI 冒烟（真实终端 node-pty）：首屏/输入/回复/命令面板/Esc/终止不挂死
-- ✅ 全命令扫描 105/105 可用（scripts/cmd-sweep.mjs 回归工具，112 命令注册表全覆盖）
+- ✅ 全命令扫描 105/105 可用（scripts/cmd-sweep.mjs 回归工具，106 命令注册表全覆盖）
 - ✅ 概念编译器端到端：「帮我做一个待办系统」→ todo 项目生成 → 启动 → API 增删查 → healthcheck 通过 → evidence.json
 - ✅ GLM-4V 视觉实测（/vision 识别 UI 截图）
 - ✅ 技能注入实测：`/skill:名` 技能正文注入对话；hooks 实测：userPromptSubmit/stop 副作用触发

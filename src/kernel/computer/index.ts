@@ -102,9 +102,20 @@ export class ComputerUse {
             return `已滚动 ${a.amount}`;
           }
           case 'open': {
-            const { exec } = await import('node:child_process');
-            exec(`start "" "${a.url}"`);
-            return `已打开 ${a.url}`;
+            // 审查修复（P1 注入）：exec(`start "" "${url}"`) 的 shell 拼接可被
+            // `" & <命令> & "` 闭合逃逸为任意命令执行——改 spawn 参数数组（不经 shell 解释）
+            // + URL 形态校验（拒绝引号/控制字符/空格后的命令拼接）
+            const u = String(a.url ?? '');
+            if (/[\x00-\x1f"']/.test(u) || !/^https?:\/\//i.test(u)) {
+              return `动作非法：open 仅接受 http/https URL（拒绝引号与控制字符）`;
+            }
+            const { spawn } = await import('node:child_process');
+            await new Promise<void>((resolve, reject) => {
+              const c = spawn('cmd', ['/c', 'start', '', u], { shell: false, windowsHide: true });
+              c.on('error', reject);
+              c.on('exit', () => resolve());
+            });
+            return `已打开 ${u}`;
           }
           default: return `未支持动作：${(a as any).type}`;
         }

@@ -209,6 +209,9 @@ export function createTaskRunner(opts: TaskRunnerOptions): TaskRunner {
       const backoff = 3 * 2 ** (tries - 1) * 1000;
       writer.write(`\n[task-runner] 退出码 ${code}——第 ${tries} 次重试（退避 ${backoff / 1000}s）\n`);
       await sleep(backoff);
+      // 审查修复（P2 竞态）：退避窗口内 kill 会置 cancelled——sleep 后、重新 spawn 前
+      // 必须再查一次，否则已取消的命令在 3-24s 后仍会被真实重新执行（副作用发生）
+      if (row(t.id)?.status === 'cancelled') return;
       code = await attempt();
     }
     writer.end();

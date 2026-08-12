@@ -69,6 +69,11 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (args[0]) {
       const cmd = resolveAlias('/' + args[0].replace(/^\//, ''));
       const merge = COMMAND_MERGE[cmd];
+      // 审查修复：UI 本地命令（/details /copy /voice 等）不在内核注册表——此前返回
+      // 误导性「无描述」；改为明确提示 TUI 本地命令
+      if (!COMMAND_DESC[cmd] && !SLASH.includes(cmd)) {
+        return `${cmd}：TUI 本地命令（麦克风钮/Ctrl+K/? 面板等处可用）——/help 全目录不含 UI 层命令`;
+      }
       return `${cmd}：${COMMAND_DESC[cmd] ?? '无描述'}${merge ? `（已并入 ${merge}）` : ''}`;
     }
     // 100% 重构：分组标题行 + 每命令一行两列（命令名 / 描述）——TTY 门控 ANSI 彩色，
@@ -76,6 +81,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const catName: Record<string, string> = {
       '◈': '对话', '⚙': '模型', '▤': '记忆', '◆': '构建', '⛨': '安全', '◉': '系统',
       '❖': '视觉', '⚿': '输入', '⛭': '网络', '◍': '协作', '☆': '工具', '⬡': '上下文',
+      '⬇': '离线',
     };
     const cats = new Map<string, string[]>();
     for (const cmd of SLASH) {
@@ -117,6 +123,27 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   bus.register('/quit', async () => { ctx.requestExit(); return '再见'; });
+
+  // /voice：语音模式（审查修复：此前仅 TUI 本地命令、/help 查不到、-p 报未知命令——
+  // 现注册进命令面；TUI 内由麦克风钮/Ctrl+B 走 gateway voice RPC，此处提供状态与指引）
+  bus.register('/voice', async (args) => {
+    const sub = args[0];
+    const tip = 'TUI 内按 Ctrl+B 或点击麦克风钮开启语音（ffmpeg 录音 → whisper 本地转写 → 自动提交 → TTS 回复）；/voice status 查看组件可用性';
+    if (sub === 'status') {
+      const { checkVoice } = await import('../kernel/voice.js');
+      const r = checkVoice((ctx.config.get('settings') as any) ?? {}, ctx.dataDir);
+      const ready = r.sttAvailable && r.details.length > 0;
+      return `语音组件：${ready ? '✅ 就绪' : '❌ 未就绪'}（${r.details.join('；') || 'whisper/ffmpeg 缺失——scripts/install-stt.mjs 安装'}）（${tip}）`;
+    }
+    if (sub === 'on' || sub === 'off') return '语音开关在 TUI 内使用（Ctrl+B 或麦克风钮）——非交互模式无语音输入';
+    return `语音模式（${tip}）`;
+  });
+
+  // /fortune：运势（审查修复：此前仅 TUI 本地命令——注册进命令面保持一致）
+  bus.register('/fortune', () => {
+    const seeds = ['今日宜：编译小步走，验证早跑通。', '今日宜：先写规格，再写代码。', '今日宜：证据留痕，回滚无忧。', '今日宜：一条命令，一个闭环。', '今日忌：不探活就上线。', '今日忌：空谈概念，不落证据。'];
+    return seeds[Math.floor(Math.random() * seeds.length)]!;
+  });
 
   bus.register('/status', () => {
     const u = { model: ctx.getModel(), mode: ctx.getMode(), cwd: ctx.cwd };
@@ -294,19 +321,6 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       return `主题已切换：${name}`;
     }
     return `当前主题：${ctx.getThemeName()}（可选：wxnodus 黑洞/dark/light）`;
-  });
-
-  // 黑洞检索（FTS + 向量语义融合：/hole 上次怎么解决的 也能命中）
-  bus.register('/hole', async (args) => {
-    const q = args.join(' ');
-    if (!q) return '用法：/hole <关键词>（自然语言「搜一下…」亦可直达）';
-    const hits = await ctx.mem.recallHybrid(q, { limit: 5 });
-    if (!hits.length) return `黑洞检索「${q}」：无命中`;
-    const sid = ctx.agent?.getSessionId?.() ?? 'default';
-    return lines(` 黑洞检索「${q}」 `, hits.map(h => {
-      const fromOther = Boolean(h.session_id) && h.session_id !== sid;
-      return ` [${fromOther ? `会话 ${h.session_id!.slice(0, 10)}` : '当前'}] ${h.content.slice(0, 70)}${fromOther ? `（/resume ${h.session_id} 跳转）` : ''}`;
-    }));
   });
 
   bus.register('/memory', async (args) => {
@@ -495,16 +509,6 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     ]);
   });
 
-  // 视觉（开放通道：settings/env 可换端点、本地 VLM 离线可用、失败可归因）
-  bus.register('/vision', async (args) => {
-    const target = args[0];
-    if (!target) return '用法：/vision <图片路径或URL>（多模态分析；默认 GLM-4V，settings.visionBaseURL/visionModel 可换，visionLocal=true 离线）';
-    const { describeImageStatus } = await import('../kernel/vision.js');
-    const settings = ctx.config.get('settings');
-    const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
-    const r = await describeImageStatus(target, enc ?? null, undefined, settings);
-    return r.ok ? (r.text ?? '（视觉端点返回空描述）') : `视觉分析不可用：${r.reason}`;
-  });
 
   bus.register('/img', async (args) => {
     const target = args[0];

@@ -37,7 +37,9 @@ const modelValueForConfigSet = (arg: string) => {
 
 export const sessionCommands: SlashCommand[] = [
   {
-    aliases: ['bg', 'btw'],
+    // 审查修复：移除 btw 别名——内核 /btw 是「侧边提问（隔离只读子代理）」，
+    // TUI 此前用 btw 作 background 别名导致同 token 双语义（/help 语义在 TUI 不成立）
+    aliases: ['bg'],
     help: 'launch a background prompt',
     name: 'background',
     run: (arg, ctx) => {

@@ -22,7 +22,7 @@ const tools = [
 ${toolList},
 ];
 const handlers = {
-${tools.map(t => `  ${JSON.stringify(t.name)}: (args) => { try { return { ok: true, result: '执行成功: ' + JSON.stringify(args) }; } catch (e) { return { ok: false, error: String(e) }; } }`).join(',\n')}
+${tools.map(t => `  ${JSON.stringify(t.name)}: (args) => { return { ok: false, error: '占位工具：${t.name} 尚未实现——编辑 server.js 中 handlers['${t.name}'] 填入真实逻辑后使用（严禁伪造成功）' }; }`).join(',\n')}
 };
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 function send(o) { process.stdout.write(JSON.stringify(o) + '\\n'); }
@@ -41,7 +41,7 @@ rl.on('line', line => {
 `;
   writeFileSync(join(dir, 'server.js'), server, 'utf8');
   writeFileSync(join(dir, 'README.md'),
-    `# ${name} — MCP Server\n\n由 WxNodus forge 自动生成。\n\n> ⚠️ AI 生成标注（深度合成办法 第二十条）：本组件由 AI 自动生成，使用前请人工复核。\n\n## 工具\n${tools.map(t => `- \`${t.name}\`：${t.description}`).join('\n')}\n`,
+    `# ${name} — MCP Server\n\n由 WxNodus forge 自动生成。\n\n> ⚠️ AI 生成标注（深度合成办法 第二十条）：本组件由 AI 自动生成，使用前请人工复核。\n\n> ⚠️ 占位声明：本产物的工具处理器为占位实现（调用返回诚实错误，不伪造成功）——\n> 编辑 server.js 中 handlers 各条目填入真实逻辑后方可投入使用。\n\n## 工具\n${tools.map(t => `- \`${t.name}\`：${t.description}`).join('\n')}\n`,
     'utf8');
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version: '1.0.0', main: 'server.js', license: 'Apache-2.0' }, null, 2), 'utf8');
   return dir;

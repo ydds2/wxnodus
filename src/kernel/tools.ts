@@ -144,6 +144,8 @@ export function coreTools(): Record<string, ToolDef> {
         const p = resolve(ctx.cwd, path);
         const content = readFileSync(p, 'utf8');
         const needle = String(oldText);
+        // 审查修复（P2）：空 oldText 使 indexOf('') 恒 0 且 from 不前进——无限循环 OOM 挂死
+        if (!needle) return 'oldText 不能为空（模型输出不规范——用 fs_write 整文件重写或重试）';
         // 深度：唯一性校验（Aider SearchReplace 对齐）——出现多处时反馈位置列表，
         // 模型据此精化 oldText（避免替换错位置）；缺省只替换第一处并注明
         const positions: number[] = [];

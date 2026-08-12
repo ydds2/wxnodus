@@ -292,7 +292,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // /title <名称>：重命名当前会话（对齐参考 /title 语义）
   bus.register('/title', (args) => {
     const name = args.join(' ').trim();
-    const sid = 'default';
+    // 审查修复：会话统一——多会话切换后作用于当前会话（此前硬编码 default）
+    const sid = ctx.agent?.getSessionId?.() ?? 'default';
     if (!name) {
       const row = ctx.db.prepare(`SELECT title FROM sessions WHERE id=?`).get(sid) as { title: string } | undefined;
       return `当前会话标题：${row?.title || '(未命名)'}（/title <名称> 重命名）`;
@@ -409,13 +410,16 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const targetRun = userRuns.length ? userRuns[Math.max(0, userRuns.length - n)] : null;
     const target = targetRun
       ? msgs.findIndex(m => m.run_no === targetRun && m.role === 'user')
-      : fallbackUserIdx[Math.max(0, fallbackUserIdx.length - n)];
+      : fallbackUserIdx.length ? fallbackUserIdx[Math.max(0, fallbackUserIdx.length - n)] : undefined;
+    // 审查修复（P3）：无任何 user 消息时 target=undefined → slice(undefined)=slice(0) 整会话被归档
+    if (target === undefined || target < 0) return '没有可撤销的用户轮次（会话中无 user 消息）';
     // 撤销前自动快照（F20：完整字段 id/archived/ts，restore 保留原始 id 与黑洞状态）
     try {
       const full = ctx.db.prepare(`SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=? AND role!='system' ORDER BY id`).all(sid);
       saveCheckpoint(ctx.db, sid, { kind: 'undo-snapshot', messages: full, ts: Date.now() });
     } catch { /* 快照失败不阻断 */ }
     const dropIds = msgs.slice(target).map(m => m.id);
+    if (!dropIds.length) return '没有可撤销的消息';
     // F20：软撤销——归档而非删除（recall 全量仍可检索，working 窗口回退）
     ctx.db.prepare(`UPDATE messages SET archived=1 WHERE id IN (${dropIds.map(() => '?').join(',')})`).run(...dropIds);
     return `已撤销 ${n} 轮（${dropIds.length} 条消息移入历史存档，仍可检索）——/checkpoint restore 可恢复到撤销前`;
@@ -633,7 +637,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   //   save 手动快照 ｜ list 列表 ｜ restore [id] 恢复消息 ｜ clear 清空
   bus.register('/checkpoint', (args) => {
     const [sub, ...rest] = args;
-    const sid = 'default';
+    // 审查修复：会话统一——作用于当前会话
+    const sid = ctx.agent?.getSessionId?.() ?? 'default';
     if (!sub || sub === 'list') {
       const rows = ctx.db.prepare(`SELECT id, data, ts FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 10`).all(sid) as Array<{ id: number; data: string; ts: number }>;
       if (!rows.length) return '暂无快照——/checkpoint save 保存，/undo 撤销前自动保存';
@@ -707,17 +712,6 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return '用法：/checkpoint save｜list｜restore [id]｜clear';
   });
 
-  // /rewind：回滚到最近快照（Claude Code /rewind 同款——等价 /checkpoint restore 最新）
-  bus.register('/rewind', () => {
-    const sid = 'default';
-    const row = ctx.db.prepare(`SELECT data FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 1`).get(sid) as { data: string } | undefined;
-    if (!row) return '无快照可回滚（/checkpoint save 保存；/undo 撤销前自动保存）';
-    const d = JSON.parse(row.data) as { messages?: Array<{ id?: number; role: string; content: string; tool_call_id?: string | null; archived?: number; ts?: number }> };
-    if (!Array.isArray(d.messages)) return '快照数据不完整';
-    // A25：统一恢复函数（清理 FTS + 重置序列——此前同 rowid 重插 constraint failed）
-    replaceSessionMessages(ctx.db, sid, d.messages);
-    return `已回滚到最近快照（${d.messages.length} 条消息，保留原始 id/archived）`;
-  });
 
   // /reload-skills：重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini），汇报统计
   bus.register('/reload-skills', () => {
@@ -972,14 +966,41 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     ]);
   });
 
-  bus.register('/forge', (args) => {
+  bus.register('/forge', async (args) => {
+    // 审查修复（假功能）：此前写死单一 echo 工具且生成「执行成功」假结果——现支持
+    // 传入工具签名 JSON（--tools '[...]'），无签名时生成占位并诚实标注（调用返回错误）
     const name = args[0];
-    if (!name) return '用法：/forge <组件名>（锻造 MCP server + SKILL.md）';
+    if (!name) return '用法：/forge <组件名> [--tools \'[{"name":"x","description":"…","inputSchema":{…}}]\']（锻造 MCP server + SKILL.md）';
+    const toolsArgIdx = args.indexOf('--tools');
+    let tools: Array<{ name: string; description: string; inputSchema: any }> = [];
+    if (toolsArgIdx >= 0 && args[toolsArgIdx + 1]) {
+      try {
+        const parsed = JSON.parse(args[toolsArgIdx + 1] ?? '');
+        if (Array.isArray(parsed) && parsed.length) {
+          tools = parsed.map(t => ({ name: String(t.name ?? ''), description: String(t.description ?? ''), inputSchema: t.inputSchema ?? { type: 'object', properties: {} } }));
+        }
+      } catch {
+        return '--tools 参数不是合法 JSON 数组（示例：[{"name":"greet","description":"打招呼","inputSchema":{"type":"object","properties":{"who":{"type":"string"}}}}]）';
+      }
+    }
     const outDir = join(ctx.dataDir, 'forge', name);
     mkdirSync(outDir, { recursive: true });
-    const server = forgeMcpServer(outDir, name, [{ name: 'echo', description: '回显输入', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } }]);
+    if (!tools.length) {
+      tools = [{ name: 'echo', description: '回显输入（占位示例——需编辑 server.js 填入真实逻辑）', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } }];
+    }
+    const server = forgeMcpServer(outDir, name, tools);
     const skill = forgeSkillDir(outDir, name, `${name} 技能`, '1. 分析需求 2. 生成代码 3. 验证');
-    return lines(` 锻造 ${name} `, [` MCP server → ${server}`, ` SKILL.md → ${skill}`]);
+    // 审查修复（死代码接线）：forge 组件注册表此前零调用——产物入注册表（检疫态）
+    try {
+      const { createRegistry } = await import('../forge/registry.js');
+      const reg = createRegistry(join(ctx.dataDir, 'forge', 'registry.json'));
+      reg.add({ name, kind: 'mcp', source: server, version: '1.0.0' });
+    } catch { /* 注册失败不阻断锻造 */ }
+    return lines(` 锻造 ${name}（${tools.length} 个工具签名） `, [
+      ` MCP server → ${server}`,
+      ` SKILL.md → ${skill}`,
+      ` ⚠ 占位声明：工具处理器为占位实现（调用返回诚实错误）——编辑 server.js 填入真实逻辑后使用`,
+    ]);
   });
 
   bus.register('/skill', (args): string | StructuredCommand => {
@@ -989,8 +1010,9 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const name = rest[0];
       if (!name) return '用法：/skill new <技能名> [描述]';
       const desc = rest.slice(1).join(' ') || `${name} 技能`;
-      const dir = writeSkill(ctx.dataDir, name, desc, '1. 理解任务 2. 制定步骤 3. 执行并验证', { aiGenerated: true });
-      return `技能已生成（ai_generated 标注）→ ${dir}`;
+      // 审查修复（假功能标注）：骨架模板如实标注——非 AI 提炼内容
+      const dir = writeSkill(ctx.dataDir, name, desc, '1. 理解任务 2. 制定步骤 3. 执行并验证（骨架模板——用 /learn 从对话提炼真实工作流）', { aiGenerated: true });
+      return `技能骨架已生成（ai_generated 标注，工作流为固定模板——建议 /learn 从对话提炼真实步骤）→ ${dir}`;
     }
     if (sub === 'list') {
       const all = discoverSkills(ctx.dataDir, ctx.cwd);
@@ -1529,9 +1551,11 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         return `已点击（${el?.method ?? 'uia'}）${el?.x != null ? ` @(${el.x},${el.y})` : ''}`;
       }
       if (sub === 'type') {
-        const q = args.slice(3).join(' ');
-        const text = args[2] ?? '';
-        if (!q || !text) return '用法：/computer uia type <文本> <名称>|<AutomationId>';
+        // 审查修复（P2）：文本多词时原实现只取 args[2]、其余并入查询——中文输入基本不可用；
+        // 改为查询取尾 token、文本为中间全部
+        const q = args[args.length - 1] ?? '';
+        const text = args.slice(2, -1).join(' ');
+        if (!q || !text) return '用法：/computer uia type <文本…> <名称>|<AutomationId>';
         const r = uiaType(text, q);
         if (!r.ok) return r.reason ?? '输入失败';
         return `已输入 ${text.length} 字符（${(r.element as any)?.method ?? 'uia'}）`;
@@ -2892,37 +2916,6 @@ export const commands = {
   });
 
   // /goal：开放目标循环执行——逐轮推进直到完成或达到最大轮数（真实 agent 执行）
-  // /task：后台任务浏览器（/jobs 同一后端——并行任务系统）
-  bus.register('/task', (args) => {
-    const [sub, ...rest] = args;
-    const tr = ctx.taskRunner;
-    if (!tr) return '任务系统不可用（taskRunner 未装配）';
-    const GLYPH: Record<string, string> = { queued: '⚪', running: '🟡', success: '🟢', failed: '🔴', cancelled: '⏸', done: '🟢' };
-    const LABEL: Record<string, string> = { queued: '排队中', running: '运行中', success: '完成', failed: '失败', cancelled: '已取消', done: '完成' };
-    if (sub === 'show') {
-      const id = rest[0];
-      if (!id) return '用法：/task show <任务ID>';
-      const t = tr.get(id);
-      if (!t) return `任务不存在：${id}`;
-      return lines(` 任务 ${id} `, [
-        ` 目标：${t.goal}`,
-        ` 状态：${GLYPH[t.status] ?? '·'} ${LABEL[t.status] ?? t.status}${t.error ? ` —— ${t.error}` : ''}`,
-        ` 类型：${t.kind === 'shell' ? 'Shell 子进程' : t.kind === 'agent' ? 'AI 子代理' : '并行编排'} ｜ PID：${t.pid ?? '-'} ｜ 退出码：${t.exit_code ?? '-'}`,
-        ...(t.output ? ['', ...String(t.output).split('\n').slice(0, 15).map(l => ` ${l.slice(0, 110)}`)] : []),
-      ]);
-    }
-    if (sub === 'clean') {
-      const n = tr.clean(Number(rest[0] ?? 100) || 100);
-      return `已清理 ${n} 条已结束任务`;
-    }
-    if (sub === 'run') return '后台派发请用 /jobs run <命令>（本命令为任务浏览；并行任务：/jobs run <主> --parallel <支线>）';
-    const rows = tr.list({ limit: 20 });
-    if (!rows.length) return '暂无后台任务（/jobs run <任务> 派发）';
-    return lines(' 后台任务 ', rows.map(r => {
-      const dur = r.done_at ? `[${Math.round((r.done_at - r.created_at) / 1000)}s]` : r.started_at ? `[${Math.round((Date.now() - r.started_at) / 1000)}s]` : '[排队]';
-      return ` ${GLYPH[r.status] ?? '·'} ${r.id} ${LABEL[r.status] ?? r.status} ${dur} ${r.kind === 'shell' ? '⚙' : r.kind === 'agent' ? '◈' : '⧉'}${r.parent_id ? ' ↳' : ''} ${String(r.goal).slice(0, 50)}`;
-    }));
-  });
 
   bus.register('/goal', async (args) => {
     const maxIter = args.length > 1 && /^\d+$/.test(args[args.length - 1]!) ? parseInt(args.pop()!, 10) : 3;
@@ -2966,7 +2959,8 @@ export const commands = {
   //   /plan on|off 模式切换 ｜ /plan save [需求] LLM 生成计划文件 ｜ /plan view ｜ /plan clear
   bus.register('/plan', async (args) => {
     const [sub, ...rest] = args;
-    const sid = 'default';
+    // 审查修复：会话统一——作用于当前会话
+    const sid = ctx.agent?.getSessionId?.() ?? 'default';
     const dir = join(ctx.dataDir, 'plans');
     const file = join(dir, `${sid}.md`);
     if (sub === 'on') { ctx.setMode('plan'); return '计划模式已开启（只读研究 + 非只读需计划审批）——完成后 /plan save 生成计划文件'; }
@@ -3016,6 +3010,8 @@ export const commands = {
   bus.register('/import', (args) => {
     const path = args[0];
     if (!path) return '用法：/import <文件路径>（JSON [{role,content}] 或 JSONL/文本）';
+    // 审查修复：会话统一——导入到当前会话（此前硬编码 default）
+    const sid = ctx.agent?.getSessionId?.() ?? 'default';
     let text = '';
     try { text = readFileSync(resolve(process.cwd(), path), 'utf8'); } catch { return `无法读取文件：${path}`; }
     let imported = 0;
@@ -3023,7 +3019,7 @@ export const commands = {
     const now = Date.now();
     const push = (role: string, content: string) => {
       if (!['user', 'assistant', 'system'].includes(role)) return;
-      ins.run('default', role, content, null, now + imported);
+      ins.run(sid, role, content, null, now + imported);
       imported++;
     };
     try {
@@ -3034,7 +3030,7 @@ export const commands = {
       } else {
         // 单对象 → 单条
         push(String(data?.role ?? 'user'), String(data?.content ?? text));
-        if (!imported) { ctx.mem.append('default', 'user', text); imported = 1; }
+        if (!imported) { ctx.mem.append(sid, 'user', text); imported = 1; }
       }
     } catch {
       // 非 JSON 数组：尝试 JSONL（/export --jsonl 的输出——每行一个 JSON 对象；
@@ -3192,6 +3188,9 @@ ${log.slice(-3000)}`;
     return '用法：/term [list] | new [shell] | write <id> <命令> | kill <id> | attach <id>';
   });
 
-  // 审计留痕
-  try { appendAudit(ctx.db, 'handlers.ext.registered', { count: 48 }); } catch { /* 审计表未就绪时静默 */ }
+  // 审计留痕（审查修复：计数动态化——此前硬编码 48 与实际注册数不符）
+  try {
+    const registered = (ctx.commandBus as any)?.list?.().length ?? 'n/a';
+    appendAudit(ctx.db, 'handlers.ext.registered', { count: registered });
+  } catch { /* 审计表未就绪时静默 */ }
 }

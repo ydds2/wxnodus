@@ -90,18 +90,53 @@ export function scanLicenses(nodeModulesDir: string): Array<{ pkg: string; licen
 }
 
 // ── ⑤ 自动化护栏（robots + 验证码）──────────────────────
+// 审查修复（P2）：按 RFC 9309 语义——路径按段匹配（Disallow:/admin 不误拦 /administrator）、
+// 按 User-agent 分组取本 UA（或 *）的规则、Allow 与 Disallow 同优先级取最长匹配
+const ROBOTS_UA = '*'; // wxnodus 抓取器按通用 UA 声明（未声明专用 UA）
 export function checkRobots(robotsTxt: string, path: string): { allowed: boolean; rule?: string } {
-  let disallowAll = false;
-  let matched: string | undefined;
+  // 按 User-agent 分组：只取匹配本 UA 的组（或 * 组）
+  let group: string[] = [];
+  let hasWildcard = false;
+  const groups: Array<{ ua: string; lines: string[] }> = [];
+  let curUa = '';
+  let curLines: string[] = [];
   for (const line of robotsTxt.split(/\r?\n/)) {
-    const m = line.match(/^Disallow:\s*(.*)$/i);
-    if (m) {
-      const p = m[1].trim();
-      if (p === '/') disallowAll = true;
-      else if (path.startsWith(p)) matched = p;
+    const ua = line.match(/^User-agent:\s*(.*)$/i);
+    if (ua) {
+      if (curUa) groups.push({ ua: curUa, lines: curLines });
+      curUa = ua[1]!.trim();
+      curLines = [];
+    } else if (curUa) {
+      curLines.push(line);
     }
   }
-  return { allowed: !disallowAll && !matched, rule: matched ?? (disallowAll ? '/' : undefined) };
+  if (curUa) groups.push({ ua: curUa, lines: curLines });
+  for (const g of groups) {
+    if (g.ua === ROBOTS_UA || /^\s*\*/.test(g.ua)) { group = g.lines; hasWildcard = true; break; }
+  }
+  if (!group && hasWildcard) group = [];
+  if (!group) {
+    // 无本 UA 组也无 * 组 → 无规则限制（允许）
+    return { allowed: true };
+  }
+  // 段级路径匹配：/admin 匹配 /admin 与 /admin/*，不匹配 /administrator
+  const matchPath = (rule: string): boolean => {
+    const r = rule.trim().replace(/\/+$/, '');
+    if (!r) return false;
+    return path === r || path.startsWith(r + '/') || (r === '/' && path.startsWith('/'));
+  };
+  let best: string | undefined;
+  let bestLen = -1;
+  for (const line of group) {
+    const m = line.match(/^(Disallow|Allow):\s*(.*)$/i);
+    if (!m) continue;
+    const rule = m[2]!.trim();
+    if (!rule || !matchPath(rule)) continue;
+    if (rule.length > bestLen) { bestLen = rule.length; best = `${m[1]!.toLowerCase()}:${rule}`; }
+  }
+  // Allow 与 Disallow 等长时 Allow 优先（RFC 9309 最具体匹配优先）
+  const allowHit = best?.startsWith('allow:') ?? false;
+  return { allowed: !best || allowHit, rule: best };
 }
 
 const CAPTCHA_RE = /验证码|人机验证|recaptcha|captcha|请输入.*码/i;

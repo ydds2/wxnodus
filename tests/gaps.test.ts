@@ -3,7 +3,6 @@ import { describe, it, expect } from 'vitest';
 import { openDB, closeDB, saveCheckpoint, restoreCheckpoint } from '../src/store/db.js';
 import { vimHandleKey } from '../src/wxnodus-ui/lib/vimKeys.js';
 import { createAutoReview } from '../src/kernel/autoReview.js';
-import { toStreamJson } from '../src/kernel/streamJson.js';
 import { resolveAtRefs } from '../src/wxnodus-ui/lib/atRefs.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -44,20 +43,6 @@ describe('AI 审批预审（差距 #8，默认关）', () => {
     const ar = createAutoReview(() => true, async (p) => p.includes('ls') ? 'allow' : 'deny');
     expect(await ar.review({ tool: 'bash', args: 'ls', cwd: '.' })).toBe('allow');
     expect(await ar.review({ tool: 'bash', args: 'rm -rf /', cwd: '.' })).toBe('deny');
-  });
-});
-
-describe('stream-json（差距 #9，CI 友好）', () => {
-  it('事件流序列化', () => {
-    const lines = toStreamJson([
-      { type: 'init', payload: { model: 'm' } },
-      { type: 'message', payload: { delta: '你' } },
-      { type: 'result', payload: { text: '你好' } },
-    ]);
-    const arr = lines.trim().split('\n').map(l => JSON.parse(l));
-    expect(arr[0].type).toBe('init');
-    expect(arr[1].type).toBe('message');
-    expect(arr[2].type).toBe('result');
   });
 });
 

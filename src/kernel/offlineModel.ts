@@ -40,28 +40,31 @@ export function offlineModelId(model: string | undefined | null): string | null 
 }
 
 // ── pipeline 单例（惰性加载 + 失败归因，不反复尝试）──
-let pipe: any = null;
-let pipeFailed = false;
-let loading: Promise<any> | null = null;
+// 审查修复（P2）：按 modelId 独立缓存——此前单一 pipe 导致切模型后仍用旧模型生成、
+// 加载期跨模型共享 promise、一模型失败永久拒绝另一模型
+const pipes = new Map<string, any>();
+const pipeFailed = new Set<string>();
+const loadings = new Map<string, Promise<any>>();
 
 async function getPipe(modelId: string): Promise<{ pipe: any } | { error: string }> {
-  if (pipe) return { pipe };
-  if (pipeFailed) return { error: '离线模型加载失败（历史错误）——/offline pack status 查看或重启重试' };
-  if (!loading) {
-    loading = (async () => {
+  if (pipes.has(modelId)) return { pipe: pipes.get(modelId) };
+  if (pipeFailed.has(modelId)) return { error: '离线模型加载失败（历史错误）——/offline pack status 查看或重启重试' };
+  if (!loadings.has(modelId)) {
+    loadings.set(modelId, (async () => {
       try {
         const { pipeline } = await import('@huggingface/transformers');
-        pipe = await pipeline('text-generation', modelId, { dtype: 'q4' });
-        return pipe;
-      } catch (e: any) {
-        pipeFailed = true;
+        const p = await pipeline('text-generation', modelId, { dtype: 'q4' });
+        pipes.set(modelId, p);
+        return p;
+      } catch {
+        pipeFailed.add(modelId);
         return null;
       } finally {
-        loading = null;
+        loadings.delete(modelId);
       }
-    })();
+    })());
   }
-  const p = await loading;
+  const p = await loadings.get(modelId);
   if (!p) return { error: '离线模型加载失败——未下载？/offline pack download 预下载；或检查磁盘空间' };
   return { pipe: p };
 }
@@ -108,10 +111,17 @@ export async function callOfflineLlm(model: string, opts: OfflineChatOpts): Prom
         if (piece) opts.onToken?.(piece);
       },
     });
-    const out = await Promise.race([
-      gen,
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`离线推理超时（>${timeoutMs / 1000}s）`)), timeoutMs)),
-    ]);
+    // 审查修复（P3）：timer 泄漏——race 落定后 clearTimeout，否则 pending timer 挂住事件循环 180s
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const timed = new Promise<never>((_, rej) => {
+      timer = setTimeout(() => rej(new Error(`离线推理超时（>${timeoutMs / 1000}s）`)), timeoutMs);
+    });
+    let out: any;
+    try {
+      out = await Promise.race([gen, timed]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
     const text = typeof out === 'string' ? out : String(out?.[0]?.generated_text ?? '');
     return { ok: true, content: text, usage: { promptTokens: 0, completionTokens: 0 } };
   } catch (e: any) {
