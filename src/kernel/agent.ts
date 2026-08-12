@@ -42,6 +42,8 @@ export interface AgentOptions {
   maxContextTokens?: number;
   /** 排除的工具名（子代理收窄工具集用） */
   excludeTools?: string[];
+  /** P0-2：自定义 agent 指令覆盖（.wxnodus/agents/*.md 定义）——存在时整体替换内置 system prompt */
+  systemPromptOverride?: string;
   /** P3 安全注入通道：vault=内存保险库；sudoInjection/secretInjection=通道开关（/security 控制，默认关闭） */
   security?: { sudoInjection?: boolean; secretInjection?: boolean; vault?: import('./secrets.js').SecretVault | null };
   /** 敏感输入请求（用户亲手输入）：kind=sudo 返回密码；kind=secret 返回密钥值；不可用返回 null */
@@ -439,7 +441,7 @@ export function createAgent(opts: AgentOptions) {
   // A24 第四类修复：委派暂停真实生效（delegation.pause → setDelegationPaused）——
   // 暂停后 delegate 工具/任务系统的新委派被拒绝（诚实返回原因，而非假装执行）
   let delegationPaused = false;
-  const spawnSub = async (goal: string, depth = 1): Promise<{ ok: boolean; output: string; turns: number }> => {
+  const spawnSub = async (goal: string, depth = 1, def?: { systemPromptOverride?: string; mode?: Mode; tools?: string[] }): Promise<{ ok: boolean; output: string; turns: number }> => {
     if (depth > MAX_SUBAGENT_DEPTH) {
       return { ok: false, output: `子代理深度超限（${MAX_SUBAGENT_DEPTH} 层）——请拆分子任务`, turns: 0 };
     }
@@ -454,11 +456,19 @@ export function createAgent(opts: AgentOptions) {
     const sub = createAgent({
       ...opts,
       sessionId: sessionId + ':sub',
-      mode: 'smart',
       maxTurns: Math.min(opts.maxTurns ?? MAX_TURNS, 8),
-      excludeTools: SUBAGENT_EXCLUDE,
+      // P0-2：自定义 agent 定义生效——mode/指令覆盖/工具白名单（缺省保持只读子代理）
+      mode: def?.mode ?? 'smart',
+      systemPromptOverride: def?.systemPromptOverride,
+      excludeTools: def?.tools
+        ? [...new Set([...CORE_TOOL_NAMES, ...Object.keys(tools)])].filter(n => !def.tools!.includes(n))
+        : SUBAGENT_EXCLUDE,
       hooks: null,
     });
+    // 白名单声明的工具在懒加载模式下也要激活（否则 schema 不可见）
+    if (def?.tools && activeToolNames) {
+      for (const t of def.tools) activeToolNames.add(t);
+    }
     const r = await sub.run(goal);
     bus.emit('agent.subagent', { goal, phase: 'complete', ok: r.ok, turns: r.turns, session_id: sessionId + ':sub', subagent_id: sessionId + ':sub' });
     hooks?.subagentStop({ ok: r.ok, output: r.text, turns: r.turns });
@@ -687,10 +697,11 @@ export function createAgent(opts: AgentOptions) {
     };
     const msgs: Array<{ role: string; content: string | Array<Record<string, any>> | null; tool_call_id?: string; reasoning_content?: string; thinking_content?: string; reasoning?: string; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }> = [];
     // 结构化系统提示（智能度基础）：角色/工作准则/模式语义/输出规范/环境
+    // P0-2：自定义 agent（.wxnodus/agents/*.md）经 systemPromptOverride 整体替换
     const { buildSystemPrompt } = await import('./systemPrompt.js');
     const modelName = (opts.config?.settings as any)?.model ?? '';
     const { hasImageIn } = await import('./providers.js');
-    msgs.push({ role: 'system', content: buildSystemPrompt({
+    msgs.push({ role: 'system', content: opts.systemPromptOverride ?? buildSystemPrompt({
       mode, cwd: process.cwd(), model: modelName, hasImageIn: hasImageIn(modelName), sessionId,
       // 开放兼容：/lang 设置生效（输出语言）+ dataDir 支持外部 prompts/system.md 覆盖
       lang: (opts.config?.settings as any)?.lang,

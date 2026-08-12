@@ -1793,6 +1793,24 @@ export const commands = {
     }
   });
 
+  // P0-1：/browser——浏览器自动化（探测/导航/关闭；AI 工具 browser_* 同链路）
+  bus.register('/browser', async (args) => {
+    const sub = String(args[0] ?? '').toLowerCase();
+    const { browserProbe, browserClose, browserNavigate } = await import('../kernel/browser.js');
+    if (sub === 'close') return await browserClose();
+    if (sub === 'open') {
+      const url = args.slice(1).join(' ').trim();
+      if (!url) return '用法：/browser open <URL>（SSRF 防护拦截内网）';
+      const r = await browserNavigate(url);
+      return r.text.slice(0, 1500);
+    }
+    // 默认：探测状态
+    const probe = browserProbe();
+    return probe.ok
+      ? `浏览器可用：${probe.browser}\n用法：/browser open <URL> ｜ /browser close（AI 也可经 browser_* 工具自主操作）`
+      : `浏览器不可用：${probe.error}\n安装 Microsoft Edge 或 Google Chrome 后重试`;
+  });
+
   // A20：/web 别名（抓取 URL——与 /claw 同链路同防护）
   bus.register('/web', async (args) => {
     const url = args.join(' ').trim();
@@ -2240,9 +2258,49 @@ export const commands = {
   });
 
   // /delegate：真实派发子代理（只读工具集、独立上下文），结果回显并持久化到 tasks 表（可查可恢复）
+  // P0-2：/agent——自定义 agent 定义（.wxnodus/agents/*.md + data/agents/*.md）
+  // 对齐 OpenCode/Codex agent 体系：list 查看｜run <name> <任务> 按定义派发
+  bus.register('/agent', async (args) => {
+    const { loadAgentDefs, findAgentDef } = await import('../kernel/agents.js');
+    const defs = loadAgentDefs(ctx.cwd, ctx.dataDir);
+    const sub = String(args[0] ?? '').toLowerCase();
+    if (sub === 'list' || !sub) {
+      if (!defs.length) return '无自定义 agent（.wxnodus/agents/*.md 或 data/agents/*.md——frontmatter: name/description/mode/tools + 正文指令）';
+      return lines(' 自定义 agent ', defs.map(d => {
+        const tools = d.tools ? `工具[${d.tools.join(',')}]` : '只读工具集';
+        return ` ${d.name.padEnd(18)} ${d.mode ?? 'smart'}｜${tools}｜${d.description}`;
+      }));
+    }
+    if (sub === 'run') {
+      const name = String(args[1] ?? '');
+      const task = args.slice(2).join(' ').trim();
+      if (!name || !task) return '用法：/agent run <agent名> <任务>（/agent list 查看）';
+      const def = findAgentDef(name, ctx.cwd, ctx.dataDir);
+      if (!def) return `agent「${name}」不存在（/agent list 查看；.wxnodus/agents/${name}.md 可创建）`;
+      if (!ctx.agent) return 'agent 不可用：当前环境未提供子代理能力';
+      ctx.bus.emit('system.notice', { text: `派发 agent「${name}」：「${task.slice(0, 60)}」…` });
+      const r = await ctx.agent.spawnSubagent(task, undefined, {
+        systemPromptOverride: def.instructions,
+        mode: def.mode,
+        tools: def.tools,
+      });
+      return lines(` agent「${name}」结果 `, [
+        ` 任务：${task.slice(0, 80)}`,
+        ` 状态：${r.ok ? '完成' : '未完成'}（${r.turns} 轮）`,
+        '',
+        ...String(r.output ?? '').split('\n').slice(0, 30).map(l => ` ${l.slice(0, 110)}`),
+      ]);
+    }
+    return '用法：/agent list｜/agent run <agent名> <任务>';
+  });
+
+  // /delegate：派发只读子代理（P0-2：--agent <name> 指定自定义 agent 定义）
   bus.register('/delegate', async (args) => {
-    const task = args.join(' ');
-    if (!task) return '用法：/delegate <任务>（派发只读子代理，结果返回当前会话）';
+    const agentIdx = args.indexOf('--agent');
+    let agentName: string | null = null;
+    if (agentIdx >= 0) agentName = String(args[agentIdx + 1] ?? '');
+    const task = args.filter((a, i) => a !== '--agent' && args[i - 1] !== '--agent').join(' ').trim();
+    if (!task) return '用法：/delegate <任务> [--agent <自定义agent名>]（派发子代理，结果返回当前会话）';
     if (!ctx.agent) return 'delegate 不可用：当前环境未提供子代理能力';
     ctx.bus.emit('system.notice', { text: `派发子代理：「${task.slice(0, 60)}」…` });
     const id = `t${Date.now().toString(36)}`;
@@ -2250,7 +2308,15 @@ export const commands = {
       ctx.db.prepare(`INSERT INTO tasks (id, goal, status, created_at) VALUES (?,?,?,?)`).run(id, `delegate: ${task.slice(0, 180)}`, 'running', Date.now());
     } catch { /* 任务表未就绪时跳过持久化 */ }
     try {
-      const r = await ctx.agent.spawnSubagent(task);
+      // P0-2：--agent 指定定义时按定义派发（指令/模式/工具白名单生效）
+      let def: { systemPromptOverride?: string; mode?: string; tools?: string[] } | undefined;
+      if (agentName) {
+        const { findAgentDef } = await import('../kernel/agents.js');
+        const d = findAgentDef(agentName, ctx.cwd, ctx.dataDir);
+        if (!d) return `agent「${agentName}」不存在（/agent list 查看）`;
+        def = { systemPromptOverride: d.instructions, mode: d.mode, tools: d.tools };
+      }
+      const r = await ctx.agent.spawnSubagent(task, undefined, def);
       // 结果持久化（机制补强）：/jobs show <id> 可查看历史
       try {
         ctx.db.prepare(`UPDATE tasks SET status=?, output=?, done_at=? WHERE id=?`).run(r.ok ? 'done' : 'failed', String(r.output).slice(0, 4000), Date.now(), id);

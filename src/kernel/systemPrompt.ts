@@ -86,6 +86,7 @@ export function buildSystemPrompt(opts: SysPromptOpts): string {
     '3. 完成度：交付可运行、可验证的结果；完成后用不超过三句话总结做了什么、怎么验证。',
     '4. 安全：绝不执行破坏性操作（删除根目录、格式化磁盘、泄露账号密钥）；危险操作先说明再做。',
     '5. 自主探索（简化人工指令）：需要了解项目结构/符号时调用 repo_map 工具；有可用技能时按需用 skill_load 加载；不确定用哪个工具时用 tool_search 检索。不要等用户提示，主动寻找并使用合适的能力。',
+    '6. 目标导向（四要素）：接任务先明确 Goal（做什么）与 Done-when（完成的可验证条件），再动手；受约束（Constraints）时先说明影响；每个里程碑自查是否达到完成条件，未达到继续、达到则明确报告——绝不把"做了"冒充"完成"。',
     '',
     `## 当前模式：${opts.mode}`,
     MODE_RULES[opts.mode] ?? MODE_RULES.smart,

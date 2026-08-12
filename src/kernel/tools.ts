@@ -471,6 +471,61 @@ export function coreTools(): Record<string, ToolDef> {
       }
     },
   };
+  // P0-1：浏览器自动化工具组（竞品标配缺口补齐）——系统 Edge/Chrome 复用 + SSRF 域名白名单。
+  // 模型可主动打开网页、点击、输入、截图（/img 视觉分析）——配合 web_search 形成完整联网闭环。
+  const browserNavigate: ToolDef = {
+    schema: { type: 'function', function: { name: 'browser_navigate', description: '打开网页（系统浏览器 + SSRF 三层防护：内网/DNS 重绑定/重定向逐跳拦截）。返回页面标题/地址/正文快照——模型据此决定下一步点击或输入。', parameters: { type: 'object', properties: { url: { type: 'string', description: 'http/https 公网 URL' } }, required: ['url'] } } },
+    danger: true, // 外联/副作用——需确认
+    async run({ url }) {
+      const { browserNavigate } = await import('./browser.js');
+      const r = await browserNavigate(String(url ?? ''));
+      return r.text;
+    },
+  };
+  const browserClick: ToolDef = {
+    schema: { type: 'function', function: { name: 'browser_click', description: '点击页面元素（CSS 选择器）。导航后操作页面交互（链接/按钮/标签页切换）。', parameters: { type: 'object', properties: { selector: { type: 'string', description: 'CSS 选择器，如 a[href*="docs"]、#submit、button:has-text("登录")' } }, required: ['selector'] } } },
+    danger: true, // 外联/副作用——需确认
+    async run({ selector }) {
+      const { browserClick } = await import('./browser.js');
+      const r = await browserClick(String(selector ?? ''));
+      return r.text;
+    },
+  };
+  const browserType: ToolDef = {
+    schema: { type: 'function', function: { name: 'browser_type', description: '向输入框输入文本（CSS 选择器定位；submit=true 回车提交——表单/搜索框）。', parameters: { type: 'object', properties: { selector: { type: 'string', description: 'CSS 选择器（input/textarea）' }, text: { type: 'string', description: '输入内容' }, submit: { type: 'boolean', description: '输入后回车（默认 false）' } }, required: ['selector', 'text'] } } },
+    danger: true, // 外联/副作用——需确认
+    async run({ selector, text, submit }) {
+      const { browserType } = await import('./browser.js');
+      const r = await browserType(String(selector ?? ''), String(text ?? ''), submit === true);
+      return r.text;
+    },
+  };
+  const browserScreenshot: ToolDef = {
+    schema: { type: 'function', function: { name: 'browser_screenshot', description: '当前页面截图保存（返回文件路径——配合 /img 或视觉模型分析页面视觉状态）。', parameters: { type: 'object', properties: {} } } },
+    danger: false,
+    async run() {
+      const { browserScreenshot } = await import('./browser.js');
+      const r = await browserScreenshot();
+      return r.text;
+    },
+  };
+  const browserSnapshot: ToolDef = {
+    schema: { type: 'function', function: { name: 'browser_snapshot', description: '当前页面可访问性快照（标题/地址/正文文本）——理解页面当前状态。', parameters: { type: 'object', properties: {} } } },
+    danger: false,
+    async run() {
+      const { browserSnapshot } = await import('./browser.js');
+      const r = await browserSnapshot();
+      return r.text;
+    },
+  };
+  const browserClose: ToolDef = {
+    schema: { type: 'function', function: { name: 'browser_close', description: '关闭浏览器会话（释放进程；下次 browser_navigate 自动重启）。', parameters: { type: 'object', properties: {} } } },
+    danger: false,
+    async run() {
+      const { browserClose } = await import('./browser.js');
+      return await browserClose();
+    },
+  };
   const scaffoldBuild: ToolDef = {
     schema: {
       type: 'function',
@@ -762,7 +817,7 @@ export function coreTools(): Record<string, ToolDef> {
         .join('\n');
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_close: browserClose, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

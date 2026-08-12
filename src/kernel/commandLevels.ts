@@ -52,6 +52,9 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/jobs retry': 'confirm', '/jobs pause': 'confirm', '/jobs resume': 'confirm', '/jobs clean': 'confirm',
   '/cron run': 'confirm',
   '/security sudo off': 'confirm', '/security secret off': 'confirm',
+  // P0-1/P0-2：浏览器（打开页面/交互——副作用外联）与自定义 agent（派发执行）
+  '/browser': 'confirm', '/browser open': 'confirm', '/browser close': 'safe',
+  '/agent': 'confirm', '/agent list': 'safe', '/agent run': 'confirm',
   // ── danger：高危，强制人工确认（AI 预审不可放行）──
   '/deploy': 'danger', '/script run': 'danger',
   '/webhook add': 'danger', '/webhook del': 'danger',
