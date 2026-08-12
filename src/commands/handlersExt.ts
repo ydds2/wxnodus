@@ -1147,9 +1147,48 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   // /evidence：真实验证并落盘证据（审计修复——不再读不存在的 health.json 伪造 'verified'）
   bus.register('/evidence', async (args) => {
+    // 校准完善：证据链可查性——/evidence list 全量证据簿、/evidence show <项目> 明细、
+    // /evidence <项目> 重验证（向后兼容）
+    const { readdirSync, readFileSync, existsSync } = await import('node:fs');
+    const projectsDir = join(ctx.dataDir, 'projects');
+    if (args[0] === 'list') {
+      if (!existsSync(projectsDir)) return '证据簿为空——/build 生成首个项目后这里出现证据';
+      const rows: Array<{ name: string; status: string; ts: number; fingerprint: string; checks: string[] }> = [];
+      for (const name of readdirSync(projectsDir)) {
+        try {
+          const ev = JSON.parse(readFileSync(join(projectsDir, name, 'evidence.json'), 'utf8'));
+          rows.push({ name, status: ev.status, ts: ev.ts, fingerprint: ev.fingerprint, checks: ev.checks ?? [] });
+        } catch { /* 无证据的项目跳过 */ }
+      }
+      rows.sort((a, b) => b.ts - a.ts);
+      if (!rows.length) return '证据簿为空——/build 生成首个项目后这里出现证据';
+      return lines(` 证据簿（${rows.length} 个项目） `, rows.map(r => [
+        ` ${r.status === 'ok' ? '✅' : '❌'} ${r.name}（${new Date(r.ts).toLocaleString()}）`,
+        `    状态 ${r.status} · 指纹 ${r.fingerprint} · ${r.checks.length} 项检查（/evidence show ${r.name}）`,
+      ]).flat());
+    }
     const name = args[0] ?? 'default';
     const dir = join(ctx.dataDir, 'projects', name);
-    if (!existsSync(dir)) return `项目不存在：${name}`;
+    if (args[0] === 'show') {
+      const projName = args[1] ?? '';
+      const projDir = join(ctx.dataDir, 'projects', projName);
+      if (!existsSync(projDir)) return `项目不存在：${projName}（/evidence list 查看证据簿）`;
+      try {
+        const ev = JSON.parse(readFileSync(join(projDir, 'evidence.json'), 'utf8'));
+        return lines(` 证据「${projName}」 `, [
+          ` 状态：${ev.status}${ev.status === 'ok' ? ' ✅' : ''}`,
+          ` 检查项：${(ev.checks ?? []).map((c: string) => '✓ ' + c).join(' / ') || '无'}`,
+          ` 指纹：${ev.fingerprint}（sha256[:6]，文件变更即变化）`,
+          ` 时间：${new Date(ev.ts).toLocaleString()}`,
+          ...(ev.detail ? [` 验证明细：${ev.detail}`] : []),
+          ...(ev.port ? [` 探活端口：${ev.port}`] : []),
+          ` 重验证：/evidence <项目>｜质量门：/gate <项目>`,
+        ]);
+      } catch {
+        return `证据文件缺失或损坏：${join(projDir, 'evidence.json')}`;
+      }
+    }
+    if (!existsSync(dir)) return `项目不存在：${name}（/evidence list 查看证据簿）`;
     // 真实验证：启动→探活→重启→读回；结果如实落盘（失败记 failed，不伪造）
     const { verifyProject } = await import('../build/verify.js');
     const vr = await verifyProject(dir);
