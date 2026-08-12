@@ -139,11 +139,17 @@ export async function searchDuckDuckGo(
   }
 
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
-  // 瞬时网络抖动重试 1 次（反爬/无结果不重试——重试无意义且放大请求）
-  let r = await safeFetchText(url, { maxBytes: 500_000, proxy: opts.proxy });
+  // 短超时（8s）+ 快速失败才重试：DDG 在国内常被墙（超时/连不上），
+  // 重试无意义且放大等待——只有 <5s 的快速失败（瞬时抖动）才值得重试 1 次
+  const attempt = async (): Promise<{ status: number; text: string } | { error: string; ms?: number }> => {
+    const t0 = Date.now();
+    const r = await safeFetchText(url, { maxBytes: 500_000, proxy: opts.proxy, timeoutMs: 8000 });
+    return 'error' in r ? { ...r, ms: Date.now() - t0 } : r;
+  };
+  let r = await attempt();
 
-  if ('error' in r && !String(r.error).includes('已拦截')) {
-    const retry = await safeFetchText(url, { maxBytes: 500_000, proxy: opts.proxy });
+  if ('error' in r && !String(r.error).includes('已拦截') && (r.ms ?? 9999) < 5000) {
+    const retry = await attempt();
     if (!('error' in retry)) r = retry;
   }
 

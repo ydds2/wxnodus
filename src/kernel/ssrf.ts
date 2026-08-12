@@ -60,12 +60,14 @@ export interface SafeFetchOptions {
   method?: string;
   /** A21：请求体（对象自动 JSON 序列化并加 content-type） */
   body?: string | Record<string, unknown>;
+  /** 单跳超时毫秒（默认 15000；搜索等对延迟敏感的场景可缩短——DDG 在国内常超时，缩短可加快回退） */
+  timeoutMs?: number;
 }
 
 const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) WxNodus/3.0 (+local CLI search)';
 
 export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): Promise<{ status: number; text: string } | { error: string }> {
-  const { maxRedirects = 5, maxBytes = 1_000_000, headers = {}, proxy } = opts;
+  const { maxRedirects = 5, maxBytes = 1_000_000, headers = {}, proxy, timeoutMs = 15000 } = opts;
   const method = String(opts.method ?? 'GET').toUpperCase();
   // A21：请求体序列化（对象 → JSON + content-type；字符串原样）
   let bodyStr: string | undefined;
@@ -88,7 +90,7 @@ export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): P
 
     if (proxy) {
       // 代理通道：Windows 10+ 内置 curl（SSRF 逐跳校验仍在 JS 侧完成）
-      const r = await proxyFetchOnce(current, proxy, { maxBytes, headers: mergedHeaders, method, body: bodyStr });
+      const r = await proxyFetchOnce(current, proxy, { maxBytes, headers: mergedHeaders, method, body: bodyStr, timeoutMs });
       if ('error' in r) return r;
       const { status, location, body } = r;
       if (status >= 300 && status < 400 && location) {
@@ -101,7 +103,7 @@ export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): P
     try {
       const resp = await fetch(current, {
         redirect: 'manual', // 手动跟随以逐跳校验
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(timeoutMs),
         method,
         body: method === 'GET' || method === 'HEAD' ? undefined : bodyStr,
         headers: { 'user-agent': DEFAULT_UA, ...mergedHeaders },
@@ -129,7 +131,7 @@ export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): P
 async function proxyFetchOnce(
   url: string,
   proxy: string,
-  opts: { maxBytes: number; headers: Record<string, string>; method: string; body?: string }
+  opts: { maxBytes: number; headers: Record<string, string>; method: string; body?: string; timeoutMs: number }
 ): Promise<{ status: number; location: string | null; body: string } | { error: string }> {
   const { spawnSync } = await import('node:child_process');
   const { mkdtempSync, readFileSync, unlinkSync, mkdirSync } = await import('node:fs');
@@ -139,7 +141,7 @@ async function proxyFetchOnce(
   const outFile = join(dir, 'body.bin');
   const headerFile = join(dir, 'headers.txt');
   const args = [
-    '-s', '-m', '15',
+    '-s', '-m', String(Math.ceil(opts.timeoutMs / 1000)),
     '--max-filesize', String(opts.maxBytes),
     '--proxy', proxy,
     '-A', DEFAULT_UA,
