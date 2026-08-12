@@ -169,8 +169,27 @@ async function main() {
     autoReview: createAutoReview(
       () => (settings as any).autoReview === true,
       async (prompt) => {
-        const r = await agent.run(`（安全预审任务）请直接回答审查结论：${prompt}`);
-        return r.ok ? r.text : 'ask';
+        // 架构修复：独立单轮调用（callModelOnce）——不再递归 agent.run。
+        // 此前递归同一 agent 实例：executeTool 内触发评审 → 覆盖 turn 状态、
+        // 相同 sessionId 消息互相污染、轮次计数错乱（竞品 Codex 用独立评审代理）。
+        try {
+          const { resolveApiKey } = await import('../kernel/providers.js');
+          const { resolveDefaultModel, resolveDefaultBaseURL } = await import('../kernel/defaults.js');
+          const { callModelOnce } = await import('../kernel/llmOnce.js');
+          const keyRes = resolveApiKey(settings);
+          if (!keyRes.key) return 'ask';
+          const r = await callModelOnce({
+            baseURL: resolveDefaultBaseURL(settings),
+            model: resolveDefaultModel(settings),
+            key: keyRes.key,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0,
+            timeoutMs: 30_000,
+          });
+          return r.ok ? r.content : 'ask';
+        } catch {
+          return 'ask';
+        }
       },
     ),
     hooks: hookRunner,

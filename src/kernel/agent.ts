@@ -554,6 +554,15 @@ export function createAgent(opts: AgentOptions) {
       if (activeToolNames && !activeToolNames.has(name) && name !== 'tool_search') {
         return `工具「${name}」未加载——请先调用 tool_search 检索并激活该工具（参数 query 填关键词）`;
       }
+      // 架构深度（OpenCode/AI SDK 对齐）：工具参数 schema 校验中介层——
+      // 模型传错参数（缺必填/类型错）在执行前被拒并给出修正提示（此前靠工具内部防御）
+      const { validateToolArgs } = await import('./toolArgs.js');
+      const argErr = validateToolArgs(name, args, tool);
+      if (argErr) {
+        bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: 0, toolId, session_id: sessionId });
+        auditTool('tool.args-invalid', { tool: name, error: argErr, args: JSON.stringify(args ?? {}).slice(0, 200) });
+        return `工具参数错误：${argErr}（请修正后重试）`;
+      }
       // F12：权限模型读 tool.danger（单一事实来源）
       // P0-2：持久化规则优先裁决（deny 直接拒绝 / allow 跳过审批 / ask 强制确认）
       // 深度：applyRules 支持 priority/modes/commandPrefix/denyMessage（Gemini policy 对齐）

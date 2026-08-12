@@ -146,7 +146,8 @@ export interface Memory {
 export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memory {
   const workingLimit = opts.workingLimit ?? 20;
   const ensureSession = db.prepare(`INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES (?, '', ?, ?)`);
-  const appendStmt = db.prepare(`INSERT INTO messages (session_id, role, content, tool_call_id, ts) VALUES (?,?,?,?,?)`);
+  const appendStmt = db.prepare(`INSERT INTO messages (session_id, role, content, tool_call_id, ts, run_no) VALUES (?,?,?,?,?,?)`);
+  const runNoStmt = db.prepare(`SELECT COALESCE(MAX(run_no),0) m FROM messages WHERE session_id=? AND role='user'`);
   const absorbStmt = db.prepare(`UPDATE messages SET archived=1 WHERE id=?`);
   const workingStmt = db.prepare(`SELECT role, content FROM messages WHERE session_id=? AND archived=0 ORDER BY id DESC LIMIT ?`);
   const recallStmt = db.prepare(`SELECT id, role, content, ts FROM messages WHERE session_id=? ORDER BY id`);
@@ -172,6 +173,14 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
     })();
   };
 
+  // 架构（V3）：用户轮次 run_no——user 消息递增（压缩/undo 跨压缩寻址稳定）；
+  // 非 user 消息沿用当前轮次（0 表示未建档）
+  const runNo = (sessionId: string, role: string): number => {
+    if (role !== 'user') return 0;
+    const row = runNoStmt.get(sessionId) as { m: number } | undefined;
+    return (row?.m ?? 0) + 1;
+  };
+
   return {
     append(sessionId, role, content, toolCallId) {
       ensureSession.run(sessionId, Date.now(), Date.now());
@@ -187,7 +196,7 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
           }
         }
       }
-      const info = appendStmt.run(sessionId, role, content, toolCallId ?? null, Date.now());
+      const info = appendStmt.run(sessionId, role, content, toolCallId ?? null, Date.now(), runNo(sessionId, role));
       // F5：消息异步写入向量索引（黑洞混合召回的数据源）
       if (role === 'user' || role === 'assistant') {
         embedAndStore(Number(info.lastInsertRowid), String(content));

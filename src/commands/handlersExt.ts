@@ -327,25 +327,37 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     }
     // M4 修复：定位当前会话（UI 多会话切换后 /undo 作用于活跃会话）
     const sid = ctx.agent?.getSessionId?.() ?? 'default';
-    const msgs = ctx.db.prepare(`SELECT id, role, content, ts FROM messages WHERE session_id=? AND role!='system' AND archived=0 ORDER BY id`).all(sid) as Array<{ id: number; role: string; content: string; ts: number }>;
+    const msgs = ctx.db.prepare(`SELECT id, role, content, ts, run_no FROM messages WHERE session_id=? AND role!='system' AND archived=0 ORDER BY id`).all(sid) as Array<{ id: number; role: string; content: string; ts: number; run_no: number }>;
     if (!msgs.length) return '没有可撤销的消息';
-    // 定位 user 消息轮次（从尾部数）
-    const userIdx: number[] = [];
-    msgs.forEach((m, i) => { if (m.role === 'user') userIdx.push(i); });
-    if (!userIdx.length) return '没有可撤销的轮次';
+    // 架构（V3）：按 run_no 定位用户轮次（跨压缩稳定——压缩归档旧轮次后编号不变；
+    // 旧数据 run_no=0 回退按消息下标定位）
+    const userRuns: number[] = [];
+    for (const m of msgs) {
+      if (m.role === 'user' && m.run_no > 0) {
+        if (!userRuns.includes(m.run_no)) userRuns.push(m.run_no);
+      }
+    }
+    const fallbackUserIdx: number[] = [];
+    msgs.forEach((m, i) => { if (m.role === 'user' && m.run_no === 0) fallbackUserIdx.push(i); });
     if (args[0] === 'list') {
-      const recent = userIdx.slice(-5).reverse();
-      // 修复：轮次编号 = 从尾部数的序号（1=最新）——此前用 userIdx.length-ui
-      // （消息下标 - user 计数，不可减）在含 assistant/tool 消息的会话中必然出现负编号
-      return lines(' 可撤销轮次（/undo <n> 撤销） ', recent.map((ui, k) => {
-        const m = msgs[ui]!;
+      // 最近 5 个用户轮次（倒序展示）
+      const recent = userRuns.length ? userRuns.slice(-5).reverse() : fallbackUserIdx.slice(-5).reverse();
+      return lines(' 可撤销轮次（/undo <n> 撤销） ', recent.map((runOrIdx, k) => {
+        const m = userRuns.length
+          ? msgs.find(x => x.run_no === runOrIdx && x.role === 'user')
+          : msgs[runOrIdx as number];
+        if (!m) return ` #${k + 1}  （不可用）`;
         const firstLine = String(m.content ?? '').split('\n')[0]!.slice(0, 30);
         return ` #${k + 1}  ${new Date(m.ts).toLocaleString('zh-CN', { hour12: false })}  ${firstLine}`;
       }));
     }
     const n = parseInt(args[0] ?? '1', 10);
     if (!Number.isFinite(n) || n < 1 || n > 20) return '用法：/undo [轮次数 1-20] ｜ /undo list 查看可撤销轮次';
-    const target = userIdx[Math.max(0, userIdx.length - n)]!;
+    // 目标轮次定位：run_no 优先（压缩后仍精确）；旧数据回退消息下标
+    const targetRun = userRuns.length ? userRuns[Math.max(0, userRuns.length - n)] : null;
+    const target = targetRun
+      ? msgs.findIndex(m => m.run_no === targetRun && m.role === 'user')
+      : fallbackUserIdx[Math.max(0, fallbackUserIdx.length - n)];
     // 撤销前自动快照（F20：完整字段 id/archived/ts，restore 保留原始 id 与黑洞状态）
     try {
       const full = ctx.db.prepare(`SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=? AND role!='system' ORDER BY id`).all(sid);

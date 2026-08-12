@@ -80,7 +80,8 @@ export function openDB(dataDir: string): Db {
       tool_call_id TEXT,
       archived INTEGER NOT NULL DEFAULT 0,
       ts INTEGER NOT NULL,
-      salience REAL NOT NULL DEFAULT 1.0
+      salience REAL NOT NULL DEFAULT 1.0,
+      run_no INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
     CREATE TABLE IF NOT EXISTS settings (
@@ -207,6 +208,13 @@ export function openDB(dataDir: string): Db {
     db.exec(`ALTER TABLE messages ADD COLUMN salience REAL NOT NULL DEFAULT 1.0`);
   } catch {
     // 列已存在（新库建表已含）——忽略
+  }
+  // V3（架构）：messages.run_no——用户轮次（压缩/undo 跨压缩寻址用；旧库补列默认 0，
+  // 新消息写入时递增）
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN run_no INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    // 列已存在——忽略
   }
   const ver = db.prepare(`SELECT value FROM settings WHERE key='schema_version'`).get() as any;
   if (!ver) {
