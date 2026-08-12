@@ -498,6 +498,7 @@ export function createAgent(opts: AgentOptions) {
     get cwd() { return ctxCwd; },
     dataDir: resolveDataDir(process.cwd()), // 开放兼容：WXNODUS_DATA_DIR 覆盖数据目录
     db: opts.db, // cron_create 等需要持久化能力的工具
+    bus: opts.bus, // notify 通知工具（system.notice 事件）
     ask: async (q) => (opts.onApproval ? opts.onApproval('ask_user', { question: q }) : false),
     clarify: async (q, choices) => (opts.onClarify ? opts.onClarify(q, choices) : ''),
     spawnSubagent: spawnSub,
@@ -934,6 +935,15 @@ export function createAgent(opts: AgentOptions) {
     // C8 修复：错误路径也发 agent.end（ok:false）——事件契约对齐参考（错误也完成回合）
     bus.emit('agent.end', { ok: finalText.length > 0, turns });
     hooks?.sessionEnd({ ok: finalText.length > 0, turns });
+    // P2-全方面：自动 checkpoint（Claude Code 每 prompt 快照对齐）——回合结束自动快照，
+    // 保留最近 10 个（saveCheckpoint 内部循环清理）；/rewind 可回滚任意自动快照
+    if (!opts2.subagent) {
+      try {
+        const { saveCheckpoint } = await import('../store/db.js');
+        const msgsSnap = opts.db.prepare(`SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=? ORDER BY id`).all(sessionId);
+        saveCheckpoint(opts.db, sessionId, { kind: 'auto', messages: msgsSnap, ts: Date.now() });
+      } catch { /* 快照失败不阻断（临时目录等） */ }
+    }
     return { ok: finalText.length > 0, text: finalText, turns, interrupted: st.interrupted };
     } finally {
       if (turn === st) turn = null; // C1：当前回合结束，释放 turn 引用

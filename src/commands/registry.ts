@@ -20,7 +20,7 @@ export const SLASH: string[] = [
   // 网络与集成
   '/claw', '/web', '/search', '/browser', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
   // 协作
-  '/swarm', '/duo', '/cron', '/jobs', '/term', '/task', '/delegate', '/agent', '/goal', '/btw',
+  '/swarm', '/duo', '/cron', '/jobs', '/term', '/task', '/delegate', '/agent', '/arena', '/goal', '/btw',
   // 工具（确定性）
   '/calc', '/hash', '/base64', '/uuid', '/rand', '/json', '/timer', '/sql', '/fs', '/units', '/csv',
   // 上下文工程（P3：repo map / 快照回滚 / 技能热重载）
@@ -38,7 +38,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉',
   '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿',
   '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
-  '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/goal': '◍', '/btw': '◍',
+  '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/arena': '◍', '/goal': '◍', '/btw': '◍',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
   '/map': '⬡', '/rewind': '⬡', '/reload-skills': '⬡',
 };
@@ -129,6 +129,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/term': '后台终端（PTY 交互会话）',
   '/delegate': '派生子代理',
   '/agent': '自定义 agent（list/run——.wxnodus/agents/*.md 定义）',
+  '/arena': '多模型对战（双模型执行同一任务对比选优）',
   '/goal': '循环目标执行',
   '/btw': '侧边提问（隔离只读上下文，不打断主对话）',
   '/calc': '计算器（自然语言直达）',

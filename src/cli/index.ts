@@ -339,6 +339,17 @@ async function main() {
     if (opts.session) {
       agent.setSessionId(opts.session);
     }
+    // --ephemeral：临时会话（Codex 对齐）——不加载历史、结束后清理（消息/快照），不污染会话列表
+    const ephemeralSid = opts.ephemeral ? `ephemeral-${Date.now().toString(36)}` : null;
+    if (ephemeralSid) agent.setSessionId(ephemeralSid);
+    const cleanupEphemeral = () => {
+      if (!ephemeralSid) return;
+      try {
+        db.prepare(`DELETE FROM messages WHERE session_id=?`).run(ephemeralSid);
+        db.prepare(`DELETE FROM checkpoints WHERE session_id=?`).run(ephemeralSid);
+        db.prepare(`DELETE FROM sessions WHERE id=?`).run(ephemeralSid);
+      } catch { /* 清理失败静默 */ }
+    };
     // --wire：订阅总线输出 JSONL 事件流（协议化接口，供外部工具/CI 消费）
     if (opts.wire) {
       const WIRE_EVENTS = new Set(['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'system.notice']);
@@ -367,6 +378,7 @@ async function main() {
       const result = await agent.run(text);
       console.log(JSON.stringify({ type: 'agent.result', ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted }));
       for (const off of offs) off();
+      cleanupEphemeral();
       process.exit(0);
     }
     const { routeInput } = await import('../commands/intent.js');
@@ -396,20 +408,42 @@ async function main() {
             const row = db.prepare(`SELECT COALESCE(SUM(input_tokens + output_tokens),0) t FROM usage_stats WHERE session_id=?`).get(opts.session ?? 'default') as { t: number } | undefined;
             usage = row?.t ?? null;
           } catch { /* 统计失败静默 */ }
+          // --output-schema：输出结构校验（claude --json-schema / codex --output-schema 对齐）——
+          // 校验失败报错并给退出码 1（诚实：不静默交付不符合结构的输出）
+          if (opts.outputSchema) {
+            const { validateJsonSchema } = await import('../kernel/jsonSchema.js');
+            try {
+              const schema = JSON.parse(opts.outputSchema);
+              const parsed = JSON.parse(result.text);
+              const violations = validateJsonSchema(parsed, schema);
+              if (violations.length) {
+                process.stderr.write(`wxnodus: 输出不符合 --output-schema：\n${violations.slice(0, 5).map(v => `  ${v.path || '(根)'}：${v.message}`).join('\n')}\n`);
+                cleanupEphemeral();
+                process.exit(1);
+              }
+            } catch (e: any) {
+              process.stderr.write(`wxnodus: --output-schema 校验异常：${String(e?.message ?? e).slice(0, 120)}\n`);
+              cleanupEphemeral();
+              process.exit(1);
+            }
+          }
           console.log(JSON.stringify({ ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted, usage }));
         } else {
           console.log(result.text);
         }
         // P1-2 退出码协议：0 成功｜1 失败（-p 分支）
+        cleanupEphemeral();
         process.exit(result.ok ? 0 : 1);
       } catch (e: any) {
         // P1-2：可重试失败（429/5xx/网络/超时）→ 75（EX_TEMPFAIL），CI 据此重试
         const { exitCodeForError } = await import('../kernel/errors.js');
         process.stderr.write(`wxnodus: ${e?.message ?? e}
 `);
+        cleanupEphemeral();
         process.exit(exitCodeForError(e));
       }
     }
+    cleanupEphemeral();
     process.exit(0);
   }
 

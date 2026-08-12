@@ -2332,6 +2332,69 @@ export const commands = {
     return '用法：/agent list｜/agent run <agent名> <任务>';
   });
 
+  // P2-全方面：/arena——多模型对战（Qwen Agent Arena 对齐，差异化杀手锏）
+  // 同一任务依次用两个模型执行（主模型 + 指定/自动次选），输出对比面板 + 全文落盘
+  bus.register('/arena', async (args) => {
+    const mIdx = args.indexOf('--model');
+    const m2 = mIdx >= 0 ? String(args[mIdx + 1] ?? '') : '';
+    const task = args.filter((a, i) => a !== '--model' && args[i - 1] !== '--model').join(' ').trim();
+    if (!task) return '用法：/arena <任务> [--model <次选模型id>]（双模型对战选优，结果落盘 data/arena-*）';
+    if (!ctx.agent) return 'arena 不可用：当前环境未提供 agent';
+    const { resolveApiKey, MODEL_CATALOG } = await import('../kernel/providers.js');
+    const { resolveDefaultModel } = await import('../kernel/defaults.js');
+    const settings = ctx.config.get('settings') as { apiKeyEnc?: string | null; baseURL?: string; model?: string };
+    const keyRes = resolveApiKey(settings);
+    if (!keyRes.key) return 'arena 需要模型密钥——/key set <密钥> 后可用（双模型真实对战）';
+    const cur = settings.model && MODEL_CATALOG.some(m => m.modelId === settings.model) ? settings.model : resolveDefaultModel(settings);
+    // 次选：--model 指定 ｜ 同 provider 备选 ｜ 目录中第一个不同模型（不同 provider 也可——密钥同 env）
+    let second = '';
+    if (m2) {
+      if (!MODEL_CATALOG.some(m => m.modelId === m2)) return `模型「${m2}」不在目录（/model 查看可用模型）`;
+      second = m2;
+    } else {
+      const sameProv = MODEL_CATALOG.find(m => m.provider === MODEL_CATALOG.find(x => x.modelId === cur)?.provider && m.modelId !== cur);
+      second = sameProv?.modelId ?? MODEL_CATALOG.find(m => m.modelId !== cur)?.modelId ?? '';
+    }
+    if (!second) return '无可用次选模型';
+    const agent = ctx.agent; // 已确认非空（上方 gate）
+    ctx.bus.emit('system.notice', { text: `arena 对战开始：${cur} vs ${second}「${task.slice(0, 40)}」…` });
+    const ts = Date.now().toString(36);
+    const run = async (modelId: string, sid: string): Promise<{ modelId: string; ok: boolean; turns: number; text: string }> => {
+      try {
+        agent.setSessionId(sid);
+        ctx.setModel(modelId);
+        const r = await agent.run(task);
+        return { modelId, ok: r.ok, turns: r.turns, text: r.text };
+      } catch (e: any) {
+        return { modelId, ok: false, turns: 0, text: `执行失败：${String(e?.message ?? e).slice(0, 200)}` };
+      }
+    };
+    const a = await run(cur, `arena-a-${ts}`);
+    const b = await run(second, `arena-b-${ts}`);
+    // 恢复主会话状态（对战使用独立会话，不污染）
+    try {
+      agent.setSessionId(agent.getSessionId?.() ?? 'default');
+      ctx.setModel(cur);
+    } catch { /* 恢复失败静默 */ }
+    // 全文落盘（对比审阅用）
+    const outFile = join(ctx.dataDir, `arena-${ts}.md`);
+    try {
+      writeFileSync(outFile, `# Arena 对战：${cur} vs ${second}\n\n## 任务\n${task}\n\n## ${cur}（${a.turns} 轮）\n${a.text}\n\n## ${second}（${b.turns} 轮）\n${b.text}\n`, 'utf8');
+    } catch { /* 落盘失败不阻断 */ }
+    const summary = (x: { text: string }) => x.text.split('\n').filter(Boolean).slice(0, 6).map(l => l.slice(0, 90)).join('\n');
+    return lines(` Arena 对战「${task.slice(0, 24)}」 `, [
+      ` 完整输出：${outFile}`,
+      '',
+      `── 选手 A：${a.modelId}（${a.turns} 轮）${a.ok ? '' : '⚠ 未完成'}──`,
+      summary(a),
+      '',
+      `── 选手 B：${b.modelId}（${b.turns} 轮）${b.ok ? '' : '⚠ 未完成'}──`,
+      summary(b),
+      '',
+      ` 建议：比较两份输出选优（也可 /arena --model <其它模型> 再战）`,
+    ]);
+  });
+
   // /delegate：派发只读子代理（P0-2：--agent <name> 指定自定义 agent 定义）
   bus.register('/delegate', async (args) => {
     const agentIdx = args.indexOf('--agent');

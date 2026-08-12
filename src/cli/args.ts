@@ -14,6 +14,10 @@ export interface CliOptions {
   serve: boolean;
   /** --port：网关监听端口（默认 4789） */
   port: number | null;
+  /** --ephemeral：临时会话（Codex 对齐——不加载历史，结束后清理，不污染会话列表） */
+  ephemeral: boolean;
+  /** --output-schema <json>：--json 模式下输出结构校验（claude --json-schema / codex --output-schema 对齐，零依赖轻量校验） */
+  outputSchema: string | null;
   positional: string[];
 }
 
@@ -28,10 +32,12 @@ const SPEC: Array<{ long: string; short?: string; key: keyof CliOptions; takeVal
   { long: '--strict-mcp-config', key: 'strictMcpConfig', type: 'bool' },
   { long: '--serve', key: 'serve', type: 'bool' },
   { long: '--port', key: 'port', takeValue: true, type: 'string' },
+  { long: '--ephemeral', key: 'ephemeral', type: 'bool' },
+  { long: '--output-schema', key: 'outputSchema', takeValue: true, type: 'string' },
 ];
 
 export function parseArgs(argv: string[]): CliOptions {
-  const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, port: null, positional: [] };
+  const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, port: null, ephemeral: false, outputSchema: null, positional: [] };
   let i = 0;
   const findSpec = (tok: string): { spec: (typeof SPEC)[number]; inline?: string } | null => {
     for (const spec of SPEC) {

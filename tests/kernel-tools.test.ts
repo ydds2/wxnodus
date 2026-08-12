@@ -136,3 +136,26 @@ describe('scaffold_build 规格优先级', () => {
     }
   });
 });
+
+// ── 全方面：notify 通知工具（Codex 对齐）──
+describe('notify 通知工具', () => {
+  it('经事件总线发 system.notice；无 bus 时明确不可用', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-nt-'))
+    const db = openDB(d)
+    try {
+      const tools = coreTools()
+      const t = tools.notify!
+      const emitted: string[] = []
+      const bus = { emit: (type: string, e: any) => emitted.push(`${type}:${e?.text ?? ''}`) }
+      expect(await t.run({ content: '构建完成' }, { db, bus } as any)).toBe('通知已发送')
+      expect(emitted[0]).toContain('system.notice')
+      expect(emitted[0]).toContain('构建完成')
+      // 空内容拒绝；无 bus 明确提示
+      expect(await t.run({ content: '  ' }, { db, bus } as any)).toContain('content 不能为空')
+      expect(await t.run({ content: 'x' }, { db } as any)).toContain('通知通道不可用')
+    } finally {
+      closeDB(db)
+      try { rmSync(d, { recursive: true, force: true }); } catch {}
+    }
+  })
+})

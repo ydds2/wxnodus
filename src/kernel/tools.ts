@@ -23,6 +23,8 @@ export interface ToolCtx {
   dataDir: string;
   /** 数据库（cron_create 等持久化工具；未装配时为 undefined） */
   db?: import('../store/db.js').Db;
+  /** 事件总线（notify 等通知工具；未装配时为 undefined） */
+  bus?: import('./events.js').EventBus;
   ask?: (q: string, opts?: { danger?: boolean }) => Promise<boolean>;
   /** C6：文字提问（clarify 工具）——返回用户文本答案 */
   clarify?: (q: string, choices?: string[]) => Promise<string>;
@@ -526,6 +528,22 @@ export function coreTools(): Record<string, ToolDef> {
       return await browserClose();
     },
   };
+  // P2-全方面：notify——AI 主动发系统通知（Codex notify 对齐）：长任务完成/关键事件提醒用户
+  const notify: ToolDef = {
+    schema: { type: 'function', function: { name: 'notify', description: '发送系统通知（长任务完成/关键事件提醒用户关注——如后台任务结束、重要结论）。', parameters: { type: 'object', properties: { content: { type: 'string', description: '通知内容（一句话）' } }, required: ['content'] } } },
+    danger: false,
+    async run({ content }, ctx) {
+      const c = String(content ?? '').trim();
+      if (!c) return '参数错误：content 不能为空';
+      if (!ctx.bus) return '通知通道不可用（事件总线未装配）';
+      try {
+        ctx.bus.emit('system.notice', { text: `🔔 ${c.slice(0, 200)}` });
+        return '通知已发送';
+      } catch (e: any) {
+        return `通知发送失败：${String(e?.message ?? e).slice(0, 120)}`;
+      }
+    },
+  };
   const scaffoldBuild: ToolDef = {
     schema: {
       type: 'function',
@@ -817,7 +835,7 @@ export function coreTools(): Record<string, ToolDef> {
         .join('\n');
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_close: browserClose, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_close: browserClose, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {
