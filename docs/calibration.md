@@ -49,3 +49,13 @@
 2. 证据可查性：`/evidence list`（全量证据簿）+ `/evidence show <项目>`（明细）——`src/commands/handlersExt.ts`
 3. 规则脑模板扩充至 48 个，支撑「零配置」声称的分量——`src/build/spec.ts`
 4. 核心链路可复现验证：`scripts/core-demo.mjs`（说一句话 → 编译 → 启动级验证 → 证据 → 五门）
+
+## 「离线」的精确边界（用户拷问校准）
+
+「零配置离线可用」曾被质疑「没有网络怎么存活」。核实代码后分层（README 已同步）：
+
+- **核心闭环完全离线成立**：规则脑是纯正则（`src/build/spec.ts` 48 模板）；脚手架产物零依赖（`node:http` + `node:test` + JSON 存储，`src/build/scaffold.ts`——npm test 不联网）；验证引擎纯本地进程（spawn → localhost 探活 → kill → 重启 → 读回，`src/build/verify.ts` 无任何 fetch）。**验证对象是本地进程而非云服务，所以责任链与网络无关。**
+- **首次联网一次、之后离线**：embedding（transformers.js 从 HF hub 下载 Xenova/all-MiniLM-L6-v2，~90MB）、本地 VLM（moondream2 q8 ~1.7GB）——模型缓存后全离线。
+- **必须联网**：AI 对话、开放域规格化（规则脑未命中）、云视觉、/search /claw。
+
+结论：与「支持本地模型」的竞品（Aider/Codex/Cline/OpenCode）的本质区别不是「模型在本地跑」，而是「**验证与证据链全程不过网**」——这是离线责任的真正含义。
