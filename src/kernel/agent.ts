@@ -556,10 +556,11 @@ export function createAgent(opts: AgentOptions) {
       }
       // F12：权限模型读 tool.danger（单一事实来源）
       // P0-2：持久化规则优先裁决（deny 直接拒绝 / allow 跳过审批 / ask 强制确认）
-      const ruleHit = applyRules(name, args, permRules);
-      if (ruleHit === 'deny') {
-        auditTool('tool.denied', { tool: name, rule: 'deny' });
-        return `工具被规则拒绝：${name}（/perm rule remove 可移除规则）`;
+      // 深度：applyRules 支持 priority/modes/commandPrefix/denyMessage（Gemini policy 对齐）
+      const ruleHit = applyRules(name, args, permRules, mode);
+      if (ruleHit?.decision === 'deny') {
+        auditTool('tool.denied', { tool: name, rule: 'deny', reason: ruleHit.rule.reason ?? '' });
+        return `工具被规则拒绝：${name}${ruleHit.rule.denyMessage ? `——${ruleHit.rule.denyMessage}` : ''}（/perm rule remove 可移除规则）`;
       }
       // AI 自主调用通道（wx_cmd）分级裁决：safe 直执行 / confirm 走模式确认链 /
       //   danger 强制人工确认（跳过 autoReview——高危不可 AI 预审放行）/ redline 直接拒绝
@@ -600,7 +601,7 @@ export function createAgent(opts: AgentOptions) {
         && (name === 'fs_write' || name === 'fs_edit')
         && typeof (args as any)?.path === 'string'
         && isPathWithinCwd(String((args as any).path));
-      if (ruleHit === 'allow') {
+      if (ruleHit?.decision === 'allow') {
         bus.emit('system.notice', { text: `规则放行：${name}（/perm rule list 查看）` });
       } else if (opts.autoReview?.enabled() && !cmdForceManual && (verdict === 'confirm' || verdict === 'plan')) {
         // AI 审批预审（D 批次）：LLM 预审代替人工弹窗——allow 放行（留痕）/ deny 拒绝 / ask 弹窗
@@ -614,7 +615,7 @@ export function createAgent(opts: AgentOptions) {
           const ok = await onApproval(name, args);
           if (!ok) return `用户拒绝执行 ${name}`;
         }
-      } else if (ruleHit === 'ask' && (verdict === 'approve' || verdict === 'confirm')) {
+      } else if (ruleHit?.decision === 'ask' && (verdict === 'approve' || verdict === 'confirm')) {
         const ok = await onApproval(name, args);
         if (!ok) return `用户拒绝执行 ${name}`;
       } else if (verdict === 'confirm' && lowRiskFile) {
@@ -662,12 +663,40 @@ export function createAgent(opts: AgentOptions) {
       // 变更即回归：文件被真实修改后调度 auto 剧本重放（防抖合并连续改动；
       // 回归重放期间的 fs_write 由 regressionRunning 守卫拦截，不会自我触发）
       if (name === 'fs_write' || name === 'fs_edit') scheduleAutoRegression();
+      // 深度（Aider auto_commit 对齐）：git 仓库内文件编辑后自动提交本次文件
+      // （commit 消息标注 [wxnodus]；settings.autoGitCommit=false 可关；失败静默不阻断）
+      if (name === 'fs_write' || name === 'fs_edit' && !out.startsWith('工具被规则拒绝')) {
+        try { await maybeAutoGitCommit(name, args, ctxCwd); } catch { /* 静默 */ }
+      }
       return out;
     } catch (e: any) {
       bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId, session_id: sessionId });
       auditTool('tool.executed', { tool: name, ok: false, ms: Date.now() - t0, error: String(e?.message ?? e).slice(0, 120) });
       return `工具执行异常：${e?.message?.slice(0, 300) ?? e}`;
     }
+  }
+
+  // 深度（Aider auto_commit 对齐）：git 仓库内 fs 编辑后自动提交——仅提交本次文件，
+  // 避免误提交用户其他改动；无 git/非仓库/失败一律静默（编辑结果不受影响）
+  async function maybeAutoGitCommit(toolName: string, args: Record<string, any>, cwd: string): Promise<void> {
+    const settings = opts.config?.settings as Record<string, any> | undefined;
+    if (settings?.autoGitCommit === false) return; // 默认开启（Aider 语义），显式 false 关闭
+    const p = String(args?.path ?? '').trim();
+    if (!p) return;
+    const { execFileSync } = await import('node:child_process');
+    const { resolve } = await import('node:path');
+    const abs = resolve(cwd, p);
+    const workDir = resolve(cwd);
+    try {
+      // 非 git 仓库直接跳过（快速失败）
+      execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: workDir, encoding: 'utf8', stdio: 'pipe', windowsHide: true, timeout: 5000 });
+    } catch { return; }
+    try {
+      const rel = abs.startsWith(workDir) ? abs.slice(workDir.length).replace(/^[\\/]/, '') : abs;
+      execFileSync('git', ['add', '--', rel], { cwd: workDir, stdio: 'pipe', windowsHide: true, timeout: 5000 });
+      execFileSync('git', ['commit', '-m', `[wxnodus] ${toolName === 'fs_write' ? '写入' : '编辑'} ${rel.slice(0, 60)}`, '--no-verify'], { cwd: workDir, stdio: 'pipe', windowsHide: true, timeout: 10000 });
+      bus.emit('system.notice', { text: `已自动提交（git）：${rel.slice(0, 60)}——/undo 或 git log 可审查` });
+    } catch { /* 提交失败（无改动/冲突）静默 */ }
   }
 
   async function loop(sessionId: string, prompt: string, opts2: { subagent?: boolean; images?: Array<{ dataUrl: string; mime: string }> } = {}): Promise<AgentResult> {
@@ -783,6 +812,8 @@ export function createAgent(opts: AgentOptions) {
     const toolList = opts2.subagent ? toolsToOpenAI(Object.fromEntries(Object.entries(toolSource).filter(([n]) => !['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate'].includes(n)))) : toolsToOpenAI(toolSource);
     let turns = 0;
     let consecutiveFail = 0;
+    // 深度：签名级循环检测缓冲（最近 8 轮工具调用签名）
+    const recentToolSigs: string[] = [];
     let unknownRounds = 0;
     let finalText = '';
     bus.emit('agent.start', { sessionId, prompt });
@@ -912,6 +943,16 @@ export function createAgent(opts: AgentOptions) {
         if (consecutiveFail >= MAX_CONSECUTIVE_FAIL) {
           bus.emit('agent.error', { message: `同工具连续失败 ${MAX_CONSECUTIVE_FAIL} 次，终止` });
           return { ok: false, text: '同工具连续失败 5 次，已终止', turns, interrupted: st.interrupted };
+        }
+        // 深度：签名级循环检测（Cline loop-detection 对齐）——相同 (工具,参数签名)
+        // 重复 ≥3 次即空转（即使每次未报失败）——比「失败计数」更早识别死循环省 token
+        const sig = executed.map(e => `${e.name}:${JSON.stringify(e.args ?? {}).slice(0, 120)}`).join('|');
+        recentToolSigs.push(sig);
+        if (recentToolSigs.length > 8) recentToolSigs.shift();
+        const repeatCount = recentToolSigs.filter(s => s === sig).length;
+        if (repeatCount >= 3) {
+          bus.emit('agent.error', { message: `检测到工具调用循环（相同调用重复 ${repeatCount} 次），终止` });
+          return { ok: false, text: `工具调用循环检测（相同调用重复 ${repeatCount} 次）——任务无进展，已终止；请换一种方式或拆分子任务`, turns, interrupted: st.interrupted };
         }
         const first = executed[0]!;
         msgs.push({

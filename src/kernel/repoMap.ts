@@ -5,6 +5,12 @@
 //       repo map 思想：先看地图再动代码，减少盲目搜索）。
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, extname, relative, sep } from 'node:path';
+import { createHash } from 'node:crypto';
+
+// 深度（Aider mtime 缓存对齐）：进程内 mtime 签名缓存——同一仓库内容未变时
+// /map 与 repo_map 工具命中缓存毫秒级返回（免全量重扫重读）
+const mapCache = new Map<string, { sig: string; result: RepoMapResult }>();
+const MAP_CACHE_MAX = 8; // 多项目轮换（防内存膨胀）
 
 export interface RepoMapFile {
   /** 相对路径（正斜杠分隔） */
@@ -124,6 +130,19 @@ export function buildRepoMap(cwd: string, opts: { budgetTokens?: number; maxFile
   const skipped = { n: 0 };
   walk(cwd, cwd, files, skipped);
 
+  // 深度：mtime 签名缓存——仅 stat（不读内容）算指纹；命中直接返回（Aider diskcache 对齐）
+  const hasher = createHash('sha1');
+  hasher.update(String(budget));
+  for (const f of files) {
+    try {
+      const st = statSync(f.abs);
+      hasher.update(`${f.rel}:${st.mtimeMs}:${st.size};`);
+    } catch { /* 文件消失忽略 */ }
+  }
+  const sig = hasher.digest('hex');
+  const cached = mapCache.get(cwd);
+  if (cached && cached.sig === sig) return cached.result;
+
   // 先读内容提取符号；再统计符号名全仓引用次数（aider 依赖图排序的轻量近似——
   // 被引用越多的符号所在文件越核心，如入口/工具层优先入预算）
   const readContent = (f: { abs: string; rel: string }): string => {
@@ -171,11 +190,18 @@ export function buildRepoMap(cwd: string, opts: { budgetTokens?: number; maxFile
   }
   if (truncated > 0) linesOut.push(`…（预算截断：${truncated} 个文件未纳入，/map <更大的预算> 查看完整）`);
 
-  return {
+  const result: RepoMapResult = {
     map: linesOut.join('\n'),
     files: included,
     scanned: files.length,
     skipped: skipped.n,
     truncated,
   };
+  // 写缓存（上限淘汰最旧）
+  if (mapCache.size >= MAP_CACHE_MAX) {
+    const oldest = [...mapCache.entries()][0];
+    if (oldest) mapCache.delete(oldest[0]);
+  }
+  mapCache.set(cwd, { sig, result });
+  return result;
 }

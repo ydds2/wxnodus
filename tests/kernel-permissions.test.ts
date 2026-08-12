@@ -174,11 +174,33 @@ describe('审批规则文件', () => {
       ]);
       const rules = loadPermRules(dir);
       expect(rules.length).toBe(2);
-      // glob 命中/不命中
-      expect(applyRules('fs_write', { path: 'src/main.ts' }, rules)).toBe('allow');
+      // 深度（Gemini policy 对齐）：返回 {decision, rule}；glob 命中/不命中
+      expect(applyRules('fs_write', { path: 'src/main.ts' }, rules)?.decision).toBe('allow');
       expect(applyRules('fs_write', { path: 'dist/x.js' }, rules)).toBeNull();
       // 无 pattern 规则全匹配
-      expect(applyRules('bash', {}, rules)).toBe('deny');
+      expect(applyRules('bash', {}, rules)?.decision).toBe('deny');
+    } finally {
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('深度：priority 排序 / modes 过滤 / bash commandPrefix / denyMessage', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wx-pr-'))
+    try {
+      const rules = [
+        { tool: 'bash', pattern: 'git push', decision: 'deny' as const, priority: 10, denyMessage: 'git push 请手动执行' },
+        { tool: 'bash', pattern: 'git *', decision: 'allow' as const, priority: 5 },
+        { tool: 'fs_write', pattern: 'src/**', decision: 'allow' as const, modes: ['smart'] },
+      ]
+      // priority 大者先匹配：git push 命中 deny（priority 10 优先于 git * allow）
+      const push = applyRules('bash', { command: 'git push origin main' }, rules as any)
+      expect(push?.decision).toBe('deny')
+      expect(push?.rule.denyMessage).toBe('git push 请手动执行')
+      // 非 push 的 git 命令命中 allow（priority 5）
+      expect(applyRules('bash', { command: 'git status' }, rules as any)?.decision).toBe('allow')
+      // modes 过滤：非 smart 模式 fs_write 规则不生效
+      expect(applyRules('fs_write', { path: 'src/x.ts' }, rules as any, 'auto')).toBeNull()
+      expect(applyRules('fs_write', { path: 'src/x.ts' }, rules as any, 'smart')?.decision).toBe('allow')
     } finally {
       try { rmSync(dir, { recursive: true, force: true }); } catch {}
     }

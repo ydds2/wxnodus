@@ -47,14 +47,21 @@ const SENSITIVE_WRITE = /(^|[\\/])(\.bashrc|\.zshrc|\.profile|\.bash_profile|\.s
 
 // ── P0-2 审批规则文件（持久化 allow/deny/ask）──
 // data/permissions.json：[{ tool: 'fs_write', pattern: 'src/**', decision: 'allow' }]
-// 规则优先级：deny > allow > ask > 模式默认（与 Codex forbidden>prompt>allow 同构）
+// 规则优先级：priority 大者先（缺省 0）→ 同 priority 按文件顺序；deny > allow > ask
+// （与 Codex forbidden>prompt>allow、Gemini policy priority 同构）
 export interface PermRule {
   tool: string;
-  /** 路径 glob（仅对带 path 参数的工具生效；缺省匹配全部） */
+  /** 路径 glob（仅对带 path 参数的工具生效；bash 工具匹配命令前缀；缺省匹配全部） */
   pattern?: string;
   decision: 'allow' | 'deny' | 'ask';
   /** 人工可读理由（Codex exec policy 同款——规则为何存在，审计可追溯） */
   reason?: string;
+  /** 深度（Gemini policy priority 对齐）：规则优先级，大者先匹配（缺省 0） */
+  priority?: number;
+  /** 深度（Gemini policy modes 对齐）：限定生效的权限模式（缺省全部模式生效） */
+  modes?: string[];
+  /** 深度（Gemini denyMessage 对齐）：deny 时定制拒绝提示（如「git push 请手动执行」） */
+  denyMessage?: string;
 }
 
 export function loadPermRules(dataDir: string): PermRule[] {
@@ -71,20 +78,31 @@ export function savePermRules(dataDir: string, rules: PermRule[]): void {
   writeFileSync(join(dataDir, 'permissions.json'), JSON.stringify(rules, null, 2), 'utf8');
 }
 
-// 规则判定：返回 decision 或 null（无规则命中）
-export function applyRules(tool: string, args: Record<string, any>, rules: PermRule[]): 'allow' | 'deny' | 'ask' | null {
+/** 规则判定：返回 decision 或 null（无规则命中）。mode 传入时按 modes 过滤（Gemini policy modes 对齐） */
+export function applyRules(tool: string, args: Record<string, any>, rules: PermRule[], mode?: string): { decision: 'allow' | 'deny' | 'ask'; rule: PermRule } | null {
   if (!rules?.length) return null;
-  const hit = rules.filter(r => r.tool === tool);
+  // priority 降序（同优先按文件序稳定）；modes 过滤
+  const hit = rules
+    .filter(r => r.tool === tool && (!r.modes?.length || (mode && r.modes.includes(mode))))
+    .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
   if (!hit.length) return null;
-  // 路径过滤：仅当规则带 pattern 且工具参数有 path 时校验 glob
+  // 路径/命令过滤：pattern 对 bash 匹配命令前缀（精确授权「git push 特定分支」），
+  // 其余工具匹配 path 参数 glob（缺省匹配全部）
   const pathArg = String(args?.path ?? '');
+  const cmdArg = tool === 'bash' ? String(args?.command ?? '') : '';
   for (const r of hit) {
     if (r.pattern) {
-      if (!pathArg) continue;
-      const re = new RegExp('^' + r.pattern.split('*').map(escapeRe).join('.*') + '$', 'i');
-      if (!re.test(pathArg)) continue;
+      if (tool === 'bash') {
+        if (!cmdArg) continue;
+        const re = new RegExp('^' + r.pattern.split('*').map(escapeRe).join('.*'));
+        if (!re.test(cmdArg)) continue;
+      } else {
+        if (!pathArg) continue;
+        const re = new RegExp('^' + r.pattern.split('*').map(escapeRe).join('.*') + '$', 'i');
+        if (!re.test(pathArg)) continue;
+      }
     }
-    return r.decision;
+    return { decision: r.decision, rule: r };
   }
   return null;
 }

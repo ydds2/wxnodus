@@ -93,14 +93,32 @@ export function coreTools(): Record<string, ToolDef> {
       try {
         const p = resolve(ctx.cwd, path);
         const content = readFileSync(p, 'utf8');
-        const idx = content.indexOf(String(oldText));
-        if (idx < 0) return `未找到要替换的文本：${String(oldText).slice(0, 80)}`;
+        const needle = String(oldText);
+        // 深度：唯一性校验（Aider SearchReplace 对齐）——出现多处时反馈位置列表，
+        // 模型据此精化 oldText（避免替换错位置）；缺省只替换第一处并注明
+        const positions: number[] = [];
+        let from = 0;
+        while (true) {
+          const i = content.indexOf(needle, from);
+          if (i < 0) break;
+          positions.push(i);
+          from = i + needle.length;
+        }
+        if (!positions.length) {
+          // 失败反馈带上下文（模型可据此修正 oldText）
+          const ctxStart = Math.max(0, content.indexOf(needle.slice(0, 20)) - 30);
+          return `未找到要替换的文本：${needle.slice(0, 60)}${ctxStart >= 0 ? `\n附近内容：…${content.slice(ctxStart, ctxStart + 80).replace(/\n/g, ' ')}…` : ''}`;
+        }
+        if (positions.length > 1) {
+          return `「${needle.slice(0, 40)}」出现 ${positions.length} 处（行 ${positions.map(i => content.slice(0, i).split('\n').length).join('、')}）——oldText 需更精确（包含更多上下文）或指定唯一片段`;
+        }
         // 影子快照（/undo fs）：编辑前备份原内容
         try {
           const { snapshotFile } = await import('./undoShadows.js');
           snapshotFile(ctx.dataDir, p, content);
         } catch { /* 快照失败不影响编辑 */ }
-        writeFileSync(p, content.slice(0, idx) + String(newText) + content.slice(idx + String(oldText).length), 'utf8');
+        const idx = positions[0]!;
+        writeFileSync(p, content.slice(0, idx) + String(newText) + content.slice(idx + needle.length), 'utf8');
         return `已替换 ${path} 中 1 处`;
       } catch (e: any) { return `编辑失败：${e.message}`; }
     },
