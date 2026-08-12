@@ -314,6 +314,17 @@ export function useComposerState({
 
         setInput(input.slice(0, compReplace) + text)
       },
+      /** A24 鼠标化：点击排队消息行进入编辑（与 ↑ 循环进队列编辑同链路） */
+      editQueued: (index: number) => {
+        const text = queuedDisplay[index]
+
+        if (text == null) {
+          return
+        }
+        setQueueEdit(index)
+        setHistoryIdx(null)
+        setInput(text)
+      },
       clearIn,
       dequeue,
       enqueue,
@@ -340,6 +351,7 @@ export function useComposerState({
       input,
       openEditor,
       pushHistory,
+      queuedDisplay,
       removeQ,
       replaceQ,
       setCompIdx,

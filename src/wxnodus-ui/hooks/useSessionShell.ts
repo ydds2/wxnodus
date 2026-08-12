@@ -651,7 +651,13 @@ export function useMainApp(gw: GatewayClient) {
           scrollRef.current.scrollToBottom()
         }
 
-        void rpc<TerminalResizeResponse>('terminal.resize', { cols: stdout.columns ?? 80, session_id: ui.sid })
+        // A24 第四类修复：把 CLI 窗口尺寸同步给后台终端（gateway 转发 node-pty
+        // resize——此前 RPC 是空 stub，/term attach 视图换行不跟随窗口）
+        void rpc<TerminalResizeResponse>('terminal.resize', {
+          cols: stdout.columns ?? 80,
+          rows: stdout.rows ?? 24,
+          session_id: ui.sid,
+        })
       }, 100)
     }
 
@@ -1205,6 +1211,7 @@ export function useMainApp(gw: GatewayClient) {
       cols,
       compIdx: composerState.compIdx,
       completions: composerState.completions,
+      editQueued: composerActions.editQueued,
       empty,
       handleTextPaste: composerActions.handleTextPaste,
       input: composerState.input,

@@ -279,3 +279,254 @@ describe('sudo/secret 注入通道', () => {
     expect(Date.now() - t0).toBeLessThan(5000);
   });
 });
+
+// A24 第四类修复：delegation.pause 真实持久化（内核 set/get + status RPC）
+describe('delegation.pause 真实持久化', () => {
+  it('pause 后 status 轮询保持 paused:true（不再闪回 false）', async () => {
+    let paused = false
+    const bus = createEventBus(dir)
+    const kernel = {
+      dataDir: dir,
+      cwd: process.cwd(),
+      db,
+      mem,
+      config: { get: () => ({}), getKey: () => undefined },
+      bus,
+      settings: { model: 'glm-4v-flash' },
+      commandBus: createCommandBus(),
+      agent: {
+        run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
+        abort() {},
+        setMode() {},
+        getMode: () => 'smart',
+        setSessionId() {},
+        getSessionId: () => 's1',
+        steer: () => true,
+        setDelegationPaused: (v: boolean) => { paused = v },
+        getDelegationPaused: () => paused,
+      },
+      applyModel() {},
+      setMode() {},
+      setTheme() {},
+      setThinking() {},
+      requestExit() {},
+    }
+    const g = new GatewayClient(kernel as any)
+
+    const p1 = await g.request('delegation.pause', { pause: true })
+    expect(p1.paused).toBe(true)
+    // 同一 gateway 的后续 status 轮询读到真实 paused（此前硬编码 false）
+    const s1 = await g.request('delegation.status', {})
+    expect(s1.paused).toBe(true)
+    // resume 后恢复
+    const p2 = await g.request('delegation.pause', { pause: false })
+    expect(p2.paused).toBe(false)
+    const s2 = await g.request('delegation.status', {})
+    expect(s2.paused).toBe(false)
+  })
+})
+
+// A24 第四类修复：terminal.resize 真实转发（不再空 stub）+ session.fork 已移除
+describe('terminal.resize 转发 / session.fork 移除', () => {
+  it('terminal.resize 转发到 kernel.term.resize（含窗口尺寸）', async () => {
+    const bus = createEventBus(dir)
+    const resized: Array<{ id: string; cols: number; rows: number }> = []
+    const kernel = {
+      dataDir: dir,
+      cwd: process.cwd(),
+      db,
+      mem,
+      config: { get: () => ({}), getKey: () => undefined },
+      bus,
+      settings: { model: 'glm-4v-flash' },
+      commandBus: createCommandBus(),
+      agent: {
+        run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
+        abort() {},
+        setMode() {},
+        getMode: () => 'smart',
+        setSessionId() {},
+        getSessionId: () => 's1',
+        steer: () => true,
+      },
+      term: {
+        list: () => [{ id: 't1', status: 'running', shell: 'bash', cwd: '/', startedAt: 0, exitCode: null }],
+        resize: (id: string, cols: number, rows: number) => { resized.push({ id, cols, rows }); return { ok: true } },
+      },
+      applyModel() {},
+      setMode() {},
+      setTheme() {},
+      setThinking() {},
+      requestExit() {},
+    }
+    const g = new GatewayClient(kernel as any)
+    const r = await g.request('terminal.resize', { cols: 120, rows: 40, session_id: 's1' })
+    expect(r.ok).toBe(true)
+    expect(resized).toEqual([{ id: 't1', cols: 120, rows: 40 }])
+  })
+
+  it('terminal.resize 无运行终端 → 诚实报错（非假装成功）', async () => {
+    const bus = createEventBus(dir)
+    const kernel = {
+      dataDir: dir,
+      cwd: process.cwd(),
+      db,
+      mem,
+      config: { get: () => ({}), getKey: () => undefined },
+      bus,
+      settings: { model: 'glm-4v-flash' },
+      commandBus: createCommandBus(),
+      agent: {
+        run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
+        abort() {},
+        setMode() {},
+        getMode: () => 'smart',
+        setSessionId() {},
+        getSessionId: () => 's1',
+        steer: () => true,
+      },
+      term: { list: () => [], resize: () => ({ ok: true }) },
+      applyModel() {},
+      setMode() {},
+      setTheme() {},
+      setThinking() {},
+      requestExit() {},
+    }
+    const g = new GatewayClient(kernel as any)
+    const r = await g.request('terminal.resize', { cols: 120, session_id: 's1' })
+    expect(r.ok).toBe(false)
+    expect(String(r.error)).toContain('运行中')
+  })
+
+  it('session.fork 已移除（死 RPC 拒绝而非静默返回）', async () => {
+    const bus = createEventBus(dir)
+    const kernel = {
+      dataDir: dir,
+      cwd: process.cwd(),
+      db,
+      mem,
+      config: { get: () => ({}), getKey: () => undefined },
+      bus,
+      settings: { model: 'glm-4v-flash' },
+      commandBus: createCommandBus(),
+      agent: {
+        run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
+        abort() {},
+        setMode() {},
+        getMode: () => 'smart',
+        setSessionId() {},
+        getSessionId: () => 's1',
+        steer: () => true,
+      },
+      applyModel() {},
+      setMode() {},
+      setTheme() {},
+      setThinking() {},
+      requestExit() {},
+    }
+    const g = new GatewayClient(kernel as any)
+    // request 捕获 unsupported 错误 → { ok:false, code }（不 reject、不假装成功）
+    const r = await g.request('session.fork', { session_id: 's1' })
+    expect(r.ok).toBe(false)
+    expect(String(r.message)).toContain('unsupported')
+  })
+})
+
+// A24 第三类修复：kernel jobs 事件 → background.jobs 即时推送
+describe('kernel jobs 事件转发', () => {
+  it('jobs.created / jobs.complete → 发布 background.jobs 快照', async () => {
+    const bus = createEventBus(dir)
+    let jobsDb = [
+      { id: 'j1', goal: '跑测试', status: 'running', kind: 'agent', created_at: 1, done_at: null, exit_code: null },
+    ]
+    const kernel = {
+      dataDir: dir,
+      cwd: process.cwd(),
+      db,
+      mem,
+      config: { get: () => ({}), getKey: () => undefined },
+      bus,
+      settings: { model: 'glm-4v-flash' },
+      commandBus: createCommandBus(),
+      agent: {
+        run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
+        abort() {},
+        setMode() {},
+        getMode: () => 'smart',
+        setSessionId() {},
+        getSessionId: () => 's1',
+        steer: () => true,
+      },
+      taskRunner: { list: () => jobsDb },
+      applyModel() {},
+      setMode() {},
+      setTheme() {},
+      setThinking() {},
+      requestExit() {},
+    }
+    const g = new GatewayClient(kernel as any)
+    ;(g as any).subscribed = true
+    const events: any[] = []
+    ;(g as any).on('event', (e: any) => events.push(e))
+    g.start()
+
+    bus.emit('jobs.created', { id: 'j2', kind: 'shell', parent_id: '', goal: '编译' })
+    expect(events.some(e => e.type === 'background.jobs')).toBe(true)
+    const snap = events.find(e => e.type === 'background.jobs')?.payload
+    expect(Array.isArray(snap)).toBe(true)
+    expect(snap[0].id).toBe('j1')
+
+    events.length = 0
+    jobsDb = [{ id: 'j1', goal: '跑测试', status: 'complete', kind: 'agent', created_at: 1, done_at: 9, exit_code: 0 }]
+    bus.emit('jobs.complete', { id: 'j1', kind: 'agent', status: 'complete', exit_code: 0, parent_id: '', duration_ms: 8 })
+    const snap2 = events.find(e => e.type === 'background.jobs')?.payload
+    expect(snap2[0].status).toBe('complete')
+    expect(snap2[0].exit_code).toBe(0)
+  })
+})
+
+// A24 第三类修复：buildInfo 补真实字段（compressions/mcp_servers/system_prompt/update_behind）
+describe('buildInfo 死数据接线', () => {
+  it('compressions 来自压缩摘要行计数（非硬编码零）', async () => {
+    const bus = createEventBus(dir)
+    // 预置会话行 + 一条压缩摘要消息（与 kernel compactSmart 写入格式一致）
+    db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES ('s1','t',1,1)`).run()
+    db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES ('s1','system','（自动压缩摘要）第一轮总结',1)`)
+      .run()
+    const kernel = {
+      dataDir: dir,
+      cwd: process.cwd(),
+      db,
+      mem,
+      config: { get: () => ({}), getKey: () => undefined },
+      bus,
+      settings: { model: 'glm-4v-flash' },
+      commandBus: createCommandBus(),
+      agent: {
+        run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
+        abort() {},
+        setMode() {},
+        getMode: () => 'smart',
+        setSessionId() {},
+        getSessionId: () => 's1',
+        steer: () => true,
+      },
+      mcpStatus: () => [{ name: 'filesystem', connected: true, tools: 5, transport: 'stdio' }],
+      systemPrompt: () => '你是 WxNodus……',
+      updateBehind: 3,
+      applyModel() {},
+      setMode() {},
+      setTheme() {},
+      setThinking() {},
+      requestExit() {},
+    }
+    const g = new GatewayClient(kernel as any)
+    // session.activate 返回 info = buildInfo()（激活 s1——压缩摘要插在该会话下）
+    const r = await g.request('session.activate', { session_id: 's1' })
+    const info = r.info
+    expect(info.usage.compressions).toBe(1)
+    expect(info.mcp_servers).toEqual([{ name: 'filesystem', connected: true, tools: 5, transport: 'stdio' }])
+    expect(info.system_prompt).toContain('WxNodus')
+    expect(info.update_behind).toBe(3)
+  })
+})

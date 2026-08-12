@@ -40,6 +40,8 @@ export interface McpToolInfo {
 export interface McpClient {
   server: McpServerConfig;
   tools: McpToolInfo[];
+  /** 连接状态（connectAllMcp 失败降级时 false——真实状态，UI 状态栏可读） */
+  connected: boolean;
   callTool(name: string, args: Record<string, any>): Promise<string>;
   close(): void;
 }
@@ -210,6 +212,7 @@ export function connectMcp(cfg: McpServerConfig): Promise<McpClient> {
         }
         resolve({
           server: cfg,
+          connected: true,
           tools: [...toolMap.values()],
           async callTool(name, args) {
             const r = await send('tools/call', { name, arguments: args ?? {} });
@@ -247,6 +250,7 @@ export async function connectAllMcp(dataDir: string, opts: { cwd?: string; stric
       // 连接失败干净降级：不阻断主流程
       out.push({
         server: cfg,
+        connected: false,
         tools: [],
         async callTool() { return `MCP ${cfg.name} 未连接：${r.reason?.message ?? r.reason}`; },
         close() { /* 无进程 */ },
@@ -353,6 +357,7 @@ export async function connectMcpHttp(cfg: McpServerConfig & { url: string }): Pr
   }
   return {
     server: cfg,
+    connected: true,
     tools: [...toolMap.values()],
     async callTool(name, args) {
       const r = await rpc('tools/call', { name, arguments: args ?? {} });

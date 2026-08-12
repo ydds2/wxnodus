@@ -115,6 +115,37 @@ describe('agent.goal 事件映射（gateway）', () => {
   })
 })
 
+describe('kernel jobs 事件 → background.jobs 即时推送（A24 第四类修复）', () => {
+  it('jobs.created/complete 触发 background.jobs 快照（不等 5s 轮询）', async () => {
+    const bus = createEventBus(dir)
+    let jobs = [
+      { id: 'j1', goal: '跑测试', status: 'running', kind: 'agent', created_at: 1, done_at: null, exit_code: null },
+    ]
+    const gw = makeGateway({
+      bus,
+      taskRunner: { list: () => jobs },
+    })
+    const events: any[] = []
+    gw.on('event', e => events.push(e))
+    gw.start()
+    gw.drain()
+
+    bus.emit('jobs.created', { id: 'j2', kind: 'shell', parent_id: '', goal: '编译' })
+    const snap1 = events.filter(e => e.type === 'background.jobs')
+    expect(snap1).toHaveLength(1)
+    expect(snap1[0]!.payload).toEqual([
+      { id: 'j1', goal: '跑测试', status: 'running', kind: 'agent', created_at: 1, done_at: null, exit_code: null },
+    ])
+
+    events.length = 0
+    jobs = [{ id: 'j1', goal: '跑测试', status: 'complete', kind: 'agent', created_at: 1, done_at: 9, exit_code: 0 }]
+    bus.emit('jobs.complete', { id: 'j1', kind: 'agent', status: 'complete', exit_code: 0, parent_id: '', duration_ms: 8 })
+    const snap2 = events.filter(e => e.type === 'background.jobs')
+    expect(snap2).toHaveLength(1)
+    expect(snap2[0]!.payload[0]).toMatchObject({ id: 'j1', status: 'complete', exit_code: 0 })
+  })
+})
+
 describe('backgroundStore（$bgState）', () => {
   it('patchBgState 合并 + bgActiveCount 统计（运行终端/任务/goal）', () => {
     expect(getBgState()).toEqual(buildBgState())

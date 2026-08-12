@@ -205,6 +205,8 @@ export type MaybePromise<T> = Promise<T> | T
 export interface ComposerActions {
   /** A22 鼠标化：补全行点击接受（与 Tab 接受同语义——含 / 前缀剥离） */
   acceptCompletion: (index: number) => void
+  /** A24：排队消息行点击进入编辑（与 ↑ 循环进队列编辑同链路） */
+  editQueued: (index: number) => void
   clearIn: () => void
   dequeue: () => string | undefined
   enqueue: (text: string) => void
@@ -405,6 +407,8 @@ export interface AppLayoutComposerProps {
   cols: number
   compIdx: number
   completions: CompletionItem[]
+  /** A24：排队消息行点击进入编辑（与 ↑ 循环同链路） */
+  editQueued: (index: number) => void
   empty: boolean
   handleTextPaste: (event: PasteEvent) => MaybePromise<ComposerPasteResult | null>
   input: string

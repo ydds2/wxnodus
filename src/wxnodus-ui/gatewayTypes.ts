@@ -611,6 +611,11 @@ export type GatewayEvent =
       session_id?: string
       type: 'background.goal'
     }
+  | {
+      payload: Array<{ created_at: number; done_at: number | null; exit_code: number | null; goal: string; id: string; kind: string; status: string }>
+      session_id?: string
+      type: 'background.jobs'
+    }
   | { payload?: { text?: string }; session_id?: string; type: 'review.summary' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.spawn_requested' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.start' }

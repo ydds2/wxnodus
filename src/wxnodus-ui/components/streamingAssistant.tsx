@@ -37,6 +37,14 @@ export const StreamingAssistant = memo(function StreamingAssistant({
   const streamPendingTools = useTurnSelector(state => state.streamPendingTools)
   const streaming = useTurnSelector(state => state.streaming)
   const activeTools = useTurnSelector(state => state.tools)
+  // A24 第三类修复：live 轮次活动流/结果/委派树/思考态真实传入 ToolTrail
+  // （此前 outcome/activity/subagents/reasoningActive 只存在于 TurnState，
+  //  ToolTrail 的对应面板从未收到数据——死数据接线）
+  const turnActivity = useTurnSelector(state => state.activity)
+  const turnOutcome = useTurnSelector(state => state.outcome)
+  const turnSubagents = useTurnSelector(state => state.subagents)
+  const turnReasoningActive = useTurnSelector(state => state.reasoningActive)
+  const turnReasoningStreaming = useTurnSelector(state => state.reasoningStreaming)
   const showStreamingArea = Boolean(streaming)
 
   if (!progress.showProgressArea && !showStreamingArea && !activeTools.length) {
@@ -87,6 +95,8 @@ export const StreamingAssistant = memo(function StreamingAssistant({
       {blocks.map(block => {
         const node = (
           <MessageLine
+            activity={turnActivity}
+            busy={ui.busy}
             cols={cols}
             compact={compact}
             detailsMode={detailsMode}
@@ -94,8 +104,12 @@ export const StreamingAssistant = memo(function StreamingAssistant({
             isStreaming={block.isStreaming}
             key={block.key}
             msg={block.msg}
+            outcome={turnOutcome}
             prev={prev}
+            reasoningActive={turnReasoningActive}
+            reasoningStreaming={turnReasoningStreaming}
             sections={sections}
+            subagents={turnSubagents}
             t={ui.theme}
             {...(block.tools ? { tools: block.tools } : {})}
           />

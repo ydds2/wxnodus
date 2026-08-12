@@ -24,6 +24,8 @@ export interface TermManager {
   spawn(shell?: string, cwd?: string): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
   write(id: string, input: string): { ok: true } | { ok: false; error: string };
   kill(id: string): { ok: true } | { ok: false; error: string };
+  /** A24 第四类修复：调整 PTY 尺寸（node-pty resize 真实转发——此前 UI 发的 resize 是空 stub） */
+  resize(id: string, cols: number, rows: number): { ok: true } | { ok: false; error: string };
   list(): TermSession[];
   get(id: string): TermSession | null;
   getLog(id: string): string;
@@ -121,6 +123,28 @@ export function createTerminalManager(opts: { dataDir: string; cwd: string }): T
         return { ok: true };
       } catch (e: any) {
         return { ok: false, error: `终止失败：${String(e?.message ?? e).slice(0, 120)}` };
+      }
+    },
+
+    // A24 第四类修复：真实转发 node-pty resize（此前 gateway 侧是空 stub——UI 调整尺寸无效）
+    resize(id: string, cols: number, rows: number): { ok: true } | { ok: false; error: string } {
+      const s = sessions.get(id);
+
+      if (!s) {
+        return { ok: false, error: `终端 ${id} 不存在（/term 查看列表）` };
+      }
+      if (s.status !== 'running') {
+        return { ok: false, error: `终端 ${id} 已退出（code=${s.exitCode ?? '?'}）` };
+      }
+      const w = Math.max(1, Math.floor(Number(cols) || 100));
+      const h = Math.max(1, Math.floor(Number(rows) || 30));
+
+      try {
+        (s.pty as any).resize(w, h);
+
+        return { ok: true };
+      } catch (e: any) {
+        return { ok: false, error: `调整尺寸失败：${String(e?.message ?? e).slice(0, 120)}` };
       }
     },
 

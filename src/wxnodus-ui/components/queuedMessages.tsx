@@ -14,7 +14,7 @@ export function getQueueWindow(queueLen: number, queueEditIdx: number | null) {
   return { end, showLead: start > 0, showTail: end < queueLen, start }
 }
 
-export function QueuedMessages({ cols, queueEditIdx, queued, t }: QueuedMessagesProps) {
+export function QueuedMessages({ cols, onEdit, queueEditIdx, queued, t }: QueuedMessagesProps) {
   if (!queued.length) {
     return null
   }
@@ -41,9 +41,12 @@ export function QueuedMessages({ cols, queueEditIdx, queued, t }: QueuedMessages
         const active = queueEditIdx === idx
 
         return (
-          <Text color={active ? t.color.accent : t.color.muted} dimColor key={`${idx}-${item.slice(0, 16)}`}>
-            {active ? '▸' : ' '} {idx + 1}. {compactPreview(item, Math.max(16, cols - 10))}
-          </Text>
+          // A24：点击排队行进入编辑（此前仅 ↑ 循环可进入）
+          <Box key={`${idx}-${item.slice(0, 16)}`} onClick={() => onEdit(idx)}>
+            <Text color={active ? t.color.accent : t.color.muted} dimColor>
+              {active ? '▸' : ' '} {idx + 1}. {compactPreview(item, Math.max(16, cols - 10))}
+            </Text>
+          </Box>
         )
       })}
 
@@ -58,6 +61,8 @@ export function QueuedMessages({ cols, queueEditIdx, queued, t }: QueuedMessages
 
 interface QueuedMessagesProps {
   cols: number
+  /** A24：点击行进入编辑（composer.editQueued） */
+  onEdit: (index: number) => void
   queueEditIdx: number | null
   queued: string[]
   t: Theme

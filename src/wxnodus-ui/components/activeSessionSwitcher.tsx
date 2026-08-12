@@ -466,42 +466,54 @@ export function ActiveSessionSwitcher({
     [draftModel, onNewPrompt]
   )
 
-  const closeSelected = useCallback(async () => {
-    const target = items[sel - 1]
-
-    if (!target || rowKind(sel) !== 'live' || closingId) {
-      return
-    }
-
-    setErr('')
-    setClosingId(target.id)
-
-    try {
-      const result = await onClose(target.id)
-      const closed = Boolean(result?.closed ?? result?.ok)
-
-      if (!closed) {
-        setErr('session was already closed')
-
+  // A24：基于 id 的关闭（Ctrl+D 与行尾 ✕ 共用——真实 onClose RPC + 光标回退）
+  const closeSession = useCallback(
+    async (id: string) => {
+      if (!id || closingId) {
         return
       }
 
-      const remaining = await load(true)
-      const fallback = closeFallbackAfterClose(target.id, currentSessionId, remaining)
+      setErr('')
+      setClosingId(id)
 
-      if (fallback.action === 'activate') {
-        onSelect(fallback.sessionId)
-      } else if (fallback.action === 'new') {
-        onNew()
-      } else {
-        setSel(s => Math.max(0, Math.min(s, remaining.length + history.length)))
+      try {
+        const result = await onClose(id)
+        const closed = Boolean(result?.closed ?? result?.ok)
+
+        if (!closed) {
+          setErr('session was already closed')
+
+          return
+        }
+
+        const remaining = await load(true)
+        const fallback = closeFallbackAfterClose(id, currentSessionId, remaining)
+
+        if (fallback.action === 'activate') {
+          onSelect(fallback.sessionId)
+        } else if (fallback.action === 'new') {
+          onNew()
+        } else {
+          setSel(s => Math.max(0, Math.min(s, remaining.length + history.length)))
+        }
+      } catch (e: unknown) {
+        setErr(rpcErrorMessage(e))
+      } finally {
+        setClosingId('')
       }
-    } catch (e: unknown) {
-      setErr(rpcErrorMessage(e))
-    } finally {
-      setClosingId('')
+    },
+    [closingId, currentSessionId, history.length, load, onClose, onNew, onSelect]
+  )
+
+  const closeSelected = useCallback(() => {
+    const target = items[sel - 1]
+
+    if (!target || rowKind(sel) !== 'live') {
+      return
     }
-  }, [closingId, currentSessionId, history.length, items, load, onClose, onNew, onSelect, rowKind, sel])
+
+    return closeSession(target.id)
+  }, [closeSession, items, rowKind, sel])
 
   const performDelete = useCallback(
     (id: string) => {
@@ -863,11 +875,27 @@ export function ActiveSessionSwitcher({
                 {title}
               </Text>
             </Box>
+
+            {/* A24：行尾 ✕ 关闭会话（Ctrl+D 同语义——stopImmediatePropagation 防选中冒泡） */}
+            <Box
+              flexShrink={0}
+              onClick={(e: { stopImmediatePropagation?: () => void }) => {
+                e.stopImmediatePropagation?.()
+                void closeSession(s.id)
+              }}
+            >
+              <Text color={t.color.muted}> ✕</Text>
+            </Box>
           </Box>
         )
       })}
 
-      {offset + VISIBLE < listLen && <Text color={t.color.muted}> ↓ {listLen - offset - VISIBLE} more</Text>}
+      {/* A24：N more 可点翻页（此前纯提示）——offset 由 listSel 派生，直接下移选中即滚动窗口 */}
+      {offset + VISIBLE < listLen && (
+        <Box onClick={() => setSel(s => Math.min(listLen, s + VISIBLE))}>
+          <Text color={t.color.muted}> ↓ {listLen - offset - VISIBLE} more</Text>
+        </Box>
+      )}
 
       {newSelected ? (
         <>

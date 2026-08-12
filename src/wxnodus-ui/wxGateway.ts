@@ -43,6 +43,9 @@ export interface WxGatewayKernel {
     updateTools?(extra: Record<string, any>): void
     /** A24：运行时切换工作目录（工具 ctx.cwd 跟随；dataDir 保持启动值） */
     setCwd?(path: string): void
+    /** A24 第四类修复：委派暂停真实生效（暂停后新委派被内核拒绝） */
+    setDelegationPaused?(paused: boolean): void
+    getDelegationPaused?(): boolean
   }
   commandBus: CommandBus
   dataDir: string
@@ -57,6 +60,12 @@ export interface WxGatewayKernel {
   setThinking: (on: boolean) => void
   requestExit: () => void
   reloadMcp?: () => Promise<{ ok: boolean; count: number; message: string }>
+  /** A24 第三类修复：MCP 服务器真实状态（连接/工具数/传输方式）——buildInfo 填充 mcp_servers */
+  mcpStatus?: () => Array<{ connected: boolean; name: string; tools: number; transport: string }>
+  /** A24 第三类修复：当前系统提示词（kernel buildSystemPrompt 真实构建）——buildInfo 填充 system_prompt */
+  systemPrompt?: () => string | undefined
+  /** A24 第三类修复：落后上游提交数（进程启动时 git rev-list 真实计算；无 git/无 upstream → null）——buildInfo 填充 update_behind */
+  updateBehind?: number | null
 }
 
 // ── P3 图片附加链路：附件目录 + 待注入图片（pending.json）持久化 ──
@@ -265,6 +274,14 @@ export class GatewayClient extends EventEmitter {
       'theme.changed': (p) => {
         this.publish({ type: 'theme.changed', payload: { name: String(p?.name ?? 'wxnodus') } })
       },
+      // A24 第四类修复：kernel jobs.created/complete → UI 即时刷新（此前事件只落
+      // taskRunner 表，UI 后台面板仅靠 5s 轮询——任务完成要等下一轮才可见）
+      'jobs.created': () => {
+        this.publishBackgroundJobs()
+      },
+      'jobs.complete': () => {
+        this.publishBackgroundJobs()
+      },
     }
 
     for (const [type, fn] of Object.entries(map)) {
@@ -304,7 +321,6 @@ export class GatewayClient extends EventEmitter {
       case 'session.close': return this.sessionClose(params) as T
       case 'session.undo': return this.sessionUndo(params) as T
       case 'session.delete': return this.sessionDelete(params) as T
-      case 'session.fork': return this.sessionFork(params) as T
       case 'session.active_list': return this.sessionActiveList(params) as T
       case 'session.list': return this.sessionList(params) as T
       case 'session.most_recent': return this.sessionMostRecent() as T
@@ -324,7 +340,7 @@ export class GatewayClient extends EventEmitter {
       case 'secret.respond': return this.secretRespond(params) as T
       case 'credential.respond': return this.credentialRespond(params) as T
       case 'clipboard.paste': return this.clipboardPaste(params) as T
-      case 'terminal.resize': return {} as T
+      case 'terminal.resize': return this.terminalResize(params) as T
       case 'input.detect_drop': return this.detectDrop(params) as T
       case 'shell.exec': return this.shellExec(params) as T
       case 'commands.catalog': return this.commandsCatalog() as T
@@ -363,6 +379,41 @@ export class GatewayClient extends EventEmitter {
       default:
         this.pushLog(`[rpc] unsupported method: ${method}`)
         throw new Error(`unsupported rpc: ${method}`)
+    }
+  }
+
+  // A24 第四类修复：终端尺寸调整真实转发（此前空 stub——/term 面板拖动或窗口
+  // 尺寸变化时 PTY 从不跟随，换行错乱）。CLI 窗口 resize 时同步所有运行中
+  // 后台终端（/term attach 视图随之正确换行）；显式 id 时只调整该终端。
+  // 注意：UI 侧传的是 session_id（会话 id，非终端 id）——按广播语义处理。
+  private terminalResize(params: Record<string, unknown>): unknown {
+    const id = String(params.id ?? '')
+    const cols = Math.max(1, Math.floor(Number(params.cols) || 100))
+    const rows = Math.max(1, Math.floor(Number(params.rows) || 30))
+
+    if (!this.kernel.term) {
+      return { ok: false, error: '终端服务未装配' }
+    }
+
+    try {
+      const targets = id
+        ? this.kernel.term.list().filter(t => t.id === id)
+        : this.kernel.term.list().filter(t => t.status === 'running')
+      let resized = 0
+
+      for (const t of targets) {
+        if (this.kernel.term.resize(t.id, cols, rows).ok) {
+          resized++
+        }
+      }
+
+      if (!resized && !targets.length) {
+        return { ok: false, error: id ? `终端 ${id} 不存在或已退出（/term 查看列表）` : '无运行中的后台终端' }
+      }
+
+      return { ok: true, resized }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e).slice(0, 120) }
     }
   }
 
@@ -407,6 +458,24 @@ export class GatewayClient extends EventEmitter {
     } catch { /* cron 表未就绪按空列表 */ }
 
     return { terms, jobs, cron }
+  }
+
+  // A24 第四类修复：jobs 事件 → UI 即时任务快照（与 background.status 同源映射——
+  // taskRunner.list 真实数据，任务创建/完成即刻推送，不等 5s 轮询）
+  private publishBackgroundJobs(): void {
+    try {
+      const jobs = (this.kernel.taskRunner?.list({ limit: 12 }) ?? []).map(j => ({
+        id: j.id,
+        goal: String(j.goal ?? '').slice(0, 80),
+        status: j.status,
+        kind: j.kind,
+        created_at: j.created_at,
+        done_at: j.done_at,
+        exit_code: j.exit_code,
+      }))
+
+      this.publish({ type: 'background.jobs', payload: jobs as never })
+    } catch { /* 任务表异常不推送（轮询兜底） */ }
   }
 
   // ── A24 目录选择器：浏览目录 ────────────────────────────────────────
@@ -456,12 +525,14 @@ export class GatewayClient extends EventEmitter {
   }
 
   // delegation.status 真实数据：活跃子代理（agent.subagent start/complete 事件驱动）
+  // A24 第四类修复：paused 读内核真实状态（此前硬编码 false——/delegate pause 后
+  // 状态条只见瞬时闪烁，下一次 status 轮询即被覆盖回 false）
   private delegationStatus(): unknown {
     return {
       active: [...this.activeSubagents],
       max_concurrent_children: 4,
       max_spawn_depth: 3,
-      paused: false,
+      paused: this.kernel.agent.getDelegationPaused?.() ?? false,
     }
   }
 
@@ -790,6 +861,9 @@ export class GatewayClient extends EventEmitter {
     this.kernel.agent.abort()
     this.running = false
     const paused = params.pause !== false
+    // A24 第四类修复：真实持久化——内核 get/set 双向（暂停态跨 RPC/轮询保持，
+    // 新委派被内核拒绝；此前只 abort 不落状态，status 轮询即回 false）
+    this.kernel.agent.setDelegationPaused?.(paused)
     this.publish({ type: 'notification.show', payload: { text: paused ? '委派已暂停' : '委派已恢复', level: 'info' } })
     return { paused }
   }
@@ -978,30 +1052,8 @@ export class GatewayClient extends EventEmitter {
     return { ok: true, removed: dropIds.length, deleted_id: dropIds[dropIds.length - 1] }
   }
 
-  // session.fork：复制会话（含全部消息）为分支并激活
-  private async sessionFork(params: Record<string, unknown>): Promise<unknown> {
-    const id = String(params.session_id ?? this.currentSessionId)
-    const newId = `s${Date.now()}f${++this.sessionSeq}`
-    const src = this.kernel.db.prepare(`SELECT title FROM sessions WHERE id=?`).get(id) as { title: string } | undefined
-
-    if (!src) {
-      return { ok: false, message: `会话不存在：${id}` }
-    }
-
-    const now = Date.now()
-    this.kernel.db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`)
-      .run(newId, `${src.title || id} (fork)`, now, now)
-    this.kernel.db.prepare(`
-      INSERT INTO messages (session_id, role, content, tool_call_id, archived, ts)
-      SELECT ?, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=?
-    `).run(newId, id)
-
-    this.currentSessionId = newId
-    this.kernel.agent.setSessionId(newId)
-    this.publish({ type: 'session.info', payload: this.buildInfo() })
-
-    return { ok: true, session_id: newId, info: this.buildInfo() }
-  }
+  // A24 第四类修复：session.fork 死 RPC 已移除——UI 只用 session.branch
+  // （/branch 同链路，无 UI 调用方）；gatewayTypes 同步清理（见 gatewayTypes.ts）
 
   private async sessionActiveList(params: Record<string, unknown>): Promise<unknown> {
     const current = String(params.current_session_id ?? '')
@@ -1102,7 +1154,10 @@ export class GatewayClient extends EventEmitter {
     } catch { /* 压缩失败不阻断返回 */ }
     const sid = String(params.session_id ?? this.currentSessionId)
     const rows = this.loadMessages(sid)
-    return { messages: rows, info: this.buildInfo(), usage: {} }
+    // A24 第三类修复：返回真实 usage（含压缩计数——此前硬编码空对象，/compress 的
+    // 「· N tok」提示从未出现）
+    const info = this.buildInfo()
+    return { messages: rows, info, usage: info.usage }
   }
 
   private async sessionBranch(params: Record<string, unknown>): Promise<unknown> {
@@ -1890,8 +1945,27 @@ export class GatewayClient extends EventEmitter {
       const row = this.kernel.db.prepare(
         `SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=?`
       ).get(this.currentSessionId) as { calls: number; input: number; output: number } | undefined
-      if (row) usage = { calls: row.calls ?? 0, input: row.input ?? 0, output: row.output ?? 0, total: (row.input ?? 0) + (row.output ?? 0) }
+      // A24 第三类修复：compressions 真实数据源——messages 表中压缩摘要行
+      // （（自动压缩摘要）前缀，kernel compactSmart 每次压缩写入一条）计数
+      let compressions = 0
+      try {
+        const c = this.kernel.db.prepare(
+          `SELECT COUNT(*) AS c FROM messages WHERE session_id=? AND content LIKE '（自动压缩摘要）%'`
+        ).get(this.currentSessionId) as { c: number } | undefined
+        compressions = c?.c ?? 0
+      } catch { /* 压缩计数失败按零 */ }
+      if (row) usage = { calls: row.calls ?? 0, input: row.input ?? 0, output: row.output ?? 0, total: (row.input ?? 0) + (row.output ?? 0), compressions }
     } catch { /* 用量统计失败按零 */ }
+    // A24 第三类修复：MCP 服务器真实状态（kernel mcpStatus——连接/工具数/传输方式）
+    let mcp_servers: SessionInfo['mcp_servers']
+    try {
+      mcp_servers = (this.kernel.mcpStatus?.() ?? []).map(s => ({
+        connected: s.connected,
+        name: s.name,
+        tools: s.tools,
+        transport: s.transport,
+      }))
+    } catch { /* MCP 状态失败按空 */ }
 
     return {
       model: s.model ?? '',
@@ -1899,6 +1973,9 @@ export class GatewayClient extends EventEmitter {
       skills,
       tools,
       usage,
+      mcp_servers,
+      system_prompt: this.kernel.systemPrompt?.(),
+      update_behind: this.kernel.updateBehind ?? null,
       version: '3.0.0',
     }
   }

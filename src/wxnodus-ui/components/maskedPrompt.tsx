@@ -5,7 +5,7 @@ import type { Theme } from '../theme.js'
 
 import { TextInput } from './textInput.js'
 
-export function MaskedPrompt({ cols = 80, icon, label, onSubmit, sub, t }: MaskedPromptProps) {
+export function MaskedPrompt({ cols = 80, icon, label, onCancel, onSubmit, sub, t }: MaskedPromptProps) {
   const [value, setValue] = useState('')
 
   return (
@@ -32,6 +32,15 @@ export function MaskedPrompt({ cols = 80, icon, label, onSubmit, sub, t }: Maske
             {value.trim().length > 0 ? '⏎ 提交' : '⏎ 提交（尚未输入）'}
           </Text>
         </Box>
+        {/* A24：取消按钮（此前仅 Esc 可取消） */}
+        {onCancel ? (
+          <>
+            <Text>{'   '}</Text>
+            <Box onClick={onCancel}>
+              <Text color={t.color.muted}>Esc 取消</Text>
+            </Box>
+          </>
+        ) : null}
       </Box>
     </Box>
   )
@@ -41,6 +50,8 @@ interface MaskedPromptProps {
   cols?: number
   icon: string
   label: string
+  /** A24：可点击取消按钮（Esc 之外的第二出口） */
+  onCancel?: () => void
   onSubmit: (v: string) => void
   sub?: string
   t: Theme

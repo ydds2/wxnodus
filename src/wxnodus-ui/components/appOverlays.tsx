@@ -3,6 +3,7 @@ import { useAtom as useStore } from '../../app/stores/engine.js'
 
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { AppOverlaysProps } from '../bridge/interfaces.js'
+import type { SecretRespondResponse, SudoRespondResponse } from '../gatewayTypes.js'
 import { $overlayState, patchOverlayState } from '../runtime/promptStore.js'
 import { $uiSessionId, $uiTheme } from '../runtime/viewStore.js'
 import { hasAnsi, sanitizeAnsiForRender, stripAnsi } from '../lib/text.js'
@@ -32,6 +33,22 @@ export function PromptZone({
 }: Pick<AppOverlaysProps, 'cols' | 'onApprovalChoice' | 'onClarifyAnswer' | 'onSecretSubmit' | 'onSudoSubmit' | 'onFormSubmit' | 'onFormCancel'>) {
   const overlay = useStore($overlayState)
   const theme = useStore($uiTheme)
+  const { gw } = useGateway()
+
+  // A24：sudo/secret 可点击取消（与 cancelOverlayFromCtrlC 同链路——空值 respond）
+  const cancelSudo = () => {
+    if (!overlay.sudo) return
+    void gw
+      .request<SudoRespondResponse>('sudo.respond', { password: '', request_id: overlay.sudo.requestId })
+      .then(r => r && patchOverlayState({ sudo: null }))
+  }
+
+  const cancelSecret = () => {
+    if (!overlay.secret) return
+    void gw
+      .request<SecretRespondResponse>('secret.respond', { request_id: overlay.secret.requestId, value: '' })
+      .then(r => r && patchOverlayState({ secret: null }))
+  }
 
   if (overlay.approval) {
     return (
@@ -75,7 +92,7 @@ export function PromptZone({
   if (overlay.sudo) {
     return (
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
-        <MaskedPrompt cols={cols} icon="🔐" label="sudo password required" onSubmit={onSudoSubmit} t={theme} />
+        <MaskedPrompt cols={cols} icon="🔐" label="sudo password required" onCancel={cancelSudo} onSubmit={onSudoSubmit} t={theme} />
       </Box>
     )
   }
@@ -87,6 +104,7 @@ export function PromptZone({
           cols={cols}
           icon="🔑"
           label={overlay.secret.prompt}
+          onCancel={cancelSecret}
           onSubmit={onSecretSubmit}
           sub={`for ${overlay.secret.envVar}`}
           t={theme}
@@ -236,9 +254,15 @@ export function FloatingOverlays({
           <Box flexDirection="column" paddingX={1} paddingY={1}>
             {overlay.pager.title && (
               <Box flexDirection="column" marginBottom={1}>
-                <Text bold color={theme.color.accent}>
-                  ◈ {overlay.pager.title}
-                </Text>
+                {/* A24：标题行右侧 ✕ 关闭（此前仅 Esc/q） */}
+                <Box flexDirection="row" justifyContent="space-between">
+                  <Text bold color={theme.color.accent}>
+                    ◈ {overlay.pager.title}
+                  </Text>
+                  <Box onClick={() => patchOverlayState({ pager: null })}>
+                    <Text color={theme.color.muted}>✕</Text>
+                  </Box>
+                </Box>
                 {/* 分隔线：按可见行最大宽度（strip ANSI 后算宽，防止转义序列干扰） */}
                 <Text color={theme.color.border}>
                   {'─'.repeat(

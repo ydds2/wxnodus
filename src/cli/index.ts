@@ -8,6 +8,9 @@ import { createAutoReview } from '../kernel/autoReview.js';
 import { parseCronExpr, cronMatches } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { resolveDataDir } from '../kernel/paths.js';
+// A24 第三类修复：buildInfo system_prompt 数据源（kernel 实时构建；ESM 静态引用缓存）
+import { buildSystemPrompt as buildSystemPromptRef } from '../kernel/systemPrompt.js';
+import { hasImageIn as hasImageInRef } from '../kernel/providers.js';
 
 const VERSION = '3.0.0';
 // 调试：捕获未处理异常/拒绝 → dataDir/logs/error-<日期>.log（统一日志目录，不污染工作目录）
@@ -411,10 +414,43 @@ async function main() {
     }
   }
 
+  // A24 第三类修复：落后上游提交数——git rev-list 真实计算（无 git/无 upstream → null）
+  // 启动时一次计算（buildInfo 高频读取，避免每次 spawn git）；纯本地引用对比，不发起网络
+  let updateBehind: number | null = null
+  try {
+    const { execFileSync: gitExec } = await import('node:child_process');
+    const branch = String(gitExec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf8', windowsHide: true, timeout: 5000 })).trim()
+    if (branch && branch !== 'HEAD') {
+      const ahead = gitExec('git', ['rev-list', '--count', `HEAD..origin/${branch}`], { cwd, encoding: 'utf8', windowsHide: true, timeout: 5000 })
+      updateBehind = Number(String(ahead).trim()) || null
+    }
+  } catch { /* 非 git 仓库/无 origin 时保持 null——诚实降级 */ }
+
   // WxNodus UI 装配
   gateway = new GatewayClient({
     bus, db, config, mem, agent, commandBus,
-    dataDir, cwd, settings, reloadMcp,
+    dataDir, cwd, settings, reloadMcp, updateBehind,
+    // A24 第三类修复：MCP 服务器真实状态（连接/工具数/传输方式）——buildInfo 填充 mcp_servers
+    mcpStatus: () => mcpClients.map(c => ({
+      connected: c.connected,
+      name: c.server.name,
+      tools: c.tools.length,
+      transport: c.server.url ? 'http' : 'stdio',
+    })),
+    // A24 第三类修复：当前系统提示词（kernel buildSystemPrompt 实时构建，外部 system.md 热生效）——buildInfo 填充 system_prompt
+    systemPrompt: () => {
+      try {
+        return buildSystemPromptRef({
+          mode: mode as any,
+          cwd,
+          model: model || settings.model || '',
+          hasImageIn: hasImageInRef(model || settings.model || ''),
+          sessionId: agent.getSessionId?.() ?? 'default',
+          lang: (settings as any).lang,
+          dataDir,
+        });
+      } catch { return undefined; }
+    },
     applyModel,
     setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
     setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },

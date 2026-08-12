@@ -14,7 +14,7 @@ const COMMON_COMMANDS: [string, string][] = [
 
 const HOTKEY_PREVIEW = HOTKEYS.slice(0, 8)
 
-export function HelpHint({ t }: { t: Theme }) {
+export function HelpHint({ onCommand, t }: { onCommand?: (text: string) => void; t: Theme }) {
   const labelW = Math.max(
     ...COMMON_COMMANDS.map(([k]) => k.length),
     ...HOTKEY_PREVIEW.map(([k]) => k.length)
@@ -38,7 +38,7 @@ export function HelpHint({ t }: { t: Theme }) {
             ? 快速帮助
           </Text>
           <Text color={t.color.muted}>
-            {'  ·  /help 查看完整面板  ·  Backspace 关闭'}
+            {'  ·  /help 查看完整面板  ·  Backspace 关闭  · 点击命令直接执行'}
           </Text>
         </Text>
 
@@ -49,10 +49,13 @@ export function HelpHint({ t }: { t: Theme }) {
         </Box>
 
         {COMMON_COMMANDS.map(([k, v]) => (
-          <Text key={k}>
-            <Text color={t.color.label}>{pad(k)}</Text>
-            <Text color={t.color.muted}>{v}</Text>
-          </Text>
+          // A24：教命令的面板命令必须可点——点击直接执行（onCommand → composer.submit）
+          <Box key={k} onClick={() => onCommand?.(k)}>
+            <Text>
+              <Text color={t.color.label}>{pad(k)}</Text>
+              <Text color={t.color.muted}>{v}</Text>
+            </Text>
+          </Box>
         ))}
 
         <Box marginTop={1}>

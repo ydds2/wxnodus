@@ -69,6 +69,7 @@ export function approvalAction(
 
 export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptProps) {
   const [sel, setSel] = useState(0)
+  const [expanded, setExpanded] = useState(false)
   const opts = req.allowPermanent === false ? APPROVAL_OPTS_NO_ALWAYS : APPROVAL_OPTS
 
   useInput((ch, key) => {
@@ -88,7 +89,8 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
     const wrapped = wrapAnsi(line, innerWidth, { hard: true, trim: false })
     return wrapped.split('\n')
   })
-  const shown = rawLines.slice(0, CMD_PREVIEW_LINES)
+  // A24：点击「…+N 行省略」展开全文（审批审阅最需要——不再被截断卡住）
+  const shown = expanded ? rawLines : rawLines.slice(0, CMD_PREVIEW_LINES)
   const overflow = rawLines.length - shown.length
 
   return (
@@ -110,9 +112,12 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
         ))}
 
         {overflow > 0 ? (
-          <Text color={t.color.muted}>
-            … +{overflow} 行省略（完整文本见上方）
-          </Text>
+          // A24：点击展开全文（审批审阅不被截断卡住；再点收起）
+          <Box onClick={() => setExpanded(v => !v)}>
+            <Text color={t.color.muted}>
+              {expanded ? '▾ 收起（点击折叠）' : `… +${overflow} 行省略（点击展开全文）`}
+            </Text>
+          </Box>
         ) : null}
       </Box>
 
@@ -186,6 +191,23 @@ export function ClarifyPrompt({ cols = 80, onAnswer, onCancel, req, t }: Clarify
         <Box>
           <Text color={t.color.label}>{'> '}</Text>
           <TextInput columns={Math.max(20, cols - 6)} onChange={setCustom} onSubmit={onAnswer} value={custom} />
+        </Box>
+
+        {/* A24：输入模式提交/返回按钮（此前仅 Enter/Esc） */}
+        <Box flexDirection="row" marginTop={1}>
+          <Box onClick={() => custom.trim() && onAnswer(custom)}>
+            <Text bold color={custom.trim() ? t.color.warn : t.color.muted} inverse={custom.trim().length > 0}>
+              {custom.trim() ? '⏎ 提交' : '⏎ 提交（空）'}
+            </Text>
+          </Box>
+          {choices.length ? (
+            <>
+              <Text>{'   '}</Text>
+              <Box onClick={() => setTyping(false)}>
+                <Text color={t.color.muted}>Esc 返回选项</Text>
+              </Box>
+            </>
+          ) : null}
         </Box>
 
         <Text color={t.color.muted}>

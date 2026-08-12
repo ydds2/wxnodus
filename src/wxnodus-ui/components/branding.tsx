@@ -5,6 +5,7 @@ import unicodeSpinners from 'unicode-animations'
 import { artWidth, hero, HERO_WIDTH, logo, LOGO_WIDTH } from '../banner.js'
 import { FEATURE_SPOTLIGHTS } from '../content/features.js'
 import { flat } from '../lib/text.js'
+import { patchOverlayState } from '../runtime/promptStore.js'
 import type { Theme } from '../theme.js'
 import type { PanelSection, SessionInfo } from '../types.js'
 
@@ -158,7 +159,7 @@ function CollapseToggle({
 const SKILLS_MAX = 8
 const TOOLSETS_MAX = 8
 
-export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
+export function SessionPanel({ info, maxWidth, onCommand, sid, t }: SessionPanelProps) {
   const term = useStdout().stdout?.columns ?? 100
   const cols = Math.max(20, Math.min(term, maxWidth ?? term))
   const heroLines = hero(t.color, t.bannerHero || undefined)
@@ -294,14 +295,19 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
           <ArtLines lines={heroLines} />
           <Text />
 
-          <Text color={t.color.accent}>
-            {info.model.split('/').pop()}
-            <Text color={t.color.muted}> · WxNodus</Text>
-          </Text>
+          {/* A24：会话面板模型/目录可点（开模型选择器/目录选择器） */}
+          <Box onClick={() => patchOverlayState({ modelPicker: true })}>
+            <Text color={t.color.accent}>
+              {info.model.split('/').pop()}
+              <Text color={t.color.muted}> · WxNodus</Text>
+            </Text>
+          </Box>
 
-          <Text color={t.color.muted} wrap="truncate-end">
-            {info.cwd || process.cwd()}
-          </Text>
+          <Box onClick={() => patchOverlayState({ dirPicker: true })}>
+            <Text color={t.color.muted} wrap="truncate-end">
+              {info.cwd || process.cwd()}
+            </Text>
+          </Box>
 
           {sid && (
             <Text>
@@ -325,13 +331,18 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
           // Narrow layout hides the hero column; surface model/cwd/session
           // here so they aren't lost.
           <Box flexDirection="column" marginBottom={1}>
-            <Text color={t.color.accent} wrap="truncate-end">
-              {info.model.split('/').pop()}
-              <Text color={t.color.muted}> · WxNodus</Text>
-            </Text>
-            <Text color={t.color.muted} wrap="truncate-end">
-              {info.cwd || process.cwd()}
-            </Text>
+            {/* A24：模型/目录可点（开模型选择器/目录选择器） */}
+            <Box onClick={() => patchOverlayState({ modelPicker: true })}>
+              <Text color={t.color.accent} wrap="truncate-end">
+                {info.model.split('/').pop()}
+                <Text color={t.color.muted}> · WxNodus</Text>
+              </Text>
+            </Box>
+            <Box onClick={() => patchOverlayState({ dirPicker: true })}>
+              <Text color={t.color.muted} wrap="truncate-end">
+                {info.cwd || process.cwd()}
+              </Text>
+            </Box>
             {sid && (
               <Text wrap="truncate-end">
                 <Text color={t.color.sessionLabel}>Session: </Text>
@@ -378,15 +389,18 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
           {featuresOpen && (
             <Box flexDirection="column" marginLeft={2}>
               {FEATURE_SPOTLIGHTS.map(f => (
-                <Text color={t.color.muted} key={f.label} wrap="truncate-end">
-                  <Text color={t.color.accent}>{f.label}</Text>
-                  {' — '}
-                  {f.desc}
-                  <Text color={t.color.statusFg} dim>
-                    {' '}
-                    {f.cmd}
+                // A24 修复：标注「一键尝试」就必须可点——点击执行示例命令
+                <Box key={f.label} onClick={() => onCommand?.(f.cmd)}>
+                  <Text color={t.color.muted} wrap="truncate-end">
+                    <Text color={t.color.accent}>{f.label}</Text>
+                    {' — '}
+                    {f.desc}
+                    <Text color={t.color.statusFg} dim>
+                      {' '}
+                      {f.cmd}
+                    </Text>
                   </Text>
-                </Text>
+                </Box>
               ))}
             </Box>
           )}
@@ -498,6 +512,8 @@ interface PanelProps {
 interface SessionPanelProps {
   info: SessionInfo
   maxWidth?: number
+  /** A24：特色能力行点击执行（composer.submit 链路） */
+  onCommand?: (text: string) => void
   sid?: string | null
   t: Theme
 }

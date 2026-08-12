@@ -437,9 +437,15 @@ export function createAgent(opts: AgentOptions) {
   // 工具集排除：写文件/执行/委派/记忆写入/外联/提问（只读探索）
   const SUBAGENT_EXCLUDE = ['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate', 'memory_write', 'http_get', 'ask_user'];
   const MAX_SUBAGENT_DEPTH = 3;
+  // A24 第四类修复：委派暂停真实生效（delegation.pause → setDelegationPaused）——
+  // 暂停后 delegate 工具/任务系统的新委派被拒绝（诚实返回原因，而非假装执行）
+  let delegationPaused = false;
   const spawnSub = async (goal: string, depth = 1): Promise<{ ok: boolean; output: string; turns: number }> => {
     if (depth > MAX_SUBAGENT_DEPTH) {
       return { ok: false, output: `子代理深度超限（${MAX_SUBAGENT_DEPTH} 层）——请拆分子任务`, turns: 0 };
+    }
+    if (delegationPaused) {
+      return { ok: false, output: '委派已暂停（delegation.pause）——用 /delegate resume 或 子代理面板恢复后再派发', turns: 0 };
     }
     // 子代理生命周期事件（独立实例，手动发事件保持 UI 可见）
     // C4 修复：subagent_id 稳定（start/complete 同 id，/agents 面板可正确闭合）
@@ -971,6 +977,9 @@ export function createAgent(opts: AgentOptions) {
     // A24：运行时切换工作目录（工具 ctx.cwd 跟随；repo_map 等 process.cwd() 读取
     // 由 gateway 侧 process.chdir 同步覆盖；dataDir 保持启动值）
     setCwd(path: string) { ctxCwd = path; },
+    // A24 第四类修复：委派暂停真实状态（delegation.pause RPC → 内核生效）
+    setDelegationPaused(paused: boolean) { delegationPaused = paused; },
+    getDelegationPaused(): boolean { return delegationPaused; },
     // F7：运行中注入消息（busy_input_mode: steer）
     steer(text: string): boolean { return steer(text); },
     // P1b：插件热重载——重建工具表（extraTools 合并 + excludeTools 过滤）

@@ -450,6 +450,8 @@ export function StatusRule({
   onSessionCountClick,
   onVoiceClick,
   onCwdClick,
+  onModelClick,
+  onBgClick,
   t
 }: StatusRuleProps) {
   const pct = usage.context_percent
@@ -629,10 +631,19 @@ export function StatusRule({
               {' (dev credits)'}
             </Text>
           ) : null}
-          <Text color={t.color.muted} wrap="truncate-end">
-            {' │ '}
-            <Text color={t.color.label} bold>{`[${modelText}]`}</Text>
-          </Text>
+          {/* A24：模型段可点——打开模型选择器（最明显该可点的状态栏元素） */}
+          <Box
+            flexShrink={0}
+            onClick={(e: { stopImmediatePropagation?: () => void }) => {
+              e.stopImmediatePropagation?.()
+              onModelClick?.()
+            }}
+          >
+            <Text color={t.color.muted} wrap="truncate-end">
+              {' │ '}
+              <Text color={t.color.label} bold>{`[${modelText}]`}</Text>
+            </Text>
+          </Box>
           {ctxLabel ? (
             <Text color={t.color.muted} wrap="truncate-end">
               {' │ '}
@@ -729,10 +740,26 @@ export function StatusRule({
         ) : null}
         {showSessionCount ? sessionCountNode : null}
         {showBg ? (
-          <Text color={t.color.muted} wrap="truncate-end">
-            {' │ '}
-            {bgCount} bg
-          </Text>
+          // A24 第三类修复：bg 段可点——直达后台面板（onSessionCountClick 同款模式）
+          onBgClick ? (
+            <Box
+              flexShrink={0}
+              onClick={(e: { stopImmediatePropagation?: () => void }) => {
+                e.stopImmediatePropagation?.()
+                onBgClick()
+              }}
+            >
+              <Text color={t.color.muted} wrap="truncate-end">
+                {' │ '}
+                {bgCount} bg
+              </Text>
+            </Box>
+          ) : (
+            <Text color={t.color.muted} wrap="truncate-end">
+              {' │ '}
+              {bgCount} bg
+            </Text>
+          )
         ) : null}
         {showCostSeg ? (
           <Text color={t.color.muted} wrap="truncate-end">
@@ -919,6 +946,10 @@ interface StatusRuleProps {
   onVoiceClick?: () => void
   /** A24：右侧 cwd/标题段点击（打开目录选择器——浏览/切换工作目录） */
   onCwdClick?: () => void
+  /** A24：模型段点击（打开模型选择器） */
+  onModelClick?: () => void
+  /** A24：bg 段点击（直达后台面板——镜像 BgSummaryLine 链路） */
+  onBgClick?: () => void
 }
 
 interface StickyPromptTrackerProps {

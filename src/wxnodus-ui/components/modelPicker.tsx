@@ -193,6 +193,80 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
     }
   }
 
+  // A24：密钥保存（键盘 Enter 与鼠标按钮共用）——真实 RPC model.save_key
+  const saveKey = () => {
+    if (!keyInput.trim() || keySaving || !provider) {
+      return
+    }
+    setKeySaving(true)
+    setKeyError('')
+    gw.request<{ provider?: ModelOptionProvider }>('model.save_key', {
+      slug: provider.slug,
+      api_key: keyInput.trim(),
+      ...(sessionId ? { session_id: sessionId } : {})
+    })
+      .then(raw => {
+        const r = asRpcResult<{ provider?: ModelOptionProvider }>(raw)
+
+        if (!r?.provider) {
+          setKeyError('密钥保存失败')
+          setKeySaving(false)
+
+          return
+        }
+
+        setProviders(prev => prev.map(p => (p.slug === r.provider!.slug ? r.provider! : p)))
+        setKeyInput('')
+        setKeySaving(false)
+        setStage('model')
+        setModelIdx(0)
+      })
+      .catch((e: unknown) => {
+        setKeyError(rpcErrorMessage(e))
+        setKeySaving(false)
+      })
+  }
+
+  // A24：断开确认（键盘 y/Enter 与鼠标按钮共用）——真实 RPC model.disconnect
+  const confirmDisconnect = () => {
+    if (!provider) {
+      setStage('provider')
+
+      return
+    }
+    setKeySaving(true)
+    gw.request<{ disconnected?: boolean }>('model.disconnect', {
+      slug: provider.slug,
+      ...(sessionId ? { session_id: sessionId } : {})
+    })
+      .then(raw => {
+        const r = asRpcResult<{ disconnected?: boolean }>(raw)
+
+        if (r?.disconnected) {
+          setProviders(prev =>
+            prev.map(p =>
+              p.slug === provider.slug
+                ? {
+                    ...p,
+                    authenticated: false,
+                    models: [],
+                    total_models: 0,
+                    warning: p.key_env ? `粘贴 ${p.key_env} 以激活` : '运行 `wxnodus model` 配置'
+                  }
+                : p
+            )
+          )
+        }
+
+        setKeySaving(false)
+        setStage('provider')
+      })
+      .catch(() => {
+        setKeySaving(false)
+        setStage('provider')
+      })
+  }
+
   useInput((ch, key) => {
     // Key entry stage handles its own input
     if (stage === 'key') {
@@ -201,38 +275,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
       }
 
       if (key.return) {
-        if (!keyInput.trim()) {
-          return
-        }
-
-        setKeySaving(true)
-        setKeyError('')
-        gw.request<{ provider?: ModelOptionProvider }>('model.save_key', {
-          slug: provider?.slug,
-          api_key: keyInput.trim(),
-          ...(sessionId ? { session_id: sessionId } : {})
-        })
-          .then(raw => {
-            const r = asRpcResult<{ provider?: ModelOptionProvider }>(raw)
-
-            if (!r?.provider) {
-              setKeyError('密钥保存失败')
-              setKeySaving(false)
-
-              return
-            }
-
-            // Update the provider in our list with fresh data
-            setProviders(prev => prev.map(p => (p.slug === r.provider!.slug ? r.provider! : p)))
-            setKeyInput('')
-            setKeySaving(false)
-            setStage('model')
-            setModelIdx(0)
-          })
-          .catch((e: unknown) => {
-            setKeyError(rpcErrorMessage(e))
-            setKeySaving(false)
-          })
+        saveKey()
 
         return
       }
@@ -260,44 +303,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
     // Disconnect confirmation stage
     if (stage === 'disconnect') {
       if (ch.toLowerCase() === 'y' || key.return) {
-        if (!provider) {
-          setStage('provider')
-
-          return
-        }
-
-        setKeySaving(true)
-        gw.request<{ disconnected?: boolean }>('model.disconnect', {
-          slug: provider.slug,
-          ...(sessionId ? { session_id: sessionId } : {})
-        })
-          .then(raw => {
-            const r = asRpcResult<{ disconnected?: boolean }>(raw)
-
-            if (r?.disconnected) {
-              // Mark provider as unauthenticated in local state
-              setProviders(prev =>
-                prev.map(p =>
-                  p.slug === provider.slug
-                    ? {
-                        ...p,
-                        authenticated: false,
-                        models: [],
-                        total_models: 0,
-                        warning: p.key_env ? `粘贴 ${p.key_env} 以激活` : '运行 `wxnodus model` 配置'
-                      }
-                    : p
-                )
-              )
-            }
-
-            setKeySaving(false)
-            setStage('provider')
-          })
-          .catch(() => {
-            setKeySaving(false)
-            setStage('provider')
-          })
+        confirmDisconnect()
 
         return
       }
@@ -464,7 +470,24 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
           </Text>
         )}
 
-        <OverlayHint t={t}>Enter 保存 · Ctrl+U 清空 · Esc 返回</OverlayHint>
+        {/* A24：密钥录入按钮（此前仅键盘——Enter 保存 / Ctrl+U 清空 / Esc 返回） */}
+        <Box flexDirection="row">
+          <Box onClick={saveKey}>
+            <Text bold color={keyInput.trim() ? t.color.accent : t.color.muted}>
+              {keyInput.trim() ? '⏎ 保存' : '⏎ 保存（空）'}
+            </Text>
+          </Box>
+          <Text>{'   '}</Text>
+          <Box onClick={() => setKeyInput('')}>
+            <Text color={t.color.muted}>Ctrl+U 清空</Text>
+          </Box>
+          <Text>{'   '}</Text>
+          <Box onClick={() => setStage('provider')}>
+            <Text color={t.color.muted}>Esc 返回</Text>
+          </Box>
+        </Box>
+
+        <OverlayHint t={t}>Enter 保存 · Ctrl+U 清空 · Esc 返回 · 鼠标点击按钮</OverlayHint>
       </Box>
     )
   }
@@ -498,7 +521,21 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
             disconnecting…
           </Text>
         ) : (
-          <OverlayHint t={t}>y/Enter 确认 · n/Esc 取消</OverlayHint>
+          <>
+            {/* A24：断开确认按钮（此前仅 y/Enter 确认 · n/Esc 取消） */}
+            <Box flexDirection="row">
+              <Box onClick={confirmDisconnect}>
+                <Text bold color={t.color.error}>
+                  y 确认断开
+                </Text>
+              </Box>
+              <Text>{'   '}</Text>
+              <Box onClick={() => setStage('provider')}>
+                <Text color={t.color.muted}>n 取消</Text>
+              </Box>
+            </Box>
+            <OverlayHint t={t}>y/Enter 确认 · n/Esc 取消 · 鼠标点击按钮</OverlayHint>
+          </>
         )}
       </Box>
     )
@@ -582,10 +619,13 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
           {offset + VISIBLE < rows.length ? ` ↓ ${rows.length - offset - VISIBLE} 更多` : ' '}
         </Text>
 
-        <Text color={t.color.muted} wrap="truncate-end">
-          持久化：{allowPersistGlobal ? (persistGlobal ? '全局' : '会话') : '会话'}
-          {allowPersistGlobal ? ' · ^g 切换' : '（仅会话）'}
-        </Text>
+        {/* A24：持久化切换可点（^g 同语义） */}
+        <Box onClick={() => allowPersistGlobal && setPersistGlobal(v => !v)}>
+          <Text color={t.color.muted} wrap="truncate-end">
+            持久化：{allowPersistGlobal ? (persistGlobal ? '全局' : '会话') : '会话'}
+            {allowPersistGlobal ? ' · ^g 切换（点击切换）' : '（仅会话）'}
+          </Text>
+        </Box>
         <OverlayHint t={t}>↑/↓ 选择 · Enter 选用 · 鼠标点击直达 · ^d 断开 · Esc 清空/返回 · q 关闭</OverlayHint>
       </Box>
     )
@@ -652,10 +692,13 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
         {offset + VISIBLE < models.length ? ` ↓ ${models.length - offset - VISIBLE} 更多` : ' '}
       </Text>
 
-      <Text color={t.color.muted} wrap="truncate-end">
-        持久化：{allowPersistGlobal ? (persistGlobal ? '全局' : '会话') : '会话'}
-        {allowPersistGlobal ? ' · ^g 切换' : '（仅会话）'}
-      </Text>
+      {/* A24：持久化切换可点（^g 同语义） */}
+      <Box onClick={() => allowPersistGlobal && setPersistGlobal(v => !v)}>
+        <Text color={t.color.muted} wrap="truncate-end">
+          持久化：{allowPersistGlobal ? (persistGlobal ? '全局' : '会话') : '会话'}
+          {allowPersistGlobal ? ' · ^g 切换（点击切换）' : '（仅会话）'}
+        </Text>
+      </Box>
       <OverlayHint t={t}>
         {models.length ? '↑/↓ 选择 · Enter 切换 · 鼠标点击直达 · Esc 清空/返回 · q 关闭' : 'Esc 返回 · q 关闭'}
       </OverlayHint>

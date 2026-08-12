@@ -79,4 +79,28 @@ describe('A20 createTerminalManager — 后台终端', () => {
     expect(w.ok).toBe(false)
     expect(String(w.error)).toContain('已退出')
   })
+
+  // A24 第四类修复：resize 真实转发 node-pty（此前 gateway 空 stub）
+  it('resize 真实调整 PTY 尺寸（不抛错）；不存在/已退出报错', async () => {
+    const tm = createTerminalManager({
+      dataDir: mkdtempSync(join(tmpdir(), 'wx-term-')),
+      cwd: process.cwd()
+    })
+    const r = await tm.spawn()
+    expect(r.ok).toBe(true)
+    const id = r.ok ? r.id : ''
+    // 运行中会话：真实调用 pty.resize（node-pty 接受任意正整数）
+    const ok = tm.resize(id, 120, 40)
+    expect(ok.ok).toBe(true)
+    // 不存在 id → 诚实报错
+    const missing = tm.resize('nope', 80, 24)
+    expect(missing.ok).toBe(false)
+    expect(String(missing.error)).toContain('不存在')
+    // 已退出 → 拒绝
+    await new Promise(res => setTimeout(res, 1200))
+    tm.kill(id)
+    const exited = tm.resize(id, 80, 24)
+    expect(exited.ok).toBe(false)
+    expect(String(exited.error)).toContain('已退出')
+  })
 })

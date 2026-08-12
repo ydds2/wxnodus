@@ -155,7 +155,15 @@ const TranscriptPane = memo(function TranscriptPane({
                 <Box flexDirection="column" paddingTop={1}>
                   <Banner maxWidth={Math.max(1, msgCols - 2)} t={ui.theme} />
 
-                  {row.msg.info && <SessionPanel info={row.msg.info} maxWidth={Math.max(1, msgCols - 2)} sid={ui.sid} t={ui.theme} />}
+                  {row.msg.info && (
+                    <SessionPanel
+                      info={row.msg.info}
+                      maxWidth={Math.max(1, msgCols - 2)}
+                      onCommand={text => composer.submit(text)}
+                      sid={ui.sid}
+                      t={ui.theme}
+                    />
+                  )}
                 </Box>
               ) : row.msg.kind === 'panel' && row.msg.panelData ? (
                 <Panel sections={row.msg.panelData.sections} t={ui.theme} title={row.msg.panelData.title} />
@@ -167,6 +175,7 @@ const TranscriptPane = memo(function TranscriptPane({
                   detailsModeCommandOverride={ui.detailsModeCommandOverride}
                   msg={row.msg}
                   msgKey={row.key}
+                  onCommand={text => composer.submit(text)}
                   prev={prevRenderedMsg(
                     i => transcript.virtualRows[i]?.msg,
                     row.index,
@@ -273,26 +282,33 @@ const ComposerPane = memo(function ComposerPane({
     >
       <QueuedMessages
         cols={composer.cols}
+        onEdit={composer.editQueued}
         queued={composer.queuedDisplay}
         queueEditIdx={composer.queueEditIdx}
         t={ui.theme}
       />
 
       {ui.bgTasks.size > 0 && (
-        <Text color={ui.theme.color.muted}>
-          {ui.bgTasks.size} background {ui.bgTasks.size === 1 ? 'task' : 'tasks'} running
-        </Text>
+        // A24：旧 bg 行点击也直达后台面板（与 BgSummaryLine 一致）
+        <Box onClick={() => patchUiState({ dualPane: true, paneTab: 'bg' })}>
+          <Text color={ui.theme.color.muted}>
+            {ui.bgTasks.size} background {ui.bgTasks.size === 1 ? 'task' : 'tasks'} running
+          </Text>
+        </Box>
       )}
 
       {/* A24：后台活动摘要——点击直达右侧面板「后台」标签（zcode 风格后台可见性） */}
       <BgSummaryLine />
 
       {status.showStickyPrompt ? (
-        <Text color={ui.theme.color.muted} wrap="truncate-end">
-          <Text color={ui.theme.color.label}>↳ </Text>
+        // A24：点击 sticky prompt 载入输入框编辑（键盘输入本就会替换它——鼠标给同款出口）
+        <Box onClick={() => composer.updateInput(status.stickyPrompt)}>
+          <Text color={ui.theme.color.muted} wrap="truncate-end">
+            <Text color={ui.theme.color.label}>↳ </Text>
 
-          {status.stickyPrompt}
-        </Text>
+            {status.stickyPrompt}
+          </Text>
+        </Box>
       ) : (
         <Box height={1} onMouseDown={captureInputDrag} onMouseDrag={dragFromSpacer} onMouseUp={endInputDrag} />
       )}
@@ -318,7 +334,7 @@ const ComposerPane = memo(function ComposerPane({
           pagerPageSize={composer.pagerPageSize}
         />
 
-        {composer.input === '?' && !composer.inputBuf.length && <HelpHint t={ui.theme} />}
+        {composer.input === '?' && !composer.inputBuf.length && <HelpHint onCommand={text => composer.submit(text)} t={ui.theme} />}
 
         {!isBlocked && (
           <>
@@ -441,6 +457,8 @@ const StatusRulePane = memo(function StatusRulePane({
         onSessionCountClick={() => patchOverlayState({ sessions: true })}
         onVoiceClick={actions.toggleVoiceMode}
         onCwdClick={() => patchOverlayState({ dirPicker: true })}
+        onModelClick={() => patchOverlayState({ modelPicker: true })}
+        onBgClick={() => patchUiState({ dualPane: true, paneTab: 'bg' })}
         selectionHint={ui.selectionHint}
         sessionStartedAt={status.sessionStartedAt}
         showCost={ui.showCost}

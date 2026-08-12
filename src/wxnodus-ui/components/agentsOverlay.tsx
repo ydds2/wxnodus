@@ -997,18 +997,24 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
-      <Box flexDirection="column" marginBottom={1}>
-        <Text wrap="truncate-end">
-          <Text bold color={replayMode ? t.color.border : t.color.primary}>
-            {title}
-          </Text>
-          {metaLine ? (
-            <Text color={t.color.muted}>
-              {'   '}
-              {metaLine}
+      {/* A24：标题行右侧 ✕ 关闭（此前仅 q/Esc）——模式无关，始终可点 */}
+      <Box flexDirection="row" justifyContent="space-between">
+        <Box flexDirection="column" marginBottom={1}>
+          <Text wrap="truncate-end">
+            <Text bold color={replayMode ? t.color.border : t.color.primary}>
+              {title}
             </Text>
-          ) : null}
-        </Text>
+            {metaLine ? (
+              <Text color={t.color.muted}>
+                {'   '}
+                {metaLine}
+              </Text>
+            ) : null}
+          </Text>
+        </Box>
+        <Box flexShrink={0} onClick={closeWithCleanup}>
+          <Text color={t.color.muted}>✕</Text>
+        </Box>
       </Box>
 
       {rows.length === 0 ? (
@@ -1110,9 +1116,19 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
             {' · 鼠标点行/按钮 · q close'}
           </Text>
         ) : (
-          <Text color={t.color.muted}>
-            ↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/← back to list{controlsHint} · q close
-          </Text>
+          <>
+            {/* A24：详情模式鼠标返回（此前仅 Esc/←） */}
+            <Box flexDirection="row">
+              <Box onClick={() => setMode('list')}>
+                <Text bold color={t.color.accent}>
+                  ← 返回列表
+                </Text>
+              </Box>
+            </Box>
+            <Text color={t.color.muted}>
+              ↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/← back to list{controlsHint} · q close
+            </Text>
+          </>
         )}
       </Box>
     </Box>

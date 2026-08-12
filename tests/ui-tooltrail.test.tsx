@@ -74,4 +74,61 @@ describe('A20 ToolTrail 精简', () => {
     // 实时耗时 ≈3s（渲染毫秒差允许 3.0/3.1s）
     expect(frame).toMatch(/3\.\ds/)
   })
+
+  // A24 第三类修复：outcome/activity/subagents 真实传入后渲染
+  it('outcome 渲染为底部结果行（此前 props 存在但无人传值——死数据）', () => {
+    const { lastFrame } = render(
+      <ToolTrail
+        outcome="approved (auto)"
+        t={DEFAULT_THEME}
+        trail={[]}
+        detailsMode="expanded"
+        sections={{ tools: 'expanded', thinking: 'hidden', subagents: 'hidden', activity: 'hidden' }}
+      />
+    )
+    expect(lastFrame()).toContain('approved (auto)')
+  })
+
+  it('activity 事件渲染为 meta 行（info/error 均可见）', () => {
+    const { lastFrame } = render(
+      <ToolTrail
+        activity={[
+          { id: 1, text: 'tool started', tone: 'info' },
+          { id: 2, text: 'approval denied', tone: 'error' },
+        ]}
+        t={DEFAULT_THEME}
+        trail={[]}
+        detailsMode="expanded"
+        sections={{ tools: 'expanded', thinking: 'hidden', subagents: 'expanded', activity: 'expanded' }}
+      />
+    )
+    const frame = lastFrame()
+    expect(frame).toContain('tool started')
+    expect(frame).toContain('approval denied')
+  })
+
+  it('subagents 渲染 spawn tree 摘要（goal 文本可见）', () => {
+    const { lastFrame } = render(
+      <ToolTrail
+        subagents={[{
+          depth: 1,
+          goal: '重构组件',
+          id: 's1',
+          index: 0,
+          notes: [],
+          parentId: null,
+          status: 'running',
+          taskCount: 1,
+          thinking: [],
+          toolCount: 0,
+          tools: [],
+        }]}
+        t={DEFAULT_THEME}
+        trail={[]}
+        detailsMode="expanded"
+        sections={{ tools: 'hidden', thinking: 'hidden', subagents: 'expanded', activity: 'hidden' }}
+      />
+    )
+    expect(lastFrame()).toContain('重构组件')
+  })
 })

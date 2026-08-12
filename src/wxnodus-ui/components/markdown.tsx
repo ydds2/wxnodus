@@ -1,7 +1,8 @@
 import { Box, Link, stringWidth, Text } from '@wxnodus/ink'
-import { Fragment, memo, type ReactNode, useMemo } from 'react'
+import { Fragment, memo, type ReactNode, useMemo, useState } from 'react'
 
 import { ensureEmojiPresentation } from '../lib/emoji.js'
+import { writeClipboardText } from '../lib/clipboard.js'
 import { normalizeExternalUrl, urlSlugTitleLabel, useLinkTitle } from '../lib/externalLink.js'
 import { BOX_CLOSE, BOX_OPEN, texToUnicode } from '../lib/mathUnicode.js'
 import { highlightLine, isHighlightable } from '../lib/syntax.js'
@@ -218,6 +219,32 @@ const SAFETY_MARGIN = 4
 const MIN_COL_WIDTH = 3
 const COL_GAP = 2 // the '  ' between columns
 const TABLE_PADDING_LEFT = 2 // paddingLeft={2} on the outer <Box>
+
+// A24：<details>/<summary> 可折叠块——默认收起（HTML 语义），点击 summary 行展开。
+// 独立组件持本地 open 状态：parse 缓存不变，点击只重渲染本块。
+function DetailsBlock({ body, summary, t }: { body: string[]; summary: string; t: Theme }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Box flexDirection="column">
+      <Box onClick={() => setOpen(v => !v)}>
+        <Text color={t.color.muted}>
+          <Text color={t.color.accent}>{open ? '▾ ' : '▶ '}</Text>
+          {summary || '详情'}
+        </Text>
+      </Box>
+      {open ? (
+        <Box flexDirection="column">
+          {body.map((line, i) => (
+            <Text color={t.color.muted} key={i} wrap="wrap-trim">
+              {line || ' '}
+            </Text>
+          ))}
+        </Box>
+      ) : null}
+    </Box>
+  )
+}
 
 const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
   // Guard: empty table
@@ -769,11 +796,25 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
         const langLabel = lang && !isDiff ? ` ${lang} ` : ''
         const rawWidth = block.reduce((w, l) => Math.max(w, stringWidth(l)), 0)
         const contentWidth = Math.max(1, cols ? Math.min(rawWidth, Math.max(4, cols - 6)) : rawWidth)
-        const topPad = Math.max(1, contentWidth - 1 - langLabel.length)
+        // A24：顶边尾缀「⧉ 复制」——点击整块复制（此前代码块只能整条消息复制）
+        const copyTag = ' ⧉'
+        const topPad = Math.max(1, contentWidth - 1 - langLabel.length - stringWidth(copyTag))
 
         nodes.push(
           <Box flexDirection="column" key={key}>
-            <Text color={t.color.muted}>{'┌─' + langLabel + '─'.repeat(topPad) + '┐'}</Text>
+            <Box
+              onClick={(e: { stopImmediatePropagation?: () => void }) => {
+                e.stopImmediatePropagation?.()
+                writeClipboardText(block.join('\n'))
+              }}
+            >
+              <Text color={t.color.muted}>
+                {'┌─' + langLabel + '─'.repeat(topPad) + '┐'}
+                <Text dim color={t.color.statusFg}>
+                  {copyTag}
+                </Text>
+              </Text>
+            </Box>
 
             {block.map((l, j) => {
               if (highlighted) {
@@ -1077,22 +1118,20 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
         continue
       }
 
-      if (/^<\/?details\b/i.test(line)) {
-        i++
-
-        continue
-      }
-
-      const summary = line.match(/^<summary>(.*?)<\/summary>$/i)?.[1]
-
-      if (summary) {
+      if (/^<details\b/i.test(line)) {
+        // A24：<details> 真正可折叠——默认收起，点击 summary 展开（此前剥标签恒展开，
+        // 「▶」看着可点实则不可点）
         start('paragraph')
-        nodes.push(
-          <Text color={t.color.muted} key={key} wrap="wrap-trim">
-            ▶ {summary}
-          </Text>
-        )
+        const body: string[] = []
+        let summary = ''
         i++
+        while (i < lines.length && !/^<\/details>/i.test(lines[i]!)) {
+          const sm = lines[i]!.match(/^<summary>(.*?)<\/summary>$/i)?.[1]
+          if (sm != null) summary = sm
+          else body.push(lines[i]!)
+          i++
+        }
+        nodes.push(<DetailsBlock body={body} key={key} summary={summary} t={t} />)
 
         continue
       }

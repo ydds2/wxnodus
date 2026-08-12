@@ -805,6 +805,14 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
       }
+      case 'background.jobs': {
+        // A24 第四类修复：jobs.created/complete 事件 → 任务列表即时刷新
+        // （此前仅 5s 轮询——任务完成在后台面板要等下一轮才可见）
+        const jobs = Array.isArray(ev.payload) ? ev.payload : []
+        patchBgState({ jobs })
+
+        return
+      }
       case 'review.summary': {
         // Self-improvement background review emitted a persistent summary
         // of what it saved to memory/skills. Surface it as a system line

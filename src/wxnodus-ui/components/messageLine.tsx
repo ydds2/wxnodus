@@ -28,7 +28,7 @@ import {
   showSelectionHint
 } from '../runtime/viewStore.js'
 import type { Theme } from '../theme.js'
-import type { ActiveTool, DetailsMode, Msg, Role, SectionVisibility } from '../types.js'
+import type { ActiveTool, ActivityItem, DetailsMode, Msg, Role, SectionVisibility, SubagentProgress } from '../types.js'
 
 import { Md } from './markdown.js'
 import { StreamingMd } from './streamingMarkdown.js'
@@ -71,33 +71,45 @@ export const messageMultiClickIntent = (e: { clickCount?: number }, msgKey: stri
 // A8：已发消息中 /skill:名 引用高亮（参考 splitSlashSkillRefs 同款）
 const SKILL_REF_RE = /(\/skill:[^\s，。！？,.;]+)/g
 
-function renderSkillRefs(text: string, t: Theme): ReactNode {
-  const parts: ReactNode[] = []
+// A24：/skill: 引用可点（高亮如链接就必须可点——点击提交执行技能；
+// stopImmediatePropagation 阻断消息选中冒泡）
+function renderSkillRefs(text: string, t: Theme, onCommand?: (text: string) => void): { nodes: ReactNode[]; hasRefs: boolean } {
+  const nodes: ReactNode[] = []
   let last = 0
+  let hasRefs = false
 
   for (const m of text.matchAll(SKILL_REF_RE)) {
+    hasRefs = true
     const i = m.index ?? 0
 
     if (i > last) {
-      parts.push(<Text key={parts.length}>{text.slice(last, i)}</Text>)
+      nodes.push(<Text key={nodes.length}>{text.slice(last, i)}</Text>)
     }
 
-    parts.push(
-      <Text color={t.color.accent} key={parts.length}>
-        {m[1]}
-      </Text>
+    nodes.push(
+      <Box
+        key={nodes.length}
+        onClick={(e: { stopImmediatePropagation?: () => void }) => {
+          e.stopImmediatePropagation?.()
+          onCommand?.(m[1]!)
+        }}
+      >
+        <Text color={t.color.accent}>{m[1]}</Text>
+      </Box>
     )
     last = i + m[0].length
   }
 
   if (last < text.length) {
-    parts.push(<Text key={parts.length}>{text.slice(last)}</Text>)
+    nodes.push(<Text key={nodes.length}>{text.slice(last)}</Text>)
   }
 
-  return parts.length ? parts : text
+  return { hasRefs, nodes }
 }
 
 export const MessageLine = memo(function MessageLine({
+  activity = [],
+  busy = false,
   cols,
   compact,
   detailsMode = 'collapsed',
@@ -105,8 +117,13 @@ export const MessageLine = memo(function MessageLine({
   isStreaming = false,
   msg,
   msgKey,
+  onCommand,
+  outcome = '',
   prev,
+  reasoningActive = false,
+  reasoningStreaming = false,
   sections,
+  subagents = [],
   t,
   tools = []
 }: MessageLineProps) {
@@ -225,11 +242,17 @@ export const MessageLine = memo(function MessageLine({
     return thinkingMode !== 'hidden' || toolsMode !== 'hidden' || activityMode !== 'hidden' ? (
       <Box flexDirection="column" marginTop={leadGap ? 1 : 0}>
         <ToolTrail
+          activity={activity}
+          busy={busy}
           commandOverride={detailsModeCommandOverride}
           detailsMode={detailsMode}
+          outcome={outcome}
           reasoning={thinking}
+          reasoningActive={reasoningActive}
+          reasoningStreaming={reasoningStreaming}
           reasoningTokens={msg.thinkingTokens}
           sections={sections}
+          subagents={subagents}
           t={t}
           tools={tools}
           toolTokens={msg.toolTokens}
@@ -343,7 +366,18 @@ export const MessageLine = memo(function MessageLine({
     }
 
     // A8：user 消息中的 /skill:名 引用以 accent 高亮（技能直达提示）
-    return <Text {...(body ? { color: body } : {})}>{renderSkillRefs(msg.text, t)}</Text>
+    // A24：含引用时用 flexWrap Box 渲染（引用可点击执行——外层消息选中被阻断）
+    const skill = renderSkillRefs(msg.text, t, onCommand)
+
+    if (skill.hasRefs) {
+      return (
+        <Box flexDirection="row" flexWrap="wrap" {...(body ? { color: body } : {})}>
+          {skill.nodes}
+        </Box>
+      )
+    }
+
+    return <Text {...(body ? { color: body } : {})}>{msg.text}</Text>
   })()
 
   // Diff segments (emitted by pushInlineDiffSegment between narration
@@ -426,6 +460,10 @@ export const shouldShowResponseSeparator = (
   msg.role === 'assistant' && /\S/.test(msg.text) && (showDetails || prev?.role === 'user')
 
 interface MessageLineProps {
+  /** A24：live 轮次活动流（tool started/approval/delegate 等）——ToolTrail meta 面板数据源 */
+  activity?: ActivityItem[]
+  /** A24：live 轮次结果（approve/deny 等）——ToolTrail 底部结果行 */
+  busy?: boolean
   cols: number
   compact?: boolean
   detailsMode?: DetailsMode
@@ -434,11 +472,20 @@ interface MessageLineProps {
   msg: Msg
   /** A19：虚拟行 key（appLayout row.key）——鼠标点选的唯一标识。 */
   msgKey?: string
+  /** A24：/skill: 引用点击执行（composer.submit 链路） */
+  onCommand?: (text: string) => void
+  /** A24：live 轮次结果（approve/deny 等）——ToolTrail 底部结果行 */
+  outcome?: string
   // The block rendered directly above this one. Drives the group-boundary
   // lead gap (see domain/blockLayout.ts::hasLeadGap). Undefined at the top of
   // the transcript or when spacing is irrelevant.
   prev?: Msg
+  /** A24：live 思考中标记（flowController 置位）——ToolTrail thinking 面板活跃态 */
+  reasoningActive?: boolean
+  reasoningStreaming?: boolean
   sections?: SectionVisibility
+  /** A24：live 委派树（子代理进度）——ToolTrail spawn tree 面板数据源 */
+  subagents?: SubagentProgress[]
   t: Theme
   tools?: ActiveTool[]
 }
