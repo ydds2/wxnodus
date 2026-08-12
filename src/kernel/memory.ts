@@ -256,8 +256,15 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
       // 改为固定阈值（保头 3 尾 3 + 余量）：消息足够多即可压缩
       const rows = db.prepare(`SELECT id, role, content FROM messages WHERE session_id=? AND archived=0 ORDER BY id`).all(sessionId) as any[];
       if (rows.length <= 8) return;
-      const mid = rows.slice(3, -3);
-      const summary = await summarize(mid.map((m: any) => `${m.role}: ${m.content}`).join('\n')).catch(() => '');
+      // 深度（OpenCode compaction 对齐）：尾部保护从「固定 3 条」升级为「保最近 2 个
+      // 用户轮」——近期对话上下文不因压缩丢失；工具输出入摘要前按 2000 字符截断
+      // （长工具输出是 token 大头，截断后摘要输入显著减小）
+      const lastUserIdx = rows.map((r: any) => r.role).lastIndexOf('user');
+      const tailGuard = lastUserIdx >= 0 ? Math.max(2, rows.length - lastUserIdx + 2) : 3;
+      const mid = rows.slice(3, -Math.min(tailGuard, rows.length - 3));
+      if (!mid.length) return;
+      const feed = mid.map((m: any) => `${m.role}: ${String(m.content ?? '').slice(0, 2000)}`).join('\n');
+      const summary = await summarize(feed).catch(() => '');
       if (summary) {
         // F6 修复：不硬 DELETE——中部消息置 archived（recall 全量仍可检索），
         // 摘要写入第一条中部消息原位（保持时间序），其余中部消息归档
@@ -272,7 +279,7 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
         }
       } else {
         const ids = rows.map((r: any) => r.id);
-        const keep = [...ids.slice(0, 3), ...ids.slice(-3)];
+        const keep = [...ids.slice(0, 3), ...ids.slice(-Math.min(tailGuard, ids.length - 3))];
         const drop = ids.filter(id => !keep.includes(id));
         db.prepare(`UPDATE messages SET archived=1 WHERE id IN (${drop.map(() => '?').join(',')})`).run(...drop);
       }

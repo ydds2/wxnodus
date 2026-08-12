@@ -754,6 +754,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   // ── 记忆类 ──────────────────────────────────
   // /compact：上下文压缩（对比轮 6 修复：有密钥时 LLM 真实总结，无密钥降级规则摘要）
+  // 融合：LLM 调用走共享 callModelOnce（与 llmSpec 同款，单一事实源）
   bus.register('/compact', async () => {
     const before = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default').length;
     const summarize = async (text: string): Promise<string> => {
@@ -761,23 +762,17 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         const { resolveApiKey } = await import('../kernel/providers.js');
         const keyRes = resolveApiKey(ctx.config.get('settings') as any);
         if (!keyRes.key) return `（规则压缩）${text.slice(0, 400)}${text.length > 400 ? '…' : ''}`;
-        const key = keyRes.key;
-        const { buildChatRequest } = await import('../kernel/providers.js');
+        const { callModelOnce } = await import('../kernel/llmOnce.js');
         const baseURL = resolveDefaultBaseURL(ctx.config.get('settings') as any);
         const model = resolveDefaultModel(ctx.config.get('settings') as any);
-        const req = buildChatRequest({
-          baseURL, model, key,
+        const r = await callModelOnce({
+          baseURL, model, key: keyRes.key,
           messages: [
             { role: 'system', content: '你是上下文压缩器。把对话片段压缩为保留关键信息的摘要（中文，≤400 字），只输出摘要。' },
             { role: 'user', content: text },
           ],
-          stream: false,
         });
-        const resp = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body, signal: AbortSignal.timeout(60000) });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const j = await resp.json() as any;
-        const summary = String(j?.choices?.[0]?.message?.content ?? '').trim();
-        return summary || `（规则压缩）${text.slice(0, 400)}`;
+        return r.ok ? r.content || `（规则压缩）${text.slice(0, 400)}` : `（规则压缩）${text.slice(0, 400)}`;
       } catch { return `（规则压缩）${text.slice(0, 400)}${text.length > 400 ? '…' : ''}`; }
     };
     await ctx.mem.compactSmart(ctx.agent?.getSessionId?.() ?? 'default', summarize);

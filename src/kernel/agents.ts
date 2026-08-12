@@ -4,6 +4,7 @@
 // frontmatter 仅标量键，手写解析零依赖（与 skills.ts 同模式）
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseSkillMd } from './skills.js';
 import type { Mode } from './permissions.js';
 
 export interface AgentDef {
@@ -19,16 +20,9 @@ export interface AgentDef {
   source: string;
 }
 
-/** frontmatter 解析（`---` 分隔 + 标量键，支持引号；失败返回 null） */
+/** frontmatter 解析（复用 skills.ts 共享解析器——`---` 分隔 + 标量键，单一事实源；无 frontmatter 返回 null） */
 function parseAgentFile(text: string, file: string): AgentDef | null {
-  const m = String(text ?? '').match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!m) return null;
-  const meta: Record<string, string> = {};
-  for (const line of m[1]!.split('\n')) {
-    const kv = /^\s*([a-zA-Z_][a-zA-Z0-9_-]*)\s*:\s*(.*?)\s*$/.exec(line);
-    if (!kv) continue;
-    meta[kv[1]!] = (kv[2] ?? '').replace(/^["']|["']$/g, '').trim();
-  }
+  const { meta, body } = parseSkillMd(text);
   const name = meta.name?.trim();
   if (!name) return null;
   const toolsRaw = meta.tools?.trim();
@@ -43,7 +37,7 @@ function parseAgentFile(text: string, file: string): AgentDef | null {
     description: meta.description ?? '',
     mode,
     tools,
-    instructions: (m[2] ?? '').trim(),
+    instructions: body,
     source: file,
   };
 }

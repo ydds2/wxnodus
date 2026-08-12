@@ -2,10 +2,10 @@
 // 链路：规则脑未命中（scaffold=unknown）且有密钥时，单轮非流式调用模型
 //       生成 Spec IR（title/summary/scaffold/acceptance）→ validateSpec 校验 →
 //       失败返回 null（调用方降级规则脑并明示，绝不产生假规格）。
+// LLM 调用走共享 callModelOnce（src/kernel/llmOnce.ts——与 /compact 同款，融合重复实现）。
 // 直连 fetch（与 agent 同模式）——模型 baseURL 是用户配置，可能是本地端点（ollama 等），
 // 不走 SSRF 防护（防护面向外部抓取，这里跟随 agent 的直连语义）。
 
-import { buildChatRequest } from '../kernel/providers.js';
 import { SCAFFOLDS, validateSpec } from './spec.js';
 import type { Spec } from './spec.js';
 
@@ -16,28 +16,16 @@ const SYSTEM_PROMPT = `你是概念编译器 WxNodus 的规格分析器。把用
 - scaffold 按需求本质选择：记账→ledger，待办→todo，笔记知识库→note，动画→anim，其余一律 generic
 - summary 概括核心功能，≤200 字`;
 
-/** 从模型响应中提取 JSON 对象（容错：剥离 markdown 代码围栏与前后噪声） */
-function extractJson(s: string): Record<string, unknown> | null {
-  const cleaned = String(s ?? '').replace(/```(?:json)?/gi, '').trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  try {
-    return JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * LLM 规格化：单轮非流式生成 Spec IR；任何失败（网络/解析/校验不通过）返回 null——
- * 调用方必须降级规则脑并如实提示，不得伪造规格。
+ * LLM 规格化：单轮非流式生成 Spec IR（共享 callModelOnce——融合 /compact 同款调用）；
+ * 任何失败（网络/解析/校验不通过）返回 null——调用方必须降级规则脑并如实提示，不得伪造规格。
  */
 export async function aiMakeSpec(
   input: string,
   deps: { baseURL: string; model: string; key: string }
 ): Promise<Spec | null> {
-  const httpReq = buildChatRequest({
+  const { callModelOnce, extractJson } = await import('../kernel/llmOnce.js');
+  const r = await callModelOnce({
     baseURL: deps.baseURL,
     model: deps.model,
     key: deps.key,
@@ -45,31 +33,10 @@ export async function aiMakeSpec(
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: input },
     ],
-    stream: false,
     temperature: 0.2,
   });
-
-  let resp: Response;
-  try {
-    resp = await fetch(httpReq.url, {
-      method: 'POST',
-      headers: httpReq.headers,
-      body: httpReq.body,
-      signal: AbortSignal.timeout(60_000),
-    });
-  } catch {
-    return null;
-  }
-  if (!resp.ok) return null;
-
-  let j: any;
-  try {
-    j = await resp.json();
-  } catch {
-    return null;
-  }
-  const content: string = j?.choices?.[0]?.message?.content ?? '';
-  const parsed = extractJson(content);
+  if (!r.ok) return null;
+  const parsed = extractJson(r.content);
   if (!parsed) return null;
 
   // LLM 可能输出非白名单模具——归入 generic（绝不直接透传未知模具）
