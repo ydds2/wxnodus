@@ -134,8 +134,8 @@ export type Role = 'assistant' | 'system' | 'tool' | 'user'
 export type DetailsMode = 'hidden' | 'collapsed' | 'expanded'
 export type ThinkingMode = 'collapsed' | 'truncated' | 'full'
 
-/** A23 双栏布局：右侧详情面板标签（任务清单/工具/上下文/子代理） */
-export type PaneTab = 'todo' | 'tools' | 'context' | 'subagents'
+/** A23 双栏布局：右侧详情面板标签（任务清单/工具/上下文/子代理/后台/特色） */
+export type PaneTab = 'todo' | 'tools' | 'context' | 'subagents' | 'bg' | 'features'
 
 // Per-section overrides for the agent details accordion.  Resolution order
 // at lookup time is: explicit `display.sections.<name>` → built-in

@@ -103,6 +103,8 @@ export interface OverlayState {
   sudo: null | SudoReq
   /** 动态内容表（多字段敏感输入） */
   form: null | FormReq
+  /** A24：目录选择器（点击状态栏 cwd 打开——浏览/切换工作目录） */
+  dirPicker: boolean
 }
 
 export interface FormReq {
@@ -393,6 +395,8 @@ export interface AppLayoutActions {
   setStickyPrompt: (value: string) => void
   /** A20：麦克风钮（缺键盘场景鼠标触发录音开关——与 Ctrl+B 同链路） */
   toggleVoice: () => void
+  /** A24：语音模式开关（鼠标点击——未开启时麦克风钮显示 🎤，点击开启/关闭） */
+  toggleVoiceMode: () => void
 }
 
 export interface AppLayoutComposerProps {

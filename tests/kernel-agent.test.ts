@@ -1,6 +1,6 @@
 // tests/kernel-agent.test.ts — L2-4 agent 循环：流式/工具执行/权限/重试/中断/子代理/规则脑
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDB, closeDB } from '../src/store/db.js';
@@ -975,5 +975,54 @@ describe('wx_cmd AI 自主调用通道（分级裁决）', () => {
     const r = await agent.run('执行');
     expect(r.ok).toBe(true);
     expect(executed).toEqual(['/status']);
+  });
+});
+
+// ── A24：运行时切换工作目录（setCwd）+ goal 进度事件 ──
+describe('A24 运行时工作目录（setCwd）', () => {
+  it('setCwd 后 fs_read 相对路径解析新目录（工具 ctx.cwd 跟随）', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-cwd-'));
+    try {
+      writeFileSync(join(d, 'target.txt'), 'hello-from-new-cwd', 'utf8');
+      let rounds = 0;
+      let sawContent = '';
+      const agent = createAgent({
+        db, bus, mem, sessionId: 't-cwd',
+        config: { settings: {} } as any,
+        callModel: async (req): Promise<ModelCall | ToolCallMsg> => {
+          rounds++;
+          if (rounds === 1) return { type: 'tool_call', name: 'fs_read', args: { path: 'target.txt' } };
+          // 第二轮：工具结果已注入消息——校验读到的是新目录文件
+          sawContent = JSON.stringify(req.messages.map((m: any) => m.content));
+          return { type: 'text', content: '完成' };
+        },
+      });
+      agent.setCwd(d);
+      const r = await agent.run('读文件');
+      expect(r.ok).toBe(true);
+      expect(sawContent).toContain('hello-from-new-cwd');
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('A24 goal 模式进度事件（agent.goal）', () => {
+  it('goal 模式循环发 agent.goal：开场 + 完成态', async () => {
+    const localBus = createEventBus(dir);
+    const goalEvents: any[] = [];
+    localBus.on('agent.goal', (e: any) => goalEvents.push(e.payload));
+    const agent = createAgent({
+      db, bus: localBus, mem, sessionId: 't-goal',
+      config: { settings: {} } as any,
+      callModel: async (): Promise<ModelCall | ToolCallMsg> => ({ type: 'text', content: '目标完成 [GOAL_DONE]' }),
+    });
+    agent.setMode('goal');
+    const r = await agent.run('目标');
+    expect(r.ok).toBe(true);
+    // 开场（round 1 进行中）+ 结束（done=true）至少两条
+    expect(goalEvents.length).toBeGreaterThanOrEqual(2);
+    expect(goalEvents[0]).toMatchObject({ round: 1, done: false, maxRounds: 10 });
+    expect(goalEvents.at(-1)!.done).toBe(true);
   });
 });

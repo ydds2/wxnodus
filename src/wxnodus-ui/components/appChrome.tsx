@@ -448,6 +448,8 @@ export function StatusRule({
   turnStartedAt,
   voiceLabel,
   onSessionCountClick,
+  onVoiceClick,
+  onCwdClick,
   t
 }: StatusRuleProps) {
   const pct = usage.context_percent
@@ -677,15 +679,36 @@ export function StatusRule({
           </Text>
         ) : null}
         {showVoice ? (
-          <Text
-            color={
-              voiceLabel!.startsWith('●') ? t.color.error : voiceLabel!.startsWith('◉') ? t.color.warn : t.color.muted
-            }
-            wrap="truncate-end"
-          >
-            {' │ '}
-            {voiceLabel}
-          </Text>
+          // A24：语音段可点（鼠标切换语音模式——onSessionCountClick 同款模式）
+          onVoiceClick ? (
+            <Box
+              flexShrink={0}
+              onClick={(e: { stopImmediatePropagation?: () => void }) => {
+                e.stopImmediatePropagation?.()
+                onVoiceClick()
+              }}
+            >
+              <Text
+                color={
+                  voiceLabel!.startsWith('●') ? t.color.error : voiceLabel!.startsWith('◉') ? t.color.warn : t.color.accent
+                }
+                wrap="truncate-end"
+              >
+                {' │ '}
+                {voiceLabel}
+              </Text>
+            </Box>
+          ) : (
+            <Text
+              color={
+                voiceLabel!.startsWith('●') ? t.color.error : voiceLabel!.startsWith('◉') ? t.color.warn : t.color.muted
+              }
+              wrap="truncate-end"
+            >
+              {' │ '}
+              {voiceLabel}
+            </Text>
+          )
         ) : null}
         {showBattery ? (
           <Text
@@ -732,7 +755,15 @@ export function StatusRule({
       {rightWidth > 0 ? (
         <>
           <Text color={t.color.border}>{separatorWidth >= 3 ? ' ─ ' : ' '}</Text>
-          <Box flexShrink={0} width={rightWidth}>
+          {/* A24：cwd/标题段可点——打开目录选择器（浏览/切换工作目录） */}
+          <Box
+            flexShrink={0}
+            width={rightWidth}
+            onClick={(e: { stopImmediatePropagation?: () => void }) => {
+              e.stopImmediatePropagation?.()
+              onCwdClick?.()
+            }}
+          >
             <Text color={t.color.label} wrap="truncate-end">
               {/* A7：会话标题优先于 cwd（参考 rightLabel 同款——标题即当前工作上下文） */}
               {sessionTitle || cwdLabel}
@@ -884,6 +915,10 @@ interface StatusRuleProps {
   usage: Usage
   voiceLabel?: string
   onSessionCountClick?: () => void
+  /** A24：语音段点击（鼠标切换语音模式——onSessionCountClick 同款模式） */
+  onVoiceClick?: () => void
+  /** A24：右侧 cwd/标题段点击（打开目录选择器——浏览/切换工作目录） */
+  onCwdClick?: () => void
 }
 
 interface StickyPromptTrackerProps {

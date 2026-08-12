@@ -17,14 +17,15 @@ import type {
   SessionActiveListResponse,
   SessionCloseResponse,
   TerminalResizeResponse,
-  VoiceRecordResponse
+  VoiceRecordResponse,
+  VoiceToggleResponse
 } from '../gatewayTypes.js'
 import { useGitBranch } from './useGitBranch.js'
 import { useVirtualHistory } from './useVirtualHistory.js'
 import { composerPromptWidth } from '../lib/inputMetrics.js'
 import { appendTranscriptMessage } from '../lib/messages.js'
 import { dualPaneWidths } from '../lib/paneLayout.js'
-import { DEFAULT_VOICE_RECORD_KEY, isMac, type ParsedVoiceRecordKey } from '../lib/platform.js'
+import { DEFAULT_VOICE_RECORD_KEY, isMac, parseVoiceRecordKey, type ParsedVoiceRecordKey } from '../lib/platform.js'
 import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
 import { terminalParityHints } from '../lib/terminalParity.js'
 import { buildToolTrailLine, formatAbandonedClarify, sameToolTrailGroup, toolTrailLabel } from '../lib/text.js'
@@ -44,6 +45,7 @@ import { $uiState, getUiState, patchUiState } from '../runtime/viewStore.js'
 import { useComposerState } from './useComposer.js'
 import { useConfigSync } from './useConfigWatcher.js'
 import { useBatteryPoll } from './useBatteryMonitor.js'
+import { useBackgroundPoll } from './useBackgroundPoll.js'
 import { useInputHandlers, applyVoiceRecordResponse } from './useKeyBindings.js'
 import { useLongRunToolCharms } from './useLongTaskHints.js'
 import { useSessionLifecycle } from './useConversationLifecycle.js'
@@ -565,6 +567,8 @@ export function useMainApp(gw: GatewayClient) {
   useConfigSync({ gw, setBellOnComplete, setVoiceEnabled, setVoiceRecordKey, sid: ui.sid })
   // A7：状态条电池指示轮询（30s；无电池自动隐藏）
   useBatteryPoll(gw)
+  // A24：后台活动轮询（终端/任务/定时——后台面板与摘要行数据源；5s）
+  useBackgroundPoll(gw)
 
   useEffect(() => {
     if (!ui.sid) {
@@ -1122,6 +1126,30 @@ export function useMainApp(gw: GatewayClient) {
       })
   }, [rpc, setVoiceProcessing, setVoiceRecording, sys, voiceEnabled, voiceRecording])
 
+  // A24：语音模式开关（鼠标点击——此前全 UI 无任何元素能鼠标开启语音；
+  // 与 /voice on|off 命令同链路 voice.toggle RPC）
+  const toggleVoiceMode = useCallback(() => {
+    const next = !voiceEnabled
+
+    rpc<VoiceToggleResponse>('voice.toggle', { action: next ? 'on' : 'off' })
+      .then(r => {
+        if (r?.enabled != null) {
+          setVoiceEnabled(!!r.enabled)
+        }
+
+        if (r?.tts != null) {
+          setVoiceTts(!!r.tts)
+        }
+
+        if (r?.record_key) {
+          setVoiceRecordKey(parseVoiceRecordKey(r.record_key))
+        }
+
+        sys(next ? '语音模式已开启（Ctrl+B 录音）' : '语音模式已关闭')
+      })
+      .catch((e: Error) => sys(`voice error: ${e.message}`))
+  }, [rpc, setVoiceEnabled, setVoiceRecordKey, setVoiceTts, sys, voiceEnabled])
+
   const appActions = useMemo(
     () => ({
       activateLiveSession: session.activateLiveSession,
@@ -1137,6 +1165,7 @@ export function useMainApp(gw: GatewayClient) {
       newPromptSession,
       onModelSelect,
       toggleVoice,
+      toggleVoiceMode,
       // Resuming a cold session from the overlay CLOSES the current one, so it
       // must respect the busy guard just like the `/resume` slash path.
       // (Switching between live sessions and `+ new` keep the current session
@@ -1165,7 +1194,8 @@ export function useMainApp(gw: GatewayClient) {
       session.guardBusySessionSwitch,
       session.newLiveSession,
       session.resumeById,
-      toggleVoice
+      toggleVoice,
+      toggleVoiceMode
     ]
   )
 

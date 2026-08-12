@@ -2316,6 +2316,8 @@ export const commands = {
     const rounds: string[] = [];
     let done = false;
     for (let i = 1; i <= Math.min(maxIter, 8); i++) {
+      // A24：goal 进度实时上报（UI 后台面板「目标循环」区——与内核 goal 模式同事件）
+      try { ctx.bus?.emit('agent.goal', { round: i, maxRounds: Math.min(maxIter, 8), done: false, text: goal.slice(0, 80) }); } catch { /* 事件失败不阻断 */ }
       const prompt = `目标：${goal}\n当前进度：${rounds.at(-1) ? '已完成以下工作——' + rounds.at(-1)!.slice(0, 600) : '尚未开始'}。\n请继续推进目标。若目标已全部完成，以「✓ 已完成」开头输出总结；否则输出本轮完成的事项与下一步。`;
       const r = await ctx.agent.run(prompt);
       rounds.push(r.text);
@@ -2337,6 +2339,7 @@ export const commands = {
       }
       if (!r.ok && r.text.includes('未配置模型密钥')) break; // 无 key：不空转
     }
+    try { ctx.bus?.emit('agent.goal', { round: done ? rounds.length : Math.min(maxIter, 8), maxRounds: Math.min(maxIter, 8), done, text: rounds.at(-1)?.slice(0, 80) ?? '' }); } catch { /* 忽略 */ }
     return lines(` 目标执行 ${done ? '✓ 完成' : `（${rounds.length} 轮）`} `, [
       ` 目标：${goal.slice(0, 80)}`,
       ...rounds.map((r, i) => ['', ` ── 第 ${i + 1} 轮 ──`, ...String(r).split('\n').slice(0, 12).map(l => ` ${l.slice(0, 110)}`)]).flat(),

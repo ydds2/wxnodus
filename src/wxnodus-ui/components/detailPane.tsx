@@ -10,7 +10,9 @@ import { useAtom as useStore } from '../../app/stores/engine.js'
 import { dualPaneWidths, PANE_TAB_LABEL, PANE_TABS } from '../lib/paneLayout.js'
 import { boundedLiveRenderText, compactPreview, fmtK, formatToolCall, parseToolTrailResultLine } from '../lib/text.js'
 import { buildSubagentTree, flattenTree, fmtDuration, formatSummary, sparkline, treeTotals, widthByDepth } from '../lib/subagentTree.js'
+import { FEATURE_SPOTLIGHTS } from '../content/features.js'
 import { toggleTodoCollapsed, useTurnSelector } from '../runtime/flowStore.js'
+import { bgActiveCount, useBgSelector } from '../runtime/backgroundStore.js'
 import { patchUiState, $uiState } from '../runtime/viewStore.js'
 import type { Theme } from '../theme.js'
 import type { PaneTab } from '../types.js'
@@ -49,13 +51,13 @@ const ctxBar = (pct: number | undefined, w = 10): string => {
   return '█'.repeat(filled) + '░'.repeat(w - filled)
 }
 
-export const DetailPane = memo(function DetailPane({ cols }: { cols: number }) {
+export const DetailPane = memo(function DetailPane({ cols, onCommand }: { cols: number; onCommand?: (text: string) => void }) {
   const ui = useStore($uiState)
   const t = ui.theme
   const paneWidth = dualPaneWidths(cols).right
   const innerWidth = Math.max(20, paneWidth - 2)
 
-  // Alt+1-4（meta+数字）切换标签——不抢普通数字输入（与 Alt+D/Alt+G 同款模式）
+  // Alt+1-6（meta+数字）切换标签——不抢普通数字输入（与 Alt+D/Alt+G 同款模式）
   useInput((ch, key) => {
     if (!key.meta) {
       return
@@ -102,12 +104,12 @@ export const DetailPane = memo(function DetailPane({ cols }: { cols: number }) {
       <Text color={t.color.border}>{'─'.repeat(paneWidth + 2)}</Text>
 
       <ScrollBox flexDirection="column" flexGrow={1} paddingX={1} stickyScroll>
-        <PaneTabView innerWidth={innerWidth} tab={ui.paneTab} t={t} />
+        <PaneTabView innerWidth={innerWidth} onCommand={onCommand} tab={ui.paneTab} t={t} />
       </ScrollBox>
 
       <Text color={t.color.muted} dim>
         {' '}
-        Alt+1-4 切换 · Alt+D 开关
+        Alt+1-{PANE_TABS.length} 切换 · Alt+D 开关
       </Text>
     </Box>
   )
@@ -115,7 +117,17 @@ export const DetailPane = memo(function DetailPane({ cols }: { cols: number }) {
 
 // ── 标签视图 ─────────────────────────────────────────────────────────
 
-function PaneTabView({ innerWidth, tab, t }: { innerWidth: number; tab: PaneTab; t: Theme }) {
+function PaneTabView({
+  innerWidth,
+  onCommand,
+  tab,
+  t
+}: {
+  innerWidth: number
+  onCommand?: (text: string) => void
+  tab: PaneTab
+  t: Theme
+}) {
   switch (tab) {
     case 'todo':
       return <TodoTab innerWidth={innerWidth} t={t} />
@@ -125,6 +137,10 @@ function PaneTabView({ innerWidth, tab, t }: { innerWidth: number; tab: PaneTab;
       return <ContextTab innerWidth={innerWidth} t={t} />
     case 'subagents':
       return <SubagentsTab innerWidth={innerWidth} t={t} />
+    case 'bg':
+      return <BgTab t={t} />
+    case 'features':
+      return <FeaturesTab onCommand={onCommand} t={t} />
   }
 }
 
@@ -340,6 +356,146 @@ function SubagentsTab({ innerWidth, t }: { innerWidth: number; t: Theme }) {
           </Text>
         )
       })}
+    </Box>
+  )
+}
+
+// ── 后台：终端 / 后台任务 / 定时任务 / 目标循环 ───────────────────────
+
+const JOB_GLYPH: Record<string, { color: (t: Theme) => string; glyph: string }> = {
+  queued: { color: t => t.color.muted, glyph: '○' },
+  running: { color: t => t.color.accent, glyph: '●' },
+  success: { color: t => t.color.statusGood, glyph: '✓' },
+  done: { color: t => t.color.statusGood, glyph: '✓' },
+  failed: { color: t => t.color.error, glyph: '✗' },
+  cancelled: { color: t => t.color.muted, glyph: '−' },
+}
+
+function BgTab({ t }: { t: Theme }) {
+  const bg = useBgSelector(s => s)
+  const running = bgActiveCount(bg)
+
+  if (!bg.terms.length && !bg.jobs.length && !bg.cron.length && !bg.goal?.active) {
+    return (
+      <Box flexDirection="column">
+        <EmptyHint t={t} text="暂无后台活动——/term 开终端、/jobs 跑任务、/goal 目标循环、/cron 定时任务都会显示在这里" />
+      </Box>
+    )
+  }
+
+  return (
+    <Box flexDirection="column">
+      {running > 0 ? (
+        <Text color={t.color.accent} wrap="truncate-end">
+          {' '}
+          ⧉ {running} 项后台活动进行中
+        </Text>
+      ) : null}
+
+      {/* 目标循环 */}
+      {bg.goal?.active ? (
+        <Box flexDirection="column">
+          <Text color={t.color.accent} wrap="truncate-end">
+            {' '}
+            🎯 goal 第 {bg.goal.round}/{bg.goal.maxRounds} 轮
+          </Text>
+          {bg.goal.text ? (
+            <Text color={t.color.muted} wrap="truncate-end">
+              {'  '}
+              {bg.goal.text}
+            </Text>
+          ) : null}
+          <Text color={t.color.border}>{'─'.repeat(16)}</Text>
+        </Box>
+      ) : null}
+
+      {/* 后台终端 */}
+      {bg.terms.length ? (
+        <Box flexDirection="column">
+          <Text bold color={t.color.text} wrap="truncate-end">
+            {' '}
+            终端（{bg.terms.filter(x => x.status === 'running').length} 运行中）
+          </Text>
+          {bg.terms.slice(0, 6).map(term => (
+            <Text key={term.id} color={t.color.muted} wrap="truncate-end">
+              {' '}
+              <Text color={term.status === 'running' ? t.color.accent : t.color.muted}>
+                {term.status === 'running' ? '●' : '○'}
+              </Text>{' '}
+              {compactPreview(term.shell, 12)}
+              <Text color={t.color.statusFg} dim>{` · ${compactPreview(term.cwd, innerShort(term.cwd))}`}</Text>
+            </Text>
+          ))}
+          <Text color={t.color.border}>{'─'.repeat(16)}</Text>
+        </Box>
+      ) : null}
+
+      {/* 后台任务 */}
+      {bg.jobs.length ? (
+        <Box flexDirection="column">
+          <Text bold color={t.color.text} wrap="truncate-end">
+            {' '}
+            任务（{bg.jobs.filter(j => j.status === 'running' || j.status === 'queued').length} 进行中）
+          </Text>
+          {bg.jobs.slice(0, 6).map(job => {
+            const g = JOB_GLYPH[job.status] ?? JOB_GLYPH.failed!
+
+            return (
+              <Text key={job.id} color={t.color.muted} wrap="truncate-end">
+                {' '}
+                <Text color={g.color(t)}>{g.glyph}</Text> {compactPreview(job.goal || job.kind, 26)}
+                {job.status === 'running' ? <Text color={t.color.statusFg} dim>{` · ${job.kind}`}</Text> : null}
+              </Text>
+            )
+          })}
+          <Text color={t.color.border}>{'─'.repeat(16)}</Text>
+        </Box>
+      ) : null}
+
+      {/* 定时任务 */}
+      {bg.cron.length ? (
+        <Box flexDirection="column">
+          <Text bold color={t.color.text} wrap="truncate-end">
+            {' '}
+            定时任务
+          </Text>
+          {bg.cron.slice(0, 6).map(c => (
+            <Text key={c.id} color={t.color.muted} wrap="truncate-end">
+              {' '}
+              <Text color={c.enabled ? t.color.accent : t.color.muted}>{c.enabled ? '●' : '○'}</Text>{' '}
+              {compactPreview(c.schedule, 12)}
+              <Text color={t.color.statusFg} dim>{` · ${compactPreview(c.action, 18)}`}</Text>
+            </Text>
+          ))}
+        </Box>
+      ) : null}
+    </Box>
+  )
+}
+
+// 终端 cwd 短显示（面板内一行的预算）
+const innerShort = (p: string) => Math.max(8, 18 - Math.min(p.length, 18))
+
+// ── 特色：WxNodus 旗舰能力速览（点击执行示例命令）────────────────────
+// 内容单一事实来源：content/features.ts（与 intro SessionPanel 特色能力区共用）
+
+function FeaturesTab({ onCommand, t }: { onCommand?: (text: string) => void; t: Theme }) {
+  return (
+    <Box flexDirection="column">
+      <Text color={t.color.muted} dim>
+        {' '}
+        WxNodus 旗舰能力——点击行执行示例命令
+      </Text>
+      {FEATURE_SPOTLIGHTS.map(f => (
+        // A22 鼠标化：点击执行（与补全面板提交同链路）；
+        // 平铺单 Text——嵌套 Text 在窄面板 truncate 宽度测量不稳（命令行优先完整）
+        <Box flexDirection="column" key={f.label} onClick={() => onCommand?.(f.cmd)}>
+          <Text wrap="truncate-end">{` ${f.label} — ${f.cmd}`}</Text>
+          <Text color={t.color.muted} dim wrap="truncate-end">
+            {`   ${f.desc}`}
+          </Text>
+        </Box>
+      ))}
     </Box>
   )
 }

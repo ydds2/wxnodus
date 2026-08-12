@@ -1,10 +1,12 @@
-// tests/ui-detailPane.test.tsx — A23 双栏布局：右侧详情面板渲染（四标签 + 空态 + 真实 store 数据）
+// tests/ui-detailPane.test.tsx — A23 双栏布局：右侧详情面板渲染（六标签 + 空态 + 真实 store 数据）
 import { render } from 'ink-testing-library'
 import React from 'react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { DetailPane } from '../src/wxnodus-ui/components/detailPane.js'
+import { FEATURE_SPOTLIGHTS } from '../src/wxnodus-ui/content/features.js'
 import { ZERO } from '../src/wxnodus-ui/domain/usage.js'
+import { patchBgState } from '../src/wxnodus-ui/runtime/backgroundStore.js'
 import { patchTurnState } from '../src/wxnodus-ui/runtime/flowStore.js'
 import { patchUiState } from '../src/wxnodus-ui/runtime/viewStore.js'
 import { DEFAULT_THEME } from '../src/wxnodus-ui/theme.js'
@@ -38,10 +40,11 @@ beforeEach(() => {
     sid: null,
   })
   patchTurnState({ todos: [], tools: [], turnTrail: [], subagents: [], todoCollapsed: false })
+  patchBgState({ terms: [], jobs: [], cron: [], goal: null })
 })
 
 describe('DetailPane — 面板骨架', () => {
-  it('渲染四标签 + 关闭钮 + 当前标签高亮', () => {
+  it('渲染六标签 + 关闭钮 + 当前标签高亮', () => {
     const { lastFrame } = render(<DetailPane cols={140} />)
     const frame = lastFrame()
 
@@ -50,6 +53,8 @@ describe('DetailPane — 面板骨架', () => {
     expect(frame).toContain('工具')
     expect(frame).toContain('上下文')
     expect(frame).toContain('子代理')
+    expect(frame).toContain('后台')
+    expect(frame).toContain('特色')
     expect(frame).toContain('✕')
   })
 
@@ -144,5 +149,50 @@ describe('DetailPane — 子代理标签', () => {
     const { lastFrame } = render(<DetailPane cols={140} />)
 
     expect(lastFrame()).toContain('尚无子代理')
+  })
+})
+
+describe('DetailPane — 后台标签（A24）', () => {
+  it('渲染终端/任务/定时/目标循环四区（真实 $bgState 数据）', () => {
+    patchUiState({ paneTab: 'bg' })
+    patchBgState({
+      terms: [{ id: 't1', shell: 'cmd', cwd: 'C:\\proj', status: 'running', exitCode: null, startedAt: 1 }],
+      jobs: [
+        { id: 'j1', goal: '后台目标', status: 'running', kind: 'shell', created_at: 1, done_at: null, exit_code: null },
+        { id: 'j2', goal: '已完成', status: 'success', kind: 'agent', created_at: 2, done_at: 3, exit_code: 0 },
+      ],
+      cron: [{ id: 1, schedule: 'every 10m', action: '跑体检', enabled: true, last_run: null }],
+      goal: { active: true, done: false, round: 3, maxRounds: 10, text: '正在推进目标' },
+    })
+    const { lastFrame } = render(<DetailPane cols={140} />)
+    const frame = lastFrame()
+
+    expect(frame).toContain('goal 第 3/10 轮')
+    expect(frame).toContain('正在推进目标')
+    expect(frame).toContain('cmd')
+    expect(frame).toContain('后台目标')
+    expect(frame).toContain('every 10m')
+    expect(frame).toContain('3 项后台活动进行中') // 1 终端 + 1 任务 + 1 goal
+  })
+
+  it('后台空态：引导文案（零假数据）', () => {
+    patchUiState({ paneTab: 'bg' })
+    const { lastFrame } = render(<DetailPane cols={140} />)
+
+    expect(lastFrame()).toContain('暂无后台活动')
+  })
+})
+
+describe('DetailPane — 特色标签（A24）', () => {
+  it('渲染旗舰能力行（含示例命令）', () => {
+    patchUiState({ paneTab: 'features' })
+    const { lastFrame } = render(<DetailPane cols={140} />)
+    const frame = lastFrame()
+
+    for (const f of FEATURE_SPOTLIGHTS) {
+      expect(frame).toContain(f.label)
+    }
+    expect(frame).toContain('/build 做一个待办系统')
+    expect(frame).toContain('点击行执行示例命令')
   })
 })

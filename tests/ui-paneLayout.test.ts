@@ -43,8 +43,8 @@ describe('dualPaneWidths — 双栏宽度分配', () => {
 })
 
 describe('isPaneTab / PANE_TABS', () => {
-  it('四标签合法，非法值拒绝', () => {
-    expect(PANE_TABS).toEqual(['todo', 'tools', 'context', 'subagents'])
+  it('六标签合法，非法值拒绝', () => {
+    expect(PANE_TABS).toEqual(['todo', 'tools', 'context', 'subagents', 'bg', 'features'])
     for (const t of PANE_TABS) expect(isPaneTab(t)).toBe(true)
     expect(isPaneTab('nope')).toBe(false)
     expect(isPaneTab(undefined)).toBe(false)

@@ -5,7 +5,8 @@ import { Fragment, memo, useMemo, useRef } from 'react'
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { AppLayoutProps } from '../bridge/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../runtime/promptStore.js'
-import { clearSelectedMessage, $uiState } from '../runtime/viewStore.js'
+import { clearSelectedMessage, patchUiState, $uiState } from '../runtime/viewStore.js'
+import { bgActiveCount, useBgSelector } from '../runtime/backgroundStore.js'
 import { INLINE_MODE, SHOW_FPS, TERMUX_TUI_MODE } from '../config/env.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
 import { prevRenderedMsg } from '../domain/blockLayout.js'
@@ -52,6 +53,32 @@ const PromptPrefix = memo(function PromptPrefix({
         </Text>
       </Box>
       <Box width={COMPOSER_PROMPT_GAP_WIDTH} />
+    </Box>
+  )
+})
+
+// A24：后台活动摘要行——运行中任务/终端/goal 循环一览，点击直达右侧面板「后台」标签
+const BgSummaryLine = memo(function BgSummaryLine() {
+  const ui = useStore($uiState)
+  const bg = useBgSelector(s => s)
+  const terms = bg.terms.filter(x => x.status === 'running').length
+  const jobs = bg.jobs.filter(j => j.status === 'running' || j.status === 'queued').length
+  const parts: string[] = []
+  if (jobs) parts.push(`${jobs} 任务`)
+  if (terms) parts.push(`${terms} 终端`)
+  if (bg.goal?.active) parts.push(`goal ${bg.goal.round}/${bg.goal.maxRounds} 轮`)
+  if (bgActiveCount(bg) === 0 || !parts.length) return null
+
+  return (
+    <Box onClick={() => patchUiState({ dualPane: true, paneTab: 'bg' })}>
+      <Text color={ui.theme.color.muted}>
+        <Text color={ui.theme.color.accent}>⧉ 后台：</Text>
+        {parts.join(' · ')}
+        <Text color={ui.theme.color.statusFg} dim>
+          {' '}
+          ▶
+        </Text>
+      </Text>
     </Box>
   )
 })
@@ -257,6 +284,9 @@ const ComposerPane = memo(function ComposerPane({
         </Text>
       )}
 
+      {/* A24：后台活动摘要——点击直达右侧面板「后台」标签（zcode 风格后台可见性） */}
+      <BgSummaryLine />
+
       {status.showStickyPrompt ? (
         <Text color={ui.theme.color.muted} wrap="truncate-end">
           <Text color={ui.theme.color.label}>↳ </Text>
@@ -267,7 +297,7 @@ const ComposerPane = memo(function ComposerPane({
         <Box height={1} onMouseDown={captureInputDrag} onMouseDrag={dragFromSpacer} onMouseUp={endInputDrag} />
       )}
 
-      <StatusRulePane at="top" composer={composer} status={status} />
+      <StatusRulePane actions={actions} at="top" composer={composer} status={status} />
 
       <Box flexDirection="column" marginTop={ui.statusBar === 'top' ? 0 : 1} position="relative">
         <FloatingOverlays
@@ -337,19 +367,22 @@ const ComposerPane = memo(function ComposerPane({
                 />
               </Box>
 
-              <Box position="absolute" right={0}>
-                {/* A20：麦克风钮——语音模式下可点击（缺键盘场景鼠标触发录音）；
-                    未开启语音时显示 GoodVibesHeart 心标 */}
-                {status.voiceEnabled ? (
-                  <Box onClick={actions.toggleVoice} flexDirection="row">
-                    <Text color={status.voiceRecording ? ui.theme.color.error : ui.theme.color.accent}>
-                      {status.voiceRecording ? '●REC ' : '◉ '}
-                    </Text>
-                  </Box>
-                ) : (
-                  <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
-                )}
-              </Box>
+      <Box position="absolute" right={0}>
+        {/* A20/A24：麦克风钮常驻——未开启时显示 🎤（点击开启语音模式）；
+            开启后 ◉ 点击录音 / ●REC 点击停止；GoodVibesHeart 移至语音开启态旁 */}
+        {status.voiceEnabled ? (
+          <Box onClick={actions.toggleVoice} flexDirection="row">
+            <Text color={status.voiceRecording ? ui.theme.color.error : ui.theme.color.accent}>
+              {status.voiceRecording ? '●REC ' : '◉ '}
+            </Text>
+            <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
+          </Box>
+        ) : (
+          <Box onClick={actions.toggleVoiceMode}>
+            <Text color={ui.theme.color.muted}>🎤 </Text>
+          </Box>
+        )}
+      </Box>
             </Box>
           </>
         )}
@@ -357,7 +390,7 @@ const ComposerPane = memo(function ComposerPane({
 
       {!composer.empty && !ui.sid && <Text color={ui.theme.color.muted}>⚕ {ui.status}</Text>}
 
-      <StatusRulePane at="bottom" composer={composer} status={status} />
+      <StatusRulePane actions={actions} at="bottom" composer={composer} status={status} />
     </NoSelect>
   )
 })
@@ -378,10 +411,11 @@ const AgentsOverlayPane = memo(function AgentsOverlayPane() {
 })
 
 const StatusRulePane = memo(function StatusRulePane({
+  actions,
   at,
   composer,
   status
-}: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top' }) {
+}: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'> & { at: 'bottom' | 'top' }) {
   const ui = useStore($uiState)
 
   if (ui.statusBar !== at) {
@@ -405,6 +439,8 @@ const StatusRulePane = memo(function StatusRulePane({
         modelReasoningEffort={ui.info?.reasoning_effort}
         notice={ui.notice}
         onSessionCountClick={() => patchOverlayState({ sessions: true })}
+        onVoiceClick={actions.toggleVoiceMode}
+        onCwdClick={() => patchOverlayState({ dirPicker: true })}
         selectionHint={ui.selectionHint}
         sessionStartedAt={status.sessionStartedAt}
         showCost={ui.showCost}
@@ -452,7 +488,7 @@ export const AppLayout = memo(function AppLayout({
           {/* A23 双栏布局：右侧详情面板（固定宽；过窄终端自动隐藏；agents 全屏时让位） */}
           {!overlay.agents && ui.dualPane && dualPaneWidths(composer.cols).show && (
             <PerfPane id="detail">
-              <DetailPane cols={composer.cols} />
+              <DetailPane cols={composer.cols} onCommand={text => composer.submit(text)} />
             </PerfPane>
           )}
         </Box>

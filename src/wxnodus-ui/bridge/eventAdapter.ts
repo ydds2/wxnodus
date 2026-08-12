@@ -18,6 +18,7 @@ import { fromSkin, DARK_THEME, LIGHT_THEME, DEFAULT_THEME } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
 import { applyDelegationStatus, getDelegationState } from '../runtime/delegationStatus.js'
+import { patchBgState } from '../runtime/backgroundStore.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
 import { getOverlayState, patchOverlayState } from '../runtime/promptStore.js'
 import { turnController } from '../runtime/flowController.js'
@@ -789,6 +790,21 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         sys(`[bg ${ev.payload.task_id}] ${ev.payload.text}`)
 
         return
+      case 'background.goal': {
+        // A24：goal 循环进度即时更新（后台面板「目标循环」区——不依赖 5s 轮询）
+        const p = ev.payload ?? {}
+        patchBgState({
+          goal: {
+            active: Boolean(p.active),
+            done: Boolean(p.done),
+            maxRounds: Number(p.maxRounds ?? 10),
+            round: Number(p.round ?? 1),
+            text: String(p.text ?? ''),
+          },
+        })
+
+        return
+      }
       case 'review.summary': {
         // Self-improvement background review emitted a persistent summary
         // of what it saved to memory/skills. Surface it as a system line

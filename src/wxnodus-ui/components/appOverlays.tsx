@@ -9,6 +9,7 @@ import { hasAnsi, sanitizeAnsiForRender, stripAnsi } from '../lib/text.js'
 
 import { ActiveSessionSwitcher } from './activeSessionSwitcher.js'
 import { CommandPalette } from './commandPalette.js'
+import { DirPicker } from './dirPicker.js'
 import { FloatBox } from './appChrome.js'
 import { MaskedPrompt } from './maskedPrompt.js'
 import { ModelPicker } from './modelPicker.js'
@@ -217,6 +218,11 @@ export function FloatingOverlays({
 
       <FloatBox color={theme.color.border} display={overlay.pluginsHub ? undefined : 'none'}>
         {overlay.pluginsHub && <PluginsHub gw={gw} onClose={() => patchOverlayState({ pluginsHub: false })} t={theme} />}
+      </FloatBox>
+
+      {/* A24：目录选择器（点击状态栏 cwd 打开——浏览/切换工作目录） */}
+      <FloatBox color={theme.color.border} display={overlay.dirPicker ? undefined : 'none'}>
+        {overlay.dirPicker && <DirPicker t={theme} />}
       </FloatBox>
 
       {/* pager：内容首行自带 box-drawing 边框（╔╭┌ lines() 面板）时外层去边框——

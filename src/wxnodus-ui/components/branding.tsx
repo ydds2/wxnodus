@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import unicodeSpinners from 'unicode-animations'
 
 import { artWidth, hero, HERO_WIDTH, logo, LOGO_WIDTH } from '../banner.js'
+import { FEATURE_SPOTLIGHTS } from '../content/features.js'
 import { flat } from '../lib/text.js'
 import type { Theme } from '../theme.js'
 import type { PanelSection, SessionInfo } from '../types.js'
@@ -172,6 +173,8 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
   const [skillsOpen, setSkillsOpen] = useState(false)
   const [systemOpen, setSystemOpen] = useState(false)
   const [mcpOpen, setMcpOpen] = useState(false)
+  // A24：特色能力（启动即见 WxNodus 优势——默认展开）
+  const [featuresOpen, setFeaturesOpen] = useState(true)
 
   const truncLine = (pfx: string, items: string[]) => {
     let line = ''
@@ -360,6 +363,33 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
             title="可用技能"
           />
           {skillsOpen && skillsBody()}
+        </Box>
+
+        {/* ── A24：特色能力（启动即见 WxNodus 核心优势） ── */}
+        <Box flexDirection="column" marginTop={1}>
+          <CollapseToggle
+            count={FEATURE_SPOTLIGHTS.length}
+            onToggle={() => setFeaturesOpen(v => !v)}
+            open={featuresOpen}
+            suffix="一键尝试"
+            t={t}
+            title="⚡ 特色能力"
+          />
+          {featuresOpen && (
+            <Box flexDirection="column" marginLeft={2}>
+              {FEATURE_SPOTLIGHTS.map(f => (
+                <Text color={t.color.muted} key={f.label} wrap="truncate-end">
+                  <Text color={t.color.accent}>{f.label}</Text>
+                  {' — '}
+                  {f.desc}
+                  <Text color={t.color.statusFg} dim>
+                    {' '}
+                    {f.cmd}
+                  </Text>
+                </Text>
+              ))}
+            </Box>
+          )}
         </Box>
 
         {/* ── System Prompt (collapsed by default) ── */}

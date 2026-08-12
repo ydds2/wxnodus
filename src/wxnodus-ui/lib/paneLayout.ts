@@ -4,13 +4,15 @@
 //       终端过窄（< MIN_COLS）自动隐藏（show=false），不挤兑对话区。
 import type { PaneTab } from '../types.js'
 
-export const PANE_TABS: readonly PaneTab[] = ['todo', 'tools', 'context', 'subagents']
+export const PANE_TABS: readonly PaneTab[] = ['todo', 'tools', 'context', 'subagents', 'bg', 'features']
 
 export const PANE_TAB_LABEL: Record<PaneTab, string> = {
   todo: '清单',
   tools: '工具',
   context: '上下文',
   subagents: '子代理',
+  bg: '后台',
+  features: '特色',
 }
 
 /** 面板展示的最小终端宽度（列）；低于此宽度即使开启也不渲染 */

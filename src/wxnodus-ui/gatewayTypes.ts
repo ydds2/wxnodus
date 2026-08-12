@@ -489,6 +489,35 @@ export interface SubagentInterruptResponse {
   subagent_id?: string
 }
 
+// A24：后台活动状态（终端/任务/定时——后台面板轮询数据源）
+export interface BackgroundStatusResponse {
+  cron?: Array<{ action: string; enabled: boolean; id: number; last_run: number | null; schedule: string }>
+  jobs?: Array<{
+    created_at: number
+    done_at: number | null
+    exit_code: number | null
+    goal: string
+    id: string
+    kind: string
+    status: string
+  }>
+  terms?: Array<{ cwd: string; exitCode: number | null; id: string; shell: string; startedAt: number; status: string }>
+}
+
+// A24：目录选择器（dir.list 浏览 / cwd.set 切换）
+export interface DirListResponse {
+  entries?: Array<{ isDir: boolean; name: string }>
+  error?: string
+  ok?: boolean
+  path?: string
+}
+
+export interface CwdSetResponse {
+  cwd?: string
+  error?: string
+  ok?: boolean
+}
+
 // ── Spawn-tree snapshots ─────────────────────────────────────────────
 
 export interface SpawnTreeListEntry {
@@ -577,6 +606,11 @@ export type GatewayEvent =
   | { payload: { env_var: string; prompt: string; request_id: string }; session_id?: string; type: 'secret.request' }
   | { payload: { request_id: string; fields: Array<{ name: string; label?: string; kind: string }>; prompt: string }; session_id?: string; type: 'credential.form' }
   | { payload: { task_id: string; text: string }; session_id?: string; type: 'background.complete' }
+  | {
+      payload?: { active?: boolean; done?: boolean; maxRounds?: number; round?: number; text?: string }
+      session_id?: string
+      type: 'background.goal'
+    }
   | { payload?: { text?: string }; session_id?: string; type: 'review.summary' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.spawn_requested' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.start' }

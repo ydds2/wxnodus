@@ -5,8 +5,8 @@
 // 参考：gateway 客户端接口契约（业界通用） + wxnodus kernel/events 事件流
 import { EventEmitter } from 'node:events'
 import { execFile, execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, unlinkSync } from 'node:fs'
-import { join, resolve, basename } from 'node:path'
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, unlinkSync, statSync } from 'node:fs'
+import { join, resolve, basename, isAbsolute } from 'node:path'
 
 import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
@@ -41,10 +41,15 @@ export interface WxGatewayKernel {
     steer(text: string): boolean
     /** P1c：插件热重载（plugins.manage toggle 后更新工具表） */
     updateTools?(extra: Record<string, any>): void
+    /** A24：运行时切换工作目录（工具 ctx.cwd 跟随；dataDir 保持启动值） */
+    setCwd?(path: string): void
   }
   commandBus: CommandBus
   dataDir: string
   cwd: string
+  /** A24：后台活动数据源（/term 终端会话；/jobs 并行任务）——UI 后台面板读取 */
+  term?: import('../kernel/term.js').TermManager
+  taskRunner?: import('../kernel/taskRunner.js').TaskRunner
   settings: { apiKeyEnc?: string | null; baseURL?: string; model?: string; mode?: string; theme?: string; thinking?: boolean }
   applyModel: (modelId: string, baseURL?: string) => void
   setMode: (m: string) => void
@@ -205,6 +210,19 @@ export class GatewayClient extends EventEmitter {
         const stage = String(p?.stage ?? '')
         if (stage) this.publish({ type: 'status.update', payload: { kind: 'thinking', text: stage } })
       },
+      // A24：goal 循环进度（内核 goal 模式 + CLI /goal 共用）——状态行「goal 第 N/M 轮」+
+      // 后台面板「目标循环」区（eventAdapter 的 kind:'goal' 分支此前是死代码，今天激活）
+      'agent.goal': (p) => {
+        const round = Number(p?.round ?? 1)
+        const maxRounds = Number(p?.maxRounds ?? 10)
+        const done = Boolean(p?.done)
+        const text = String(p?.text ?? '').slice(0, 120)
+        const label = done
+          ? `✓ goal 完成（${round}/${maxRounds} 轮）`
+          : `↻ goal 第 ${round}/${maxRounds} 轮`
+        this.publish({ type: 'status.update', payload: { kind: 'goal', text: label } })
+        this.publish({ type: 'background.goal', payload: { active: !done, round, maxRounds, done, text } })
+      },
       'agent.error': (p) => {
         this.running = false
         this.publish({ type: 'error', payload: { message: String(p?.message ?? 'agent error') } })
@@ -337,9 +355,103 @@ export class GatewayClient extends EventEmitter {
       case 'voice.toggle': return this.voiceToggle(params) as T
       case 'voice.record': return this.voiceRecord(params) as T
       case 'image.attach': return this.imageAttach(params) as T
+      // A24：后台活动（/term 终端 /jobs 任务 /cron 定时——后台面板轮询数据源）
+      case 'background.status': return this.backgroundStatus() as T
+      // A24：目录选择器（dir.list 浏览 / cwd.set 切换工作目录）
+      case 'dir.list': return this.dirList(params) as T
+      case 'cwd.set': return this.cwdSet(params) as T
       default:
         this.pushLog(`[rpc] unsupported method: ${method}`)
         throw new Error(`unsupported rpc: ${method}`)
+    }
+  }
+
+  // ── A24 后台活动状态（终端/任务/定时——后台面板与摘要行数据源）────────
+  private backgroundStatus(): unknown {
+    let terms: Array<Record<string, unknown>> = []
+    try {
+      terms = (this.kernel.term?.list() ?? []).map(t => ({
+        id: t.id,
+        shell: t.shell,
+        cwd: t.cwd,
+        status: t.status,
+        exitCode: t.exitCode,
+        startedAt: t.startedAt,
+      }))
+    } catch { /* term 未装配/异常按空列表 */ }
+
+    let jobs: Array<Record<string, unknown>> = []
+    try {
+      jobs = (this.kernel.taskRunner?.list({ limit: 12 }) ?? []).map(j => ({
+        id: j.id,
+        goal: String(j.goal ?? '').slice(0, 80),
+        status: j.status,
+        kind: j.kind,
+        created_at: j.created_at,
+        done_at: j.done_at,
+        exit_code: j.exit_code,
+      }))
+    } catch { /* taskRunner 未装配/异常按空列表 */ }
+
+    let cron: Array<Record<string, unknown>> = []
+    try {
+      cron = (
+        (this.kernel.db?.prepare?.('SELECT id, schedule, action, enabled, last_run FROM cron_jobs ORDER BY id')?.all?.() ?? []) as Array<{
+          action: string
+          enabled: number
+          id: number
+          last_run: number | null
+          schedule: string
+        }>
+      ).map(c => ({ id: c.id, schedule: c.schedule, action: String(c.action ?? '').slice(0, 60), enabled: !!c.enabled, last_run: c.last_run }))
+    } catch { /* cron 表未就绪按空列表 */ }
+
+    return { terms, jobs, cron }
+  }
+
+  // ── A24 目录选择器：浏览目录 ────────────────────────────────────────
+  private dirList(params: Record<string, unknown>): unknown {
+    const target = String(params.path ?? this.kernel.cwd)
+    const p = isAbsolute(target) ? target : resolve(this.kernel.cwd, target)
+
+    try {
+      const st = statSync(p)
+      if (!st.isDirectory()) return { ok: false, error: '不是目录' }
+      const entries = readdirSync(p)
+        .map(name => {
+          try {
+            return { name, isDir: statSync(join(p, name)).isDirectory() }
+          } catch {
+            return null
+          }
+        })
+        .filter((e): e is { isDir: boolean; name: string } => e !== null)
+        .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
+      return { ok: true, path: p, entries }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e).slice(0, 120) }
+    }
+  }
+
+  // ── A24 目录选择器：切换工作目录（运行时生效，重启不记忆）────────────
+  private cwdSet(params: Record<string, unknown>): unknown {
+    const target = String(params.path ?? '')
+    const p = isAbsolute(target) ? target : resolve(this.kernel.cwd, target)
+
+    try {
+      const st = statSync(p)
+      if (!st.isDirectory()) return { ok: false, error: '不是目录' }
+      process.chdir(p)
+      this.kernel.cwd = p
+      // 工具 ctx.cwd 跟随（fs/bash/term/search 全部经 ctx.cwd 解析）；
+      // dataDir 保持启动值——会话数据/记忆/项目不随目录迁移
+      this.kernel.agent.setCwd?.(p)
+      // 重发 session.info → 状态栏 cwd / git 分支自动刷新
+      this.publish({ type: 'session.info', payload: this.buildInfo() })
+      this.publish({ type: 'notification.show', payload: { text: `已切换工作目录：${p}`, level: 'success' } })
+      return { ok: true, cwd: p }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e).slice(0, 120) }
     }
   }
 

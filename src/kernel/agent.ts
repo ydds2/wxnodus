@@ -474,8 +474,13 @@ export function createAgent(opts: AgentOptions) {
     };
   }
 
+  // A24：运行时工作目录（目录选择器 /cwd 切换）——工具 ctx.cwd 动态读取；
+  // dataDir 保持启动值（会话数据与记忆不随目录迁移——切换只影响文件/命令操作）
+  let ctxCwd = process.cwd();
+
   const toolCtx: ToolCtx = {
-    cwd: process.cwd(),
+    // getter：setCwd 后工具侧实时跟随（值快照会滞留旧目录）
+    get cwd() { return ctxCwd; },
     dataDir: resolveDataDir(process.cwd()), // 开放兼容：WXNODUS_DATA_DIR 覆盖数据目录
     db: opts.db, // cron_create 等需要持久化能力的工具
     ask: async (q) => (opts.onApproval ? opts.onApproval('ask_user', { question: q }) : false),
@@ -929,14 +934,19 @@ export function createAgent(opts: AgentOptions) {
   async function runWithGoalLoop(prompt: string, images?: Array<{ dataUrl: string; mime: string }>): Promise<AgentResult> {
     if (mode !== 'goal') return loop(sessionId, prompt, { images });
     const goalPrompt = `${prompt}\n\n（goal 模式：自主规划并持续执行直到目标全部完成。全部完成时回复末尾输出 ${GOAL_DONE_MARK}，未完成则继续执行。每轮都可以调用工具。）`;
+    // A24：goal 进度实时上报（UI 后台面板「目标循环」区 + 状态行）
+    bus.emit('agent.goal', { round: 1, maxRounds: MAX_GOAL_ROUNDS, done: false, text: prompt.slice(0, 80) });
     let result = await loop(sessionId, goalPrompt, { images });
     let rounds = 1;
     while (rounds < MAX_GOAL_ROUNDS && !result.interrupted && !result.text.includes(GOAL_DONE_MARK)) {
       rounds++;
       bus.emit('agent.stage', { stage: `goal 循环第 ${rounds}/${MAX_GOAL_ROUNDS} 轮…` });
+      bus.emit('agent.goal', { round: rounds, maxRounds: MAX_GOAL_ROUNDS, done: false, text: result.text.slice(0, 80) });
       result = await loop(sessionId, `（goal 模式第 ${rounds} 轮）继续执行直到目标全部完成，完成后输出 ${GOAL_DONE_MARK}。以上文历史为当前进度。`);
     }
-    if (result.text.includes(GOAL_DONE_MARK)) {
+    const done = result.text.includes(GOAL_DONE_MARK);
+    bus.emit('agent.goal', { round: rounds, maxRounds: MAX_GOAL_ROUNDS, done, text: result.text.slice(0, 80) });
+    if (done) {
       // 转义方括号（正则字符类）——[GOAL_DONE] 必须按字面匹配
       const esc = GOAL_DONE_MARK.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       result.text = result.text.replace(new RegExp(`\\s*${esc}\\s*$`), '').trim();
@@ -958,6 +968,9 @@ export function createAgent(opts: AgentOptions) {
     abort() { const t = turn; if (t) { t.aborted = true; t.signal.abortController.abort(); t.signal.resolve(); } },
     setMode(m: Mode) { mode = m; },
     getMode(): Mode { return mode; },
+    // A24：运行时切换工作目录（工具 ctx.cwd 跟随；repo_map 等 process.cwd() 读取
+    // 由 gateway 侧 process.chdir 同步覆盖；dataDir 保持启动值）
+    setCwd(path: string) { ctxCwd = path; },
     // F7：运行中注入消息（busy_input_mode: steer）
     steer(text: string): boolean { return steer(text); },
     // P1b：插件热重载——重建工具表（extraTools 合并 + excludeTools 过滤）
