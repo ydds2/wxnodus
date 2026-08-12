@@ -35,8 +35,24 @@ export function resolveVoiceConfig(settings: Record<string, any> | undefined, da
       }
     } catch { /* 忽略 */ }
   }
+  // A25：whisper-cli 自动发现——配置路径 → 环境变量 → <dataDir>/voice/bin/Release（官方
+  // release 包解压结构）→ <dataDir>/voice/bin → PATH（findWhisperBin 兜底）
+  let whisperBin = v.whisperBin ?? env.WXNODUS_VOICE_BIN?.trim() ?? null;
+  if (!whisperBin) {
+    try {
+      for (const sub of ['Release', '.']) {
+        const dir = join(dataDir, 'voice', 'bin', sub === '.' ? '' : sub);
+        if (!existsSync(dir)) continue;
+        const exe = readdirSync(dir).find(f => /^whisper-cli\.exe$/i.test(f));
+        if (exe) {
+          whisperBin = join(dir, exe);
+          break;
+        }
+      }
+    } catch { /* 忽略 */ }
+  }
   return {
-    whisperBin: (v.whisperBin ?? env.WXNODUS_VOICE_BIN?.trim()) || null,
+    whisperBin,
     modelPath,
     device: (v.device ?? env.WXNODUS_VOICE_DEVICE?.trim()) || null,
   };

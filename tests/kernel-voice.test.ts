@@ -31,6 +31,21 @@ describe('resolveVoiceConfig（开放兼容：settings/env/自动发现）', () 
     const cfg = resolveVoiceConfig({}, d, {});
     expect(cfg.modelPath).toBe(join(d, 'voice', 'models', 'ggml-small.bin'));
   });
+  // A25：whisper-cli 自动发现（data/voice/bin/Release 官方解压结构 + data/voice/bin）
+  it('whisper-cli 自动发现：data/voice/bin/Release/whisper-cli.exe', () => {
+    const d = tmp();
+    mkdirSync(join(d, 'voice', 'bin', 'Release'), { recursive: true });
+    writeFileSync(join(d, 'voice', 'bin', 'Release', 'whisper-cli.exe'), 'x');
+    const cfg = resolveVoiceConfig({}, d, {});
+    expect(cfg.whisperBin).toBe(join(d, 'voice', 'bin', 'Release', 'whisper-cli.exe'));
+  });
+  it('whisper-cli 自动发现：data/voice/bin/whisper-cli.exe（无 Release 子目录）', () => {
+    const d = tmp();
+    mkdirSync(join(d, 'voice', 'bin'), { recursive: true });
+    writeFileSync(join(d, 'voice', 'bin', 'whisper-cli.exe'), 'x');
+    const cfg = resolveVoiceConfig({}, d, {});
+    expect(cfg.whisperBin).toBe(join(d, 'voice', 'bin', 'whisper-cli.exe'));
+  });
   it('无配置时全 null', () => {
     const d = tmp();
     const cfg = resolveVoiceConfig({}, d, {});
