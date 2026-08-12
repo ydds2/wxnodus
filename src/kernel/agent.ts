@@ -436,6 +436,8 @@ export function createAgent(opts: AgentOptions) {
     // AI 自主调用通道（wx_cmd 工具）：执行斜杠指令（cli 装配 bus.execute 包装）
     runCommand: opts.onCommand,
     hookFailure: (name, err) => hooks?.postToolUseFailure?.(name, err),
+    // 开放通道 settings（computer_observe 视觉等）：agent 配置直读
+    getSettings: () => (opts.config?.settings as Record<string, any> | undefined) ?? undefined,
   };
 
   const onApproval = opts.onApproval ?? (async () => true);

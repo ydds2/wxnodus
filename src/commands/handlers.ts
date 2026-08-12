@@ -495,23 +495,25 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     ]);
   });
 
-  // 视觉（GLM-4V）
+  // 视觉（开放通道：settings/env 可换端点、本地 VLM 离线可用、失败可归因）
   bus.register('/vision', async (args) => {
     const target = args[0];
-    if (!target) return '用法：/vision <图片路径或URL>（GLM-4V 多模态分析）';
-    const { describeImage } = await import('../kernel/vision.js');
-    const key = ctx.config.getKey('settings', 'apiKeyEnc');
-    const out = await describeImage(target, key ? ctx.config.getKey('settings', 'apiKeyEnc') : null);
-    return out ?? '视觉分析失败（需配置 GLM key：/key set <key>，或网络不可达）';
+    if (!target) return '用法：/vision <图片路径或URL>（多模态分析；默认 GLM-4V，settings.visionBaseURL/visionModel 可换，visionLocal=true 离线）';
+    const { describeImageStatus } = await import('../kernel/vision.js');
+    const settings = ctx.config.get('settings');
+    const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
+    const r = await describeImageStatus(target, enc ?? null, undefined, settings);
+    return r.ok ? (r.text ?? '（视觉端点返回空描述）') : `视觉分析不可用：${r.reason}`;
   });
 
   bus.register('/img', async (args) => {
     const target = args[0];
-    if (!target) return '用法：/img <图片路径或URL>（GLM-4V 多模态分析，/vision 同义）';
-    const { describeImage } = await import('../kernel/vision.js');
+    if (!target) return '用法：/img <图片路径或URL>（多模态分析，/vision 同义）';
+    const { describeImageStatus } = await import('../kernel/vision.js');
+    const settings = ctx.config.get('settings');
     const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
-    const out = await describeImage(target, enc ?? null);
-    return out ?? '视觉分析失败（需配置 GLM key：/key set <key>，或网络不可达）';
+    const r = await describeImageStatus(target, enc ?? null, undefined, settings);
+    return r.ok ? (r.text ?? '（视觉端点返回空描述）') : `视觉分析不可用：${r.reason}`;
   });
 
   // 备份

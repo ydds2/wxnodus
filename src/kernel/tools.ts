@@ -60,6 +60,8 @@ export interface ToolCtx {
   requestForm?: (fields: Array<{ name: string; label?: string; kind: 'text' | 'password' | 'key' }>, prompt?: string) => Promise<Record<string, string> | null>;
   /** P1-1：工具失败通知（postToolUseFailure hook） */
   hookFailure?: (name: string, err: string) => void;
+  /** 开放通道 settings（视觉端点/本地开关等）——agent 装配时提供，缺省 undefined */
+  getSettings?: () => Record<string, any> | undefined;
   /** AI 自主调用通道（wx_cmd 工具）：执行斜杠命令并返回文本输出（cli 装配 bus.execute 包装） */
   runCommand?: (input: string) => Promise<string>;
 }
@@ -989,7 +991,90 @@ export function coreTools(): Record<string, ToolDef> {
       return await r.cu.act({ type: 'open', url: String(url ?? '') });
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
+  const computerObserve: ToolDef = {
+    schema: { type: 'function', function: { name: 'computer_observe', description: '理解当前屏幕：截图 + 视觉模型描述（可见文字/布局/元素及其位置线索）。操作屏幕前先观察——配合 computer_uia_tree 拿精确元素结构。', parameters: { type: 'object', properties: {} } } },
+    danger: false,
+    async run(_a, ctx) {
+      const r = await getComputerUse();
+      if ('error' in r) return r.error;
+      try {
+        const { join } = await import('node:path');
+        const { mkdirSync, writeFileSync } = await import('node:fs');
+        const dir = join(ctx.dataDir, 'captures');
+        mkdirSync(dir, { recursive: true });
+        const file = join(dir, `observe-${Date.now().toString(36)}.png`);
+        writeFileSync(file, r.shot.png);
+        // 开放视觉通道（settings/env 端点可换、本地 VLM 离线可用）
+        const { describeImageStatus } = await import('./vision.js');
+        const settings = ctx.getSettings?.();
+        const enc = (settings as any)?.apiKeyEnc as string | undefined ?? null;
+        const vr = await describeImageStatus(file, enc, '描述当前屏幕内容：界面/窗口/按钮与输入框的名称与大致位置（用中文），以及屏幕上的可见文字。', settings);
+        const text = vr.ok ? (vr.text ?? '') : `（视觉不可用：${vr.reason}——已截图 ${file}，可用 /img 复查或 computer_uia_tree 读元素结构）`;
+        return `截图已保存：${file}（${r.shot.width}x${r.shot.height}）\n${text.slice(0, 1500)}`;
+      } catch (e: any) { return `观察失败：${String(e?.message ?? e).slice(0, 120)}`; }
+    },
+  };
+  // ── UIA（Windows UI Automation——元素级桌面控制，robotjs 盲坐标的上限升级）──
+  // 定位语法：<Name>|<AutomationId>（任一可省）——来自 computer_uia_tree 的输出
+  const uiaWindowsTool: ToolDef = {
+    schema: { type: 'function', function: { name: 'computer_uia_windows', description: '枚举可见窗口（标题/进程/句柄）——定位要操作的窗口后，用 computer_uia_tree <句柄> 读其控件结构。', parameters: { type: 'object', properties: {} } } },
+    danger: false,
+    async run() {
+      const { uiaWindows } = await import('./computer/uia.js');
+      const r = uiaWindows();
+      if (!r.ok) return r.reason ?? 'UIA 不可用';
+      const wins = (r.windows ?? []).slice(0, 30);
+      if (!wins.length) return '未发现可见窗口';
+      return `可见窗口（${wins.length}）：\n` + wins.map(w => `${w.focused ? '◉' : '○'} 「${w.name.slice(0, 40)}」${w.className ? ` <${w.className}>` : ''} pid=${w.pid} handle=${w.handle}`).join('\n');
+    },
+  };
+  const uiaTreeTool: ToolDef = {
+    schema: { type: 'function', function: { name: 'computer_uia_tree', description: '读取窗口控件树（元素级结构：类型/名称/AutomationId/坐标/可用性）。盲坐标点击前先读树——动态 UI 按元素定位。无句柄时读当前焦点窗口。', parameters: { type: 'object', properties: { handle: { type: 'string', description: '窗口句柄（computer_uia_windows 输出；可省=焦点窗口）' } } } } },
+    danger: false,
+    async run({ handle }) {
+      const { uiaTree } = await import('./computer/uia.js');
+      const r = uiaTree(String(handle ?? ''));
+      if (!r.ok) return r.reason ?? 'UIA 不可用';
+      const els = r.elements ?? [];
+      if (!els.length) return '控件树为空（窗口无可交互元素）';
+      return `控件树（${els.length} 项——定位语法 <名称>|<AutomationId>）：\n` + els.map(e =>
+        `${e.name ? `「${e.name.slice(0, 30)}」` : ''}${e.id ? ` id=${e.id}` : ''} <${e.ct}> @(${e.x},${e.y} ${e.w}x${e.h})${e.enabled ? '' : ' ✗disabled'}`.trim()
+      ).join('\n');
+    },
+  };
+  const uiaFindTool: ToolDef = {
+    schema: { type: 'function', function: { name: 'computer_uia_find', description: '按名称或 AutomationId 定位元素（返回控件信息与坐标）。定位后 computer_uia_click/type 操作。', parameters: { type: 'object', properties: { query: { type: 'string', description: '<名称>|<AutomationId>（任一可省）' }, handle: { type: 'string', description: '窗口句柄（可省=全桌面搜索）' } }, required: ['query'] } } },
+    danger: false,
+    async run({ query, handle }) {
+      const { uiaFind } = await import('./computer/uia.js');
+      const r = uiaFind(String(query ?? ''), String(handle ?? ''));
+      if (!r.ok) return r.reason ?? '未找到';
+      const e = r.element as any;
+      return `已定位：${e.name ? `「${e.name}」` : ''}${e.id ? ` id=${e.id}` : ''} <${e.ct}> @(${e.x},${e.y} ${e.w}x${e.h})`;
+    },
+  };
+  const uiaClickTool: ToolDef = {
+    schema: { type: 'function', function: { name: 'computer_uia_click', description: '元素级点击（InvokePattern/SelectionItem 原生触发，动态 UI 可靠；失败回退坐标）。', parameters: { type: 'object', properties: { query: { type: 'string', description: '<名称>|<AutomationId>' }, handle: { type: 'string', description: '窗口句柄（可省）' } }, required: ['query'] } } },
+    danger: true,
+    async run({ query, handle }) {
+      const { uiaClick } = await import('./computer/uia.js');
+      const r = uiaClick(String(query ?? ''), String(handle ?? ''));
+      if (!r.ok) return r.reason ?? '点击失败';
+      const el = r.element as any;
+      return `已点击（${el?.method ?? 'uia'}）${el?.x != null ? ` @(${el.x},${el.y})` : ''}`;
+    },
+  };
+  const uiaTypeTool: ToolDef = {
+    schema: { type: 'function', function: { name: 'computer_uia_type', description: '元素级输入（ValuePattern——中文原生，无剪贴板 hack）。', parameters: { type: 'object', properties: { text: { type: 'string' }, query: { type: 'string', description: '<名称>|<AutomationId>' }, handle: { type: 'string', description: '窗口句柄（可省）' } }, required: ['text', 'query'] } } },
+    danger: true,
+    async run({ text, query, handle }) {
+      const { uiaType } = await import('./computer/uia.js');
+      const r = uiaType(String(text ?? ''), String(query ?? ''), String(handle ?? ''));
+      if (!r.ok) return r.reason ?? '输入失败';
+      return `已输入 ${String(text ?? '').length} 字符（${(r.element as any)?.method ?? 'uia'}）`;
+    },
+  };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, computer_observe: computerObserve, computer_uia_windows: uiaWindowsTool, computer_uia_tree: uiaTreeTool, computer_uia_find: uiaFindTool, computer_uia_click: uiaClickTool, computer_uia_type: uiaTypeTool, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

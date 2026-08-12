@@ -1400,12 +1400,60 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/computer', async (args) => {
     // Computer Use 手动入口（审查接线：computer/index.ts 此前零命令/零工具——README 宣传但无入口）。
-    // 用法：/computer [click <x> <y> [right|double] | type <文本> | open <url>]——无参=截图+视口信息
+    // 用法：/computer [click <x> <y> [right|double] | type <文本> | open <url> | observe | uia windows|tree|find <q>|click <q>|type <文本> <q>]
     const { join } = await import('node:path');
     const { writeFileSync } = await import('node:fs');
     const { captureScreen, ComputerUse } = await import('../kernel/computer/index.js');
     const { ActionGuard } = await import('../kernel/computer/guards.js');
     const { convertCoords } = await import('../kernel/computer/actionLayer.js');
+    // UIA 子命令（元素级——Windows UI Automation，零新增依赖）
+    if (args[0] === 'uia') {
+      const sub = args[1];
+      const { uiaWindows, uiaTree, uiaFind, uiaClick, uiaType } = await import('../kernel/computer/uia.js');
+      if (sub === 'windows') {
+        const r = uiaWindows();
+        if (!r.ok) return r.reason ?? 'UIA 不可用';
+        return lines(' UIA 可见窗口 ', (r.windows ?? []).map(w => ` ${w.focused ? '◉' : '○'} 「${w.name.slice(0, 40)}」 pid=${w.pid} handle=${w.handle}`));
+      }
+      if (sub === 'tree') {
+        const r = uiaTree(args[2] ?? '');
+        if (!r.ok) return r.reason ?? 'UIA 不可用';
+        return lines(` UIA 控件树（${(r.elements ?? []).length}） `, (r.elements ?? []).map(e =>
+          ` ${e.name ? `「${e.name.slice(0, 30)}」` : ''}${e.id ? ` id=${e.id}` : ''} <${e.ct}> @(${e.x},${e.y})`));
+      }
+      if (sub === 'find') {
+        const q = args.slice(2).join(' ');
+        if (!q) return '用法：/computer uia find <名称>|<AutomationId>';
+        const r = uiaFind(q);
+        if (!r.ok) return r.reason ?? '未找到';
+        const e = r.element as any;
+        return `已定位：${e?.name ? `「${e.name}」` : ''}${e?.id ? ` id=${e.id}` : ''} <${e?.ct ?? ''}> @(${e?.x},${e?.y} ${e?.w}x${e?.h})`;
+      }
+      if (sub === 'click') {
+        const q = args.slice(2).join(' ');
+        if (!q) return '用法：/computer uia click <名称>|<AutomationId>';
+        const r = uiaClick(q);
+        if (!r.ok) return r.reason ?? '点击失败';
+        const el = r.element as any;
+        return `已点击（${el?.method ?? 'uia'}）${el?.x != null ? ` @(${el.x},${el.y})` : ''}`;
+      }
+      if (sub === 'type') {
+        const q = args.slice(3).join(' ');
+        const text = args[2] ?? '';
+        if (!q || !text) return '用法：/computer uia type <文本> <名称>|<AutomationId>';
+        const r = uiaType(text, q);
+        if (!r.ok) return r.reason ?? '输入失败';
+        return `已输入 ${text.length} 字符（${(r.element as any)?.method ?? 'uia'}）`;
+      }
+      return lines(' UIA ', [
+        ' 用法：',
+        '  /computer uia windows             — 枚举可见窗口',
+        '  /computer uia tree [句柄]         — 控件树（无句柄=焦点窗口）',
+        '  /computer uia find <名称>|<Id>    — 定位元素',
+        '  /computer uia click <名称>|<Id>   — 元素级点击（原生 Invoke）',
+        '  /computer uia type <文本> <名称>|<Id> — 元素级输入（中文原生）',
+      ]);
+    }
     const shot = await captureScreen();
     if (!shot) return 'Computer Use 不可用：原生模块缺失或无图形环境（CI/远程会话）';
     const cu = new ComputerUse(new ActionGuard({ width: shot.width, height: shot.height }));
@@ -1428,6 +1476,19 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       if (!url) return '用法：/computer open <URL|路径>';
       return await cu.act({ type: 'open', url });
     }
+    if (sub === 'observe') {
+      // 截图 + 开放视觉通道理解（settings 端点/本地 VLM）
+      const out = join(ctx.dataDir, `computer-${Date.now().toString(36)}.png`);
+      writeFileSync(out, shot.png, 'utf8');
+      const { describeImageStatus } = await import('../kernel/vision.js');
+      const settings = ctx.config.get('settings');
+      const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
+      const vr = await describeImageStatus(out, enc ?? null, '描述当前屏幕内容：界面/窗口/按钮与输入框的名称与大致位置（用中文）。', settings);
+      return lines(' Computer Use 观察 ', [
+        ` 截图 → ${out}`,
+        vr.ok ? ` ${(vr.text ?? '').slice(0, 1200)}` : ` ⚠ 视觉不可用：${vr.reason}（可用 /computer uia tree 读元素结构）`,
+      ]);
+    }
     // 无参/未知子命令：截图 + 视口信息
     const out = join(ctx.dataDir, `computer-${Date.now().toString(36)}.png`);
     writeFileSync(out, shot.png, 'utf8');
@@ -1439,7 +1500,9 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       `  /computer click <x> <y> [right|double]  — 点击屏幕坐标`,
       `  /computer type <文本>                   — 键入文本（中文走剪贴板）`,
       `  /computer open <URL|路径>               — 系统默认浏览器/资源管理器打开`,
-      `模型侧：computer_screenshot → 视觉分析 → computer_click/type/open 工具自动完成同链路`,
+      `  /computer observe                      — 截图 + 视觉理解（开放通道/本地 VLM）`,
+      `  /computer uia …                        — Windows UI Automation（元素级：windows/tree/find/click/type）`,
+      `模型侧：computer_observe/uia_tree → 定位 → computer_click/uia_click 自动完成同链路`,
     ]);
   });
 
