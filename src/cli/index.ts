@@ -254,6 +254,17 @@ async function main() {
     }).catch(() => { /* 后台审查失败静默 */ });
   }, 5000);
 
+  // P1-4：冷启动预热——后台加载记忆 embedder（transformers.js 首次加载 ~10s）。
+  // 首个 /hole、/memory search 或 agent 自动召回不再白等；失败静默（下次调用再加载）。
+  // 仅常驻模式预热（-p 单次执行毫秒级退出，预热无意义）。
+  if (!opts.prompt && !opts.serve && !opts.wire) {
+    setTimeout(() => {
+      void (async () => {
+        try { await mem.recallHybrid('预热', { limit: 1 }); } catch { /* 静默 */ }
+      })();
+    }, 0);
+  }
+
   // 定时任务调度（对比轮 6：/cron 真实执行）——每分钟检查到期任务，后台派发 agent 执行
   // 支持标准 5 字段 cron（分 时 日 月 周）与 every Nm/Nh/Nd 兼容格式（cronExpr.ts 解析）
   setInterval(() => {

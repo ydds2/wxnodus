@@ -14,15 +14,39 @@ export interface SpecDiagnostic {
   message: string;
 }
 
-const SCAFFOLDS = ['ledger', 'todo', 'note', 'anim', 'generic'] as const;
+/** 模具集合（llmSpec.ts 校验 LLM 输出合法性复用） */
+export const SCAFFOLDS = ['ledger', 'todo', 'note', 'anim', 'generic'] as const;
 
-// 规则脑模具关键词表
+// 规则脑模具关键词表（P0-1 扩充：高频需求词 → generic 基线 CRUD 模板；
+// 规则顺序：specific 在前，通用兜底在后）
 const RULES: Array<{ re: RegExp; scaffold: string }> = [
   { re: /记账|账本|财务|收支|ledger|bookkeep/i, scaffold: 'ledger' },
   { re: /待办|任务清单|todo|task list/i, scaffold: 'todo' },
   { re: /笔记|知识库|note|wiki/i, scaffold: 'note' },
   { re: /动画|分镜|anim/i, scaffold: 'anim' },
-  { re: /系统|网站|应用|工具|页面|管理/i, scaffold: 'generic' },
+  // ── P0-1：常见需求词扩充（映射 generic 基线 CRUD）──
+  { re: /计算器|calculator|算税|算利率|换算器/i, scaffold: 'generic' },
+  { re: /爬虫|抓取数据|采集|crawler|spider/i, scaffold: 'generic' },
+  { re: /博客|blog|文章发布/i, scaffold: 'generic' },
+  { re: /问卷|投票|survey|poll|表单收集/i, scaffold: 'generic' },
+  { re: /聊天室|chat room|chatroom|即时通讯|聊天机器人|chatbot/i, scaffold: 'generic' },
+  { re: /天气|weather/i, scaffold: 'generic' },
+  { re: /翻译|翻译器|词典|translate|dictionary/i, scaffold: 'generic' },
+  { re: /时钟|钟表|计时|倒计时|clock|stopwatch|timer/i, scaffold: 'generic' },
+  { re: /画板|画布|白板|绘图|draw|canvas|白板/i, scaffold: 'generic' },
+  { re: /短链|短链接|短网址|shorten|短码/i, scaffold: 'generic' },
+  { re: /文件管理|文件整理|file manager|批量重命名/i, scaffold: 'generic' },
+  { re: /图表|图表生成|数据可视化|chart|dashboard|看板/i, scaffold: 'generic' },
+  { re: /下载|downloader|离线保存/i, scaffold: 'generic' },
+  { re: /提醒|提醒器|备忘|reminder|闹钟/i, scaffold: 'generic' },
+  { re: /密码|密码生成|密钥生成|password|passphrase/i, scaffold: 'generic' },
+  { re: /随机|随机数|抽签|抽奖|random|lottery/i, scaffold: 'generic' },
+  { re: /OCR|文字识别|图片转文字/i, scaffold: 'generic' },
+  { re: /RSS|订阅源|feed 阅读/i, scaffold: 'generic' },
+  { re: /音乐|播放器|播放列表|music|player/i, scaffold: 'generic' },
+  { re: /图片|图片处理|压缩图片|缩略图|image|thumbnail/i, scaffold: 'generic' },
+  { re: /日记|日志记录|diary|journal/i, scaffold: 'note' },
+  { re: /系统|网站|应用|工具|页面|管理|平台/i, scaffold: 'generic' },
 ];
 
 const SUBJECTIVE = /良好|合理|美观|优雅|好用|顺畅/;

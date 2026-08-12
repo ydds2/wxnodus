@@ -66,6 +66,16 @@ export function parseArgs(argv: string[]): CliOptions {
     const n = Number(out.port);
     out.port = Number.isFinite(n) && n > 0 ? n : null;
   }
+  // P1-6：Git Bash MSYS 路径转换检测——`-p "/help"` 被改写为 `C:/Program Files/Git/help`，
+  // 命令文本被破坏路由到 AI 层；给出明确修正指引（Windows Git Bash 特有）
+  if (out.prompt && /(?:program files[\\/]git[\\/]|programfiles[\\/]git[\\/])/i.test(out.prompt)) {
+    process.stderr.write(
+      'wxnodus: -p 参数疑似被 Git Bash 的 MSYS 路径转换改写（如 /help → C:/Program Files/Git/help）\n' +
+      '  修正：命令前加 MSYS_NO_PATHCONV=1（如 MSYS_NO_PATHCONV=1 wxnodus -p "/help"），\n' +
+      '  或 MSYS2_ARG_CONV_EXCL="*" 全局禁用转换。\n'
+    );
+    process.exit(2);
+  }
   return out;
 }
 

@@ -400,6 +400,65 @@ export function coreTools(): Record<string, ToolDef> {
       catch (e: any) { return `记忆写入失败：${e.message}`; }
     },
   };
+  // P0-2：记忆删改闭环——memory_search（查）/memory_write（增）已有，补 update/delete：
+  // 模型发现记忆过时/错误时可主动纠正（改），或按 id 清理（删）——「增删改查」四操作齐
+  const memoryUpdate: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'memory_update',
+        description: '改写历史记忆（按 id 更新内容，FTS 全文索引同步、旧向量清除）。发现记忆过时/错误/不完整时调用纠正——比重复写入更准确。id 来自 memory_search 结果。',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'number', description: '记忆 id（memory_search 返回的 [id]）' },
+            content: { type: 'string', description: '纠正后的完整内容' },
+          },
+          required: ['id', 'content'],
+        },
+      },
+    },
+    danger: true, // 写库——需确认
+    async run({ id, content }, ctx) {
+      const n = Number(id);
+      const c = String(content ?? '').trim();
+      if (!Number.isInteger(n) || n < 1) return '参数错误：id 必填（正整数）';
+      if (!c) return '参数错误：content 不能为空';
+      const { updateMessage } = await import('../store/db.js');
+      try {
+        return updateMessage(ctx.db as any, n, c) ? `已更新记忆 #${n}（FTS 同步）` : `记忆 #${n} 不存在（/memory list 查看 id）`;
+      } catch (e: any) {
+        return `记忆更新失败：${String(e?.message ?? e).slice(0, 120)}`;
+      }
+    },
+  };
+  const memoryDelete: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'memory_delete',
+        description: '删除历史记忆（按 id 物理删除 + FTS/向量索引清理）。记忆内容错误且无法通过 memory_update 纠正时调用。id 来自 memory_search 结果。',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'number', description: '记忆 id（memory_search 返回的 [id]）' },
+          },
+          required: ['id'],
+        },
+      },
+    },
+    danger: true, // 写库/删除——需确认
+    async run({ id }, ctx) {
+      const n = Number(id);
+      if (!Number.isInteger(n) || n < 1) return '参数错误：id 必填（正整数）';
+      const { deleteMessage } = await import('../store/db.js');
+      try {
+        return deleteMessage(ctx.db as any, n) ? `已删除记忆 #${n}（索引已清理）` : `记忆 #${n} 不存在（/memory list 查看 id）`;
+      } catch (e: any) {
+        return `记忆删除失败：${String(e?.message ?? e).slice(0, 120)}`;
+      }
+    },
+  };
   const scaffoldBuild: ToolDef = {
     schema: {
       type: 'function',
@@ -681,7 +740,7 @@ export function coreTools(): Record<string, ToolDef> {
         .join('\n');
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, memory_write: memoryWrite, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

@@ -354,3 +354,18 @@ export function deleteMessage(db: Db, id: number): boolean {
   const r = db.prepare(`DELETE FROM messages WHERE id=?`).run(id);
   return r.changes > 0;
 }
+
+/** P0-2：改写消息内容（记忆纠错/更新）。FTS 触发器只覆盖 INSERT——UPDATE 需手动同步；
+ * 向量索引清除旧向量（语义已变，避免旧向量误召回；重嵌由后续写入自然补充）。 */
+export function updateMessage(db: Db, id: number, content: string): boolean {
+  const r = db.prepare(`UPDATE messages SET content=?, ts=? WHERE id=?`).run(content, Date.now(), id);
+  if (r.changes === 0) return false;
+  try {
+    db.prepare(`DELETE FROM messages_fts WHERE rowid=?`).run(id);
+    db.prepare(`INSERT INTO messages_fts(rowid, content) VALUES (?, ?)`).run(id, bigramZh(content));
+  } catch { /* FTS 不可用忽略（LIKE 降级） */ }
+  try {
+    db.prepare(`DELETE FROM archival_vec WHERE id=?`).run(id);
+  } catch { /* 向量表缺失忽略 */ }
+  return true;
+}

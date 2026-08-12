@@ -1,7 +1,7 @@
 // tests/kernel-search.test.ts — A20 自研联网搜索：DDG HTML 解析器（fixture，不发真实网络）
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { decodeDdgUrl, parseBingHtml, parseDuckDuckGoHtml } from '../src/kernel/search.js'
+import { decodeDdgUrl, parseBingHtml, parseDuckDuckGoHtml, searchWeb } from '../src/kernel/search.js'
 
 // DDG HTML 结果页 fixture（真实结构：result__a + result__snippet）
 const FIXTURE_HTML = `
@@ -117,5 +117,41 @@ describe('parseBingHtml — Bing 回退引擎解析', () => {
   it('非 http 链接跳过；无结果空数组', () => {
     expect(parseBingHtml('<li class="b_algo"><h2><a href="javascript:void(0)">x</a></h2></li>')).toEqual([])
     expect(parseBingHtml('<html>no results</html>')).toEqual([])
+  })
+})
+
+describe('searchWeb — P0-3 搜索缓存', () => {
+  const DDG_OK = `<a rel="nofollow" class="result__a" href="https://example.com/a">缓存测试标题</a>
+<a class="result__snippet" href="https://example.com/a">缓存摘要</a>`
+
+  function stubFetchOk() {
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      calls++
+      return { ok: true, status: 200, arrayBuffer: async () => Buffer.from(DDG_OK) } as any
+    }))
+    return () => calls
+  }
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('同查询 5 分钟内命中缓存：第二次不发起网络请求', async () => {
+    const count = stubFetchOk()
+    const q = `缓存查询${Date.now()}`
+    const r1 = await searchWeb(q, { maxResults: 3 })
+    expect(r1.ok).toBe(true)
+    expect(count()).toBe(1)
+
+    const r2 = await searchWeb(q, { maxResults: 3 })
+    expect(r2.ok).toBe(true)
+    expect(count()).toBe(1) // 缓存命中——不再请求
+    expect(r2.ok && r2.results[0]!.title).toBe('缓存测试标题')
+  })
+
+  it('不同查询词不共享缓存', async () => {
+    const count = stubFetchOk()
+    await searchWeb(`甲${Date.now()}`)
+    await searchWeb(`乙${Date.now()}`)
+    expect(count()).toBe(2)
   })
 })

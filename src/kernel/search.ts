@@ -167,7 +167,12 @@ export async function searchDuckDuckGo(
 }
 
 /** 搜索（DDG 优先，失败自动回退 Bing——国内网络 DDG 常不可达）。
- * 安全通道：SSRF 防护 + 大小上限；返回结果列表或错误。 */
+ * 安全通道：SSRF 防护 + 大小上限；返回结果列表或错误。
+ * P0-3：同查询 5 分钟内存缓存（AI 多轮重复搜索防抖——命中 <10ms，不再白等网络）。 */
+const SEARCH_CACHE_TTL = 5 * 60_000;
+const SEARCH_CACHE_MAX = 64;
+const searchCache = new Map<string, { ts: number; results: SearchResult[]; engine: string }>();
+
 export async function searchWeb(
   query: string,
   opts: { maxResults?: number; proxy?: string } = {}
@@ -178,11 +183,20 @@ export async function searchWeb(
     return { ok: false, error: '搜索词为空' };
   }
 
+  const max = opts.maxResults ?? 8;
+  const cacheKey = `${q}|${max}|${opts.proxy ?? ''}`;
+  const cached = searchCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < SEARCH_CACHE_TTL) {
+    return { ok: true, results: cached.results.slice(0, max), engine: cached.engine };
+  }
+
   // 引擎 1：DuckDuckGo（隐私友好）
   const ddg = await searchDuckDuckGo(q, opts);
 
   if (ddg.ok) {
-    return { ok: true, results: ddg.results, engine: 'duckduckgo' };
+    const out = { ok: true as const, results: ddg.results, engine: 'duckduckgo' as const };
+    setSearchCache(cacheKey, out.results, out.engine);
+    return out;
   }
 
   // 引擎 2：Bing（国内可达）——DDG 失败/反爬时自动回退
@@ -199,5 +213,16 @@ export async function searchWeb(
     return { ok: false, error: `DDG：${ddg.error}；Bing 无结果（HTTP ${r.status}）` };
   }
 
-  return { ok: true, results: results.slice(0, opts.maxResults ?? 8), engine: 'bing' };
+  const out = { ok: true as const, results, engine: 'bing' as const };
+  setSearchCache(cacheKey, results, 'bing');
+  return out;
+}
+
+/** 缓存写入（超上限逐最旧淘汰——防内存膨胀） */
+function setSearchCache(key: string, results: SearchResult[], engine: string): void {
+  if (searchCache.size >= SEARCH_CACHE_MAX) {
+    const oldest = [...searchCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
+    if (oldest) searchCache.delete(oldest[0]);
+  }
+  searchCache.set(key, { ts: Date.now(), results, engine });
 }

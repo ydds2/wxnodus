@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDB, closeDB, appendAudit, saveCheckpoint, restoreCheckpoint, searchMessages, bigramZh, auditHash, forkSession, pickResumeSession } from '../src/store/db.js';
+import { openDB, closeDB, appendAudit, saveCheckpoint, restoreCheckpoint, searchMessages, bigramZh, auditHash, forkSession, pickResumeSession, deleteMessage, updateMessage } from '../src/store/db.js';
 
 let dir: string;
 let db: ReturnType<typeof openDB>;
@@ -80,6 +80,33 @@ describe('searchMessages（FTS5 中文检索）', () => {
   it('无关词零命中', () => {
     const hits = searchMessages(db, '不存在的词xyzzy', { limit: 5 });
     expect(hits.length).toBe(0);
+  });
+});
+
+describe('updateMessage/deleteMessage（P0-2 记忆删改索引同步）', () => {
+  it('改写后 FTS 同步：旧词不命中、新词命中', () => {
+    db.prepare(`INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES ('s-upd','','0','0')`).run();
+    const r = db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES (?,?,?,?)`)
+      .run('s-upd', 'assistant', '旧版本库密码是 alpha123', Date.now());
+    const id = Number(r.lastInsertRowid);
+    expect(searchMessages(db, 'alpha123', { limit: 5 }).some(h => h.id === id)).toBe(true);
+
+    expect(updateMessage(db, id, '新版本库密码是 beta456')).toBe(true);
+    expect(searchMessages(db, 'alpha123', { limit: 5 }).some(h => h.id === id)).toBe(false);
+    expect(searchMessages(db, 'beta456', { limit: 5 }).some(h => h.id === id)).toBe(true);
+  });
+
+  it('删除后 FTS/向量不可命中；不存在 id 返回 false', () => {
+    db.prepare(`INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES ('s-del','','0','0')`).run();
+    const r = db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES (?,?,?,?)`)
+      .run('s-del', 'assistant', '待删除的临时记录 xyz789', Date.now());
+    const id = Number(r.lastInsertRowid);
+    expect(searchMessages(db, 'xyz789', { limit: 5 }).some(h => h.id === id)).toBe(true);
+
+    expect(deleteMessage(db, id)).toBe(true);
+    expect(searchMessages(db, 'xyz789', { limit: 5 }).some(h => h.id === id)).toBe(false);
+    expect(updateMessage(db, 999999999, 'x')).toBe(false);
+    expect(deleteMessage(db, 999999999)).toBe(false);
   });
 });
 

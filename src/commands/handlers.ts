@@ -4,7 +4,7 @@ import type { Config } from '../store/config.js';
 import type { Db } from '../store/db.js';
 import type { Memory } from '../kernel/memory.js';
 import { parseSinceArg } from '../kernel/memory.js';
-import { deleteMessage, appendAudit } from '../store/db.js';
+import { deleteMessage, updateMessage, appendAudit } from '../store/db.js';
 import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias } from './registry.js';
@@ -351,6 +351,16 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       return `已删除消息 #${id}（FTS/向量索引同步清理）`;
     }
 
+    // P0-2：改写（记忆纠错/更新——FTS 同步 + 旧向量清除）——/memory update <id> <新内容>
+    if (sub === 'update') {
+      const id = Number(args[1]);
+      const content = args.slice(2).join(' ').trim();
+      if (!Number.isInteger(id) || id < 1 || !content) return '用法：/memory update <消息id> <新内容>（id 见 /memory list）';
+      const ok = updateMessage(ctx.db, id, content);
+      if (!ok) return `消息 #${id} 不存在`;
+      return `已更新消息 #${id}（FTS 同步，旧向量已清除）`;
+    }
+
     // 置顶/淡化（salience 加权召回）：/memory pin|fade|reset <id> [倍率]
     if (sub === 'pin' || sub === 'fade' || sub === 'reset') {
       const id = Number(args[1]);
@@ -397,15 +407,31 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const dryRun = args.includes('--dry-run');
     const input = args.filter(a => a !== '--dry-run').join(' ');
     if (!input) return '用法：/build <需求> [--dry-run]（自然语言「做个待办系统」亦可直达）';
-    const spec = makeSpec(input, { key: ctx.getModel() ? 'x' : null });
-    if (spec.scaffold === 'unknown') return `需求无法编译（${input.slice(0, 30)}…）——换个说法或说「/help build」`;
+    // P0-1：规格化双通道——规则脑优先（快/零 token）；未命中且有密钥 → LLM 开放域
+    const settings = ctx.config.get('settings') as { apiKeyEnc?: string | null; baseURL?: string; model?: string };
+    const { resolveApiKey, MODEL_CATALOG } = await import('../kernel/providers.js');
+    const keyRes = resolveApiKey(settings);
+    let spec = makeSpec(input, { key: keyRes.key ? 'x' : null });
+    let specSource: 'ai' | 'rule' = 'rule';
+    if (spec.scaffold === 'unknown' && keyRes.key) {
+      // 规则脑未命中且有密钥——LLM 规格化；失败降级规则脑（unknown）并如实提示
+      const { aiMakeSpec } = await import('../build/llmSpec.js');
+      const model = settings.model && MODEL_CATALOG.some(m => m.modelId === settings.model)
+        ? settings.model
+        : resolveDefaultModel(settings);
+      const ai = await aiMakeSpec(input, { baseURL: resolveDefaultBaseURL(settings), model, key: keyRes.key });
+      if (ai) { spec = ai; specSource = 'ai'; }
+    }
+    if (spec.scaffold === 'unknown') {
+      return `需求无法编译（${input.slice(0, 30)}…）——规则脑未命中${keyRes.key ? '且 AI 规格化失败（检查模型配置或重试）' : '；/key set <密钥> 后可 AI 规格化任意需求'}；或说「/help build」`;
+    }
     const plan = makePlan(input, { key: null });
     const { diagnoseSpec } = await import('../build/spec.js');
     const diags = diagnoseSpec(spec);
     if (dryRun) {
       return lines(` 规格诊断「${spec.title}」 `, [
         ...diags.map(d => ` ${d.level === 'error' ? '✗' : d.level === 'warning' ? '!' : '·'} [${d.code}] ${d.message}`),
-        ` 模具：${spec.scaffold}`,
+        ` 模具：${spec.scaffold}（${specSource === 'ai' ? 'AI 规格化' : '规则模板'}）`,
         ` 计划：${topoSort(plan.modules).join(' → ')}（dry-run 未落盘）`,
         ` 验收：${spec.acceptance.map(a => '✓ ' + a).join('\n       ')}`,
       ]);
@@ -448,7 +474,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
           ? ` 构建未通过验证「${spec.title}」 `
           : ` 构建完成（验证跳过）「${spec.title}」 `;
     return lines(head, [
-      ` 模具：${spec.scaffold} · 模块：${order.join(' → ')}`,
+      ` 模具：${spec.scaffold}（${specSource === 'ai' ? 'AI 规格化' : '规则模板'}）· 模块：${order.join(' → ')}`,
       ` 验收：${spec.acceptance.map(a => '✓ ' + a).join('\n       ')}`,
       ` 位置：${projDir}`,
       ` 验证：${vr.status === 'ok' ? '✅ 启动→探活→重启→读回' : `⚠ ${vr.detail}`}`,
