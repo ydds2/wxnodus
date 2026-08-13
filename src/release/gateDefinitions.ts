@@ -76,6 +76,10 @@ export const WAVE_0_UNREACHABLE: Record<GateId, string[]> = {
   I: ['secondary-platform-matrix'],
 };
 
+// ── Wave 2 Gate 稳定 ID（W2-11）：runner 只消费 capability snapshot/evidence，不重新 probe 本机 ──
+export const WAVE_2_GATE_IDS = ['W2_MIGRATION_DRILL', 'W2_SCRIPT_MAPPING', 'W2_UNAVAILABLE_SURFACES'] as const;
+export type Wave2GateId = typeof WAVE_2_GATE_IDS[number];
+
 // ── Wave 1 Gate 求值（W1-11）：只接受 W1-09 verifier 实例签发的 receipt ──
 export interface Wave1GateInput { id: 'A' | 'B' | 'C' | 'D' | 'F' | 'G'; required: boolean;
   evidence: VerifiedEvidenceReceipt[]; reviewer?: VerifiedReviewerAttestationReceipt;
