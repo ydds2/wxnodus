@@ -45,7 +45,7 @@
     "test:w2-10": "vitest run tests/w2-subagent-recovery-progress.contract.test.ts",
     "test:w2-10-ext": "vitest run tests/w2-subagent-worktree-recovery.contract.test.ts",
     "test:w2-11": "vitest run tests/w2-wave2-migration-gate.contract.test.ts",
-    "test:goal-exports": "vitest run tests/session-start-mcp-generation.contract.test.ts tests/branding-personalization.contract.test.ts tests/cli-first-run-language.test.ts",
+    "test:goal-exports": "vitest run tests/session-start-mcp-generation.contract.test.ts tests/branding-personalization.contract.test.ts tests/cli-first-run-language.test.ts tests/vision-capture-negotiator.contract.test.ts",
     "demo:session-start": "npm exec -- tsx scripts/generate-session-start.ts",
     "demo:mcp-server": "npm exec -- tsx scripts/generate-mcp-server.ts",
     "demo:personalize": "npm exec -- tsx scripts/personalize-wxnodus.ts",

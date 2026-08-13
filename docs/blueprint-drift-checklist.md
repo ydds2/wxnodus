@@ -35,11 +35,11 @@
 | 蓝图项 | WxNodus 对照 | 状态 | 证据 |
 |---|---|---|---|
 | Endpoint 统一抽象 → Capability Card | `CapabilityRegistry`（W2-03：声明/探测/快照三态）+ 工具签名目录 | ✅ | `src/application/capabilities/capabilityRegistry.ts`、`tests/w2-capability-registry.contract.test.ts` |
-| VisionCapture 内核（双通道录制+归纳） | 视觉通道已具备（截图+坐标+UIA 元素级）；**轨迹录制→归纳→Card 未实现** | 🟡 | `src/infrastructure/computer/windowsUiaDriver.ts`、`virtualDesktop.ts`；录制归纳列 §10-1 |
-| CompatNegotiator 内核（字段映射+spec 冻结哈希+双 HITL） | 概念编译器 spec（`src/build/spec.ts`）+ 高影响授权 scope hash（canonical sha256 防漂移）+ review 双签名门禁；「双方字段映射协商」未做 | 🟡 | `src/domain/computer/highImpactApproval.ts`、`src/domain/quality/review.ts` |
+| VisionCapture 内核（双通道录制+归纳） | ✅ **最小可验证版落地**：操作轨迹录制（视觉三元组帧引用+语义锚点+网络通道对照）→ seal sha256 绑定 → `<untrusted_recorded_trace>` 隔离（归纳层拒绝裸输入）→ Capability Card 确定性归纳（参数键提升为槽位、证据锚点、auth 前置） | ✅ | `src/domain/computer/visionCapture.ts`、`src/application/computer/visionCaptureService.ts`、`tests/vision-capture-negotiator.contract.test.ts`；真实 CDP/HAR 采集适配仍列 §10-1 |
+| CompatNegotiator 内核（字段映射+spec 冻结哈希+双 HITL） | ✅ **最小可验证版落地**：字段映射确定性机器门三规则（来源存在性/目标存在性/转换可判定——禁自由文本）、EARS 主观词禁令、spec 冻结哈希（canonical → sha256 前 12 位）+ 阶段重算漂移检测（`NEGOTIATION_SPEC_DRIFT`）；双 HITL 沿用 review attestation | ✅ | `src/domain/computer/compatNegotiation.ts`、`src/application/computer/compatNegotiatorService.ts`、`tests/vision-capture-negotiator.contract.test.ts` |
 | ComponentForge 内核（六态机→三类产物） | 概念编译器：需求→模块分解→脚手架→验证→证据链 + skillLifecycle staging→smoke→原子换入 + MCP Server 生成 | ✅ | `src/build/*`、`src/application/extensions/skillLifecycleService.ts`、`tests/w2-skill-lifecycle.contract.test.ts` |
 | 公理一 Endpoint 抽象万物 | CapabilityRegistry 三态 + 16 verifier 能力声明 | ✅ | 同上 |
-| 公理二 双通道捕获 | 视觉 ✓（截图+DOM/UIA 锚点）、流量 ✓（browser 每请求 route+URL 策略）；**录制/HAR 落盘** ✗ | 🟡 | `src/infrastructure/computer/playwrightBrowserDriver.ts`、`urlPolicy.ts` |
+| 公理二 双通道捕获 | ✅ 视觉三元组+网络通道对照已入轨迹合同（`RecordedStep.frameBefore/After` + `network[]`）；真实 CDP/HAR 采集适配仍列 §10-1 | 🟡 | `src/domain/computer/visionCapture.ts`、`playwrightBrowserDriver.ts` |
 | 公理三 分层执行 API > DOM > 视觉 | UIA 优先，坐标 fallback 仅在 Default 桌面普通应用 UI 且边界重证后允许；SecureDesktop/UAC/锁屏禁止 fallback | ✅（更严格） | `src/infrastructure/computer/windowsUiaDriver.ts`（`UIA_COORDINATE_FALLBACK_FORBIDDEN`） |
 | 公理四 锻造即验证 | 概念编译器启动→探活→读回 + 证据链 + 四质量门 + W3-07 严格验收 DAG | ✅ | `src/build/verify.ts`、`src/domain/build/planDag.ts`、`tests/integration/buildRestartReadback.test.ts` |
 | 公理五 合规内核化 | 授权存证/5 权限模式/8 硬红线/AES-256-GCM 密钥（明文不落盘）/审计导出 | ✅ | `src/kernel/*`、W1-07、`src/kernel/redact.ts` |
@@ -50,10 +50,10 @@
 
 | 蓝图项 | 状态 | 说明 |
 |---|---|---|
-| 视觉三元组（截图+坐标+DOM 锚点）录制 | 🟡 | 运行时具备（截图/UIA 元素/坐标变换），**录制落库**未做（§10-1） |
+| 视觉三元组（截图+坐标+DOM 锚点）录制 | ✅ 最小版（轨迹合同+seal+untrusted 隔离）；真实浏览器录制探针仍列 §10-1 |
 | 流量通道 HAR + APICARV 端点反推 | ⬜ | browser driver 做请求级策略/隔离，不做 HAR→OpenAPI 反推 |
 | 系统侧三模式（OpenAPI 逆向/CDC/文件监听） | ⬜ | WxNodus 面向桌面 CLI 场景；数据库侧已有 CDC 等价物（WAL/sqlite-vec 全量索引） |
-| 归纳管线（分段/抽象/回放校验） | ⬜ | §10-1（蓝图 M2 内容，需要录制地基） |
+| 归纳管线（分段/抽象/回放校验） | 🟡 抽象（槽位提升）与确定性归纳已落地；分段/回放校验仍列 §10-1 |
 | 成本控制与视觉回落 | ✅ | 视觉仅在 computer use 显式调用时计费；分层执行已落地 |
 
 ## 4. 蓝图第 4 章：CompatNegotiator
@@ -61,8 +61,8 @@
 | 蓝图项 | 状态 | 说明 |
 |---|---|---|
 | 输入三元组（双方 Card+意图+约束包） | 🟡 | 意图门（routeInput）+ PDP 策略 + 能力快照存在；「双方 Card 字段映射」未做 |
-| spec 五部分 + 冻结哈希 | ✅ | 高影响审批 `requestHash`（canonical sha256 全参数绑定）+ `BUILD_VERIFICATION_SNAPSHOT` 快照防漂移 |
-| 字段映射机器门三规则（来源存在/目标存在/转换可判定） | 🟡 | json.schema verifier + `workspace.diff` 等确定性校验存在；字段映射协商本体未做 |
+| spec 五部分 + 冻结哈希 | ✅ | `freezeCompatSpec`（spec_hash=sha256 前 12 位）+ `verifyCompatSpec`（漂移 → NEGOTIATION_SPEC_DRIFT）；另高影响审批 requestHash 与 BUILD_VERIFICATION_SNAPSHOT 同构防漂移 |
+| 字段映射机器门三规则（来源存在/目标存在/转换可判定） | ✅ | `validateFieldMapping`（`NEGOTIATION_MAPPING_SOURCE_MISSING/TARGET_MISSING/TRANSFORM_UNKNOWN`） |
 | 缺口消解四策略 | ⬜ | §10-1 |
 | 两道 HITL（防锚定先判后看） | 🟡 | human.approval verifier + review attestation 双签名；防锚定 UI 交互未做 |
 
@@ -129,7 +129,7 @@
 
 ## 10. 未落地项清单（诚实声明，附优先级）
 
-1. **轨迹录制→能力归纳（蓝图 M1/M2）**：VisionCapture 录制层与 CompatNegotiator 字段映射协商。WxNodus 当前价值面是「本地 CLI agent」，站点适配器锻造是蓝图绑定织系平台的专属命题；若目标明确要求，可作为后续 wave（依赖：CDP 录制探针 + HAR 落盘 + 归纳回放校验）。
+1. **真实 CDP/HAR 采集适配 + 归纳分段/回放校验（蓝图 M1/M2 增强）**：VisionCapture 轨迹合同/归纳（最小版）与 CompatNegotiator 机器门/冻结哈希已落地（✅，见 §2/§3/§4）；剩余为把录制合同接到真实浏览器探针（CDP Network 域 → HAR 落盘）与分段/held-out 回放校验——列为后续 wave。
 2. **对抗探针 + held-out 变体回放**：build 验证已具备重启读回；参数扰动回放集未做（可复用 W3-08 协调器扩展）。
 3. **exemplar 池/recipes 配方沉淀 + 远程市场签名分发**：黑洞引擎已具备存储底座；沉淀与分发管线未做。
 4. **「独立艺术品」包装层**：✅ 雏形已落地（config `branding{name,icon}` 每用户可命名/图标化 + `personalize-wxnodus.ts` demo + 契约测试）；**安装器/图标打包器/自包含发行形态**未做——列入后续产品化。
