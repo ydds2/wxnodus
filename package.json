@@ -23,7 +23,8 @@
     "gate:wave0": "node scripts/run-wave-gates.mjs --wave 0",
     "test:w1-01": "vitest run tests/wave1/w1-01-protocol.test.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "test:w1-02": "vitest run tests/wave1/w1-02-bootstrap.test.ts"
+    "test:w1-02": "vitest run tests/wave1/w1-02-bootstrap.test.ts",
+    "test:w1-03": "vitest run tests/wave1/w1-03-http-gateway-security.test.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",

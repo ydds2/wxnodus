@@ -33,9 +33,18 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-const json = (res: ServerResponse, code: number, obj: unknown) => {
+// W1-03：CORS 只回显 allowlist 内 Origin，永不 `*`（非浏览器客户端无 Origin 则不回 CORS 头）
+function corsHeaders(req: IncomingMessage): Record<string, string> {
+  const origin = req.headers.origin;
+  if (!origin) return {};
+  const allowlist = (process.env.WXNODUS_SERVE_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!allowlist.includes(origin)) return {};
+  return { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' };
+}
+
+const json = (res: ServerResponse, req: IncomingMessage, code: number, obj: unknown) => {
   const body = JSON.stringify(obj);
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' });
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', ...corsHeaders(req) });
   res.end(body);
 };
 
@@ -49,7 +58,7 @@ export function startServeServer(k: ServeKernel, port = 4789): { close(): Promis
       if (req.method === 'GET' && url.pathname === '/health') {
         let cmdCount = 0;
         try { cmdCount = (k.db.prepare('SELECT COUNT(*) c FROM messages').get() as { c: number }).c; } catch { /* 内存模式 */ }
-        json(res, 200, {
+        json(res, req, 200, {
           ok: true, service: 'wxnodus-serve', version: '3.0.0',
           model: (k.config.get('settings') as any)?.model ?? '',
           dataDir: k.dataDir, cwd: k.cwd,
@@ -79,28 +88,28 @@ export function startServeServer(k: ServeKernel, port = 4789): { close(): Promis
         switch (method) {
           case 'chat': {
             const prompt = String(params.prompt ?? '');
-            if (!prompt.trim()) { json(res, 400, { ok: false, error: 'prompt 必填' }); return; }
+            if (!prompt.trim()) { json(res, req, 400, { ok: false, error: 'prompt 必填' }); return; }
             if (params.session_id && k.agent.setSessionId) k.agent.setSessionId(String(params.session_id));
             const r = await k.agent.run(prompt);
-            json(res, 200, { ok: r.ok, text: r.text, turns: r.turns, interrupted: r.interrupted });
+            json(res, req, 200, { ok: r.ok, text: r.text, turns: r.turns, interrupted: r.interrupted });
             return;
           }
           case 'command': {
             const cmd = String(params.command ?? '');
-            if (!cmd.trim()) { json(res, 400, { ok: false, error: 'command 必填' }); return; }
+            if (!cmd.trim()) { json(res, req, 400, { ok: false, error: 'command 必填' }); return; }
             const r = await k.commandBus.execute(cmd);
-            json(res, 200, { ok: r.ok, output: r.output ?? '', error: r.error });
+            json(res, req, 200, { ok: r.ok, output: r.output ?? '', error: r.error });
             return;
           }
           case 'memory.search': {
-            if (!k.mem.recallHybrid) { json(res, 200, { ok: true, hits: [] }); return; }
+            if (!k.mem.recallHybrid) { json(res, req, 200, { ok: true, hits: [] }); return; }
             const hits = await k.mem.recallHybrid(String(params.query ?? ''), { limit: Number(params.limit ?? 5) });
-            json(res, 200, { ok: true, hits });
+            json(res, req, 200, { ok: true, hits });
             return;
           }
           case 'memory.recall': {
             const rows = k.mem.recall(String(params.session_id ?? 'default'));
-            json(res, 200, { ok: true, messages: rows });
+            json(res, req, 200, { ok: true, messages: rows });
             return;
           }
           case 'sessions': {
@@ -108,18 +117,18 @@ export function startServeServer(k: ServeKernel, port = 4789): { close(): Promis
             try {
               rows = k.db.prepare('SELECT id, title, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 50').all() as unknown[];
             } catch { /* 内存模式 */ }
-            json(res, 200, { ok: true, sessions: rows });
+            json(res, req, 200, { ok: true, sessions: rows });
             return;
           }
           default:
-            json(res, 400, { ok: false, error: `未知 method：${method}（支持 chat/command/memory.search/memory.recall/sessions）` });
+            json(res, req, 400, { ok: false, error: `未知 method：${method}（支持 chat/command/memory.search/memory.recall/sessions）` });
         }
         return;
       }
 
-      json(res, 404, { ok: false, error: `未找到路由：${req.method} ${url.pathname}（GET /health、POST /rpc、GET /events）` });
+      json(res, req, 404, { ok: false, error: `未找到路由：${req.method} ${url.pathname}（GET /health、POST /rpc、GET /events）` });
     } catch (e: any) {
-      json(res, 500, { ok: false, error: String(e?.message ?? e).slice(0, 300) });
+      json(res, req, 500, { ok: false, error: String(e?.message ?? e).slice(0, 300) });
     }
   });
 
