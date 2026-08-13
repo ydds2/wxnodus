@@ -10,6 +10,8 @@ import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.j
 import { resolveDataDir } from '../kernel/paths.js';
 // W3-01：完成终态 → 退出码共享映射（failure 不藏在 exit 0 后面）
 import { processExitForCompletion } from '../protocol/completionTransport.js';
+// W3-02：wire 入口前端——事件流经纯投影管线，终态走共享 completionTransport（headless，无 React）
+import { createWireFrontend } from '../bootstrap/createWireFrontend.js';
 // A24 第三类修复：buildInfo system_prompt 数据源（kernel 实时构建；ESM 静态引用缓存）
 import { buildSystemPrompt as buildSystemPromptRef } from '../kernel/systemPrompt.js';
 import { hasImageIn as hasImageInRef } from '../kernel/providers.js';
@@ -415,11 +417,17 @@ if (pre.mode === 'error') {
           }).catch(() => {});
         });
       }
+      // W3-02：wire 入口前端——gateway 事件流经纯投影管线，终态上报与共享表比对（漂移即 FRONTEND_COMPLETION_MISMATCH）
+      const frontend = gateway ? createWireFrontend(gateway) : null;
       const result = await agent.run(text);
-      console.log(JSON.stringify({ type: 'agent.result', ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted }));
+      const wireStatus = result.interrupted ? 'cancelled' as const : result.ok ? 'succeeded' as const : 'failed' as const;
+      const completion = frontend?.complete(wireStatus, { wireFinal: wireStatus });
+      console.log(JSON.stringify({ type: 'agent.result', ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted,
+        wireFinal: completion && !completion.ok ? 'FRONTEND_COMPLETION_MISMATCH' : wireStatus }));
       for (const off of offs) off();
+      frontend?.dispose();
       cleanupEphemeral();
-      process.exit(0);
+      process.exit(processExitForCompletion(completion && !completion.ok ? 'failed' : wireStatus));
     }
     const { routeInput } = await import('../commands/intent.js');
     const routed = await routeInput(text);

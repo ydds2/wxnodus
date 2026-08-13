@@ -20,6 +20,8 @@ import type { GatewayEventHandlerContext } from './interfaces.js'
 import { getOverlayState, patchOverlayState } from '../runtime/promptStore.js'
 import { turnController } from '../runtime/flowController.js'
 import { getUiState, patchUiState } from '../runtime/viewStore.js'
+// W3-02：事件流接入纯投影管线（run 生命周期 → presentation 纯层 reducer/projector）
+import { feedTuiProjection } from '../runtime/tuiProjection.js'
 
 // 审查修复：匹配中文「未配置模型密钥」——内核 agent.ts 返回中文文案（非英文 provider 错误），
 // 此前「需要配置模型提供方」面板永不触发（死代码）；双语言覆盖
@@ -365,6 +367,9 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     if (ev.session_id && sid && ev.session_id !== sid && !ev.type.startsWith('gateway.')) {
       return
     }
+
+    // W3-02：本会话事件流同步喂入纯投影管线（run 状态是 reducer 导出物，TUI 不自行维护）
+    feedTuiProjection(ev)
 
     switch (ev.type) {
       case 'gateway.ready':
