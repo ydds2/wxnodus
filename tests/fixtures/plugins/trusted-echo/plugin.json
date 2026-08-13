@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "name": "trusted-echo",
+  "version": "1.0.0",
+  "entrypoint": "index.mjs",
+  "trustLevel": "trusted",
+  "permissions": [],
+  "checksum": "2ffc7cc79910407fdd9c3205698fb0b9ac143098b8220e0be946a5fe3a9be477"
+}

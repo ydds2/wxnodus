@@ -1,0 +1,1 @@
+export default { echo: (x) => x };

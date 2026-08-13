@@ -40,6 +40,7 @@
     "test:w2-05": "vitest run tests/w2-session-lifecycle-hooks.contract.test.ts",
     "test:w2-06": "vitest run tests/w2-mcp-duplex.contract.test.ts",
     "test:w2-07": "vitest run tests/w2-skill-lifecycle.contract.test.ts",
+    "test:w2-08": "vitest run tests/w2-plugin-sandbox.contract.test.ts",
     "test:wave1:trusted-kernel": "vitest run tests/wave1/w1-01-protocol.test.ts tests/wave1/w1-02-bootstrap.test.ts tests/wave1/w1-03-http-gateway-security.test.ts tests/wave1/w1-04-command-contract.test.ts tests/wave1/w1-05-tool-catalog.test.ts tests/wave1/w1-06-memory-durability.test.ts tests/wave1/w1-07-security-control-plane.test.ts tests/wave1/w1-08-tool-execution-pipeline.test.ts tests/wave1/w1-09-trusted-completion.test.ts tests/wave1/w1-10-offline-provider.test.ts tests/wave1/w1-11-capability-gate.test.ts",
     "gate:wave1": "node scripts/run-wave1-gates.mjs",
     "migration:drill:wave1": "node scripts/run-wave1-migration-drill.mjs",

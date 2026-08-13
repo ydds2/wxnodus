@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "name": "untrusted-network",
+  "version": "1.0.0",
+  "entrypoint": "index.mjs",
+  "trustLevel": "untrusted",
+  "permissions": [
+    {
+      "kind": "network.fetch"
+    }
+  ],
+  "checksum": "9f085b1079ab38f776bbb3930dfd067a838ca3e0483aff8625f88837e8ed964c"
+}
