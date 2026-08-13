@@ -9,6 +9,7 @@ import { mkdirSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
+import { migrateMemory } from '../infrastructure/sqlite/memoryMigrations.js';
 import { runDbMigrationsTo } from '../migrations/db/runner.js';
 
 // ESM 下加载 CJS 扩展（sqlite-vec 为 CommonJS 包——require 在 ESM 不可用）
@@ -203,6 +204,9 @@ export function openDB(dataDir: string): Db {
   } catch {
     // vec 不可用：降级
   }
+
+  // W1-06：Black Hole Memory 持久层（primary/FTS/outbox/vector）——schema 唯一入口
+  migrateMemory(db, { embeddingDimensions: 384 });
 
   // 迁移基线（W0-06）：registry 驱动 V2 salience / V3 run_no / V4 parts 列演进
   // 每条迁移：checksum 验证 → SQLite 一致备份 → 事务内 expand + 版本提升 + history=applied；

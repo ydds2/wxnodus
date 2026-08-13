@@ -5,8 +5,11 @@
 //   混合召回 recallHybrid：FTS5 中文 bigram + sqlite-vec KNN，去重合并；embedding 不可用降级纯 FTS
 //   压缩 compactKeepHeadTail（确定性保头尾）/ compactSmart（LLM 总结中部，失败降级）
 //   参考：MemGPT 分层记忆、Claude Code autocompact、Gemini GEMINI.md JIT
+import { randomUUID } from 'node:crypto';
 import type { Db } from '../store/db.js';
 import { searchMessages } from '../store/db.js';
+import { openMemoryRepository } from '../infrastructure/sqlite/memoryRepository.js';
+import type { MemoryRecord, MemoryRepository } from '../domain/memory/memoryRepository.js';
 
 // ── token 估算（CJK=1/字，ASCII≈1/4）───────────────────────
 export function estimateTokens(text: string): number {
@@ -156,6 +159,9 @@ export interface Memory {
   compactSmart(sessionId: string, summarize: (text: string) => Promise<string>): Promise<void>;
   /** 会话无标题时用给定标题命名（自动标题） */
   setTitleIfEmpty(sessionId: string, title: string): void;
+  /** W1-06 façade：Black Hole Memory repository 单入口（作用域隔离/六分量排序/durable outbox）；
+   *  legacy messages 路径保留兼容，新 mutation 一律委托 repository 而非直改旧 FTS/vector */
+  repository(): MemoryRepository & { getActive(id: string): MemoryRecord | null };
 }
 
 export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memory {
@@ -194,6 +200,13 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
     if (role !== 'user') return 0;
     const row = runNoStmt.get(sessionId) as { m: number } | undefined;
     return (row?.m ?? 0) + 1;
+  };
+
+  // W1-06：repository 懒加载单例（同 db 共享——事务/schema 与 kernel 一致）
+  let repo: MemoryRepository & { getActive(id: string): MemoryRecord | null } | null = null;
+  const repository = (): MemoryRepository & { getActive(id: string): MemoryRecord | null } => {
+    if (!repo) repo = openMemoryRepository(db, { now: () => Date.now(), idFactory: prefix => `${prefix}-${randomUUID()}` });
+    return repo;
   };
 
   return {
@@ -314,5 +327,6 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
         db.prepare(`UPDATE sessions SET title=?, updated_at=? WHERE id=?`).run(title.trim().slice(0, 50), Date.now(), sessionId);
       }
     },
+    repository,
   };
 }

@@ -2,6 +2,8 @@
 // 图片只在当次 API 调用的内存消息里（DB 存纯文本）——后续轮次上下文丢失"看过什么图"。
 // 本模块：图片轮次异步经 GLM-4V 生成摘要，追加进该会话最后一条 user 消息
 // （working() 历史自然带入下一轮；UI 会话视图同步可见模型对图的理解）。
+// W1-06：摘要同时写入 Black Hole Memory repository（provenance 'image'，session 作用域），
+// 走事务索引——失败静默降级（不阻断对话，消息仍保留 messages 表路径）。
 // 红线：无 key 不调用 AI（不假装）；失败静默降级（不阻断对话）。
 import type { Db } from '../store/db.js';
 
@@ -47,6 +49,22 @@ export async function attachImageSummary(opts: {
     const r = db.prepare(
       `UPDATE messages SET content = content || ? WHERE id = (SELECT MAX(id) FROM messages WHERE session_id=? AND role='user')`
     ).run(summary, sessionId);
+    // W1-06：摘要沉淀进 memory repository（image provenance + session scope）——fail-soft
+    try {
+      const { openMemoryRepository } = await import('../infrastructure/sqlite/memoryRepository.js');
+      const repo = openMemoryRepository(db, { now: () => Date.now(), idFactory: prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` });
+      repo.append({
+        role: 'assistant',
+        content: raw.trim().slice(0, SUMMARY_MAX),
+        salience: 0.6,
+        retention: { class: 'session', retainUntil: null },
+        provenance: {
+          sourceType: 'image', sourceId: `image-summary-${Date.now()}`, sourceUri: `session://${sessionId}`,
+          capturedAt: new Date().toISOString(), actorId: 'image-summary',
+          correlationId: sessionId, policySnapshotId: 'local', sourceTrust: 0.7,
+        },
+      }, { sessionId });
+    } catch { /* memory repository 不可用：仅 messages 表路径 */ }
     return r.changes > 0;
   } catch {
     return false; // 失败静默降级，不阻断对话
