@@ -112,6 +112,10 @@ export const USAGE = `WxNodus V3 — 本地概念编译器 CLI
       --strict-mcp-config 仅信任项目 .mcp.json 声明
   -C, --cwd <dir>      工作目录
   -s, --session <id>   会话 ID
+      --lang <zh-CN|en> 系统语言（首次启动选择；优先级 cli > env > workspace > user）
   -h, --help           帮助
   -v, --version        版本
 `;
+
+// W2-01：严格 pre-bootstrap parser 单一入口（unknown flag 不再忽略——onboarding 之前即可判定）
+export { parsePreBootstrapArgs } from '../application/bootstrap/preBootstrapOnboarding.js';

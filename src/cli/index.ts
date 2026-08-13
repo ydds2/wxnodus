@@ -38,8 +38,6 @@ if (!process.env.WXNODUS_NO_DEBUG) {
 // A 批次：自研参数解析（替代 commander，零依赖）
 const { parseArgs, USAGE } = await import('./args.js');
 const opts = parseArgs(process.argv.slice(2));
-if (opts.help) { console.log(USAGE); process.exit(0); }
-if (opts.version) { console.log(`wxnodus ${VERSION}`); process.exit(0); }
 // --cwd：切换到指定工作目录（数据/会话/项目规范均以该目录为准；Gemini/Codex 同款）
 if (opts.cwd) {
   try {
@@ -50,12 +48,33 @@ if (opts.cwd) {
   }
 }
 
+// W2-01：pre-bootstrap onboarding——首次进入选择系统语言（zh-CN/en）；
+// 在 _initErrorLog/mkdirSync/DB/MCP/Plugin/网络/TUI 之前执行（干净环境零副作用）。
+const { decidePreBootstrap, readLocaleFile, promptLanguageOnStdio, persistPreBootstrapLocale } = await import('../application/bootstrap/preBootstrapOnboarding.js');
+const pre = await decidePreBootstrap({
+  argv: process.argv.slice(2),
+  env: process.env,
+  isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+  systemLocale: Intl.DateTimeFormat().resolvedOptions().locale,
+  readWorkspaceLocale: () => readLocaleFile(join(process.cwd(), '.wxnodus', 'config.yaml')),
+  readUserLocale: () => readLocaleFile(join(resolveDataDir(process.cwd()), 'config.json')),
+  promptLanguage: promptLanguageOnStdio,
+  persistUserLocale: locale => persistPreBootstrapLocale(join(resolveDataDir(process.cwd()), 'config.json'), locale),
+});
+if (pre.mode === 'error') {
+  process.stderr.write(`${pre.output ?? 'CONFIG_SCHEMA_INVALID'}\n`);
+  process.exitCode = 2;
+} else if (pre.mode === 'print-and-exit') {
+  process.stdout.write(pre.output === 'version' ? `wxnodus ${VERSION}\n` : `${USAGE}\n`);
+  process.exit(0);
+} else {
+  const locale = pre.locale ?? 'en';
 
-async function main() {
-  const cwd = process.cwd();
-  const dataDir = resolveDataDir(cwd);
-  _initErrorLog(dataDir);
-  mkdirSync(dataDir, { recursive: true });
+  async function main() {
+    const cwd = process.cwd();
+    const dataDir = resolveDataDir(cwd);
+    _initErrorLog(dataDir);
+    mkdirSync(dataDir, { recursive: true });
 
   const [{ createConfig }, { openDB, closeDB }, { createEventBus }, { createMemory }, { createAgent }, { createCommandBus }, { createHookRunner }, { GatewayClient }] = await Promise.all([
     import('../store/config.js'),
@@ -530,6 +549,7 @@ async function main() {
           hasImageIn: hasImageInRef(model || settings.model || ''),
           sessionId: agent.getSessionId?.() ?? 'default',
           lang: (settings as any).lang,
+          locale,
           dataDir,
         });
       } catch { return undefined; }
@@ -579,3 +599,4 @@ async function main() {
 }
 
 main().catch(e => { console.error('启动失败：', e?.message ?? e); process.exit(1); });
+}

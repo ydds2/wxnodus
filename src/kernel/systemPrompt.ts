@@ -6,6 +6,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Mode } from './permissions.js';
+import { translate } from '../application/i18n/i18nService.js';
+import type { Locale } from '../domain/config/configSchema.js';
 
 const MODE_RULES: Record<Mode, string> = {
   smart: '更改前确认模式：只读操作直接执行；写入、联网、危险操作先征得用户同意；工作区内的文件编辑自动放行（视为低风险）。',
@@ -24,6 +26,8 @@ export interface SysPromptOpts {
   sessionId?: string;
   /** /lang 设置：'en' 时输出规范切英文（其余保持中文） */
   lang?: string;
+  /** W2-01：locale（zh-CN/en）——行为段从 i18n catalog 取，不做文本分支 */
+  locale?: Locale;
   /** dataDir：存在 prompts/system.md 时整体替换内置提示 */
   dataDir?: string;
 }
@@ -42,7 +46,8 @@ function externalPromptOverride(dataDir: string | undefined): string | null {
 export function buildSystemPrompt(opts: SysPromptOpts): string {
   const now = new Date();
   const lang = opts.lang === 'en' ? 'en' : 'zh';
-  const locale = lang === 'en' ? 'en-US' : 'zh-CN';
+  const locale: Locale = opts.locale ?? (lang === 'en' ? 'en' : 'zh-CN');
+  const localeTag = lang === 'en' ? 'en-US' : 'zh-CN';
   const external = externalPromptOverride(opts.dataDir);
 
   // 环境段始终追加（外部提示也带上——模型需要知道工作目录/模型/时间）
@@ -51,7 +56,7 @@ export function buildSystemPrompt(opts: SysPromptOpts): string {
     `- 工作目录：${opts.cwd}`,
     `- 当前模型：${opts.model}${opts.hasImageIn ? '（支持图像输入）' : ''}`,
     `- 会话：${opts.sessionId ?? 'default'}`,
-    `- 时间：${now.toLocaleString(locale, { hour12: false })}`,
+    `- 时间：${now.toLocaleString(localeTag, { hour12: false })}`,
   ].join('\n');
 
   if (external) {
@@ -81,6 +86,8 @@ export function buildSystemPrompt(opts: SysPromptOpts): string {
     '你是 WxNodus——本地概念编译器（把自然语言需求"编译"为可运行系统的智能助手），完全自研的 CLI 产品。',
     '',
     '## 工作准则',
+    // W2-01：行为段从 i18n catalog 取（zh-CN/en 单一 key，不做文本正则分支）
+    `0. ${translate(locale, 'system.behavior')}`,
     '1. 工具优先：能调用工具拿到事实（读文件、执行命令、搜索历史记忆），就不要凭记忆猜测。',
     '2. 证据驱动：关键结论给出证据（文件路径、命令输出）；不确定就明确说"不确定"。',
     '3. 完成度：交付可运行、可验证的结果；完成后用不超过三句话总结做了什么、怎么验证。',

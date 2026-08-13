@@ -1,6 +1,10 @@
 // src/store/config.ts — L1-2 配置中心：data/ 分区 json，单一事实来源
 // 设计：每个分区（settings/aliases/routes/...）一个 json 文件；原子写（tmp+rename）；
 //       set 增量合并；getKey/setKey 支持点路径。参考：Gemini CLI 分层配置、Claude Code settings 分区
+// W2-01 legacy façade：locale precedence（cli > env > workspace > user > default）唯一事实源
+// 在 ConfigService/ConfigRepository（user/config.json + workspace/.wxnodus/config.yaml）——
+// 本文件的 settings 分区 `lang` 只用于运行时 /lang 切换（systemPrompt 输出规范），
+// 不参与 onboarding precedence（禁止第二套 precedence）。
 import { join } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 
