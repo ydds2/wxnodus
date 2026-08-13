@@ -34,6 +34,18 @@ export function createCommandRegistry() {
       }
       return count;
     },
+    /** W2-04：owner 原子换入（先删旧 owner 全量再注册新条目——单次可见 swap；成功后调用方才 dispose 旧资源） */
+    swapOwner(owner: string, incoming: Array<{ definition: CommandDefinition; handler: CommandHandler }>): OperationResult<{ owner: string; replaced: string[] }> {
+      const replaced: string[] = [];
+      for (const [name, entry] of entries) {
+        if (entry.definition.owner === owner) { entries.delete(name); replaced.push(name); }
+      }
+      for (const item of incoming) {
+        const name = item.definition.name.toLowerCase();
+        entries.set(name, { id: randomUUID(), definition: { ...item.definition, name }, handler: item.handler });
+      }
+      return ok({ owner, replaced });
+    },
     list(): CommandDefinition[] {
       return [...entries.values()].map(x => x.definition).sort((a, b) => a.name.localeCompare(b.name));
     },

@@ -85,6 +85,24 @@ export function createToolCatalog() {
     snapshot(): readonly ToolDescriptor[] {
       return Object.freeze([...tools.values()].sort((a, b) => a.id.localeCompare(b.id)));
     },
+    /** W2-04：owner 原子换入（同事务单次可见 revision swap——成功后调用方才 dispose 旧 scope） */
+    swapOwner(owner: string, incoming: readonly ToolDescriptor[]) {
+      for (const tool of incoming) {
+        if (tool.owner !== owner) return err(gatewayError('TOOL_OWNER_MISMATCH', 'tool owner 与 swap owner 不一致', 'tool.owner.mismatch'));
+        const missing = validateDescriptor(tool);
+        if (missing) return err(gatewayError('TOOL_DESCRIPTOR_INCOMPLETE', `tool descriptor 缺少 ${missing}`, 'tool.descriptor.incomplete', { retryable: false, details: { field: missing, toolId: tool.id } }));
+      }
+      const previous = [...tools.values()].filter(tool => tool.owner === owner);
+      for (const tool of previous) tools.delete(tool.id);
+      for (const tool of incoming) tools.set(tool.id, freezeDescriptor(tool));
+      return ok({ owner, replaced: previous.map(tool => tool.id) });
+    },
+    /** W2-04：owner 移除（deactivate——只删本 owner 条目，跨 owner 零删除） */
+    removeOwner(owner: string) {
+      const removed = [...tools.values()].filter(tool => tool.owner === owner).map(tool => tool.id);
+      for (const id of removed) tools.delete(id);
+      return ok({ owner, removed });
+    },
   };
 }
 
