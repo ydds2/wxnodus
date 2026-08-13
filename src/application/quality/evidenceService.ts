@@ -70,7 +70,9 @@ export class EvidenceService {
       artifact: { id: request.context.artifactId, sha256: request.context.artifactSha256 },
       stdout,
       stderr,
-      attachments: refs,
+      // attachments 只含 stdout/stderr 之外的额外附件（stdout/stderr 已单列——重复引用会让闭包校验误报 EVIDENCE_DUPLICATE_ID）
+      attachments: refs.filter(ref =>
+        ref.attachmentId !== request.execution.stdout.attachmentId && ref.attachmentId !== request.execution.stderr.attachmentId),
       closure: { status: 'closed', attachmentIds: refs.map(ref => ref.attachmentId).sort() },
       environment: {
         snapshotId: request.context.environmentSnapshotId,

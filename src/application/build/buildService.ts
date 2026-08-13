@@ -1,0 +1,112 @@
+// src/application/build/buildService.ts — Acceptance-driven BuildService：staging 事务 + 严格验收 + 单一 DAG + 原子换入
+// 全部入口（CLI 命令/工具/MCP/HTTP）委托这唯一服务；开放域请求永不伪造完成（BUILD_OPEN_DOMAIN_UNSUPPORTED）
+import type { AcceptanceCriterion } from '../../domain/build/acceptance.js';
+import { validateAcceptance } from '../../domain/build/acceptance.js';
+import type { BuildVerificationSnapshot } from '../../domain/build/buildRun.js';
+import { assertSnapshotMatch, createBuildVerificationSnapshot } from '../../domain/build/buildRun.js';
+import type { NodeResult, PlanNode } from '../../domain/build/planDag.js';
+import { executePlanDag } from '../../domain/build/planDag.js';
+import type { OperationResult } from '../../protocol/results.js';
+import type { RunFinalStatus } from '../../protocol/runs.js';
+
+const fail = <T = never>(code: string, details?: Record<string, unknown>): OperationResult<T> => ({
+  ok: false,
+  error: { code, message: code, messageKey: code, retryable: false, details },
+});
+
+export interface BuildRequest {
+  spec: unknown;
+  targetDir: string;
+  dataDir: string;
+  openDomain?: boolean;
+  existingProject?: boolean;
+  previewApproved?: boolean;
+  snapshotInput: Omit<BuildVerificationSnapshot, 'verificationId'>;
+}
+
+export interface BuildDecision {
+  status: RunFinalStatus;
+  reasons: string[];
+  criteria: Array<{ id: string; status: string }>;
+}
+
+export interface BuildServicePorts {
+  workspace: {
+    stage(): Promise<OperationResult<{ stagingDir: string }>>;
+    commit(stagingDir: string, targetDir: string): Promise<OperationResult<void>>;
+    abandon(stagingDir: string): Promise<void>;
+    diff(targetDir: string): Promise<OperationResult<{ changed: string[] }>>;
+  };
+  /** 每个验收标准 → W3-01 verifier；缺失即 BUILD_VERIFIER_MAPPING_MISSING */
+  verifierMap: { resolve(criterion: AcceptanceCriterion): OperationResult<{ verifierId: string }> };
+  /** 构建节点（install/build/start/readiness/business-write/stop-port-release/restart/business-read/test/evidence/decision） */
+  nodes(stagingDir: string, snapshot: BuildVerificationSnapshot): PlanNode[];
+  /** 静态入口校验：生成的 server 必须在 / 提供前端，否则 BUILD_STATIC_ENTRY_MISSING */
+  staticEntry: { verify(stagingDir: string, signal: AbortSignal): Promise<OperationResult<{ servesRoot: boolean }>> };
+  /** 完成判定（required criteria 全部 passed 才算通过） */
+  decide(criteria: AcceptanceCriterion[], nodes: Record<string, NodeResult>): OperationResult<BuildDecision>;
+}
+
+export interface BuildRunResult {
+  stagingDir: string;
+  committed: boolean;
+  snapshot: BuildVerificationSnapshot;
+  decision: BuildDecision;
+}
+
+export class BuildService {
+  constructor(private readonly ports: BuildServicePorts) {}
+
+  async compileAndRun(request: BuildRequest, signal: AbortSignal): Promise<OperationResult<BuildRunResult>> {
+    if (request.openDomain) return fail('BUILD_OPEN_DOMAIN_UNSUPPORTED');
+    const validated = validateAcceptance(request.spec);
+    if (!validated.ok) return validated;
+    const criteria = validated.value;
+    for (const criterion of criteria) {
+      const mapped = this.ports.verifierMap.resolve(criterion);
+      if (!mapped.ok) return mapped;
+    }
+    if (request.existingProject) {
+      const diff = await this.ports.workspace.diff(request.targetDir);
+      if (!diff.ok) return diff;
+      if (diff.value.changed.length > 0 && !request.previewApproved) {
+        return fail('BUILD_PREVIEW_APPROVAL_REQUIRED', { changed: diff.value.changed.slice(0, 20) });
+      }
+    }
+    const snapshot = createBuildVerificationSnapshot(request.snapshotInput);
+    const staged = await this.ports.workspace.stage();
+    if (!staged.ok) return staged;
+    const stagingDir = staged.value.stagingDir;
+    try {
+      const staticEntry = await this.ports.staticEntry.verify(stagingDir, signal);
+      if (!staticEntry.ok) return staticEntry;
+      if (!staticEntry.value.servesRoot) return fail('BUILD_STATIC_ENTRY_MISSING', { stagingDir });
+      const nodes = this.ports.nodes(stagingDir, snapshot);
+      const executed = await executePlanDag(nodes, signal);
+      for (const [nodeId, nodeResult] of Object.entries(executed.nodes)) {
+        if (nodeResult.status === 'failed' && nodeResult.code !== 'BUILD_NODE_FAILED' && nodeResult.code) {
+          return fail(nodeResult.code, { nodeId });
+        }
+      }
+      const decision = this.ports.decide(criteria, executed.nodes);
+      if (!decision.ok) return decision;
+      const requiredPassed = criteria.filter(criterion => criterion.required)
+        .every(criterion => decision.value.criteria.find(item => item.id === criterion.id)?.status === 'passed');
+      if (!requiredPassed) {
+        await this.ports.workspace.abandon(stagingDir);
+        return { ok: true, value: { stagingDir, committed: false, snapshot, decision: decision.value } };
+      }
+      const committed = await this.ports.workspace.commit(stagingDir, request.targetDir);
+      if (!committed.ok) return committed;
+      return { ok: true, value: { stagingDir, committed: true, snapshot, decision: decision.value } };
+    } catch (error) {
+      await this.ports.workspace.abandon(stagingDir).catch(() => undefined);
+      return fail('BUILD_NODE_FAILED', { message: String((error as Error)?.message ?? error) });
+    }
+  }
+
+  /** 快照漂移断言（evidence/verifier 集成处使用） */
+  assertSnapshot(expected: BuildVerificationSnapshot, actual: Partial<BuildVerificationSnapshot>): OperationResult<void> {
+    return assertSnapshotMatch(expected, actual);
+  }
+}
