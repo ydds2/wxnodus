@@ -31,3 +31,18 @@ export function validateSafeName(input: string, existing: readonly string[]) {
   }
   return ok(normalized);
 }
+
+/** W2-07：扩展名（Skill/Plugin 共用同一实现）——NFKC 恒等、字符集、Windows 保留名、结尾点/空格 */
+export function assertSafeExtensionName(value: string): void {
+  const normalized = value.normalize('NFKC');
+  const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+  if (
+    normalized !== value
+    || !/^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/.test(value)
+    || value.includes('..')
+    || reserved.test(value)
+    || /[. ]$/.test(value)
+  ) {
+    throw Object.assign(new Error(`UNSAFE_EXTENSION_NAME:${value}`), { code: 'UNSAFE_EXTENSION_NAME' });
+  }
+}

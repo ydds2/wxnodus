@@ -23,5 +23,6 @@ export class ExtensionScopeManager {
   async deactivate(owner: string) { const old = this.active.get(owner); if (!old) return ok(undefined);
     this.active.delete(owner); return old.dispose(); }
   snapshot(owner: string) { return this.active.get(owner)?.snapshot(); }
+  activeOwners(): string[] { return [...this.active.keys()]; }
   resolveTool(id: string): unknown { for (const scope of this.active.values()) if (scope.tools.has(id)) return scope.tools.get(id); }
 }
