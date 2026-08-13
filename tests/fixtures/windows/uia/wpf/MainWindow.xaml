@@ -1,0 +1,12 @@
+<Window x:Class="WxNodus.WpfFixture.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="WxNodus UIA Fixture" Width="420" Height="260">
+  <StackPanel Margin="20">
+    <Button x:Name="invoke" AutomationProperties.AutomationId="invoke" Content="Invoke Me" Click="Invoke_OnClick" />
+    <ListBox x:Name="selection" AutomationProperties.AutomationId="selection" Height="96">
+      <ListBoxItem>item-1</ListBoxItem>
+      <ListBoxItem>item-2</ListBoxItem>
+      <ListBoxItem>item-3</ListBoxItem>
+    </ListBox>
+    <TextBox x:Name="value" AutomationProperties.AutomationId="value" Width="180" />
+    <TextBlock x:Name="status" AutomationProperties.AutomationId="status" Text="status:ready" />
+  </StackPanel>
+</Window>

@@ -1,0 +1,14 @@
+{
+  "name": "wxnodus-uia-electron-fixture",
+  "version": "31.7.7",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-packager . "WxNodus Electron Fixture" --platform=win32 --arch=x64 --out=dist --overwrite --prune"
+  },
+  "devDependencies": {
+    "electron": "31.7.7",
+    "electron-packager": "17.1.2"
+  }
+}

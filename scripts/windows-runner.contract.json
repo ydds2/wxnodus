@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "runnerId": "self-hosted-windows",
+  "image": "windows-runner",
+  "requiredLabels": ["self-hosted", "windows", "x64", "interactive"],
+  "osKeys": ["win11-24h2", "win10-22h2"],
+  "baselines": {
+    "win10-22h2": "10.0.19045",
+    "win11-24h2": "10.0.26100"
+  },
+  "requirements": {
+    "interactiveUnlockedDefaultDesktop": true,
+    "physicalMicrophone": true,
+    "sapiVoiceAndPlayback": true,
+    "dualMonitorNegativeOriginMixedDpiPmv2": true,
+    "fixtureLockVerified": true,
+    "nodeMajor": 22
+  }
+}
