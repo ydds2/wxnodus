@@ -21,6 +21,9 @@ import { classifyToolAction } from '../kernel/permissions.js'
 import { redactSecrets } from '../kernel/redact.js'
 import { discoverSkills } from '../kernel/skills.js'
 import { COMMAND_CAT, COMMAND_DESC, SLASH } from '../commands/registry.js'
+import { PersonalizationService } from '../application/personalization/personalizationService.js'
+import { ConfigRepository } from '../infrastructure/config/configRepository.js'
+import { createPersonalizationRpcHandlers } from '../protocol/personalization.js'
 import type { GatewayEvent } from './gatewayTypes.js'
 import { ZERO } from './domain/usage.js'
 import type { SessionInfo, TodoItem } from './types.js'
@@ -392,6 +395,14 @@ export class GatewayClient extends EventEmitter {
       case 'config.get': return this.configGet(params) as T
       case 'config.set': return this.configSet(params) as T
       case 'setup.status': return this.setupStatus() as T
+      // W2-02：个性化 profile（真实 ConfigRepository + PersonalizationService，非假成功）
+      case 'personalization.get':
+      case 'personalization.update':
+      case 'personalization.setup':
+      case 'personalization.export':
+      case 'personalization.import':
+      case 'config.getFull':
+        return this.personalizationRpc(method, params) as T
       case 'approval.respond': return this.approvalRespond(params) as T
       case 'clarify.respond': return this.clarifyRespond(params) as T
       case 'sudo.respond': return this.sudoRespond(params) as T
@@ -1447,6 +1458,29 @@ export class GatewayClient extends EventEmitter {
       killed = r.changes
     } catch { /* 任务表不可用 */ }
     return { killed }
+  }
+
+  // W2-02：个性化服务懒加载单例（user config.json + workspace .wxnodus/config.yaml）
+  private personalizationService: PersonalizationService | null = null
+  private getPersonalization(): PersonalizationService {
+    if (!this.personalizationService) {
+      this.personalizationService = new PersonalizationService(new ConfigRepository({
+        userFile: join(this.kernel.dataDir, 'config.json'),
+        workspaceFile: join(this.kernel.cwd, '.wxnodus', 'config.yaml'),
+      }))
+    }
+    return this.personalizationService
+  }
+
+  /** W2-02：个性化/全量配置 RPC——真实 service，失败返回 OperationResult（绝不假成功） */
+  private async personalizationRpc(method: string, params: Record<string, unknown>): Promise<unknown> {
+    const handlers = createPersonalizationRpcHandlers({
+      service: this.getPersonalization(),
+      readFullConfig: async () => ({ ...(this.kernel.settings ?? {}) }),
+    })
+    const handler = handlers[method]
+    if (!handler) throw new Error(`unsupported rpc: ${method}`)
+    return handler(params)
   }
 
   private configGet(params: Record<string, unknown>): unknown {

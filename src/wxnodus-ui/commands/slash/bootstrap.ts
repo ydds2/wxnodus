@@ -1,20 +1,11 @@
-import { withInkSuspended } from '@wxnodus/ink'
-
-import { launchWxnodusCommand } from '../../lib/externalCli.js'
-import { runExternalSetup } from '../../bridge/setupHandoff.js'
+// src/wxnodus-ui/commands/slash/bootstrap.ts — W2-02：/setup 进程内执行（不再 spawn 外部 wxnodus 进程）
+import { runInProcessSetup } from '../../bridge/setupHandoff.js'
 import type { SlashCommand } from '../slashTypes.js'
 
 export const setupCommands: SlashCommand[] = [
   {
-    help: 'run full setup wizard (launches `wxnodus setup`)',
+    help: 'run setup in-process (personalization service)',
     name: 'setup',
-    run: (arg, ctx) =>
-      void runExternalSetup({
-        args: ['setup', ...arg.split(/\s+/).filter(Boolean)],
-        ctx,
-        done: 'setup complete — starting session…',
-        launcher: launchWxnodusCommand,
-        suspend: withInkSuspended
-      })
+    run: (_arg, ctx) => void runInProcessSetup({ ctx })
   }
 ]

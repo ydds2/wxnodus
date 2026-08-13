@@ -162,14 +162,18 @@ export const sessionCommands: SlashCommand[] = [
         return
       }
 
-      ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'personality', session_id: ctx.sid, value: arg }).then(
-        ctx.guarded<ConfigSetResponse>(r => {
-          if (r.history_reset) {
-            ctx.session.resetVisibleHistory(r.info ?? null)
+      // W2-02：走真实 PersonalizationService（user scope persona），失败显示稳定 error.code
+      ctx.gateway.rpc<{ ok: boolean; value?: { profile?: { persona?: string } }; error?: { code: string } }>('personalization.update', {
+        scope: 'user',
+        patch: { persona: arg },
+      }).then(
+        ctx.guarded(r => {
+          if (r.ok) {
+            const persona = r.value?.profile?.persona ?? 'default'
+            ctx.transcript.sys(`personality: ${persona} · persisted (user scope)`)
+          } else {
+            ctx.transcript.sys(`personality: ${r.error?.code ?? 'PERSONALIZATION_SCHEMA_INVALID'}`)
           }
-
-          ctx.transcript.sys(`personality: ${r.value || 'default'}${r.history_reset ? ' · transcript cleared' : ''}`)
-          ctx.local.maybeWarn(r)
         })
       )
     }

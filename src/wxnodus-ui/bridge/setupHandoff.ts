@@ -1,54 +1,29 @@
-import type { RunExternalProcess } from '@wxnodus/ink'
-
-import type { SetupStatusResponse } from '../gatewayTypes.js'
-import type { LaunchResult } from '../lib/externalCli.js'
-
+// src/wxnodus-ui/bridge/setupHandoff.ts — W2-02：/setup 不再 spawn 外部 wxnodus 进程——
+// 个性化初始化走 personalization.setup RPC（真实 PersonalizationService），
+// 结果必须等待 OperationResult：仅 ok:true 显示成功，错误显示稳定 error.code。
 import type { SlashHandlerContext } from './interfaces.js'
 import { patchUiState } from '../runtime/viewStore.js'
 
-export interface RunExternalSetupOptions {
-  args: string[]
+export interface RunInProcessSetupOptions {
   ctx: Pick<SlashHandlerContext, 'gateway' | 'session' | 'transcript'>
-  done: string
-  launcher: (args: string[]) => Promise<LaunchResult>
-  suspend: (run: RunExternalProcess) => Promise<void>
 }
 
-export async function runExternalSetup({ args, ctx, done, launcher, suspend }: RunExternalSetupOptions) {
+export async function runInProcessSetup({ ctx }: RunInProcessSetupOptions) {
   const { gateway, session, transcript } = ctx
 
-  transcript.sys(`launching \`wxnodus ${args.join(' ')}\`…`)
   patchUiState({ status: 'setup running…' })
 
-  let result: LaunchResult = { code: null }
-
-  await suspend(async () => {
-    result = await launcher(args)
+  const result = await gateway.rpc<{ ok: boolean; value?: { profile?: Record<string, unknown> }; error?: { code: string } }>('personalization.setup', {
+    scope: 'user',
+    patch: { memory: { enabled: true, retention: 'persistent' } },
   })
 
-  if (result.error) {
-    transcript.sys(`error launching wxnodus: ${result.error}`)
+  if (!result || !result.ok) {
+    transcript.sys(`setup: ${result?.error?.code ?? 'PERSONALIZATION_SCHEMA_INVALID'}`)
     patchUiState({ status: 'setup required' })
-
     return
   }
 
-  if (result.code !== 0) {
-    transcript.sys(`wxnodus ${args[0]} exited with code ${result.code}`)
-    patchUiState({ status: 'setup required' })
-
-    return
-  }
-
-  const setup = await gateway.rpc<SetupStatusResponse>('setup.status', {})
-
-  if (setup?.provider_configured === false) {
-    transcript.sys('still no provider configured')
-    patchUiState({ status: 'setup required' })
-
-    return
-  }
-
-  transcript.sys(done)
+  transcript.sys('setup complete — starting session…')
   session.newSession()
 }
