@@ -25,7 +25,8 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "test:w1-02": "vitest run tests/wave1/w1-02-bootstrap.test.ts",
     "test:w1-03": "vitest run tests/wave1/w1-03-http-gateway-security.test.ts",
-    "test:w1-04": "vitest run tests/wave1/w1-04-command-contract.test.ts"
+    "test:w1-04": "vitest run tests/wave1/w1-04-command-contract.test.ts",
+    "test:w1-05": "vitest run tests/wave1/w1-05-tool-catalog.test.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
