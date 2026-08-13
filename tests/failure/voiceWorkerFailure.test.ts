@@ -4,7 +4,8 @@ import { VoiceSessionService } from '../../src/application/voice/voiceSessionSer
 
 it('keeps the event loop responsive and confirms process-tree termination on abort', async () => {
   let heartbeat = 0;
-  const interval = setInterval(() => { heartbeat += 1; }, 5);
+  // 满载并行 CI 下 5ms 间隔会合并（coalesce）——用 2ms 间隔 + 40ms 窗口保证至少数个 tick（意图：事件循环不被阻塞）
+  const interval = setInterval(() => { heartbeat += 1; }, 2);
   const terminateTree = vi.fn(async () => ({ ok: true as const, value: undefined }));
   const supervisor = {
     spawn: vi.fn(async (_exe: string, _args: string[], _options: unknown, signal: AbortSignal) =>
@@ -18,7 +19,7 @@ it('keeps the event loop responsive and confirms process-tree termination on abo
   const service = new VoiceSessionService({ supervisor, temp, sttReady: () => true });
   const controller = new AbortController();
   const pending = service.transcribe({ id: 'audio-1', path: 'audio.wav', retention: 'ephemeral' }, controller.signal);
-  await new Promise(resolve => setTimeout(resolve, 25));
+  await new Promise(resolve => setTimeout(resolve, 40));
   controller.abort();
   const result = await pending;
   clearInterval(interval);
