@@ -19,7 +19,10 @@ const capabilities: CapabilityPort = {
     id: 'caps-1',
     policySnapshotId: 'policy-1',
     generatedAt: '2026-08-13T00:00:00.000Z',
-    states: { command: 'available', memory: 'available', 'offline-model': 'available', voice: 'unavailable', computer: 'unavailable', forge: 'unavailable', distribution: 'unavailable' },
+    profile: 'standard',
+    platform: 'win32',
+    states: { command: 'available', memory: 'available', 'offline-model': 'available', voice: 'unavailable', computer: 'unavailable', forge: 'unavailable', distribution: 'unavailable', session: 'unavailable', build: 'unavailable', verify: 'unavailable', evidence: 'unavailable', browser: 'unavailable', 'mcp-client': 'unavailable', 'mcp-server': 'unavailable', skill: 'unavailable', plugin: 'unavailable', task: 'unavailable', subagent: 'unavailable' },
+    descriptors: { command: { id: 'command', profile: 'standard', platform: 'win32', requirement: 'required', state: 'available', delivered: true, stableStatus: 'DELIVERED', source: 'fixture', checksum: '0'.repeat(64) } } as never,
   }),
   require(id) {
     return this.snapshot().states[id] === 'available'

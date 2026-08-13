@@ -1,14 +1,35 @@
-// src/domain/capabilities/capability.ts — CapabilityPort（W1-11 实现 registry；本任务只定义端口）
+// src/domain/capabilities/capability.ts — CapabilityPort（W1-02 定义；W2-03 扩展 union/snapshot，不重声明端口）
 import { gatewayError } from '../../protocol/errors.js';
 import { err, type OperationResult } from '../../protocol/results.js';
 
-export type CapabilityId = 'command' | 'memory' | 'offline-model' | 'voice' | 'computer' | 'forge' | 'distribution';
+export type CapabilityId = 'command' | 'memory' | 'offline-model' | 'session' | 'build' | 'verify' |
+  'evidence' | 'browser' | 'voice' | 'computer' | 'forge' | 'distribution' |
+  'mcp-client' | 'mcp-server' | 'skill' | 'plugin' | 'task' | 'subagent';
+
+export type CapabilityState = 'available' | 'degraded' | 'unavailable' | 'blocked';
+
+export interface CapabilityDescriptor {
+  id: CapabilityId;
+  profile: 'core' | 'standard' | 'full-local-ai';
+  platform: NodeJS.Platform;
+  requirement: 'required' | 'optional' | 'unavailable';
+  state: CapabilityState;
+  delivered: boolean;
+  stableStatus: 'DELIVERED' | 'NOT_DELIVERED';
+  unlockGate?: 'W3_OR_LATER_REQUIRED_GATE';
+  reasonCode?: 'NOT_DELIVERED' | 'CAPABILITY_UNAVAILABLE' | 'CAPABILITY_BLOCKED' | 'CAPABILITY_PROBE_FAILED';
+  source: string;
+  checksum: string;
+}
 
 export interface CapabilitySnapshot {
   id: string;
   policySnapshotId: string;
   generatedAt: string;
-  states: Readonly<Record<CapabilityId, 'available' | 'unavailable'>>;
+  profile: 'core' | 'standard' | 'full-local-ai';
+  platform: NodeJS.Platform;
+  states: Readonly<Record<CapabilityId, CapabilityState>>;
+  descriptors: Readonly<Record<CapabilityId, CapabilityDescriptor>>;
 }
 
 export interface CapabilityPort {
