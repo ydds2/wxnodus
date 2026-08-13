@@ -43,19 +43,25 @@ describe('W2-01 config precedence and pre-bootstrap onboarding', () => {
       extensions: { future: { keep: true } },
     });
     const service = new ConfigService(repo);
+    const resolved = async (ctx: { cli?: unknown; env?: unknown; systemLocale?: string }) => {
+      const r = await service.resolveLocale(ctx);
+      expect(r.ok).toBe(true);
+      if (!r.ok) throw new Error(r.error.code);
+      return r.value;
+    };
 
-    expect((await service.resolveLocale({ cli: 'zh-CN', env: 'en' })).value).toEqual({
+    expect(await resolved({ cli: 'zh-CN', env: 'en' })).toEqual({
       value: 'zh-CN', source: 'cli',
     });
-    expect((await service.resolveLocale({ env: 'zh-CN' })).value).toEqual({
+    expect(await resolved({ env: 'zh-CN' })).toEqual({
       value: 'zh-CN', source: 'env',
     });
-    expect((await service.resolveLocale({})).value).toEqual({ value: 'en', source: 'workspace' });
+    expect(await resolved({})).toEqual({ value: 'en', source: 'workspace' });
 
     await repo.remove('workspace');
-    expect((await service.resolveLocale({})).value).toEqual({ value: 'zh-CN', source: 'user' });
+    expect(await resolved({})).toEqual({ value: 'zh-CN', source: 'user' });
     await repo.remove('user');
-    expect((await service.resolveLocale({ systemLocale: 'fr-FR' })).value).toEqual({
+    expect(await resolved({ systemLocale: 'fr-FR' })).toEqual({
       value: 'en', source: 'default',
     });
   });
