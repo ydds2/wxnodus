@@ -1,5 +1,11 @@
 import type { SessionInfo, SlashCategory, SubagentStatus, Usage } from './types.js'
 
+// ── W1-01 compatibility re-exports：协议类型单一事实源（现有 response DTO 保留不动）──
+export type { GatewayError } from '../protocol/errors.js'
+export type { OperationResult } from '../protocol/results.js'
+export type { RunFinalStatus } from '../protocol/runs.js'
+export type { GatewayEvent as ProtocolGatewayEvent } from '../protocol/events.js'
+
 export interface GatewaySkin {
   banner_hero?: string
   banner_logo?: string

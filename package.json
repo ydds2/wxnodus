@@ -21,6 +21,7 @@
     "test:known-failures": "vitest run --config vitest.known-failures.config.ts",
     "drill:wave0-recovery": "npm exec -- tsx scripts/drill-wave0-recovery.ts",
     "gate:wave0": "node scripts/run-wave-gates.mjs --wave 0",
+    "test:w1-01": "vitest run tests/wave1/w1-01-protocol.test.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
