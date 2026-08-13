@@ -92,7 +92,7 @@
 | 蓝图红线/绿灯 | 状态 | 证据 |
 |---|---|---|
 | 红线1 屏障规避禁止 | ✅ | 5 权限模式 + 8 硬红线（任何模式不可绕过）+ computer 边界 fail-closed（锁屏/UAC/受保护 UI） |
-| 红线2 封禁信号熔断 | 🟡 | 熔断机制具备（EmergencyStop），平台授权状态库未做（§10） |
+| 红线2 封禁信号熔断 | 🟡 | 熔断机制具备（EmergencyStop）+ 平台授权槽位最小版已落地（platformAuthRegistry 注册/到期自动失效/撤销/封禁、无证据默认锁定）；真实平台授权接入仍列 §10-5 |
 | 红线3 身份伪装禁止 | ✅ | 固定 UA 常量 + 浏览器沙盒隔离（无扩展旁路） |
 | 红线4 超范围采集 | ✅ | 秘密转写 opaque ref（`VOICE_SECRET_TRANSCRIPT_EXPOSED`）+ 密钥 AES-256-GCM 不落盘 |
 | 红线5 授权到期失效 | ✅ | 高影响 grant 单次使用（`APPROVAL_GRANT_REPLAYED`）+ lease 到期 CAS orphaned |
@@ -104,13 +104,13 @@
 
 | 蓝图项 | 状态 | 说明 |
 |---|---|---|
-| 新增模块（visionCapture/compatNegotiator/componentForge/capabilityRegistry/consentLedger/credentialVault/platformAuthRegistry） | 🟡 | capabilityRegistry ✅ / consentLedger ✅ / 凭证保管 ✅；visionCapture ⬜ compatNegotiator ⬜ componentForge≈概念编译器 ✅ platformAuthRegistry ⬜ |
-| 五张新表（capability_cards/compat_specs/forged_components/consent_records/credential_refs） | 🟡 | consent/audit 已有；compat_* 三表随 §10-1 |
+| 新增模块（visionCapture/compatNegotiator/componentForge/capabilityRegistry/consentLedger/credentialVault/platformAuthRegistry） | 🟡 | capabilityRegistry ✅ / consentLedger ✅ / 凭证保管 ✅ / visionCapture ✅ 最小版 / compatNegotiator ✅ 最小版 / componentForge≈概念编译器 ✅ / platformAuthRegistry ✅ 最小版 |
+| 五张新表（capability_cards/compat_specs/forged_components/consent_records/credential_refs） | 🟡 | consent/audit 已有；compat_* 三表持久化随后续 wave（当前为内存合同层，见 §10-1） |
 | P0 债务：统一注册表 + 认证基座 | ✅ | CommandRegistry/ToolCatalog/CapabilityRegistry 单一事实源；单机身份=配置用户态 |
-| P1 债务：远程市场+签名 / 推流 / 向量检索 | 🟡 | 向量检索 ✅（sqlite-vec）；远程市场签名 ⬜（§10-3）；WebRTC 推流 N/A（CLI 无推流场景） |
-| M1 录制地基 | ⬜ | §10-1 |
+| P1 债务：远程市场+签名 / 推流 / 向量检索 | 🟡 | 向量检索 ✅（sqlite-vec）；市场签名最小版 ✅（Ed25519 签名/验签/篡改拒绝，§10-3）；远程分发服务 ⬜（§10-3）；WebRTC 推流 N/A（CLI 无推流场景） |
+| M1 录制地基 | 🟡 | 最小版 ✅（轨迹合同 + seal sha256 + untrusted 隔离，§10-1）；真实 CDP 探针接入 ⬜（§10-1） |
 | M2 单端锻造 | 🟡 | 概念编译器≈锻造骨架（非站点适配器）；站点适配器锻造 ⬜ |
-| M3 双方协商 | ⬜ | §10-1 |
+| M3 双方协商 | 🟡 | 最小版 ✅（字段映射确定性机器门 + spec 冻结哈希，§10-1）；远程协商协议 ⬜（§10-1） |
 | M4 生态 | 🟡 | Skill 打包/分发已具备；WebMCP ⬜ |
 
 ## 9. 「移除 zero-download/zero-dependency」落实证据
@@ -129,14 +129,16 @@
 
 ## 10. 未落地项清单（诚实声明，附优先级）
 
-1. **真实 CDP/HAR 采集适配 + 归纳分段/回放校验（蓝图 M1/M2 增强）**：VisionCapture 轨迹合同/归纳（最小版）与 CompatNegotiator 机器门/冻结哈希已落地（✅，见 §2/§3/§4）；剩余为把录制合同接到真实浏览器探针（CDP Network 域 → HAR 落盘）与分段/held-out 回放校验——列为后续 wave。
+> 条目中「✅ 最小版」= 合同层/无头可验证部分已落地并通过契约测试；真实 CDP 探针接入、远程分发服务、安装器打包器等重集成部分仍留待后续 wave。
+
+1. **真实 CDP/HAR 采集适配 + 归纳分段/回放校验（蓝图 M1/M2 增强）**：✅ **最小版已落地**——`harCaptureAdapter`（HAR 1.2 落盘 + sha256 绑定 + startedAt 排序 + 网络通道轨迹桥接 `toNetworkEvents`，契约测试 `tests/forge-compliance-release.contract.test.ts`）；剩余为把录制合同接到真实浏览器 CDP Network 域探针与分段/held-out 回放校验——列为后续 wave。
 2. **对抗探针 + held-out 变体回放**：build 验证已具备重启读回；参数扰动回放集未做（可复用 W3-08 协调器扩展）。
-3. **exemplar 池/recipes 配方沉淀 + 远程市场签名分发**：黑洞引擎已具备存储底座；沉淀与分发管线未做。
-4. **「独立艺术品」包装层**：✅ 雏形已落地（config `branding{name,icon}` 每用户可命名/图标化 + `personalize-wxnodus.ts` demo + 契约测试）；**安装器/图标打包器/自包含发行形态**未做——列入后续产品化。
-5. **平台授权证据槽位（platformAuthRegistry）**：红线 6 的平台侧证据登记未做（单机 CLI 无多租户目标场景，保留为扩展点）。
+3. **exemplar 池/recipes 配方沉淀 + 远程市场签名分发**：✅ **最小版已落地**——`ExemplarPool`（容量上限 + most-recent-first 召回，§10 契约测试）与 `marketSigning`（Ed25519 签名/验签、篡改/错钥/畸形签名一律 `MARKET_SIGNATURE_INVALID`）；远程市场分发服务（HTTP 端点/密钥轮换/吊销列表）未做——后续 wave。
+4. **「独立艺术品」包装层**：✅ 雏形已落地（config `branding{name,icon}` 每用户可命名/图标化 + `personalize-wxnodus.ts` demo + 契约测试）；✅ **安装器 manifest 雏形已落地**（`installerManifest`：应用名净化剥离 Windows 非法字符 + 入口 sha256 绑定 + semver 校验，契约测试）；真正的安装器打包器（NSIS/MSI 生成、图标编译、自包含发行形态）未做——后续产品化。
+5. **平台授权证据槽位（platformAuthRegistry）**：✅ **最小版已落地**——注册/到期自动失效/撤销/封禁熔断，无证据默认物理锁定（红线 6 fail-closed，契约测试）；接入真实平台 OAuth/授权服务器未做（单机 CLI 无多租户目标场景，保留为扩展点）。
 
 ## 11. 结论
 
 - 蓝图的可验证方法论骨架（锻造状态机、门禁、spec 冻结哈希、授权链、统一注册表、分层执行、行为级验证、合规内核化）**已系统性落地**于 WxNodus 的 quality/computer/voice/build/PTY/extensions 各层，且全部有测试与 gate 证据。
-- 蓝图绑定「织系平台」的站点适配专属能力（轨迹录制归纳、字段映射协商、WebMCP、远程市场）**明确未实现**——这是产品面差异而非工程遗漏，均在本清单中标注与给出后续路径。
-- 目标 G1-G5 中，G1（语言选择）、G2（蓝图对照=本清单）、G3（解除零依赖限制）、G5（质量/自主提案）已完成；G4（个性化）已落地、「独立艺术品」包装层列为后续。
+- 蓝图绑定「织系平台」的站点适配专属能力中，轨迹录制归纳与字段映射协商已落地最小可验证版（✅ 契约测试）；真实浏览器探针、远程市场分发、WebMCP 仍明确未实现——这是产品面差异而非工程遗漏，均在本清单中标注与给出后续路径。
+- 目标 G1-G5 中，G1（语言选择）、G2（蓝图对照=本清单）、G3（解除零依赖限制）、G5（质量/自主提案）已完成；G4（个性化）已落地、「独立艺术品」包装层雏形（branding + 安装器 manifest）已落地，完整安装器打包器列为后续。
