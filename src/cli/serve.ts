@@ -9,6 +9,9 @@
 //            curl -s -X POST http://127.0.0.1:4789/rpc -H 'Content-Type: application/json' \
 //                 -d '{"method":"chat","params":{"prompt":"你好"}}'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+// W3-01：RPC 响应状态走共享 completionTransport 映射（failure 不藏在 HTTP 200 后面）
+import { httpStatusForCompletion } from '../protocol/completionTransport.js';
+import type { RunFinalStatus } from '../protocol/runs.js';
 
 export interface ServeKernel {
   dataDir: string;
@@ -20,7 +23,7 @@ export interface ServeKernel {
     recall(sessionId: string): Array<{ id: number; role: string; content: string; ts: number }>;
   };
   agent: { run(prompt: string): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>; getSessionId?(): string; setSessionId?(id: string): void };
-  commandBus: { execute(cmd: string): Promise<{ ok: boolean; output?: string; error?: string }> };
+  commandBus: { execute(cmd: string): Promise<{ ok: boolean; output?: string; error?: string; completionStatus?: RunFinalStatus }> };
   config: { get(p: string): Record<string, any> };
 }
 
@@ -91,14 +94,15 @@ export function startServeServer(k: ServeKernel, port = 4789): { close(): Promis
             if (!prompt.trim()) { json(res, req, 400, { ok: false, error: 'prompt 必填' }); return; }
             if (params.session_id && k.agent.setSessionId) k.agent.setSessionId(String(params.session_id));
             const r = await k.agent.run(prompt);
-            json(res, req, 200, { ok: r.ok, text: r.text, turns: r.turns, interrupted: r.interrupted });
+            const status = httpStatusForCompletion(r.interrupted ? 'cancelled' : r.ok ? 'succeeded' : 'failed');
+            json(res, req, status, { ok: r.ok, text: r.text, turns: r.turns, interrupted: r.interrupted });
             return;
           }
           case 'command': {
             const cmd = String(params.command ?? '');
             if (!cmd.trim()) { json(res, req, 400, { ok: false, error: 'command 必填' }); return; }
             const r = await k.commandBus.execute(cmd);
-            json(res, req, 200, { ok: r.ok, output: r.output ?? '', error: r.error });
+            json(res, req, httpStatusForCompletion(r.completionStatus ?? (r.ok ? 'succeeded' : 'failed')), { ok: r.ok, output: r.output ?? '', error: r.error });
             return;
           }
           case 'memory.search': {

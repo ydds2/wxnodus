@@ -40,6 +40,14 @@ export function readEvidence(projectDir: string): Evidence | null {
   catch { return null; }
 }
 
+// W3-01：证据链状态 → Run 完成终态投影（ok→succeeded，failed→failed，缺失/其余→inconclusive——
+// 证据不足以断言成功也不足以断言失败时，诚实上报 inconclusive 而不是 succeeded；终态再由共享 completionTransport 映射到各传输层）
+export function evidenceCompletionStatus(ev: Evidence | null): 'succeeded' | 'failed' | 'inconclusive' {
+  if (ev?.status === 'ok') return 'succeeded';
+  if (ev?.status === 'failed') return 'failed';
+  return 'inconclusive';
+}
+
 // 合规检查（L3-3 深度接入——审计修复：从「文件存在」骨架升级为真实检查项：
 // 授权声明（LICENSE）/ AI 生成标注（README 或证据含 ai_generated）/ 审计留痕（dataDir 审计链）
 export function complianceCheck(projectDir: string, dataDir?: string): { ok: boolean; items: string[] } {

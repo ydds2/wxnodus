@@ -8,6 +8,8 @@ import { createAutoReview } from '../kernel/autoReview.js';
 import { parseCronExpr, parseIntervalExpr, cronMatches } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { resolveDataDir } from '../kernel/paths.js';
+// W3-01：完成终态 → 退出码共享映射（failure 不藏在 exit 0 后面）
+import { processExitForCompletion } from '../protocol/completionTransport.js';
 // A24 第三类修复：buildInfo system_prompt 数据源（kernel 实时构建；ESM 静态引用缓存）
 import { buildSystemPrompt as buildSystemPromptRef } from '../kernel/systemPrompt.js';
 import { hasImageIn as hasImageInRef } from '../kernel/providers.js';
@@ -436,9 +438,10 @@ if (pre.mode === 'error') {
       }
       // 审查修复：命令分支退出码遵循 P1-2 协议（0 成功｜1 失败）——此前恒 0，
       // 命令失败/未知命令 CI 无法感知；agent 分支已正确用 r.ok 决定
+      // W3-01：退出码改走共享 completionTransport 映射（failed → 1），与 HTTP/wire 口径一致
       if (!r.ok) {
         cleanupEphemeral();
-        process.exit(1);
+        process.exit(processExitForCompletion('failed'));
       }
     } else if (routed.kind === 'tool' && routed.value) {
       console.log(routed.value);
@@ -475,9 +478,9 @@ if (pre.mode === 'error') {
         } else {
           console.log(result.text);
         }
-        // P1-2 退出码协议：0 成功｜1 失败（-p 分支）
+        // P1-2 退出码协议：0 成功｜1 失败（-p 分支）——W3-01 起走共享 completionTransport（interrupted → cancelled 130）
         cleanupEphemeral();
-        process.exit(result.ok ? 0 : 1);
+        process.exit(processExitForCompletion(result.interrupted ? 'cancelled' : result.ok ? 'succeeded' : 'failed'));
       } catch (e: any) {
         // P1-2：可重试失败（429/5xx/网络/超时）→ 75（EX_TEMPFAIL），CI 据此重试
         const { exitCodeForError } = await import('../kernel/errors.js');

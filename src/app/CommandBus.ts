@@ -2,6 +2,8 @@
 // 设计：处理器注册表 + 别名解析 + 参数拆分 + 异常捕获（输出经消息流呈现）
 //       handler 可返回 string（普通输出）或结构化 { kind: 'skill' }（TUI 注入为消息发送）
 import { resolveAlias, isSlash } from '../commands/registry.js';
+// W3-01：命令执行结果携带完成终态——各入口（CLI 退出码/HTTP 状态/wire 终态）据此走共享 completionTransport
+import type { RunFinalStatus } from '../protocol/runs.js';
 
 // A22 指令融合：子命令注入别名（目标命令 + 注入参数）。
 // /hole <查询> → /memory search <查询>；/rewind → /checkpoint restore。
@@ -25,6 +27,8 @@ export interface ExecResult {
   output?: string;
   error?: string;
   dispatch?: StructuredCommand;
+  /** W3-01：完成终态（供传输层映射退出码/HTTP 状态/wire 终态，failure 不藏在 exit 0/HTTP 200 后面） */
+  completionStatus?: RunFinalStatus;
 }
 
 export interface CommandBus {
@@ -42,7 +46,7 @@ export function createCommandBus(): CommandBus {
     },
     async execute(input) {
       const trimmed = input.trim();
-      if (!isSlash(trimmed)) return { ok: false, error: '非命令输入' };
+      if (!isSlash(trimmed)) return { ok: false, error: '非命令输入', completionStatus: 'failed' };
       const tokens = trimmed.split(/\s+/);
       const head = tokens[0] ?? '';
       let cmd: string | null = null;
@@ -75,17 +79,17 @@ export function createCommandBus(): CommandBus {
           if (tokens.length > 1) argPrefix = [...argPrefix, ...tokens.slice(1)];
         }
       }
-      if (!cmd) return { ok: false, error: `未知命令：${head}（/help 查看）` };
+      if (!cmd) return { ok: false, error: `未知命令：${head}（/help 查看）`, completionStatus: 'failed' };
       const fn = handlers.get(cmd)!;
       try {
         const out = await fn(argPrefix, trimmed);
         if (out && typeof out === 'object') {
           // 结构化结果：output 留空，dispatch 携带注入载荷（CLI 侧打印 message 兜底）
-          return { ok: true, output: '', dispatch: out };
+          return { ok: true, output: '', dispatch: out, completionStatus: 'succeeded' };
         }
-        return { ok: true, output: out ?? '' };
+        return { ok: true, output: out ?? '', completionStatus: 'succeeded' };
       } catch (e: any) {
-        return { ok: false, error: `命令 ${cmd} 执行失败：${e?.message ?? e}` };
+        return { ok: false, error: `命令 ${cmd} 执行失败：${e?.message ?? e}`, completionStatus: 'failed' };
       }
     },
     list: () => [...handlers.keys()],

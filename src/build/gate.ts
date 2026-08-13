@@ -3,9 +3,17 @@
 import { existsSync , readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readEvidence, complianceCheck } from './evidence.js';
+// W3-01：门禁结果 → 完成终态/退出码共享映射（failure 不藏在 exit 0 后面）
+import { processExitForCompletion } from '../protocol/completionTransport.js';
+import type { RunFinalStatus } from '../protocol/runs.js';
 
 export interface GateCtx { projectDir: string; dataDir: string }
 export interface GateResult { gates: Array<{ name: string; ok: boolean; detail: string }>; pass: boolean }
+
+/** W3-01：门禁结果投影为 Run 完成终态（pass → succeeded，否则 failed） */
+export const gateCompletionStatus = (result: GateResult): RunFinalStatus => result.pass ? 'succeeded' : 'failed';
+/** W3-01：门禁结果 → 进程退出码（与 HTTP/wire 共享同一张表） */
+export const gateProcessExit = (result: GateResult): number => processExitForCompletion(gateCompletionStatus(result));
 
 export async function runGate(ctx: GateCtx): Promise<GateResult> {
   const gates = [
