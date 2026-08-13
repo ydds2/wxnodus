@@ -44,6 +44,7 @@
     "test:w2-09": "vitest run tests/w2-autonomy-persistence-budget.contract.test.ts",
     "test:w2-10": "vitest run tests/w2-subagent-recovery-progress.contract.test.ts",
     "test:w2-11": "vitest run tests/w2-wave2-migration-gate.contract.test.ts",
+    "test:w3-01": "vitest run tests/unit/quality/verifierRegistry.contract.test.ts",
     "migration:drill:wave2": "node scripts/run-wave2-migration-drill.mjs",
     "gate:wave2": "node scripts/run-wave2-gates.mjs",
     "test:wave1:trusted-kernel": "vitest run tests/wave1/w1-01-protocol.test.ts tests/wave1/w1-02-bootstrap.test.ts tests/wave1/w1-03-http-gateway-security.test.ts tests/wave1/w1-04-command-contract.test.ts tests/wave1/w1-05-tool-catalog.test.ts tests/wave1/w1-06-memory-durability.test.ts tests/wave1/w1-07-security-control-plane.test.ts tests/wave1/w1-08-tool-execution-pipeline.test.ts tests/wave1/w1-09-trusted-completion.test.ts tests/wave1/w1-10-offline-provider.test.ts tests/wave1/w1-11-capability-gate.test.ts",
