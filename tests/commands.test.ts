@@ -4,7 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, isSlash, resolveAlias } from '../src/commands/registry.js';
-import { nlTrigger, routeNaturalLanguage, routeInput, NL_TRIGGERS, type NlTrigger } from '../src/commands/intent.js';
+import { routeNaturalLanguage, routeInput, NL_TRIGGERS, type NlTrigger } from '../src/commands/intent.js';
 import { deterministicRun } from '../src/commands/deterministic.js';
 import { renderWaterfall, registerExtHandlers } from '../src/commands/handlersExt.js';
 import { createCommandBus } from '../src/app/CommandBus.js';

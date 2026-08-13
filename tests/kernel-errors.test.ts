@@ -56,7 +56,7 @@ describe('错误码体系（4xxx/5xxx）', () => {
         agent, applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
       } as any);
       (gw as any).running = true; // 模拟运行中
-      const r = await gw.request('prompt.submit', { text: 'x' });
+      const r = await gw.request('prompt.submit', { text: 'x' }) as { ok: boolean; code: number };
       expect(r.ok).toBe(false);
       expect(r.code).toBe(4009);
       closeDB(db);

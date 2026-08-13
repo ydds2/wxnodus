@@ -9,6 +9,8 @@ import { math } from 'micromark-extension-math';
 import type { Content } from 'mdast';
 import type { MdBlock } from './blocks.js';
 
+export type { MdBlock };
+
 export function parseMd(text: string): MdBlock[] {
   if (!text.trim()) return [];
   // 流式容错：未闭合围栏补全

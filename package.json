@@ -11,9 +11,16 @@
     "build": "npm run clean && tsc",
     "dev": "tsx src/cli/index.ts",
     "start": "tsx src/cli/index.ts",
-    "test": "vitest run",
+    "test": "npm run test:all",
+    "test:all": "vitest run --config vitest.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
+    "check:test-discovery": "node scripts/check-test-discovery.mjs",
+    "check:requirement-coverage": "node scripts/check-requirement-coverage.mjs",
+    "test:known-failures": "vitest run --config vitest.known-failures.config.ts",
+    "drill:wave0-recovery": "npm exec -- tsx scripts/drill-wave0-recovery.ts",
+    "gate:wave0": "node scripts/run-wave-gates.mjs --wave 0",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

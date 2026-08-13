@@ -131,7 +131,7 @@ describe('会话级批准缓存（Kimi auto_approve_actions 同款）', () => {
 describe('工具执行包装', () => {
   it('danger 工具包 untrusted 标记（防提示注入）', async () => {
     const t = coreTools().bash;
-    const result = await t.run({ command: 'echo hi' }, {});
+    const result = await t.run({ command: 'echo hi' }, { cwd: process.cwd(), dataDir: process.cwd() });
     // 危险工具结果包裹 <untrusted_tool_result>
     if (isDangerous(coreTools(), 'bash')) {
       expect(String(result)).toContain('<untrusted_tool_result>');

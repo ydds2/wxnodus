@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { appendChildNode, createNode } from './dom.js'
+import { appendChildNode, createNode, setStyle } from './dom.js'
 import { dispatchClick, hitTest } from './hit-test.js'
 import { nodeCache } from './node-cache.js'
 
@@ -22,7 +22,7 @@ describe('hit-test', () => {
     appendChildNode(wrapper, overlay)
     appendChildNode(overlay, row)
 
-    overlay.style.position = 'absolute'
+    setStyle(overlay, { position: 'absolute' })
     row._eventHandlers = { onClick: () => seen.push('row') }
 
     rect(root, 0, 0, 120, 40)

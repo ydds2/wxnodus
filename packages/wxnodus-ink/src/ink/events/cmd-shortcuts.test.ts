@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseMultipleKeypresses } from '../parse-keypress.js'
+import { parseMultipleKeypresses, type ParsedKey } from '../parse-keypress.js'
 
 import { InputEvent } from './input-event.js'
 
-function parseOne(sequence: string) {
-  const [keys] = parseMultipleKeypresses({ incomplete: '', mode: 'NORMAL' }, sequence)
+function parseOne(sequence: string): ParsedKey {
+  const [keys] = parseMultipleKeypresses({ incomplete: '', mode: 'NORMAL', pasteBuffer: '' }, sequence)
   expect(keys).toHaveLength(1)
 
-  return keys[0]!
+  return keys[0] as ParsedKey
 }
 
 describe('enhanced keyboard modifier parsing', () => {

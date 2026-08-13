@@ -18,11 +18,25 @@ function pathOf(dataDir: string, p: Partition): string {
   return join(dataDir, `${p}.json`);
 }
 
+export class ConfigStoreError extends Error {
+  constructor(
+    readonly code: 'CONFIG_CORRUPT' | 'CONFIG_IO_FAILED',
+    readonly path: string,
+    cause?: unknown,
+  ) {
+    super(`${code}:${path}`, { cause });
+    this.name = 'ConfigStoreError';
+  }
+}
+
 function read(dataDir: string, p: Partition): Record<string, any> {
+  const path = pathOf(dataDir, p);
   try {
-    return JSON.parse(readFileSync(pathOf(dataDir, p), 'utf8')) as Record<string, any>;
-  } catch {
-    return {};
+    return JSON.parse(readFileSync(path, 'utf8')) as Record<string, any>;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    if (error instanceof SyntaxError) throw new ConfigStoreError('CONFIG_CORRUPT', path, error);
+    throw new ConfigStoreError('CONFIG_IO_FAILED', path, error);
   }
 }
 
@@ -51,7 +65,8 @@ function deepGet(obj: Record<string, any>, path: string): any {
 }
 
 // P2 配置校验：settings 分区已知键 schema——未知键 /config set 时警告（防拼写错误静默无效）
-const SETTINGS_KEYS = new Set([
+// 单一事实源：同时驱动 V3 兼容清单（src/compat/configSurface.ts）
+export const SETTINGS_KEYS = new Set([
   'apiKeyEnc', 'model', 'baseURL', 'mode', 'theme', 'thinking', 'hooks', 'security',
   'lowRiskAutoApprove', 'autoResume', 'autoReview', 'webhooks', 'busy_input_mode',
   'strictMcpConfig', 'toolLazyLoad', 'budgetTokens', 'autoRepoMap',

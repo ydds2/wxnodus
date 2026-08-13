@@ -48,7 +48,7 @@ describe('safeFetchText 重定向与拦截', () => {
   it('内网地址直接拦截，不发请求', async () => {
     const r = await safeFetchText('http://127.0.0.1:1/x');
     expect('error' in r).toBe(true);
-    expect(r.error).toContain('已拦截');
+    expect((r as { error: string }).error).toContain('已拦截');
   });
   it('重定向逐跳校验：公网 → 内网跳转被拦截', async () => {
     const srv = createServer((req, res) => {
@@ -115,6 +115,6 @@ describe('A21 safeFetchText 多方法（POST/PUT/DELETE）', () => {
   it('内网拦截对 POST 同样生效（SSRF 方法无关）', async () => {
     const r = await safeFetchText('http://127.0.0.1:9999/api', { method: 'POST', body: { a: 1 } });
     expect('error' in r).toBe(true);
-    expect(r.error).toContain('已拦截');
+    expect((r as { error: string }).error).toContain('已拦截');
   });
 });

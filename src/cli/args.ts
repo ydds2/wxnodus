@@ -21,7 +21,14 @@ export interface CliOptions {
   positional: string[];
 }
 
-const SPEC: Array<{ long: string; short?: string; key: keyof CliOptions; takeValue?: boolean; type: 'bool' | 'string' }> = [
+// 单一事实源：CLI flag 规范同时驱动解析器与 V3 兼容清单（src/compat/commandSurface.ts）
+export const CLI_FLAG_SPEC: ReadonlyArray<{
+  long: string;
+  short?: string;
+  key: keyof CliOptions;
+  takeValue?: boolean;
+  type: 'bool' | 'string';
+}> = [
   { long: '--prompt', short: '-p', key: 'prompt', takeValue: true, type: 'string' },
   { long: '--json', key: 'json', type: 'bool' },
   { long: '--wire', key: 'wire', type: 'bool' },
@@ -35,6 +42,8 @@ const SPEC: Array<{ long: string; short?: string; key: keyof CliOptions; takeVal
   { long: '--ephemeral', key: 'ephemeral', type: 'bool' },
   { long: '--output-schema', key: 'outputSchema', takeValue: true, type: 'string' },
 ];
+
+const SPEC = CLI_FLAG_SPEC;
 
 export function parseArgs(argv: string[]): CliOptions {
   const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, port: null, ephemeral: false, outputSchema: null, positional: [] };

@@ -14,7 +14,7 @@ describe('主题（自研明暗双主题）', () => {
   it('DARK/LIGHT 主题颜色键齐全', () => {
     for (const t of [DARK_THEME, LIGHT_THEME]) {
       for (const k of ['text', 'muted', 'border', 'accent', 'ok', 'warn', 'error', 'userBg']) {
-        expect(typeof t.color[k]).toBe('string');
+        expect(typeof (t.color as unknown as Record<string, string>)[k]).toBe('string');
       }
     }
   });
@@ -26,15 +26,15 @@ describe('主题（自研明暗双主题）', () => {
 describe('消息行渲染（V3 MessageLine）', () => {
   const t = DEFAULT_THEME;
   it('用户消息可见', () => {
-    const { lastFrame } = render(<MessageLine cols={80} msg={{ id: '1', role: 'user', text: '你好' }} t={t} />);
+    const { lastFrame } = render(<MessageLine cols={80} msg={{ id: '1', role: 'user', text: '你好' } as any} t={t} />);
     expect(lastFrame()).toContain('你好');
   });
   it('助手消息可见', () => {
-    const { lastFrame } = render(<MessageLine cols={80} msg={{ id: '2', role: 'assistant', text: '收到' }} t={t} />);
+    const { lastFrame } = render(<MessageLine cols={80} msg={{ id: '2', role: 'assistant', text: '收到' } as any} t={t} />);
     expect(lastFrame()).toContain('收到');
   });
   it('错误消息可见', () => {
-    const { lastFrame } = render(<MessageLine cols={80} msg={{ id: '3', role: 'system', text: '出错了' }} t={t} />);
+    const { lastFrame } = render(<MessageLine cols={80} msg={{ id: '3', role: 'system', text: '出错了' } as any} t={t} />);
     expect(lastFrame()).toContain('出错了');
   });
 });

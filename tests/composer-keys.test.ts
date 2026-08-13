@@ -43,37 +43,37 @@ describe('handleComposerKey', () => {
     expect(down.next.value).toBe('b');
   });
   it('字符输入：插入光标处', () => {
-    const r = handleComposerKey({ value: 'ac', cursor: 1, history: [], hIndex: -1 }, { input: 'b' });
+    const r = handleComposerKey({ value: 'ac', cursor: 1, history: [], hIndex: -1, suggestSel: 0 }, { input: 'b' });
     expect(r.next.value).toBe('abc');
     expect(r.next.cursor).toBe(2);
   });
   it('粘贴多字符整体插入（ink 一次性回调）', () => {
-    const r = handleComposerKey({ value: 'a', cursor: 1, history: [], hIndex: -1 }, { input: 'hello 世界' });
+    const r = handleComposerKey({ value: 'a', cursor: 1, history: [], hIndex: -1, suggestSel: 0 }, { input: 'hello 世界' });
     expect(r.next.value).toBe('ahello 世界');
     expect(r.next.cursor).toBe(9); // 1 + 'hello 世界'.length(8)
   });
   it('控制组合键（Ctrl+C 等）不输入', () => {
-    const r = handleComposerKey({ value: 'a', cursor: 1, history: [], hIndex: -1 }, { input: 'c', ctrl: true });
+    const r = handleComposerKey({ value: 'a', cursor: 1, history: [], hIndex: -1, suggestSel: 0 }, { input: 'c', ctrl: true });
     expect(r.next.value).toBe('a');
     expect(r.action.type).toBe('none');
   });
   it('Backspace 删除光标前字符', () => {
-    const r = handleComposerKey({ value: 'abc', cursor: 2, history: [], hIndex: -1 }, { backspace: true });
+    const r = handleComposerKey({ value: 'abc', cursor: 2, history: [], hIndex: -1, suggestSel: 0 }, { backspace: true });
     expect(r.next.value).toBe('ac');
     expect(r.next.cursor).toBe(1);
   });
   it('Backspace 在行首不删除', () => {
-    const r = handleComposerKey({ value: 'abc', cursor: 0, history: [], hIndex: -1 }, { backspace: true });
+    const r = handleComposerKey({ value: 'abc', cursor: 0, history: [], hIndex: -1, suggestSel: 0 }, { backspace: true });
     expect(r.next.value).toBe('abc');
     expect(r.action.type).toBe('none');
   });
   it('Delete 删除光标处字符', () => {
-    const r = handleComposerKey({ value: 'abc', cursor: 1, history: [], hIndex: -1 }, { delete: true });
+    const r = handleComposerKey({ value: 'abc', cursor: 1, history: [], hIndex: -1, suggestSel: 0 }, { delete: true });
     expect(r.next.value).toBe('ac');
     expect(r.next.cursor).toBe(1);
   });
   it('←→ 光标移动（边界钳制）', () => {
-    const s = { value: 'ab', cursor: 1, history: [], hIndex: -1 };
+    const s = { value: 'ab', cursor: 1, history: [], hIndex: -1, suggestSel: 0 };
     expect(handleComposerKey(s, { leftArrow: true }).next.cursor).toBe(0);
     expect(handleComposerKey({ ...s, cursor: 0 }, { leftArrow: true }).next.cursor).toBe(0);
     expect(handleComposerKey(s, { rightArrow: true }).next.cursor).toBe(2);

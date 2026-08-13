@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { estimateMessagesTokens, compactMessages, createMemory } from '../src/kernel/memory.js';
+import { estimateMessagesTokens, compactMessages, createMemory, type MemMsg } from '../src/kernel/memory.js';
 import { openDB, closeDB } from '../src/store/db.js';
 import { createEventBus } from '../src/kernel/events.js';
 import { curatorConfigFrom, readCuratorState, writeCuratorState, maybeRunCurator } from '../src/kernel/curator.js';
@@ -20,7 +20,7 @@ afterEach(() => {
 
 describe('自动压缩（内存消息）', () => {
   it('estimateMessagesTokens 估算消息序列', () => {
-    const msgs = [
+    const msgs: MemMsg[] = [
       { role: 'user', content: '你好' },
       { role: 'assistant', content: '世界' },
     ];
@@ -29,7 +29,7 @@ describe('自动压缩（内存消息）', () => {
     expect(estimateMessagesTokens([])).toBe(0);
   });
   it('compactMessages LLM 摘要：保头尾 + 摘要', async () => {
-    const msgs = Array.from({ length: 20 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `消息${i}` }));
+    const msgs: MemMsg[] = Array.from({ length: 20 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `消息${i}` }));
     const out = await compactMessages(msgs, async () => '中间内容摘要');
     expect(out[0]!.content).toBe('消息0');
     expect(out[1]!.content).toBe('消息1');
@@ -39,13 +39,13 @@ describe('自动压缩（内存消息）', () => {
     expect(out.length).toBeLessThan(msgs.length);
   });
   it('compactMessages 摘要失败降级为确定性截断（不抛错）', async () => {
-    const msgs = Array.from({ length: 12 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `消息${i}` }));
+    const msgs: MemMsg[] = Array.from({ length: 12 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `消息${i}` }));
     const out = await compactMessages(msgs, async () => { throw new Error('模拟失败'); });
     expect(out.length).toBeGreaterThan(0);
     expect(out[0]!.content).toBe('消息0');
   });
   it('短消息序列不压缩', async () => {
-    const msgs = Array.from({ length: 6 }, (_, i) => ({ role: 'user', content: `m${i}` }));
+    const msgs: MemMsg[] = Array.from({ length: 6 }, (_, i) => ({ role: 'user', content: `m${i}` }));
     const out = await compactMessages(msgs, async () => 'x');
     expect(out.length).toBe(6);
   });

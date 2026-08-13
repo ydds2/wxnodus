@@ -31,7 +31,7 @@ describe('handleMouseEvent right-click selection behavior', () => {
     startSelection(app.props.selection, 0, 0)
     updateSelection(app.props.selection, 4, 0)
 
-    handleMouseEvent(app, { action: 'press', button: 2, col: 3, kind: 'mouse', row: 1 })
+    handleMouseEvent(app, { action: 'press', button: 2, col: 3, kind: 'mouse', row: 1, sequence: '' })
     await Promise.resolve()
 
     expect(app.props.onCopySelectionNoClear).toHaveBeenCalledOnce()
@@ -79,7 +79,7 @@ describe('handleMouseEvent right-click selection behavior', () => {
     startSelection(app.props.selection, 0, 0)
     updateSelection(app.props.selection, 4, 0)
 
-    handleMouseEvent(app, { action: 'press', button: 2, col: 3, kind: 'mouse', row: 1 })
+    handleMouseEvent(app, { action: 'press', button: 2, col: 3, kind: 'mouse', row: 1, sequence: '' })
     await Promise.resolve()
 
     expect(app.props.onCopySelectionNoClear).toHaveBeenCalledOnce()
@@ -93,7 +93,7 @@ describe('handleMouseEvent right-click selection behavior', () => {
     startSelection(app.props.selection, 0, 0)
     updateSelection(app.props.selection, 4, 0)
 
-    handleMouseEvent(app, { action: 'press', button: 2, col: 3, kind: 'mouse', row: 1 })
+    handleMouseEvent(app, { action: 'press', button: 2, col: 3, kind: 'mouse', row: 1, sequence: '' })
     await Promise.resolve()
 
     expect(app.props.onCopySelectionNoClear).not.toHaveBeenCalled()
@@ -106,7 +106,7 @@ describe('handleMouseEvent right-click selection behavior', () => {
     startSelection(app.props.selection, 0, 0)
     updateSelection(app.props.selection, 4, 0)
 
-    handleMouseEvent(app, { action: 'press', button: 0x20 | 2, col: 3, kind: 'mouse', row: 1 })
+    handleMouseEvent(app, { action: 'press', button: 0x20 | 2, col: 3, kind: 'mouse', row: 1, sequence: '' })
 
     expect(app.props.onCopySelectionNoClear).not.toHaveBeenCalled()
     expect(app.props.onMouseDownAt).not.toHaveBeenCalled()
@@ -115,7 +115,7 @@ describe('handleMouseEvent right-click selection behavior', () => {
   it('still dispatches right-click handlers when no text is selected', () => {
     const app = makeApp()
 
-    handleMouseEvent(app, { action: 'press', button: 2, col: 3, kind: 'mouse', row: 1 })
+    handleMouseEvent(app, { action: 'press', button: 2, col: 3, kind: 'mouse', row: 1, sequence: '' })
 
     expect(app.props.onCopySelectionNoClear).not.toHaveBeenCalled()
     expect(app.props.onMouseDownAt).toHaveBeenCalledWith(2, 0, 2)

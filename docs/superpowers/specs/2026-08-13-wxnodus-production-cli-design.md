@@ -1,6 +1,6 @@
 # WxNodus V4 生产级 CLI 系统设计规范
 
-- 状态：设计规范已完成自审，待用户书面复核
+- 状态：用户已书面批准，进入分 Wave 实施
 - 日期：2026-08-13
 - 迁移代号：V4 Strangler Migration
 - 适用仓库：`WxNodusV3CLI`
@@ -22,7 +22,7 @@ V4 不以“模型输出了答案”作为完成，不以“工具返回了字�
 用户已于 2026-08-13 明确批准以下基线：
 
 1. 采用兼容演进式 V4，不进行一次性清洁重写。
-2. Windows 10/11 x64 为一级生产平台；Linux/macOS 为核心能力二级平台。
+2. Windows 11 current production x64 为一级生产平台；Windows 10 22H2 仅进入 legacy compatibility matrix；Linux/macOS 为核心能力二级平台。
 3. 提供 Core、Standard、Full Local AI 三个安装档位。
 4. 移除“零下载、零运行时依赖、所有能力必须单文件”的限制。
 5. 保留本地优先、数据外发透明、可离线缓存、供应链可审计原则。
@@ -74,7 +74,7 @@ V4 必须交付以下能力：
 15. **R15 — Quality Control**：引入独立质量控制面，消除 false success。
 16. **R16 — Autonomy Control**：引入持久化自主控制面，限制预算、循环、并发、外部副作用和子代理传播。
 17. **R17 — Dependencies and Profiles**：使用成熟依赖、模型和可选二进制，提供 Core/Standard/Full Local AI 三档安装、CapabilityReport、checksum、SBOM、许可证和来源审计，并支持缓存和 air-gapped 安装。
-18. **R18 — Production Lifecycle**：提供 Windows 一级平台、Linux/macOS 二级平台的安装、升级、数据库/配置迁移、operational rollback 或明确的 forward-only recovery、卸载、诊断和发布验证。
+18. **R18 — Production Lifecycle**：提供 Windows 11 current production 一级平台、Windows 10 22H2 legacy compatibility matrix、Linux/macOS 二级平台的安装、升级、数据库/配置迁移、operational rollback 或明确的 forward-only recovery、卸载、诊断和发布验证。
 19. **R19 — Blueprint Principles**：落实已重新定义的 FDR、单核双壳接口、ComponentForge 和“无证据不得完成”，不继承零下载/零依赖限制。
 20. **R20 — Chinese Completion Report**：最终用中文报告实际完成证据、失败、阻塞和未验证项。
 
@@ -134,8 +134,8 @@ V4 必须交付以下能力：
 
 ### 7.1 一级生产平台
 
-- Windows 10/11 x64
-- Node.js 22+
+- Windows 11 current production x64（仍在 Microsoft 服务期的 GA Channel 版本）
+- Node.js `^22.22.2 || ^24.15.0 || >=26.0.0`
 - PowerShell
 - Windows UI Automation
 - robotjs / node-screenshots
@@ -144,9 +144,9 @@ V4 必须交付以下能力：
 - whisper.cpp
 - Windows SAPI
 
-Windows 一级能力必须在真实 Windows 环境完成集成验证，mock 只能作为前置测试。
+Windows 一级能力必须在真实 Windows 11 current production 环境完成集成验证，mock 只能作为前置测试。产品仍保持 Windows 本地优先；`engines.node`、安装器、CI、CapabilityReport、文档和发布产物必须使用同一 Node 支持表达式，不得另设 release tooling 范围。
 
-### 7.2 二级平台
+### 7.2 二级与遗留兼容平台
 
 Linux 和 macOS 必须支持：
 
@@ -161,6 +161,8 @@ Linux 和 macOS 必须支持：
 
 Windows 专属能力通过 CapabilityRegistry 返回 `unavailable` 或声明的降级状态，不得返回假成功。
 
+Windows 10 22H2 已于 2025-10-14 结束支持，且当前 Playwright 官方系统要求从 Windows 11 起；因此 Windows 10 只作为 non-GA 的 legacy compatibility matrix，记录 best-effort 构建、CLI/数据迁移和不依赖 Playwright 的兼容结果。其失败不降低 Windows 11 Tier 1 门，不得将 Windows 10 宣称为当前生产支持平台，也不得以替代浏览器运行时伪造 Playwright 官方支持。
+
 ### 7.3 安装档位
 
 #### Core
@@ -170,18 +172,21 @@ Windows 专属能力通过 CapabilityRegistry 返回 `unavailable` 或声明的�
 - Session、Commands、Permissions、Hooks
 - MCP/Skill 基础支持
 - 不自动下载本地模型
+- SQLite/FTS Memory、Plugin runtime、PTY、完整 Verify/Evidence 和 Browser DOM automation 均为 Optional；缺失时必须按 canonical 表诚实降级
 
 #### Standard
 
-- SQLite/vector memory
+- Core 全部 Required 能力
+- SQLite/FTS Memory
 - PTY
-- Browser automation
+- Browser DOM automation
 - Plugin runtime
 - 完整 Build/Verify/Evidence
-- Windows UIA、robotjs、node-screenshots、SAPI 和 Computer Use 驱动为 Required
+- Windows UIA、robotjs、node-screenshots、SAPI 和 Computer Use 驱动在 Windows 为 Required
 
 #### Full Local AI
 
+- Standard 全部 Required 能力
 - embedding 模型
 - whisper.cpp 和语音模型
 - 本地 LLM
@@ -192,18 +197,20 @@ Windows 专属能力通过 CapabilityRegistry 返回 `unavailable` 或声明的�
 
 ### 7.4 Capability × Profile × Platform 合同
 
-| 能力 | Windows Core | Windows Standard | Windows Full Local AI | Linux/macOS Core | Linux/macOS Standard | Linux/macOS Full Local AI |
+下表是 profile × platform 唯一 canonical 合同；Wave、安装器、CapabilityReport、测试和发布门只能引用本表，不得在别处把 Optional 提升为 Required 或把 Required 降为 Optional。
+
+| 能力 | Windows 11 Core | Windows 11 Standard | Windows 11 Full Local AI | Linux/macOS Core | Linux/macOS Standard | Linux/macOS Full Local AI |
 |---|---|---|---|---|---|---|
 | CLI、Session、Commands、Permissions、Hooks、Gateway | Required | Required | Required | Required | Required | Required |
 | MCP client/server、Skills、Build 基础链 | Required | Required | Required | Required | Required | Required |
 | SQLite/FTS Memory、Plugin runtime、PTY、完整 Verify/Evidence | Optional | Required | Required | Optional | Required | Required |
 | Browser DOM automation | Optional | Required | Required | Optional | Required | Required |
-| UIA、robotjs、node-screenshots、SAPI | Unavailable | Required | Required | Unavailable | Unavailable | Unavailable |
+| UIA、robotjs、node-screenshots、SAPI、Computer Use | Unavailable | Required | Required | Unavailable | Unavailable | Unavailable |
 | embedding/vector 混合检索 | Unavailable | Optional | Required | Unavailable | Optional | Required |
 | 本地 LLM、Voice transcription、Vision models | Unavailable | Optional | Required | Unavailable | Optional | Required（受平台模型支持约束） |
 | air-gapped bundle | Optional | Optional | Required | Optional | Optional | Required |
 
-Required 能力缺失必须阻断对应档位发布；Optional 能力缺失必须诚实降级；Unavailable 能力被调用必须返回稳定错误码。Profile 安装器不得把上级档位能力暗示为下级档位已具备。
+Required 能力缺失必须阻断对应档位发布；Optional 能力可以安装并验证，但缺失时必须诚实降级；Unavailable 能力被调用必须返回稳定错误码。Profile 安装器不得把上级档位能力暗示为下级档位已具备。Wave 4 的“完整发布”是指完整执行本表，而不是把 Windows Core 的 Optional 能力改为 Required。Windows 10 22H2 不进入此 canonical GA 表，只按第 7.2 节 legacy compatibility matrix 报告。
 
 ## 8. 核心设计原则
 
@@ -533,22 +540,27 @@ agent:<agent>:<tool>
 
 ### 13.2 MCP
 
-V4 MCP client/server 分阶段支持：
+V4 MCP modern 基线固定为 `2026-07-28`。该基线是无状态、按请求自包含的 JSON-RPC 协议：server 必须实现 `server/discover`；每个请求的 `_meta` 必须携带 `io.modelcontextprotocol/protocolVersion` 和 `io.modelcontextprotocol/clientCapabilities`，不得从连接、进程或先前请求推断会话、身份、版本或能力。modern 路径没有 `initialize` 握手或 MCP session 语义；跨请求状态只能用每次显式传递的 task/thread/application handle 标识。
+
+MCP `2025-11-25` 及更早版本属于 legacy。`initialize`、initialized notification、stateful connection/session 及相关版本协商只能封装在独立 compat adapter，必须与 modern application/domain path 隔离；modern client 对 stdio 先用 `server/discover` 探测，只有确认 legacy 后才进入 compat adapter。不得让 legacy `initialize` 成为 modern server、Forge 模板或 GA 核心依赖。
+
+V4 MCP client/server 的 P0 支持范围为：
 
 - Tools
 - Resources
 - Prompts
-- Notifications
-- Elicitation
-- Tasks
+- subscribe/notify subscriptions
+- Form Elicitation；不得用于密码、API key、access token 或支付凭证
 - stdio
 - Streamable HTTP
-- OAuth adapter
-- capability negotiation
+- HTTP OAuth 2.1 adapter、Protected Resource Metadata/authorization-server discovery、PKCE、resource/audience binding 和 bearer token validation
+- `server/discover`、per-request capability negotiation 和 modern `_meta`
 
-所有 HTTP MCP URL 和 redirect 必须通过 SSRF policy。项目配置 round-trip 不得丢失 transport 字段。
+上述 P0 能力必须在适用 client/server 角色和声明的 profile/platform 上通过正反 contract test；没有声明的能力不得被假设存在。MCP Tasks 是独立 **Preview extension**，只能显式 opt-in、capability-negotiated 并有 core synchronous/产品自有 TaskRunner fallback；它不得成为任一 GA Required AcceptanceCriterion、Build/Verify/CompletionGate、取消语义或互操作性的唯一依赖。Tasks 支持缺失时必须降级，不得阻断不依赖 Tasks 的 GA 核心流程。
 
-WxNodus 自身提供 MCP Server，向外暴露经权限控制的 build、verify、evidence、memory、forge、browser、computer 和 session 能力。
+所有 HTTP MCP URL、authorization metadata endpoint 和 redirect 必须通过 SSRF policy。项目配置 round-trip 不得丢失 transport 或 protocol-era 字段。
+
+WxNodus 自身提供 MCP Server，向外暴露经权限控制的 build、verify、evidence、memory、forge、browser、computer 和 session 应用能力；这里的 `session` 是 WxNodus 应用实体，不得映射为 modern MCP transport/session 状态。
 
 ### 13.3 Skills
 
@@ -654,7 +666,7 @@ Maker Agent
 - 能力、权限、外部依赖或必需审批不可用：`blocked`。
 - 用户或上游取消：`cancelled`。
 
-Independent Reviewer 必须与 Maker 使用不同执行身份和独立上下文，不得复用 Maker 的未验证自述；低影响确定性任务可以由独立 verifier 组合代替第二模型，但仍不得由 Maker 自判。`OperationResult.ok` 只表示某次操作成功，不得隐含目标完成。
+Independent Reviewer 必须与 Maker 使用不同执行身份、凭证和独立上下文，不得复用 Maker 的未验证自述。Reviewer attestation 必须绑定当前 `artifactHash`、`environmentSnapshotId`、`policySnapshotId`、acceptance criteria/result digest，并包含 reviewer identity、issuer、签名算法与 key ID/certificate reference、nonce、签发时间、有效期/最大 freshness window 和单次使用/消费状态；CompletionGate 必须验证签名与 issuer/key trust policy、freshness、nonce 唯一性及 replay ledger，过期、重复、撤销、Maker 同身份或绑定不一致一律为 `inconclusive` 或失败而不得通过。低影响确定性任务可以由独立 verifier 组合代替第二模型，但该组合须产生同等可验证 attestation，仍不得由 Maker 自判。`OperationResult.ok` 只表示某次操作成功，不得隐含目标完成。
 
 ### 15.2 持久化实体
 
@@ -666,8 +678,9 @@ Independent Reviewer 必须与 Maker 使用不同执行身份和独立上下文�
 - Artifact
 - EvidenceRecord
 - CompletionDecision
+- ReviewerAttestation
 
-每个 CompletionDecision 必须可追溯到 acceptance criteria、verifier 结果、artifact hash 和 policy snapshot。
+每个 CompletionDecision 必须可追溯到 acceptance criteria、verifier 结果、当前 artifact hash、environment/policy snapshot 和已消费的 reviewer attestation。
 
 ### 15.3 Verifier Registry
 
@@ -706,6 +719,7 @@ Verifier 异常得到 `inconclusive`，不得转换为通过。
 - verifier 名称和版本
 - 时间与 correlation ID
 - decision lineage
+- reviewer attestation 引用、签名验证、issuer/key trust、nonce/freshness 和 replay 检查结果
 
 最终测试后必须重新生成 Evidence，再运行 CompletionGate。证据 hash 不得截断为弱指纹。
 
@@ -883,7 +897,7 @@ Observe
 
 GA 必须在代表性 Win32、WPF、UWP/WinUI 和 Electron 应用上验证 UIA/输入/截图；Browser DOM 单独覆盖 Chromium 页面。多显示器测试必须包含负坐标、不同缩放比和跨屏目标。
 
-普通用户进程不得自动控制提权窗口；Windows Secure Desktop、UAC consent desktop、登录/锁屏界面和受保护系统 UI 明确为 Unavailable。检测到完整性级别或 Secure Desktop 边界时必须停止并请求用户手动操作，不能降级为盲坐标点击。急停、高影响审批和每层 driver fallback 均必须有真实应用验收场景。
+普通用户进程不得自动控制提权窗口；Windows Secure Desktop、UAC consent desktop、登录/锁屏界面和受保护系统 UI 明确在自动化范围外且为 Unavailable，不属于 Windows 11 Tier 1 或 Windows 10 legacy matrix 的验收目标。检测到完整性级别或 Secure Desktop 边界时必须停止并请求用户手动操作，不能降级为盲坐标点击。急停、高影响审批和每层 driver fallback 均必须有真实应用验收场景。
 
 ## 20. 概念编译器与 Build Pipeline
 
@@ -957,20 +971,23 @@ Forge 采用正交状态而不是一条不可逆单链：
 
 ### 21.3 MCP 组件验证
 
-生成 MCP Server 后依次执行：
+生成 MCP Server 后按 modern `2026-07-28` 路径依次执行：
 
 1. build
 2. spawn
-3. initialize
-4. tools/list
-5. tools/call positive case
-6. tools/call negative case
-7. process shutdown
-8. install preview
-9. user approval
-10. config write
-11. ToolCatalog reload
-12. installed tool smoke test
+3. `server/discover`
+4. 校验每请求 `_meta`、版本和 client capabilities；验证同一连接交错无关请求时无隐式 session 污染
+5. `tools/list`、`resources/list`、`prompts/list` 与 subscriptions/Form Elicitation/OAuth 的适用 contract
+6. `tools/call` positive case
+7. `tools/call` negative case
+8. process shutdown
+9. install preview
+10. user approval
+11. config write
+12. ToolCatalog reload
+13. installed tool smoke test
+
+若组件显式声明 legacy 兼容，另由独立 compat adapter 对 `2025-11-25` 执行 `initialize`/session contract；该结果不得替代 modern 验证。Tasks Preview 只能作为非阻断扩展 contract，不能替代 P0 或产品 TaskRunner 验证。
 
 组件名称必须规范化并防止路径逃逸；目录只拼接一次。Command grammar 必须允许安全传入引用路径和 JSON。
 
@@ -1077,6 +1094,16 @@ ApprovalGrant 必须绑定 `actorId`、`sessionId`、`runId`、规范化的 effe
 - 支持缓存和离线安装
 - 对可执行文件显示信任边界
 - 下载失败时诚实降级
+
+### 24.4 发布证明边界
+
+以下三类证明不得混称为“已签名”或互相替代：
+
+1. **Sigstore bundle**：用于发布文件/离线包签名验证，保存 artifact digest、signature/DSSE、certificate 或 public-key reference、transparency-log/RFC 3161 verification material；Gate H 验证 subject digest、identity/issuer、签名、透明日志或时间戳和 trust root。
+2. **GitHub artifact attestation 与 SBOM attestation**：build provenance attestation 绑定 workflow 构建身份与 artifact subject/digest；SBOM attestation 另将 CycloneDX SBOM 作为独立 predicate 绑定同一发布 subject。普通 Actions artifact 上传、SBOM 文件存在或 Sigstore bundle 均不等于这两种 attestation。
+3. **npm publish provenance**：只对实际发布到 npm registry 的包，由受支持的 CI/trusted publishing 或 `npm publish --provenance` 生成并在 registry 验证。未发布 npm 包时状态必须为 `N/A (not published)`，不得宣称 npm provenance 已生成；`N/A` 不豁免适用的 Sigstore、GitHub artifact/SBOM attestation。
+
+每个 release artifact 必须在 manifest 中分别记录三类证明的 `verified | failed | N/A`、subject digest 和验证命令/证据；只有实际适用且 verified 的项才能用于 Gate F/H。CycloneDX SBOM 必须版本化并绑定最终 artifact，不能用源码依赖清单替代发布产物 SBOM。
 
 ## 25. 错误处理和可观测性
 
@@ -1261,7 +1288,7 @@ ToolExecutionPipeline、PDP、EffectJournal、BudgetLedger 和 CompletionGate �
 - S10 ComponentForge lifecycle
 - 遗留实现和 adapter 删除
 - S12 Build/Test/Distribution/Release Matrix
-- 三档安装、SBOM、签名、升级，以及 operational rollback 或预先声明并验证的 forward-only recovery
+- 三档安装、Sigstore bundle、GitHub artifact/SBOM attestation、适用时 npm publish provenance、升级，以及 operational rollback 或预先声明并验证的 forward-only recovery
 
 退出标准：组件生成到安装全链、clean install、upgrade、相应的 operational rollback 或 forward-only recovery 演练，以及 release evidence 通过。
 
@@ -1274,7 +1301,7 @@ Wave 0 至 Wave 3 只能作为 internal/canary migration increments；每波必�
 | R01 | Application Services、统一 Gateway | `src/bootstrap/`、`src/application/`、`src/protocol/` | 无 TUI 启动；UI 越层依赖应失败 | A/B/D；boundary test、headless E2E |
 | R02 | Session lifecycle、Forge SessionStart 模板 | session service、hook package、forge | generate/verify/approve/install/create/resume/disable/uninstall；每 session 重入 | B/D/G；事件和生命周期证据 |
 | R03 | Grammar、Registry、Command Forge 模板 | command service、forge | 引号/JSON/flag/register/reload/disable/uninstall；未知 flag | B/D/F/G；property 和 disposer tests |
-| R04 | MCP client/server、Forge lifecycle | extension/MCP adapters、forge | initialize/list/call/approve/install/reload/disable/uninstall；negative call/SSRF | B/D/F/G；protocol transcript |
+| R04 | MCP `2026-07-28` client/server、P0 primitives、Forge lifecycle 与独立 legacy compat adapter | extension/MCP adapters、forge | modern `server/discover`/per-request `_meta`/无 session、Tools/Resources/Prompts/subscriptions/Form Elicitation/OAuth、approve/install/reload/disable/uninstall；legacy `2025-11-25` initialize 仅 adapter；negative call/SSRF；Tasks Preview 缺失不阻断 core | B/D/F/G；modern/legacy 分离的 protocol transcript |
 | R05 | TaskTicket、worktree、Sub-agent Forge 模板 | autonomy/task runner、forge | generate/spawn/cancel/merge/recover/disable/uninstall；越权和取消竞争 | B/D/F/G；isolation、lineage、无新 effect |
 | R06 | sandboxed Plugin runtime、Plugin Forge 模板 | plugin infrastructure、forge | generate/approve/install/load/crash/reload/disable/uninstall；恶意逃逸 | B/D/F/G；sandbox 和资源清理证据 |
 | R07 | Driver layer、PDP、急停 | computer/browser adapters | DOM/UIA/OCR/坐标、多屏/DPI、急停、高影响审批；Secure Desktop 拒绝 | B/E/F/G；真实后置证据 |
@@ -1285,9 +1312,9 @@ Wave 0 至 Wave 3 只能作为 internal/canary migration increments；每波必�
 | R12 | CLI shell/protocol | `src/cli/`、`src/protocol/` | help/prompt/json/wire/serve；未知参数和 exit code | A/B/D/F；golden output、contract tests |
 | R13 | pre-bootstrap onboarding | config/bootstrap | clean TTY zh/en；non-TTY/help/version no write/no hang | B/D/G；双语言 snapshots |
 | R14 | PersonalizationService | config/application/TUI | 用户级/工作区级 set/restart/read/export/import/迁移；无效 schema | B/C/D/G；持久化读回 |
-| R15 | Verifier Registry、CompletionGate | quality domain | failed tool/test/tamper/missing/inconclusive；Maker 自述 | B/D/F/G；false-success regression |
+| R15 | Verifier Registry、CompletionGate、ReviewerAttestation | quality domain | failed tool/test/tamper/missing/inconclusive；Maker 自述；attestation 签名/issuer/key/nonce/freshness/replay/身份独立负例 | B/D/F/G；false-success 与 attestation regression |
 | R16 | Goal DAG、PDP、Budget、EffectJournal、ProgressDetector | autonomy domain | loop/cancel/recover/budget/approval replay；并发和 lineage | B/D/F/G；bounded execution evidence |
-| R17 | 三档安装器、CapabilityReport、供应链产物 | installer/capabilities/release | 每档 clean/offline install、缺失 Required/Optional/Unavailable、checksum/signature/license | A/B/F/H；lock、SBOM、license、bundle |
+| R17 | 三档安装器、CapabilityReport、供应链产物 | installer/capabilities/release | 每档 clean/offline install、缺失 Required/Optional/Unavailable、checksum/license；分别验证 Sigstore bundle、GitHub artifact+CycloneDX SBOM attestations、适用时 npm publish provenance，未发布 npm 为 N/A 且不得宣称 | A/B/F/H；lock、SBOM、license、bundle/attestation/provenance manifest |
 | R18 | Migration、distribution、diagnostics、recovery | migrations/scripts/release | Windows + Linux/macOS 构建；upgrade/write/rollback-or-forward-fix/re-upgrade/uninstall/diagnose | A/B/C/H/I；release matrix 和恢复报告 |
 | R19 | FDR、单核双壳接口、Forge、Evidence | architecture/quality/autonomy/forge | Observe/Execute/Verify/Govern/Evolve；无 evidence candidate | D/G；设计到实现映射和 CompletionDecision |
 | R20 | 中文交付报告 | release evidence | completion audit 包含失败、阻塞、未验证项 | G；中文报告及 Evidence IDs |
@@ -1303,7 +1330,7 @@ Wave 0 必须使用 Requirement ID 自动检查本矩阵的覆盖闭包；任一
 3. Contract：Gateway DTO、MCP、Plugin IPC、Verifier protocol。
 4. Integration：SQLite/FTS/vector、ProcessSupervisor、Tool pipeline、Build pipeline。
 5. E2E：CLI、Wire、HTTP、TUI、Forge。
-6. Real-platform：Windows Voice、UIA、robotjs、多显示器、SAPI。
+6. Real-platform：Windows 11 current production Voice、UIA、robotjs、多显示器、SAPI；Windows 10 22H2 仅运行 legacy matrix。
 7. Migration：旧配置和各 schema fixture。
 8. Security：SSRF、路径逃逸、权限绕过、凭证脱敏、证据篡改。
 9. Failure injection：worker crash、进程超时、下载中断、DB migration 失败、取消竞争。
@@ -1327,12 +1354,14 @@ npm test
 - offline model 无 API key 可达。
 - SessionStart 每逻辑 session 一次。
 - MCP 和 Plugin 工具同时存在且各自 reload 不互删。
+- MCP modern `server/discover`、每请求 `_meta`、无隐式 session；legacy initialize 只经过 compat adapter；P0 primitives/OAuth 完整且 Tasks Preview 缺失不阻断。
 - Memory KNN scope、索引更新/删除/重建。
 - Voice WAV header、转录取消、临时文件 retention。
 - Browser redirect SSRF、多 session context 隔离。
 - UIA 失败、坐标 fallback、postcondition mismatch。
 - Build 静态页面、业务写入、重启读回。
 - Evidence 重新计算和篡改检测。
+- Reviewer attestation 的 Maker 独立身份、签名、issuer/key、nonce、freshness、replay 和 artifact/environment/policy binding。
 - Goal verifier 异常为 inconclusive。
 - Agent task 取消后无新 effect。
 - Forge 路径规范化、protocol 和 behavior lifecycle。
@@ -1349,7 +1378,7 @@ TypeScript 编译、产物生成和 package boundary 检查通过。
 
 ### Gate C：Migration
 
-旧配置、SQLite 和扩展数据迁移成功；备份可验证；失败演练不损坏原数据。
+旧配置、SQLite 和扩展数据必须针对**当前 Wave 的候选 artifact digest/commit、迁移集合、schema/config version 和当期 V3 Compatibility Manifest**完成迁移；备份可验证；失败演练不损坏原数据。Gate C 证据必须绑定该 Wave 当前 artifact，前一 Wave、其他 commit 或未重建产物的 migration 结果不得复用。若当前 Wave 不修改 migration code/schema，也必须对当前 artifact 重跑当期适用的 smoke/fixture 与恢复检查，而不是沿用旧通过结论。
 
 ### Gate D：Functional
 
@@ -1357,19 +1386,19 @@ CLI、headless application、MCP、Build pipeline 和 Extension lifecycle 端到
 
 ### Gate E：Windows Real-platform
 
-Voice、Computer Use、UIA、Browser、SAPI 和急停在真实 Windows 环境通过。
+Voice、Computer Use、UIA、Browser、SAPI 和急停在真实 Windows 11 current production 环境通过；Windows 10 结果只记入 legacy compatibility matrix，不得替代 Gate E。
 
 ### Gate F：Security and Compliance
 
-权限绕过、SSRF、路径逃逸、日志脱敏、license、SBOM、checksum 和审计导出通过。
+权限绕过、SSRF、路径逃逸、日志脱敏、license、CycloneDX SBOM、checksum、Sigstore bundle、GitHub artifact/SBOM attestation、适用时 npm publish provenance 和审计导出通过；未发布 npm 包必须记录 `N/A (not published)`，不得宣称 provenance。
 
 ### Gate G：Evidence and Completion
 
-最终 artifact hash、验证输出、环境快照和 CompletionDecision 必须一致且可检测篡改。只有全部 Required AcceptanceCriterion 为当前 artifact/environment/policy snapshot 的 `passed`，并且独立复核通过，Gate G 才能通过；`failed`、`incomplete`、`inconclusive`、`blocked` 或 `cancelled` 中任一状态都不能通过 Gate G。
+最终 artifact hash、验证输出、环境快照、ReviewerAttestation 和 CompletionDecision 必须一致且可检测篡改。只有全部 Required AcceptanceCriterion 为当前 artifact/environment/policy snapshot 的 `passed`，并且 Maker 独立 reviewer attestation 的签名、issuer/key trust、nonce、freshness、replay 和绑定验证通过，Gate G 才能通过；`failed`、`incomplete`、`inconclusive`、`blocked` 或 `cancelled` 中任一状态都不能通过 Gate G。
 
 ### Gate H：Distribution
 
-按第 7.4 节覆盖三个安装档位的 clean install、offline/air-gapped install、CapabilityReport、package/binary/model checksum、签名与信任链、SBOM、license、upgrade、uninstall 和 diagnostics。Required 能力缺失或签名验证失败必须阻断。
+按第 7.4 节 canonical 表覆盖三个安装档位的 clean install、offline/air-gapped install、CapabilityReport、package/binary/model checksum、Sigstore bundle 与信任链、GitHub artifact/SBOM attestation、CycloneDX SBOM、license、适用时 npm publish provenance、upgrade、uninstall 和 diagnostics。Required 能力缺失或任一适用证明验证失败必须阻断；未发布 npm 包只能记 `N/A (not published)`，不得宣称 npm provenance，也不得影响其他适用证明。
 
 ### Gate I：Secondary Platforms
 
@@ -1379,13 +1408,13 @@ Linux 和 macOS 执行二级平台 required capability 的 build、automated tes
 
 | Wave | Channel | Required Gates | N/A 规则 |
 |---|---|---|---|
-| 0 | internal baseline | A、B（基线/缺陷测试）、C（备份恢复演练）、F（Policy Manifest） | 尚未迁移的功能门为 N/A，不得对外宣称 V4 能力 |
-| 1 | internal | A、B、C、D（可信内核范围）、F、G（内核 criteria） | Voice/Computer/Forge/Distribution 为 N/A 且入口不可达 |
-| 2 | canary | A、B、C、D（配置/扩展/Sub-agent）、F、G | E 与未交付的 S6-S10 为 N/A 且 capability 不得 enabled |
-| 3 | canary | A、B、C、D、E、F、G | GA distribution 仍为 N/A，禁止正式稳定版声明 |
-| 4 | GA candidate | A、B、C、D、E、F、G、H、I | 只有 profile/platform 合同明确为 Optional/Unavailable 的能力可 N/A |
+| 0 | internal baseline | A、B（基线/缺陷测试）、C*（备份恢复演练）、F（Policy Manifest） | 尚未迁移的功能门为 N/A，不得对外宣称 V4 能力 |
+| 1 | internal | A、B、C*、D（可信内核范围）、F、G（内核 criteria） | Voice/Computer/Forge/Distribution 为 N/A 且入口不可达 |
+| 2 | canary | A、B、C*、D（配置/扩展/Sub-agent）、F、G | E 与未交付的 S6-S10 为 N/A 且 capability 不得 enabled |
+| 3 | canary | A、B、C*、D、E、F、G | GA distribution 仍为 N/A，禁止正式稳定版声明 |
+| 4 | GA candidate | A、B、C*、D、E、F、G、H、I | 只有 profile/platform 合同明确为 Optional/Unavailable 的能力可 N/A |
 
-任一当期 Required Gate 失败，发布状态必须是 blocked 或 failed。N/A 必须有 Requirement ID、profile/platform 和不可达证据，不能用于跳过已承诺能力。
+- `C*` 表示每个 Wave 都必须按 Gate C 对**该 Wave 当前候选 artifact**重跑并生成不可复用的 digest-bound 证据，不是可继承的历史门。任一当期 Required Gate 失败，发布状态必须是 blocked 或 failed。N/A 必须有 Requirement ID、profile/platform 和不可达证据，不能用于跳过已承诺能力。
 
 ## 31. 迁移、兼容和回滚
 
@@ -1478,7 +1507,7 @@ Wave 0 必须生成并提交 V3 Compatibility Manifest，逐项枚举：
 4. 检查 `git status`、目标分支和最终 diff。
 5. 执行并保存 build、typecheck、全部测试套件结果。
 6. 验证测试发现范围，而不是只相信单个绿色汇总。
-7. 在真实 Windows 环境执行 Voice 和 Computer Use 验收。
+7. 在真实 Windows 11 current production 环境执行 Voice 和 Computer Use 验收，并将 Windows 10 22H2 结果单独记入 legacy compatibility matrix。
 8. 在全新数据目录执行中文与 English onboarding。
 9. 使用旧数据 fixture 执行 migration，并按迁移声明执行 operational rollback 演练或 forward-only recovery/forward-fix 演练，分别保存对应证据。
 10. 执行 MCP/Skill/Plugin/Forge 全生命周期。
@@ -1496,7 +1525,15 @@ Wave 0 必须生成并提交 V3 Compatibility Manifest，逐项枚举：
 - 没有用文档、计划、测试数量、manifest 或 elapsed effort 代替真实能力验证。
 - 用户未批准降低的生产要求没有被降级。
 
-## 34. 实施计划约束
+## 34. 官方来源附录
+
+- 查阅日期：2026-08-13；规范判断以对应 URL 的版本化正文或当日官方页面为准。
+- MCP modern `2026-07-28` 总规范、无状态/`_meta`、版本兼容、`server/discover`、Elicitation、Authorization 与 Tasks extension：<https://modelcontextprotocol.io/specification/2026-07-28>、<https://modelcontextprotocol.io/specification/2026-07-28/basic>、<https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning>、<https://modelcontextprotocol.io/specification/2026-07-28/server/discover>、<https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation>、<https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization>、<https://modelcontextprotocol.io/extensions/tasks/overview>；legacy：<https://modelcontextprotocol.io/specification/2025-11-25>。
+- Node release/support：<https://nodejs.org/en/about/previous-releases>。
+- Microsoft Windows 11 release information 与 Windows 10 lifecycle：<https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information>、<https://learn.microsoft.com/en-us/lifecycle/products/windows-10-home-and-pro>；Playwright system requirements：<https://playwright.dev/docs/intro#system-requirements>。
+- Sigstore bundle、CycloneDX、GitHub artifact/SBOM attestations、npm publish provenance：<https://docs.sigstore.dev/about/bundle/>、<https://cyclonedx.org/specification/overview/>、<https://docs.github.com/en/actions/concepts/security/artifact-attestations>、<https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations>、<https://docs.npmjs.com/generating-provenance-statements/>。
+
+## 35. 实施计划约束
 
 本规范批准后，详细实施计划必须：
 

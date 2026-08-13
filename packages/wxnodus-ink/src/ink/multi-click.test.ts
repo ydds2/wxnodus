@@ -41,8 +41,8 @@ const makeApp = () => {
 
 /** press + release at the same cell — a single complete click. */
 const click = (app: any, button = 0, col = 5, row = 2) => {
-  handleMouseEvent(app, { action: 'press', button, col, kind: 'mouse', row })
-  handleMouseEvent(app, { action: 'release', button, col, kind: 'mouse', row })
+  handleMouseEvent(app, { action: 'press', button, col, kind: 'mouse', row, sequence: '' })
+  handleMouseEvent(app, { action: 'release', button, col, kind: 'mouse', row, sequence: '' })
 }
 
 describe('modifiersFromButton — SGR 修饰键位映射', () => {

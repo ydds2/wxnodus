@@ -118,7 +118,8 @@ describe('agent.goal 事件映射（gateway）', () => {
 describe('kernel jobs 事件 → background.jobs 即时推送（A24 第四类修复）', () => {
   it('jobs.created/complete 触发 background.jobs 快照（不等 5s 轮询）', async () => {
     const bus = createEventBus(dir)
-    let jobs = [
+    type JobRow = { id: string; goal: string; status: string; kind: string; created_at: number; done_at: number | null; exit_code: number | null }
+    let jobs: JobRow[] = [
       { id: 'j1', goal: '跑测试', status: 'running', kind: 'agent', created_at: 1, done_at: null, exit_code: null },
     ]
     const gw = makeGateway({

@@ -1,0 +1,1 @@
+POLICY_OK:C:\Users\20164\Desktop\WxNodusV3CLI\docs\superpowers\manifests\v3-policy.json

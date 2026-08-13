@@ -9,13 +9,14 @@ import { mkdirSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
+import { runDbMigrationsTo } from '../migrations/db/runner.js';
 
 // ESM 下加载 CJS 扩展（sqlite-vec 为 CommonJS 包——require 在 ESM 不可用）
 const requireCjs = createRequire(import.meta.url);
 
 export type Db = InstanceType<typeof Database>;
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 4;
 
 // 中文 bigram 预处理：FTS5 unicode61 无法切中文词——按 2 字滑窗生成 bigram 空格串
 // 例：「黑洞引擎」→「黑洞 洞引 引擎」——检索「黑洞」可命中；英文/数字连续段保留为单词
@@ -203,32 +204,10 @@ export function openDB(dataDir: string): Db {
     // vec 不可用：降级
   }
 
-  // 幂等迁移 + schema_version
-  // V2：messages.salience（记忆置顶/淡化）——旧库无此列，ALTER 补列（幂等：已存在即跳过）
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN salience REAL NOT NULL DEFAULT 1.0`);
-  } catch {
-    // 列已存在（新库建表已含）——忽略
-  }
-  // V3（架构）：messages.run_no——用户轮次（压缩/undo 跨压缩寻址用；旧库补列默认 0，
-  // 新消息写入时递增）
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN run_no INTEGER NOT NULL DEFAULT 0`);
-  } catch {
-    // 列已存在——忽略
-  }
-  // V4（架构）：messages.parts——消息分段结构（OpenCode parts 模型渐进对齐）：
-  // JSON 数组 [{kind:'text'|'tool'|'reasoning', ...}]——工具输出截断/错误/推理分 part；
-  // 空（NULL）表示整段即 content（旧数据兼容，查询主源不变）
-  try {
-    db.exec(`ALTER TABLE messages ADD COLUMN parts TEXT`);
-  } catch {
-    // 列已存在——忽略
-  }
-  const ver = db.prepare(`SELECT value FROM settings WHERE key='schema_version'`).get() as any;
-  if (!ver) {
-    db.prepare(`INSERT INTO settings (key, value) VALUES ('schema_version', ?)`).run(String(SCHEMA_VERSION));
-  }
+  // 迁移基线（W0-06）：registry 驱动 V2 salience / V3 run_no / V4 parts 列演进
+  // 每条迁移：checksum 验证 → SQLite 一致备份 → 事务内 expand + 版本提升 + history=applied；
+  // 失败 → 事务回滚（版本不提升）+ history=failed，异常向上抛出（不再吞掉）
+  runDbMigrationsTo(db, dbFile, SCHEMA_VERSION);
 
   return db;
 }

@@ -10,31 +10,75 @@
 //  硬红线：任何模式不可绕过——扩展自 hermes 的 HARDLINE/DANGEROUS_PATTERNS 结构
 import { join } from 'node:path';
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import type { NormativeRedlineCategory, PolicyMatcher } from '../policy/schema.js';
 
 export type Mode = 'smart' | 'auto' | 'manual' | 'plan' | 'yolo' | 'goal';
 export type Verdict = 'approve' | 'reject' | 'confirm' | 'plan';
 
 export interface Redline { pattern: RegExp; desc: string }
 
-// 硬红线清单（任何模式不可绕过——安全底线；修复 F13：扩展覆盖）
-export const HARD_REDLINES: Redline[] = [
-  // 文件系统破坏（安全审查修复：~ 后跟 / 的变体、正斜杠系统盘）
-  { pattern: /rm\s+-rf\s+\/|rm\s+-rf\s+[a-zA-Z]:[\\/]|rm\s+-rf\s+~(?=[\\/]|\s|$)|rm\s+-rf\s+~\/*/i, desc: '删除根目录/家目录' },
-  { pattern: /rm\s+-rf\s+(?:\$HOME|%USERPROFILE%|\/home\/|\/root)(?:\s|$)/i, desc: '删除家目录（变量变体）' },
-  { pattern: /\bformat\s+[a-zA-Z]:/i, desc: '格式化磁盘' },
-  { pattern: /\bdiskpart\b/i, desc: '磁盘分区操作' },
-  { pattern: /\bmkfs(?:\s|$)/i, desc: '创建文件系统' },
-  { pattern: /\bdd\s+.*\bof=\/dev\/(?:sd|nvme|hd)/i, desc: 'dd 写入裸设备' },
-  { pattern: /del\s+\/f\s+\/s\s+[a-zA-Z]:[\\/]|Remove-Item\s+-Recurse\s+-Force\s+[a-zA-Z]:[\\/]/i, desc: '递归删除系统盘' },
-  // 系统/进程破坏
-  { pattern: /\breg\s+delete\s+HKLM/i, desc: '修改系统注册表' },
-  { pattern: /\b(shutdown|reboot|poweroff|halt|init\s+0|telinit\s+0|systemctl\s+(poweroff|reboot))\b/i, desc: '关机/重启' },
-  { pattern: /\bkill\s+-9?\s+-1\b|:\(\)\s*\{\s*:\|:\s*&\s*\}\s*;/i, desc: 'kill -1 / fork bomb' },
-  // 凭据/注入
-  { pattern: /\biex\b|Invoke-Expression|Format-Volume/i, desc: 'PowerShell 注入执行' },
-  { pattern: /\|\s*(sh|bash|pwsh|powershell)\b/i, desc: '管道执行' },
-  { pattern: /git\s+push\s+--force(?:\s|$)/i, desc: '强制推送（--force-with-lease 不误伤）' },
+/** 规范性规则描述符：稳定 id/version/category——Policy Manifest 与运行时 HARD_REDLINES 的单一事实源 */
+export interface PolicyRuleSource {
+  id: string;
+  version: number;
+  kind: 'hard_redline' | 'sensitive_write' | 'command_redline';
+  category: NormativeRedlineCategory;
+  descriptionKey: string;
+  source: string;
+  overrideable: false;
+  requiresUserPresence: boolean;
+  matcher: PolicyMatcher;
+}
+
+const POLICY_RULE_SOURCES: readonly PolicyRuleSource[] = [
+  // ── root_home_recursive_destruction ──
+  { id: 'redline.rm-rf-root-home', version: 1, kind: 'hard_redline', category: 'root_home_recursive_destruction', descriptionKey: 'policy.redline.rm_rf_root_home', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: 'rm\\s+-rf\\s+\\/|rm\\s+-rf\\s+[a-zA-Z]:[\\\\/]|rm\\s+-rf\\s+~(?=[\\\\/]|\\s|$)|rm\\s+-rf\\s+~\\/*', flags: 'i' } },
+  { id: 'redline.rm-rf-home-env', version: 1, kind: 'hard_redline', category: 'root_home_recursive_destruction', descriptionKey: 'policy.redline.rm_rf_home_env', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: 'rm\\s+-rf\\s+(?:\\$HOME|%USERPROFILE%|\\/home\\/|\\/root)(?:\\s|$)', flags: 'i' } },
+  { id: 'redline.del-recursive-system-drive', version: 1, kind: 'hard_redline', category: 'root_home_recursive_destruction', descriptionKey: 'policy.redline.del_recursive_system_drive', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: 'del\\s+\\/f\\s+\\/s\\s+[a-zA-Z]:[\\\\/]|Remove-Item\\s+-Recurse\\s+-Force\\s+[a-zA-Z]:[\\\\/]', flags: 'i' } },
+  // ── disk_format_partition_raw_write ──
+  { id: 'redline.format-drive', version: 1, kind: 'hard_redline', category: 'disk_format_partition_raw_write', descriptionKey: 'policy.redline.format_drive', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: '\\bformat\\s+[a-zA-Z]:', flags: 'i' } },
+  { id: 'redline.diskpart', version: 1, kind: 'hard_redline', category: 'disk_format_partition_raw_write', descriptionKey: 'policy.redline.diskpart', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: '\\bdiskpart\\b', flags: 'i' } },
+  { id: 'redline.mkfs', version: 1, kind: 'hard_redline', category: 'disk_format_partition_raw_write', descriptionKey: 'policy.redline.mkfs', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: '\\bmkfs(?:\\s|$)', flags: 'i' } },
+  { id: 'redline.dd-raw-device', version: 1, kind: 'hard_redline', category: 'disk_format_partition_raw_write', descriptionKey: 'policy.redline.dd_raw_device', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: '\\bdd\\s+.*\\bof=\\/dev\\/(?:sd|nvme|hd)', flags: 'i' } },
+  // ── shutdown_restart_fork_bomb ──
+  { id: 'redline.shutdown-reboot', version: 1, kind: 'hard_redline', category: 'shutdown_restart_fork_bomb', descriptionKey: 'policy.redline.shutdown_reboot', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: '\\b(shutdown|reboot|poweroff|halt|init\\s+0|telinit\\s+0|systemctl\\s+(poweroff|reboot))\\b', flags: 'i' } },
+  { id: 'redline.kill-1-fork-bomb', version: 1, kind: 'hard_redline', category: 'shutdown_restart_fork_bomb', descriptionKey: 'policy.redline.kill_1_fork_bomb', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: '\\bkill\\s+-9?\\s+-1\\b|:\\(\\)\\s*\\{\\s*:\\|:\\s*&\\s*\\}\\s*;', flags: 'i' } },
+  // ── system_registry_destruction ──
+  { id: 'redline.reg-delete-hklm', version: 1, kind: 'hard_redline', category: 'system_registry_destruction', descriptionKey: 'policy.redline.reg_delete_hklm', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: '\\breg\\s+delete\\s+HKLM', flags: 'i' } },
+  // ── interpreter_pipe_injection ──
+  { id: 'redline.iex-powershell', version: 1, kind: 'hard_redline', category: 'interpreter_pipe_injection', descriptionKey: 'policy.redline.iex_powershell', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: '\\biex\\b|Invoke-Expression|Format-Volume', flags: 'i' } },
+  { id: 'redline.pipe-to-shell', version: 1, kind: 'hard_redline', category: 'interpreter_pipe_injection', descriptionKey: 'policy.redline.pipe_to_shell', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: '\\|\\s*(sh|bash|pwsh|powershell)\\b', flags: 'i' } },
+  // ── remote_history_force_push ──
+  { id: 'redline.git-push-force', version: 1, kind: 'hard_redline', category: 'remote_history_force_push', descriptionKey: 'policy.redline.git_push_force', source: 'permissions.ts#HARD_REDLINES', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: 'git\\s+push\\s+--force(?:\\s|$)', flags: 'i' } },
+  // ── credential_secret_persistence_leak ──
+  { id: 'redline.sensitive-write', version: 1, kind: 'sensitive_write', category: 'credential_secret_persistence_leak', descriptionKey: 'policy.redline.sensitive_write', source: 'permissions.ts#SENSITIVE_WRITE', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: '(^|[\\\\/])(\\.bashrc|\\.zshrc|\\.profile|\\.bash_profile|\\.ssh[\\\\/].*|\\.env|\\.env\\.local|id_rsa|id_ed25519|authorized_keys|known_hosts|\\.git[\\\\/]config|\\.npmrc|\\.pypirc|settings\\.json(?:\\.tmp)?|permissions\\.json(?:\\.tmp)?)(\\s|$)', flags: 'i' } },
+  { id: 'redline.credential-file-write', version: 1, kind: 'sensitive_write', category: 'credential_secret_persistence_leak', descriptionKey: 'policy.redline.credential_file_write', source: 'permissions.ts#CREDENTIAL_WRITE', overrideable: false, requiresUserPresence: false, matcher: { type: 'regex', value: '(^|[\\\\/])(.*\\.(pem|key|p12|pfx|jks)|credentials(\\.[a-z]+)?|\\.aws[\\\\/]credentials|\\.kube[\\\\/]config)(\\s|$)', flags: 'i' } },
+  // ── unmediated_privilege_key_security_mode_change ──
+  ...(['/perm', '/perm rule', '/yolo', '/afk', '/key set', '/key off', '/self-evolve', '/security', '/security sudo on', '/security secret on', '/sandbox L0', '/sandbox L1', '/sandbox L2', '/sandbox L3', '/plan on', '/plan off'] as const).map(command => ({
+    id: `redline.command.${command.replace(/[^a-z0-9]+/gi, '-')}`,
+    version: 1,
+    kind: 'command_redline' as const,
+    category: 'unmediated_privilege_key_security_mode_change' as const,
+    descriptionKey: 'policy.redline.unmediated_privilege_key_security_mode_change',
+    source: 'kernel/commandLevels.ts#COMMAND_LEVELS',
+    overrideable: false as const,
+    requiresUserPresence: true,
+    matcher: { type: 'command' as const, value: command },
+  })),
 ];
+
+const matcherToRegex = (matcher: PolicyMatcher): RegExp =>
+  matcher.type === 'regex' ? new RegExp(matcher.value, matcher.flags) : new RegExp('(?:)');
+
+// 硬红线清单（任何模式不可绕过——安全底线）：由规范性规则目录派生（单一事实源，杜绝双写漂移）
+export const HARD_REDLINES: Redline[] = POLICY_RULE_SOURCES
+  .filter(rule => rule.kind === 'hard_redline')
+  .map(rule => ({ pattern: matcherToRegex(rule.matcher), desc: rule.descriptionKey }));
+
+/** 规范性规则目录（Policy Manifest 生成输入） */
+export function policyRuleSources(): readonly PolicyRuleSource[] {
+  return POLICY_RULE_SOURCES;
+}
 
 function hitRedline(tool: string, args: Record<string, any>): Redline | null {
   const text = [tool, ...Object.values(args ?? {})].map(String).join(' ');
@@ -43,9 +87,10 @@ function hitRedline(tool: string, args: Record<string, any>): Redline | null {
 }
 
 // 敏感路径写保护（修复 F13）：fs_write/fs_edit 写入凭据/配置/密钥文件直接拒绝
-// 审查修复：settings/permissions 原子写临时名（.tmp）纳入——此前锚点 (\s|$) 匹配不到
-// settings.json.tmp，临时文件可被写入（config.ts 原子写 next 覆盖，影响低但属红线缺口）
-const SENSITIVE_WRITE = /(^|[\\/])(\.bashrc|\.zshrc|\.profile|\.bash_profile|\.ssh[\\/].*|\.env|\.env\.local|id_rsa|id_ed25519|authorized_keys|known_hosts|\.git[\\/]config|\.npmrc|\.pypirc|settings\.json(?:\.tmp)?|permissions\.json(?:\.tmp)?)(\s|$)/i;
+// 单一事实源：由规范性规则目录中 kind==='sensitive_write' 派生（含凭据文件扩展）
+const SENSITIVE_WRITE_MATCHERS: RegExp[] = POLICY_RULE_SOURCES
+  .filter(rule => rule.kind === 'sensitive_write')
+  .map(rule => matcherToRegex(rule.matcher));
 
 // ── P0-2 审批规则文件（持久化 allow/deny/ask）──
 // data/permissions.json：[{ tool: 'fs_write', pattern: 'src/**', decision: 'allow' }]
@@ -216,10 +261,10 @@ export function modeVerdict(mode: Mode, tool: string, args: Record<string, any>,
   // 1. 硬红线：任何模式不可绕过
   const red = hitRedline(tool, args);
   if (red) return 'reject';
-  // 2. 敏感路径写保护（fs_write/fs_edit 的 path 参数）
+  // 2. 敏感路径写保护（fs_write/fs_edit 的 path 参数——凭据/密钥/配置文件一律拒绝）
   if (tool === 'fs_write' || tool === 'fs_edit') {
     const path = String(args?.path ?? '');
-    if (SENSITIVE_WRITE.test(path)) return 'reject';
+    if (SENSITIVE_WRITE_MATCHERS.some(re => re.test(path))) return 'reject';
   }
   // 3. bash 只读命令分级：只读（pwd/ls/cat/git status…）除 manual 外直接放行
   if (tool === 'bash' && classifyBashCommand(String(args?.command ?? '')) === 'readonly') {

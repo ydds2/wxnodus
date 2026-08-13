@@ -188,7 +188,7 @@ describe('子代理派发', () => {
     const agent = createAgent({
       db, bus, mem, sessionId: 't-delegate',
       config: { settings: { apiKeyEnc: null as any } } as any,
-      callModel: async (req) => {
+      callModel: async (req: any) => {
         const last = req.messages[req.messages.length - 1]!.content;
         if (last.includes('主任务')) return { type: 'tool_call', name: 'delegate', args: { goal: '子任务：计算答案' } };
         return { type: 'text', content: '子代理回复：完成' };
@@ -240,7 +240,7 @@ describe('流式与思考模式', () => {
     const agent = createAgent({
       db, bus, mem, sessionId: 't-reason',
       config: { settings: { apiKeyEnc: null as any } } as any,
-      callModel: async (req) => {
+      callModel: async (req: any) => {
         if (!secondReq) {
           if (!req.messages.some((m: any) => m.role === 'assistant')) {
             return { type: 'tool_call', id: 'call_r1', name: 'ls', args: { path: '.' }, reasoning: '深度思考中' };
@@ -266,7 +266,7 @@ describe('流式与思考模式', () => {
       db, bus, mem, sessionId: 't-batch',
       config: { settings: { apiKeyEnc: null as any } } as any,
       mode: 'yolo',
-      callModel: async (req) => {
+      callModel: async (req: any) => {
         if (!req.messages.some((m: any) => m.role === 'assistant')) {
           return {
             type: 'tool_call', id: 'c1', name: 'ls', args: { path: '.' },
@@ -358,7 +358,7 @@ describe('clarify 与 todo', () => {
         answered = true;
         return '用 TypeScript';
       },
-      callModel: async (req) => {
+      callModel: async (req: any) => {
         if (!req.messages.some((m: any) => m.role === 'assistant')) {
           return { type: 'tool_call', id: 'cl1', name: 'clarify', args: { question: '用什么语言实现？', choices: ['TS', 'Python'] } } as ToolCallMsg;
         }
@@ -368,8 +368,8 @@ describe('clarify 与 todo', () => {
     });
     const r = await agent.run('实现一个工具');
     expect(answered).toBe(true);
-    expect(got?.q).toContain('用什么语言');
-    expect(Array.isArray(got?.choices)).toBe(true);
+    expect((got as any)?.q).toContain('用什么语言');
+    expect(Array.isArray((got as any)?.choices)).toBe(true);
     expect(r.text).toContain('TypeScript');
   });
   it('todo 工具：add/list/done 持久化', async () => {
@@ -443,7 +443,7 @@ describe('updateTools 热重载', () => {
   it('updateTools 后新工具立即可用（无需重建 agent）', async () => {
     const extra = {
       hotplug_now: {
-        schema: { type: 'function', function: { name: 'hotplug_now', description: '时间戳', parameters: { type: 'object', properties: {} } } },
+        schema: { type: 'function' as const, function: { name: 'hotplug_now', description: '时间戳', parameters: { type: 'object' as const, properties: {} } } },
         danger: true,
         run: async () => '热重载时间戳：123',
       },
@@ -857,7 +857,7 @@ describe('wx_cmd AI 自主调用通道（分级裁决）', () => {
       config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
       mode: 'smart',
       callModel: async () => script.shift()!,
-      onCommand: async (input) => { executed.push(String(input)); return `已执行：${String(input).slice(0, 40)}`; },
+      onCommand: async (input: any) => { executed.push(String(input)); return `已执行：${String(input).slice(0, 40)}`; },
       onApproval: async () => { approvals++; return true; },
       ...over,
     } as any);
@@ -898,7 +898,7 @@ describe('wx_cmd AI 自主调用通道（分级裁决）', () => {
         }
         return { type: 'tool_call', name: 'wx_cmd', args: { command: '/compact' } };
       },
-      onCommand: async (input) => { executed2.push(String(input)); return 'ok'; },
+      onCommand: async (input: any) => { executed2.push(String(input)); return 'ok'; },
       onApproval: async () => false,
     } as any);
     const r2 = await agent2.run('压缩上下文');

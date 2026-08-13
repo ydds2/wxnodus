@@ -223,7 +223,7 @@ describe('forkSession', () => {
     expect(copy.title).toContain('（副本）');
     const msgs = db.prepare(`SELECT role, content FROM messages WHERE session_id=? ORDER BY ts`).all('fork-copy') as any[];
     expect(msgs.map(m => m.content)).toEqual(['问题一', '回答一', '旧归档']);
-    expect(db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(src)!.c).toBe(3);
+    expect((db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(src) as { c: number }).c).toBe(3);
   });
   it('源会话不存在返回 0', () => {
     expect(forkSession(db, 'no-such', 'x')).toBe(0);

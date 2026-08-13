@@ -15,6 +15,16 @@ let mem: ReturnType<typeof createMemory>;
 let gw: GatewayClient;
 let runCalls: Array<{ text: string; opts: any }>;
 
+// 测试辅助：Gateway RPC 响应形态由各命令契约决定，测试侧不重复声明 DTO
+async function req(method: string, params: Record<string, unknown> = {}): Promise<any> {
+  return gw.request(method, params);
+}
+
+// 局部 GatewayClient 实例（describe 内新建的 g）共用同一宽松契约
+async function gre(client: GatewayClient, method: string, params: Record<string, unknown> = {}): Promise<any> {
+  return client.request(method, params);
+}
+
 function makeGateway(settings: Record<string, any> = {}) {
   const bus = createEventBus(dir);
   runCalls = [];
@@ -60,7 +70,7 @@ afterEach(() => {
 
 describe('session.undo 响应契约（UI 死路径修复）', () => {
   it('空会话返回 { ok:false, removed:0 }', async () => {
-    const r = await gw.request('session.undo', { session_id: 's1' });
+    const r = await req('session.undo', { session_id: 's1' });
     expect(r.ok).toBe(false);
     expect(r.removed).toBe(0);
   });
@@ -70,7 +80,7 @@ describe('session.undo 响应契约（UI 死路径修复）', () => {
     mem.append('s1', 'assistant', '回答一');
     mem.append('s1', 'user', '问题二');
     mem.append('s1', 'assistant', '回答二');
-    const r = await gw.request('session.undo', { session_id: 's1' });
+    const r = await req('session.undo', { session_id: 's1' });
     expect(r.ok).toBe(true);
     expect(r.removed).toBe(2);
     // 软归档：消息仍在库中（黑洞 recall 保留），仅 archived=1
@@ -79,7 +89,7 @@ describe('session.undo 响应契约（UI 死路径修复）', () => {
     expect(archived.c).toBe(2);
     expect(total.c).toBe(4);
     // 视图回退：loadMessages 过滤归档 → 只剩第一轮
-    const act = await gw.request('session.activate', { session_id: 's1' });
+    const act = await req('session.activate', { session_id: 's1' });
     const view = (act.messages as Array<{ role: string; text: string }>).filter(m => m.role !== 'system');
     expect(view.map(m => m.text)).toEqual(['问题一', '回答一']);
   });
@@ -87,7 +97,7 @@ describe('session.undo 响应契约（UI 死路径修复）', () => {
   it('撤销前生成 checkpoint 快照（可恢复）', async () => {
     mem.append('s1', 'user', '问题');
     mem.append('s1', 'assistant', '回答');
-    await gw.request('session.undo', { session_id: 's1' });
+    await req('session.undo', { session_id: 's1' });
     const cp = db.prepare(`SELECT COUNT(*) AS c FROM checkpoints WHERE session_id='s1'`).get() as any;
     expect(cp.c).toBeGreaterThan(0);
   });
@@ -95,9 +105,9 @@ describe('session.undo 响应契约（UI 死路径修复）', () => {
   it('连续撤销直至空（removed 归零不报错）', async () => {
     mem.append('s1', 'user', '唯一问题');
     mem.append('s1', 'assistant', '唯一回答');
-    const r1 = await gw.request('session.undo', { session_id: 's1' });
+    const r1 = await req('session.undo', { session_id: 's1' });
     expect(r1.removed).toBe(2);
-    const r2 = await gw.request('session.undo', { session_id: 's1' });
+    const r2 = await req('session.undo', { session_id: 's1' });
     expect(r2.ok).toBe(false);
     expect(r2.removed).toBe(0);
   });
@@ -118,7 +128,7 @@ describe('image.attach 附加链路', () => {
   it('attach 真实 PNG：宽高/token 元数据 + 附件落盘 + pending 登记', async () => {
     const img = join(dir, 'test-256x128.png');
     writePng(img, 256, 128);
-    const r = await gw.request('image.attach', { session_id: 's1', path: img });
+    const r = await req('image.attach', { session_id: 's1', path: img });
     expect(r.attached).toBe(true);
     expect(r.width).toBe(256);
     expect(r.height).toBe(128);
@@ -128,19 +138,19 @@ describe('image.attach 附加链路', () => {
   });
 
   it('不存在的路径 / 非图片文件 → attached:false', async () => {
-    const r1 = await gw.request('image.attach', { session_id: 's1', path: join(dir, 'ghost.png') });
+    const r1 = await req('image.attach', { session_id: 's1', path: join(dir, 'ghost.png') });
     expect(r1.attached).toBe(false);
     const txt = join(dir, 'not-image.txt');
     writeFileSync(txt, '纯文本不是图片');
-    const r2 = await gw.request('image.attach', { session_id: 's1', path: txt });
+    const r2 = await req('image.attach', { session_id: 's1', path: txt });
     expect(r2.attached).toBe(false);
   });
 
   it('图像模型：pending 随 prompt.submit 注入（多模态 parts）', async () => {
     const img = join(dir, 'attach.png');
     writePng(img, 320, 200);
-    await gw.request('image.attach', { session_id: 's1', path: img });
-    await gw.request('prompt.submit', { session_id: 's1', text: '看看这张图' });
+    await req('image.attach', { session_id: 's1', path: img });
+    await req('prompt.submit', { session_id: 's1', text: '看看这张图' });
     await new Promise(r => setTimeout(r, 20));
     expect(runCalls.length).toBe(1);
     const opts = runCalls[0]!.opts;
@@ -155,17 +165,17 @@ describe('image.attach 附加链路', () => {
     (gw as any).subscribed = true // 激活事件直发（否则 publish 缓冲）
     const img = join(dir, 'attach2.png');
     writePng(img, 100, 100);
-    await gw.request('image.attach', { session_id: 's1', path: img });
+    await req('image.attach', { session_id: 's1', path: img });
     const notices: string[] = [];
     (gw as any).on('event', (e: any) => { if (e?.type === 'notification.show') notices.push(String(e?.payload?.text ?? '')); });
-    await gw.request('prompt.submit', { session_id: 's1', text: '看图说话' });
+    await req('prompt.submit', { session_id: 's1', text: '看图说话' });
     await new Promise(r => setTimeout(r, 20));
     expect(runCalls[0]?.opts).toBeUndefined(); // 无 images 参数
     expect(notices.some(t => t.includes('GLM-4V Flash'))).toBe(true);
   });
 
   it('clipboard.paste 响应形态稳定（有图/无图均返回合法结构）', async () => {
-    const r = await gw.request('clipboard.paste', { session_id: 's1' });
+    const r = await req('clipboard.paste', { session_id: 's1' });
     if (r.attached) {
       expect(r.count).toBeGreaterThan(0);
       expect(Number.isFinite(r.width)).toBe(true);
@@ -179,7 +189,7 @@ describe('image.attach 附加链路', () => {
 // ── spawn_tree 持久化：save/list/load 三件套（/replay 磁盘档案）──
 describe('spawn_tree 持久化', () => {
   it('save → list（按会话过滤倒序）→ load 回放往返', async () => {
-    const s1 = await gw.request('spawn_tree.save', {
+    const s1 = await req('spawn_tree.save', {
       finished_at: Date.now() / 1000,
       label: '第一个委派',
       session_id: 's1',
@@ -188,26 +198,26 @@ describe('spawn_tree 持久化', () => {
     });
     expect(s1.ok).toBe(true);
     // 另一会话的快照（不应出现在 s1 列表）
-    await gw.request('spawn_tree.save', {
+    await req('spawn_tree.save', {
       finished_at: Date.now() / 1000,
       label: '其他会话委派',
       session_id: 's-other',
       subagents: [{ goal: 'B', status: 'running' }, { goal: 'C', status: 'completed' }],
     });
-    const list = await gw.request('spawn_tree.list', { session_id: 's1', limit: 10 });
+    const list = await req('spawn_tree.list', { session_id: 's1', limit: 10 });
     expect(list.entries.length).toBe(1);
     expect(list.entries[0].label).toBe('第一个委派');
     expect(list.entries[0].count).toBe(1);
     // load 回放
-    const loaded = await gw.request('spawn_tree.load', { path: list.entries[0].path });
+    const loaded = await req('spawn_tree.load', { path: list.entries[0].path });
     expect(loaded.subagents.length).toBe(1);
     expect(loaded.subagents[0].goal).toBe('目标A');
     expect(loaded.session_id).toBe('s1');
   });
   it('空目录 / 损坏文件容错', async () => {
-    const empty = await gw.request('spawn_tree.list', { session_id: 'ghost' });
+    const empty = await req('spawn_tree.list', { session_id: 'ghost' });
     expect(empty.entries).toEqual([]);
-    const bad = await gw.request('spawn_tree.load', { path: join(dir, '不存在.json') });
+    const bad = await req('spawn_tree.load', { path: join(dir, '不存在.json') });
     expect(bad.subagents).toEqual([]);
   });
 });
@@ -215,20 +225,20 @@ describe('spawn_tree 持久化', () => {
 // ── reload.mcp：确认门 + 热重载回调 ──
 describe('reload.mcp', () => {
   it('未确认 → confirm_required', async () => {
-    const r = await gw.request('reload.mcp', { session_id: 's1' });
+    const r = await req('reload.mcp', { session_id: 's1' });
     expect(r.status).toBe('confirm_required');
   });
   it('确认后调用 kernel.reloadMcp 并返回计数', async () => {
     let called = 0;
     (gw as any).kernel.reloadMcp = async () => { called++; return { ok: true, count: 2, message: '已重载 2 个' }; };
-    const r = await gw.request('reload.mcp', { session_id: 's1', confirm: true });
+    const r = await req('reload.mcp', { session_id: 's1', confirm: true });
     expect(r.status).toBe('reloaded');
     expect(r.message).toContain('2');
     expect(called).toBe(1);
   });
   it('无 reloadMcp 能力时优雅降级', async () => {
     (gw as any).kernel.reloadMcp = undefined;
-    const r = await gw.request('reload.mcp', { session_id: 's1', confirm: true });
+    const r = await req('reload.mcp', { session_id: 's1', confirm: true });
     expect(r.status).toBe('reloaded');
     expect(typeof r.message).toBe('string');
   });
@@ -241,10 +251,10 @@ describe('sudo/secret 注入通道', () => {
     const events: any[] = [];
     (gw as any).on('event', (e: any) => events.push(e));
     const promise = gw.requestSecretInput('sudo', '需要密码');
-    const req = events.find((e: any) => e.type === 'sudo.request');
-    expect(req).toBeDefined();
-    const requestId = req.payload.request_id;
-    const r = await gw.request('sudo.respond', { request_id: requestId, password: '手输密码' });
+    const reqEvent = events.find((e: any) => e.type === 'sudo.request');
+    expect(reqEvent).toBeDefined();
+    const requestId = reqEvent.payload.request_id;
+    const r = await gre(gw, 'sudo.respond', { request_id: requestId, password: '手输密码' });
     expect(r.ok).toBe(true);
     expect(await promise).toBe('手输密码');
   });
@@ -254,14 +264,14 @@ describe('sudo/secret 注入通道', () => {
     const events: any[] = [];
     (gw as any).on('event', (e: any) => events.push(e));
     const promise = gw.requestSecretInput('secret', '需要密钥', 'MY_TOKEN');
-    const req = events.find((e: any) => e.type === 'secret.request');
-    expect(req?.payload?.env_var).toBe('MY_TOKEN');
-    await gw.request('secret.respond', { request_id: req.payload.request_id, value: 'sk-xyz' });
+    const reqEvent = events.find((e: any) => e.type === 'secret.request');
+    expect(reqEvent?.payload?.env_var).toBe('MY_TOKEN');
+    await gre(gw, 'secret.respond', { request_id: reqEvent.payload.request_id, value: 'sk-xyz' });
     expect(await promise).toBe('sk-xyz');
   });
 
   it('未知 request_id respond → 失败且不影响其他请求', async () => {
-    const r = await gw.request('sudo.respond', { request_id: 'ghost', password: 'x' });
+    const r = await req('sudo.respond', { request_id: 'ghost', password: 'x' });
     expect(r.ok).toBe(false);
   });
 
@@ -313,15 +323,15 @@ describe('delegation.pause 真实持久化', () => {
     }
     const g = new GatewayClient(kernel as any)
 
-    const p1 = await g.request('delegation.pause', { pause: true })
+    const p1 = await gre(g, 'delegation.pause', { pause: true })
     expect(p1.paused).toBe(true)
     // 同一 gateway 的后续 status 轮询读到真实 paused（此前硬编码 false）
-    const s1 = await g.request('delegation.status', {})
+    const s1 = await gre(g, 'delegation.status', {})
     expect(s1.paused).toBe(true)
     // resume 后恢复
-    const p2 = await g.request('delegation.pause', { pause: false })
+    const p2 = await gre(g, 'delegation.pause', { pause: false })
     expect(p2.paused).toBe(false)
-    const s2 = await g.request('delegation.status', {})
+    const s2 = await gre(g, 'delegation.status', {})
     expect(s2.paused).toBe(false)
   })
 })
@@ -360,7 +370,7 @@ describe('terminal.resize 转发 / session.fork 移除', () => {
       requestExit() {},
     }
     const g = new GatewayClient(kernel as any)
-    const r = await g.request('terminal.resize', { cols: 120, rows: 40, session_id: 's1' })
+    const r = await gre(g, 'terminal.resize', { cols: 120, rows: 40, session_id: 's1' })
     expect(r.ok).toBe(true)
     expect(resized).toEqual([{ id: 't1', cols: 120, rows: 40 }])
   })
@@ -393,7 +403,7 @@ describe('terminal.resize 转发 / session.fork 移除', () => {
       requestExit() {},
     }
     const g = new GatewayClient(kernel as any)
-    const r = await g.request('terminal.resize', { cols: 120, session_id: 's1' })
+    const r = await gre(g, 'terminal.resize', { cols: 120, session_id: 's1' })
     expect(r.ok).toBe(false)
     expect(String(r.error)).toContain('运行中')
   })
@@ -426,7 +436,7 @@ describe('terminal.resize 转发 / session.fork 移除', () => {
     }
     const g = new GatewayClient(kernel as any)
     // request 捕获 unsupported 错误 → { ok:false, code }（不 reject、不假装成功）
-    const r = await g.request('session.fork', { session_id: 's1' })
+    const r = await gre(g, 'session.fork', { session_id: 's1' })
     expect(r.ok).toBe(false)
     expect(String(r.message)).toContain('unsupported')
   })
@@ -436,7 +446,8 @@ describe('terminal.resize 转发 / session.fork 移除', () => {
 describe('kernel jobs 事件转发', () => {
   it('jobs.created / jobs.complete → 发布 background.jobs 快照', async () => {
     const bus = createEventBus(dir)
-    let jobsDb = [
+    type JobRow = { id: string; goal: string; status: string; kind: string; created_at: number; done_at: number | null; exit_code: number | null }
+    let jobsDb: JobRow[] = [
       { id: 'j1', goal: '跑测试', status: 'running', kind: 'agent', created_at: 1, done_at: null, exit_code: null },
     ]
     const kernel = {
@@ -522,7 +533,7 @@ describe('buildInfo 死数据接线', () => {
     }
     const g = new GatewayClient(kernel as any)
     // session.activate 返回 info = buildInfo()（激活 s1——压缩摘要插在该会话下）
-    const r = await g.request('session.activate', { session_id: 's1' })
+    const r = await gre(g, 'session.activate', { session_id: 's1' })
     const info = r.info
     expect(info.usage.compressions).toBe(1)
     expect(info.mcp_servers).toEqual([{ name: 'filesystem', connected: true, tools: 5, transport: 'stdio' }])
@@ -570,7 +581,7 @@ describe('死 RPC 真实实现（/save /rollback /tools /reload /paste.collapse�
     db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES ('s1','t',1,1)`).run()
     db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES ('s1','user','你好',1)`).run()
     const g = new GatewayClient(makeKernel() as any)
-    const r = await g.request('session.save', { session_id: 's1' })
+    const r = await gre(g, 'session.save', { session_id: 's1' })
     expect(r.ok).toBe(true)
     const { existsSync, readFileSync } = await import('node:fs')
     expect(existsSync(r.file)).toBe(true)
@@ -579,7 +590,7 @@ describe('死 RPC 真实实现（/save /rollback /tools /reload /paste.collapse�
 
   it('session.save 空会话诚实报错', async () => {
     const g = new GatewayClient(makeKernel() as any)
-    const r = await g.request('session.save', { session_id: 's1' })
+    const r = await gre(g, 'session.save', { session_id: 's1' })
     expect(r.ok).toBe(false)
   })
 
@@ -592,16 +603,16 @@ describe('死 RPC 真实实现（/save /rollback /tools /reload /paste.collapse�
     saveCheckpoint(db, 's1', { kind: 'manual', messages: rows })
     const g = new GatewayClient(makeKernel() as any)
     // list
-    const list = await g.request('rollback.list', { session_id: 's1' })
+    const list = await gre(g, 'rollback.list', { session_id: 's1' })
     expect(list.enabled).toBe(true)
     expect(list.checkpoints.length).toBe(1)
     expect(list.checkpoints[0].hash).toBe('#1')
     // diff
-    const diff = await g.request('rollback.diff', { hash: '#1', session_id: 's1' })
+    const diff = await gre(g, 'rollback.diff', { hash: '#1', session_id: 's1' })
     expect(diff.stat).toContain('快照 1 条消息')
     // restore（先改坏会话再回滚）
     db.prepare(`UPDATE messages SET content='被改坏' WHERE session_id='s1'`).run()
-    const restore = await g.request('rollback.restore', { hash: '#1', session_id: 's1' })
+    const restore = await gre(g, 'rollback.restore', { hash: '#1', session_id: 's1' })
     expect(restore.success).toBe(true)
     expect(restore.history_removed).toBe(1)
     const after = db.prepare(`SELECT content FROM messages WHERE session_id='s1'`).get() as { content: string }
@@ -615,12 +626,12 @@ describe('死 RPC 真实实现（/save /rollback /tools /reload /paste.collapse�
       abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true,
       updateTools: (t: Record<string, unknown>) => updated.push(t),
     } }) as any)
-    const r = await g.request('tools.configure', { action: 'disable', names: ['fs_'] })
+    const r = await gre(g, 'tools.configure', { action: 'disable', names: ['fs_'] })
     expect(r.changed.length).toBeGreaterThan(0)
     expect(updated.length).toBe(1)
     expect(updated[0]).not.toHaveProperty('fs_read')
     // 再 enable 恢复
-    await g.request('tools.configure', { action: 'enable', names: ['fs_'] })
+    await gre(g, 'tools.configure', { action: 'enable', names: ['fs_'] })
     expect(updated[1]).toHaveProperty('fs_read')
   })
 
@@ -629,17 +640,17 @@ describe('死 RPC 真实实现（/save /rollback /tools /reload /paste.collapse�
     writeFileSync(`${dir}/.env`, 'WXNODUS_TEST_RELOAD=abc\n', 'utf8')
     delete process.env.WXNODUS_TEST_RELOAD
     const g = new GatewayClient(makeKernel() as any)
-    const r = await g.request('reload.env', {})
+    const r = await gre(g, 'reload.env', {})
     expect(r.updated).toBe(1)
     expect(process.env.WXNODUS_TEST_RELOAD).toBe('abc')
     // 二次加载无变化 → 0
-    const r2 = await g.request('reload.env', {})
+    const r2 = await gre(g, 'reload.env', {})
     expect(r2.updated).toBe(0)
   })
 
   it('paste.collapse 大段粘贴落盘并返回路径', async () => {
     const g = new GatewayClient(makeKernel() as any)
-    const r = await g.request('paste.collapse', { text: 'x'.repeat(5000) })
+    const r = await gre(g, 'paste.collapse', { text: 'x'.repeat(5000) })
     expect(r.path).toBeTruthy()
     const { existsSync, readFileSync } = await import('node:fs')
     expect(existsSync(r.path)).toBe(true)
@@ -658,7 +669,7 @@ describe('假数据消除（A25）', () => {
       agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
-    const r = await g.request('config.get', { key: 'mtime' })
+    const r = await gre(g, 'config.get', { key: 'mtime' })
     expect(r.mtime).toBeGreaterThan(0)
   })
 
@@ -670,7 +681,7 @@ describe('假数据消除（A25）', () => {
       agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
-    const r = await g.request('setup.status', {})
+    const r = await gre(g, 'setup.status', {})
     expect(r.provider_configured).toBe(true)
   })
 
@@ -682,7 +693,7 @@ describe('假数据消除（A25）', () => {
       agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
-    const r = await g.request('setup.status', {})
+    const r = await gre(g, 'setup.status', {})
     expect(r.provider_configured).toBe(false)
   })
 
@@ -699,7 +710,7 @@ describe('假数据消除（A25）', () => {
       taskRunner: { getMaxConcurrent: () => 2 },
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
-    const r = await g.request('delegation.status', {})
+    const r = await gre(g, 'delegation.status', {})
     expect(r.max_concurrent_children).toBe(2)
     expect(r.max_spawn_depth).toBe(3)
     expect(r.paused).toBe(true)
@@ -715,7 +726,7 @@ describe('假数据消除（A25）', () => {
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
     ;(g as any).running = true
-    const r = await g.request('session.active_list', { current_session_id: 's1' })
+    const r = await gre(g, 'session.active_list', { current_session_id: 's1' })
     expect(r.sessions[0].status).toBe('working')
   })
 })

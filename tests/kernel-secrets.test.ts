@@ -53,6 +53,7 @@ describe('bash 工具安全注入', () => {
   const ctx = (over: Record<string, any> = {}) => ({
     cwd: process.cwd(), dataDir: dir, signal: undefined as any,
     secrets: { vault: createSecretVault(), sudoEnabled: true, secretEnabled: true },
+    requestSecret: async (kind: string, prompt?: string, name?: string): Promise<string | null> => null,
     ...over,
   });
 

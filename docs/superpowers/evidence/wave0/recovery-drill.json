@@ -1,0 +1,37 @@
+{
+  "waveScope": "wave0",
+  "registryPath": "src/migrations/config/registry.ts",
+  "descriptorId": "config-v0-to-v1",
+  "descriptorChecksum": "9797574ee457ca5c9d487aca404622b9e46ea914a4c0bb62487521d145c30de1",
+  "registryArtifactPath": "src/migrations/config/registry.ts",
+  "registryArtifactSha256": "cf903bd545a42b944af3acc308b4b09a2e97d03b260f321551a20a704c2dce00",
+  "dbRegistryPath": "src/migrations/db/registry.ts",
+  "dbRegistryArtifactSha256": "5796f523ba96ed5bb0b4cc4fd9e6fddb1f858780037634e9b88532954cbe77eb",
+  "dbDescriptorIds": [
+    "db-v2-add-salience",
+    "db-v3-add-run_no",
+    "db-v4-add-parts"
+  ],
+  "dbDescriptorChecksums": [
+    "9b394b369814ce325fa35c3c34db47436318eee0ef140335107bce7d032f8e41",
+    "631f0bc290addf5541dd93d9eebbd1913a947de8d49a929d9ebbbb00f6ef921c",
+    "fa56fe0b5ab472a9086e76d87103966d28a7ed46a6ea6314ba2168df70478e31"
+  ],
+  "compatibilityManifestPath": "docs/superpowers/manifests/v3-compatibility.json",
+  "compatibilityManifestSha256": "2e340b1a311741df408f75222fe25d5b265899e7ae893335c552899658d12b2e",
+  "candidateArtifactSha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
+  "environmentSha256": "2fd8225a2a72cb6a96541aeb5bcbe79f1397da6c9238209b75499390d4691a9d",
+  "policyManifestSha256": "0812344a8fe7895f2576d13991d265d104a10574db501a110f8b03e1531fffb9",
+  "bindingSha256": "79051f70ce712a50f06358e971dd9f15d4b2f7996f22d489fcc02d41cc8fed84",
+  "drills": {
+    "config": {
+      "ok": true,
+      "detail": "config-v0-to-v1 六步 + 故障注入通过"
+    },
+    "db": {
+      "ok": true,
+      "detail": "DB forward-only：expand → N-1 窗口 → confirmed-write → reconcile → readback 通过"
+    }
+  },
+  "generatedAt": "2026-08-13T09:55:36.425Z"
+}
