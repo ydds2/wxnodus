@@ -17,7 +17,7 @@ const requireCjs = createRequire(import.meta.url);
 
 export type Db = InstanceType<typeof Database>;
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 // 中文 bigram 预处理：FTS5 unicode61 无法切中文词——按 2 字滑窗生成 bigram 空格串
 // 例：「黑洞引擎」→「黑洞 洞引 引擎」——检索「黑洞」可命中；英文/数字连续段保留为单词

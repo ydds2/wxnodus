@@ -130,9 +130,9 @@ describe('DB migration backup and recovery', () => {
     // confirmed write：新列可写
     db.prepare(`INSERT INTO messages (session_id, role, content, ts, salience, run_no, parts) VALUES ('s2', 'assistant', '新形状', 2, 2.0, 1, '["text"]')`).run();
 
-    // reconcile：总数一致、非空列完整
+    // reconcile：总数一致、非空列完整（只对已应用的迁移对账——未达目标版本的迁移跳过）
     for (const migration of dbMigrations()) {
-      if (migration.strategy === 'forward-only') {
+      if (migration.strategy === 'forward-only' && migration.toVersion <= getSchemaVersion(db)) {
         const result = migration.reconcile(db);
         expect(result.reconciledRows).toBe(2);
         expect(result.mismatches).toBe(0);

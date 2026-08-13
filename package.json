@@ -28,6 +28,7 @@
     "test:w1-04": "vitest run tests/wave1/w1-04-command-contract.test.ts",
     "test:w1-05": "vitest run tests/wave1/w1-05-tool-catalog.test.ts",
     "test:w1-06": "vitest run tests/wave1/w1-06-memory-durability.test.ts",
+    "test:w1-07": "vitest run tests/wave1/w1-07-security-control-plane.test.ts",
     "test:wave1:trusted-kernel": "vitest run tests/wave1/",
     "memory:curate": "npm exec -- tsx scripts/memory-curator.ts"
   },

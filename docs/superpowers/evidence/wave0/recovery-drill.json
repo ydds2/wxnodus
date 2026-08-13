@@ -6,23 +6,25 @@
   "registryArtifactPath": "src/migrations/config/registry.ts",
   "registryArtifactSha256": "cf903bd545a42b944af3acc308b4b09a2e97d03b260f321551a20a704c2dce00",
   "dbRegistryPath": "src/migrations/db/registry.ts",
-  "dbRegistryArtifactSha256": "5796f523ba96ed5bb0b4cc4fd9e6fddb1f858780037634e9b88532954cbe77eb",
+  "dbRegistryArtifactSha256": "9d1a1c13aeefc74017388ac6586328bbdcc0ff939ec8ee59ece59e523fbbf1fe",
   "dbDescriptorIds": [
     "db-v2-add-salience",
     "db-v3-add-run_no",
-    "db-v4-add-parts"
+    "db-v4-add-parts",
+    "db-v5-add-security-control-plane"
   ],
   "dbDescriptorChecksums": [
     "9b394b369814ce325fa35c3c34db47436318eee0ef140335107bce7d032f8e41",
     "631f0bc290addf5541dd93d9eebbd1913a947de8d49a929d9ebbbb00f6ef921c",
-    "fa56fe0b5ab472a9086e76d87103966d28a7ed46a6ea6314ba2168df70478e31"
+    "fa56fe0b5ab472a9086e76d87103966d28a7ed46a6ea6314ba2168df70478e31",
+    "f0fe886b1631fd1e1f69ee814b4ee60ac470e4a7c91e93fdc048765d5c8076c0"
   ],
   "compatibilityManifestPath": "docs/superpowers/manifests/v3-compatibility.json",
   "compatibilityManifestSha256": "2e340b1a311741df408f75222fe25d5b265899e7ae893335c552899658d12b2e",
   "candidateArtifactSha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
   "environmentSha256": "2fd8225a2a72cb6a96541aeb5bcbe79f1397da6c9238209b75499390d4691a9d",
   "policyManifestSha256": "0812344a8fe7895f2576d13991d265d104a10574db501a110f8b03e1531fffb9",
-  "bindingSha256": "79051f70ce712a50f06358e971dd9f15d4b2f7996f22d489fcc02d41cc8fed84",
+  "bindingSha256": "c16d76de83e5b9179fc0c6a853d25d544a76dabf30fc66b53113714466267b0f",
   "drills": {
     "config": {
       "ok": true,
@@ -33,5 +35,5 @@
       "detail": "DB forward-only：expand → N-1 窗口 → confirmed-write → reconcile → readback 通过"
     }
   },
-  "generatedAt": "2026-08-13T09:55:36.425Z"
+  "generatedAt": "2026-08-13T10:41:21.237Z"
 }

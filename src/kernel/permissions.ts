@@ -240,6 +240,9 @@ export function classifyToolAction(tool: string, args: Record<string, any>): { c
 
 // ── 会话级批准缓存（Kimi auto_approve_actions 同款）──
 // 用户选「Allow this session」的 action 记入缓存，本次进程内同 action 自动放行不再弹
+// W1-07 legacy adapter：ApprovalCache 只是 UI 去重（抑制重复审批弹窗），不是授权——
+// 真正的授权在 SqliteAuthorizationUnitOfWork（canonical context + policy/budget snapshot binding
+// + single-use nonce + effect journal）。此处不得把缓存命中当作安全判定。
 export interface ApprovalCache {
   key(tool: string, args: Record<string, any>): string;
   has(tool: string, args: Record<string, any>): boolean;

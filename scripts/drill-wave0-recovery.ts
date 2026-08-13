@@ -104,7 +104,8 @@ function dbDrill(): { ok: boolean; detail: string } {
     db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES ('s1', 'drill', 1, 1)`).run();
     db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES ('s1', 'user', 'N-1 窗口写入', 1)`).run();   // N-1 read/write window
     db.prepare(`INSERT INTO messages (session_id, role, content, ts, salience, run_no, parts) VALUES ('s1', 'assistant', 'confirmed-write', 2, 2.0, 1, '["text"]')`).run(); // confirmed-write
-    for (const migration of dbMigrations()) {                                      // reconcile
+    for (const migration of dbMigrations()) {                                      // reconcile（只对已应用迁移）
+      if (migration.toVersion > 4) continue;
       const r = migration.reconcile(db);
       if (r.reconciledRows !== 2 || r.mismatches !== 0) return { ok: false, detail: 'DB_RECONCILE_MISMATCH' };
     }

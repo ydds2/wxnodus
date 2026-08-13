@@ -1,7 +1,8 @@
-// src/migrations/db/registry.ts — DB 迁移注册表（V2 salience / V3 run_no / V4 parts，forward-only）
+// src/migrations/db/registry.ts — DB 迁移注册表（V2 salience / V3 run_no / V4 parts / V5 安全控制面，forward-only）
 import Database from 'better-sqlite3';
 import { computeMigrationDescriptorChecksum } from '../types.js';
 import type { MigrationDescriptor } from '../types.js';
+import { securityControlPlaneMigration } from '../../infrastructure/sqlite/securityMigrations.js';
 
 export interface ConfirmedDbWrite {
   table: string;
@@ -99,6 +100,7 @@ export function dbMigrations(): DbMigration[] {
       ddl: 'ALTER TABLE messages ADD COLUMN parts TEXT',
       nullable: true,
     }),
+    securityControlPlaneMigration(),
   ];
 }
 
