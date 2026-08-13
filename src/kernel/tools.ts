@@ -2,19 +2,18 @@
 // 设计：工具 = { schema(OpenAI function calling 格式), danger, run(args, ctx) }
 //      危险工具结果包裹 <untrusted_tool_result>（防提示注入——模型把工具输出当指令）
 // 参考：Claude Code tools-reference（15 工具）、aider 工具集、Codex function call
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, realpathSync } from 'node:fs';
 import { join, resolve, relative, sep } from 'node:path';
 import { sanitizedEnv } from './env.js';
+import { probeProcessAvailable } from './processProbe.js';
 
-/** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性） */
+/** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性）
+ * W3-11：进程探测集中到 kernel/processProbe（入口层不直接执行进程） */
 let grepChecked: boolean | null = null;
 function hasGrep(): boolean {
   if (grepChecked !== null) return grepChecked;
-  try {
-    const r = spawnSync('grep', ['--version'], { stdio: 'pipe', timeout: 5000 });
-    grepChecked = r.status === 0;
-  } catch { grepChecked = false; }
+  grepChecked = probeProcessAvailable('grep', ['--version'], 5000);
   return grepChecked;
 }
 

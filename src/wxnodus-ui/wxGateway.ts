@@ -4,7 +4,7 @@
 //       wxnodus agent 事件 → GatewayEvent（message.delta/tool.*/status.update 等）
 // 参考：gateway 客户端接口契约（业界通用） + wxnodus kernel/events 事件流
 import { EventEmitter } from 'node:events'
-import { execFile, execFileSync, spawnSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, unlinkSync, statSync } from 'node:fs'
 import { join, resolve, basename, isAbsolute } from 'node:path'
 
@@ -1750,15 +1750,13 @@ export class GatewayClient extends EventEmitter {
       // A25 复查：开启 TTS 时一次性探测 Windows SAPI（powershell + System.Speech）——
       // 失败如实通知（此前无条件返回 true，用户以为有播报实际从未出声）
       if (this.voiceTts) {
-        try {
-          const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Add-Type -AssemblyName System.Speech'], {
-            stdio: 'pipe', timeout: 8000, windowsHide: true,
-          })
-          if (r.status !== 0) throw new Error(`exit ${r.status}`)
-        } catch {
+        // W3-11：SAPI 探测经 kernel/voice 集中委托（入口层不直接执行进程）
+        void import('../kernel/voice.js').then(({ probeSapiTtsAvailable }) => {
+        if (!probeSapiTtsAvailable()) {
           this.voiceTts = false
           this.publish({ type: 'notification.show', payload: { text: 'TTS 不可用：Windows 语音组件（System.Speech）缺失或 powershell 不可用——播报已关闭', level: 'warn' } })
         }
+        })
       }
     } else if (action === 'wake') {
       // 异步启停（动态 import）；当前状态先翻转展示，失败会回滚
@@ -1911,8 +1909,8 @@ export class GatewayClient extends EventEmitter {
     this.voiceTranscribing = true
     this.publish({ type: 'voice.status', payload: { state: 'transcribing' } })
     const settings = this.kernel.config.get('settings') as Record<string, any> | undefined
-    const { stopAndTranscribe } = await import('../kernel/voice.js')
-    const r = await stopAndTranscribe(rec, this.kernel.dataDir, settings)
+    const { stopVoiceTranscribe } = await import('./runtime/voiceRpc.js')
+    const r = await stopVoiceTranscribe(rec, this.kernel.dataDir, settings)
     this.voiceTranscribing = false
     this.publish({ type: 'voice.status', payload: { state: 'idle' } })
 
@@ -1966,12 +1964,12 @@ export class GatewayClient extends EventEmitter {
     if (action === 'start') {
       if (this.voiceTranscribing) return { status: 'busy' }
       if (this.voiceRecordingSession) return { status: 'recording' }
-      const { startRecording } = await import('../kernel/voice.js')
+      const { startVoiceRecording } = await import('./runtime/voiceRpc.js')
       // A20：免提模式——/voice on 后默认 VAD（静音自动停止）；参数可关闭
       const vad = params.vad !== false && this.voiceEnabled
       // A22：VAD 参数可配（settings.voice.vad.{silenceMs,silenceThreshold,minSpeechMs}）
       const vadConfig = vadConfigFromSettings(settings)
-      const r = startRecording(this.kernel.dataDir, settings, process.env, {
+      const r = await startVoiceRecording(this.kernel.dataDir, settings, process.env, {
         vad,
         ...(vadConfig ? { vadConfig } : {}),
         onVadEnded: () => { void this.finishVoiceRecording() },

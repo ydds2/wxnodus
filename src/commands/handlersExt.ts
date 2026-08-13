@@ -1516,7 +1516,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     // 用法：/computer [click <x> <y> [right|double] | type <文本> | open <url> | observe | uia windows|tree|find <q>|click <q>|type <文本> <q>]
     const { join } = await import('node:path');
     const { writeFileSync } = await import('node:fs');
-    const { captureScreen, ComputerUse } = await import('../kernel/computer/index.js');
+    const { captureScreen } = await import('../kernel/computer/index.js');
     const { ActionGuard } = await import('../kernel/computer/guards.js');
     const { convertCoords } = await import('../kernel/computer/actionLayer.js');
     // UIA 子命令（元素级——Windows UI Automation，零新增依赖）
@@ -1571,7 +1571,9 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     }
     const shot = await captureScreen();
     if (!shot) return 'Computer Use 不可用：原生模块缺失或无图形环境（CI/远程会话）';
-    const cu = new ComputerUse(new ActionGuard({ width: shot.width, height: shot.height }));
+    // W3-11：ComputerUse 构造经 compat 委托（直接 new 遗留驱动已禁用）
+    const { createComputerUse } = await import('./computerCompat.js');
+    const cu = await createComputerUse(new ActionGuard({ width: shot.width, height: shot.height }));
     const sub = args[0];
     if (sub === 'click') {
       const x = Number(args[1]), y = Number(args[2]);

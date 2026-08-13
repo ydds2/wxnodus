@@ -372,6 +372,17 @@ async function pumpTts(): Promise<void> {
  * 播报文本（入队 + 打断旧播报）。返回 true 表示已入队（非 Windows 恒 false）。
  * 播报是附加能力——失败静默，绝不阻塞主流程。
  */
+// W3-11：SAPI 探测集中到 kernel（入口层不直接执行进程）——开启 TTS 前一次性验证 System.Speech 可用
+export function probeSapiTtsAvailable(): boolean {
+  try {
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Add-Type -AssemblyName System.Speech'], {
+      stdio: 'pipe', timeout: 8000, windowsHide: true,
+    });
+    if (result.status !== 0) return false;
+    return true;
+  } catch { return false; }
+}
+
 export function speakTts(text: string, _env: NodeJS.ProcessEnv = process.env): boolean {
   if (!isWindows()) return false;
   const safe = sanitizeTts(text);

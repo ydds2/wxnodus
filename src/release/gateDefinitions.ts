@@ -80,6 +80,52 @@ export const WAVE_0_UNREACHABLE: Record<GateId, string[]> = {
 export const WAVE_2_GATE_IDS = ['W2_MIGRATION_DRILL', 'W2_SCRIPT_MAPPING', 'W2_UNAVAILABLE_SURFACES'] as const;
 export type Wave2GateId = typeof WAVE_2_GATE_IDS[number];
 
+// ── Wave 3 scoped Gate（W3-11）：精确 test manifest（禁止目录通配）+ 只含 A/B/C/D/E/F/G 七片；H/I 严格 N/A ──
+export const WAVE3_TEST_FILES = [
+  'tests/unit/quality/verifierRegistry.contract.test.ts',
+  'tests/integration/evidenceAuthorityConflict.test.ts',
+  'tests/integration/failurePropagation.test.ts',
+  'tests/unit/tui/reducer-projector.contract.test.ts',
+  'tests/contract/gatewayClient.contract.test.ts',
+  'tests/integration/frontendParity.test.ts',
+  'tests/unit/voice/audioDeviceService.test.ts',
+  'tests/unit/voice/voice-domain.contract.test.ts',
+  'tests/unit/voice/wavWriter.test.ts',
+  'tests/integration/voiceSession.test.ts',
+  'tests/integration/voiceHeadlessParity.test.ts',
+  'tests/failure/voiceWorkerFailure.test.ts',
+  'tests/unit/computer/highImpactApproval.test.ts',
+  'tests/unit/computer/postcondition.test.ts',
+  'tests/unit/computer/driverContracts.test.ts',
+  'tests/integration/computerUsePipeline.test.ts',
+  'tests/integration/computerFrontendParity.test.ts',
+  'tests/integration/emergencyStop.test.ts',
+  'tests/integration/browserIsolation.test.ts',
+  'tests/failure/driverFallback.test.ts',
+  'tests/unit/build/buildContracts.test.ts',
+  'tests/integration/buildService.test.ts',
+  'tests/integration/buildRestartReadback.test.ts',
+  'tests/integration/buildEvidenceDecision.test.ts',
+  'tests/failure/buildVerifierFailure.test.ts',
+  'tests/contract/pty.contract.test.ts',
+  'tests/failure/ptyLifecycle.test.ts',
+  'tests/contract/windowsRunnerProvisioning.contract.test.ts',
+  'tests/integration/wave3-current-migration-recovery.test.ts',
+  'tests/integration/wave3-headless-e2e.test.ts',
+  'tests/integration/wave3-legacy-bypass.test.ts',
+  'tests/integration/wave3-gate-scope.test.ts',
+] as const;
+
+export const WAVE3_GATE_DEFINITIONS = [
+  { id: 'A-W3', wave: 3, command: ['npm.cmd', ['run', 'gate:wave3-a']], owner: 'wave3' },
+  { id: 'B-W3', wave: 3, command: ['npm.cmd', ['exec', '--', 'vitest', 'run', ...WAVE3_TEST_FILES]], owner: 'wave3' },
+  { id: 'C-W3', wave: 3, command: ['npm.cmd', ['run', 'drill:wave3-recovery']], owner: 'wave3' },
+  { id: 'D-W3', wave: 3, command: ['npm.cmd', ['run', 'test:wave3-headless']], owner: 'wave3' },
+  { id: 'E-W3', wave: 3, command: ['npm.cmd', ['run', 'test:windows-real']], owner: 'wave3' },
+  { id: 'F-W3', wave: 3, command: ['npm.cmd', ['run', 'test:wave3-security']], owner: 'wave3' },
+  { id: 'G-W3', wave: 3, command: ['npm.cmd', ['run', 'gate:completion']], owner: 'wave3' },
+] as const;
+
 // ── Wave 1 Gate 求值（W1-11）：只接受 W1-09 verifier 实例签发的 receipt ──
 export interface Wave1GateInput { id: 'A' | 'B' | 'C' | 'D' | 'F' | 'G'; required: boolean;
   evidence: VerifiedEvidenceReceipt[]; reviewer?: VerifiedReviewerAttestationReceipt;
