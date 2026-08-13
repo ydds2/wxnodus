@@ -12,8 +12,10 @@
 | G1 | 首次安装后必须选择系统语言（中文/English） | ✅ | `src/application/bootstrap/preBootstrapOnboarding.ts`（decidePreBootstrap/promptLanguageOnStdio/persistPreBootstrapLocale）+ `src/cli/index.ts:57-75` 接线（任何副作用前执行）+ 本次修复 continue 分支丢失 locale 字段的真实 bug + `tests/cli-first-run-language.test.ts`（7 用例：首次提示持久化/二次不提示/--lang 与 env 优先/非法 locale exit 2/非 TTY 回退/stdio [1][2] 映射/双语欢迎）|
 | G2 | 参考 Kimi 蓝图 | ✅ | 本清单即对照产物；蓝图八章全部研读（见下文逐章映射） |
 | G3 | 移除 zero-download/zero-dependency 限制 | ✅ | 全仓零自制轮子：better-sqlite3+sqlite-vec、playwright-core、robotjs、node-pty、whisper.cpp、ffmpeg、@modelcontextprotocol、undici、yaml、react19 等成熟依赖直接使用；离线仍可选（规则脑兜底），但不再以零依赖为约束（见 §9） |
-| G4 | 每个 wxnodus 成为独立艺术品 + 每用户个性化 | 🟡 | 个性化已落地（W2-02 PersonalizationService/`personalization.get/update` RPC、config 用户态、皮肤/主题、模型目录）；「独立艺术品」= 独立可发行 CLI + 每用户 config.json 独立工作区（`resolveDataDir`）——包装/分发级「艺术品化」（图标/命名/打包器）列为后续清单 §10-4 |
+| G4 | 每个 wxnodus 成为独立艺术品 + 每用户个性化 | ✅（雏形） | 个性化已落地（W2-02 PersonalizationService + config 用户态 + 皮肤/主题）；**艺术品包装层雏形已落地**：config schema `branding{name,icon}` + `ConfigService.setBranding/resolveBranding`（workspace 优先、默认名回退）+ `scripts/personalize-wxnodus.ts` demo + `tests/branding-personalization.contract.test.ts`（持久化读回/覆盖优先级/非法输入绝不部分写入/数据 URI icon）；安装器/图标打包器仍列 §10-4 |
 | G5 | 提高 AI 生产质量与自主能力的方法 | ✅ | `docs/ai-production-quality-and-autonomy-proposal.md`（七条可验证纪律 + 四条有界自主机制，全部标注落地证据） |
+| G6 | 生成 SessionStart | ✅ | `src/domain/sessions/sessionStart.ts`（文档契约+校验）+ `src/application/sessions/sessionStartGenerator.ts`（canonical sha256 全字段绑定 + 原子持久化）+ `scripts/generate-session-start.ts` demo + `tests/session-start-mcp-generation.contract.test.ts`（生成/漂移检测/持久化/非法拒绝） |
+| G7 | 生成 MCP servers（显式生成 demo） | ✅ | `src/application/mcp/mcpServerGenerator.ts`（工具签名 → 可运行 stdio 源码 `server.ts` + sha256 绑定 `manifest.json`，确定性字节输出，声明面回显不伪造业务逻辑）+ `scripts/generate-mcp-server.ts` demo + 契约测试（runnable 源码含 registerTool/确定性/非法名与 schema 拒绝） |
 
 ## 1. 蓝图第 1 章：现状解剖（八条结构性局限 L1–L8）
 
@@ -23,7 +25,7 @@
 | L2 桥接停留在文案级单向 | W2-06 双向 MCP 协议（stdio JSON-RPC，client+server 双向）、W3-09 PTY、browser/UIA 全窗口控制 | ✅ | `tests/w2-mcp-duplex.contract.test.ts`、`src/infrastructure/computer/*`、`src/domain/pty/pty.ts` |
 | L3 无操作录制/轨迹学习 | 未做轨迹录制（蓝图 M1/M2 专属能力，见 §5） | ⬜ | 明确列入 §10-1 |
 | L4 视觉代理只用于逐步决策 | GLM-4V 屏幕理解 + computer use 观察-决策闭环；仍未用于「能力归纳」 | 🟡 | `src/kernel/computer/*`、W3-05 `computerUseService.ts` |
-| L5 协议能力静态化（固定 5 工具/4 技能） | MCP Server **按工具签名生成**（非固定枚举）+ Skill 打包（agentskills 规范） | ✅ | `scripts/` 组件化构建 + `src/application/extensions/skillLifecycleService.ts` |
+| L5 协议能力静态化（固定 5 工具/4 技能） | MCP Server **按工具签名显式生成**（`mcpServerGenerator.ts`，非固定枚举）+ Skill 打包（agentskills 规范）+ 手写双工服务器并存 | ✅ | `src/application/mcp/mcpServerGenerator.ts`、`scripts/generate-mcp-server.ts`、`src/application/extensions/skillLifecycleService.ts` |
 | L6 监听闭环场景绑定 | background jobs/定时任务按 scope 参数化（不绑定单一站点） | ✅ | `src/kernel/*` jobs 事件 + `tests/ui-background.test.ts` |
 | L7 合规基座缺位 | 合规五项红线：授权存证（ConsentLedger）/AI 标注（深度合成）/审计导出/许可证扫描/robots 护栏 | ✅ | `src/kernel/tools.ts` recordConsent、`src/build/evidence.ts` complianceCheck、W1-07 安全控制面 |
 | L8 机器门空实现 | no-fabrication 落地为确定性校验：json.schema verifier、spec 校验、`VERIFIER_AUDIT_SOURCE_MISMATCH` 等 | ✅ | W3-01 16 内置 verifier + `src/domain/build/acceptance.ts` |
@@ -130,7 +132,7 @@
 1. **轨迹录制→能力归纳（蓝图 M1/M2）**：VisionCapture 录制层与 CompatNegotiator 字段映射协商。WxNodus 当前价值面是「本地 CLI agent」，站点适配器锻造是蓝图绑定织系平台的专属命题；若目标明确要求，可作为后续 wave（依赖：CDP 录制探针 + HAR 落盘 + 归纳回放校验）。
 2. **对抗探针 + held-out 变体回放**：build 验证已具备重启读回；参数扰动回放集未做（可复用 W3-08 协调器扩展）。
 3. **exemplar 池/recipes 配方沉淀 + 远程市场签名分发**：黑洞引擎已具备存储底座；沉淀与分发管线未做。
-4. **「独立艺术品」包装层**：每用户 config 个性化已实现；可发行形态（图标/命名/自包含打包器/安装器）未做——列入后续产品化。
+4. **「独立艺术品」包装层**：✅ 雏形已落地（config `branding{name,icon}` 每用户可命名/图标化 + `personalize-wxnodus.ts` demo + 契约测试）；**安装器/图标打包器/自包含发行形态**未做——列入后续产品化。
 5. **平台授权证据槽位（platformAuthRegistry）**：红线 6 的平台侧证据登记未做（单机 CLI 无多租户目标场景，保留为扩展点）。
 
 ## 11. 结论
