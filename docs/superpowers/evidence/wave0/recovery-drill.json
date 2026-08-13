@@ -24,7 +24,7 @@
   "candidateArtifactSha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
   "environmentSha256": "2fd8225a2a72cb6a96541aeb5bcbe79f1397da6c9238209b75499390d4691a9d",
   "policyManifestSha256": "0812344a8fe7895f2576d13991d265d104a10574db501a110f8b03e1531fffb9",
-  "bindingSha256": "c16d76de83e5b9179fc0c6a853d25d544a76dabf30fc66b53113714466267b0f",
+  "bindingSha256": "c31a4208f7d8d1f47309b5c1556dcaed03dee0c259e5a01cccffe863d7971952",
   "drills": {
     "config": {
       "ok": true,
@@ -35,5 +35,5 @@
       "detail": "DB forward-only：expand → N-1 窗口 → confirmed-write → reconcile → readback 通过"
     }
   },
-  "generatedAt": "2026-08-13T10:41:21.237Z"
+  "generatedAt": "2026-08-13T11:24:11.239Z"
 }

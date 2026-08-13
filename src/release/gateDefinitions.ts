@@ -1,5 +1,10 @@
-// src/release/gateDefinitions.ts — Wave 0 Gate scope（唯一 scope 定义）
+// src/release/gateDefinitions.ts — Wave 0 Gate scope（唯一 scope 定义）+ Wave 1 Gate 求值（W1-11）
 import type { GateId } from './evidenceTypes.js';
+import type { VerifiedEvidenceReceipt } from '../domain/quality/evidence.js';
+import type { ReviewerAttestationVerifier, VerifiedReviewerAttestationReceipt } from '../domain/quality/review.js';
+import type { FileEvidenceStore } from '../infrastructure/quality/fileEvidenceStore.js';
+import { gatewayError } from '../protocol/errors.js';
+import { err, ok } from '../protocol/results.js';
 
 export interface RequiredGateScope {
   mode: 'required';
@@ -70,3 +75,25 @@ export const WAVE_0_UNREACHABLE: Record<GateId, string[]> = {
   H: ['distribution-installer'],
   I: ['secondary-platform-matrix'],
 };
+
+// ── Wave 1 Gate 求值（W1-11）：只接受 W1-09 verifier 实例签发的 receipt ──
+export interface Wave1GateInput { id: 'A' | 'B' | 'C' | 'D' | 'F' | 'G'; required: boolean;
+  evidence: VerifiedEvidenceReceipt[]; reviewer?: VerifiedReviewerAttestationReceipt;
+  notApplicable?: { requirementId: string; profile: string; platform: string; unreachableEvidenceIds: string[] } }
+
+export function evaluateWave1Gates(gates: Wave1GateInput[], trust: { evidenceStore: FileEvidenceStore; reviewerVerifier: ReviewerAttestationVerifier }) {
+  for (const gate of gates) {
+    if (gate.notApplicable) {
+      if (!gate.notApplicable.requirementId || !gate.notApplicable.profile || !gate.notApplicable.platform || !gate.notApplicable.unreachableEvidenceIds.length)
+        return err(gatewayError('GATE_NOT_APPLICABLE_INVALID', gate.id, 'gate.na.invalid'));
+      continue;
+    }
+    if (!gate.evidence.length || !gate.evidence.every(item => trust.evidenceStore.owns(item)))
+      return err(gatewayError('GATE_EVIDENCE_UNTRUSTED', gate.id, 'gate.evidence.untrusted'));
+    if (gate.id === 'G' && (!gate.reviewer || !trust.reviewerVerifier.owns(gate.reviewer)))
+      return err(gatewayError('GATE_REVIEW_UNTRUSTED', gate.id, 'gate.review.untrusted'));
+    if (gate.required && gate.evidence.some(item => item.record.criteria.some(c => c.required && c.status !== 'passed')))
+      return err(gatewayError('GATE_REQUIRED_FAILED', gate.id, 'gate.required.failed'));
+  }
+  return ok({ passed: true, gateIds: gates.map(gate => gate.id) });
+}

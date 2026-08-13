@@ -39,13 +39,15 @@ export function securityControlPlaneMigration(): DbMigration {
       // 未应用（N-1 读者窗口）：无行可对账，0 mismatch——由 runner 的版本闸保证不提前 reconcile
       if (!has('approval_grants')) return { reconciledRows: 0, mismatches: 0 };
       let mismatches = 0;
-      const grants = db.prepare('SELECT context_json,context_hash,budget_snapshot_id FROM approval_grants')
-        .all() as Array<{ context_json: string; context_hash: string; budget_snapshot_id: string }>;
+      // budget binding 在 context_json.budgetSnapshotId 内（W1-07 schema 无独立列）
+      const grants = db.prepare('SELECT context_json,context_hash FROM approval_grants')
+        .all() as Array<{ context_json: string; context_hash: string }>;
       for (const grant of grants) {
-        let context: unknown;
-        try { context = JSON.parse(grant.context_json); } catch { mismatches++; continue; }
-        if (authorizationContextHash(context as Parameters<typeof authorizationContextHash>[0]) !== grant.context_hash) mismatches++;
-        if (!db.prepare('SELECT id FROM budget_snapshots WHERE id=?').get(grant.budget_snapshot_id)) mismatches++;
+        let context: Record<string, unknown> | null = null;
+        try { context = JSON.parse(grant.context_json) as Record<string, unknown>; } catch { mismatches++; continue; }
+        if (authorizationContextHash(context as unknown as Parameters<typeof authorizationContextHash>[0]) !== grant.context_hash) mismatches++;
+        const budgetId = typeof context?.budgetSnapshotId === 'string' ? context.budgetSnapshotId : null;
+        if (!budgetId || !db.prepare('SELECT id FROM budget_snapshots WHERE id=?').get(budgetId)) mismatches++;
       }
       // effect journal 哈希链对账（GENESIS → entry_hash 连续）
       if (has('effect_journal')) {
