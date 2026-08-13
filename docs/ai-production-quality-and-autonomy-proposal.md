@@ -75,7 +75,7 @@ W3-01 建立了 16 个内置 verifier（`command.exit-code`→`human.approval`�
 2. **预算感知的 prompt**：把剩余预算（token/turn/retry）注入 system prompt，让模型在接近限额时收敛而不是硬断。
 3. **证据驱动的训练反馈**：把 `CompletionGate` 的 criterionResults 落库为标注数据（哪些 verifier 经常 inconclusive），用于回灌提示词与工具设计。
 4. **多级人工介入**：human.approval verifier 已存在；下一步接动态表单（`credential.form` 已有）实现按风险分级的人工闸口。
-5. **跨 OS 真实验收常态化**：W3-10 的 Gate E 双 OS-keyed receipt 机制已落地，需在真实 Win11-24h2/Win10-22h2 runner 上产出物理 receipt（本机当前 blocked——2026-08-13 实测：单一 `\\.\DISPLAY1` 1536x864、无物理麦克风、无 .NET SDK、OS build 26200 不在 24h2/22h2 基线内；机制诚实产出 blocked receipt，绝不伪造）。
+5. **跨 OS 真实验收常态化**：W3-10 的 Gate E 双 OS-keyed receipt 机制已落地；**用户已裁定列入后续 wave（2026-08-13）**——本机实测 blocked（单一 `\\.\DISPLAY1` 1536x864、无物理麦克风、无 .NET SDK、OS build 26200 不在 24h2/22h2 基线内），机制诚实产出 blocked receipt 绝不伪造；受控 runner 的一键执行命令与前置清单见 `docs/blueprint-drift-checklist.md` §10-6。
 
 ## 四、一句话总结
 
