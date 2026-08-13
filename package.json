@@ -42,7 +42,7 @@
     "test:w2-07": "vitest run tests/w2-skill-lifecycle.contract.test.ts",
     "test:w2-08": "vitest run tests/w2-plugin-sandbox.contract.test.ts",
     "test:w2-09": "vitest run tests/w2-autonomy-persistence-budget.contract.test.ts",
-    "test:w2-10": "vitest run tests/w2-subagent-recovery-progress.contract.test.ts",
+    "test:w2-10": "vitest run tests/w2-subagent-recovery-progress.contract.test.ts tests/w2-subagent-worktree-recovery.contract.test.ts",
     "test:w2-11": "vitest run tests/w2-wave2-migration-gate.contract.test.ts",
     "test:w3-01": "vitest run tests/unit/quality/verifierRegistry.contract.test.ts tests/unit/quality/completionGate.closed-evidence.test.ts tests/integration/evidenceAuthorityConflict.test.ts tests/integration/failurePropagation.test.ts",
     "test:w3-02": "vitest run tests/unit/tui/reducer-projector.contract.test.ts tests/contract/gatewayClient.contract.test.ts tests/integration/frontendParity.test.ts",
