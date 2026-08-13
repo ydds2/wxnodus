@@ -84,7 +84,8 @@ export async function decidePreBootstrap(input: DecidePreBootstrapInput): Promis
     systemLocale: input.systemLocale,
   });
   if (parsed.value.lang || normalizeLocale(input.env.WXNODUS_LANG) || workspace || user) {
-    return { mode: 'continue', ...explicit, args: parsed.value };
+    // 注意：显式给出 locale 字段（ResolvedConfig 的 value/source 是内部形状——此前展开导致已持久化/--lang 路径丢失 locale，CLI 回退 'en'）
+    return { mode: 'continue', locale: explicit.value, source: explicit.source, args: parsed.value };
   }
   if (!input.isTTY || parsed.value.nonInteractive) {
     return {
