@@ -119,5 +119,21 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "files": [
+    "dist",
+    "packages/wxnodus-ink/dist",
+    "packages/wxnodus-ink/index.js",
+    "packages/wxnodus-ink/index.d.ts",
+    "packages/wxnodus-ink/text-input.js",
+    "packages/wxnodus-ink/text-input.d.ts",
+    "packages/wxnodus-ink/package.json",
+    "packages/wxnodus-ink/LICENSE",
+    "README.md",
+    "LICENSE"
+  ],
+  "bundledDependencies": [
+    "@wxnodus/ink"
+  ],
+  "prepack": "npm run build"
 }

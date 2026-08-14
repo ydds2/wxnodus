@@ -52,5 +52,13 @@
   },
   "devDependencies": {
     "esbuild": "^0.25.0"
-  }
+  },
+  "files": [
+    "dist",
+    "index.js",
+    "index.d.ts",
+    "text-input.js",
+    "text-input.d.ts",
+    "LICENSE"
+  ]
 }
