@@ -72,8 +72,6 @@ export interface DecidePreBootstrapInput {
 export async function decidePreBootstrap(input: DecidePreBootstrapInput): Promise<PreBootstrapDecision> {
   const parsed = parsePreBootstrapArgs(input.argv);
   if (!parsed.ok) return { mode: 'error', exitCode: 2, output: parsed.error.code };
-  if (parsed.value.help) return { mode: 'print-and-exit', exitCode: 0, output: 'help', args: parsed.value };
-  if (parsed.value.version) return { mode: 'print-and-exit', exitCode: 0, output: 'version', args: parsed.value };
 
   const [workspace, user] = await Promise.all([input.readWorkspaceLocale(), input.readUserLocale()]);
   const explicit = resolveLocalePrecedence({
@@ -83,6 +81,10 @@ export async function decidePreBootstrap(input: DecidePreBootstrapInput): Promis
     user,
     systemLocale: input.systemLocale,
   });
+  // DX-05：help/version 也携带解析后的 locale（--lang en --help 输出英文）——
+  // locale 文件只读（不创建目录），help/version 零副作用承诺保持。
+  if (parsed.value.help) return { mode: 'print-and-exit', exitCode: 0, output: 'help', locale: explicit.value, source: explicit.source, args: parsed.value };
+  if (parsed.value.version) return { mode: 'print-and-exit', exitCode: 0, output: 'version', locale: explicit.value, source: explicit.source, args: parsed.value };
   if (parsed.value.lang || normalizeLocale(input.env.WXNODUS_LANG) || workspace || user) {
     // 注意：显式给出 locale 字段（ResolvedConfig 的 value/source 是内部形状——此前展开导致已持久化/--lang 路径丢失 locale，CLI 回退 'en'）
     return { mode: 'continue', locale: explicit.value, source: explicit.source, args: parsed.value };

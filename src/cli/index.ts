@@ -40,7 +40,7 @@ if (!process.env.WXNODUS_NO_DEBUG) {
   };
 }
 // A 批次：自研参数解析（替代 commander，零依赖）
-const { parseArgs, USAGE } = await import('./args.js');
+const { parseArgs } = await import('./args.js');
 const opts = parseArgs(process.argv.slice(2));
 // --cwd：切换到指定工作目录（数据/会话/项目规范均以该目录为准；Gemini/Codex 同款）
 if (opts.cwd) {
@@ -76,7 +76,13 @@ if (pre.mode === 'error') {
   process.stderr.write(`${pre.output ?? 'CONFIG_SCHEMA_INVALID'}\n`);
   process.exitCode = 2;
 } else if (pre.mode === 'print-and-exit') {
-  process.stdout.write(pre.output === 'version' ? `wxnodus ${VERSION}\n` : `${USAGE}\n`);
+  // DX-05：help 文案按系统语言本地化（--lang en --help 无中文；code/key 不本地化）
+  if (pre.output === 'version') {
+    process.stdout.write(`wxnodus ${VERSION}\n`);
+  } else {
+    const { translate } = await import('../application/i18n/i18nService.js');
+    process.stdout.write(translate(pre.locale ?? 'zh-CN', 'cli.usage'));
+  }
   process.exit(0);
 } else {
   const locale = pre.locale ?? 'en';
