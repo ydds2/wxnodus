@@ -1520,6 +1520,12 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   bus.register('/computer', async (args) => {
+    // W3 Computer 第 1 步：组合路由决策——modern/required 在 ComputerUseService 接线完成前 fail-closed
+    const { decideComputerRoute } = await import('./computerRouting.js');
+    const computerRoute = decideComputerRoute({ env: process.env.WXNODUS_COMPOSITION_ROOT });
+    if (!computerRoute.ok) {
+      throw new Error(`[${computerRoute.error.code}] ${computerRoute.error.message}`);
+    }
     // Computer Use 手动入口（审查接线：computer/index.ts 此前零命令/零工具——README 宣传但无入口）。
     // 用法：/computer [click <x> <y> [right|double] | type <文本> | open <url> | observe | uia windows|tree|find <q>|click <q>|type <文本> <q>]
     const { join } = await import('node:path');
@@ -2149,6 +2155,12 @@ export const commands = {
 
   // P0-1：/browser——浏览器自动化（探测/导航/关闭；AI 工具 browser_* 同链路）
   bus.register('/browser', async (args) => {
+    // W3 Browser 第 1 步：组合路由决策——modern/required 在 Playwright 接线完成前 fail-closed
+    const { decideBrowserRoute } = await import('./computerRouting.js');
+    const browserRoute = decideBrowserRoute({ env: process.env.WXNODUS_COMPOSITION_ROOT });
+    if (!browserRoute.ok) {
+      throw new Error(`[${browserRoute.error.code}] ${browserRoute.error.message}`);
+    }
     const sub = String(args[0] ?? '').toLowerCase();
     const { browserProbe, browserClose, browserNavigate } = await import('../kernel/browser.js');
     if (sub === 'close') return await browserClose();
