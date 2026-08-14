@@ -16,7 +16,13 @@ it('keeps the event loop responsive and confirms process-tree termination on abo
     terminateTree,
   };
   const temp = { remove: vi.fn(async () => ({ ok: true as const, value: undefined })) };
-  const service = new VoiceSessionService({ supervisor, temp, sttReady: () => true });
+  const transcriptStore = {
+    save: vi.fn(async () => ({ ok: true as const, value: undefined })),
+    load: vi.fn(async () => ({ ok: true as const, value: 'text' })),
+  };
+  const service = new VoiceSessionService({ supervisor, temp, transcriptStore, sttReady: () => true });
+  await service.start('push-to-talk', AbortSignal.timeout(100));
+  service.speechDetected();
   const controller = new AbortController();
   const pending = service.transcribe({ id: 'audio-1', path: 'audio.wav', retention: 'ephemeral' }, controller.signal);
   await new Promise(resolve => setTimeout(resolve, 40));
@@ -35,6 +41,7 @@ it('does not enter listening when STT capability is unavailable', async () => {
   const service = new VoiceSessionService({
     supervisor: { spawn: vi.fn(), terminateTree: vi.fn() },
     temp: { remove: vi.fn() },
+    transcriptStore: { save: vi.fn(), load: vi.fn() },
     sttReady: () => false,
   });
   await expect(service.start('push-to-talk', AbortSignal.timeout(100))).resolves.toMatchObject({

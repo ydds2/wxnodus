@@ -6,11 +6,23 @@ const okProcess = (overrides: Partial<{ exitCode: number | null; timedOut: boole
   processId: 7, exitCode: 0, signal: null, stdout: '你好世界', stderr: '', timedOut: false, aborted: false, ...overrides,
 });
 
+const store = () => ({
+  save: vi.fn(async () => ({ ok: true as const, value: undefined })),
+  load: vi.fn(async () => ({ ok: true as const, value: '你好世界' })),
+});
+
+// 状态机前置：listening → speech_detected 后才能转写（契约锁定 idle 直跳非法）
+const readyToTranscribe = async (service: VoiceSessionService) => {
+  await service.start('push-to-talk', AbortSignal.timeout(100));
+  service.speechDetected();
+};
+
 describe('VoiceSessionService', () => {
   it('transcribes successfully and returns an opaque transcript ref', async () => {
     const spawn = vi.fn(async () => okProcess());
     const temp = { remove: vi.fn(async () => ({ ok: true as const, value: undefined })) };
-    const service = new VoiceSessionService({ supervisor: { spawn, terminateTree: vi.fn() }, temp, sttReady: () => true });
+    const service = new VoiceSessionService({ supervisor: { spawn, terminateTree: vi.fn() }, temp, transcriptStore: store(), sttReady: () => true });
+    await readyToTranscribe(service);
     const result = await service.transcribe({ id: 'audio-1', path: 'a.wav', retention: 'session' }, AbortSignal.timeout(1_000));
     expect(result).toMatchObject({ ok: true, value: { transcriptRef: { ref: 'transcript://audio-1' } } });
     // session 保留：临时文件不清理
@@ -20,12 +32,14 @@ describe('VoiceSessionService', () => {
 
   it('cleans up ephemeral audio after transcribe and maps timeout/crash to stable codes', async () => {
     const temp = { remove: vi.fn(async () => ({ ok: true as const, value: undefined })) };
-    const timedOut = new VoiceSessionService({ supervisor: { spawn: vi.fn(async () => okProcess({ timedOut: true })), terminateTree: vi.fn() }, temp, sttReady: () => true });
+    const timedOut = new VoiceSessionService({ supervisor: { spawn: vi.fn(async () => okProcess({ timedOut: true })), terminateTree: vi.fn() }, temp, transcriptStore: store(), sttReady: () => true });
+    await readyToTranscribe(timedOut);
     expect(await timedOut.transcribe({ id: 'a2', path: 'b.wav', retention: 'ephemeral' }, AbortSignal.timeout(1_000)))
       .toMatchObject({ ok: false, error: { code: 'VOICE_WORKER_TIMEOUT' } });
     expect(temp.remove).toHaveBeenCalledWith('b.wav');
 
-    const crashed = new VoiceSessionService({ supervisor: { spawn: vi.fn(async () => okProcess({ exitCode: 3 })), terminateTree: vi.fn() }, temp, sttReady: () => true });
+    const crashed = new VoiceSessionService({ supervisor: { spawn: vi.fn(async () => okProcess({ exitCode: 3 })), terminateTree: vi.fn() }, temp, transcriptStore: store(), sttReady: () => true });
+    await readyToTranscribe(crashed);
     expect(await crashed.transcribe({ id: 'a3', path: 'c.wav', retention: 'audit' }, AbortSignal.timeout(1_000)))
       .toMatchObject({ ok: false, error: { code: 'VOICE_WORKER_CRASHED' } });
     // audit 保留：不清理
@@ -39,7 +53,8 @@ describe('VoiceSessionService', () => {
           resolve => signal.addEventListener('abort', () => resolve({ ...okProcess(), aborted: true }), { once: true }))),
       terminateTree: vi.fn(async () => ({ ok: false as const, error: { code: 'VOICE_PROCESS_TREE_STILL_RUNNING', message: 'x', messageKey: 'x', retryable: false } })),
     };
-    const service = new VoiceSessionService({ supervisor, temp: { remove: vi.fn(async () => ({ ok: true as const, value: undefined })) }, sttReady: () => true });
+    const service = new VoiceSessionService({ supervisor, temp: { remove: vi.fn(async () => ({ ok: true as const, value: undefined })) }, transcriptStore: store(), sttReady: () => true });
+    await readyToTranscribe(service);
     const controller = new AbortController();
     const pending = service.transcribe({ id: 'a4', path: 'd.wav', retention: 'ephemeral' }, controller.signal);
     controller.abort();

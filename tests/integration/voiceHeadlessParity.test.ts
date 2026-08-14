@@ -7,7 +7,8 @@ const makeService = (sttReady: boolean) => new VoiceSessionService({
     spawn: vi.fn(async () => ({ processId: 1, exitCode: 0, signal: null, stdout: '', stderr: '', timedOut: false, aborted: false })),
     terminateTree: vi.fn(async () => ({ ok: true as const, value: undefined })),
   },
-  temp: { remove: vi.fn(async () => ({ ok: true as const, value: undefined })) },
+  transcriptStore: { save: async () => ({ ok: true as const, value: undefined }), load: async () => ({ ok: true as const, value: '' }) },
+    temp: { remove: vi.fn(async () => ({ ok: true as const, value: undefined })) },
   sttReady: () => sttReady,
 });
 
@@ -35,6 +36,9 @@ describe('voice headless parity', () => {
   it('returns identical abort codes on every entry point', async () => {
     const results = await Promise.all(fronts.map(async () => {
       const service = makeService(true);
+      // 状态机前置：listening → speech_detected 后转写（与其它入口一致）
+      await service.start('push-to-talk', AbortSignal.timeout(100));
+      service.speechDetected();
       const controller = new AbortController();
       const pending = service.transcribe({ id: 'x', path: 'x.wav', retention: 'ephemeral' }, controller.signal);
       controller.abort();
