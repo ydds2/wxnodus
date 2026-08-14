@@ -174,3 +174,9 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - `src/commands/voiceRouting.ts`: voice capability routing (same shape as build routing) — modern/required fails closed with `VOICE_MODERN_UNAVAILABLE` while kernel/TUI voice is not yet a `VoiceSessionService` facade; legacy/shadow unchanged. `/voice` handler enforces it.
 - VoiceSessionService/domain/audio-contract/worker-failure tests already exist (W3-03/04 suites); facade collapse is the remaining step.
 - Full suite: 209 files / 1698 passed / 10 skipped / 0 failed.
+
+
+## Wave 3 progress (Computer/Browser step 1) — 2026-08-14
+
+- `src/commands/computerRouting.ts`: computer + browser capability routing (shared generic, same fail-closed shape as build/voice) — modern/required fails closed with `COMPUTER_MODERN_UNAVAILABLE` / `BROWSER_MODERN_UNAVAILABLE` while ComputerUseService full-port wiring (PDP/approval/postcondition/evidence) is incomplete; legacy/shadow unchanged; `/computer` and `/browser` handlers enforce it.
+- Full suite: 210 files / 1703 passed / 10 skipped / 0 failed.
