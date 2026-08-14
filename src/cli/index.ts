@@ -100,43 +100,36 @@ if (pre.mode === 'error') {
     _initErrorLog(dataDir);
     mkdirSync(dataDir, { recursive: true });
 
-  const [{ createConfig }, { openDB, closeDB }, { createEventBus }, { createMemory }, { createAgent }, { createCommandBus }, { createHookRunner }, { GatewayClient }] = await Promise.all([
-    import('../store/config.js'),
-    import('../store/db.js'),
+  const [{ createEventBus }, { createAgent }, { createCommandBus }, { createHookRunner }, { GatewayClient }] = await Promise.all([
     import('../kernel/events.js'),
-    import('../kernel/memory.js'),
     import('../kernel/agent.js'),
     import('../app/CommandBus.js'),
     import('../kernel/hooks.js'),
     import('../wxnodus-ui/wxGateway.js'),
   ]);
 
-  const config = createConfig(dataDir);
-  const db = openDB(dataDir);
-  // W7-03：黑洞同化索引（代码/模块/插件/MCP）——与记忆同库，FTS5 + bigram_zh
-  const { CodeIndexRepository } = await import('../infrastructure/code/codeIndexRepository.js');
-  const codeIndex = new CodeIndexRepository(db);
-  codeIndex.install();
+  // W8-00：组合根接管第一刀——config/repositories/kernel 依赖装配统一走 createCliComposition
+  // （固定阶段 + 失败只 dispose 已启动资源 + shutdown 幂等；db 关闭由组合根统一负责）
+  const { createCliComposition } = await import('../bootstrap/cliComposition.js');
+  const composition = await createCliComposition({ dataDir, workspaceRoot: cwd });
+  if (!composition.ok) {
+    console.error(`wxnodus: ${composition.error.code} ${JSON.stringify(composition.error.details ?? {})}`);
+    process.exit(2);
+  }
+  const { config, db, codeIndex, memoryRepository, mem } = composition.value;
   // W2-03：统一幂等关闭——全部 disposer 尝试、聚合失败 id（bootstrapShutdown 语义）；
-  // serve/keepalive/TUI/SIGINT/SIGTERM 共用同一条关闭路径（此前各分支各写各的 process.exit）。
+  // serve/keepalive/TUI/SIGINT/SIGTERM 共用同一条关闭路径（组合根资源 + CLI 层资源一并聚合）。
   const { createShutdown } = await import('../bootstrap/bootstrapShutdown.js');
   const disposers: Array<{ id: string; dispose: (reason: string) => Promise<void> | void }> = [];
-  const shutdown = (reason = 'cli') => createShutdown(disposers)(reason);
-  disposers.push({ id: 'db', dispose: () => { closeDB(db); } });
+  const shutdown = (reason = 'cli') => createShutdown([
+    ...disposers,
+    { id: 'composition', dispose: () => composition.value.shutdown(reason).then(ids => { if (ids.length) throw new Error(`composition failed: ${ids.join(',')}`); }) },
+  ])(reason);
   const bus = createEventBus(dataDir);
   // W3 Memory 影子双写（决策：影子双写、观察后切换）：legacy 消息写入是唯一行为事实源，
   // 影子同步写 modern 显式记忆记录（session scope，失败只计数不上抛）；召回观察期保持 legacy。
-  // memoryRepository 同一实例供影子写与 /memory 命令（memoryServiceFor）共用。
-  const memBase = createMemory(db);
-  const { openMemoryRepository: openMemoryRepo } = await import('../infrastructure/sqlite/memoryRepository.js');
-  const { createMemoryShadow } = await import('../application/memory/memoryShadow.js');
+  // mem/memoryRepository 已由组合根装配（同一实例供影子写与 /memory 命令 memoryServiceFor 共用）。
   const { createMemoryService } = await import('../application/memoryService.js');
-  const { randomUUID: uuid } = await import('node:crypto');
-  const memoryRepository = openMemoryRepo(db, {
-    now: () => Date.now(),
-    idFactory: prefix => `${prefix}-${uuid()}`,
-  });
-  const mem = createMemoryShadow({ legacy: memBase, repository: memoryRepository, db });
   const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string; mode?: string; theme?: string; thinking?: boolean; workspace?: string };
   // W7-00：主工作区动态指定（用户动态确定的项目文件夹）——cli(--workspace) > env(WXNODUS_WORKSPACE) >
   // persisted(settings.workspace) > cwd 默认；显式非法 fail-closed 绝不静默降级。
