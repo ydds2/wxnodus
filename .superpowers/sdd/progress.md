@@ -327,3 +327,14 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - 契约：`tests/wave3/w3-agent-pipeline-wiring.test.ts` 9/9（全链 grant/journal/evidence、桥语义、超预算、postcondition、agent 级 goal/chat 集成）。
 - 全量：**231 文件 / 1809 通过 / 10 跳过 / 0 失败**；known-failures 31/31（27 open 稳定复现 + 3 migrated 绿回归 + 1 原有）；typecheck×2/build/discovery 干净；dist smoke（--version / 确定性计算）通过。
 - 剩余：forge KF-016/017 修复（下轮）；Wave 5（Market 信任根 + HAR 脱敏）；Wave 6（evidence 索引接线/Gate E-H-I/finalizer）。
+
+## Priority 2 完成（forge KF-016/017 原子修复）— 2026-08-15
+
+- RED 先行（4 红实证）：`kf-016-forge-path-normalization.regression.test.ts`（幂等组合 + 父目录约定向后兼容）、`kf-017-forge-placeholder-verification.regression.test.ts`（无证据伪 verified 拒绝 / verify 证据门 + 持久化 / 状态机 installed 须先 verified + 撤销保留）。
+- 修复：
+  - `src/forge/forge.ts`：`componentDir(outDir, name)`——basename===name 时直接落位（消除 /forge 命令实际触发的双拼缺陷），父目录约定向后兼容；forgeMcpServer/forgeSkillDir 共用。
+  - `src/forge/registry.ts`：状态机——`setStatus(id,'verified')` 一律忽略（verified 唯一通道是 `verify(id, evidence)` 非空证据门，证据落库 `verification` 字段）；`installed` 须先 `verified`（不跳过检疫）；→quarantine 撤销任意态允许。
+- `tests/forge.test.ts` 锁定旧缺陷语义的断言更新为诚实状态机流。
+- 全量：**233 文件 / 1814 通过 / 10 跳过 / 0 失败**；known-failures 31/31（18 open oracle + 12 migrated 绿回归）；typecheck×2/build/discovery 干净。
+- KF 账本现状：30 条中 12 条 resolved-with-green-regression，18 条 open（环境/legacy 路径缺陷稳定复现）。
+- 剩余：Wave 5（Market 信任根 + HAR 预存储脱敏）、Wave 6（evidence 索引接线 / Gate E-H-I / release:finalize）。
