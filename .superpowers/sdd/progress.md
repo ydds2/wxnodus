@@ -113,3 +113,11 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - Tests: `tests/wave3/w3-build-service-wiring.test.ts` 6/6 — full chain to an owned `succeeded` receipt with real evidence store + real signatures.
 - Full suite: 203 files / 1675 passed / 10 skipped / 0 failed.
 - Remaining: `/build` handler modern branch wiring (reviewer key persistence + snapshot services), then session/memory/voice/computer/plugin/subagent/MCP/TUI.
+
+
+## Wave 3 progress (reviewer key persistence) — 2026-08-14
+
+- `src/application/quality/reviewerKeyService.ts`: persisted Ed25519 reviewer identity — private key encrypted (AES via injected cipher, machine-fingerprint bound in production), plaintext never touches disk; idempotent load-or-create; corrupted ciphertext fails closed (`REVIEWER_KEY_CORRUPT`) instead of silently regenerating (which would invalidate all historical attestations).
+- Interop test proves the full chain now runs end-to-end with a persisted key service: `createReviewerKeyService` bundle → `createProductionBuildWiring` → `compileAndRun` → owned `succeeded` receipt.
+- Full suite: 204 files / 1681 passed / 10 skipped / 0 failed.
+- Remaining for `/build` modern branch: spec→acceptance contract (rule-brain specs carry no verifierId — honest fail-closed until structured acceptance exists), snapshot service wiring (environment/capability/policy), then handler flip.
