@@ -1925,6 +1925,45 @@ export const commands = {
     if (!mcpRoute.ok) {
       throw new Error(`[${mcpRoute.error.code}] ${mcpRoute.error.message}`);
     }
+    // W3 MCP facade：modern 路由经现代 client host（SDK auto negotiation 是 era 事实源）+
+    // transport policy + transcript store；shutdown 由统一 disposer 纳入（cli 'mcp' 已接线）。
+    // incoming stdio/Streamable HTTP 由 WxNodusMcpServer 真实启动——只发布真实 delivered surface
+    // （pipeline 未接线即 NOT_DELIVERED fail-closed，绝不假发布）。
+    if (mcpRoute.value.route === 'modern') {
+      const { connectMcp: connectModern } = await import('../infrastructure/mcp/mcpClientHost.js');
+      const { McpTransportPolicy } = await import('../infrastructure/mcp/mcpTransportPolicy.js');
+      const { InMemoryMcpTranscriptStore } = await import('../infrastructure/mcp/mcpTranscriptStore.js');
+      const { loadMcpConfig: loadModern } = await import('../kernel/mcp.js');
+      const [sub, ...rest] = args;
+      const entries = loadModern(ctx.dataDir, { cwd: ctx.cwd });
+      if (!sub || sub === 'list') {
+        return lines(' MCP（modern 路由） ', [
+          ...(entries.length ? entries.map(s => ` ${s.name}${s.source === 'project' ? ' [项目]' : ' [用户]'} → ${s.url ? `HTTP ${s.url}` : `${s.command} ${(s.args ?? []).join(' ')}`}`) : [' 未配置 server']),
+          ' /mcp connect <名称> —— 真实 SDK 协商（stdio/streamable-http，era 事实源）',
+          ' 传输策略：policy 逐条判定；transcript 落盘审计；dispose 纳入统一 shutdown',
+        ]);
+      }
+      if (sub === 'connect' && rest[0]) {
+        const target = entries.find(e => e.name === rest[0]);
+        if (!target) return `server「${rest[0]}」未配置（/mcp add 先配置）`;
+        try {
+          const { lookup } = await import('node:dns/promises');
+          const policy = new McpTransportPolicy({ resolve: async host => (await lookup(host, { all: true })).map(r => r.address) });
+          if (target.url) await policy.assertHttpTarget(new URL(target.url)); // SSRF 先验（私网/loopback/DNS fail-closed）
+          const config = target.url
+            ? { transport: 'streamable-http' as const, url: target.url, headers: {} }
+            : { transport: 'stdio' as const, command: target.command, args: target.args ?? [], env: {} };
+          const connected = await connectModern(config, AbortSignal.timeout(30_000));
+          const transcript = new InMemoryMcpTranscriptStore(() => new Date().toISOString());
+          transcript.append({ requestId: `r-${Date.now()}`, direction: 'out', method: 'initialize', status: 'ok', payload: { name: target.name, era: connected.era, negotiatedVersion: connected.negotiatedVersion }, evidenceId: `mcp-connect:${target.name}` });
+          await connected.dispose();
+          return `已连接 ${target.name}：era ${connected.era} · 协议 ${connected.negotiatedVersion}（transcript 已记录）`;
+        } catch (cause) {
+          return `[MCP_CONNECT_FAILED] ${String((cause as Error)?.message ?? cause).slice(0, 200)}`;
+        }
+      }
+      return 'modern 路由：/mcp list ｜ connect <名称>（incoming server 经 WxNodusMcpServer——未接线 pipeline 的 surface 如实 NOT_DELIVERED）';
+    }
     const { loadMcpConfig, saveMcpConfig, saveProjectMcpConfig, connectMcp } = await import('../kernel/mcp.js');
     const [sub, ...rest] = args;
     const entries = loadMcpConfig(ctx.dataDir, { cwd: ctx.cwd });

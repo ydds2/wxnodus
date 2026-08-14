@@ -23,7 +23,7 @@ export interface PreBootstrapDecision {
 }
 
 const VALUE_FLAGS = new Set(['--lang', '--data-dir', '--prompt', '-p', '--cwd', '-C', '--session', '-s', '--port', '--output-schema']);
-const BOOL_FLAGS = new Set(['--help', '-h', '--version', '-v', '--json', '--wire', '--serve', '--strict-mcp-config', '--ephemeral']);
+const BOOL_FLAGS = new Set(['--help', '-h', '--version', '-v', '--json', '--wire', '--serve', '--strict-mcp-config', '--ephemeral', '--mcp-server']);
 
 export function parsePreBootstrapArgs(argv: string[]): OperationResult<PreBootstrapArgs> {
   const out: PreBootstrapArgs = { help: false, version: false, nonInteractive: false };
@@ -33,7 +33,7 @@ export function parsePreBootstrapArgs(argv: string[]): OperationResult<PreBootst
     if (BOOL_FLAGS.has(flag)) {
       if (flag === '--help' || flag === '-h') out.help = true;
       if (flag === '--version' || flag === '-v') out.version = true;
-      if (['--json', '--wire', '--serve'].includes(flag)) out.nonInteractive = true;
+      if (['--json', '--wire', '--serve', '--mcp-server'].includes(flag)) out.nonInteractive = true;
       continue;
     }
     if (VALUE_FLAGS.has(flag)) {

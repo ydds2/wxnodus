@@ -21,13 +21,13 @@ describe('extension capability routing', () => {
     expect(modern.value.route).toBe('modern');
   });
 
-  it('mcp defaults to legacy and fails closed on modern', () => {
+  it('mcp defaults to legacy and routes to the wired client host on modern', () => {
     const legacy = decideMcpRoute({});
     const modern = decideMcpRoute({ operatorFlag: 'modern' });
     expect(legacy.ok && legacy.value.route).toBe('legacy');
-    expect(modern.ok).toBe(false);
-    if (modern.ok) throw new Error('unreachable');
-    expect(modern.error.code).toBe('MCP_MODERN_UNAVAILABLE');
+    expect(modern.ok).toBe(true);
+    if (!modern.ok) throw new Error('unreachable');
+    expect(modern.value.route).toBe('modern');
   });
 
   it('shadow stays on legacy for all three', () => {

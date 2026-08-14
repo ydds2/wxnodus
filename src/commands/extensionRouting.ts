@@ -21,7 +21,10 @@ export interface ExtensionRouteDecision {
 // （broker 权限请求在生产 ToolExecutionPipeline 接线前 fail-closed——不假执行）
 const PLUGIN_WIRED = true;
 const SUBAGENT_WIRED = true;
-const MCP_WIRED = false;
+// MCP 已接线：extensions /mcp modern 分支（SDK auto negotiation + transport policy + transcript）+
+// shutdown 纳入（incoming server close 进统一 disposer）+ incoming stdio（--mcp-server）/Streamable HTTP（/mcp）。
+// pipeline 未接线 surface 一律 NOT_DELIVERED fail-closed（绝不假发布）。
+const MCP_WIRED = true;
 
 function decideCapability(input: {
   operatorFlag?: string;
@@ -77,7 +80,7 @@ export function decideMcpRoute(input: { operatorFlag?: string; env?: string }): 
     capability: 'mcp',
     wired: MCP_WIRED,
     unavailableCode: 'MCP_MODERN_UNAVAILABLE',
-    unavailableMessage: 'mcp 能力的 modern 路由尚未完成生产接线（extensions 接线 + shutdown 纳入）',
+    unavailableMessage: 'mcp 能力的 modern 路由不可用（extensions 接线 + shutdown 纳入未完成）',
     unavailableKey: 'mcp.modern.unavailable',
   });
 }

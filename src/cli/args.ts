@@ -16,6 +16,8 @@ export interface CliOptions {
   port: number | null;
   /** --ephemeral：临时会话（Codex 对齐——不加载历史，结束后清理，不污染会话列表） */
   ephemeral: boolean;
+  /** --mcp-server：incoming MCP stdio 服务器模式（真实启动；discovery/tools/resources/prompts 双工） */
+  mcpServer: boolean;
   /** --output-schema <json>：--json 模式下输出结构校验（claude --json-schema / codex --output-schema 对齐，零依赖轻量校验） */
   outputSchema: string | null;
   positional: string[];
@@ -40,13 +42,14 @@ export const CLI_FLAG_SPEC: ReadonlyArray<{
   { long: '--serve', key: 'serve', type: 'bool' },
   { long: '--port', key: 'port', takeValue: true, type: 'string' },
   { long: '--ephemeral', key: 'ephemeral', type: 'bool' },
+  { long: '--mcp-server', key: 'mcpServer', type: 'bool' },
   { long: '--output-schema', key: 'outputSchema', takeValue: true, type: 'string' },
 ];
 
 const SPEC = CLI_FLAG_SPEC;
 
 export function parseArgs(argv: string[]): CliOptions {
-  const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, port: null, ephemeral: false, outputSchema: null, positional: [] };
+  const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, port: null, ephemeral: false, mcpServer: false, outputSchema: null, positional: [] };
   let i = 0;
   const findSpec = (tok: string): { spec: (typeof SPEC)[number]; inline?: string } | null => {
     for (const spec of SPEC) {
@@ -104,12 +107,16 @@ export const USAGE = `WxNodus V3 — 本地概念编译器 CLI
   wxnodus -C <目录>          指定工作目录
   wxnodus -s <会话ID>        指定会话
   wxnodus -p "需求" --strict-mcp-config  仅信任项目声明 MCP
+  wxnodus --mcp-server              incoming MCP stdio 服务器（双工 discovery/tools）
+  wxnodus --serve                   本地 AI 网关（HTTP，Bearer 认证）
 
 选项：
   -p, --prompt <text>  非交互单次执行
       --json           -p 模式下输出 JSON
       --wire           -p 模式下输出 JSONL 事件流
       --strict-mcp-config 仅信任项目 .mcp.json 声明
+      --mcp-server     incoming MCP stdio 服务器模式（需 WXNODUS_MCP_REQUEST_STATE_KEY）
+      --serve          启动本地 AI 网关（--port 指定端口，默认 4789）
   -C, --cwd <dir>      工作目录
   -s, --session <id>   会话 ID
       --lang <zh-CN|en> 系统语言（首次启动选择；优先级 cli > env > workspace > user）

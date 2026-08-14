@@ -126,6 +126,41 @@ if (pre.mode === 'error') {
   }
   let model = settings.model ?? (settings.apiKeyEnc ? resolveDefaultModel({}) : '');
 
+  // W3 MCP facade：incoming server 共享构造（--mcp-server stdio 与 --serve /mcp Streamable HTTP 同一 ports）——
+  // CapabilityPort 用真实 registry（require 决定 surface）；pipeline fail-closed（生产未接线即 NOT_DELIVERED，绝不假发布）
+  const { createHash, randomUUID } = await import('node:crypto');
+  const { Wave1CapabilityRegistry } = await import('../application/capabilities/capabilityRegistry.js');
+  const { createMcpIncomingServer } = await import('../application/mcp/mcpServerWiring.js');
+  const policySnapshotId = createHash('sha256').update(JSON.stringify(settings ?? {})).digest('hex');
+  const makeMcpIncoming = () => createMcpIncomingServer({
+    capabilities: new Wave1CapabilityRegistry(policySnapshotId, () => new Date().toISOString()),
+    contextFactory: () => ({
+      actorId: 'actor:cli', sessionId: opts.session ?? 'default', runId: null,
+      correlationId: randomUUID(), policySnapshotId, locale: 'zh-CN', source: 'cli' as const,
+      capabilities: ['memory'], timestamp: new Date().toISOString(),
+    }),
+  });
+
+  // W3 MCP facade：--mcp-server —— incoming stdio 服务器模式（真实 connect；close 纳入统一 shutdown）
+  if (opts.mcpServer) {
+    const mcp = makeMcpIncoming();
+    disposers.push({ id: 'mcp-incoming', dispose: () => mcp.close() });
+    try {
+      await mcp.startStdio();
+    } catch (e: any) {
+      process.stderr.write(`wxnodus: ${String(e?.code === 'MCP_REQUEST_STATE_KEY_MISSING' ? e.message : e?.message ?? e)}\n`);
+      process.exitCode = 2;
+      await shutdown('mcp-server-start-failed');
+      return;
+    }
+    // 常驻等待（事件循环由 stdio transport 保持）；stdin EOF/transport close 触发 close → shutdown
+    process.on('SIGINT', () => { void shutdown('sigint').finally(() => process.exit(0)); });
+    process.on('SIGTERM', () => { void shutdown('sigterm').finally(() => process.exit(0)); });
+    await new Promise<void>(() => {});
+    return;
+  }
+
+
   // 审批桥：agent 工具确认 → GatewayClient.requestApproval（审批 overlay）
   let gateway: any = null;
 
@@ -403,12 +438,16 @@ if (pre.mode === 'error') {
   if (opts.serve) {
     const { startServeServer } = await import('./serve.js');
     const port = opts.port ?? Number(process.env.WXNODUS_SERVE_PORT ?? 4789);
+    // W3 MCP facade：incoming Streamable HTTP（/mcp）与 serve 共用生命周期——close 纳入统一 shutdown
+    const mcpIncoming = makeMcpIncoming();
     const srv = startServeServer({
       dataDir, cwd, db, bus, mem, agent,
       commandBus,
       config,
+      mcpHandler: (req, res) => mcpIncoming.httpHandler(req, res),
     }, port);
     disposers.push({ id: 'serve', dispose: async () => { await srv.close(); } });
+    disposers.push({ id: 'mcp-incoming', dispose: () => mcpIncoming.close() });
     console.log(`◉ WxNodus AI 网关已启动：http://127.0.0.1:${srv.port}`);
     console.log(`  GET  /health/live  存活探针（无认证）｜ GET /health /rpc /events 需 Bearer（WXNODUS_SERVE_TOKEN）`);
     console.log('  Ctrl+C 停止');

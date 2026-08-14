@@ -27,6 +27,8 @@ export interface ServeKernel {
   agent: { run(prompt: string): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>; getSessionId?(): string; setSessionId?(id: string): void };
   commandBus: { execute(cmd: string): Promise<{ ok: boolean; output?: string; error?: string; completionStatus?: RunFinalStatus }> };
   config: { get(p: string): Record<string, any> };
+  /** W3 MCP facade：incoming Streamable HTTP handler（/mcp 挂载；Bearer/CSRF 前置后委托 SDK handler） */
+  mcpHandler?: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 }
 
 export interface ServeSecurityOptions {
@@ -165,6 +167,13 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
           }));
         }
         req.on('close', () => { for (const off of offs) { try { off(); } catch {} } });
+        return;
+      }
+
+      // W3 MCP facade：incoming Streamable HTTP——MCP 客户端 POST/GET/DELETE（含 legacy SSE 会话与 DELETE 终止）
+      // 在 CSRF（有 Origin 才放行 allowlist）+ Bearer 之后委托 SDK handler；响应由 handler 自行写出
+      if (k.mcpHandler && url.pathname === '/mcp' && (req.method === 'POST' || req.method === 'GET' || req.method === 'DELETE')) {
+        await k.mcpHandler(req, res);
         return;
       }
 
