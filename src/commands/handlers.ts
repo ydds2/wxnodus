@@ -417,6 +417,13 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   // 概念编译（超复杂项目能力）
   bus.register('/build', async (args) => {
+    // W3 Build 第 1 步：组合路由决策——modern/required 在 BuildService 生产接线完成前
+    // fail-closed（BUILD_MODERN_UNAVAILABLE），绝不静默退回 legacy 假成功
+    const { decideBuildRoute } = await import('./buildRouting.js');
+    const buildRoute = decideBuildRoute({ env: process.env.WXNODUS_COMPOSITION_ROOT });
+    if (!buildRoute.ok) {
+      throw new Error(`[${buildRoute.error.code}] ${buildRoute.error.message}`);
+    }
     // A21：--dry-run——只编译（规格诊断 + 计划预览），零副作用；P2-2：--strict——门禁未过标记失败
     const dryRun = args.includes('--dry-run');
     const strict = args.includes('--strict');
