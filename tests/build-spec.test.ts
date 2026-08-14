@@ -131,7 +131,7 @@ describe('证据链（evidence）', () => {
     const p = join(dir, 'proj3');
     instantiate({ title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p);
     const fp = fingerprint(p);
-    expect(fp.length).toBe(6); // sha256[:6]
+    expect(fp.length).toBe(64); // 完整 SHA-256（KF-020：绝不截断）
     const r = writeEvidence(p, { status: 'ok', checks: ['health-ok'], port: 4321 });
     expect(r).toBe(true);
     const ev = JSON.parse(readFileSync(join(p, 'evidence.json'), 'utf8'));

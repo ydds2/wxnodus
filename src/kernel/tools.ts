@@ -713,7 +713,7 @@ export function coreTools(): Record<string, ToolDef> {
           return `规格校验失败：${errors.map(e => e.message).join('；')}`;
         }
         const dir = join(ctx.dataDir, 'projects', parsed.title);
-        const r = instantiate(s, dir);
+        const r = instantiate(s, dir, plan); // KF-022：scaffold 由 BuildPlan 驱动
         if (!r.ok) return `脚手架失败：${r.reason}`;
         // A21：规格 IR 版本化——spec.json 快照 + sha256（后续 build 可 diff/增量）
         try {

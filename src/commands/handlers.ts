@@ -689,7 +689,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     };
     // 构建（脚手架 → 真实验证 → 证据落盘 → 质量门）
     progress('脚手架生成…');
-    const sc = instantiate(spec, projDir);
+    const sc = instantiate(spec, projDir, plan); // KF-022：scaffold 由 BuildPlan 驱动（绝不绕过计划）
     if (!sc.ok) return `脚手架失败：${sc.reason}`;
     // A21：规格 IR 版本化（spec.json 快照 + sha256——后续 build 可 diff/增量重编）
     try {

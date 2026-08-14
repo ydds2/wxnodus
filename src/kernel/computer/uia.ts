@@ -124,10 +124,17 @@ if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
       $sel.Select()
       '{"ok":true,"method":"select"}'
     } catch {
+      # 兜底真实点击（绝不以伪动作谎报成功）：SetCursorPos + mouse_event 按下/抬起
       $rect = $el.Current.BoundingRectangle
       $script:centerX = [int]($rect.X + $rect.Width / 2)
       $script:centerY = [int]($rect.Y + $rect.Height / 2)
-      "{\`"ok\`":true,\`"method\`":\`"focus\`",\`"x\`":$script:centerX,\`"y\`":$script:centerY}"
+      $sig = '[DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, int dwExtraInfo);'
+      if (-not ('WxNodus.WxUiaClick' -as [type])) { Add-Type -MemberDefinition $sig -Name WxUiaClick -Namespace WxNodus }
+      $moved = [WxNodus.WxUiaClick]::SetCursorPos($script:centerX, $script:centerY)
+      [WxNodus.WxUiaClick]::mouse_event(0x0002, 0, 0, 0, 0)
+      [WxNodus.WxUiaClick]::mouse_event(0x0004, 0, 0, 0, 0)
+      if (-not $moved) { '{"ok":false,"reason":"click fallback failed: SetCursorPos"}' }
+      else { "{\`"ok\`":true,\`"method\`":\`"mouse\`",\`"x\`":$script:centerX,\`"y\`":$script:centerY}" }
     }
   }
 }
@@ -196,7 +203,7 @@ export function uiaFind(query: string, handle?: string): UiaResult {
   return runPs('find', [name, id, handle ?? '']);
 }
 
-/** 元素级点击：InvokePattern → SelectionItemPattern → 坐标兜底（返回 focus 坐标可转 robotjs） */
+/** 元素级点击：InvokePattern → SelectionItemPattern → 坐标兜底真实 mouse_event 点击（绝不 focus 假成功） */
 export function uiaClick(query: string, handle?: string): UiaResult {
   const parts = String(query ?? '').split('|');
   return runPs('click', [parts[0] ?? '', parts[1] ?? '', handle ?? '']);

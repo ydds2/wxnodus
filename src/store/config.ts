@@ -82,6 +82,10 @@ export const SETTINGS_KEYS = new Set([
   'tui_dual_pane',
   // A22 语音配置（voice.recordKey/vad.{silenceMs,silenceThreshold,minSpeechMs}/wakeWords/continuous）
   'voice',
+  // W7/KF-004：人格（settings.personality 真实消费——进入 system prompt persona 段，不再假成功）
+  'personality',
+  // W7-00：主工作区（用户动态指定的项目文件夹）
+  'workspace',
 ]);
 export function unknownSettingsKeys(settings: Record<string, any>): string[] {
   return Object.keys(settings).filter(k => !SETTINGS_KEYS.has(k));

@@ -9,6 +9,7 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Spec } from './spec.js';
+import { makePlan, topoSort, type BuildPlan } from './plan.js';
 
 export interface InstantiateResult { ok: boolean; reason?: string }
 
@@ -751,21 +752,44 @@ export function checkLeftover(projectDir: string): boolean {
   return true;
 }
 
-export function instantiate(spec: Spec, projectDir: string): InstantiateResult {
+export function instantiate(spec: Spec, projectDir: string, plan?: BuildPlan): InstantiateResult {
   try {
     for (const sub of ['server', 'public', 'public/src']) mkdirSync(join(projectDir, sub), { recursive: true });
     const mold = spec.scaffold === 'todo' || spec.scaffold === 'ledger' || spec.scaffold === 'note' || spec.scaffold === 'anim' ? spec.scaffold : 'generic';
     const title = spec.title || '项目';
-    writeFileSync(join(projectDir, 'server', 'index.js'), genServer(mold, title), 'utf8');
-    writeFileSync(join(projectDir, 'server', 'router.js'), ROUTER_JS, 'utf8');
-    writeFileSync(join(projectDir, 'server', 'store.js'), STORE_JS, 'utf8');
+    // KF-022：scaffold 由 BuildPlan（模块拓扑）驱动——文件按拓扑序落位，绝不绕过计划只消费 Spec；
+    // 未显式传入时以规则脑分解兜底（makePlan——单一计划事实源）
+    const effective = plan ?? makePlan(`${spec.title ?? ''} ${spec.summary ?? ''}`.trim() || spec.scaffold, { key: null });
+    const order = topoSort(effective.modules);
+    const moduleWriters: Record<string, () => void> = {
+      db: () => { writeFileSync(join(projectDir, 'server', 'store.js'), STORE_JS, 'utf8'); },
+      api: () => {
+        writeFileSync(join(projectDir, 'server', 'index.js'), genServer(mold, title), 'utf8');
+        writeFileSync(join(projectDir, 'server', 'router.js'), ROUTER_JS, 'utf8');
+      },
+      frontend: () => {
+        writeFileSync(join(projectDir, 'public', 'index.html'), genIndexHtml(mold, title), 'utf8');
+        writeFileSync(join(projectDir, 'public', 'src', 'main.jsx'), MAIN_JSX, 'utf8');
+        writeFileSync(join(projectDir, 'public', 'src', 'App.jsx'), (MOLD_APP[mold] ?? MOLD_APP.generic!).replaceAll('TITLE', title), 'utf8');
+      },
+      // 单模块应用（app）：全部文件属于该模块（简单需求不强制分层）
+      app: () => {
+        writeFileSync(join(projectDir, 'server', 'index.js'), genServer(mold, title), 'utf8');
+        writeFileSync(join(projectDir, 'server', 'router.js'), ROUTER_JS, 'utf8');
+        writeFileSync(join(projectDir, 'server', 'store.js'), STORE_JS, 'utf8');
+        writeFileSync(join(projectDir, 'public', 'index.html'), genIndexHtml(mold, title), 'utf8');
+        writeFileSync(join(projectDir, 'public', 'src', 'main.jsx'), MAIN_JSX, 'utf8');
+        writeFileSync(join(projectDir, 'public', 'src', 'App.jsx'), (MOLD_APP[mold] ?? MOLD_APP.generic!).replaceAll('TITLE', title), 'utf8');
+      },
+    };
+    for (const mod of order) (moduleWriters[mod] ?? moduleWriters.app!)();
+    // 验证/文档/测试不属于模块划分——拓扑落位后统一生成
     writeFileSync(join(projectDir, 'server', 'smoke.test.js'), genSmokeTest(mold), 'utf8');
-    writeFileSync(join(projectDir, 'public', 'index.html'), genIndexHtml(mold, title), 'utf8');
-    writeFileSync(join(projectDir, 'public', 'src', 'main.jsx'), MAIN_JSX, 'utf8');
-    writeFileSync(join(projectDir, 'public', 'src', 'App.jsx'), (MOLD_APP[mold] ?? MOLD_APP.generic!).replaceAll('TITLE', title), 'utf8');
     writeFileSync(join(projectDir, 'README.md'), genReadme(mold, spec), 'utf8');
     writeFileSync(join(projectDir, 'package.json'), genPackageJson(mold, title, spec.summary), 'utf8');
     writeFileSync(join(projectDir, 'healthcheck.js'), `// healthcheck：启动→探活→读回\nconst http = require('node:http');\nhttp.get('http://127.0.0.1:' + (process.env.PORT || 4321) + '/api/health', r => { let b=''; r.on('data',c=>b+=c); r.on('end',()=>{ console.log(b); process.exit(r.statusCode===200?0:1); }); }).on('error', () => process.exit(1));\n`, 'utf8');
+    // 计划落盘（真实消费证据——模块拓扑与顺序可查；绝不只印在日志里）
+    writeFileSync(join(projectDir, 'plan.json'), JSON.stringify({ modules: effective.modules, order }, null, 2), 'utf8');
     if (!checkLeftover(projectDir)) {
       return { ok: false, reason: '残留槽位（LEFTOVER）未替换' };
     }

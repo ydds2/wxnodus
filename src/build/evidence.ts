@@ -1,5 +1,5 @@
 // src/build/evidence.ts — L3-1 证据链（交付可信度核心）
-// 设计：项目目录指纹（sha256[:6]）+ 证据 JSON（状态/检查项/端口/时间）
+// 设计：项目目录指纹（完整 SHA-256 64 hex——KF-020：绝不截断，截断 6 hex 碰撞空间不可接受）+ 证据 JSON（状态/检查项/端口/时间）
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -16,7 +16,7 @@ export function fingerprint(projectDir: string): string {
     }
   };
   walk(projectDir);
-  return h.digest('hex').slice(0, 6);
+  return h.digest('hex');
 }
 
 export interface Evidence {

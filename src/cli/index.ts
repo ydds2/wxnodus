@@ -56,13 +56,15 @@ if (opts.cwd) {
 // 在 _initErrorLog/mkdirSync/DB/MCP/Plugin/网络/TUI 之前执行（干净环境零副作用）。
 // DX-01：--data-dir 唯一 parser——优先级 CLI > env（WXNODUS_DATA_DIR）> cwd 默认；
 // 结果贯穿 locale 读取、SQLite、logs、MCP、plugins、models/cache、HAR（全部以 dataDir 为根）。
-const { decidePreBootstrap, parsePreBootstrapArgs, readLocaleFile, promptLanguageOnStdio, persistPreBootstrapLocale } = await import('../application/bootstrap/preBootstrapOnboarding.js');
+const { parsePreBootstrapArgs, readLocaleFile, promptLanguageOnStdio, persistPreBootstrapLocale } = await import('../application/bootstrap/preBootstrapOnboarding.js');
+// R13 bootstrap（KF-003）：首次安装引导唯一入口——CLI 只经 runSetupWizard 决策
+const { runSetupWizard } = await import('../bootstrap/setupWizard.js');
 const preArgs = parsePreBootstrapArgs(process.argv.slice(2));
 const dataDir = (preArgs.ok && preArgs.value.dataDir ? preArgs.value.dataDir : resolveDataDir(process.cwd()));
 // DX-01：CLI flag 胜出时经 env 通道全链路传播——kernel 内 resolveDataDir(process.cwd()) 各点
 // （agent 权限规则/session 事件/浏览器/离线模型缓存等）统一生效，不留第二条数据目录事实源。
 if (preArgs.ok && preArgs.value.dataDir) process.env.WXNODUS_DATA_DIR = dataDir;
-const pre = await decidePreBootstrap({
+const pre = await runSetupWizard({
   argv: process.argv.slice(2),
   env: process.env,
   isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
@@ -803,6 +805,8 @@ if (pre.mode === 'error') {
           lang: (settings as any).lang,
           locale,
           dataDir,
+          // KF-004：settings.personality 真实消费——persona 段进入系统提示
+          persona: (settings as any).personality,
         });
       } catch { return undefined; }
     },

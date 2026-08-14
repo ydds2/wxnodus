@@ -725,6 +725,8 @@ export function createAgent(opts: AgentOptions) {
       // 开放兼容：/lang 设置生效（输出语言）+ dataDir 支持外部 prompts/system.md 覆盖
       lang: (opts.config?.settings as any)?.lang,
       dataDir: opts.dataDir,
+      // KF-004：settings.personality 真实消费——persona 段进入系统提示
+      persona: (opts.config?.settings as any)?.personality,
     }) });
     // 项目规范注入（生态规范文件链）：AGENTS.md/CLAUDE.md/GEMINI.md/.cursorrules 等
     // 首个存在者进系统提示（多工具共存——一套项目规范多 CLI 消费）
