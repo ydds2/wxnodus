@@ -166,6 +166,16 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - 剩余观察项：agent 自动召回仍走 legacy（决策既定——一致性验证后另定）；embedding 向量召回需 worker 接线（pending 状态诚实保持）。
 
 
+## Wave 1 收尾 / W1-08 生产 ToolExecutionPipeline — 2026-08-14
+
+- 控制面置备（`aeb6cc2`）：`provisionSecurityControlPlane`（幂等 / policy checksum 漂移轮换 / budget 轮换重置 used）；`installSecuritySchema` 幂等化；UoW 公开 `appendJournalEntry` / `commit` / `release`（release 退款、归零清键不留残渣）、`activePolicySnapshotId`/`activeBudgetSnapshotId`。
+- 生产装配（`69f63d8`）：`createProductionToolExecution`——11 ports 全真实：resolve=ToolCatalog（builtin:workspace.read/write、network.fetch、process.spawn、memory 五描述符）；validate=required 键校验；normalize=argsHash+effect 资源实例化（NormalizedExecution 携带 toolId）；decide=SqlitePolicyRepository+decideEffect（deny→POLICY_DENIED）；authorizeAndReserve=canonical AuthorizationContext+issue/consume 同事务（require_approval 走审批桥，无桥 APPROVAL_UNAVAILABLE）；execute=pathBoundary/safeFetchText/超时强杀/memory scope 真实实现（未接线 TOOL_EXECUTOR_UNWIRED）；appendJournal=UoW 哈希链；verifyPostcondition=真实再探（写后存在性/大小）；captureEvidence=sha256 原子证据落盘（篡改读回 TOOL_EVIDENCE_INTEGRITY_FAILED）；commitBudget/releaseBudget=退款落链。`DEFAULT_TOOL_POLICY`（allow memory/filesystem.read；require_approval write/network/process；无规则 deny）。
+- 消费端接线（`4912a9d`）：plugin broker 权限请求（/plugin modern 分支 ctx.toolPipeline）与 MCP delivered memory surface（`createMcpIncomingServer` 注入生产 pipeline，`builtin:memory` 真实返回 session 显式记忆 verified receipt）都走生产 pipeline；broker/pipeline 未装配时两处保持原诚实 fail-closed（PLUGIN_BROKER_PIPELINE_UNAVAILABLE / NOT_DELIVERED）。CLI 组合根装配 policy/budget 置备 + TUI 审批桥。
+- 测试：`w1-08-pipeline-provisioning.test.ts` 5/5、`w3-tool-execution-wiring.test.ts` 11/11（全链 allow 回执 + journal 链 + 证据读回；APPROVAL_UNAVAILABLE/POLICY_DENIED 零副作用；真实写+后置再探；越界释放退款；BUDGET_EXCEEDED；hard redline PDP 拒绝；TOOL_NOT_FOUND；预取消无预算泄漏；MCP adapter 真实 verified receipt；broker 越界 fail-closed）。
+- 全量：223 文件 / 1769 通过 / 10 跳过 / 0 失败；build/typecheck×2/discovery 干净；CLI 进程 smoke（policy/budget 快照激活 + /memory shadow + 确定性计算）通过。
+- 剩余：agent 主路径 executeTool 尚未切到生产 pipeline（legacy 工具执行保持——迁移需 toolId/effects 全表映射，另行一步）；MCP `session` surface 仍 CAPABILITY_UNAVAILABLE（registry fence，诚实保持）。
+
+
 ## Wave 3 progress (transport readiness) — 2026-08-14
 
 - KF-027 migrated atomically (case retired, formal regression added): the wire stdin RPC frame handler in `src/cli/index.ts` now gates dispatch behind `wireReady` — frames arriving before gateway/frontend/subscription assembly complete return `WIRE_GATEWAY_NOT_READY` instead of being silently dropped or dispatched early.
