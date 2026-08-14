@@ -23,6 +23,8 @@ import { AgentsOverlay } from './agentsOverlay.js'
 import { GoodVibesHeart, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { Banner, Panel, SessionPanel } from './branding.js'
+import { BrandBar } from './brandBar.js'
+import { accretionRule } from '../lib/brandRule.js'
 import { DetailPane } from './detailPane.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
@@ -56,6 +58,13 @@ const PromptPrefix = memo(function PromptPrefix({
     </Box>
   )
 })
+
+// 品牌顶栏右端上下文：模型短名 + 个性化档案（如有）
+const modelBarLabel = (model: string, profile: string) => {
+  const short = String(model).split('/').pop() ?? ''
+  const parts = [short, profile && profile !== 'default' ? profile : ''].filter(Boolean)
+  return parts.join(' · ')
+}
 
 // A24：后台活动摘要行——运行中任务/终端/goal 循环一览，点击直达右侧面板「后台」标签
 const BgSummaryLine = memo(function BgSummaryLine() {
@@ -123,6 +132,11 @@ const TranscriptPane = memo(function TranscriptPane({
 
   return (
     <>
+      {/* 品牌差异化：常驻品牌顶栏——不随消息滚动消失（黑洞引擎视觉锚点） */}
+      <BrandBar
+        rightLabel={modelBarLabel(ui.info?.model ?? '', ui.info?.profile_name ?? '')}
+        t={ui.theme}
+      />
       <ScrollBox
         flexDirection="column"
         flexGrow={1}
@@ -143,11 +157,17 @@ const TranscriptPane = memo(function TranscriptPane({
           {transcript.virtualRows.slice(transcript.virtualHistory.start, transcript.virtualHistory.end).map(row => (
             <Box flexDirection="column" key={row.key} ref={transcript.virtualHistory.measureRef(row.key)}>
               {row.msg.role === 'user' && firstUserIdx >= 0 && row.index > firstUserIdx && (
-                // 轮次分隔：双色规则线（border 线 + accent 中心点）——比纯 ─── 更有层次
-                <Box marginTop={1}>
-                  <Text color={ui.theme.color.border}>──</Text>
-                  <Text color={ui.theme.color.accent}>·</Text>
-                  <Text color={ui.theme.color.border}>──────</Text>
+                // 品牌差异化：轮次分隔 = 吸积盘渐变规则线（border 外缘 → accent 内环 → 事件视界核心 ◉）
+                <Box flexDirection="row" marginTop={1}>
+                  {accretionRule(Math.max(6, msgCols - 2), {
+                    border: ui.theme.color.border,
+                    accent: ui.theme.color.accent,
+                    primary: ui.theme.color.primary
+                  }).map((segment, i) => (
+                    <Text color={segment.color} key={i}>
+                      {segment.text}
+                    </Text>
+                  ))}
                 </Box>
               )}
 
