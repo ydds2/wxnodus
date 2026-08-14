@@ -86,3 +86,14 @@ Committed as `481ceda` (P0-04), `12eb537` (P0-05), `9a44dd7` (P0-06), `ecf43eb` 
 - P0-07: task kill aborts the agent-line effect fence; late subagent results never settle; KF-025 migrated (case retired, formal regression green).
 - P0-08 (infrastructure): `boundedResponseReader` (Content-Length pre-reject; real-byte chunk limit with stream cancel) and `outboundTargetPolicy` (scheme/target/DNS fail-closed; private address in resolved set rejects). Kernel `safeFetchText` rewiring to these primitives is not yet done.
 - Verification: build/typecheck/typecheck:tests/discovery clean; full suite 1518 passed / 10 skipped / 1 failed + 5 UI suites — identical characterized baseline, no new regressions; known-failure oracle 31/31 (25 open emit stable codes, 6 resolved are green regressions incl. KF-025/026).
+
+
+## Wave 3 progress — 2026-08-14
+
+Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), and the W3 Build routing step.
+
+- Merge: Wave 0-2 + branding now live on master; merged-master suite 198 files / 1651 passed / 0 failed.
+- W2-03/04: `src/cli/headlessGateway.ts` (real headless wire gateway - dispatcher + responder semantics with fail-closed timeouts), keepalive TDZ fixed, unified idempotent shutdown wired across serve/keepalive/TUI/signals, real `dist/cli` process-level smoke (version/help/exit codes, zero side effects, unknown-flag fail-closed exit 2).
+- W3 Build step 1: `src/commands/buildRouting.ts` - build capability routing (declared capability > root default; modern/required fail closed with `BUILD_MODERN_UNAVAILABLE` while `compileAndRun` production wiring is incomplete; legacy/shadow unchanged). `/build` handler enforces it.
+- Full suite: 201 files / 1666 passed / 10 skipped / 0 failed.
+- Remaining W3: `BuildService.compileAndRun` full production ports (staging workspace/verifier map/nodes/static entry/completion input), then session/memory/voice/computer/plugin/subagent/MCP/TUI in order.
