@@ -73,6 +73,13 @@ export class SqliteAuthorizationUnitOfWork {
       return budget ? { ok: true, value: budget.id } : { ok: false, error: { code: 'BUDGET_SNAPSHOT_CHANGED', message: 'BUDGET_SNAPSHOT_CHANGED', messageKey: 'BUDGET_SNAPSHOT_CHANGED', retryable: false } };
     } catch { return { ok: false, error: { code: 'BUDGET_SNAPSHOT_CHANGED', message: 'BUDGET_SNAPSHOT_CHANGED', messageKey: 'BUDGET_SNAPSHOT_CHANGED', retryable: false } }; }
   }
+  /** 活动 policy 快照 id（authorize 上下文绑定用——以仓储为唯一可信源，不经调用方传入） */
+  activePolicySnapshotId(): OperationResult<string> {
+    try {
+      const policy = this.db.prepare('SELECT id FROM policy_snapshots WHERE active=1').get() as { id: string } | undefined;
+      return policy ? { ok: true, value: policy.id } : { ok: false, error: { code: 'POLICY_UNAVAILABLE', message: 'POLICY_UNAVAILABLE', messageKey: 'POLICY_UNAVAILABLE', retryable: false } };
+    } catch { return { ok: false, error: { code: 'POLICY_UNAVAILABLE', message: 'POLICY_UNAVAILABLE', messageKey: 'POLICY_UNAVAILABLE', retryable: false } }; }
+  }
   /** W1-08：pipeline 生命周期 journal 状态追加（applied/failed/cancelled/committed/released）——哈希链单一事实 */
   appendJournalEntry(effectId: string, state: string, payload: unknown, createdAt: string): OperationResult<void> {
     try {
@@ -100,7 +107,11 @@ export class SqliteAuthorizationUnitOfWork {
         const budget = this.db.prepare('SELECT id,used_json FROM budget_snapshots WHERE active=1').get() as { id: string; used_json: string } | undefined;
         if (!budget) throw new Rollback(fail('BUDGET_SNAPSHOT_CHANGED'));
         const used = JSON.parse(budget.used_json) as Budget;
-        for (const [key, amount] of Object.entries(reservation)) used[key] = Math.max(0, (used[key] ?? 0) - amount);
+        for (const [key, amount] of Object.entries(reservation)) {
+          const refunded = Math.max(0, (used[key] ?? 0) - amount);
+          if (refunded > 0) used[key] = refunded;
+          else delete used[key]; // 退款归零即清键——不留预算残渣
+        }
         this.db.prepare('UPDATE budget_snapshots SET used_json=? WHERE id=?').run(JSON.stringify(used), budget.id);
         this.appendJournal(reservationId, 'released', { reservation }, createdAt);
       })();

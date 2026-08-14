@@ -105,9 +105,9 @@ describe('W1-08 UoW lifecycle extension', () => {
     const second = fixture();
     provisionSecurityControlPlane(second.db, { policy: { id: 'policy-1', document: policyDoc }, budget: { id: 'budget-1', limits }, now: 't1' });
     expect(second.uow().commit('grant-1', {}, 't3')).toMatchObject({ ok: false, error: { code: 'APPROVAL_REPLAYED' } });
-    // release 退款 + 落链
+    // release 退款 + 落链（归零即清键——不留预算残渣）
     expect(unit.release('grant-1', { externalWrites: 1 }, 't4')).toMatchObject({ ok: true });
-    expect((db.prepare('SELECT used_json FROM budget_snapshots WHERE active=1').get() as { used_json: string }).used_json).toBe('{"externalWrites":0}');
+    expect((db.prepare('SELECT used_json FROM budget_snapshots WHERE active=1').get() as { used_json: string }).used_json).toBe('{}');
     expect(unit.verifyJournal()).toMatchObject({ ok: true });
   });
 });
