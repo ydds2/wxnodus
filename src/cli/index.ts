@@ -452,12 +452,19 @@ if (pre.mode === 'error') {
       // --wire 双向化（P1）：stdin 接收 JSONL 请求帧 → gateway RPC 分发——
       // 外部工具/CI 可应答 approval.respond / clarify.respond / sudo.respond / secret.respond
       // 帧格式：{"method":"approval.respond","params":{"request_id":"…","answer":"allow"}}
+      // KF-027 修复：wire stdin 处理器必须在 gateway ready 之后才接受 RPC 帧——
+      // ready 之前到达的帧返回 WIRE_GATEWAY_NOT_READY（不静默吞掉、不提前分发）。
+      let wireReady = false;
       if (gateway) {
         const { createInterface } = await import('node:readline');
         const rl = createInterface({ input: process.stdin });
         rl.on('line', (line) => {
           const frame = (() => { try { return JSON.parse(line); } catch { return null; } })();
           if (!frame?.method || typeof frame.method !== 'string') return;
+          if (!wireReady) {
+            console.log(JSON.stringify({ type: 'wire.response', method: frame.method, ok: false, error: { code: 'WIRE_GATEWAY_NOT_READY' } }));
+            return;
+          }
           const params = (frame.params ?? {}) as Record<string, unknown>;
           void gateway.request(frame.method, params).then((r: any) => {
             if (r && typeof r === 'object') console.log(JSON.stringify({ type: 'wire.response', method: frame.method, ...r }));
@@ -466,6 +473,7 @@ if (pre.mode === 'error') {
       }
       // W3-02：wire 入口前端——gateway 事件流经纯投影管线，终态上报与共享表比对（漂移即 FRONTEND_COMPLETION_MISMATCH）
       const frontend = gateway ? createWireFrontend(gateway) : null;
+      wireReady = true; // gateway + 前端 + 事件订阅全部装配完成——此时才接受 RPC 帧
       const result = await agent.run(text);
       const wireStatus = result.interrupted ? 'cancelled' as const : result.ok ? 'succeeded' as const : 'failed' as const;
       const completion = frontend?.complete(wireStatus, { wireFinal: wireStatus });
