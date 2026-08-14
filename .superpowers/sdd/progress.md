@@ -202,3 +202,9 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - Transcript storage port added: transcription text is persisted through the injected store and the service only ever returns the opaque `transcript://<id>` ref (plaintext never flows out of the service layer); save failures surface as the terminal result.
 - Existing voice suites updated to the legal state path (7 suites / 19 tests green).
 - Full suite: 213 files / 1718 passed / 10 skipped / 0 failed (one heapdump test timed out under parallel-suite load in the first run; isolated rerun 7/7 in 2.6s — environment flake, not a regression).
+
+
+## Wave 3 progress (Voice facade done) — 2026-08-14
+
+- `src/kernel/voice.ts` `stopAndTranscribe` now delegates execution to `VoiceSessionService` (production deps: async whisper supervisor with AbortSignal + process-tree kill, temp cleanup, transcript store persisting under `dataDir/voice/transcripts/<id>.txt` with opaque-ref-only reads). Kernel keeps capture/device enumeration/TTS as a platform adapter. `VOICE_FACADE_DONE` flipped true — modern voice routing is now live; voice suites 20/20.
+- Full suite: 213 files / 1716 passed / 10 skipped / 0 failed.
