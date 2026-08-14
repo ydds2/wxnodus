@@ -14,7 +14,7 @@ export const SLASH: string[] = [
   // 安全（合规红线）
   '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt', '/yolo', '/afk', '/security', '/offline',
   // 系统
-  '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init', '/voice', '/fortune',
+  '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init', '/voice', '/fortune', '/workspace',
   // 视觉与媒体（可视化 AI 技能）
   '/vision', '/img', '/video', '/render', '/capture', '/input', '/computer',
   // 网络与集成
@@ -35,7 +35,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆', '/assimilate': '◆',
   '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨', '/offline': '⬇',
-  '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉', '/voice': '◉', '/fortune': '◉',
+  '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉', '/voice': '◉', '/fortune': '◉', '/workspace': '◉',
   '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿', '/computer': '⛭',
   '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
   '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/arena': '◍', '/review': '◍', '/understand': '◍', '/session-stream': '◍', '/goal': '◍', '/btw': '◍',
@@ -101,6 +101,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/theme': '主题切换',
   '/lang': '语言切换',
   '/config': '配置中心',
+  '/workspace': '主工作区查看/设置（用户动态指定项目文件夹）',
   '/logs': '日志查看',
   '/bench': '基准测试',
   '/map': '仓库地图（aider repo-map 自研版——符号索引注入上下文，/map <预算>）',

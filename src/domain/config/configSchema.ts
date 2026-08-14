@@ -1,4 +1,5 @@
 // src/domain/config/configSchema.ts — 配置文档 schema 与稳定错误码
+import { isAbsolute } from 'node:path';
 import type { GatewayError } from '../../protocol/errors.js';
 import type { OperationResult } from '../../protocol/results.js';
 
@@ -17,6 +18,8 @@ export interface ConfigDocument {
   installationProfile: InstallationProfile;
   extensions: Record<string, unknown>;
   branding?: BrandingConfig;
+  /** W7-00：主工作区根（用户动态指定的项目文件夹；绝对路径） */
+  workspaceRoot?: string;
 }
 
 export const BRANDING_LIMITS = { nameMaxChars: 40, iconMaxChars: 4096 } as const;
@@ -72,12 +75,18 @@ export function validateConfigDocument(value: unknown): OperationResult<ConfigDo
   const locale = raw.locale === undefined ? undefined : normalizeLocale(raw.locale);
   const profile = raw.installationProfile ?? 'standard';
   const branding = validateBranding(raw.branding);
+  // W7-00：workspaceRoot 必须绝对路径、无控制字符、长度上限
+  const workspaceRoot = raw.workspaceRoot === undefined ? undefined : String(raw.workspaceRoot);
+  const workspaceRootValid = workspaceRoot === undefined ||
+    (workspaceRoot.length > 0 && workspaceRoot.length <= 512 &&
+      isAbsolute(workspaceRoot) && !CONTROL_CHARS.test(workspaceRoot));
   if (raw.configVersion !== 1 || raw.onboardingVersion !== 1 ||
       (raw.locale !== undefined && locale === undefined) ||
       (branding === null) ||
       !['core', 'standard', 'full-local-ai'].includes(String(profile)) ||
       (raw.extensions !== undefined &&
-        (typeof raw.extensions !== 'object' || raw.extensions === null || Array.isArray(raw.extensions)))) {
+        (typeof raw.extensions !== 'object' || raw.extensions === null || Array.isArray(raw.extensions))) ||
+      !workspaceRootValid) {
     return { ok: false, error: configError('CONFIG_SCHEMA_INVALID', 'config.schema.invalid') };
   }
   return {
@@ -89,6 +98,7 @@ export function validateConfigDocument(value: unknown): OperationResult<ConfigDo
       installationProfile: profile as InstallationProfile,
       extensions: (raw.extensions ?? {}) as Record<string, unknown>,
       ...(branding !== undefined ? { branding } : {}),
+      ...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
     },
   };
 }

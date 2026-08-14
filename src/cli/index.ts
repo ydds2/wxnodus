@@ -131,7 +131,23 @@ if (pre.mode === 'error') {
     idFactory: prefix => `${prefix}-${uuid()}`,
   });
   const mem = createMemoryShadow({ legacy: memBase, repository: memoryRepository, db });
-  const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string; mode?: string; theme?: string; thinking?: boolean };
+  const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string; mode?: string; theme?: string; thinking?: boolean; workspace?: string };
+  // W7-00：主工作区动态指定（用户动态确定的项目文件夹）——cli(--workspace) > env(WXNODUS_WORKSPACE) >
+  // persisted(settings.workspace) > cwd 默认；显式非法 fail-closed 绝不静默降级。
+  // 文件操作/下载落盘/同化索引统一以 workspaceRoot 为边界根。
+  const { resolveWorkspaceRoot } = await import('../domain/config/workspaceRoot.js');
+  const resolvedWorkspace = resolveWorkspaceRoot({
+    cli: opts.workspace ?? undefined,
+    env: process.env.WXNODUS_WORKSPACE,
+    persisted: settings.workspace,
+    cwd,
+  });
+  if (!resolvedWorkspace.ok) {
+    console.error(`wxnodus: ${resolvedWorkspace.error.code} ${JSON.stringify(resolvedWorkspace.error.details ?? {})}`);
+    process.exit(2);
+  }
+  const workspaceRoot = resolvedWorkspace.value.value;
+  const workspaceSource = resolvedWorkspace.value.source;
   // 默认模型/端点兜底：/key 只保存密钥时，若 config 无 model/baseURL，
   // agent 的 defaultCallModel 会因 `!s.model || !s.baseURL` 降级规则脑
   // （提示「未配置」）——有 key 即视为已配置，补齐默认值并持久化。
@@ -163,7 +179,7 @@ if (pre.mode === 'error') {
   const { createAgentApprovalBridge } = await import('../application/tools/agentToolSurface.js');
   const agentApprovalBridge = createAgentApprovalBridge();
   const toolExecution = createProductionToolExecution({
-    db, dataDir, workspaceRoot: cwd, memoryRepository,
+    db, dataDir, workspaceRoot, memoryRepository,
     policy: { id: 'policy-cli-v1', document: DEFAULT_TOOL_POLICY },
     budget: { id: 'budget-cli-v1', limits: { ...DEFAULT_TOOL_BUDGET_LIMITS } },
     approver: async (request) => {
@@ -405,9 +421,21 @@ if (pre.mode === 'error') {
     fileFor: sid => join(dataDir, 'sessions', sid, 'session-start.json'),
   });
 
+  // W7-00：命令层主工作区动态切换（/workspace set 即时生效；工具管线边界随下次启动）
+  let liveWorkspaceRoot = workspaceRoot;
+  let liveWorkspaceSource: string = workspaceSource;
+
   const makeHandlerCtx = () => ({
     dataDir, cwd, db, mem, config, bus, commandBus,
     agent,
+    // W7-00：主工作区（动态指定）——文件操作/下载/同化边界根 + 来源
+    get workspaceRoot() { return liveWorkspaceRoot; },
+    get workspaceSource() { return liveWorkspaceSource; },
+    setWorkspace: (dir: string | null) => {
+      config.setKey('settings', 'workspace', dir);
+      liveWorkspaceRoot = dir ?? cwd;
+      liveWorkspaceSource = dir ? 'persisted' : 'cwd';
+    },
     sessionStart: sessionStartService,
     // W3 Memory：/memory 命令经 session-scoped modern 权威服务（scope 只来自当前会话）
     memoryServiceFor: (sid: string) => createMemoryService(memoryRepository, { sessionId: sid }),

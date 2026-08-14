@@ -17,7 +17,7 @@ import { instantiate } from '../build/scaffold.js';
 import { writeEvidence, fingerprint } from '../build/evidence.js';
 import { runGate } from '../build/gate.js';
 import { searchMessages } from '../store/db.js';
-import { join } from 'node:path';
+import { join, isAbsolute } from 'node:path';
 import { mkdirSync, existsSync, readdirSync, cpSync, writeFileSync } from 'node:fs';
 
 export interface HandlerCtx {
@@ -64,6 +64,10 @@ export interface HandlerCtx {
   memoryServiceFor?(sessionId: string): import('../application/memoryService.js').MemoryService;
   /** W1-08：生产 ToolExecutionPipeline（plugin broker 能力请求与 MCP surface 的真实执行入口） */
   toolPipeline?: import('../domain/tools/toolExecutionPipeline.js').ToolExecutionPipeline;
+  /** W7-00：主工作区（用户动态指定）——当前根、来源、持久化写入（/workspace 命令用） */
+  workspaceRoot?: string;
+  workspaceSource?: string;
+  setWorkspace?: (dir: string | null) => void;
 }
 
 const lines = (title: string, body: string[]): string => {
@@ -339,6 +343,35 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       return `主题已切换：${name}`;
     }
     return `当前主题：${ctx.getThemeName()}（可选：wxnodus 黑洞/dark/light）`;
+  });
+
+  // W7-00：主工作区（用户动态指定）——查看/设置/重置；持久化 settings.workspace
+  // （下次启动工具管线边界随之切换；命令层经 getter 即时生效）
+  bus.register('/workspace', (args) => {
+    const sub = args[0];
+    if (!sub || sub === 'show') {
+      const root = ctx.workspaceRoot ?? ctx.cwd;
+      return `主工作区：${root}\n来源：${ctx.workspaceSource ?? 'cwd'}\n设置：/workspace set <绝对目录> [--create]\n重置：/workspace reset`;
+    }
+    if (sub === 'set') {
+      const dir = args[1];
+      if (!dir) return '用法：/workspace set <绝对目录> [--create]';
+      if (!isAbsolute(dir)) return 'WORKSPACE_INVALID：必须是绝对路径（如 C:/Users/you/work）';
+      if (!existsSync(dir)) {
+        if (args.includes('--create')) {
+          try { mkdirSync(dir, { recursive: true }); } catch (cause) { return `WORKSPACE_CREATE_FAILED: ${String((cause as Error).message ?? cause)}`; }
+        } else {
+          return 'WORKSPACE_NOT_FOUND：目录不存在（加 --create 自动创建）';
+        }
+      }
+      ctx.setWorkspace?.(dir);
+      return `主工作区已设置：${dir}（已持久化；命令层即时生效，工具管线边界下次启动生效）`;
+    }
+    if (sub === 'reset') {
+      ctx.setWorkspace?.(null);
+      return `主工作区已重置：${ctx.cwd}（默认项目文件夹）`;
+    }
+    return '用法：/workspace [show|set <dir> [--create]|reset]';
   });
 
   bus.register('/memory', async (args) => {

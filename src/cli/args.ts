@@ -20,6 +20,8 @@ export interface CliOptions {
   mcpServer: boolean;
   /** --output-schema <json>：--json 模式下输出结构校验（claude --json-schema / codex --output-schema 对齐，零依赖轻量校验） */
   outputSchema: string | null;
+  /** W7-00：--workspace <dir>：主工作区根（用户动态指定的项目文件夹；优先级 cli > env > persisted > cwd） */
+  workspace: string | null;
   positional: string[];
 }
 
@@ -44,12 +46,13 @@ export const CLI_FLAG_SPEC: ReadonlyArray<{
   { long: '--ephemeral', key: 'ephemeral', type: 'bool' },
   { long: '--mcp-server', key: 'mcpServer', type: 'bool' },
   { long: '--output-schema', key: 'outputSchema', takeValue: true, type: 'string' },
+  { long: '--workspace', key: 'workspace', takeValue: true, type: 'string' },
 ];
 
 const SPEC = CLI_FLAG_SPEC;
 
 export function parseArgs(argv: string[]): CliOptions {
-  const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, port: null, ephemeral: false, mcpServer: false, outputSchema: null, positional: [] };
+  const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, port: null, ephemeral: false, mcpServer: false, outputSchema: null, workspace: null, positional: [] };
   let i = 0;
   const findSpec = (tok: string): { spec: (typeof SPEC)[number]; inline?: string } | null => {
     for (const spec of SPEC) {

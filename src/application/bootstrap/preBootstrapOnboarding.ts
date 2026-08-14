@@ -11,6 +11,8 @@ export interface PreBootstrapArgs {
   nonInteractive: boolean;
   lang?: Locale;
   dataDir?: string;
+  /** W7-00：主工作区（--workspace）——cli 优先级最高，运行时 resolveWorkspaceRoot 校验 */
+  workspace?: string;
 }
 
 export interface PreBootstrapDecision {
@@ -22,7 +24,7 @@ export interface PreBootstrapDecision {
   args?: PreBootstrapArgs;
 }
 
-const VALUE_FLAGS = new Set(['--lang', '--data-dir', '--prompt', '-p', '--cwd', '-C', '--session', '-s', '--port', '--output-schema']);
+const VALUE_FLAGS = new Set(['--lang', '--data-dir', '--prompt', '-p', '--cwd', '-C', '--session', '-s', '--port', '--output-schema', '--workspace']);
 const BOOL_FLAGS = new Set(['--help', '-h', '--version', '-v', '--json', '--wire', '--serve', '--strict-mcp-config', '--ephemeral', '--mcp-server']);
 
 export function parsePreBootstrapArgs(argv: string[]): OperationResult<PreBootstrapArgs> {
@@ -48,6 +50,7 @@ export function parsePreBootstrapArgs(argv: string[]): OperationResult<PreBootst
         out.lang = locale;
       }
       if (flag === '--data-dir') out.dataDir = value;
+      if (flag === '--workspace') out.workspace = value;
       if (['--prompt', '-p'].includes(flag)) out.nonInteractive = true;
       continue;
     }
