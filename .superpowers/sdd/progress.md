@@ -254,3 +254,9 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - `/plugin` modern branch wired: `PluginLifecycleService` (manifest → checksum → probe → sandbox gate → owned-scope atomic swap) with the production crash-isolation sandbox, `ExtensionScopeManager`, lifecycle evidence on disk. Broker permission requests fail closed (`PLUGIN_BROKER_PIPELINE_UNAVAILABLE`) until the production `ToolExecutionPipeline` (W1-08 contract) is wired — never fake-executed. `PLUGIN_WIRED` flipped true.
 - Full suite: 217 files / 1732 passed / 10 skipped / 0 failed.
 - Remaining plugin: production ToolExecutionPipeline (11 ports) for broker capability requests.
+
+
+## Wave 3 progress (Subagent facade done) — 2026-08-14
+
+- `/delegate` modern branch: live process host — `WorktreeManager` (git add + realpath double check) → real `dist/cli` child process → `SubagentStartReceipt` (taskId/pid/startedAt) with narrowed budget/scope. Stop semantics via `SubagentHost` (fence → taskkill process tree → stop receipt; tree failure → `SUBAGENT_STOP_FAILED`). `SUBAGENT_WIRED` flipped true.
+- Full suite: 217 files / 1732 passed / 10 skipped / 0 failed (one known heapdump flaky under parallel load — passes in isolation).
