@@ -138,3 +138,11 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - Tests 4/4: exactly-once generation, concurrent dedup, disk reuse, tamper rejection.
 - Full suite: 205 files / 1685 passed / 10 skipped / 0 failed.
 - Remaining Session: production entry wiring (TUI/kernel session creation calling ensure with real capability/hook snapshots).
+
+
+## Wave 3 progress (Session step 3, production wiring) — 2026-08-14
+
+- `/new` now calls the session start service: artifact (capability snapshot from the builtin verifier capability union, hook snapshot from settings.hooks sessionStart, sha256 binding) is persisted atomically before the session row is inserted; generation failure fails the command closed (no artifact-less sessions).
+- Real-bug fixes found by the process test: empty model on no-key runs now falls back to `rule-brain` (validator rejects empty model); artifact dir is `<cwd>/data/sessions/<id>/session-start.json` (resolveDataDir → `join(cwd,'data')`).
+- Process-level test `tests/wave3/w3-session-start-cli.test.ts` spawns the real `dist/cli -p /new` and validates the on-disk artifact through `validateSessionStart` (sha256 recomputation).
+- Full suite: 206 files / 1686 passed / 10 skipped / 0 failed.
