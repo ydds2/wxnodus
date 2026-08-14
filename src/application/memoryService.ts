@@ -1,23 +1,56 @@
-// src/application/memoryService.ts — 记忆检索应用服务端口（W1-02 契约）＋ W1-06 repository 委托
-import type { MemoryRepository } from '../domain/memory/memoryRepository.js';
+// src/application/memoryService.ts — 记忆应用服务权威（P0-05）：append/update/delete/search 唯一入口
+// scope 只由注入的可信 context provider 构造；input 不能携带或伪造 session/project/global 作用域。
+// repository 最底层执行 tier 隔离（write 必须声明 scope、update/delete 校验 ID 归属、global 读取显式 opt-in）。
+import type {
+  AppendMemory,
+  MemoryPatch,
+  MemoryQuery,
+  MemoryRecord,
+  MemoryRepository,
+  MemorySearchHit,
+} from '../domain/memory/memoryRepository.js';
 import type { MemoryScope } from '../domain/memory/memoryScope.js';
 import type { OperationResult } from '../protocol/results.js';
 
+export interface MemoryScopeContext {
+  sessionId?: string;
+  projectId?: string;
+  userArchive?: boolean;
+  globalOptIn?: boolean;
+}
+
+export interface MemorySearchInput {
+  text: string;
+  limit?: number;
+}
+
 export interface MemoryService {
-  search(input: { query: string; sessionId: string }): Promise<OperationResult<readonly unknown[]>>;
+  append(input: AppendMemory): OperationResult<{ record: MemoryRecord; deduplicated: boolean }>;
+  update(id: string, patch: MemoryPatch): OperationResult<MemoryRecord>;
+  delete(id: string): OperationResult<void>;
+  search(input: MemorySearchInput): OperationResult<readonly MemorySearchHit[]>;
 }
 
 /**
- * W1-06 委托：所有检索只走 MemoryRepository（scope 隔离 + 六分量排序 + 事务索引），
- * 不再直连 messages_fts/archival_vec。scope 由调用方会话决定；global 需显式 opt-in。
+ * P0-05 权威委托：所有读写只走 MemoryRepository；scope 来自调用方装配时注入的可信 context，
+ * 输入只提供查询词与条数——调用方无法借 sessionId 参数逃逸到其它会话。
  */
-export function createMemoryService(repository: MemoryRepository, opts: { sessionId(): string }): MemoryService {
+export function createMemoryService(repository: MemoryRepository, context: MemoryScopeContext): MemoryService {
+  const scope = (): MemoryScope => ({
+    ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
+    ...(context.projectId !== undefined ? { projectId: context.projectId } : {}),
+    ...(context.userArchive ? { userArchive: true } : {}),
+    ...(context.globalOptIn ? { globalOptIn: true } : {}),
+  });
+  const query = (input: MemorySearchInput): MemoryQuery => ({
+    text: input.text,
+    limit: input.limit ?? 10,
+    now: new Date().toISOString(),
+  });
   return {
-    async search(input) {
-      const scope: MemoryScope = { sessionId: input.sessionId || opts.sessionId() };
-      const result = repository.search({ text: input.query, limit: 10, now: new Date().toISOString() }, scope);
-      if (!result.ok) return result;
-      return { ok: true, value: result.value.map(hit => ({ record: hit.record, score: hit.score })) };
-    },
+    append: input => repository.append(input, scope()),
+    update: (id, patch) => repository.update(id, patch, scope()),
+    delete: id => repository.delete(id, scope()),
+    search: input => repository.search(query(input), scope()),
   };
 }
