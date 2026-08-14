@@ -370,7 +370,7 @@ if (pre.mode === 'error') {
       config,
     }, port);
     console.log(`◉ WxNodus AI 网关已启动：http://127.0.0.1:${srv.port}`);
-    console.log(`  GET  /health   状态 ｜ POST /rpc   chat/command/memory.*/sessions ｜ GET /events  SSE 事件流`);
+    console.log(`  GET  /health/live  存活探针（无认证）｜ GET /health /rpc /events 需 Bearer（WXNODUS_SERVE_TOKEN）`);
     console.log('  Ctrl+C 停止');
     process.on('SIGINT', async () => { await srv.close(); process.exit(0); });
     process.on('SIGTERM', async () => { await srv.close(); process.exit(0); });

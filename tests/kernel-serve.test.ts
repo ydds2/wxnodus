@@ -1,4 +1,4 @@
-// tests/kernel-serve.test.ts — AI 网关：HTTP 服务（/health /rpc /events）
+// tests/kernel-serve.test.ts — AI 网关：HTTP 服务（/health/live /health /rpc /events；Bearer 认证）
 import { describe, it, expect, afterAll } from 'vitest';
 import { startServeServer, type ServeKernel } from '../src/cli/serve.js';
 
@@ -19,25 +19,45 @@ const kernel: ServeKernel = {
 };
 
 const PORT = 4792;
-const srv = startServeServer(kernel, PORT);
+const TOKEN = 'kernel-serve-test-token';
+const srv = startServeServer(kernel, PORT, { token: TOKEN });
 
 afterAll(async () => { await srv.close(); });
 
 const rpc = async (body: unknown) => {
   const res = await fetch(`http://127.0.0.1:${PORT}/rpc`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+    body: JSON.stringify(body),
   });
   return { status: res.status, json: (await res.json()) as any };
 };
 
 describe('AI 网关（wxnodus --serve）', () => {
-  it('GET /health 返回服务状态', async () => {
-    const res = await fetch(`http://127.0.0.1:${PORT}/health`);
+  it('GET /health/live 返回最小存活状态（无认证、零泄漏）', async () => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/health/live`);
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as any;
+    expect(j.ok).toBe(true);
+    expect(j.service).toBe('wxnodus-serve');
+    expect(j).not.toHaveProperty('dataDir');
+    expect(j).not.toHaveProperty('model');
+  });
+  it('GET /health 认证后返回完整服务状态', async () => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/health`, { headers: { Authorization: `Bearer ${TOKEN}` } });
     expect(res.status).toBe(200);
     const j = (await res.json()) as any;
     expect(j.ok).toBe(true);
     expect(j.service).toBe('wxnodus-serve');
     expect(j.model).toBe('deepseek-v4-flash');
+  });
+  it('未携带 token 的 /health、/rpc、/events 一律 401', async () => {
+    expect((await fetch(`http://127.0.0.1:${PORT}/health`)).status).toBe(401);
+    expect((await fetch(`http://127.0.0.1:${PORT}/events`)).status).toBe(401);
+    const r = await fetch(`http://127.0.0.1:${PORT}/rpc`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method: 'command', params: { command: '/status' } }),
+    });
+    expect(r.status).toBe(401);
   });
   it('POST /rpc chat → agent.run 真实调用', async () => {
     const r = await rpc({ method: 'chat', params: { prompt: '你好' } });
@@ -60,9 +80,12 @@ describe('AI 网关（wxnodus --serve）', () => {
     expect(r.status).toBe(400);
     expect(r.json.error).toContain('未知 method');
   });
-  it('GET /events SSE 连接可建立', async () => {
+  it('GET /events SSE 连接可建立（认证）', async () => {
     const ctrl = new AbortController();
-    const res = await fetch(`http://127.0.0.1:${PORT}/events`, { signal: ctrl.signal });
+    const res = await fetch(`http://127.0.0.1:${PORT}/events`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+      signal: ctrl.signal,
+    });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/event-stream');
     ctrl.abort();
