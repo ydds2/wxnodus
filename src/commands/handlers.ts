@@ -342,6 +342,19 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const absorbed = ctx.mem.absorbCount('default');
     const sub = args[0];
 
+    // W3 Memory 影子观察：/memory shadow —— 两模型计数 + 影子健康 + 召回来源诚实声明
+    if (sub === 'shadow') {
+      const report = (ctx.mem as { shadowReport?(sessionId: string): unknown }).shadowReport?.(ctx.agent?.getSessionId?.() ?? 'default');
+      if (!report) return '影子双写未启用（modern memory shadow 未装配）';
+      const r = report as { legacyMessages: number; shadowRecords: number; shadowAppends: number; shadowFailures: number; lastError: string | null; recallSource: string };
+      return lines(' 记忆影子观察（观察期——召回不回切） ', [
+        ` legacy 消息：${c(`${r.legacyMessages} 条`, '36')}（唯一行为事实源）`,
+        ` modern 显式记录：${c(`${r.shadowRecords} 条`, '35')}（session scope 影子写）`,
+        ` 影子写：${r.shadowAppends} 次 · 失败 ${c(`${r.shadowFailures} 次`, r.shadowFailures ? '31' : '37')}${r.lastError ? `（最近：${r.lastError}）` : ''}`,
+        ` 召回来源：${r.recallSource}——一致性验证后另定召回策略（绝不静默回切）`,
+      ]);
+    }
+
     // A21：检索（混合召回 + 时间过滤）——/memory search <词> [--limit N] [--since X]
     if (sub === 'search') {
       // 查询词剔除 flags 及其值（--limit/--since）

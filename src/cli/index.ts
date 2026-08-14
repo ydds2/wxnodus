@@ -105,7 +105,19 @@ if (pre.mode === 'error') {
   const shutdown = (reason = 'cli') => createShutdown(disposers)(reason);
   disposers.push({ id: 'db', dispose: () => { closeDB(db); } });
   const bus = createEventBus(dataDir);
-  const mem = createMemory(db);
+  // W3 Memory 影子双写（决策：影子双写、观察后切换）：legacy 消息写入是唯一行为事实源，
+  // 影子同步写 modern 显式记忆记录（session scope，失败只计数不上抛）；召回观察期保持 legacy。
+  const mem = await (async () => {
+    const { randomUUID: uuid } = await import('node:crypto');
+    const base = createMemory(db);
+    const { openMemoryRepository } = await import('../infrastructure/sqlite/memoryRepository.js');
+    const { createMemoryShadow } = await import('../application/memory/memoryShadow.js');
+    const repository = openMemoryRepository(db, {
+      now: () => Date.now(),
+      idFactory: prefix => `${prefix}-${uuid()}`,
+    });
+    return createMemoryShadow({ legacy: base, repository, db });
+  })();
   const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string; mode?: string; theme?: string; thinking?: boolean };
   // 默认模型/端点兜底：/key 只保存密钥时，若 config 无 model/baseURL，
   // agent 的 defaultCallModel 会因 `!s.model || !s.baseURL` 降级规则脑
