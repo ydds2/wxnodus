@@ -121,3 +121,12 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - Interop test proves the full chain now runs end-to-end with a persisted key service: `createReviewerKeyService` bundle → `createProductionBuildWiring` → `compileAndRun` → owned `succeeded` receipt.
 - Full suite: 204 files / 1681 passed / 10 skipped / 0 failed.
 - Remaining for `/build` modern branch: spec→acceptance contract (rule-brain specs carry no verifierId — honest fail-closed until structured acceptance exists), snapshot service wiring (environment/capability/policy), then handler flip.
+
+
+## Wave 3 progress (Session step 1) — 2026-08-14
+
+- `src/domain/sessions/sessionStart.ts`: `validateSessionStart` now recomputes the canonical sha256 and rejects all-zero/drifted hashes (`SESSION_START_HASH_MISMATCH`) — previously only the 64-hex shape was checked and `'0'.repeat(64)` passed. Canonical serialization and hashing are single-source in the domain; generator reuses them.
+- `readSessionStart`: read-back recomputation — disk tampering (field change without hash) and half-written/non-JSON files are rejected.
+- Contract test fixed: the old assertion that an all-zero hash passes now asserts rejection; new tamper/malformed read-back cases added (7/7).
+- Full suite: 204 files / 1681 passed / 10 skipped / 0 failed.
+- Remaining Session: generate once per session lifecycle + atomic persistence after capability/hook snapshot + production entry wiring (TUI/kernel session creation).
