@@ -427,4 +427,12 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - 全量：**255 文件 / 1925 通过 / 10 跳过 / 0 失败**；typecheck×2/build/discovery 干净；dist smoke（--version/确定性计算/非法 workspace fail-closed）通过。
 - 剩余：8 条环境类 KF（需真实硬件/资产或后续接线工作）、W7-02 系统目录感知确认、组合根 presentation/services 翻转（后续切片）。
 
+## 差距分析驱动的完善轮（可编程 KF 清零 + W7-02）— 2026-08-15
+
+- **3 条可编程 KF（`f70c7c1`）**：KF-002 config.get({key:'full'}) 返回完整配置快照（settings+dataDir+cwd）；KF-018 脚手架交付根 index.html 零依赖兜底页 + 生成服务真实静态回退（'/' → 200 HTML，回归实测真实启动服务）；KF-028 会话恢复经 agent.getSessionId() 绑定（不回落 default）。账本 → **5 open / 25 resolved，5 条全部为环境/资产类**（离线模型资产/whisper/截图尺寸/robotjs 参数/全量配置路径中的环境子集——如实保持 open）。
+- **W7-02 系统目录感知确认（`36e3c6b`）**：windowsPathClassifier（系统目录前缀/reparse/隐藏·系统属性真实探测/workspace/other；非 win32 诚实降级）；管线 decide 在红线闸后、策略前独立分类——system-touch → require_approval + SYSTEM_TOUCH_REQUIRES_CONFIRMATION + obligations（分类理由随审批透出，journal 留痕）；未确认零副作用。诚实边界：感知+确认层，非 OS 沙箱；实测 OS 对隐藏+系统属性文件自身 EPERM 保护。
+- 全量：**259 文件 / 1935 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
+- 剩余：5 条环境类 KF（需真实环境）、组合根第二刀（presentation/services 现代翻转——第一刀依赖装配已收编，此刀为收尾结构债）、「百万上下文」表述背书。
+
+
 
