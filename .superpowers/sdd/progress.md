@@ -97,3 +97,10 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - W3 Build step 1: `src/commands/buildRouting.ts` - build capability routing (declared capability > root default; modern/required fail closed with `BUILD_MODERN_UNAVAILABLE` while `compileAndRun` production wiring is incomplete; legacy/shadow unchanged). `/build` handler enforces it.
 - Full suite: 201 files / 1666 passed / 10 skipped / 0 failed.
 - Remaining W3: `BuildService.compileAndRun` full production ports (staging workspace/verifier map/nodes/static entry/completion input), then session/memory/voice/computer/plugin/subagent/MCP/TUI in order.
+
+
+## Wave 4 progress (DX-02) — 2026-08-14
+
+- DX-02 build boundary: root `build` now chains `build:ink` (esbuild bundle of `packages/wxnodus-ink`) before `tsc`. Simulated clean checkout (`rm -rf dist packages/wxnodus-ink/dist` → `npm run build`) rebuilds both and all ten UI suites pass (91/91). Contract test `tests/wave4/w4-build-boundary.test.ts` locks the chain.
+- Full suite: 202 files / 1669 passed / 10 skipped / 0 failed.
+- Remaining DX: npm tgz boundary (files allowlist), installer lifecycle, data-dir parser, English/first-run.
