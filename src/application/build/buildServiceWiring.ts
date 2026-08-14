@@ -50,7 +50,7 @@ export interface ProductionBuildWiringInput {
   verifyProject: VerifyProjectLike;
   evidenceStore: EvidenceStorePort & { readVerifiedClosed(runId: string, ref: unknown): Promise<OperationResult<VerifiedEvidenceReceipt>> };
   snapshots: BuildSnapshotProviders;
-  reviewerSigner: { issuer: string; keyId: string; sign(hash: Uint8Array): Promise<Buffer> };
+  reviewerSigner: { issuer: string; keyId: string; sign(hash: Uint8Array): Promise<Uint8Array> };
   reviewerTrust: ReviewerTrustPolicy;
   nonceStore: ReviewNonceStore;
   makerActorId: string;

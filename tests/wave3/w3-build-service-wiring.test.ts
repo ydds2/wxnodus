@@ -1,22 +1,22 @@
 // tests/wave3/w3-build-service-wiring.test.ts — Wave 3 Build 生产端口组装（真实 authority 闭环）
 // 真实闭环：WorkspaceTransaction(staging) → scaffold 节点 → staticEntry → verifier →
-// EvidenceService.close → readVerified → reviewer attestation(Ed25519) → CompletionGate →
+// EvidenceService.close → readVerifiedClosed → reviewer attestation(Ed25519) → CompletionGate →
 // coordinator owned receipt。快照/密钥注入真实（确定性 sha256 + 真 ed25519 签名）。
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { mkdtemp, mkdir, mkdirSync, rm, writeFileSync } from 'node:fs';
+import { mkdtemp, mkdirSync, rm, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { createProductionBuildWiring, type BuildSnapshotProviders } from '../../src/application/build/buildServiceWiring.js';
-import { BuildService } from '../../src/application/build/buildService.js';
+import { BuildService, type BuildServicePorts } from '../../src/application/build/buildService.js';
+import { CompletionCoordinator } from '../../src/application/quality/completionCoordinator.js';
+import { createReviewerKeyService } from '../../src/application/quality/reviewerKeyService.js';
 import { FileEvidenceStore } from '../../src/infrastructure/quality/fileEvidenceStore.js';
 import { FileReviewNonceStore } from '../../src/infrastructure/quality/fileReviewNonceStore.js';
-
 import { BUILTIN_VERIFIER_DESCRIPTORS } from '../../src/domain/quality/verifier.js';
 
 const mkdtempAsync = promisify(mkdtemp);
-const mkdirAsync = promisify(mkdir);
 const rmAsync = promisify(rm);
 const sha = (char: string) => char.repeat(64);
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
@@ -29,12 +29,32 @@ function writeMinServer(dir: string) {
     "const http=require('http');http.get('http://127.0.0.1:'+(process.env.PORT||4321)+'/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1));\n");
 }
 
+const specWith = (verifierId: string): unknown => [
+  { id: 'criterion-1', required: true, description: 'serves /', verifierId, expected: { path: 'server/index.js' }, evidenceRequirements: [] },
+];
+
+const criterionOf = () => ({
+  id: 'criterion-1', required: true, description: 'serves /', verifierId: 'file.exists', expected: { path: 'server/index.js' }, evidenceRequirements: [],
+});
+
 interface Fixture {
   root: string;
-  ports: import('../../src/application/build/buildService.js').BuildServicePorts;
-  coordinator: import('../../src/application/quality/completionCoordinator.js').CompletionCoordinator;
+  ports: BuildServicePorts;
+  coordinator: CompletionCoordinator;
   cleanup(): Promise<void>;
 }
+
+const fakeCipher = () => {
+  const map = new Map<string, string>();
+  return {
+    encrypt: (plain: string) => {
+      const token = `enc:${map.size + 1}`;
+      map.set(token, plain);
+      return token;
+    },
+    decrypt: (stored: string) => map.get(stored) ?? null,
+  };
+};
 
 async function fixture(overrides: {
   verify?: (dir: string) => Promise<{ status: 'ok' | 'failed' | 'skipped'; detail: string }>;
@@ -89,7 +109,7 @@ async function fixture(overrides: {
   });
 
   if (!wiring.ok) {
-    return { root, ports: null as never, coordinator: null as never, cleanup: () => rmAsync(root, { recursive: true, force: true }) };
+    throw new Error(wiring.error.code);
   }
   return {
     root,
@@ -99,17 +119,11 @@ async function fixture(overrides: {
   };
 }
 
-const specWith = (verifierId: string): unknown => [
-  { id: 'criterion-1', required: true, description: 'serves /', verifierId, expected: { path: 'server/index.js' }, evidenceRequirements: [] },
-];
-
 describe('production build wiring', () => {
   it('maps a criterion verifier id that exists in the builtin registry', async () => {
     const f = await fixture();
     try {
-      const result = f.ports.verifierMap.resolve({
-        id: 'c-1', required: true, description: 'x', verifierId: 'file.exists', expected: 0, evidenceRequirements: [],
-      });
+      const result = f.ports.verifierMap.resolve(criterionOf());
       expect(result).toMatchObject({ ok: true, value: { verifierId: 'file.exists' } });
     } finally { await f.cleanup(); }
   });
@@ -117,9 +131,7 @@ describe('production build wiring', () => {
   it('rejects a criterion whose verifier id is not in the builtin registry', async () => {
     const f = await fixture();
     try {
-      const result = f.ports.verifierMap.resolve({
-        id: 'c-1', required: true, description: 'x', verifierId: 'ghost.verifier', expected: 0, evidenceRequirements: [],
-      });
+      const result = f.ports.verifierMap.resolve({ ...criterionOf(), verifierId: 'ghost.verifier' });
       expect(result).toMatchObject({ ok: false, error: { code: 'BUILD_VERIFIER_MAPPING_MISSING' } });
     } finally { await f.cleanup(); }
   });
@@ -165,9 +177,7 @@ describe('production build wiring', () => {
     });
     try {
       const input = await f.ports.completionInput({
-        criteria: [
-          { id: 'criterion-1', required: true, description: 'serves /', verifierId: 'file.exists', expected: 0, evidenceRequirements: [] },
-        ],
+        criteria: [criterionOf()],
         nodes: {},
         snapshot: {
           runId: 'run-1', artifactId: 'artifact-1', artifactHash: sha('a'), verificationId: 'v-1',
@@ -182,5 +192,60 @@ describe('production build wiring', () => {
 
   it('all sixteen builtin verifier descriptors are referenced by the wiring probe', () => {
     expect(Object.keys(BUILTIN_VERIFIER_DESCRIPTORS)).toHaveLength(16);
+  });
+
+  it('interoperates with the persisted reviewer key service across the full chain', async () => {
+    const root = await mkdtempAsync(join(tmpdir(), 'wxnodus-reviewer-wiring-'));
+    try {
+      const cipher = fakeCipher();
+      const keyService = createReviewerKeyService({
+        dataDir: root,
+        encrypt: cipher.encrypt,
+        decrypt: cipher.decrypt,
+        clock: () => '2026-08-13T00:00:00.000Z', // activeFrom 早于 wiring 的 issuedAt
+      });
+      const bundle = await keyService.loadOrCreate();
+      if (!bundle.ok) throw new Error(bundle.error.code);
+
+      const rewired = createProductionBuildWiring({
+        dataDir: root,
+        runId: 'run-2',
+        sessionId: 'session-2',
+        instantiate: (spec, targetDir) => {
+          writeMinServer(targetDir);
+          return { ok: true, value: { spec } };
+        },
+        verifyProject: async () => ({ status: 'ok', detail: 'verified' }),
+        evidenceStore: new FileEvidenceStore(root, () => '2026-08-13T00:02:30.000Z') as never,
+        snapshots: {
+          environment: () => ({ ok: true, value: { snapshotId: 'env-1', sha256: digest('env'), platform: 'win32', arch: 'x64' } }),
+          capability: () => ({ ok: true, value: { snapshotId: 'cap-1', sha256: digest('cap') } }),
+          policy: () => ({ ok: true, value: { snapshotId: 'policy-1', sha256: digest('policy'), decisionId: 'decision-1' } }),
+        },
+        reviewerSigner: bundle.value.signer,
+        reviewerTrust: bundle.value.trustPolicy,
+        nonceStore: new FileReviewNonceStore(join(root, 'review-nonces')),
+        makerActorId: 'maker-1',
+        reviewerActorId: 'reviewer',
+        clock: () => '2026-08-13T00:03:00.000Z',
+      });
+      if (!rewired.ok) throw new Error(rewired.error.code);
+      const service = new BuildService(rewired.value.ports, rewired.value.coordinator);
+      const result = await service.compileAndRun({
+        spec: specWith('file.exists'),
+        targetDir: join(root, 'projects', 'p2'),
+        dataDir: root,
+        snapshotInput: {
+          runId: 'run-2', artifactId: 'artifact-1', artifactHash: sha('a'),
+          environmentSnapshotId: 'env-1', environmentHash: digest('env'),
+          capabilitySnapshotId: 'cap-1', policySnapshotId: 'policy-1', policyHash: digest('policy'),
+        },
+      }, AbortSignal.timeout(30_000));
+      if (!result.ok) throw new Error(JSON.stringify(result.error));
+      expect(result.value.committed).toBe(true);
+      expect(result.value.decision.status).toBe('succeeded');
+    } finally {
+      await rmAsync(root, { recursive: true, force: true });
+    }
   });
 });
