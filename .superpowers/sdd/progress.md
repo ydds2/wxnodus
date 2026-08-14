@@ -57,3 +57,12 @@ Verified chain: `FileEvidenceStore → ReviewerAttestationVerifier → Completio
 - `gate:completion`: `scripts/run-completion-gate.mjs` is now a launcher only; `src/cli/runCompletionGate.ts` orchestrates the authority (bundle integrity → persisted binding+attestation → reviewer trust config → owned receipts → owned decision); missing inputs block; exit codes propagate exactly; `run-wave3-gates.mjs` preserves Gate G child exit codes.
 - Regressions: 104 passed / 5 skipped across the W0-01 suites plus cross-process writes (both records preserved, no lock artifacts; pre-existing lock fails closed without run mutation).
 - Known baseline gaps unchanged: five UI suites need `packages/wxnodus-ink/dist/entry-exports.js` (Wave 4); `tests/kernel-voice.test.ts` needs git-ignored `data/voice` assets (Wave 3–4).
+
+## Wave 0 verification — 2026-08-14
+
+- `npm run build` / `typecheck` / `typecheck:tests` / `check:test-discovery`: passed.
+- Focused authority regression set (23 files): 255 passed / 5 skipped.
+- `test:known-failures` oracle: 31/31 (open cases emit stable failure codes; resolved cases are green regressions on disk).
+- Full `npm test`: 1490 passed / 10 skipped / 1 failed + 5 UI suites — identical to the characterized baseline (voice assets absent; local ink dist missing). No new regressions.
+- `git diff --check`: clean. Wave 0 committed as `7146357`, `fa59d4e`, `37acb5c`.
+- Honest status: CompletionGate is the sole decision authority in the domain/app/release layer; Gate E remains `blocked` (no physical receipts); CommandBus/agent/CLI/HTTP/Wire transport cutoffs remain un-wired and are tracked as part of Wave 2–3 composition wiring, not counted as done here.
