@@ -273,3 +273,13 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - Tests: `tests/wave3/w3-mcp-wiring.test.ts` 3/3 (key-gate fail-closed, idempotent close, structured HTTP error) + updated `w3-extension-routing.test.ts`; wave2 duplex contract 5/5 unchanged.
 - Full suite: 218 files / 1735 passed / 10 skipped / 0 failed.
 - Remaining MCP: declared-delivered incoming surfaces (`session`/`memory`) stay honest `CAPABILITY_UNAVAILABLE` / structured `NOT_DELIVERED` until the production `ToolExecutionPipeline` is wired.
+
+
+## Wave 3 progress (TUI facade done) — 2026-08-14
+
+- `src/presentation/tui/tuiPresentationAdapter.ts`: presentation adapter 端口 + 组合根工厂——GatewayClient/React 不再持有 db/agent/memory 原始句柄；`WxGatewayKernel` 的 db/agent/mem 字段移除，替换为窄端口 `adapter`（sessions/messages/checkpoints/tasks/cron/usage 语义操作 + agent 端口），失败降级语义与迁移前逐点对齐（list→[]、get→零行等）。原始句柄留在组合根（CLI `createTuiPresentationAdapter({ db, agent, ensureSession })`）。
+- 源门禁（RED）：`tests/wave3/w3-tui-adapter.test.ts` 断言 `src/wxnodus-ui/wxGateway.ts` 不再含 `this.kernel.db/agent/mem` 与 raw `db: any`/`agent:` 字段；adapter 行为以真实 SQLite round-trip 验证（9/9）。
+- Resume 走真实 session：adapter `sessions.ensure` 接 `sessionStartService.ensure`（工件先行/read-back 重算）；`session.create/activate/resume` 工件闸门 fail-closed（无工件会话不产生行），UI 消费端（useConversationLifecycle）对 `ok:false` 形状 fail-closed 不再进入半初始化状态；GatewayClient 级测试证明失败时不落会话行。
+- `TUI_ADAPTER_DONE` 翻转 true——modern TUI 路由 live；`w3-tui-routing.test.ts` 更新（modern 路由；shadow/legacy 不变）。
+- 全量：219 文件 / 1744 通过 / 10 跳过 / 0 失败；build/typecheck×2/discovery 干净；dist 进程 smoke（--version / -p 确定性计算）通过。
+- 剩余 W3：Memory 生产切换（数据模型决策阻塞）+ 生产 ToolExecutionPipeline（W1-08 11 ports，plugin broker 前置）。
