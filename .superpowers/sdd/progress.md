@@ -167,3 +167,10 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - Known-failure oracle: 31/31 (23 open stable + 7 resolved green regressions incl. KF-027).
 - Full suite: 208 files / 1693 passed / 10 skipped / 0 failed.
 - Remaining transport: HTTP terminal-status parity under the security adapter (mostly done in P0-01), then Voice/Computer/Plugin/Subagent/MCP/TUI.
+
+
+## Wave 3 progress (Voice step 1) — 2026-08-14
+
+- `src/commands/voiceRouting.ts`: voice capability routing (same shape as build routing) — modern/required fails closed with `VOICE_MODERN_UNAVAILABLE` while kernel/TUI voice is not yet a `VoiceSessionService` facade; legacy/shadow unchanged. `/voice` handler enforces it.
+- VoiceSessionService/domain/audio-contract/worker-failure tests already exist (W3-03/04 suites); facade collapse is the remaining step.
+- Full suite: 209 files / 1698 passed / 10 skipped / 0 failed.
