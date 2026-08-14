@@ -43,7 +43,7 @@ Baseline is accepted as accurately characterized, not green. Wave work must pres
 | Wave 3 capabilities | pending | Modern service islands not fully wired. |
 | Wave 4 distribution/DX | pending | Includes local ink build boundary and voice asset portability. |
 | Wave 5 Market/HAR | pending | Independent trust root and pre-storage redaction required. |
-| Wave 6 physical/finalizer | pending | Gate E/H/I evidence unavailable; remain blocked/incomplete. |
+| Wave 6 physical/finalizer | mechanisms ready, gates honestly blocked | Gate E/H/I + freezer + finalizer mechanisms complete; physical/cross-platform/network steps remain honestly blocked on this host (below). |
 
 ## W0-01 authority perimeter — 2026-08-14
 
@@ -381,3 +381,29 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - 全量：**237 文件 / 1848 通过 / 10 跳过 / 0 失败**；known-failures 31/31（exit 0）；typecheck×2/build/discovery 干净；dist smoke 通过；Gate E produce 本机诚实 blocked（11 项物理前置缺失如实列出，receipt 三件套真实哈希）。
 - 诚实边界：Gate E 依旧 blocked（无物理环境——结构真实、探测真实、绝不伪造 passed）；场景 PowerShell 只改源码未在本机执行。
 - 剩余：W6-03（Gate H 离线证据运行器 / Gate I 诚实 blocked）、W6-04（pack:release 冻结器 + release:finalize + check-release-surface）。
+
+## W6-03/04 完成（冻结器 + Gate H/I + finalizer）— 2026-08-15
+
+- RED 先行（`c41b23b`）：候选冻结 / Gate H 四步离线证据 / Gate I 诚实 blocked / finalize 固定顺序 + 绝不发布源检（npm publish/git tag/git push 源级断言）。
+- W6-03（`91478e3`）：
+  - `candidateFreezer`：真实 npm pack 冻结 candidate.json（candidateId/commit/tgzSha256/cell/entrypoint 读回自校验）；`pack:release` 仅冻结绝不发布。
+  - `gateHRunner` 四步真实证据：pack 复验（sha256===candidate.tgzSha256）/ 离线干净安装（网络 blocked 如实记录）/ airgap installer 全生命周期（真实 PowerShell install→tamper 拒装→-Uninstall 只删 journal）/ 空 HOME+data-dir 运行；任一步 blocked → 整体 blocked。
+  - `gateI`：win32 绝不出具模拟 Linux/macOS receipt（`GATE_I_PLATFORM_UNAVAILABLE`）；aggregate 校验 platform 声明 + 附件哈希。
+- W6-04（`7a0a420`）：`release:finalize` 固定顺序（import evidence→legacy reachability→requirement coverage→immutable candidate→真实 pack 重算 tgz sha256（漂移 blocked）→E/H/I digest→release gate→completion gate→report/sign）；全过才写 success-certificate；绝不重建 candidate、绝不 publish/tag；`check:release-surface` 前置门。
+- Gate H 真实 smoke 挖出 8 项缺陷，全修（`15b77d6`）：
+  1. installerPathPolicy 拒 @ 段（scoped 包无法打包）→ 白名单加 @，插值字符仍拒；
+  2. 闭包子路径 specifier（react/jsx-runtime、@mcp/client/stdio）恒判缺失 → 按包根解析；
+  3. vitest 经 src/**/*.test.ts 编进 dist 污染闭包 → 基础 tsconfig 排除；
+  4. 类型产物/sourcemap（3771 文件）入闭包且深路径破 MAX_PATH → 闭包排除（LICENSE 保留）；
+  5. 依赖平铺安装根（闭包键缺 node_modules/ 前缀，运行时解析必败）→ stageClosureEntries 还原布局；
+  6. Copy-Item 深路径失败 → robocopy 长路径/字面路径安全；
+  7. 模板字面量 '\' 吞成 '' → journal dirs=0、卸载留 907 空目录 → 转义修复 + 回归断言；
+  8. Gate H unpacked 复用残留旧 zip 文件 + check-release-surface 缺 dirname import → 修复；
+  9. 加固：journal 由 manifest 确定性推导（含 manifest.json）；安装后真实运行 installed CLI（--version + 确定性计算）。
+- 验证：w4 16/16 + p0 22/22 绿；全量 **239 文件 / 1866 通过 / 10 跳过 / 0 失败**；known-failures 31/31（exit 0）；typecheck×2/build/discovery 干净；dist smoke 通过。
+- 诚实 smoke（本机真实执行）：
+  - `pack:release --run release-candidate-smoke`：真实 candidate.json + tgz sha256 绑定。
+  - `gate:h`：pack-verify / installer-lifecycle（真实 PS 安装 → 运行 =14 → tamper 拒装 → 干净卸载零残留）/ blank-home-run **passed**；clean-install 网络 ENOTCACHED 如实 **blocked** → 整体 blocked（预期）。
+  - `release:finalize`：import-evidence 步骤 blocked（gate-report 缺失——物理门未跑）→ 事实报告 + rootDigest + exit 2（预期）。
+  - `check:release-surface`：事实报告 missing（evidence-index/gate-report/gate-e-aggregate/gate-i）+ exit 2（预期）。
+- 终局诚实边界：Gate E（无真实双 OS 物理 receipt）/ Gate I（无 Linux/macOS worker）/ 网络干净安装（离线缓存缺失）保持诚实 blocked——机制全就绪、证据真实、绝不伪造；不标 goal complete、不发布。
