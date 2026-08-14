@@ -69,7 +69,7 @@ Verified chain: `FileEvidenceStore → ReviewerAttestationVerifier → Completio
 
 ## Wave 2 progress — 2026-08-14
 
-Committed as `50bb8e5` (W2-01), `3c7e796` (W2-02), `1fc0ee3` (W2-03), `2e6fada` (branding UI).
+Committed as `50bb8e5` (W2-01), `3c7e796` (W2-02), `1fc0ee3` (W2-03), `2e6fada` (branding UI). Merged to master as `6c8edcb` — master now carries all Wave 0–2 + branding work; merged-master full suite is 198 files / 1651 passed / 10 skipped / 0 failed (exit 0), typecheck x2 + discovery clean. The single worktree voice failure does not exist on master (voice assets are untracked in the main checkout only).
 
 - W2-01: immutable `CompositionRoutingSnapshot` (`src/bootstrap/compositionRouting.ts`) — operator flag/env/workspace precedence; modern/required downgrade denied; default legacy.
 - W2-02: `createGatewayService` dispatcher — full source/session/correlation/signal propagation; `GATEWAY_METHOD_UNKNOWN` for unknown methods (no legacy fallback); handler exceptions fail closed (`GATEWAY_METHOD_FAILED`); optional `publish` event path.
