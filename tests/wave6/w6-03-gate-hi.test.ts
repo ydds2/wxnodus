@@ -5,7 +5,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { freezeCandidate } from '../../src/release/candidateFreezer.js';
 import { runGateH } from '../../src/release/gateHRunner.js';
@@ -25,11 +26,10 @@ const FAKE_TGZ = Buffer.from('fake-tgz-bytes');
 
 describe('W6-03 候选冻结器（freezeCandidate）', () => {
   it('真实 pack（注入）→ candidate.json 元数据与实盘一致 + 读回可校验', async () => {
-    const repoRoot = tmp('w6-freeze-');
-    mkdirSync(join(repoRoot, 'dist', 'cli'), { recursive: true });
-    writeFileSync(join(repoRoot, 'dist', 'cli', 'index.js'), 'console.log(1)');
+    const repoRoot = resolve(join(fileURLToPath(new URL('.', import.meta.url)), '..', '..')); // 真实仓库根（git commit + dist 可用）
+    const outDir = tmp('w6-freeze-out-');
     const result = await freezeCandidate({
-      repoRoot, runId: 'run-freeze-1', outDir: join(repoRoot, 'artifacts', 'release-evidence', 'run-freeze-1'),
+      repoRoot, runId: 'run-freeze-1', outDir,
       // 注入 pack（单测不跑真实构建链；C4 用真实 npm pack smoke 覆盖）
       pack: async (packDestination) => {
         const file = join(packDestination, 'wxnodus-3.0.0.tgz');
@@ -61,7 +61,6 @@ describe('W6-03 候选冻结器（freezeCandidate）', () => {
 });
 
 describe('W6-03 Gate H 离线证据运行器（runGateH）', () => {
-  const passStep = async (id: string) => ({ id, status: 'passed' as const, attachments: [] });
   const candidateOf = (dir: string): string => {
     const file = join(dir, 'candidate.json');
     writeFileSync(file, JSON.stringify({
@@ -79,13 +78,13 @@ describe('W6-03 Gate H 离线证据运行器（runGateH）', () => {
       steps: {
         packVerify: async () => ({ id: 'pack-verify', status: 'passed', attachments: [] }),
         cleanInstall: async () => ({ id: 'clean-install', status: 'passed', attachments: [] }),
-        installerLifecycle: async (evidenceDir) => {
+        installerLifecycle: async ({ evidenceDir }) => {
           const file = join(evidenceDir, 'attachments', 'install.log');
           mkdirSync(join(evidenceDir, 'attachments'), { recursive: true });
           writeFileSync(file, 'INSTALLED');
           return { id: 'installer-lifecycle', status: 'passed', attachments: [{ path: file, sha256: sha256(readFileSync(file)) }] };
         },
-        blankHomeRun: passStep,
+        blankHomeRun: async () => ({ id: 'blank-home-run', status: 'passed', attachments: [] }),
       },
     });
     expect(result.ok).toBe(true);
@@ -107,10 +106,10 @@ describe('W6-03 Gate H 离线证据运行器（runGateH）', () => {
     const result = await runGateH({
       repoRoot: tmp('w6-gateh-repo2-'), evidenceDir: dir, runId: 'run-h-2', candidateFile,
       steps: {
-        packVerify: passStep,
-        cleanInstall: async () => ({ id: 'clean-install', status: 'blocked', reason: 'network blocked (registry unreachable)', attachments: [] }),
-        installerLifecycle: passStep,
-        blankHomeRun: passStep,
+        packVerify: async () => ({ id: 'pack-verify', status: 'passed' as const, attachments: [] }),
+        cleanInstall: async () => ({ id: 'clean-install', status: 'blocked' as const, reason: 'network blocked (registry unreachable)', attachments: [] }),
+        installerLifecycle: async () => ({ id: 'installer-lifecycle', status: 'passed' as const, attachments: [] }),
+        blankHomeRun: async () => ({ id: 'blank-home-run', status: 'passed' as const, attachments: [] }),
       },
     });
     expect(result.ok).toBe(true);
