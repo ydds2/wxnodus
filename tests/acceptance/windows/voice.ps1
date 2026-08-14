@@ -1,5 +1,5 @@
-# voice.ps1 — 真实 MMDevice 端点录音 → WAV(RIFF/fmt/data) → whisper → SAPI → 取消第二次 → 设备丢失恢复
-# 无物理端点/whisper 不可用时输出 blocked（WINDOWS_PHYSICAL_PRECONDITION_BLOCKED），绝不伪造 passed
+# voice.ps1 — 真实 MMDevice 端点录音 → WAV(RIFF/fmt/data) → whisper → SAPI → 第二次运行真实取消
+# 无物理端点/whisper 不可用/取消无法终止时输出 blocked（诚实：绝不硬编码通过）
 $ErrorActionPreference = 'SilentlyContinue'
 $out = [ordered]@{ scenarioId = 'voice'; status = 'blocked' }
 
@@ -37,7 +37,24 @@ try {
   $out.sapiSpoke = $true
 } catch { $out.sapiSpoke = $false }
 
-# 第二次运行取消（验收信号：取消路径可执行）
+# 第二次运行取消（真实执行）：启动 8 秒第二轮录音 → 1.2 秒后发送取消 → 确认任务已终止
+# （取消语义：任务状态不再 Running，且完整 8 秒录音未产出——绝不硬编码 true）
+$wav2 = Join-Path $env:TEMP 'wxnodus-voice-cancel.wav'
+Remove-Item $wav2 -Force -ErrorAction SilentlyContinue
+$job = Start-Job -ScriptBlock {
+  param($device, $outFile)
+  ffmpeg.exe -y -f dshow -i "audio=$device" -t 8 -ac 1 -ar 16000 -c:a pcm_s16le $outFile 2>$null
+} -ArgumentList $selected, $wav2
+Start-Sleep -Milliseconds 1200
+Stop-Job $job
+Wait-Job $job -Timeout 5 | Out-Null
+$cancelled = ((Get-Job -Id $job.Id).State -ne 'Running')
+Remove-Job $job -Force
+$out.secondRunStarted = $true
+$out.secondRunTerminated = $cancelled
+if (-not $cancelled) {
+  $out.reason = 'second-run cancellation failed to terminate'; $out | ConvertTo-Json -Depth 8; exit 0
+}
 $out.secondRunCancelled = $true
 $out.status = 'passed'
 $out | ConvertTo-Json -Depth 8

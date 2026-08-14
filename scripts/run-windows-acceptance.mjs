@@ -1,10 +1,16 @@
-// scripts/run-windows-acceptance.mjs — Gate E OS-keyed 真实验收 runner
-// --produce-receipt --os-key win11-24h2|win10-22h2 --run <uuid>：单单元 receipt 生产（物理前置缺失 → blocked receipt + exit 2）
-// --aggregate-receipts --run <uuid> --receipt <path> --receipt <path>：恰好两个 OS-keyed receipt 聚合，原子写 latest-run.json
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+// scripts/run-windows-acceptance.mjs — Gate E OS-keyed 真实验收 runner（W6-02 三件套哈希链）
+// --produce-receipt --os-key win11-24h2|win10-22h2 --run <uuid> [--runner-snapshot <path>] [--scenario-dir <dir>]
+//   产出 receipt-core.json → manifest.json（hash core+附件）→ receipt-index.json（引用两者 hash）；
+//   物理前置缺失 → 诚实 blocked receipt + exit 2
+// --aggregate-receipts --run <uuid> --receipt <dir> --receipt <dir>：两个 OS-keyed receipt 目录聚合
+//   （先重算 index/manifest/rootDigest/entries，再解析 core），原子写 latest-run.json
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, copyFileSync, statSync } from 'node:fs';
+import { join, resolve, basename } from 'node:path';
+import { createHash } from 'node:crypto';
 
-const { evaluateWindowsRunner, aggregateGateEReceipts } = await import('../src/release/windowsAcceptanceContract.mjs');
+const { evaluateWindowsRunner, aggregateGateEReceipts, computeRootDigest } = await import('../src/release/windowsAcceptanceContract.mjs');
+
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -15,65 +21,129 @@ const has = (name) => args.includes(name);
 
 const receiptsRoot = resolve('artifacts/release-evidence');
 
-function writeReceipt(runId, receiptKey, receipt) {
+const EMPTY_RUNNER = {
+  selfHosted: false, labels: [], interactive: false, unlocked: false, inputDesktop: '', sessionId: 0,
+  os: { family: 'unknown', version: '0' }, node: { version: '0', arch: 'x64' },
+  microphones: [], sapiVoices: [], sapiPlaybackPassed: false,
+  fixtures: { lockSha256: '', sourceHashesValid: false, artifactHashesValid: false }, monitors: [],
+};
+
+function loadRunnerSnapshot(explicitPath) {
+  if (explicitPath) {
+    // W6-02：显式 --runner-snapshot 必须存在且可解析（缺失/坏 JSON → 诚实 blocked，绝不静默退化）
+    const file = resolve(explicitPath);
+    if (!existsSync(file)) {
+      console.error(`WINDOWS_RUNNER_SNAPSHOT_MISSING: ${explicitPath}`);
+      process.exit(2);
+    }
+    try { return JSON.parse(readFileSync(file, 'utf8')); } catch (cause) {
+      console.error(`WINDOWS_RUNNER_SNAPSHOT_INVALID: ${String(cause?.message ?? cause)}`);
+      process.exit(2);
+    }
+  }
+  const defaultPath = resolve('scripts/provisioned-runner.json');
+  return existsSync(defaultPath) ? JSON.parse(readFileSync(defaultPath, 'utf8')) : EMPTY_RUNNER;
+}
+
+/** 三件套写盘：core → manifest（core+附件哈希）→ index（引用两者哈希）——closure 不落 core */
+function writeReceiptBundle(runId, receiptKey, core) {
   const dir = join(receiptsRoot, runId, `receipt-${receiptKey}`);
-  mkdirSync(dir, { recursive: true });
-  const json = JSON.stringify(receipt, null, 2);
-  writeFileSync(join(dir, 'receipt.json'), json, 'utf8');
-  writeFileSync(join(dir, 'manifest.json'), JSON.stringify({
-    algorithm: 'sha256',
-    rootDigest: '',
-    entries: [{ path: 'receipt.json', bytes: Buffer.byteLength(json), sha256: '' }],
-  }, null, 2), 'utf8');
+  mkdirSync(join(dir, 'attachments'), { recursive: true });
+  const coreBytes = Buffer.from(`${JSON.stringify(core, null, 2)}\n`, 'utf8');
+  writeFileSync(join(dir, 'receipt-core.json'), coreBytes, 'utf8');
+  const entries = [{ path: 'receipt-core.json', bytes: coreBytes.length, sha256: sha256(coreBytes) }];
+  for (const scenario of core.scenarios) {
+    for (const attachmentId of scenario.attachmentIds) {
+      const file = join(dir, attachmentId);
+      if (!existsSync(file)) {
+        console.error(`WINDOWS_RECEIPT_ATTACHMENT_MISSING: ${attachmentId}`);
+        process.exit(2);
+      }
+      const bytes = readFileSync(file);
+      entries.push({ path: attachmentId, bytes: bytes.length, sha256: sha256(bytes) });
+    }
+  }
+  const manifest = { algorithm: 'sha256', rootDigest: computeRootDigest(entries), entries };
+  const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  writeFileSync(join(dir, 'manifest.json'), manifestBytes, 'utf8');
+  const index = {
+    receiptKey, receiptId: core.receiptId, runId,
+    coreSha256: sha256(coreBytes), manifestSha256: sha256(manifestBytes),
+  };
+  writeFileSync(join(dir, 'receipt-index.json'), `${JSON.stringify(index, null, 2)}\n`, 'utf8');
   return dir;
+}
+
+/** 场景结果目录：<dir>/*.json（{id,status,attachmentIds}）+ 相对附件文件 → 拷贝进 receipt 附件区 */
+function loadScenarioResults(scenarioDir, receiptDir, decisionStatus) {
+  if (!scenarioDir || !existsSync(scenarioDir)) {
+    return [{ id: 'preflight', status: decisionStatus === 'passed' ? 'passed' : 'blocked', attachmentIds: [] }];
+  }
+  const scenarios = [];
+  for (const name of readdirSync(scenarioDir).filter(n => n.endsWith('.json')).sort()) {
+    const result = JSON.parse(readFileSync(join(scenarioDir, name), 'utf8'));
+    const attachmentIds = [];
+    for (const attachmentId of result.attachmentIds ?? []) {
+      const source = join(scenarioDir, attachmentId);
+      if (!existsSync(source)) {
+        console.error(`WINDOWS_RECEIPT_ATTACHMENT_MISSING: ${attachmentId}`);
+        process.exit(2);
+      }
+      const target = join(receiptDir, attachmentId);
+      mkdirSync(join(target, '..'), { recursive: true });
+      copyFileSync(source, target);
+      attachmentIds.push(attachmentId);
+    }
+    scenarios.push({ id: result.id ?? basename(name, '.json'), status: result.status ?? 'blocked', attachmentIds });
+  }
+  return scenarios;
 }
 
 if (has('--produce-receipt')) {
   const osKey = flag('--os-key');
   const runId = flag('--run');
   if (!runId || !['win11-24h2', 'win10-22h2'].includes(osKey)) {
-    console.error('usage: --produce-receipt --os-key win11-24h2|win10-22h2 --run <uuid>');
+    console.error('usage: --produce-receipt --os-key win11-24h2|win10-22h2 --run <uuid> [--runner-snapshot <path>] [--scenario-dir <dir>]');
     process.exit(2);
   }
-  // runner 快照：provision-windows-runner.ps1 的输出（缺失即物理前置 blocked）
-  const provisioned = existsSync('scripts/provisioned-runner.json')
-    ? JSON.parse(readFileSync('scripts/provisioned-runner.json', 'utf8'))
-    : null;
-  const runner = provisioned ?? { selfHosted: false, labels: [], interactive: false, unlocked: false, inputDesktop: '', sessionId: 0, os: { family: 'unknown', version: '0' }, node: { version: '0', arch: 'x64' }, microphones: [], sapiVoices: [], sapiPlaybackPassed: false, fixtures: { lockSha256: '', sourceHashesValid: false, artifactHashesValid: false }, monitors: [] };
+  const runner = loadRunnerSnapshot(flag('--runner-snapshot'));
   const decision = evaluateWindowsRunner(runner);
   const receiptKey = osKey === 'win11-24h2' ? 'windows-11-24h2-production-real' : 'windows-10-22h2-legacy-compatibility';
-  const receipt = {
-    receiptId: `receipt-${receiptKey}`,
-    receiptKey,
-    runId,
+  const receiptId = `receipt-${receiptKey}`;
+  const receiptDir = join(receiptsRoot, runId, `receipt-${receiptKey}`);
+  mkdirSync(receiptDir, { recursive: true });
+  const scenarios = loadScenarioResults(flag('--scenario-dir'), receiptDir, decision.status);
+  // 诚实 blocked：物理前置缺失时场景一律 blocked（绝不伪造 passed）
+  const effectiveScenarios = decision.status === 'passed'
+    ? scenarios
+    : scenarios.map(scenario => ({ ...scenario, status: 'blocked', attachmentIds: [] }));
+  const core = {
+    receiptId, receiptKey, runId,
     candidateCommit: runner.candidateCommit ?? '',
     artifact: runner.artifact ?? { id: '', sha256: '' },
     environment: runner.environment ?? { snapshotId: '', sha256: '' },
     capability: runner.capability ?? { snapshotId: '', sha256: '' },
     runner,
     fixtures: runner.fixtures ?? { lockSha256: '', sourceHashesValid: false, artifactHashesValid: false },
-    scenarios: [{ id: 'preflight', status: decision.status === 'passed' ? 'passed' : 'blocked', attachmentIds: [] }],
-    closure: { status: 'closed' },
-    manifestSha256: '0'.repeat(64),
+    scenarios: effectiveScenarios,
   };
-  writeReceipt(runId, receiptKey, receipt);
+  writeReceiptBundle(runId, receiptKey, core);
   if (decision.status !== 'passed') {
     console.error(`WINDOWS_PHYSICAL_PRECONDITION_BLOCKED: ${decision.missing?.join(', ')}`);
     process.exit(2);
   }
-  console.log(JSON.stringify({ receiptId: receipt.receiptId, receiptKey, status: 'produced' }));
+  console.log(JSON.stringify({ receiptId, receiptKey, status: 'produced' }));
   process.exit(0);
 }
 
 if (has('--aggregate-receipts')) {
   const runId = flag('--run');
-  const receiptPaths = args.reduce((acc, value, index) => (value === '--receipt' ? [...acc, args[index + 1]] : acc), []);
-  if (!runId || receiptPaths.length !== 2) {
-    console.error('usage: --aggregate-receipts --run <uuid> --receipt <path> --receipt <path>');
+  const receiptDirs = args.reduce((acc, value, index) => (value === '--receipt' ? [...acc, args[index + 1]] : acc), []);
+  if (!runId || receiptDirs.length !== 2) {
+    console.error('usage: --aggregate-receipts --run <uuid> --receipt <dir> --receipt <dir>');
     process.exit(2);
   }
-  const receipts = receiptPaths.map(path => JSON.parse(readFileSync(resolve(path), 'utf8')));
-  const decision = aggregateGateEReceipts(receipts);
+  const decision = aggregateGateEReceipts(receiptDirs.map(dir => resolve(dir)));
   const dir = join(receiptsRoot, runId);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'gate-e-aggregate.json'), JSON.stringify(decision, null, 2), 'utf8');

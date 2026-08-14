@@ -7,7 +7,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { aggregateGateEReceipts, evaluateWindowsRunner, REQUIRED_WINDOWS_SCENARIOS } from '../../src/release/windowsAcceptanceContract.mjs';
+import { aggregateGateEReceipts, evaluateWindowsRunner } from '../../src/release/windowsAcceptanceContract.mjs';
+import * as contractModule from '../../src/release/windowsAcceptanceContract.mjs';
+
+// W6-02 实现后才导出（C1 阶段为 undefined → 首用例即红）
+const REQUIRED_WINDOWS_SCENARIOS: string[] =
+  (contractModule as unknown as { REQUIRED_WINDOWS_SCENARIOS?: string[] }).REQUIRED_WINDOWS_SCENARIOS ?? [];
 
 const sha256 = (bytes: string | Buffer): string => createHash('sha256').update(bytes).digest('hex');
 const cleanup: Array<() => void> = [];
@@ -79,9 +84,24 @@ function buildReceipt(family: 'win10' | 'win11', scenarios: Array<{ id: string; 
   return { dir, receiptKey, core, coreSha256, manifestSha256 };
 }
 
+/** 合法重绑定：core 内容变更后重算 manifest + index（模拟另一候选真实产出的 receipt） */
+function rehash(dir: string): void {
+  const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as { entries: Array<{ path: string }> };
+  const entries: Array<{ path: string; bytes: number; sha256: string }> = [];
+  for (const entry of manifest.entries) {
+    const bytes = readFileSync(join(dir, entry.path));
+    entries.push({ path: entry.path, bytes: bytes.length, sha256: sha256(bytes) });
+  }
+  const newManifest = { algorithm: 'sha256', rootDigest: rootDigest(entries), entries };
+  const manifestBytes = Buffer.from(`${JSON.stringify(newManifest, null, 2)}\n`, 'utf8');
+  const index = JSON.parse(readFileSync(join(dir, 'receipt-index.json'), 'utf8')) as { receiptKey: string; receiptId: string; runId: string };
+  writeFileSync(join(dir, 'manifest.json'), manifestBytes);
+  writeFileSync(join(dir, 'receipt-index.json'), `${JSON.stringify({ ...index, coreSha256: sha256(readFileSync(join(dir, 'receipt-core.json'))), manifestSha256: sha256(manifestBytes) }, null, 2)}\n`, 'utf8');
+}
+
 const allScenarios = (): Array<{ id: string; status: string; attachmentIds: string[] }> =>
   ['preflight', 'voice', 'computer-multimonitor', 'browser', 'build-restart-readback', 'uia', 'emergency-stop']
-    .map(id => ({ id, status: 'passed', attachmentIds: [`att-${id}`] }));
+    .map(id => ({ id, status: 'passed', attachmentIds: [`attachments/${id}.json`] }));
 
 const allAttachments = (): Record<string, string> => Object.fromEntries(
   ['preflight', 'voice', 'computer-multimonitor', 'browser', 'build-restart-readback', 'uia', 'emergency-stop']
@@ -120,11 +140,12 @@ describe('W6-02 Gate E receipt 三件套哈希链', () => {
   });
 
   it('必需场景缺失 → WINDOWS_RECEIPT_SCENARIO_MISSING；场景失败 → WINDOWS_ACCEPTANCE_SCENARIO_FAILED', () => {
+    const goodWin10 = buildReceipt('win10', allScenarios(), allAttachments());
     const missingVoice = buildReceipt('win11', allScenarios().filter(s => s.id !== 'voice'), allAttachments());
-    expect(aggregateGateEReceipts([missingVoice.dir, mkdtempSync(join(tmpdir(), 'w6-e-x-'))] as never))
+    expect(aggregateGateEReceipts([missingVoice.dir, goodWin10.dir] as never))
       .toMatchObject({ status: 'blocked', code: 'WINDOWS_RECEIPT_SCENARIO_MISSING' });
     const failedBrowser = buildReceipt('win11', allScenarios().map(s => (s.id === 'browser' ? { ...s, status: 'failed' } : s)), allAttachments());
-    expect(aggregateGateEReceipts([failedBrowser.dir, mkdtempSync(join(tmpdir(), 'w6-e-y-'))] as never))
+    expect(aggregateGateEReceipts([failedBrowser.dir, goodWin10.dir] as never))
       .toMatchObject({ status: 'blocked', code: 'WINDOWS_ACCEPTANCE_SCENARIO_FAILED' });
   });
 
@@ -134,6 +155,7 @@ describe('W6-02 Gate E receipt 三件套哈希链', () => {
     const core = JSON.parse(readFileSync(join(win10.dir, 'receipt-core.json'), 'utf8')) as Record<string, unknown>;
     core.artifact = { id: 'other-art', sha256: 'c'.repeat(64) };
     writeFileSync(join(win10.dir, 'receipt-core.json'), JSON.stringify(core, null, 2));
+    rehash(win10.dir); // 合法重绑定（另一候选真实产出的 receipt）——哈希链自洽但候选不同
     const result = aggregateGateEReceipts([win11.dir, win10.dir] as never);
     expect(result).toMatchObject({ status: 'blocked', code: 'WINDOWS_RECEIPT_CANDIDATE_MISMATCH' });
   });
