@@ -2,7 +2,7 @@
 // 11 ports 全真实：resolve/validate/normalize/decide/authorizeAndReserve/execute/appendJournal/
 // verifyPostcondition/captureEvidence/commitBudget/releaseBudget——真实 SQLite 控制面 +
 // 真实文件系统 executor + 真实证据落盘 + 哈希链 journal。fail-closed 路径全部锁定。
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -150,5 +150,48 @@ describe('W1-08 production tool execution pipeline', () => {
     }, context(), controller.signal);
     expect(result).toMatchObject({ ok: false, error: { code: 'OPERATION_CANCELLED' } });
     expect(JSON.parse((db.prepare('SELECT used_json FROM budget_snapshots WHERE active=1').get() as { used_json: string }).used_json)).toEqual({});
+  });
+
+  it('MCP delivered memory surface executes through the production pipeline (real verified receipt)', async () => {
+    process.env.WXNODUS_MCP_REQUEST_STATE_KEY = Buffer.alloc(32, 1).toString('base64');
+    const { WxNodusMcpAdapter } = await import('../../src/infrastructure/mcp/wxnodusMcpServer.js');
+    const { InMemoryMcpTranscriptStore } = await import('../../src/infrastructure/mcp/mcpTranscriptStore.js');
+    const { buildMcpMeta } = await import('../../src/domain/mcp/mcpProtocol.js');
+    const { pipeline, context } = fixture();
+    const transcript = new InMemoryMcpTranscriptStore(() => '2026-08-13T00:00:00.000Z');
+    const adapter = new WxNodusMcpAdapter({
+      capabilities: {
+        snapshot: () => ({ id: 'caps-1' }),
+        require: (id: string) => id === 'memory'
+          ? ({ ok: true as const, value: { id, snapshotId: 'caps-1' } })
+          : ({ ok: false as const, error: { code: 'CAPABILITY_UNAVAILABLE' } }),
+      } as never,
+      pipeline: pipeline.pipeline as never,
+      transcript,
+      contextFactory: () => context(),
+    });
+    const meta = buildMcpMeta({ name: 'test', version: '1' }, { tools: {}, resources: {}, prompts: {} });
+    const result = await adapter.call('memory', {}, meta, context(), new AbortController().signal);
+    expect(result).toMatchObject({ ok: true, value: { state: 'verified', toolId: 'builtin:memory' } });
+    expect(transcript.records().at(-1)).toMatchObject({ status: 'ok' });
+    delete process.env.WXNODUS_MCP_REQUEST_STATE_KEY;
+  });
+
+  it('plugin broker routes workspace.read through the production pipeline (path boundary enforced)', async () => {
+    const { createPluginBroker } = await import('../../src/infrastructure/plugins/pluginProtocol.js');
+    const { dir, pipeline, context } = fixture({ approver: async () => true });
+    const target = join(dir, 'plugin-read.txt');
+    writeFileSync(target, '插件能力读取', 'utf8');
+    const broker = createPluginBroker({ pipeline: pipeline.pipeline });
+    const okRead = await broker.request('plugin-1', { id: 'req-1', kind: 'workspace.read', path: target }, context(), new AbortController().signal);
+    expect(okRead).toMatchObject({ ok: true, value: { requestId: 'req-1' } });
+    // 越界读 fail-closed（绝不静默放行）
+    const escaped = await broker.request('plugin-1', { id: 'req-2', kind: 'workspace.read', path: join(dir, '..', 'outside.txt') }, context(), new AbortController().signal);
+    expect(escaped).toMatchObject({ ok: false, error: { code: 'BUILD_PATH_OUTSIDE_WORKSPACE' } });
+    // process.spawn 在本 fixture 策略 hard redline → PDP 直接拒绝（先于审批）
+    const noApprover = fixture();
+    const broker2 = createPluginBroker({ pipeline: noApprover.pipeline.pipeline });
+    const spawn = await broker2.request('plugin-1', { id: 'req-3', kind: 'process.spawn', executable: 'cmd.exe', args: [] }, noApprover.context(), new AbortController().signal);
+    expect(spawn).toMatchObject({ ok: false, error: { code: 'POLICY_DENIED' } });
   });
 });

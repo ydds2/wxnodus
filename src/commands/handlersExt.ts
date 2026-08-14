@@ -1734,8 +1734,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       throw new Error(`[${pluginRoute.error.code}] ${pluginRoute.error.message}`);
     }
     // W3 Plugin facade：modern 路由经 PluginLifecycleService（manifest→checksum→probe→沙箱门→owned scope 原子换入）。
-    // 生产 sandbox=crash-isolation（Untrusted 自动 quarantined）；broker 权限请求在 ToolExecutionPipeline
-    // 生产接线前 fail-closed（PLUGIN_BROKER_PIPELINE_UNAVAILABLE——绝不假执行）；生命周期证据落盘。
+    // 生产 sandbox=crash-isolation（Untrusted 自动 quarantined）；broker 权限请求经生产 ToolExecutionPipeline
+    // （W1-08 11 ports 真实装配）——未装配组合根时保持 PLUGIN_BROKER_PIPELINE_UNAVAILABLE fail-closed（绝不假执行）。
     if (pluginRoute.value.route === 'modern') {
       const { join } = await import('node:path');
       const { createProcessIsolationSandbox } = await import('../infrastructure/plugins/processIsolationSandbox.js');
@@ -1747,12 +1747,12 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const name = rest[0];
       const sandbox = createProcessIsolationSandbox();
       const broker = createPluginBroker({
-        pipeline: {
+        pipeline: (ctx.toolPipeline ?? {
           execute: async () => ({
             ok: false as const,
-            error: { code: 'PLUGIN_BROKER_PIPELINE_UNAVAILABLE', message: 'ToolExecutionPipeline 生产接线未完成——插件能力请求 fail-closed', messageKey: 'PLUGIN_BROKER_PIPELINE_UNAVAILABLE', retryable: false },
+            error: { code: 'PLUGIN_BROKER_PIPELINE_UNAVAILABLE', message: 'ToolExecutionPipeline 未装配——插件能力请求 fail-closed', messageKey: 'PLUGIN_BROKER_PIPELINE_UNAVAILABLE', retryable: false },
           }),
-        } as never,
+        }) as never,
       });
       const service = createPluginLifecycleService({
         dataDir: ctx.dataDir,

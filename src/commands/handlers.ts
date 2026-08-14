@@ -62,6 +62,8 @@ export interface HandlerCtx {
   };
   /** W3 Memory：session-scoped modern 权威服务（/memory 命令只经此端口读写显式记忆记录） */
   memoryServiceFor?(sessionId: string): import('../application/memoryService.js').MemoryService;
+  /** W1-08：生产 ToolExecutionPipeline（plugin broker 能力请求与 MCP surface 的真实执行入口） */
+  toolPipeline?: import('../domain/tools/toolExecutionPipeline.js').ToolExecutionPipeline;
 }
 
 const lines = (title: string, body: string[]): string => {

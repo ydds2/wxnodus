@@ -5,6 +5,7 @@
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import type { CapabilityPort } from '../../domain/capabilities/capability.js';
 import { mcpUnavailable } from '../../domain/mcp/mcpProtocol.js';
+import type { ToolExecutionPipeline } from '../../domain/tools/toolExecutionPipeline.js';
 import type { OperationContext } from '../../protocol/operationContext.js';
 import { InMemoryMcpTranscriptStore } from '../../infrastructure/mcp/mcpTranscriptStore.js';
 import { createRegisteredServer, createWxNodusHttpHandler, type WxNodusMcpPorts } from '../../infrastructure/mcp/wxnodusMcpServer.js';
@@ -13,6 +14,8 @@ export interface McpIncomingServerOptions {
   capabilities: CapabilityPort;
   contextFactory(): OperationContext;
   clock?(): string;
+  /** W1-08：生产 ToolExecutionPipeline（真实执行 delivered surface）；未装配 → NOT_DELIVERED fail-closed */
+  pipeline?: ToolExecutionPipeline;
 }
 
 export interface McpIncomingServer {
@@ -30,8 +33,8 @@ export const hasRequestStateKey = (): boolean =>
 
 export function createMcpIncomingServer(options: McpIncomingServerOptions): McpIncomingServer {
   const transcript = new InMemoryMcpTranscriptStore(options.clock ?? (() => new Date().toISOString()));
-  // fail-closed pipeline：生产 ToolExecutionPipeline（W1-08 11 ports，前置 plugin broker）未接线前，
-  // 任何通过 capabilities.require() 的 surface 调用一律结构化 NOT_DELIVERED——绝不假发布。
+  // 生产 pipeline 装配则真实执行 delivered surface；未装配保持 fail-closed（NOT_DELIVERED——绝不假发布）。
+  // W1-08：builtin:memory 经 11 ports 全链（resolve→…→evidence→commit）真实返回 session 显式记忆。
   const failClosedPipeline = {
     async execute(request: { toolId: string }) {
       return mcpUnavailable(request.toolId, 'tools', 'stdio', 'NOT_DELIVERED');
@@ -39,7 +42,7 @@ export function createMcpIncomingServer(options: McpIncomingServerOptions): McpI
   } as never;
   const ports: WxNodusMcpPorts = {
     capabilities: options.capabilities,
-    pipeline: failClosedPipeline,
+    pipeline: (options.pipeline ?? failClosedPipeline) as never,
     transcript,
     contextFactory: options.contextFactory,
   };

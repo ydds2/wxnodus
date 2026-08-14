@@ -138,8 +138,30 @@ if (pre.mode === 'error') {
   }
   let model = settings.model ?? (settings.apiKeyEnc ? resolveDefaultModel({}) : '');
 
+  // 审批桥：agent 工具确认 → GatewayClient.requestApproval（审批 overlay）
+  // W1-08：生产 ToolExecutionPipeline 的 approver 闭包引用此变量（TUI/headless 装配后可用）
+  let gateway: any = null;
+
+  // W1-08：生产 ToolExecutionPipeline（11 ports 真实装配）——plugin broker 与 MCP delivered surface 的
+  // 唯一真实执行入口。approver：无网关/拒绝 → fail-closed；policy/budget 为 CLI 默认（诚实 fail-closed 默认）。
+  const { createProductionToolExecution } = await import('../application/tools/toolExecutionWiring.js');
+  const { DEFAULT_TOOL_POLICY, DEFAULT_TOOL_BUDGET_LIMITS } = await import('../application/tools/defaultToolPolicy.js');
+  const toolExecution = createProductionToolExecution({
+    db, dataDir, workspaceRoot: cwd, memoryRepository,
+    policy: { id: 'policy-cli-v1', document: DEFAULT_TOOL_POLICY },
+    budget: { id: 'budget-cli-v1', limits: { ...DEFAULT_TOOL_BUDGET_LIMITS } },
+    approver: async (request) => {
+      if (!gateway) return false;
+      const choice = await gateway.requestApproval(String(request.toolId), {
+        ...(request.args as Record<string, unknown> ?? {}), _effectKind: request.effect.kind,
+      });
+      return choice !== 'deny';
+    },
+  });
+
   // W3 MCP facade：incoming server 共享构造（--mcp-server stdio 与 --serve /mcp Streamable HTTP 同一 ports）——
-  // CapabilityPort 用真实 registry（require 决定 surface）；pipeline fail-closed（生产未接线即 NOT_DELIVERED，绝不假发布）
+  // CapabilityPort 用真实 registry（require 决定 surface）；pipeline 为生产 ToolExecutionPipeline
+  // （delivered surface 真实执行；未接线 surface 仍 NOT_DELIVERED fail-closed，绝不假发布）
   const { createHash, randomUUID } = await import('node:crypto');
   const { Wave1CapabilityRegistry } = await import('../application/capabilities/capabilityRegistry.js');
   const { createMcpIncomingServer } = await import('../application/mcp/mcpServerWiring.js');
@@ -151,6 +173,7 @@ if (pre.mode === 'error') {
       correlationId: randomUUID(), policySnapshotId, locale: 'zh-CN', source: 'cli' as const,
       capabilities: ['memory'], timestamp: new Date().toISOString(),
     }),
+    pipeline: toolExecution.pipeline,
   });
 
   // W3 MCP facade：--mcp-server —— incoming stdio 服务器模式（真实 connect；close 纳入统一 shutdown）
@@ -172,9 +195,6 @@ if (pre.mode === 'error') {
     return;
   }
 
-
-  // 审批桥：agent 工具确认 → GatewayClient.requestApproval（审批 overlay）
-  let gateway: any = null;
 
   // W2-03：--prompt --wire 真实 headless 网关——此前 gateway 恒为 null（TUI 才装配），
   // wire 双向化（stdin 帧 → RPC）与 wire 终态比对静默失效。headless 网关无 React/Ink 依赖，
@@ -359,6 +379,8 @@ if (pre.mode === 'error') {
     sessionStart: sessionStartService,
     // W3 Memory：/memory 命令经 session-scoped modern 权威服务（scope 只来自当前会话）
     memoryServiceFor: (sid: string) => createMemoryService(memoryRepository, { sessionId: sid }),
+    // W1-08：plugin broker 能力请求的真实执行入口（未装配组合根时 handlersExt 保持 fail-closed）
+    toolPipeline: toolExecution.pipeline,
     getModel: () => model,
     getMode: () => mode,
     setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
