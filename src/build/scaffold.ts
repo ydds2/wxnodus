@@ -74,12 +74,29 @@ function match(routes, method, pathname) {
   return null;
 }
 
+// 静态回退：public/ 优先，其次项目根（未构建前端 → 根 index.html 零依赖兜底页）
+const STATIC_TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript', css: 'text/css', png: 'image/png', svg: 'image/svg+xml', json: 'application/json' };
+function serveStatic(res, pathname) {
+  if ((res.req?.method ?? 'GET') !== 'GET') return false;
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const rel = pathname.replace(/^\\/+/, '') || 'index.html'; // '/' → index.html（根静态入口）
+  const candidates = [path.join(__dirname, '..', 'public', rel), path.join(__dirname, '..', rel)];
+  const file = candidates.find((x) => { try { return fs.statSync(x).isFile(); } catch { return false; } });
+  if (!file) return false;
+  res.statusCode = 200;
+  const ext = String(file.split('.').pop() ?? '').toLowerCase();
+  res.setHeader('Content-Type', STATIC_TYPES[ext] || 'application/octet-stream');
+  fs.createReadStream(file).pipe(res);
+  return true;
+}
+
 function createRouter(routes) {
   return async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const pathname = url.pathname.replace(/\\/+$/, '') || '/';
     const hit = match(routes, req.method ?? 'GET', pathname);
-    if (!hit) return json(res, 404, { error: 'not found' });
+    if (!hit) return serveStatic(res, pathname) ? undefined : json(res, 404, { error: 'not found' });
     try {
       await hit.handler(req, res, url, readBody, hit.params);
     } catch (e) {
@@ -787,6 +804,8 @@ export function instantiate(spec: Spec, projectDir: string, plan?: BuildPlan): I
     writeFileSync(join(projectDir, 'server', 'smoke.test.js'), genSmokeTest(mold), 'utf8');
     writeFileSync(join(projectDir, 'README.md'), genReadme(mold, spec), 'utf8');
     writeFileSync(join(projectDir, 'package.json'), genPackageJson(mold, title, spec.summary), 'utf8');
+    // KF-018：根 index.html 静态入口（未构建前端 → 零依赖兜底页，同一 API；服务端静态回退同时服务根与 public/）
+    writeFileSync(join(projectDir, 'index.html'), genIndexHtml(mold, title), 'utf8');
     writeFileSync(join(projectDir, 'healthcheck.js'), `// healthcheck：启动→探活→读回\nconst http = require('node:http');\nhttp.get('http://127.0.0.1:' + (process.env.PORT || 4321) + '/api/health', r => { let b=''; r.on('data',c=>b+=c); r.on('end',()=>{ console.log(b); process.exit(r.statusCode===200?0:1); }); }).on('error', () => process.exit(1));\n`, 'utf8');
     // 计划落盘（真实消费证据——模块拓扑与顺序可查；绝不只印在日志里）
     writeFileSync(join(projectDir, 'plan.json'), JSON.stringify({ modules: effective.modules, order }, null, 2), 'utf8');

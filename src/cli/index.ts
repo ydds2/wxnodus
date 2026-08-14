@@ -738,7 +738,10 @@ if (pre.mode === 'error') {
     const resumeId = pickResumeSession(db);
     if (resumeId) {
       agent.setSessionId(resumeId);
-      bus.emit('system.notice', { text: `已自动恢复上次未完成会话 ${resumeId.slice(0, 8)}…（/new 可开始新会话）` });
+      // KF-028：绑定恢复的会话——后续 Gateway/UI 一律经 agent.getSessionId() 读取，
+      // 绝不回落 'default'（恢复后仍指向默认会话 = 假恢复）
+      const boundSessionId = agent.getSessionId() ?? resumeId;
+      bus.emit('system.notice', { text: `已自动恢复上次未完成会话 ${boundSessionId.slice(0, 8)}…（/new 可开始新会话）` });
     }
   }
 

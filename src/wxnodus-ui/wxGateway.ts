@@ -1446,6 +1446,11 @@ export class GatewayClient extends EventEmitter {
 
     const s = this.kernel.settings as Record<string, any>
 
+    // KF-002：key='full' 返回完整配置快照（settings + 运行环境）——绝不返回 undefined 包装
+    if (key === 'full') {
+      return { full: { ...(s ?? this.kernel.config.get('settings') ?? {}), dataDir: this.kernel.dataDir, cwd: this.kernel.cwd } };
+    }
+
     // 审计修复：单键查询按真实 settings 返回（此前任意 key 都返回 'interrupt' 假值）
     if (key) {
       if (key === 'skin') return { value: s.skin ?? 'default' }
