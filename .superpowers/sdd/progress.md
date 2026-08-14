@@ -194,3 +194,11 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - `src/bootstrap/tuiRouting.ts`: TUI assembly routing — modern/required fails closed (`TUI_MODERN_UNAVAILABLE`, unified shutdown then exit 2) while `WxGatewayKernel` is not yet collapsed to a presentation adapter; legacy/shadow unchanged. CLI TUI assembly enforces it before constructing GatewayClient.
 - Wave 3 routing now covers all eight capabilities: build, voice, computer, browser, plugin, subagent, mcp, tui — every modern request fails closed with a specific code until the real wiring lands; every legacy/shadow path preserves current behavior.
 - Full suite: 212 files / 1713 passed / 10 skipped / 0 failed.
+
+
+## Wave 3 progress (Voice step 2, state machine + transcript storage) — 2026-08-14
+
+- `VoiceSessionService` now enforces the domain state machine (`transitionVoice`) — illegal jumps fail closed (`VOICE_ILLEGAL_TRANSITION`); transcribe requires the legal `speech_detected` precondition; successful exit walks thinking→idle, abort cancelling→idle, failure error→idle.
+- Transcript storage port added: transcription text is persisted through the injected store and the service only ever returns the opaque `transcript://<id>` ref (plaintext never flows out of the service layer); save failures surface as the terminal result.
+- Existing voice suites updated to the legal state path (7 suites / 19 tests green).
+- Full suite: 213 files / 1718 passed / 10 skipped / 0 failed (one heapdump test timed out under parallel-suite load in the first run; isolated rerun 7/7 in 2.6s — environment flake, not a regression).
