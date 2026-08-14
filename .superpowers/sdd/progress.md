@@ -232,3 +232,11 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - `/browser` modern branch: entry URL authorization first, then `BrowserSessionService` (owner-checked) open/navigate/close, evidence via `createComputerEvidenceStore`. `BROWSER_SERVICE_WIRED` flipped true.
 - Tests 5/5: public URL authorized, loopback/private/unknown-host denied, owned session lifecycle, connectedAddress unavailable fail-closed.
 - Full suite: 215 files / 1725 passed / 10 skipped / 0 failed.
+
+
+## Wave 3 progress (Plugin step 1, production sandbox) — 2026-08-14
+
+- `src/infrastructure/plugins/processIsolationSandbox.ts`: first concrete PluginSandbox implementation — real child-process isolation (cleared environment, piped stdio, no inherited handles, atomic stop), truthful probe evidence (`crash-isolation` with OS-enforcement items false), so untrusted plugins are quarantined by the sandbox gate (`PLUGIN_SANDBOX_UNAVAILABLE`) — never downgraded into a false safety claim. Trusted plugins pass through crash-isolation.
+- Tests 4/4: truthful probe, untrusted quarantine, trusted allow, real child-process start/stop.
+- Full suite: 216 files / 1729 passed / 10 skipped / 0 failed.
+- Remaining plugin: `/plugin` modern branch wiring (broker pipeline injection + scope manager + evidence) then PLUGIN_WIRED flip.
