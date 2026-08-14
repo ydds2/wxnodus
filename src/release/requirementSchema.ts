@@ -10,7 +10,7 @@ export interface RequirementCoverage {
   gates: Array<'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I'>;
   evidenceRequirements: string[];
   evidenceIds: string[];
-  status: 'planned' | 'implemented' | 'verified' | 'blocked';
+  status: 'planned' | 'implemented' | 'verified' | 'blocked' | 'skipped' | 'not_applicable';
 }
 
 const REQUIREMENTS = Array.from(

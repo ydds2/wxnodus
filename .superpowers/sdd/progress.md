@@ -36,8 +36,8 @@ Baseline is accepted as accurately characterized, not green. Wave work must pres
 |---|---|---|
 | Baseline/worktree | completed | Correct ancestry and isolated root verified; baseline failures classified above. |
 | W0-01 Completion authority | core-complete | WeakSet receipt + coordinator + gate + evidence write perimeter + BuildService + gate:completion adapter + Gate G wired; transport cutoffs (CommandBus/agent/CLI/HTTP/Wire) deferred to Wave 3 wiring. |
-| W0-02 Release eligibility | pending | Known-failure oracle must remain distinct from release blockers. |
-| W0-03 Evidence/requirements | pending | Release-mode versioned closure; current requirements remain unverified. |
+| W0-02 Release eligibility | core-complete | `releaseEligibility` + `check-release-eligibility` adapter; open KF blocks with `RELEASE_BLOCKED_OPEN_P0`; required gate failed/blocked/cancelled/inconclusive/incomplete/na never release; resolved-KF regression existence enforced. |
+| W0-03 Evidence/requirements | core-complete | Versioned evidence index + requirement resolver; verified requirements must bind current candidate/index fully; current all-planned requirements stay unverifiable (20/20 `REQUIREMENT_NOT_VERIFIED` in release mode). |
 | Wave 1 security | pending | No production bypass may be called fixed before wiring regression passes. |
 | Wave 2 composition root | pending | Legacy production root still active. |
 | Wave 3 capabilities | pending | Modern service islands not fully wired. |

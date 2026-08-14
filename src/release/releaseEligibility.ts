@@ -24,7 +24,6 @@ const GATE_TERMINAL = new Set(['passed', 'failed', 'blocked', 'cancelled', 'inco
 
 export function releaseEligibility(input: ReleaseEligibilityInput): ReleaseEligibilityResult {
   const byGate = new Map(input.outcomes.map(outcome => [outcome.gate, outcome.status]));
-  const reasons: string[] = [];
 
   const missing = input.requiredGates.filter(gate => !byGate.has(gate));
   if (missing.length > 0) {
