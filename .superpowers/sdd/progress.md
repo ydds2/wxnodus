@@ -104,3 +104,12 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - DX-02 build boundary: root `build` now chains `build:ink` (esbuild bundle of `packages/wxnodus-ink`) before `tsc`. Simulated clean checkout (`rm -rf dist packages/wxnodus-ink/dist` → `npm run build`) rebuilds both and all ten UI suites pass (91/91). Contract test `tests/wave4/w4-build-boundary.test.ts` locks the chain.
 - Full suite: 202 files / 1669 passed / 10 skipped / 0 failed.
 - Remaining DX: npm tgz boundary (files allowlist), installer lifecycle, data-dir parser, English/first-run.
+
+
+## Wave 3 progress (Build wiring) — 2026-08-14
+
+- `src/application/build/buildServiceWiring.ts`: production port assembly for `BuildService.compileAndRun` — real `WorkspaceTransaction` staging, verifier-map against the 16 builtin verifier descriptors, real probe (file.exists/file.content/command.exit-code implemented; the other 13 crash honestly, never fake-pass), real `EvidenceService.close` → `readVerifiedClosed` → Ed25519 reviewer attestation → `CompletionGate` → coordinator owned receipt. Missing snapshot providers fail closed (`BUILD_SNAPSHOT_UNAVAILABLE`).
+- `buildService.ts` contract fix: `nodes` factory now receives the spec, and the static-entry check runs after the DAG (scaffold writes the project into staging first) — previously the pre-check on an empty staging dir would always fail in production.
+- Tests: `tests/wave3/w3-build-service-wiring.test.ts` 6/6 — full chain to an owned `succeeded` receipt with real evidence store + real signatures.
+- Full suite: 203 files / 1675 passed / 10 skipped / 0 failed.
+- Remaining: `/build` handler modern branch wiring (reviewer key persistence + snapshot services), then session/memory/voice/computer/plugin/subagent/MCP/TUI.
