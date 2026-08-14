@@ -12,13 +12,13 @@ describe('extension capability routing', () => {
     expect(modern.value.route).toBe('modern');
   });
 
-  it('subagent defaults to legacy and fails closed on modern', () => {
+  it('subagent defaults to legacy and routes to the live process host on modern', () => {
     const legacy = decideSubagentRoute({});
     const modern = decideSubagentRoute({ env: 'modern' });
     expect(legacy.ok && legacy.value.route).toBe('legacy');
-    expect(modern.ok).toBe(false);
-    if (modern.ok) throw new Error('unreachable');
-    expect(modern.error.code).toBe('SUBAGENT_MODERN_UNAVAILABLE');
+    expect(modern.ok).toBe(true);
+    if (!modern.ok) throw new Error('unreachable');
+    expect(modern.value.route).toBe('modern');
   });
 
   it('mcp defaults to legacy and fails closed on modern', () => {

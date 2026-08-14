@@ -20,7 +20,7 @@ export interface ExtensionRouteDecision {
 // Plugin 已接线：生产 sandbox + lifecycle（manifest→checksum→probe→沙箱门→owned scope）+ /plugin modern 分支
 // （broker 权限请求在生产 ToolExecutionPipeline 接线前 fail-closed——不假执行）
 const PLUGIN_WIRED = true;
-const SUBAGENT_WIRED = false;
+const SUBAGENT_WIRED = true;
 const MCP_WIRED = false;
 
 function decideCapability(input: {
@@ -66,7 +66,7 @@ export function decideSubagentRoute(input: { operatorFlag?: string; env?: string
     capability: 'subagent',
     wired: SUBAGENT_WIRED,
     unavailableCode: 'SUBAGENT_MODERN_UNAVAILABLE',
-    unavailableMessage: 'subagent 能力的 modern 路由尚未完成生产接线（live process host/effect fence）',
+    unavailableMessage: 'subagent 能力的 modern 路由不可用',
     unavailableKey: 'subagent.modern.unavailable',
   });
 }

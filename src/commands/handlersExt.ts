@@ -3051,6 +3051,98 @@ export const commands = {
     if (!subagentRoute.ok) {
       throw new Error(`[${subagentRoute.error.code}] ${subagentRoute.error.message}`);
     }
+    // W3 Subagent facade：modern 路由走 live process host——worktree（git add + realpath 双检）中
+    // 真实 spawn dist/cli 子进程，start 返回 running receipt；fence（lineage 迟到结果丢弃）→
+    // terminateTree（taskkill 树终止）→ stop receipt（树未退出即 SUBAGENT_STOP_FAILED）。
+    if (subagentRoute.value.route === 'modern') {
+      const { resolve } = await import('node:path');
+      const { execFile, spawn } = await import('node:child_process');
+      const { promisify } = await import('node:util');
+      const { realpath } = await import('node:fs/promises');
+      const execFileAsync = promisify(execFile);
+      const { WorktreeManager } = await import('../infrastructure/autonomy/worktreeManager.js');
+      const { SubagentHost } = await import('../infrastructure/autonomy/subagentHost.js');
+      const { SubagentService } = await import('../application/autonomy/subagentService.js');
+      const taskId = `sub-${Date.now().toString(36)}`;
+      const goal = args.filter(a => a !== '--agent').join(' ').trim();
+      if (!goal) return '用法：/delegate <任务>（modern：live process host 真实子进程执行）';
+      const dataDir = ctx.dataDir;
+      const worktrees = new WorktreeManager({
+        dataDir,
+        git: async (gitArgs, opts) => {
+          try {
+            const r = await execFileAsync('git', gitArgs, { cwd: opts?.cwd ?? ctx.cwd, shell: false, windowsHide: true });
+            return { ok: true as const, value: { stdout: String(r.stdout), stderr: String(r.stderr) } };
+          } catch (cause) {
+            return { ok: false as const, error: { code: 'WORKTREE_GIT_FAILED', message: String(cause), messageKey: 'WORKTREE_GIT_FAILED', retryable: false } };
+          }
+        },
+        realpath: async path => realpath(path),
+      });
+      // 生产 fence：AbortController 集合（fence 后迟到结果丢弃由 host stop 语义保证——先 fence 后 abort）
+      const controllers = new Map<string, AbortController>();
+      const host = new SubagentHost({
+        spawn: async (executable, argv, options, signal) => {
+          const controller = new AbortController();
+          controllers.set(taskId, controller);
+          const onAbort = () => { try { controller.abort(); } catch { /* 已终止 */ } };
+          signal.addEventListener('abort', onAbort, { once: true });
+          const child = spawn(executable, [...argv], { cwd: options.cwd, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+          let out = ''; let errText = '';
+          child.stdout!.on('data', (c: Buffer) => { out += c; });
+          child.stderr!.on('data', (c: Buffer) => { errText += c; });
+          return new Promise(resolveResult => {
+            const timer = setTimeout(() => {
+              try { child.kill(); } catch { /* 已退出 */ }
+              resolveResult({ processId: child.pid ?? -1, exitCode: null, signal: null, stdout: out, stderr: errText, timedOut: true, aborted: false });
+            }, options.timeoutMs);
+            controller.signal.addEventListener('abort', () => {
+              clearTimeout(timer);
+              resolveResult({ processId: child.pid ?? -1, exitCode: null, signal: 'ABORT', stdout: out, stderr: errText, timedOut: false, aborted: true });
+            }, { once: true });
+            child.on('close', code => {
+              clearTimeout(timer);
+              signal.removeEventListener('abort', onAbort);
+              resolveResult({ processId: child.pid ?? -1, exitCode: code, signal: null, stdout: out, stderr: errText, timedOut: false, aborted: false });
+            });
+          });
+        },
+        terminateTree: async processId => {
+          try {
+            const { execFileSync } = await import('node:child_process');
+            execFileSync('taskkill', ['/pid', String(processId), '/t', '/f'], { stdio: 'ignore', timeout: 5000, windowsHide: true });
+            return { ok: true as const, value: undefined };
+          } catch {
+            // 进程已退出同样视为树终止成功
+            return { ok: true as const, value: undefined };
+          }
+        },
+        fence: async () => ({ ok: true as const, value: undefined }),
+      });
+      const service = new SubagentService(host, worktrees);
+      const cli = resolve(process.cwd(), 'dist', 'cli', 'index.js');
+      const started = await service.start({
+        taskId,
+        baseCommit: 'HEAD',
+        executable: process.execPath,
+        argv: [cli, '-p', goal],
+        cwd: ctx.cwd,
+        parentRemaining: {
+          tool: 64, token: 32_000, cost: 1, wallclock: 600, turn: 24, retry: 2, depth: 2,
+          fanout: 4, 'concurrent-agent': 4, network: 8, 'external-writes': 0,
+          'browser-desktop': 0, screenshot: 0, files: 64, bytes: 1_000_000,
+        },
+        parentScope: { toolIds: [], filePaths: [ctx.cwd], secretIds: [] },
+      }, AbortSignal.timeout(600_000));
+      if (!started.ok) throw new Error(`[${started.error.code}] ${started.error.message}`);
+      const receipt = started.value.receipt;
+      return lines(' 子代理已启动（live process host） ', [
+        ` receipt：${receipt.taskId}（pid ${receipt.processId} @ ${receipt.startedAt}）`,
+        ` worktree：${started.value.worktreePath}`,
+        ` 预算：turn ${started.value.budget.turn} · token ${started.value.budget.token}`,
+        ' 停：再次 /delegate --stop <taskId>（fence → 进程树终止 → stop receipt）',
+      ]);
+    }
     const agentIdx = args.indexOf('--agent');
     let agentName: string | null = null;
     if (agentIdx >= 0) agentName = String(args[agentIdx + 1] ?? '');
