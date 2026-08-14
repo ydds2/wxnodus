@@ -32,26 +32,9 @@ const LOG_LIMIT = 200
 
 export interface WxGatewayKernel {
   bus: EventBus
-  db: any
   config: any
-  mem: { append(sessionId: string, role: string, content: string, toolCallId?: string): void; recallHybrid?(q: string, o?: { limit?: number }): Promise<Array<{ id: number; content: string; score: number }>> }
-  agent: {
-    run(prompt: string, opts?: { images?: Array<{ dataUrl: string; mime: string }> }): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>
-    abort(): void
-    setMode(m: string): void
-    getMode(): string
-    setSessionId(id: string): void
-    steer(text: string): boolean
-    /** P1c：插件热重载（plugins.manage toggle 后更新工具表） */
-    updateTools?(extra: Record<string, any>): void
-    /** A24：运行时切换工作目录（工具 ctx.cwd 跟随；dataDir 保持启动值） */
-    setCwd?(path: string): void
-    /** A24 第四类修复：委派暂停真实生效（暂停后新委派被内核拒绝） */
-    setDelegationPaused?(paused: boolean): void
-    getDelegationPaused?(): boolean
-    /** A25：委派深度上限（delegation.status caps 真实数据源） */
-    getMaxSpawnDepth?(): number
-  }
+  /** W3 TUI facade：presentation adapter——db/agent/memory 原始句柄不再进入 UI 层（组合根持有） */
+  adapter: import('../presentation/tui/tuiPresentationAdapter.js').TuiPresentationAdapter
   commandBus: CommandBus
   dataDir: string
   cwd: string
@@ -345,7 +328,7 @@ export class GatewayClient extends EventEmitter {
   start() {
     this.attachBus()
     this.currentSessionId = 'default'
-    this.kernel.agent.setSessionId(this.currentSessionId)
+    this.kernel.adapter.agent.setSessionId(this.currentSessionId)
     // 开放兼容：gateway.ready 携带已配置皮肤（此前 skin 管道空转——数据源接上）
     const skin = loadSkinFile(this.kernel.dataDir, (this.kernel.settings as any)?.skin)
     this.publish({ type: 'gateway.ready', ...(skin ? { payload: { skin } } : {}) })
@@ -515,15 +498,7 @@ export class GatewayClient extends EventEmitter {
 
     let cron: Array<Record<string, unknown>> = []
     try {
-      cron = (
-        (this.kernel.db?.prepare?.('SELECT id, schedule, action, enabled, last_run FROM cron_jobs ORDER BY id')?.all?.() ?? []) as Array<{
-          action: string
-          enabled: number
-          id: number
-          last_run: number | null
-          schedule: string
-        }>
-      ).map(c => ({ id: c.id, schedule: c.schedule, action: String(c.action ?? '').slice(0, 60), enabled: !!c.enabled, last_run: c.last_run }))
+      cron = this.kernel.adapter.data.cron.list().map(c => ({ id: c.id, schedule: c.schedule, action: String(c.action ?? '').slice(0, 60), enabled: !!c.enabled, last_run: c.last_run }))
     } catch { /* cron 表未就绪按空列表 */ }
 
     return { terms, jobs, cron }
@@ -583,7 +558,7 @@ export class GatewayClient extends EventEmitter {
       this.kernel.cwd = p
       // 工具 ctx.cwd 跟随（fs/bash/term/search 全部经 ctx.cwd 解析）；
       // dataDir 保持启动值——会话数据/记忆/项目不随目录迁移
-      this.kernel.agent.setCwd?.(p)
+      this.kernel.adapter.agent.setCwd?.(p)
       // 重发 session.info → 状态栏 cwd / git 分支自动刷新
       this.publish({ type: 'session.info', payload: this.buildInfo() })
       this.publish({ type: 'notification.show', payload: { text: `已切换工作目录：${p}`, level: 'success' } })
@@ -605,8 +580,8 @@ export class GatewayClient extends EventEmitter {
         return d ? { subagent_id: id, goal: d.goal, started_at: d.started_at, status: d.status } : { subagent_id: id }
       }),
       max_concurrent_children: this.kernel.taskRunner?.getMaxConcurrent?.() ?? 2,
-      max_spawn_depth: this.kernel.agent.getMaxSpawnDepth?.() ?? 3,
-      paused: this.kernel.agent.getDelegationPaused?.() ?? false,
+      max_spawn_depth: this.kernel.adapter.agent.getMaxSpawnDepth?.() ?? 3,
+      paused: this.kernel.adapter.agent.getDelegationPaused?.() ?? false,
     }
   }
 
@@ -691,9 +666,9 @@ export class GatewayClient extends EventEmitter {
       if (!existsSync(join(dir, 'plugin.json'))) return { plugin: null }
       const ok = setPluginEnabled(dir, enable)
       // 热更新 agent 工具表（不重启）
-      if (ok && this.kernel.agent?.updateTools) {
+      if (ok && this.kernel.adapter.agent?.updateTools) {
         const all = await loadAllPlugins(this.kernel.dataDir, this.kernel.cwd)
-        this.kernel.agent.updateTools(pluginToolsToExtra(all))
+        this.kernel.adapter.agent.updateTools(pluginToolsToExtra(all))
       }
       return { plugin: { name, enabled: enable } }
     }
@@ -771,7 +746,7 @@ export class GatewayClient extends EventEmitter {
       clearPending(this.kernel.dataDir, sid)
     }
     // 后台执行 agent（事件流驱动 UI），不阻塞 RPC
-    void this.kernel.agent.run(text, images ? { images } : undefined).catch((e) => {
+    void this.kernel.adapter.agent.run(text, images ? { images } : undefined).catch((e) => {
       process.stderr.write(`[wxGateway] agent.run failed: ${e?.message ?? e}\n`)
       this.running = false
       this.publish({ type: 'error', payload: { message: String(e?.message ?? 'agent run failed') } })
@@ -792,16 +767,19 @@ export class GatewayClient extends EventEmitter {
 
   private async sessionCreate(_params: Record<string, unknown>): Promise<unknown> {
     const id = `s${Date.now()}${++this.sessionSeq}`
-    const now = Date.now()
+
+    // W3 Session：真实 session 生命周期——工件（能力/hook 快照 + sha256）先行；失败 fail-closed，不产生无工件会话
+    const ensured = await this.kernel.adapter.data.sessions.ensure(id)
+    if (!ensured.ok) return { ok: false, message: `会话工件生成失败：${ensured.code}` }
 
     try {
-      this.kernel.db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`).run(id, '', now, now)
+      this.kernel.adapter.data.sessions.create(id)
     } catch {
       // 内存模式降级
     }
 
     this.currentSessionId = id
-    this.kernel.agent.setSessionId(id)
+    this.kernel.adapter.agent.setSessionId(id)
 
     return { session_id: id, info: this.buildInfo() }
   }
@@ -809,10 +787,15 @@ export class GatewayClient extends EventEmitter {
   private async sessionActivate(params: Record<string, unknown>): Promise<unknown> {
     const id = String(params.session_id ?? '')
     this.lastSessionEvent = { sid: id, text: `已切换到会话 ${id}` }
+
+    // W3 Session：resume 走真实 session——工件 read-back 重算（篡改/缺失 fail-closed，不静默重建）
+    const ensured = await this.kernel.adapter.data.sessions.ensure(id)
+    if (!ensured.ok) return { ok: false, message: `会话工件校验失败：${ensured.code}` }
+
     const messages = this.loadMessages(id)
 
     this.currentSessionId = id
-    this.kernel.agent.setSessionId(id)
+    this.kernel.adapter.agent.setSessionId(id)
 
     return { session_id: id, messages, info: this.buildInfo(), running: false, started_at: Date.now() / 1000 }
   }
@@ -820,10 +803,15 @@ export class GatewayClient extends EventEmitter {
   private async sessionResume(params: Record<string, unknown>): Promise<unknown> {
     const id = String(params.session_id ?? '')
     this.lastSessionEvent = { sid: id, text: `已恢复会话 ${id}` }
+
+    // W3 Session：resume 走真实 session——与 session.activate 同一工件闸门
+    const ensured = await this.kernel.adapter.data.sessions.ensure(id)
+    if (!ensured.ok) return { ok: false, message: `会话工件校验失败：${ensured.code}` }
+
     const messages = this.loadMessages(id)
 
     this.currentSessionId = id
-    this.kernel.agent.setSessionId(id)
+    this.kernel.adapter.agent.setSessionId(id)
 
     return {
       session_id: id,
@@ -838,11 +826,7 @@ export class GatewayClient extends EventEmitter {
   private async sessionClose(params: Record<string, unknown>): Promise<unknown> {
     const id = String(params.session_id ?? '')
 
-    try {
-      this.kernel.db.prepare(`UPDATE sessions SET updated_at = ? WHERE id = ?`).run(Date.now(), id)
-    } catch {
-      // 忽略
-    }
+    this.kernel.adapter.data.sessions.touch(id, Date.now())
 
     return { ok: true }
   }
@@ -850,16 +834,13 @@ export class GatewayClient extends EventEmitter {
   // F2 修复：session.delete 真实实现（级联删消息/checkpoints；当前会话则重置）
   private async sessionDelete(params: Record<string, unknown>): Promise<unknown> {
     const id = String(params.session_id ?? this.currentSessionId)
-    const exists = this.kernel.db.prepare(`SELECT id FROM sessions WHERE id=?`).get(id) as { id: string } | undefined
-    if (!exists) return { ok: false, message: `会话不存在：${id}` }
+    if (!this.kernel.adapter.data.sessions.exists(id)) return { ok: false, message: `会话不存在：${id}` }
 
-    this.kernel.db.prepare(`DELETE FROM messages WHERE session_id=?`).run(id)
-    this.kernel.db.prepare(`DELETE FROM checkpoints WHERE session_id=?`).run(id)
-    this.kernel.db.prepare(`DELETE FROM sessions WHERE id=?`).run(id)
+    this.kernel.adapter.data.sessions.delete(id)
 
     if (this.currentSessionId === id) {
       this.currentSessionId = 'default'
-      this.kernel.agent.setSessionId('default')
+      this.kernel.adapter.agent.setSessionId('default')
     }
     this.publish({ type: 'status.update', payload: { kind: 'done', text: 'ready' } })
 
@@ -924,19 +905,19 @@ export class GatewayClient extends EventEmitter {
   // 审计修复：此前 UI 调用无后端分支（/agents kill、/agents pause 必失败）——真实实现
   private async subagentInterrupt(_params: Record<string, unknown>): Promise<unknown> {
     // 中止当前回合（含运行中的子代理——agent 单实例，abort 作用于活动 turn）
-    this.kernel.agent.abort()
+    this.kernel.adapter.agent.abort()
     this.running = false
     return { ok: true, interrupted: true }
   }
 
   private async delegationPause(params: Record<string, unknown>): Promise<unknown> {
     // 暂停委派：中止活动回合 + 标记暂停（后续 delegate 由状态条可见暂停态）
-    this.kernel.agent.abort()
+    this.kernel.adapter.agent.abort()
     this.running = false
     const paused = params.pause !== false
     // A24 第四类修复：真实持久化——内核 get/set 双向（暂停态跨 RPC/轮询保持，
     // 新委派被内核拒绝；此前只 abort 不落状态，status 轮询即回 false）
-    this.kernel.agent.setDelegationPaused?.(paused)
+    this.kernel.adapter.agent.setDelegationPaused?.(paused)
     this.publish({ type: 'notification.show', payload: { text: paused ? '委派已暂停' : '委派已恢复', level: 'info' } })
     return { paused }
   }
@@ -1089,7 +1070,7 @@ export class GatewayClient extends EventEmitter {
   private async sessionSteer(params: Record<string, unknown>): Promise<unknown> {
     const text = String(params.text ?? '').trim()
     if (!text) return { status: 'rejected', reason: 'empty steer text' }
-    const ok = this.kernel.agent.steer(text)
+    const ok = this.kernel.adapter.agent.steer(text)
     return ok ? { status: 'queued' } : { status: 'rejected', reason: 'agent not running' }
   }
 
@@ -1101,26 +1082,19 @@ export class GatewayClient extends EventEmitter {
       return { ok: false, removed: 0, code: 4009, message: 'agent 运行中不能撤销——请先中断' }
     }
     const id = String(params.session_id ?? this.currentSessionId)
-    const nonSys = this.kernel.db.prepare(
-      `SELECT id, role FROM messages WHERE session_id=? AND role!='system' AND archived=0 ORDER BY id`
-    ).all(id) as Array<{ id: number; role: string }>
+    const nonSys = this.kernel.adapter.data.messages.nonSystem(id)
     if (!nonSys.length) return { ok: false, removed: 0, message: '没有可撤销的消息' }
     const userIdx = nonSys.map((m, i) => (m.role === 'user' ? i : -1)).filter(i => i >= 0)
     if (!userIdx.length) return { ok: false, removed: 0, message: '没有可撤销的轮次' }
     // 撤销前自动快照（/checkpoint restore 可恢复，与 CLI /undo 一致）
     try {
-      const { saveCheckpoint } = await import('../store/db.js')
-      const full = this.kernel.db.prepare(
-        `SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=? AND role!='system' ORDER BY id`
-      ).all(id)
-      saveCheckpoint(this.kernel.db, id, { kind: 'undo-snapshot', messages: full, ts: Date.now() })
+      const full = this.kernel.adapter.data.messages.rows(id)
+      this.kernel.adapter.data.checkpoints.save(id, { kind: 'undo-snapshot', messages: full, ts: Date.now() })
     } catch { /* 快照失败不阻断 */ }
     // 软撤销：归档而非删除（黑洞 recall 全量保留，working 窗口回退）
     const start = userIdx[userIdx.length - 1]!
     const dropIds = nonSys.slice(start).map(m => m.id)
-    this.kernel.db.prepare(
-      `UPDATE messages SET archived=1 WHERE id IN (${dropIds.map(() => '?').join(',')})`
-    ).run(...dropIds)
+    this.kernel.adapter.data.messages.archive(dropIds)
     this.publish({ type: 'status.update', payload: { kind: 'done', text: 'ready' } })
     return { ok: true, removed: dropIds.length, deleted_id: dropIds[dropIds.length - 1] }
   }
@@ -1156,9 +1130,7 @@ export class GatewayClient extends EventEmitter {
   private async rollbackList(params: Record<string, unknown>): Promise<unknown> {
     try {
       const sid = String(params.session_id ?? this.currentSessionId)
-      const rows = this.kernel.db.prepare(
-        `SELECT id, data, ts FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 20`
-      ).all(sid) as Array<{ id: number; data: string; ts: number }>
+      const rows = this.kernel.adapter.data.checkpoints.list(sid, 20)
       return {
         enabled: true,
         checkpoints: rows.map(r => {
@@ -1179,7 +1151,7 @@ export class GatewayClient extends EventEmitter {
       const sid = String(params.session_id ?? this.currentSessionId)
       const id = Number(String(params.hash ?? '').replace(/^#/, ''))
       if (!Number.isInteger(id) || id <= 0) return { error: `无效的快照编号：${params.hash}` }
-      const row = this.kernel.db.prepare(`SELECT data FROM checkpoints WHERE id=? AND session_id=?`).get(id, sid) as { data: string } | undefined
+      const row = this.kernel.adapter.data.checkpoints.get(id, sid)
       if (!row) return { error: `快照 #${id} 不存在（/rollback list 查看）` }
       const d = JSON.parse(row.data) as { messages?: Array<{ role: string; content: string }> }
       const msgs = Array.isArray(d.messages) ? d.messages : []
@@ -1199,15 +1171,14 @@ export class GatewayClient extends EventEmitter {
       const sid = String(params.session_id ?? this.currentSessionId)
       const id = Number(String(params.hash ?? '').replace(/^#/, ''))
       if (!Number.isInteger(id) || id <= 0) return { success: false, error: `无效的快照编号：${params.hash}` }
-      const row = this.kernel.db.prepare(`SELECT data FROM checkpoints WHERE id=? AND session_id=?`).get(id, sid) as { data: string } | undefined
+      const row = this.kernel.adapter.data.checkpoints.get(id, sid)
       if (!row) return { success: false, error: `快照 #${id} 不存在（/rollback list 查看）` }
       const d = JSON.parse(row.data) as { messages?: Array<{ id?: number; role: string; content: string; tool_call_id?: string | null; archived?: number; ts?: number }> }
       if (!Array.isArray(d.messages)) return { success: false, error: '快照数据不完整' }
-      const before = (this.kernel.db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(sid) as { c: number }).c
+      const before = this.kernel.adapter.data.messages.count(sid)
       // A25：统一恢复函数——清理 FTS 旧行 + 重置 AUTOINCREMENT 序列再重插
       // （此前手写 DELETE+重插：FTS5 触发器使同 rowid 重插 constraint failed）
-      const { replaceSessionMessages } = await import('../store/db.js')
-      replaceSessionMessages(this.kernel.db, sid, d.messages)
+      this.kernel.adapter.data.messages.replace(sid, d.messages)
       this.publish({ type: 'session.info', payload: this.buildInfo() })
       return { success: true, restored_to: `#${id}`, history_removed: before, reason: `已从快照 #${id} 恢复 ${d.messages.length} 条消息` }
     } catch (e: any) {
@@ -1238,7 +1209,7 @@ export class GatewayClient extends EventEmitter {
       this.toolDisableSet = disabled
       const base = { ...coreTools() }
       for (const t of disabled) delete base[t]
-      this.kernel.agent.updateTools?.(base)
+      this.kernel.adapter.agent.updateTools?.(base)
       this.publish({ type: 'session.info', payload: this.buildInfo() })
       return { changed: [...new Set(changed)], unknown }
     } catch (e: any) {
@@ -1291,11 +1262,7 @@ export class GatewayClient extends EventEmitter {
     let rows: any[] = []
 
     try {
-      rows = this.kernel.db.prepare(
-        `SELECT s.id, s.title, s.created_at AS started_at, s.updated_at,
-                (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
-         FROM sessions s ORDER BY s.updated_at DESC LIMIT 20`
-      ).all()
+      rows = this.kernel.adapter.data.sessions.list(20)
     } catch {
       rows = []
     }
@@ -1304,19 +1271,16 @@ export class GatewayClient extends EventEmitter {
     // 字形与配色分支永不出现）
     let sessionHasBgTask = (_sid: string): boolean => false
     try {
-      const bgRows = this.kernel.db.prepare(
-        `SELECT COUNT(*) AS c FROM tasks WHERE parent_id = ? AND status IN ('running','queued')`
-      ).get(current) as { c: number } | undefined
       sessionHasBgTask = sid => {
         if (sid !== current) return false
-        return Number(bgRows?.c ?? 0) > 0
+        return this.kernel.adapter.data.tasks.hasRunningOrQueued(current)
       }
     } catch { /* 任务表不可用按无 */ }
     const sessions = rows.map((r: any) => ({
       id: String(r.id),
       title: String(r.title ?? ''),
       current: String(r.id) === current,
-      started_at: Number(r.started_at ?? 0) / 1000,
+      started_at: Number(r.created_at ?? 0) / 1000,
       message_count: Number(r.message_count ?? 0),
       model: this.kernel.settings.model ?? '',
       status:
@@ -1337,11 +1301,7 @@ export class GatewayClient extends EventEmitter {
     const limit = Math.min(Number(params.limit ?? 200) || 200, 500)
     let rows: any[] = []
     try {
-      rows = this.kernel.db.prepare(
-        `SELECT s.id, s.title, s.created_at, s.updated_at,
-                (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
-         FROM sessions s ORDER BY s.updated_at DESC LIMIT ?`
-      ).all(limit)
+      rows = this.kernel.adapter.data.sessions.list(limit)
     } catch {
       rows = []
     }
@@ -1360,7 +1320,7 @@ export class GatewayClient extends EventEmitter {
     let row: any = null
 
     try {
-      row = this.kernel.db.prepare(`SELECT id, title, created_at FROM sessions ORDER BY updated_at DESC LIMIT 1`).get()
+      row = this.kernel.adapter.data.sessions.mostRecent() ?? null
     } catch {
       row = null
     }
@@ -1378,17 +1338,13 @@ export class GatewayClient extends EventEmitter {
     const id = String(params.session_id ?? '')
     const title = String(params.title ?? '')
 
-    try {
-      this.kernel.db.prepare(`UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?`).run(title, Date.now(), id)
-    } catch {
-      // 忽略
-    }
+    this.kernel.adapter.data.sessions.rename(id, title)
 
     return { title }
   }
 
   private async sessionInterrupt(): Promise<unknown> {
-    this.kernel.agent.abort()
+    this.kernel.adapter.agent.abort()
     this.running = false
 
     return { ok: true }
@@ -1414,19 +1370,12 @@ export class GatewayClient extends EventEmitter {
     const name = String(params.name ?? '').trim()
     const newId = `s${Date.now()}b`
     try {
-      const row = this.kernel.db.prepare(`SELECT COUNT(*) AS c FROM sessions WHERE id=?`).get(src) as { c: number } | undefined
-      if (!row?.c) return { error: '会话不存在' }
-      this.kernel.db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`)
-        .run(newId, name || `${src} branch`, Date.now(), Date.now())
-      this.kernel.db.prepare(`
-        INSERT INTO messages (session_id, role, content, tool_call_id, archived, ts)
-        SELECT ?, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=?
-      `).run(newId, src)
+      if (!this.kernel.adapter.data.sessions.branch(src, newId, name || `${src} branch`)) return { error: '会话不存在' }
     } catch (e: any) {
       return { error: String(e?.message ?? e).slice(0, 120) }
     }
     this.currentSessionId = newId
-    this.kernel.agent.setSessionId(newId)
+    this.kernel.adapter.agent.setSessionId(newId)
     return { session_id: newId, title: name || `${src} branch`, messages: this.loadMessages(newId), info: this.buildInfo() }
   }
 
@@ -1435,14 +1384,12 @@ export class GatewayClient extends EventEmitter {
     if (!text) return { task_id: null }
     const taskId = `bg${Date.now().toString(36)}`
     try {
-      this.kernel.db.prepare(`INSERT INTO tasks (id, goal, status, created_at) VALUES (?,?,?,?)`)
-        .run(taskId, text.slice(0, 200), 'running', Date.now())
+      this.kernel.adapter.data.tasks.insert(taskId, text.slice(0, 200))
     } catch { /* 任务表不可用：仅内存执行 */ }
     // 后台执行（不阻塞 RPC）：agent.run 完成后发 background.complete（UI 移除 bg 徽标）
-    void this.kernel.agent.run(text).then(r => {
+    void this.kernel.adapter.agent.run(text).then(r => {
       try {
-        this.kernel.db.prepare(`UPDATE tasks SET status='done', output=?, done_at=? WHERE id=?`)
-          .run(String(r.text ?? '').slice(0, 2000), Date.now(), taskId)
+        this.kernel.adapter.data.tasks.markDone(taskId, String(r.text ?? '').slice(0, 2000))
       } catch { /* 忽略 */ }
       this.publish({ type: 'background.complete', payload: { task_id: taskId, text: String(r.text ?? '') } })
     })
@@ -1451,11 +1398,10 @@ export class GatewayClient extends EventEmitter {
 
   private async processStop(): Promise<unknown> {
     // 停止全部后台任务：中止当前回合 + 任务表标记 done（/jobs 可见）
-    this.kernel.agent.abort()
+    this.kernel.adapter.agent.abort()
     let killed = 0
     try {
-      const r = this.kernel.db.prepare(`UPDATE tasks SET status='done', done_at=? WHERE status='running'`).run(Date.now())
-      killed = r.changes
+      killed = this.kernel.adapter.data.tasks.markAllRunningDone()
     } catch { /* 任务表不可用 */ }
     return { killed }
   }
@@ -1555,7 +1501,7 @@ export class GatewayClient extends EventEmitter {
       this.publish({ type: 'notification.show', payload: { text: `已切换模型：${hit ? hit.modelId : modelId}`, level: 'info' } })
     } else if (key === 'mode') {
       this.kernel.setMode(value)
-      this.kernel.agent.setMode(value)
+      this.kernel.adapter.agent.setMode(value)
     } else if (key === 'theme') {
       this.kernel.setTheme(value)
     } else if (key === 'thinking' || key === 'reasoning') {
@@ -2197,13 +2143,7 @@ export class GatewayClient extends EventEmitter {
   private loadMessages(sessionId: string): Array<{ role: 'assistant' | 'system' | 'tool' | 'user'; text: string }> {
     try {
       // P3：working 窗口对齐——归档消息（黑洞 recall 层）不进会话视图
-      const rows = this.kernel.db.prepare(
-        `SELECT role, content FROM messages WHERE session_id = ? AND archived=0 ORDER BY id`
-      ).all(sessionId) as Array<{ role: string; content: string }>
-
-      const msgs = rows
-        .filter((r) => r.role === 'user' || r.role === 'assistant')
-        .map((r) => ({ role: r.role as 'user' | 'assistant', text: r.content }))
+      const msgs = this.kernel.adapter.data.messages.load(sessionId)
 
       // A12：会话切换 timeline 事件（◈ 前缀，一次性注入列表头部）
       if (this.lastSessionEvent && this.lastSessionEvent.sid === sessionId && msgs.length) {
@@ -2234,17 +2174,12 @@ export class GatewayClient extends EventEmitter {
     } catch { /* 工具枚举失败按空 */ }
     let usage = { ...ZERO }
     try {
-      const row = this.kernel.db.prepare(
-        `SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=?`
-      ).get(this.currentSessionId) as { calls: number; input: number; output: number } | undefined
+      const row = this.kernel.adapter.data.usage.get(this.currentSessionId)
       // A24 第三类修复：compressions 真实数据源——messages 表中压缩摘要行
       // （（自动压缩摘要）前缀，kernel compactSmart 每次压缩写入一条）计数
       let compressions = 0
       try {
-        const c = this.kernel.db.prepare(
-          `SELECT COUNT(*) AS c FROM messages WHERE session_id=? AND content LIKE '（自动压缩摘要）%'`
-        ).get(this.currentSessionId) as { c: number } | undefined
-        compressions = c?.c ?? 0
+        compressions = this.kernel.adapter.data.usage.compressions(this.currentSessionId)
       } catch { /* 压缩计数失败按零 */ }
       if (row) usage = { calls: row.calls ?? 0, input: row.input ?? 0, output: row.output ?? 0, total: (row.input ?? 0) + (row.output ?? 0), compressions }
     } catch { /* 用量统计失败按零 */ }
@@ -2287,7 +2222,7 @@ export class GatewayClient extends EventEmitter {
 
   kill(reason = 'requested') {
     this.pushLog(`[lifecycle] GatewayClient.kill reason=${reason}`)
-    this.kernel.agent.abort()
+    this.kernel.adapter.agent.abort()
     this.running = false
     for (const off of this.unsubscribe) {
       try { off() } catch { /* 忽略 */ }

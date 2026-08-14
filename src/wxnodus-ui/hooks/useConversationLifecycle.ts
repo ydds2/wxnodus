@@ -167,7 +167,9 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
       const r = await rpc<SessionCreateResponse>('session.create', { cols: colsRef.current })
 
-      if (!r) {
+      // W3 Session：工件闸门 fail-closed（ok:false 形状——不进入无工件会话）
+      if (!r || r.ok === false) {
+        if (r?.message) sys(`error: ${String(r.message)}`)
         patchUiState({ status: 'ready' })
 
         return null
@@ -255,8 +257,9 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
         .then(raw => {
           const r = asRpcResult<SessionActivateResponse>(raw)
 
-          if (!r) {
-            sys('error: invalid response: session.activate')
+          // W3 Session：工件闸门 fail-closed（ok:false 形状——切换失败不进入半初始化状态）
+          if (!r || r.ok === false) {
+            sys(r?.message ? `error: ${String(r.message)}` : 'error: invalid response: session.activate')
 
             return patchUiState({ status: 'ready' })
           }
@@ -304,8 +307,9 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
           .then(raw => {
             const r = asRpcResult<SessionResumeResponse>(raw)
 
-            if (!r) {
-              sys('error: invalid response: session.resume')
+            // W3 Session：工件闸门 fail-closed（ok:false 形状——恢复失败不进入半初始化状态）
+            if (!r || r.ok === false) {
+              sys(r?.message ? `error: ${String(r.message)}` : 'error: invalid response: session.resume')
 
               return patchUiState({ status: 'ready' })
             }

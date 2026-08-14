@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { createCommandBus } from '../src/app/CommandBus.js'
+import { createTuiPresentationAdapter } from '../src/presentation/tui/tuiPresentationAdapter.js'
 import { createEventBus } from '../src/kernel/events.js'
 import { createMemory } from '../src/kernel/memory.js'
 import { openDB, closeDB } from '../src/store/db.js'
@@ -34,7 +35,7 @@ function makeGateway(extra: Record<string, any> = {}) {
     bus,
     settings: { model: 'mock' },
     commandBus: createCommandBus(),
-    agent,
+    adapter: createTuiPresentationAdapter({ db, agent: agent as never }),
     applyModel() {},
     setMode() {},
     setTheme() {},

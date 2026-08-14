@@ -7,7 +7,8 @@ import { GatewayClient } from '../src/wxnodus-ui/wxGateway.js';
 import { openDB, closeDB } from '../src/store/db.js';
 import { createMemory } from '../src/kernel/memory.js';
 import { createEventBus } from '../src/kernel/events.js';
-import { createCommandBus } from '../src/app/CommandBus.js';
+import { createCommandBus } from '../src/app/CommandBus.js'
+import { createTuiPresentationAdapter } from '../src/presentation/tui/tuiPresentationAdapter.js';
 
 let dir: string;
 let db: ReturnType<typeof openDB>;
@@ -46,7 +47,8 @@ function makeGateway(settings: Record<string, any> = {}) {
     bus,
     settings: { model: 'glm-4v-flash', ...settings },
     commandBus: createCommandBus(),
-    agent,
+    // W3 TUI facade：db/agent 原始句柄经 presentation adapter 进入 GatewayClient
+    adapter: createTuiPresentationAdapter({ db, agent: agent as never }),
     applyModel() {},
     setMode() {},
     setTheme() {},
@@ -304,7 +306,7 @@ describe('delegation.pause 真实持久化', () => {
       bus,
       settings: { model: 'glm-4v-flash' },
       commandBus: createCommandBus(),
-      agent: {
+      adapter: createTuiPresentationAdapter({ db, agent: ({
         run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
         abort() {},
         setMode() {},
@@ -314,7 +316,7 @@ describe('delegation.pause 真实持久化', () => {
         steer: () => true,
         setDelegationPaused: (v: boolean) => { paused = v },
         getDelegationPaused: () => paused,
-      },
+      }) as never }),
       applyModel() {},
       setMode() {},
       setTheme() {},
@@ -350,7 +352,7 @@ describe('terminal.resize 转发 / session.fork 移除', () => {
       bus,
       settings: { model: 'glm-4v-flash' },
       commandBus: createCommandBus(),
-      agent: {
+      adapter: createTuiPresentationAdapter({ db, agent: ({
         run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
         abort() {},
         setMode() {},
@@ -358,7 +360,7 @@ describe('terminal.resize 转发 / session.fork 移除', () => {
         setSessionId() {},
         getSessionId: () => 's1',
         steer: () => true,
-      },
+      }) as never }),
       term: {
         list: () => [{ id: 't1', status: 'running', shell: 'bash', cwd: '/', startedAt: 0, exitCode: null }],
         resize: (id: string, cols: number, rows: number) => { resized.push({ id, cols, rows }); return { ok: true } },
@@ -386,7 +388,7 @@ describe('terminal.resize 转发 / session.fork 移除', () => {
       bus,
       settings: { model: 'glm-4v-flash' },
       commandBus: createCommandBus(),
-      agent: {
+      adapter: createTuiPresentationAdapter({ db, agent: ({
         run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
         abort() {},
         setMode() {},
@@ -394,7 +396,7 @@ describe('terminal.resize 转发 / session.fork 移除', () => {
         setSessionId() {},
         getSessionId: () => 's1',
         steer: () => true,
-      },
+      }) as never }),
       term: { list: () => [], resize: () => ({ ok: true }) },
       applyModel() {},
       setMode() {},
@@ -419,7 +421,7 @@ describe('terminal.resize 转发 / session.fork 移除', () => {
       bus,
       settings: { model: 'glm-4v-flash' },
       commandBus: createCommandBus(),
-      agent: {
+      adapter: createTuiPresentationAdapter({ db, agent: ({
         run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
         abort() {},
         setMode() {},
@@ -427,7 +429,7 @@ describe('terminal.resize 转发 / session.fork 移除', () => {
         setSessionId() {},
         getSessionId: () => 's1',
         steer: () => true,
-      },
+      }) as never }),
       applyModel() {},
       setMode() {},
       setTheme() {},
@@ -459,7 +461,7 @@ describe('kernel jobs 事件转发', () => {
       bus,
       settings: { model: 'glm-4v-flash' },
       commandBus: createCommandBus(),
-      agent: {
+      adapter: createTuiPresentationAdapter({ db, agent: ({
         run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
         abort() {},
         setMode() {},
@@ -467,7 +469,7 @@ describe('kernel jobs 事件转发', () => {
         setSessionId() {},
         getSessionId: () => 's1',
         steer: () => true,
-      },
+      }) as never }),
       taskRunner: { list: () => jobsDb },
       applyModel() {},
       setMode() {},
@@ -513,7 +515,7 @@ describe('buildInfo 死数据接线', () => {
       bus,
       settings: { model: 'glm-4v-flash' },
       commandBus: createCommandBus(),
-      agent: {
+      adapter: createTuiPresentationAdapter({ db, agent: ({
         run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
         abort() {},
         setMode() {},
@@ -521,7 +523,7 @@ describe('buildInfo 死数据接线', () => {
         setSessionId() {},
         getSessionId: () => 's1',
         steer: () => true,
-      },
+      }) as never }),
       mcpStatus: () => [{ name: 'filesystem', connected: true, tools: 5, transport: 'stdio' }],
       systemPrompt: () => '你是 WxNodus……',
       updateBehind: 3,
@@ -555,7 +557,7 @@ describe('死 RPC 真实实现（/save /rollback /tools /reload /paste.collapse�
       bus,
       settings: { model: 'glm-4v-flash' },
       commandBus: createCommandBus(),
-      agent: {
+      adapter: createTuiPresentationAdapter({ db, agent: ({
         run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
         abort() {},
         setMode() {},
@@ -567,7 +569,8 @@ describe('死 RPC 真实实现（/save /rollback /tools /reload /paste.collapse�
         setDelegationPaused() {},
         getDelegationPaused: () => false,
         getMaxSpawnDepth: () => 3,
-      },
+        ...(extra.agent ?? {}),
+      }) as never }),
       applyModel() {},
       setMode() {},
       setTheme() {},
@@ -621,11 +624,11 @@ describe('死 RPC 真实实现（/save /rollback /tools /reload /paste.collapse�
 
   it('tools.configure enable/disable 调用 updateTools（真实热生效）', async () => {
     const updated: Array<Record<string, unknown>> = []
-    const g = new GatewayClient(makeKernel({ agent: {
+    const g = new GatewayClient(makeKernel({ adapter: createTuiPresentationAdapter({ db, agent: ({
       run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }),
       abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true,
       updateTools: (t: Record<string, unknown>) => updated.push(t),
-    } }) as any)
+    }) as never }) }) as any)
     const r = await gre(g, 'tools.configure', { action: 'disable', names: ['fs_'] })
     expect(r.changed.length).toBeGreaterThan(0)
     expect(updated.length).toBe(1)
@@ -666,7 +669,7 @@ describe('假数据消除（A25）', () => {
     const g = new GatewayClient({
       dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
       settings: { model: 'x' }, commandBus: createCommandBus(),
-      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      adapter: createTuiPresentationAdapter({ db, agent: ({ run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true }) as never }),
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
     const r = await gre(g, 'config.get', { key: 'mtime' })
@@ -678,7 +681,7 @@ describe('假数据消除（A25）', () => {
     const g = new GatewayClient({
       dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
       settings: { model: 'x', apiKeyEnc: 'enc1:abc' }, commandBus: createCommandBus(),
-      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      adapter: createTuiPresentationAdapter({ db, agent: ({ run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true }) as never }),
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
     const r = await gre(g, 'setup.status', {})
@@ -690,7 +693,7 @@ describe('假数据消除（A25）', () => {
     const g = new GatewayClient({
       dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
       settings: { model: 'x' }, commandBus: createCommandBus(),
-      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      adapter: createTuiPresentationAdapter({ db, agent: ({ run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true }) as never }),
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
     const r = await gre(g, 'setup.status', {})
@@ -702,11 +705,11 @@ describe('假数据消除（A25）', () => {
     const g = new GatewayClient({
       dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
       settings: { model: 'x' }, commandBus: createCommandBus(),
-      agent: {
+      adapter: createTuiPresentationAdapter({ db, agent: ({
         run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart',
         setSessionId() {}, getSessionId: () => 's1', steer: () => true,
         setDelegationPaused() {}, getDelegationPaused: () => true, getMaxSpawnDepth: () => 3,
-      },
+      }) as never }),
       taskRunner: { getMaxConcurrent: () => 2 },
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
@@ -722,7 +725,7 @@ describe('假数据消除（A25）', () => {
     const g = new GatewayClient({
       dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
       settings: { model: 'x' }, commandBus: createCommandBus(),
-      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      adapter: createTuiPresentationAdapter({ db, agent: ({ run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true }) as never }),
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
     ;(g as any).running = true
@@ -737,7 +740,7 @@ describe('子代理富事件分流（A25）', () => {
     const g = new GatewayClient({
       dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
       settings: { model: 'x' }, commandBus: createCommandBus(),
-      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      adapter: createTuiPresentationAdapter({ db, agent: ({ run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true }) as never }),
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
     const events: any[] = []
@@ -761,7 +764,7 @@ describe('子代理富事件分流（A25）', () => {
     const g = new GatewayClient({
       dataDir: dir, cwd: process.cwd(), db, mem, config: { get: () => ({}) }, bus,
       settings: { model: 'x' }, commandBus: createCommandBus(),
-      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true },
+      adapter: createTuiPresentationAdapter({ db, agent: ({ run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, setMode() {}, getMode: () => 'smart', setSessionId() {}, getSessionId: () => 's1', steer: () => true }) as never }),
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
     const events: any[] = []

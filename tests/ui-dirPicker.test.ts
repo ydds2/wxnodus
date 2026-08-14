@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { createCommandBus } from '../src/app/CommandBus.js'
+import { createTuiPresentationAdapter } from '../src/presentation/tui/tuiPresentationAdapter.js'
 import { createEventBus } from '../src/kernel/events.js'
 import { createMemory } from '../src/kernel/memory.js'
 import { openDB, closeDB } from '../src/store/db.js'
@@ -55,7 +56,7 @@ describe('dir.list RPC（真实目录浏览）', () => {
     }
     gw = new GatewayClient({
       dataDir: dir, cwd: origCwd, db, mem: createMemory(db), config: { get: () => ({}) }, bus,
-      settings: { model: 'mock' }, commandBus: createCommandBus(), agent,
+      settings: { model: 'mock' }, commandBus: createCommandBus(), adapter: createTuiPresentationAdapter({ db, agent: agent as never }),
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
   })
@@ -99,7 +100,7 @@ describe('cwd.set RPC（运行时切换工作目录）', () => {
     }
     const kernel: any = {
       dataDir: dir, cwd: origCwd, db, mem: createMemory(db), config: { get: () => ({}) }, bus,
-      settings: { model: 'mock' }, commandBus: createCommandBus(), agent,
+      settings: { model: 'mock' }, commandBus: createCommandBus(), adapter: createTuiPresentationAdapter({ db, agent: agent as never }),
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     }
     const gw = new GatewayClient(kernel)
@@ -134,7 +135,7 @@ describe('cwd.set RPC（运行时切换工作目录）', () => {
     }
     const gw = new GatewayClient({
       dataDir: dir, cwd: origCwd, db, mem: createMemory(db), config: { get: () => ({}) }, bus,
-      settings: { model: 'mock' }, commandBus: createCommandBus(), agent,
+      settings: { model: 'mock' }, commandBus: createCommandBus(), adapter: createTuiPresentationAdapter({ db, agent: agent as never }),
       applyModel() {}, setMode() {}, setTheme() {}, setThinking() {}, requestExit() {},
     } as any)
 

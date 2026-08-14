@@ -647,8 +647,18 @@ if (pre.mode === 'error') {
   }
 
   // WxNodus UI 装配
+  // W3 TUI facade：presentation adapter——db/agent/memory 原始句柄留在组合根，UI 只经窄端口；
+  // ensureSession 接真实 session 生命周期（sessionStartService.ensure——工件先行，失败 fail-closed）
+  const { createTuiPresentationAdapter } = await import('../presentation/tui/tuiPresentationAdapter.js');
   gateway = new GatewayClient({
-    bus, db, config, mem, agent, commandBus,
+    bus, config, commandBus,
+    adapter: createTuiPresentationAdapter({
+      db, agent,
+      ensureSession: async (sid) => {
+        const r = await sessionStartService.ensure(sid);
+        return r.ok ? { ok: true as const } : { ok: false as const, code: r.error.code };
+      },
+    }),
     dataDir, cwd, settings, reloadMcp, updateBehind,
     // A24 第三类修复：MCP 服务器真实状态（连接/工具数/传输方式）——buildInfo 填充 mcp_servers
     mcpStatus: () => mcpClients.map(c => ({

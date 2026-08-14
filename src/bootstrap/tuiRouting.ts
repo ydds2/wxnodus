@@ -17,8 +17,9 @@ export interface TuiRouteDecision {
   reason: string;
 }
 
-// WxGatewayKernel → presentation adapter 的收缩状态——Wave 3 TUI 完成前为 false
-const TUI_ADAPTER_DONE = false;
+// WxGatewayKernel → presentation adapter 的收缩状态——Wave 3 TUI 完成（db/agent/memory 原始句柄
+// 不再进入 UI 层；resume 走真实 session 工件闸门；组合根持有原始句柄）
+const TUI_ADAPTER_DONE = true;
 
 export function decideTuiRoute(input: {
   operatorFlag?: string;

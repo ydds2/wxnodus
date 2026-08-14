@@ -129,6 +129,9 @@ export interface SetupStatusResponse {
 export interface SessionCreateResponse {
   info?: SessionInfo & { config_warning?: string; credential_warning?: string }
   session_id: string
+  /** W3 Session：工件闸门 fail-closed 时 ok:false（无 session_id） */
+  ok?: boolean
+  message?: string
 }
 
 export interface SessionResumeResponse {
@@ -141,6 +144,9 @@ export interface SessionResumeResponse {
   session_id: string
   started_at?: number
   status?: LiveSessionStatus
+  /** W3 Session：工件闸门 fail-closed 时 ok:false */
+  ok?: boolean
+  message?: string
 }
 
 export type LiveSessionStatus = 'idle' | 'starting' | 'waiting' | 'working'
@@ -178,6 +184,9 @@ export interface SessionActivateResponse {
   session_key?: string
   started_at?: number
   status?: LiveSessionStatus
+  /** W3 Session：工件闸门 fail-closed 时 ok:false */
+  ok?: boolean
+  message?: string
 }
 
 export interface SessionListItem {

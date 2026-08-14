@@ -16,18 +16,16 @@ describe('tui capability routing', () => {
     expect(decision.ok && decision.value.route).toBe('legacy');
   });
 
-  it('modern root fails closed with TUI_MODERN_UNAVAILABLE', () => {
+  it('modern root routes to the presentation adapter assembly', () => {
     const decision = decideTuiRoute({ operatorFlag: 'modern' });
-    expect(decision.ok).toBe(false);
-    if (decision.ok) throw new Error('unreachable');
-    expect(decision.error.code).toBe('TUI_MODERN_UNAVAILABLE');
+    expect(decision.ok).toBe(true);
+    if (!decision.ok) throw new Error('unreachable');
+    expect(decision.value.route).toBe('modern');
   });
 
-  it('env modern is equally denied', () => {
+  it('env modern routes equally', () => {
     const decision = decideTuiRoute({ env: 'modern' });
-    expect(decision.ok).toBe(false);
-    if (decision.ok) throw new Error('unreachable');
-    expect(decision.error.code).toBe('TUI_MODERN_UNAVAILABLE');
+    expect(decision.ok && decision.value.route).toBe('modern');
   });
 
   it('propagates invalid roots', () => {
