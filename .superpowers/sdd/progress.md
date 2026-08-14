@@ -146,3 +146,10 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - Real-bug fixes found by the process test: empty model on no-key runs now falls back to `rule-brain` (validator rejects empty model); artifact dir is `<cwd>/data/sessions/<id>/session-start.json` (resolveDataDir → `join(cwd,'data')`).
 - Process-level test `tests/wave3/w3-session-start-cli.test.ts` spawns the real `dist/cli -p /new` and validates the on-disk artifact through `validateSessionStart` (sha256 recomputation).
 - Full suite: 206 files / 1686 passed / 10 skipped / 0 failed.
+
+
+## Wave 3 progress (Memory gateway methods) — 2026-08-14
+
+- `src/application/memory/memoryGatewayMethods.ts`: memory append/update/delete/search exposed as Gateway methods; scope is built only from the trusted `GatewayServiceRequest.sessionId` (params-carried forged sessionId is ignored — proven by test); missing text fails closed with specific codes; cross-session update/delete denied at the service boundary.
+- Full suite: 207 files / 1691 passed / 10 skipped / 0 failed.
+- Remaining Memory: production wiring of legacy `/memory` command + `memory_search` tool + agent recall onto these gateway methods (kernel memory stays as migration read source).
