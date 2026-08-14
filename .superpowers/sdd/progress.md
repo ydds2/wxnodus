@@ -417,3 +417,14 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - 验证：Wave 7 四文件 27/27 绿（含真实 localhost 下载、真实 SQLite FTS、真实 CommandBus 接线）；全量 **244 文件 / 1893 通过 / 10 跳过 / 0 失败**；known-failures 31/31；typecheck×2/build/discovery 干净；dist smoke（--version / 确定性计算）通过。
 - 诚实边界：W7-02（windowsPathClassifier 系统目录感知确认）仍在计划中未实现——本轮按用户指定顺序完成工作区/下载/同化三项；下载 v1 无断点续传；代码同化 v1 无 AST 级语义索引/向量召回（FTS-only 明确）。
 
+## 专项清扫：缺陷治理四连（按用户指定优先级）— 2026-08-15
+
+- **优先级 1 假成功类 6 KF（`006a755`）**：KF-003 setupWizard 真实入口（CLI 只经 runSetupWizard 决策）；KF-004 personality 白名单化 + system prompt persona 段真实消费；KF-009 UIA 点击兜底真实 mouse_event（绝不再 method=focus 谎报）；KF-020 证据指纹完整 SHA-256 64 hex；KF-022 scaffold 消费 BuildPlan（模块拓扑序落位 + plan.json）；KF-029 systemPrompt.ts 零中文（控制文本全迁 i18n catalog zh-CN/en 同 key 30+ 条，lang=en 整段无 CJK）。
+- **优先级 2 组合根接管第一刀（`d2479f2`）**：`createCliComposition` 固定阶段 config→repositories→kernel 装配 CLI 依赖（失败只 dispose 已启动资源 + shutdown 幂等）；cli/index.ts 不再内联 createConfig/openDB/createMemory/openMemoryRepo/CodeIndexRepository。presentation/services 现代翻转留后续切片（诚实边界）。
+- **优先级 3 红线下沉管线（`9f9b453`）**：`redlineGate.checkRedlineViolation` 对 args 确定性序列化匹配 HARD_REDLINES；生产管线 decide 阶段先于策略独立复检——命中 HARD_REDLINE_DENIED 零副作用（策略 allow + 审批放行也不可绕过）——「任何模式不可绕过」从命令层声明变成管线级事实。
+- **优先级 4 隔离类 4 KF（`5f5b1a8`）**：KF-012 浏览器上下文按 sessionId 分槽；KF-013 KNN 向量召回按 session 过滤；KF-014 compactSmart 压缩归档同步维护 FTS；KF-015 updateTools 增量合并（多次注册共存）。
+- 缺陷账本：**30 条 KF 中 22 resolved-with-green-regression / 8 open**（8 条全部为环境/资产类——离线模型资产、whisper、截图尺寸、robotjs 参数、全量配置路径、静态前端产物、会话恢复降级）；oracle 31/31。
+- 全量：**255 文件 / 1925 通过 / 10 跳过 / 0 失败**；typecheck×2/build/discovery 干净；dist smoke（--version/确定性计算/非法 workspace fail-closed）通过。
+- 剩余：8 条环境类 KF（需真实硬件/资产或后续接线工作）、W7-02 系统目录感知确认、组合根 presentation/services 翻转（后续切片）。
+
+
