@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HarCaptureAdapter } from '../src/infrastructure/browser/harCaptureAdapter.js';
 import { ExemplarPool } from '../src/application/forge/exemplarPool.js';
-import { createSigningKeypair, itemSha256, signMarketItem, verifyMarketItem } from '../src/application/forge/marketSigning.js';
+import { createSigningKeypair, payloadDigestOf, signMarketItem, verifyMarketItem } from '../src/application/forge/marketSigning.js';
 import { PlatformAuthRegistry } from '../src/application/compliance/platformAuthRegistry.js';
 import { buildInstallerManifest, sanitizeAppName } from '../src/application/release/installerManifest.js';
 
@@ -66,9 +66,9 @@ describe('exemplar 池 + 市场签名（最小版）', () => {
 
   it('signs market items and rejects tampered payloads, wrong keys, and malformed signatures', () => {
     const signer = createSigningKeypair('market-key-1');
-    const item = { id: 'skill-comment-sync', kind: 'skill' as const, payload: { name: 'comment-sync', files: ['SKILL.md'] } };
+    const item = { id: 'skill-comment-sync', kind: 'skill' as const, version: '1.0.0', publisher: 'pub-a', payload: { name: 'comment-sync', files: ['SKILL.md'] }, expiry: null, scope: ['public'] };
     const signed = signMarketItem(signer, item);
-    expect(signed.sha256).toBe(itemSha256(item));
+    expect(signed.sha256).toBe(payloadDigestOf(item.payload));
     expect(verifyMarketItem(signer.publicKey, signed)).toMatchObject({ ok: true });
     // 篡改 payload → MARKET_SIGNATURE_INVALID
     const tampered = { ...signed, payload: { ...item.payload, files: ['SKILL.md', 'evil.sh'] } };

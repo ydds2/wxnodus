@@ -1,22 +1,36 @@
-// src/application/forge/marketServer.ts — 远程市场分发 HTTP 服务（§10-3 完整集成）：
-// POST /keys（公钥注册）· POST /publish（验签入目录）· GET /items/:id（200/404/410）· GET /catalog · GET /keys/:keyId（公钥分发）
-// node:http 零框架；端口 0 临时分配（测试用）；请求体解析失败一律 400
+// src/application/forge/marketServer.ts — W5-01 市场分发 HTTP 服务（零框架 node:http；端口 0 临时分配）
+// 变更端点（POST /keys · /publish · /revoke）前置管理策略：Bearer token 哈希 + scope + nonce 防重放 + body 上限；
+// 每次变更经权威落审计哈希链。读端点（GET /catalog · /keys/:keyId · /items/:id）保持公开分发语义。
 import { createServer, type Server } from 'node:http';
 import type { MarketAuthority } from './marketAuthority.js';
+import type { MarketPolicy } from './marketPolicy.js';
 
 export interface MarketServerHandle {
   port: number;
   close(): Promise<void>;
 }
 
-const readBody = (req: import('node:http').IncomingMessage): Promise<unknown> => new Promise(resolve => {
+const readBody = (req: import('node:http').IncomingMessage, maxBytes: number): Promise<{ body: unknown; tooLarge: boolean }> => new Promise(resolve => {
   const chunks: Buffer[] = [];
-  req.on('data', chunk => chunks.push(Buffer.from(chunk)));
-  req.on('end', () => {
-    const raw = Buffer.concat(chunks).toString('utf8');
-    try { resolve(raw ? JSON.parse(raw) : null); } catch { resolve(undefined); }
+  let total = 0;
+  let settled = false;
+  req.on('data', chunk => {
+    if (settled) return;
+    total += chunk.length;
+    if (total > maxBytes) {
+      settled = true;
+      resolve({ body: undefined, tooLarge: true });
+      return;
+    }
+    chunks.push(Buffer.from(chunk));
   });
-  req.on('error', () => resolve(undefined));
+  req.on('end', () => {
+    if (settled) return;
+    settled = true;
+    const raw = Buffer.concat(chunks).toString('utf8');
+    try { resolve({ body: raw ? JSON.parse(raw) : null, tooLarge: false }); } catch { resolve({ body: undefined, tooLarge: false }); }
+  });
+  req.on('error', () => { if (!settled) { settled = true; resolve({ body: undefined, tooLarge: false }); } });
 });
 
 const send = (res: import('node:http').ServerResponse, status: number, body: unknown) => {
@@ -24,28 +38,45 @@ const send = (res: import('node:http').ServerResponse, status: number, body: unk
   res.end(JSON.stringify(body));
 };
 
-export function startMarketServer(authority: MarketAuthority): Promise<MarketServerHandle> {
+export function startMarketServer(authority: MarketAuthority, options: { policy: MarketPolicy }): Promise<MarketServerHandle> {
+  const { policy } = options;
   return new Promise(resolve => {
     const server: Server = createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', 'http://localhost');
       const method = req.method ?? 'GET';
       try {
         if (method === 'POST' && url.pathname === '/keys') {
-          const body = await readBody(req) as { keyId?: string; publicKeyPem?: string } | null;
-          if (!body || typeof body.keyId !== 'string' || typeof body.publicKeyPem !== 'string') return send(res, 400, { code: 'MARKET_KEY_INVALID' });
-          const result = authority.registerKeyPem(body.keyId, body.publicKeyPem);
+          const auth = policy.authorize({ authorization: req.headers.authorization, nonce: req.headers['x-market-nonce'] as string | undefined, action: 'keys:register' });
+          if (!auth.ok) return send(res, auth.error.code === 'MARKET_FORBIDDEN' ? 403 : auth.error.code === 'MARKET_NONCE_REPLAYED' ? 409 : 401, { code: auth.error.code });
+          const { body, tooLarge } = await readBody(req, policy.maxBodyBytes);
+          if (tooLarge) return send(res, 413, { code: 'MARKET_BODY_TOO_LARGE' });
+          const input = body as { keyId?: string; publicKeyPem?: string; generation?: number; authorizedByKeyId?: string; authorizedBySignature?: string } | null;
+          if (!input || typeof input.keyId !== 'string' || typeof input.publicKeyPem !== 'string') return send(res, 400, { code: 'MARKET_KEY_INVALID' });
+          const result = typeof input.generation === 'number' && input.authorizedByKeyId && input.authorizedBySignature
+            ? authority.registerRoot({
+              keyId: input.keyId, publicKeyPem: input.publicKeyPem, generation: input.generation,
+              authorizedByKeyId: input.authorizedByKeyId, authorizedBySignature: input.authorizedBySignature,
+            }, { actor: auth.value.actor, nonce: req.headers['x-market-nonce'] as string })
+            : { ok: false, error: { code: 'MARKET_KEY_INVALID' } };
           return result.ok ? send(res, 201, { ok: true }) : send(res, 400, { code: result.error.code });
         }
         if (method === 'POST' && url.pathname === '/publish') {
-          const body = await readBody(req);
+          const auth = policy.authorize({ authorization: req.headers.authorization, nonce: req.headers['x-market-nonce'] as string | undefined, action: 'publish' });
+          if (!auth.ok) return send(res, auth.error.code === 'MARKET_FORBIDDEN' ? 403 : auth.error.code === 'MARKET_NONCE_REPLAYED' ? 409 : 401, { code: auth.error.code });
+          const { body, tooLarge } = await readBody(req, policy.maxBodyBytes);
+          if (tooLarge) return send(res, 413, { code: 'MARKET_BODY_TOO_LARGE' });
           if (!body || typeof body !== 'object') return send(res, 400, { code: 'MARKET_PUBLISH_REJECTED' });
-          const result = authority.publish(body as never);
-          return result.ok ? send(res, 201, { ok: true, entry: result.value }) : send(res, 400, { code: result.error.code });
+          const result = authority.publish(body as never, { actor: auth.value.actor, nonce: req.headers['x-market-nonce'] as string });
+          return result.ok ? send(res, 201, { ok: true, entry: result.value }) : send(res, result.error.code === 'MARKET_ITEM_VERSION_CONFLICT' ? 409 : 400, { code: result.error.code });
         }
         if (method === 'POST' && url.pathname === '/revoke') {
-          const body = await readBody(req) as { id?: string } | null;
-          if (!body || typeof body.id !== 'string') return send(res, 400, { code: 'MARKET_ITEM_NOT_FOUND' });
-          const result = authority.revoke(body.id);
+          const auth = policy.authorize({ authorization: req.headers.authorization, nonce: req.headers['x-market-nonce'] as string | undefined, action: 'revoke' });
+          if (!auth.ok) return send(res, auth.error.code === 'MARKET_FORBIDDEN' ? 403 : auth.error.code === 'MARKET_NONCE_REPLAYED' ? 409 : 401, { code: auth.error.code });
+          const { body, tooLarge } = await readBody(req, policy.maxBodyBytes);
+          if (tooLarge) return send(res, 413, { code: 'MARKET_BODY_TOO_LARGE' });
+          const input = body as { id?: string } | null;
+          if (!input || typeof input.id !== 'string') return send(res, 400, { code: 'MARKET_ITEM_NOT_FOUND' });
+          const result = authority.revoke(input.id, { actor: auth.value.actor, nonce: req.headers['x-market-nonce'] as string });
           return result.ok ? send(res, 200, { ok: true }) : send(res, 404, { code: result.error.code });
         }
         if (method === 'GET' && url.pathname === '/catalog') {

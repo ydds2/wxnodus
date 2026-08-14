@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import { computeMigrationDescriptorChecksum } from '../types.js';
 import type { MigrationDescriptor } from '../types.js';
 import { securityControlPlaneMigration } from '../../infrastructure/sqlite/securityMigrations.js';
+import { marketMigration } from '../../infrastructure/sqlite/marketMigrations.js';
 
 export interface ConfirmedDbWrite {
   table: string;
@@ -101,6 +102,7 @@ export function dbMigrations(): DbMigration[] {
       nullable: true,
     }),
     securityControlPlaneMigration(),
+    marketMigration(),
   ];
 }
 

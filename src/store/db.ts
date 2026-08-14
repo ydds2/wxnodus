@@ -19,7 +19,7 @@ const requireCjs = createRequire(import.meta.url);
 
 export type Db = InstanceType<typeof Database>;
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 export { bigramZh };
 

@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe('database schema history', () => {
-  it('aligns schema_version with the extracted V2/V3/V4/V5 migrations', () => {
+  it('aligns schema_version with the extracted V2/V3/V4/V5/V6 migrations', () => {
     const dir = mkdtempSync(join(tmpdir(), 'wxn-db-migration-'));
     dirs.push(dir);
     const seed = new Database(join(dir, 'nodus.db'));
@@ -30,8 +30,8 @@ describe('database schema history', () => {
       "SELECT COUNT(*) AS count FROM migration_history WHERE status='applied'",
     ).get() as { count: number };
 
-    expect(Number(fixture.value), 'DB_SCHEMA_VERSION_DRIFT').toBe(5);
-    expect(history.count).toBeGreaterThanOrEqual(4);
+    expect(Number(fixture.value), 'DB_SCHEMA_VERSION_DRIFT').toBe(6);
+    expect(history.count).toBeGreaterThanOrEqual(5);
     closeDB(db);
   });
 });
