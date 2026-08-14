@@ -98,6 +98,12 @@ if (pre.mode === 'error') {
 
   const config = createConfig(dataDir);
   const db = openDB(dataDir);
+  // W2-03：统一幂等关闭——全部 disposer 尝试、聚合失败 id（bootstrapShutdown 语义）；
+  // serve/keepalive/TUI/SIGINT/SIGTERM 共用同一条关闭路径（此前各分支各写各的 process.exit）。
+  const { createShutdown } = await import('../bootstrap/bootstrapShutdown.js');
+  const disposers: Array<{ id: string; dispose: (reason: string) => Promise<void> | void }> = [];
+  const shutdown = (reason = 'cli') => createShutdown(disposers)(reason);
+  disposers.push({ id: 'db', dispose: () => { closeDB(db); } });
   const bus = createEventBus(dataDir);
   const mem = createMemory(db);
   const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string; mode?: string; theme?: string; thinking?: boolean };
@@ -122,6 +128,14 @@ if (pre.mode === 'error') {
 
   // 审批桥：agent 工具确认 → GatewayClient.requestApproval（审批 overlay）
   let gateway: any = null;
+
+  // W2-03：--prompt --wire 真实 headless 网关——此前 gateway 恒为 null（TUI 才装配），
+  // wire 双向化（stdin 帧 → RPC）与 wire 终态比对静默失效。headless 网关无 React/Ink 依赖，
+  // approval/clarify/sudo/secret/form responder 等待 stdin 帧，超时 fail-closed（deny/''/null）。
+  if (opts.wire && opts.prompt && !opts.serve) {
+    const { createHeadlessWireGateway } = await import('./headlessGateway.js');
+    gateway = createHeadlessWireGateway({ sessionId: opts.session ?? 'default' });
+  }
   // 会话级批准缓存（Kimi auto_approve_actions 同款）：用户选「Allow this session」的
   // action 记入缓存，本次进程内同 action 自动放行不再弹——危险确认不再频繁
   const { createApprovalCache } = await import('../kernel/permissions.js');
@@ -133,6 +147,7 @@ if (pre.mode === 'error') {
   const { connectAllMcp, mcpClientsToTools, closeAllMcp } = await import('../kernel/mcp.js');
   const mcpOpts = { cwd, strict: (settings as any).strictMcpConfig === true || opts.strictMcpConfig === true };
   let mcpClients = await connectAllMcp(dataDir, mcpOpts);
+  disposers.push({ id: 'mcp', dispose: () => { closeAllMcp(mcpClients); } });
   // MCP 热重载（/reload-mcp）：断开 → 重连 → updateTools 热换工具表（不重启进程）
   const reloadMcp = async (): Promise<{ ok: boolean; count: number; message: string }> => {
     try {
@@ -276,7 +291,7 @@ if (pre.mode === 'error') {
     setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
     setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },
     getThemeName: () => themeName,
-    requestExit: () => { exitRequested = true; setTimeout(() => process.exit(0), 50); },
+    requestExit: () => { exitRequested = true; void shutdown('request-exit').finally(() => process.exit(0)); },
     clearHistory: () => { /* UI 历史清理由 App 层处理 */ },
     setModel: applyModel,
     openModelPicker: () => { /* WxNodus UI: /model 打开选择器 */ },
@@ -369,11 +384,13 @@ if (pre.mode === 'error') {
       commandBus,
       config,
     }, port);
+    disposers.push({ id: 'serve', dispose: async () => { await srv.close(); } });
     console.log(`◉ WxNodus AI 网关已启动：http://127.0.0.1:${srv.port}`);
     console.log(`  GET  /health/live  存活探针（无认证）｜ GET /health /rpc /events 需 Bearer（WXNODUS_SERVE_TOKEN）`);
     console.log('  Ctrl+C 停止');
-    process.on('SIGINT', async () => { await srv.close(); process.exit(0); });
-    process.on('SIGTERM', async () => { await srv.close(); process.exit(0); });
+    // W2-03：SIGINT/SIGTERM 走统一幂等关闭（不再分支各自 process.exit）
+    process.on('SIGINT', () => { void shutdown('sigint').finally(() => process.exit(0)); });
+    process.on('SIGTERM', () => { void shutdown('sigterm').finally(() => process.exit(0)); });
     // 常驻等待（事件循环由 HTTP server 保持）
     await new Promise<void>(() => {});
     return;
@@ -385,6 +402,7 @@ if (pre.mode === 'error') {
     // --session：切换到指定会话（此前仅 usage 查询使用，agent 未切换——审计修复）
     if (opts.session) {
       agent.setSessionId(opts.session);
+      gateway.bindSession?.(opts.session);
     }
     // --ephemeral：临时会话（Codex 对齐）——不加载历史、结束后清理（消息/快照），不污染会话列表
     const ephemeralSid = opts.ephemeral ? `ephemeral-${Date.now().toString(36)}` : null;
@@ -443,8 +461,10 @@ if (pre.mode === 'error') {
       if (out.startsWith('__KEEPALIVE__')) {
         console.log(out.slice(14).trim());
         await new Promise<void>(resolve => {
-          process.once('SIGINT', () => { shutdown(); resolve(); });
-          process.once('SIGTERM', () => { shutdown(); resolve(); });
+          // W2-03 修复：此前引用 TUI 分支才定义的 shutdown（TDZ ReferenceError——headless
+          // keepalive 路径永不执行 TUI 装配）。现走共享统一关闭。
+          process.once('SIGINT', () => { void shutdown('sigint').finally(resolve); });
+          process.once('SIGTERM', () => { void shutdown('sigterm').finally(resolve); });
         });
       } else {
         console.log(out);
@@ -574,7 +594,7 @@ if (pre.mode === 'error') {
     setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
     setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },
     setThinking: (on: boolean) => { config.setKey('settings', 'thinking', on); },
-    requestExit: () => { exitRequested = true; shutdown(); setTimeout(() => process.exit(0), 50); },
+    requestExit: () => { exitRequested = true; void shutdown('request-exit').finally(() => process.exit(0)); },
   });
   gateway.start();
 
@@ -594,24 +614,18 @@ if (pre.mode === 'error') {
   }
 
   // Ctrl+C：运行中中断 / 空闲退出
-  // B1 统一退出清理：MCP 子进程 + DB + UI 全部回收（SIGINT/SIGTERM/requestExit 共用）
-  let shutdownDone = false;
-  const shutdown = () => {
-    if (shutdownDone) return;
-    shutdownDone = true;
-    try { closeAllMcp(mcpClients); } catch {}
-    try { closeDB(db); } catch {}
-    try { app?.unmount(); } catch {}
-  };
+  // B1/W2-03 统一退出清理：MCP 子进程 + DB + UI 全部回收（SIGINT/SIGTERM/requestExit 共用
+  // main 顶部定义的共享幂等 shutdown——聚合全部 disposer 失败，不再各分支手写 process.exit）
+  disposers.push({ id: 'ui', dispose: () => { app?.unmount(); } });
 
   process.on('SIGINT', () => {
-    if (exitRequested) { shutdown(); process.exit(0); }
+    if (exitRequested) { void shutdown('sigint').finally(() => process.exit(0)); return; }
     exitRequested = true;
     gateway.kill('SIGINT');
     agent.abort();
-    setTimeout(() => { shutdown(); process.exit(0); }, 300);
+    setTimeout(() => { void shutdown('sigint').finally(() => process.exit(0)); }, 300);
   });
-  process.on('SIGTERM', () => { shutdown(); process.exit(0); });
+  process.on('SIGTERM', () => { void shutdown('sigterm').finally(() => process.exit(0)); });
 }
 
 main().catch(e => { console.error('启动失败：', e?.message ?? e); process.exit(1); });
