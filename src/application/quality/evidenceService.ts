@@ -1,13 +1,13 @@
 // src/application/quality/evidenceService.ts — W3-01：verifier 结果闭合为 EvidenceRecord（authority 冲突 fail closed；trusted 字段剥离）
 import { createHash, randomUUID } from 'node:crypto';
 import type { OperationResult } from '../../protocol/results.js';
-import type { EvidenceAttachmentRef, EvidenceRecord } from '../../domain/quality/evidence.js';
+import type { EvidenceAttachmentRef, EvidenceRecord, EvidenceRef } from '../../domain/quality/evidence.js';
 import { BUILTIN_VERIFIER_DESCRIPTORS } from '../../domain/quality/verifier.js';
 import type { VerificationRequest, VerificationResult } from '../../domain/quality/verifier.js';
 
 interface PendingAttachment { attachmentId: string; bytes: Buffer }
 export interface EvidenceStorePort {
-  appendClosed(record: EvidenceRecord, attachments: readonly PendingAttachment[]): Promise<OperationResult<{ evidenceId: string }>>;
+  appendClosed(record: EvidenceRecord, attachments: readonly PendingAttachment[]): Promise<OperationResult<{ evidenceId: string; ref: EvidenceRef }>>;
 }
 
 const canonical = (value: unknown): string => {
@@ -26,7 +26,7 @@ const failed = (code: string): OperationResult<never> => ({
 export class EvidenceService {
   constructor(private readonly store: EvidenceStorePort) {}
 
-  async close(request: VerificationRequest, result: VerificationResult): Promise<OperationResult<{ evidenceId: string }>> {
+  async close(request: VerificationRequest, result: VerificationResult): Promise<OperationResult<{ evidenceId: string; ref: EvidenceRef }>> {
     // 审计源冲突：authority 的源状态与 verifier 结论不一致 → fail closed，绝不产出 passed 证据
     if (result.status !== result.authority.sourceStatus) return failed('EVIDENCE_AUDIT_SOURCE_CONFLICT');
     const pending = [request.execution.stdout, request.execution.stderr, ...(request.execution.attachments ?? [])];

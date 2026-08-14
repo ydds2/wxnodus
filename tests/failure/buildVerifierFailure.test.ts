@@ -16,7 +16,9 @@ describe('build verifier failures', () => {
 
   it('detects verification snapshot drift with BUILD_VERIFICATION_SNAPSHOT_MISMATCH', () => {
     const snapshot = createBuildVerificationSnapshot({
-      runId: 'r1', artifactHash: 'a'.repeat(64), environmentSnapshotId: 'e', capabilitySnapshotId: 'c', policySnapshotId: 'p',
+      runId: 'r1', artifactId: 'a1', artifactHash: 'a'.repeat(64),
+      environmentSnapshotId: 'e', environmentHash: 'b'.repeat(64),
+      capabilitySnapshotId: 'c', policySnapshotId: 'p', policyHash: 'c'.repeat(64),
     });
     expect(assertSnapshotMatch(snapshot, snapshot)).toMatchObject({ ok: true });
     expect(assertSnapshotMatch(snapshot, { artifactHash: 'b'.repeat(64) })).toMatchObject({

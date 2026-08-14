@@ -8,6 +8,8 @@ import type { NodeResult, PlanNode } from '../../domain/build/planDag.js';
 import { executePlanDag } from '../../domain/build/planDag.js';
 import type { OperationResult } from '../../protocol/results.js';
 import type { RunFinalStatus } from '../../protocol/runs.js';
+import { CompletionCoordinator } from '../quality/completionCoordinator.js';
+import type { CompletionGateInput } from '../../domain/quality/completionGate.js';
 
 const fail = <T = never>(code: string, details?: Record<string, unknown>): OperationResult<T> => ({
   ok: false,
@@ -30,6 +32,12 @@ export interface BuildDecision {
   criteria: Array<{ id: string; status: string }>;
 }
 
+export interface BuildCompletionContext {
+  criteria: AcceptanceCriterion[];
+  nodes: Record<string, NodeResult>;
+  snapshot: BuildVerificationSnapshot;
+}
+
 export interface BuildServicePorts {
   workspace: {
     stage(): Promise<OperationResult<{ stagingDir: string }>>;
@@ -43,8 +51,8 @@ export interface BuildServicePorts {
   nodes(stagingDir: string, snapshot: BuildVerificationSnapshot): PlanNode[];
   /** 静态入口校验：生成的 server 必须在 / 提供前端，否则 BUILD_STATIC_ENTRY_MISSING */
   staticEntry: { verify(stagingDir: string, signal: AbortSignal): Promise<OperationResult<{ servesRoot: boolean }>> };
-  /** 完成判定（required criteria 全部 passed 才算通过） */
-  decide(criteria: AcceptanceCriterion[], nodes: Record<string, NodeResult>): OperationResult<BuildDecision>;
+  /** 仅组装未受信任的 completion input；唯一 authority 是 injected CompletionCoordinator。 */
+  completionInput(context: BuildCompletionContext): Promise<OperationResult<CompletionGateInput>>;
 }
 
 export interface BuildRunResult {
@@ -55,7 +63,10 @@ export interface BuildRunResult {
 }
 
 export class BuildService {
-  constructor(private readonly ports: BuildServicePorts) {}
+  constructor(
+    private readonly ports: BuildServicePorts,
+    private readonly completionCoordinator: CompletionCoordinator,
+  ) {}
 
   async compileAndRun(request: BuildRequest, signal: AbortSignal): Promise<OperationResult<BuildRunResult>> {
     if (request.openDomain) return fail('BUILD_OPEN_DOMAIN_UNSUPPORTED');
@@ -77,30 +88,73 @@ export class BuildService {
     const staged = await this.ports.workspace.stage();
     if (!staged.ok) return staged;
     const stagingDir = staged.value.stagingDir;
+    let settled = false;
+    const abandon = async () => {
+      if (!settled) {
+        settled = true;
+        await this.ports.workspace.abandon(stagingDir).catch(() => undefined);
+      }
+    };
     try {
+      if (!CompletionCoordinator.isGenuine(this.completionCoordinator)) {
+        await abandon();
+        return fail('COMPLETION_COORDINATOR_UNTRUSTED');
+      }
       const staticEntry = await this.ports.staticEntry.verify(stagingDir, signal);
-      if (!staticEntry.ok) return staticEntry;
-      if (!staticEntry.value.servesRoot) return fail('BUILD_STATIC_ENTRY_MISSING', { stagingDir });
+      if (!staticEntry.ok) {
+        await abandon();
+        return staticEntry;
+      }
+      if (!staticEntry.value.servesRoot) {
+        await abandon();
+        return fail('BUILD_STATIC_ENTRY_MISSING', { stagingDir });
+      }
       const nodes = this.ports.nodes(stagingDir, snapshot);
       const executed = await executePlanDag(nodes, signal);
       for (const [nodeId, nodeResult] of Object.entries(executed.nodes)) {
         if (nodeResult.status === 'failed' && nodeResult.code !== 'BUILD_NODE_FAILED' && nodeResult.code) {
+          await abandon();
           return fail(nodeResult.code, { nodeId });
         }
       }
-      const decision = this.ports.decide(criteria, executed.nodes);
-      if (!decision.ok) return decision;
-      const requiredPassed = criteria.filter(criterion => criterion.required)
-        .every(criterion => decision.value.criteria.find(item => item.id === criterion.id)?.status === 'passed');
-      if (!requiredPassed) {
-        await this.ports.workspace.abandon(stagingDir);
-        return { ok: true, value: { stagingDir, committed: false, snapshot, decision: decision.value } };
+      const completionInput = await this.ports.completionInput({ criteria, nodes: executed.nodes, snapshot });
+      if (!completionInput.ok) {
+        await abandon();
+        return completionInput;
+      }
+      let completion;
+      try {
+        completion = CompletionCoordinator.prototype.decide.call(this.completionCoordinator, completionInput.value);
+      } catch {
+        await abandon();
+        return fail('COMPLETION_COORDINATOR_UNTRUSTED');
+      }
+      if (!completion.ok) {
+        await abandon();
+        return completion;
+      }
+      if (!CompletionCoordinator.prototype.owns.call(this.completionCoordinator, completion.value)) {
+        await abandon();
+        return fail('COMPLETION_RECEIPT_UNTRUSTED');
+      }
+      const decision: BuildDecision = {
+        status: completion.value.decision.status,
+        reasons: [...completion.value.decision.reasons],
+        criteria: completion.value.decision.criterionResults.map(item => ({ ...item })),
+      };
+      if (decision.status !== 'succeeded') {
+        await abandon();
+        return { ok: true, value: { stagingDir, committed: false, snapshot, decision } };
       }
       const committed = await this.ports.workspace.commit(stagingDir, request.targetDir);
-      if (!committed.ok) return committed;
-      return { ok: true, value: { stagingDir, committed: true, snapshot, decision: decision.value } };
+      if (!committed.ok) {
+        await abandon();
+        return committed;
+      }
+      settled = true;
+      return { ok: true, value: { stagingDir, committed: true, snapshot, decision } };
     } catch (error) {
-      await this.ports.workspace.abandon(stagingDir).catch(() => undefined);
+      await abandon();
       return fail('BUILD_NODE_FAILED', { message: String((error as Error)?.message ?? error) });
     }
   }

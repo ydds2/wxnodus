@@ -1,8 +1,10 @@
 // src/release/gateDefinitions.ts — Wave 0 Gate scope（唯一 scope 定义）+ Wave 1 Gate 求值（W1-11）
 import type { GateId } from './evidenceTypes.js';
 import type { VerifiedEvidenceReceipt } from '../domain/quality/evidence.js';
-import type { ReviewerAttestationVerifier, VerifiedReviewerAttestationReceipt } from '../domain/quality/review.js';
-import type { FileEvidenceStore } from '../infrastructure/quality/fileEvidenceStore.js';
+import { ReviewerAttestationVerifier, type VerifiedReviewerAttestationReceipt } from '../domain/quality/review.js';
+import { FileEvidenceStore } from '../infrastructure/quality/fileEvidenceStore.js';
+import { CompletionCoordinator } from '../application/quality/completionCoordinator.js';
+import type { CompletionGateInput } from '../domain/quality/completionGate.js';
 import { gatewayError } from '../protocol/errors.js';
 import { err, ok } from '../protocol/results.js';
 
@@ -131,17 +133,49 @@ export interface Wave1GateInput { id: 'A' | 'B' | 'C' | 'D' | 'F' | 'G'; require
   evidence: VerifiedEvidenceReceipt[]; reviewer?: VerifiedReviewerAttestationReceipt;
   notApplicable?: { requirementId: string; profile: string; platform: string; unreachableEvidenceIds: string[] } }
 
-export function evaluateWave1Gates(gates: Wave1GateInput[], trust: { evidenceStore: FileEvidenceStore; reviewerVerifier: ReviewerAttestationVerifier }) {
+export function evaluateWave1Gates(gates: Wave1GateInput[], trust: {
+  evidenceStore: FileEvidenceStore;
+  reviewerVerifier: ReviewerAttestationVerifier;
+  coordinator?: CompletionCoordinator;
+}) {
   for (const gate of gates) {
     if (gate.notApplicable) {
       if (!gate.notApplicable.requirementId || !gate.notApplicable.profile || !gate.notApplicable.platform || !gate.notApplicable.unreachableEvidenceIds.length)
         return err(gatewayError('GATE_NOT_APPLICABLE_INVALID', gate.id, 'gate.na.invalid'));
       continue;
     }
-    if (!gate.evidence.length || !gate.evidence.every(item => trust.evidenceStore.owns(item)))
+    // prototype 调用绕过 subclass owns override——只认 W1-09 WeakSet 实例身份
+    if (!gate.evidence.length || !gate.evidence.every(item => FileEvidenceStore.prototype.owns.call(trust.evidenceStore, item)))
       return err(gatewayError('GATE_EVIDENCE_UNTRUSTED', gate.id, 'gate.evidence.untrusted'));
-    if (gate.id === 'G' && (!gate.reviewer || !trust.reviewerVerifier.owns(gate.reviewer)))
-      return err(gatewayError('GATE_REVIEW_UNTRUSTED', gate.id, 'gate.review.untrusted'));
+    if (gate.id === 'G') {
+      // Gate G：唯一 authority 是 CompletionCoordinator，不再做本地 criteria 聚合
+      if (!gate.reviewer || !ReviewerAttestationVerifier.prototype.owns.call(trust.reviewerVerifier, gate.reviewer))
+        return err(gatewayError('GATE_REVIEW_UNTRUSTED', gate.id, 'gate.review.untrusted'));
+      if (!trust.coordinator || !CompletionCoordinator.isGenuine(trust.coordinator))
+        return err(gatewayError('GATE_COMPLETION_AUTHORITY_UNTRUSTED', gate.id, 'gate.completion.authorityUntrusted'));
+      const attestation = gate.reviewer.attestation;
+      const input: CompletionGateInput = {
+        runId: attestation.runId,
+        artifact: attestation.artifact,
+        environment: attestation.environment,
+        policy: attestation.policy,
+        requiredCriterionIds: [...attestation.requiredCriterionIds],
+        evidence: gate.evidence,
+        review: gate.reviewer,
+      };
+      let decision;
+      try {
+        decision = CompletionCoordinator.prototype.decide.call(trust.coordinator, input);
+      } catch {
+        return err(gatewayError('GATE_COMPLETION_AUTHORITY_UNTRUSTED', gate.id, 'gate.completion.authorityUntrusted'));
+      }
+      if (!decision.ok) return decision;
+      if (!CompletionCoordinator.prototype.owns.call(trust.coordinator, decision.value))
+        return err(gatewayError('GATE_COMPLETION_RECEIPT_UNTRUSTED', gate.id, 'gate.completion.receiptUntrusted'));
+      if (decision.value.decision.status !== 'succeeded')
+        return err(gatewayError('GATE_COMPLETION_NOT_SUCCEEDED', gate.id, 'gate.completion.notSucceeded'));
+      continue;
+    }
     if (gate.required && gate.evidence.some(item => item.record.criteria.some(c => c.required && c.status !== 'passed')))
       return err(gatewayError('GATE_REQUIRED_FAILED', gate.id, 'gate.required.failed'));
   }

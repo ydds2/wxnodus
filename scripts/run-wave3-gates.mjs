@@ -108,5 +108,7 @@ process.stdout.write(`${JSON.stringify(report)}\n`);
 
 if (firstFailure === 'E-W3' && eReceipts.length !== 2) process.exitCode = 2;
 else if (firstFailure === 'C-W3' && !existsSync(join(rootDir, 'migrations', 'c-w3-receipt.json'))) process.exitCode = 2;
+// G-W3：completion 子进程的终态码原样传播（blocked 2 / incomplete 3 / inconclusive 4 / cancelled 130 不被压成 failed 1）
+else if (firstFailure === 'G-W3') process.exitCode = gateResults['G-W3'].status ?? 2;
 else if (firstFailure) process.exitCode = exitFor.failed;
 else process.exitCode = exitFor.succeeded;

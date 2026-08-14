@@ -1,0 +1,59 @@
+# WxNodus V3 Production Hardening Progress
+
+## Workspace
+
+- Worktree: `C:/Users/20164/Desktop/WxNodusV3CLI-production-hardening`
+- Branch: `feature/production-hardening`
+- Baseline: `7452895a2a499c2a8da6729fe11851cb4e4befba`
+- Plan: `docs/superpowers/plans/2026-08-14-wxnodus-production-hardening.md`
+- Status: in progress; not production-ready; Gate E remains blocked.
+
+## Invariants
+
+- Preserve WeakSet receipt ownership through `evidenceStore.owns()` and `reviewerVerifier.owns()`; do not add or trust a `trusted` field.
+- Missing, unclosed, tampered, cancelled, or inconclusive evidence never yields `succeeded`.
+- Do not manufacture Win11/Win10 physical receipts. Gate E remains `blocked` until both real OS-keyed receipts bind to the same immutable candidate.
+- Do not publish, tag, push, create releases, or mark the goal complete automatically.
+
+## Baseline verification — 2026-08-14
+
+- `npm ci`: passed (309 packages installed; deprecation warnings only).
+- Full `npm test`: failed: 7 files, 2 tests.
+  - Five UI suites could not load `packages/wxnodus-ink/dist/entry-exports.js`. Root `npm run build` compiles the root `dist` but does not build this local package output; this is a reproducible setup/package-boundary defect.
+  - `tests/kernel-taskRunner.test.ts` failed once because a child log was still empty. Isolated-root rerun passed 13/13; retain as an observed flaky/race signal, not a resolved defect.
+  - `tests/kernel-voice.test.ts` expects real files under git-ignored `data/voice`; isolated worktree rerun failed 1/7. This is a non-portable test prerequisite and cannot be counted as product evidence.
+- `npm run build`: passed, but did not create `packages/wxnodus-ink/dist/entry-exports.js`.
+- Isolated-root UI rerun after root build: still failed all five suites with the same missing local-package dist error.
+- Isolated-root taskRunner rerun: passed 13/13.
+- Isolated-root voice rerun: failed 1/7 due to absent ignored whisper binary/model.
+- Main checkout and isolated worktree remained clean after verification.
+
+Baseline is accepted as accurately characterized, not green. Wave work must preserve these failures in reports until their owning waves repair them (taskRunner/effect fence in Wave 1, package boundary and voice packaging in Waves 3–4).
+
+## Wave ledger
+
+| Item | Status | Notes |
+|---|---|---|
+| Baseline/worktree | completed | Correct ancestry and isolated root verified; baseline failures classified above. |
+| W0-01 Completion authority | core-complete | WeakSet receipt + coordinator + gate + evidence write perimeter + BuildService + gate:completion adapter + Gate G wired; transport cutoffs (CommandBus/agent/CLI/HTTP/Wire) deferred to Wave 3 wiring. |
+| W0-02 Release eligibility | pending | Known-failure oracle must remain distinct from release blockers. |
+| W0-03 Evidence/requirements | pending | Release-mode versioned closure; current requirements remain unverified. |
+| Wave 1 security | pending | No production bypass may be called fixed before wiring regression passes. |
+| Wave 2 composition root | pending | Legacy production root still active. |
+| Wave 3 capabilities | pending | Modern service islands not fully wired. |
+| Wave 4 distribution/DX | pending | Includes local ink build boundary and voice asset portability. |
+| Wave 5 Market/HAR | pending | Independent trust root and pre-storage redaction required. |
+| Wave 6 physical/finalizer | pending | Gate E/H/I evidence unavailable; remain blocked/incomplete. |
+
+## W0-01 authority perimeter — 2026-08-14
+
+Verified chain: `FileEvidenceStore → ReviewerAttestationVerifier → CompletionGate → CompletionCoordinator → owned CompletionDecisionReceipt`.
+
+- `FileEvidenceStore`: synchronous input snapshots for `append`/`appendClosed`/`appendBundle`; root pinned via `resolve()`; pre-existing root/parent junction writes rejected; root-wide cross-process writer lock (bounded retries, fail-closed `EVIDENCE_WRITE_LOCKED`, identity-checked release); exact-once record serialization; returned ref derived from the published bytes; post-publish `verifyRunBundle` readback with rollback on mismatch (new-run cleanup, old-run restore); reviewer receipts minted only via `readVerifiedClosed`.
+- `CompletionGate`: required criteria matched as a set against the signed binding, results emitted in signed order; `requiredCriterionIds` part of the signed review binding; v1 attestations verified for historical integrity but never authorize completion (`REVIEW_ATTESTATION_SCHEMA_UNSUPPORTED`); new attestations signed as schemaVersion 2.
+- `CompletionCoordinator`: genuine brand (`#brand`), prototype-bound `decide`/`owns` calls bypass subclass overrides, trusted clock only.
+- `BuildService`: `ports.decide` removed; commit authority is solely an owned `succeeded` receipt from the injected genuine coordinator; every post-stage failure abandons staging; snapshot carries artifactId/environmentHash/policyHash.
+- Gate G (`evaluateWave1Gates`): evidence/reviewer ownership plus coordinator receipt; no local criteria aggregation; missing/fake coordinator fail closed.
+- `gate:completion`: `scripts/run-completion-gate.mjs` is now a launcher only; `src/cli/runCompletionGate.ts` orchestrates the authority (bundle integrity → persisted binding+attestation → reviewer trust config → owned receipts → owned decision); missing inputs block; exit codes propagate exactly; `run-wave3-gates.mjs` preserves Gate G child exit codes.
+- Regressions: 104 passed / 5 skipped across the W0-01 suites plus cross-process writes (both records preserved, no lock artifacts; pre-existing lock fails closed without run mutation).
+- Known baseline gaps unchanged: five UI suites need `packages/wxnodus-ink/dist/entry-exports.js` (Wave 4); `tests/kernel-voice.test.ts` needs git-ignored `data/voice` assets (Wave 3–4).
