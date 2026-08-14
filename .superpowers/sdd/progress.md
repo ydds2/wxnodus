@@ -39,7 +39,7 @@ Baseline is accepted as accurately characterized, not green. Wave work must pres
 | W0-02 Release eligibility | core-complete | `releaseEligibility` + `check-release-eligibility` adapter; open KF blocks with `RELEASE_BLOCKED_OPEN_P0`; required gate failed/blocked/cancelled/inconclusive/incomplete/na never release; resolved-KF regression existence enforced. |
 | W0-03 Evidence/requirements | core-complete | Versioned evidence index + requirement resolver; verified requirements must bind current candidate/index fully; current all-planned requirements stay unverifiable (20/20 `REQUIREMENT_NOT_VERIFIED` in release mode). |
 | Wave 1 security | P0 batch done | P0-01 serve auth+CSRF+health-minimal+413; P0-02 browser session service (owner close, connectedAddress fail-closed); P0-03 PS literal + installer path policy; P0-04 pathBoundary; P0-05 memory scope authority; P0-06 hook fail-closed + KF-026 migrated; P0-07 effect fence + KF-025 migrated; P0-08 bounded reader/target policy + safeFetchText rewired (DNS fail-closed, oversized rejected not truncated). Remaining Wave 1 wiring: kernel/browser.ts facade delegation + KF-012; installer dependency closure (Wave 4 DX-04). |
-| Wave 2 composition root | in progress | W2-01 immutable `CompositionRoutingSnapshot` (`src/bootstrap/compositionRouting.ts`): operator flag/env/workspace precedence, modern/required downgrade denied, default legacy. Remaining: production bootstrap options factory, GatewayService dispatch wiring, CLI lifecycle consolidation, real E2E (W2-02/03/04). |
+| Wave 2 composition root | in progress | W2-01 immutable `CompositionRoutingSnapshot`; W2-02 GatewayService dispatcher (`createGatewayService` — unknown method stable-fails, no legacy fallback); W2-03 unified idempotent shutdown (all disposers attempted, failure ids aggregated). Remaining: production bootstrap factory wiring, CLI lifecycle consolidation, real E2E (W2-04). |
 | Wave 3 capabilities | pending | Modern service islands not fully wired. |
 | Wave 4 distribution/DX | pending | Includes local ink build boundary and voice asset portability. |
 | Wave 5 Market/HAR | pending | Independent trust root and pre-storage redaction required. |
@@ -67,7 +67,16 @@ Verified chain: `FileEvidenceStore → ReviewerAttestationVerifier → Completio
 - `git diff --check`: clean. Wave 0 committed as `7146357`, `fa59d4e`, `37acb5c`.
 - Honest status: CompletionGate is the sole decision authority in the domain/app/release layer; Gate E remains `blocked` (no physical receipts); CommandBus/agent/CLI/HTTP/Wire transport cutoffs remain un-wired and are tracked as part of Wave 2–3 composition wiring, not counted as done here.
 
-## Wave 1 P0 security batch — 2026-08-14
+## Wave 2 progress — 2026-08-14
+
+Committed as `50bb8e5` (W2-01), `3c7e796` (W2-02), `1fc0ee3` (W2-03), `2e6fada` (branding UI).
+
+- W2-01: immutable `CompositionRoutingSnapshot` (`src/bootstrap/compositionRouting.ts`) — operator flag/env/workspace precedence; modern/required downgrade denied; default legacy.
+- W2-02: `createGatewayService` dispatcher — full source/session/correlation/signal propagation; `GATEWAY_METHOD_UNKNOWN` for unknown methods (no legacy fallback); handler exceptions fail closed (`GATEWAY_METHOD_FAILED`); optional `publish` event path.
+- W2-03: `bootstrapShutdown` now attempts every disposer in strict reverse order, aggregates failing resource ids, and reuses the settled result on repeated calls.
+- Branding UI: persistent black-hole brand bar (accretion-disk gradient rule + event-horizon core ◉), turn separators rebranded, `brandRule.ts` pure functions TDD'd; all seven UI suites green in the worktree after building the local ink dist (`packages/wxnodus-ink/dist/entry-exports.js`).
+- Full suite now: 1650 passed / 10 skipped / 1 failed — the only failure is the known voice-asset gap (`tests/kernel-voice.test.ts`). The five UI suites that previously failed on missing ink dist are now green locally; wiring the ink build into the root build chain remains a Wave 4 (DX-02) boundary item.
+- Remaining in Wave 2: production bootstrap factory wiring, CLI lifecycle consolidation, real process-level E2E (W2-04).
 
 Committed as `481ceda` (P0-04), `12eb537` (P0-05), `9a44dd7` (P0-06), `ecf43eb` (P0-08 infrastructure), `567778c` (P0-07).
 
