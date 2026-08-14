@@ -38,7 +38,7 @@ Baseline is accepted as accurately characterized, not green. Wave work must pres
 | W0-01 Completion authority | core-complete | WeakSet receipt + coordinator + gate + evidence write perimeter + BuildService + gate:completion adapter + Gate G wired; transport cutoffs (CommandBus/agent/CLI/HTTP/Wire) deferred to Wave 3 wiring. |
 | W0-02 Release eligibility | core-complete | `releaseEligibility` + `check-release-eligibility` adapter; open KF blocks with `RELEASE_BLOCKED_OPEN_P0`; required gate failed/blocked/cancelled/inconclusive/incomplete/na never release; resolved-KF regression existence enforced. |
 | W0-03 Evidence/requirements | core-complete | Versioned evidence index + requirement resolver; verified requirements must bind current candidate/index fully; current all-planned requirements stay unverifiable (20/20 `REQUIREMENT_NOT_VERIFIED` in release mode). |
-| Wave 1 security | in progress | P0-04 pathBoundary + staging transaction; P0-05 memory scope authority; P0-06 hook fail-closed + KF-026 migrated; P0-08 bounded reader + outbound target policy. P0-01/02/03/07 and kernel/ssrf full rewiring remain. |
+| Wave 1 security | in progress | P0-04 pathBoundary + staging transaction; P0-05 memory scope authority; P0-06 hook fail-closed + KF-026 migrated; P0-07 effect fence + KF-025 migrated; P0-08 bounded reader + outbound target policy. P0-01 HTTP facade, P0-02 browser sessions, P0-03 installer literal/closure, and kernel/ssrf full rewiring remain. |
 | Wave 2 composition root | pending | Legacy production root still active. |
 | Wave 3 capabilities | pending | Modern service islands not fully wired. |
 | Wave 4 distribution/DX | pending | Includes local ink build boundary and voice asset portability. |
@@ -66,3 +66,14 @@ Verified chain: `FileEvidenceStore → ReviewerAttestationVerifier → Completio
 - Full `npm test`: 1490 passed / 10 skipped / 1 failed + 5 UI suites — identical to the characterized baseline (voice assets absent; local ink dist missing). No new regressions.
 - `git diff --check`: clean. Wave 0 committed as `7146357`, `fa59d4e`, `37acb5c`.
 - Honest status: CompletionGate is the sole decision authority in the domain/app/release layer; Gate E remains `blocked` (no physical receipts); CommandBus/agent/CLI/HTTP/Wire transport cutoffs remain un-wired and are tracked as part of Wave 2–3 composition wiring, not counted as done here.
+
+## Wave 1 P0 security batch — 2026-08-14
+
+Committed as `481ceda` (P0-04), `12eb537` (P0-05), `9a44dd7` (P0-06), `ecf43eb` (P0-08 infrastructure), `567778c` (P0-07).
+
+- P0-04: `src/infrastructure/fs/pathBoundary.ts` (lexical + realpath/symlink/junction double check) wired into `WorkspaceTransaction` commit/diff; junction escape now `BUILD_PATH_UNSAFE_SYMLINK`.
+- P0-05: `MemoryService` is the append/update/delete/search authority; scope comes only from injected trusted context; forged session inputs impossible; cross-scope update/delete `MEMORY_SCOPE_DENIED`; global read requires explicit opt-in.
+- P0-06: structured `HookExecutionOutcome` + `decideSecurityHook`; security-critical hook crash/timeout/missing/non-zero exit deny; KF-026 migrated (case retired, formal regression green).
+- P0-07: task kill aborts the agent-line effect fence; late subagent results never settle; KF-025 migrated (case retired, formal regression green).
+- P0-08 (infrastructure): `boundedResponseReader` (Content-Length pre-reject; real-byte chunk limit with stream cancel) and `outboundTargetPolicy` (scheme/target/DNS fail-closed; private address in resolved set rejects). Kernel `safeFetchText` rewiring to these primitives is not yet done.
+- Verification: build/typecheck/typecheck:tests/discovery clean; full suite 1518 passed / 10 skipped / 1 failed + 5 UI suites — identical characterized baseline, no new regressions; known-failure oracle 31/31 (25 open emit stable codes, 6 resolved are green regressions incl. KF-025/026).
