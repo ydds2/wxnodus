@@ -461,6 +461,88 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (spec.scaffold === 'unknown') {
       return `需求无法编译（${input.slice(0, 30)}…）——规则脑未命中${keyRes.key ? '且 AI 规格化失败（检查模型配置或重试）' : '；/key set <密钥> 后可 AI 规格化任意需求'}；或说「/help build」`;
     }
+    // W3 Build facade：modern 路由走 BuildService.compileAndRun（staging→scaffold→staticEntry→verifier→evidence→reviewer→owned receipt）。
+    // spec→结构化验收（规则脑确定性锚点；未知模具 fail-closed）；快照真实来源（env/capability/hooks 确定性哈希）；
+    // reviewer 密钥 AES 持久化（明文绝不落盘）。
+    if (buildRoute.value.route === 'modern') {
+      const { createHash } = await import('node:crypto');
+      const { join } = await import('node:path');
+      const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+      const { specToAcceptance } = await import('../build/specAcceptance.js');
+      const criteria = specToAcceptance(spec);
+      if (!criteria.ok) {
+        throw new Error(`[${criteria.error.code}] ${criteria.error.message}（规则脑模具 ${spec.scaffold} 无结构化验收——现代编译拒绝）`);
+      }
+      const projName = `p${Date.now().toString(36)}`;
+      const projDir = join(ctx.dataDir, 'projects', projName);
+      const runId = `build-${Date.now().toString(36)}`;
+      // 快照：environment（平台确定性）、capability（内置 verifier 能力并集）、policy（hooks 配置确定性哈希）
+      const { BUILTIN_VERIFIER_DESCRIPTORS } = await import('../domain/quality/verifier.js');
+      const capabilityIds = [...new Set(Object.values(BUILTIN_VERIFIER_DESCRIPTORS).flatMap(d => d.requiredCapabilities))].sort();
+      const envBody = JSON.stringify({ platform: process.platform, arch: process.arch, node: process.version });
+      const capBody = JSON.stringify(capabilityIds);
+      const { hooksFromConfig } = await import('../kernel/hooks.js');
+      const policyBody = JSON.stringify(hooksFromConfig(ctx.config.get('settings') as Record<string, unknown> | undefined));
+      const { createProductionBuildWiring } = await import('../application/build/buildServiceWiring.js');
+      const { FileEvidenceStore } = await import('../infrastructure/quality/fileEvidenceStore.js');
+      const { FileReviewNonceStore } = await import('../infrastructure/quality/fileReviewNonceStore.js');
+      const { createReviewerKeyService } = await import('../application/quality/reviewerKeyService.js');
+      const { encryptKey, decryptKey } = await import('../kernel/providers.js');
+      const keyService = createReviewerKeyService({ dataDir: ctx.dataDir, encrypt: encryptKey, decrypt: decryptKey });
+      const bundle = await keyService.loadOrCreate();
+      if (!bundle.ok) throw new Error(`[${bundle.error.code}] ${bundle.error.message}`);
+      const wiring = createProductionBuildWiring({
+        dataDir: ctx.dataDir,
+        runId,
+        sessionId: ctx.agent?.getSessionId?.() ?? 'default',
+        // 原始规则脑 spec 驱动脚手架（criteria 仅验收断言）；legacy instantiate/verify 作为节点真实执行
+        instantiate: (_criteria, stagingDir) => instantiate(spec, stagingDir) as never,
+        verifyProject: async (dir) => {
+          const { verifyProject: legacyVerify } = await import('../build/verify.js');
+          return legacyVerify(dir);
+        },
+        evidenceStore: new FileEvidenceStore(join(ctx.dataDir, 'evidence'), () => new Date().toISOString()) as never,
+        snapshots: {
+          environment: () => ({ ok: true as const, value: { snapshotId: `env-${process.platform}-${process.arch}`, sha256: sha256(envBody), platform: process.platform, arch: process.arch } }),
+          capability: () => ({ ok: true as const, value: { snapshotId: 'cap-builtin-verifiers', sha256: sha256(capBody) } }),
+          policy: () => ({ ok: true as const, value: { snapshotId: 'policy-hooks', sha256: sha256(policyBody), decisionId: 'hooks-config' } }),
+        },
+        reviewerSigner: bundle.value.signer,
+        reviewerTrust: bundle.value.trustPolicy,
+        nonceStore: new FileReviewNonceStore(join(ctx.dataDir, 'review-nonces')),
+        makerActorId: 'wxnodus-build',
+        reviewerActorId: 'reviewer',
+      });
+      if (!wiring.ok) throw new Error(`[${wiring.error.code}] ${wiring.error.message}`);
+      const { BuildService } = await import('../application/build/buildService.js');
+      const service = new BuildService(wiring.value.ports, wiring.value.coordinator);
+      const result = await service.compileAndRun({
+        spec: criteria.value,
+        targetDir: projDir,
+        dataDir: ctx.dataDir,
+        snapshotInput: {
+          runId,
+          artifactId: `artifact-${projName}`,
+          artifactHash: sha256(JSON.stringify(spec)),
+          environmentSnapshotId: `env-${process.platform}-${process.arch}`,
+          environmentHash: sha256(envBody),
+          capabilitySnapshotId: 'cap-builtin-verifiers',
+          policySnapshotId: 'policy-hooks',
+          policyHash: sha256(policyBody),
+        },
+      }, AbortSignal.timeout(300_000));
+      if (!result.ok) throw new Error(`[${result.error.code}] ${result.error.message}`);
+      const decision = result.value.decision;
+      if (decision.status !== 'succeeded') {
+        throw new Error(`[BUILD_DECISION_${decision.status.toUpperCase()}] ${decision.reasons.join('；') || '未通过完成判定'}`);
+      }
+      return lines(` 构建完成「${spec.title}」 `, [
+        ` 模具：${spec.scaffold}（${specSource === 'ai' ? 'AI 规格化' : '规则模板'}）· 现代路由（BuildService 权威闭环）`,
+        ` 位置：${projDir}`,
+        ` 判定：${decision.status}（owned receipt）· 验收 ${decision.criteria.map(c => c.status).join('/')}`,
+        ` 启动：cd ${projDir} && node server/index.js`,
+      ]);
+    }
     const plan = makePlan(input, { key: null });
     const { diagnoseSpec } = await import('../build/spec.js');
     const diags = diagnoseSpec(spec);

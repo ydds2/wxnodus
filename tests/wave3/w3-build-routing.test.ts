@@ -18,18 +18,18 @@ describe('build capability routing', () => {
     expect(decision.value.route).toBe('legacy');
   });
 
-  it('modern root fails closed while the BuildService wiring is incomplete', () => {
+  it('modern root routes to the wired BuildService pipeline', () => {
     const decision = decideBuildRoute({ operatorFlag: 'modern' });
-    expect(decision.ok).toBe(false);
-    if (decision.ok) throw new Error('unreachable');
-    expect(decision.error.code).toBe('BUILD_MODERN_UNAVAILABLE');
+    expect(decision.ok).toBe(true);
+    if (!decision.ok) throw new Error('unreachable');
+    expect(decision.value.route).toBe('modern');
   });
 
-  it('env modern is equally denied (same fail-closed path)', () => {
+  it('env modern routes identically', () => {
     const decision = decideBuildRoute({ env: 'modern' });
-    expect(decision.ok).toBe(false);
-    if (decision.ok) throw new Error('unreachable');
-    expect(decision.error.code).toBe('BUILD_MODERN_UNAVAILABLE');
+    expect(decision.ok).toBe(true);
+    if (!decision.ok) throw new Error('unreachable');
+    expect(decision.value.route).toBe('modern');
   });
 
   it('propagates invalid composition roots instead of guessing', () => {

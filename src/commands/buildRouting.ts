@@ -17,8 +17,8 @@ export interface BuildRouteDecision {
   reason: string;
 }
 
-// BuildService 生产端口是否已接线（Wave 3 完成前为 false；接线完成后此开关同步翻转）
-const BUILD_SERVICE_WIRED = false;
+// BuildService 生产端口已接线：wiring + spec→acceptance 契约 + /build modern 分支（staging→验证→evidence→reviewer→owned receipt）
+const BUILD_SERVICE_WIRED = true;
 
 export function decideBuildRoute(input: {
   operatorFlag?: string;
@@ -40,7 +40,7 @@ export function decideBuildRoute(input: {
     return err(
       gatewayError(
         'BUILD_MODERN_UNAVAILABLE',
-        'build 能力的 modern 路由尚未完成生产接线（BuildService.compileAndRun 全端口）',
+        'build 能力的 modern 路由不可用',
         'build.modern.unavailable',
       ),
     );
