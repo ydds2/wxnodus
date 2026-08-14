@@ -1669,6 +1669,12 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   //   插件 = data/plugins/<name>/（plugin.json 声明 + index.js 实现）
   //   工具自动并入 agent（danger 包裹）；命令注册为 /<插件名>.<命令名>
   bus.register('/plugin', async (args) => {
+    // W3 Plugin 第 1 步：组合路由决策——modern/required 在沙箱/权限/签名接线完成前 fail-closed
+    const { decidePluginRoute } = await import('./extensionRouting.js');
+    const pluginRoute = decidePluginRoute({ env: process.env.WXNODUS_COMPOSITION_ROOT });
+    if (!pluginRoute.ok) {
+      throw new Error(`[${pluginRoute.error.code}] ${pluginRoute.error.message}`);
+    }
     const { loadAllPlugins, setPluginEnabled } = await import('../kernel/plugins.js');
     const [sub, ...rest] = args;
     const all = await loadAllPlugins(ctx.dataDir, ctx.cwd);
@@ -1797,6 +1803,12 @@ export const commands = {
   // /mcp：本地 MCP 客户端管理（两级配置：项目 .mcp.json + 用户 data/mcp.json）
   // 生态对齐 Claude Code：项目级 mcpServers 对象格式；strictMcpConfig 仅信任项目声明
   bus.register('/mcp', async (args) => {
+    // W3 MCP 第 1 步：组合路由决策——modern/required 在 extensions 接线完成前 fail-closed
+    const { decideMcpRoute } = await import('./extensionRouting.js');
+    const mcpRoute = decideMcpRoute({ env: process.env.WXNODUS_COMPOSITION_ROOT });
+    if (!mcpRoute.ok) {
+      throw new Error(`[${mcpRoute.error.code}] ${mcpRoute.error.message}`);
+    }
     const { loadMcpConfig, saveMcpConfig, saveProjectMcpConfig, connectMcp } = await import('../kernel/mcp.js');
     const [sub, ...rest] = args;
     const entries = loadMcpConfig(ctx.dataDir, { cwd: ctx.cwd });
@@ -2887,6 +2899,12 @@ export const commands = {
 
   // /delegate：派发只读子代理（P0-2：--agent <name> 指定自定义 agent 定义）
   bus.register('/delegate', async (args) => {
+    // W3 Subagent 第 1 步：组合路由决策——modern/required 在 live process host 接线完成前 fail-closed
+    const { decideSubagentRoute } = await import('./extensionRouting.js');
+    const subagentRoute = decideSubagentRoute({ env: process.env.WXNODUS_COMPOSITION_ROOT });
+    if (!subagentRoute.ok) {
+      throw new Error(`[${subagentRoute.error.code}] ${subagentRoute.error.message}`);
+    }
     const agentIdx = args.indexOf('--agent');
     let agentName: string | null = null;
     if (agentIdx >= 0) agentName = String(args[agentIdx + 1] ?? '');
