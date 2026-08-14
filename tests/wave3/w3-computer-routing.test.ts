@@ -10,11 +10,11 @@ describe('computer/browser capability routing', () => {
     expect(decision.value.route).toBe('legacy');
   });
 
-  it('modern computer root fails closed with COMPUTER_MODERN_UNAVAILABLE', () => {
+  it('modern computer root routes to the wired pipeline', () => {
     const decision = decideComputerRoute({ operatorFlag: 'modern' });
-    expect(decision.ok).toBe(false);
-    if (decision.ok) throw new Error('unreachable');
-    expect(decision.error.code).toBe('COMPUTER_MODERN_UNAVAILABLE');
+    expect(decision.ok).toBe(true);
+    if (!decision.ok) throw new Error('unreachable');
+    expect(decision.value.route).toBe('modern');
   });
 
   it('modern browser root fails closed with BROWSER_MODERN_UNAVAILABLE', () => {

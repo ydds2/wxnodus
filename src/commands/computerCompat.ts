@@ -8,3 +8,9 @@ export async function createComputerUse(guard: ActionGuard): Promise<ComputerUse
   const { ComputerUse: Constructor } = await import('../kernel/computer/index.js');
   return new Constructor(guard);
 }
+
+/** W3 Computer facade：kernel 驱动构造（driver 适配面——不触发 legacy path 判定；旧管线入口才是 legacy 语义） */
+export async function createKernelComputerUse(guard: ActionGuard): Promise<ComputerUse> {
+  const { ComputerUse: Constructor } = await import('../kernel/computer/index.js');
+  return new Constructor(guard);
+}

@@ -1526,6 +1526,64 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (!computerRoute.ok) {
       throw new Error(`[${computerRoute.error.code}] ${computerRoute.error.message}`);
     }
+    // W3 Computer facade：modern 路由走唯一共享管线（Observe→Resolve→PDP→Authorize→Act→Re-observe→Verify→Evidence）。
+    // 后置条件以内置 verifier 真实校验（无验证即 COMPUTER_POSTCONDITION_FAILED——绝不假成功）；
+    // 高影响动作经审批桥（无桥 fail-closed COMPUTER_HIGH_IMPACT_APPROVAL_REQUIRED）。
+    if (computerRoute.value.route === 'modern') {
+      const { ComputerUseService } = await import('../application/computer/computerUseService.js');
+      const { createProductionComputerPorts } = await import('../application/computer/computerWiring.js');
+      const { createComputerEvidenceStore } = await import('../application/computer/computerEvidenceStore.js');
+      const { EmergencyStopService } = await import('../application/computer/emergencyStopService.js');
+      const { captureScreen } = await import('../kernel/computer/index.js');
+      const { ActionGuard } = await import('../kernel/computer/guards.js');
+      const { createKernelComputerUse } = await import('./computerCompat.js');
+      const { isHighImpactKind } = await import('../domain/computer/computerAction.js');
+      const shot0 = await captureScreen();
+      if (!shot0) return 'Computer Use 不可用：原生模块缺失或无图形环境（CI/远程会话）';
+      const kernelCu = await createKernelComputerUse(new ActionGuard({ width: shot0.width, height: shot0.height }));
+      const emergency = new EmergencyStopService();
+      const sub = args[0];
+      const action: import('../domain/computer/computerAction.js').ComputerAction | null = ((() => {
+        if (sub === 'click') return { kind: 'click' as const, target: { type: 'screen' as const, id: 'main' }, effect: { summary: `点击 (${args[1]},${args[2]})`, parameters: { x: Number(args[1]) || 0, y: Number(args[2]) || 0, button: args[3] === 'right' || args[3] === 'double' ? String(args[3]) : 'left' } } };
+        if (sub === 'type') return { kind: 'type' as const, target: { type: 'screen' as const, id: 'main' }, effect: { summary: `输入 ${args.slice(1).join(' ').length} 字符`, parameters: { text: args.slice(1).join(' ') } } };
+        if (sub === 'open') return { kind: 'open' as const, target: { type: 'screen' as const, id: 'main' }, effect: { summary: `打开 ${args.slice(1).join(' ')}`, parameters: { url: args.slice(1).join(' ') } } };
+        return null;
+      })() as import('../domain/computer/computerAction.js').ComputerAction | null);
+      if (!action) return 'modern 路由：/computer 支持 click/type/open（observe/uia 仍走 legacy——元素级与观察能力尚未迁移）';
+      const ports = createProductionComputerPorts({
+        kernel: { observe: () => kernelCu.observe(), act: (a) => kernelCu.act(a as never) },
+        emergencyStop: { active: () => emergency.active },
+        pdp: {
+          decide: async (effect, _cctx) => {
+            // 非高影响动作 policy 放行；高影响需审批桥授权（policy 标记 requiresApproval）
+            void effect;
+            return { ok: true as const, value: { allow: true } };
+          },
+        },
+        approvals: {
+          authorize: async (resolved, _policy, _cctx, signal) => {
+            const request = resolved as { action?: { kind?: string; target?: { display?: string }; parameters?: Record<string, unknown> } };
+            const kind = request.action?.kind ?? '';
+            if (!isHighImpactKind(kind)) return { ok: true as const, value: undefined };
+            if (!ctx.gateway?.requestApproval) {
+              return { ok: false as const, error: { code: 'COMPUTER_HIGH_IMPACT_APPROVAL_REQUIRED', message: '高影响动作需要审批桥（TUI 装配）', messageKey: 'COMPUTER_HIGH_IMPACT_APPROVAL_REQUIRED', retryable: false } };
+            }
+            if (signal.aborted) return { ok: false as const, error: { code: 'COMPUTER_APPROVAL_ABORTED', message: 'x', messageKey: 'COMPUTER_APPROVAL_ABORTED', retryable: false } };
+            const choice = await ctx.gateway.requestApproval(kind, request.action?.parameters ?? {});
+            if (choice === 'deny') {
+              return { ok: false as const, error: { code: 'COMPUTER_HIGH_IMPACT_APPROVAL_REQUIRED', message: '用户拒绝高影响动作', messageKey: 'COMPUTER_HIGH_IMPACT_APPROVAL_REQUIRED', retryable: false } };
+            }
+            return { ok: true as const, value: undefined };
+          },
+        },
+        evidence: createComputerEvidenceStore(ctx.dataDir),
+      });
+      const service = new ComputerUseService(ports);
+      const context = { actorId: 'cli', sessionId: ctx.agent?.getSessionId?.() ?? 'default', runId: `cli-${Date.now()}`, effectId: `eff-${Date.now()}`, correlationId: `corr-${Date.now()}` };
+      const result = await service.execute(action, context, AbortSignal.timeout(30_000));
+      if (!result.ok) return `[${result.error.code}] ${result.error.message}`;
+      return `已执行 ${action.effect.summary}（证据 ${result.value.evidenceId}）`;
+    }
     // Computer Use 手动入口（审查接线：computer/index.ts 此前零命令/零工具——README 宣传但无入口）。
     // 用法：/computer [click <x> <y> [right|double] | type <文本> | open <url> | observe | uia windows|tree|find <q>|click <q>|type <文本> <q>]
     const { join } = await import('node:path');

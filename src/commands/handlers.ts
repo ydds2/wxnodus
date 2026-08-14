@@ -45,7 +45,11 @@ export interface HandlerCtx {
   /** 命令总线（/plugin reload 重注册插件命令） */
   commandBus?: CommandBus;
   /** UI 网关（动态内容表 requestCredentialForm 等 UI 交互 RPC）——TUI 装配后可用 */
-  gateway?: { requestCredentialForm(fields: Array<{ name: string; label?: string; kind: string }>, prompt?: string): Promise<Record<string, string> | null> } | null;
+  gateway?: {
+    requestCredentialForm(fields: Array<{ name: string; label?: string; kind: string }>, prompt?: string): Promise<Record<string, string> | null>;
+    /** W3 Computer：审批桥（高影响动作授权）——TUI 装配后可用 */
+    requestApproval?(name: string, args: Record<string, unknown>): Promise<'allow' | 'session' | 'deny'>;
+  } | null;
   /** 敏感数据内存保险库（/security 关闭通道时同步清空） */
   secrets?: import('../kernel/secrets.js').SecretVault;
   /** 并行任务系统（/jobs：shell 真进程 / agent 子代理 / 并行双线子任务） */
