@@ -283,9 +283,33 @@ if (pre.mode === 'error') {
     if (baseURL) config.setKey('settings', 'baseURL', baseURL);
     model = modelId;
   };
+  // W3 Session 第 3 步：会话启动工件服务（能力/hook 快照 + sha256 绑定 + 原子持久化）——
+  // /new 等会话创建点调用 ensure；能力清单取自内置 verifier 所需能力并集（真实快照来源）
+  const { createSessionStartService } = await import('../application/sessions/sessionStartService.js');
+  const { SessionStartGenerator } = await import('../application/sessions/sessionStartGenerator.js');
+  const { BUILTIN_VERIFIER_DESCRIPTORS } = await import('../domain/quality/verifier.js');
+  const { hooksFromConfig } = await import('../kernel/hooks.js');
+  const sessionStartService = createSessionStartService({
+    generator: new SessionStartGenerator({
+      locale: () => (locale === 'zh-CN' ? 'zh-CN' : 'en'),
+      model: () => model || settings.model || 'rule-brain', // 无 key 时规则脑兜底——工件 model 字段不得为空（validate 拒绝）
+      dataDir: () => dataDir,
+      hooks: () => {
+        const cfg = hooksFromConfig(settings);
+        return cfg.sessionStart
+          ? [{ id: 'settings.hooks.sessionStart', kind: 'on-session-start' as const, enabled: true }]
+          : [];
+      },
+      capabilities: () => [...new Set(Object.values(BUILTIN_VERIFIER_DESCRIPTORS).flatMap(d => d.requiredCapabilities))].sort(),
+      now: () => new Date().toISOString(),
+    }),
+    fileFor: sid => join(dataDir, 'sessions', sid, 'session-start.json'),
+  });
+
   const makeHandlerCtx = () => ({
     dataDir, cwd, db, mem, config, bus, commandBus,
     agent,
+    sessionStart: sessionStartService,
     getModel: () => model,
     getMode: () => mode,
     setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },

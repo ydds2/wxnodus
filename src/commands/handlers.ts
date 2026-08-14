@@ -52,6 +52,10 @@ export interface HandlerCtx {
   taskRunner?: import('../kernel/taskRunner.js').TaskRunner;
   /** A20：后台终端（/term：node-pty 真实交互会话） */
   term?: import('../kernel/term.js').TermManager;
+  /** W3 Session：会话启动工件服务（/new 等会话创建点调用——只生成一次 + 原子持久化） */
+  sessionStart?: {
+    ensure(sessionId: string): Promise<import('../protocol/results.js').OperationResult<import('../domain/sessions/sessionStart.js').SessionStartDocument>>;
+  };
 }
 
 const lines = (title: string, body: string[]): string => {

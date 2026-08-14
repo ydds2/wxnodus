@@ -281,8 +281,16 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // /new：新建空会话并切换
-  bus.register('/new', () => {
+  bus.register('/new', async () => {
     const newId = `s${Date.now()}n`;
+    // W3 Session 第 3 步：会话启动工件（能力/hook 快照 + sha256 绑定）先落盘——
+    // 生成失败 fail-closed（绝不创建无工件的会话，工件是后续审计/恢复的事实源）
+    if (ctx.sessionStart) {
+      const artifact = await ctx.sessionStart.ensure(newId);
+      if (!artifact.ok) {
+        throw new Error(`[${artifact.error.code}] 会话启动工件生成失败：${artifact.error.message}`);
+      }
+    }
     ctx.db.prepare(`INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`)
       .run(newId, '', Date.now(), Date.now());
     try { ctx.agent?.setSessionId(newId); } catch { /* 忽略 */ }
