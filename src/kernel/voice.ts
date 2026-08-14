@@ -9,12 +9,16 @@
 // A20：vad 模式——ffmpeg 输出裸 PCM 到管道，Node 侧自研能量检测（见 vad.ts），
 //      静音达阈值自动停止（免提闭环：说话→静音→自动转写→提交）。
 import { spawnSync, spawn } from 'node:child_process';
-import { mkdirSync, existsSync, readdirSync, readFileSync, openSync, writeSync, closeSync } from 'node:fs';
+import { mkdirSync, existsSync, readdirSync, openSync, writeSync, closeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
 import { DEFAULT_VAD, VadTracker, pcmToInt16, type VadConfig } from './vad.js';
+// W3 Voice facade：转写执行/状态机/产物落盘委托 VoiceSessionService（唯一权威）——
+// kernel 仅保留采集/设备枚举/TTS 等平台适配面（compatibility adapter）。
+import { VoiceSessionService, type VoiceSessionDeps } from '../application/voice/voiceSessionService.js';
+import type { TranscriptRef } from '../domain/voice/voiceSession.js';
 
 export interface VoiceConfig {
   whisperBin: string | null;
@@ -271,6 +275,82 @@ export function startRecording(
   }
 }
 
+/**
+ * W3 Voice facade：生产依赖组装——supervisor（异步 whisper spawn + 进程树终止）、
+ * temp（录音 wav 清理）、transcriptStore（转写产物落盘，opaque ref 指向磁盘文件）。
+ */
+function voiceSessionDepsFor(dataDir: string, settings: Record<string, any> | undefined, env: NodeJS.ProcessEnv): VoiceSessionDeps {
+  const cfg = resolveVoiceConfig(settings, dataDir, env);
+  const transcriptsDir = join(dataDir, 'voice', 'transcripts');
+  return {
+    sttReady: () => checkVoice(settings, dataDir).sttAvailable,
+    supervisor: {
+      spawn: async (_exe, args, options, signal) => {
+        const bin = findWhisperBin(cfg);
+        if (!bin) {
+          return { processId: -1, exitCode: 1, signal: null, stdout: '', stderr: 'whisper-cli 未找到', timedOut: false, aborted: false };
+        }
+        const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        let out = '';
+        let err = '';
+        child.stdout!.on('data', (c: Buffer) => { out += c; });
+        child.stderr!.on('data', (c: Buffer) => { err += c; });
+        return new Promise(resolve => {
+          const timer = setTimeout(() => {
+            stopRecordingProcess(child);
+            resolve({ processId: child.pid ?? -1, exitCode: null, signal: null, stdout: out, stderr: err, timedOut: true, aborted: false });
+          }, options.timeoutMs);
+          const onAbort = () => {
+            clearTimeout(timer);
+            stopRecordingProcess(child);
+            resolve({ processId: child.pid ?? -1, exitCode: null, signal: 'ABORT', stdout: out, stderr: err, timedOut: false, aborted: true });
+          };
+          signal.addEventListener('abort', onAbort, { once: true });
+          child.on('close', code => {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', onAbort);
+            resolve({ processId: child.pid ?? -1, exitCode: code, signal: null, stdout: out, stderr: err, timedOut: false, aborted: false });
+          });
+        });
+      },
+      terminateTree: async processId => {
+        if (processId > 0) stopRecordingProcess({ pid: processId } as ReturnType<typeof spawn>);
+        return { ok: true as const, value: undefined };
+      },
+    },
+    temp: {
+      remove: async path => {
+        try {
+          const { rmSync } = await import('node:fs');
+          rmSync(path, { force: true });
+        } catch { /* 清理失败静默 */ }
+        return { ok: true as const, value: undefined };
+      },
+    },
+    transcriptStore: {
+      save: async (audioId, text) => {
+        try {
+          mkdirSync(transcriptsDir, { recursive: true });
+          const { writeFileSync } = await import('node:fs');
+          writeFileSync(join(transcriptsDir, audioId + '.txt'), text, 'utf8');
+          return { ok: true as const, value: undefined };
+        } catch (cause) {
+          return { ok: false as const, error: { code: 'TRANSCRIPT_SAVE_FAILED', message: String(cause), messageKey: 'TRANSCRIPT_SAVE_FAILED', retryable: false } };
+        }
+      },
+      load: async (ref: TranscriptRef) => {
+        try {
+          const id = ref.ref.slice('transcript://'.length);
+          const { readFileSync } = await import('node:fs');
+          return { ok: true as const, value: readFileSync(join(transcriptsDir, id + '.txt'), 'utf8') };
+        } catch {
+          return { ok: false as const, error: { code: 'TRANSCRIPT_NOT_FOUND', message: 'transcript 不存在', messageKey: 'TRANSCRIPT_NOT_FOUND', retryable: false } };
+        }
+      },
+    },
+  };
+}
+
 /** 结束 ffmpeg 采集进程（Windows taskkill / 其余 SIGTERM）。 */
 function stopRecordingProcess(proc: ReturnType<typeof spawn>): void {
   try {
@@ -282,7 +362,10 @@ function stopRecordingProcess(proc: ReturnType<typeof spawn>): void {
   } catch { /* 忽略 */ }
 }
 
-/** 停止采集并本地转写（whisper.cpp）；返回文本或错误 */
+/**
+ * 停止采集并本地转写（whisper.cpp）——W3 Voice facade：执行委托 VoiceSessionService
+ * （状态机强制 + 产物落盘 + opaque ref 唯一出口），kernel 读回文本仅供 TUI 兼容面。
+ */
 export async function stopAndTranscribe(rec: RecordingSession, dataDir: string, settings: Record<string, any> | undefined, env: NodeJS.ProcessEnv = process.env): Promise<{ ok: true; text: string; ms: number } | { ok: false; error: string }> {
   const t0 = Date.now();
   try {
@@ -296,29 +379,23 @@ export async function stopAndTranscribe(rec: RecordingSession, dataDir: string, 
     }
     if (!existsSync(rec.wavPath)) return { ok: false, error: '录音文件未生成（麦克风无输入？）' };
     const cfg = resolveVoiceConfig(settings, dataDir, env);
-    const bin = findWhisperBin(cfg);
-    if (!bin) return { ok: false, error: '未找到 whisper-cli（whisper.cpp）——安装后设置 WXNODUS_VOICE_BIN' };
+    if (!findWhisperBin(cfg)) return { ok: false, error: '未找到 whisper-cli（whisper.cpp）——安装后设置 WXNODUS_VOICE_BIN' };
     if (!cfg.modelPath) return { ok: false, error: '缺少 whisper 模型——放置 ggml-*.bin 到 data/voice/models/' };
-    const outBase = rec.wavPath.replace(/\.wav$/, '');
-    const r = spawnSync(bin, ['-m', cfg.modelPath, '-f', rec.wavPath, '-otxt', '-of', outBase, '-np'], {
-      stdio: 'pipe', timeout: 120000, encoding: 'utf8',
-    });
-    if (r.status !== 0) {
-      return { ok: false, error: `转写失败（whisper 退出码 ${r.status ?? '?'}）：${String(r.stderr ?? '').slice(0, 120)}` };
-    }
-    // whisper.cpp 输出 <outBase>.txt
-    const textFile = `${outBase}.txt`;
-    const text = existsSync(textFile) ? readFileText(textFile) : '';
-    return { ok: true, text: text.trim(), ms: Date.now() - t0 };
+    // 权威委托：VoiceSessionService 执行转写（状态机 + 落盘 + opaque ref）
+    const service = new VoiceSessionService(voiceSessionDepsFor(dataDir, settings, env));
+    const started = await service.start('push-to-talk', AbortSignal.timeout(5_000));
+    if (!started.ok) return { ok: false, error: started.error.code };
+    const detected = service.speechDetected();
+    if (!detected.ok) return { ok: false, error: detected.error.code };
+    const audioId = randomUUID();
+    const transcribed = await service.transcribe({ id: audioId, path: rec.wavPath, retention: 'session' }, AbortSignal.timeout(120_000));
+    if (!transcribed.ok) return { ok: false, error: transcribed.error.code };
+    const text = await service.readTranscript(transcribed.value.transcriptRef);
+    if (!text.ok) return { ok: false, error: text.error.code };
+    return { ok: true, text: text.value.trim(), ms: Date.now() - t0 };
   } catch (e: any) {
     return { ok: false, error: `转写异常：${String(e?.message ?? e).slice(0, 120)}` };
   }
-}
-
-function readFileText(p: string): string {
-  try {
-    return readFileSync(p, 'utf8');
-  } catch { return ''; }
 }
 
 // ── TTS（Windows SAPI 本地朗读，零依赖；非 Windows 不可用）──

@@ -17,8 +17,8 @@ export interface VoiceRouteDecision {
   reason: string;
 }
 
-// kernel/TUI voice 是否已降为 facade（VoiceSessionService 全入口接管）——Wave 3 Voice 完成前为 false
-const VOICE_FACADE_DONE = false;
+// kernel/TUI voice 已降为 facade：转写执行/状态机/产物落盘全部委托 VoiceSessionService（kernel 仅保留采集/设备/TTS 适配面）
+const VOICE_FACADE_DONE = true;
 
 export function decideVoiceRoute(input: {
   operatorFlag?: string;
@@ -39,7 +39,7 @@ export function decideVoiceRoute(input: {
     return err(
       gatewayError(
         'VOICE_MODERN_UNAVAILABLE',
-        'voice 能力的 modern 路由尚未完成生产接线（kernel/TUI voice 尚未降为 VoiceSessionService facade）',
+        'voice 能力的 modern 路由不可用',
         'voice.modern.unavailable',
       ),
     );

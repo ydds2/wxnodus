@@ -18,18 +18,18 @@ describe('voice capability routing', () => {
     expect(decision.value.route).toBe('legacy');
   });
 
-  it('modern root fails closed while the voice facade wiring is incomplete', () => {
+  it('modern root routes to the facade-backed modern path (kernel voice is a VoiceSessionService adapter)', () => {
     const decision = decideVoiceRoute({ operatorFlag: 'modern' });
-    expect(decision.ok).toBe(false);
-    if (decision.ok) throw new Error('unreachable');
-    expect(decision.error.code).toBe('VOICE_MODERN_UNAVAILABLE');
+    expect(decision.ok).toBe(true);
+    if (!decision.ok) throw new Error('unreachable');
+    expect(decision.value.route).toBe('modern');
   });
 
-  it('env modern is equally denied (same fail-closed path)', () => {
+  it('env modern routes identically', () => {
     const decision = decideVoiceRoute({ env: 'modern' });
-    expect(decision.ok).toBe(false);
-    if (decision.ok) throw new Error('unreachable');
-    expect(decision.error.code).toBe('VOICE_MODERN_UNAVAILABLE');
+    expect(decision.ok).toBe(true);
+    if (!decision.ok) throw new Error('unreachable');
+    expect(decision.value.route).toBe('modern');
   });
 
   it('propagates invalid composition roots instead of guessing', () => {
