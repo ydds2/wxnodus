@@ -217,3 +217,10 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - Tests 4/4: full pipeline stage order with evidence read-back, fail-closed without pdp, tampered-evidence rejection, high-impact kind recognition.
 - Full suite: 214 files / 1720 passed / 10 skipped / 0 failed (two flaky timeouts under parallel load — taskRunner log-flush and heapdump — pass 20/20 in isolation, unrelated to this change).
 - Remaining: `/computer` handler modern branch assembly (approval bridge type + request mapping) then COMPUTER_SERVICE_WIRED flip; browser wiring.
+
+
+## Wave 3 progress (Computer facade done) — 2026-08-14
+
+- `/computer` modern branch assembled for real: `ComputerUseService` shared pipeline with kernel driver, high-impact approval bridge via `ctx.gateway.requestApproval` (no bridge → `COMPUTER_HIGH_IMPACT_APPROVAL_REQUIRED` fail-closed), on-disk evidence via `createComputerEvidenceStore`. Unverifiable actions return `COMPUTER_POSTCONDITION_FAILED` honestly (never fake success). Kernel construction routes through `createKernelComputerUse` compat so the legacy-import gate stays green. `COMPUTER_SERVICE_WIRED` flipped true.
+- Full suite: 214 files / 1720 passed / 10 skipped / 0 failed.
+- Remaining computer: browser wiring (Playwright via service), observe/uia modern migration.
