@@ -563,7 +563,8 @@ if (pre.mode === 'error') {
       const frontend = gateway ? createWireFrontend(gateway) : null;
       wireReady = true; // gateway + 前端 + 事件订阅全部装配完成——此时才接受 RPC 帧
       const result = await agent.run(text);
-      const wireStatus = result.interrupted ? 'cancelled' as const : result.ok ? 'succeeded' as const : 'failed' as const;
+      // KF-023/024：agent 完成态细分优先于 ok 布尔（incomplete → exit 3，走共享 completionTransport）
+      const wireStatus = result.interrupted ? 'cancelled' as const : result.status ?? (result.ok ? 'succeeded' as const : 'failed' as const);
       const completion = frontend?.complete(wireStatus, { wireFinal: wireStatus });
       console.log(JSON.stringify({ type: 'agent.result', ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted,
         wireFinal: completion && !completion.ok ? 'FRONTEND_COMPLETION_MISMATCH' : wireStatus }));

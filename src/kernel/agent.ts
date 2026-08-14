@@ -14,6 +14,7 @@ import { resolveDataDir } from './paths.js';
 import { estimateMessagesTokens, compactMessages } from './memory.js';
 import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx } from './tools.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
+import { isCompletionClaim, GOAL_DONE_MARK } from './completionClaim.js';
 import type { HookRunner } from './hooks.js';
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import { loadProjectRules } from './projectRules.js';
@@ -67,6 +68,8 @@ export interface AgentResult {
   text: string;
   turns: number;
   interrupted: boolean;
+  /** 完成态细分（KF-023/024）：零验证副作用的完成声明 → 'incomplete'（exit 3）；普通失败/成功不设 */
+  status?: 'succeeded' | 'failed' | 'incomplete' | 'cancelled';
 }
 
 const MAX_TURNS = 16;
@@ -442,7 +445,8 @@ export function createAgent(opts: AgentOptions) {
     getSettings: () => (opts.config?.settings as Record<string, any> | undefined) ?? undefined,
   };
 
-  const onApproval = opts.onApproval ?? (async () => true);
+  // KF-010：默认审批 fail-closed——未装配 onApproval 时一律拒绝（绝不静默放行副作用）
+  const onApproval = opts.onApproval ?? (async () => false);
 
   // P0-2 审批规则文件：启动加载 data/permissions.json，工具执行前应用（deny>allow>ask）
   const permRules = loadPermRules(opts.dataDir ?? resolveDataDir(process.cwd()));
@@ -455,7 +459,12 @@ export function createAgent(opts: AgentOptions) {
     return true;
   };
 
+  // KF-023/024：单次工具调用的确定性结局（loop 据此累计 verifiedEffects——成功侧记 verified，
+  // 拒绝/参数错/未知工具记 other，异常记 failed）；字符串启发式（「失败」/「异常」）仍用于模型回填
+  let lastToolOutcome: 'verified' | 'failed' | 'other' = 'other';
+
   async function executeTool(name: string, args: Record<string, any>): Promise<string> {
+    lastToolOutcome = 'other';
     // C3 修复：工具调用稳定 id（start/complete 同 id，UI 工具卡可正确闭合）
     const toolId = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     // A25：事件带 session_id 标记（子代理会话为 <主>:sub 后缀——gateway 据此
@@ -616,8 +625,10 @@ export function createAgent(opts: AgentOptions) {
       if ((name === 'fs_write' || name === 'fs_edit') && !out.startsWith('工具被规则拒绝')) {
         try { await maybeAutoGitCommit(name, args, ctxCwd); } catch { /* 静默 */ }
       }
+      lastToolOutcome = 'verified';
       return out;
     } catch (e: any) {
+      lastToolOutcome = 'failed';
       bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId, session_id: sessionId });
       auditTool('tool.executed', { tool: name, ok: false, ms: Date.now() - t0, error: String(e?.message ?? e).slice(0, 120) });
       return `工具执行异常：${e?.message?.slice(0, 300) ?? e}`;
@@ -647,7 +658,11 @@ export function createAgent(opts: AgentOptions) {
     } catch { /* 提交失败（无改动/冲突）静默 */ }
   }
 
-  async function loop(sessionId: string, prompt: string, opts2: { subagent?: boolean; images?: Array<{ dataUrl: string; mime: string }> } = {}): Promise<AgentResult> {
+  /** KF-023/024：单次 run 的已验证工具副作用计数（跨 goal 轮次累计） */
+  interface RunState { verifiedEffects: number }
+
+  async function loop(sessionId: string, prompt: string, opts2: { subagent?: boolean; images?: Array<{ dataUrl: string; mime: string }>; runState?: RunState } = {}): Promise<AgentResult> {
+    const rs = opts2.runState ?? { verifiedEffects: 0 };
     // 架构 P3：会话事件流（可重放/审计）——用户消息入流
     try {
       const { appendSessionEvent } = await import('./sessionStream.js');
@@ -772,6 +787,9 @@ export function createAgent(opts: AgentOptions) {
     const recentToolSigs: string[] = [];
     let unknownRounds = 0;
     let finalText = '';
+    // KF-023/024：回合终态在函数作用域声明（finally 与尾部共用同一 ok）
+    let ok = false;
+    let status: AgentResult['status'] | undefined;
     bus.emit('agent.start', { sessionId, prompt });
     hooks?.userPromptSubmit?.(prompt, sessionId);
     // 审查修复：turns===0 时首轮尚未开始——此前 ===1 恒假（turns 在 while 内才 ++），
@@ -904,6 +922,8 @@ export function createAgent(opts: AgentOptions) {
           }
           unknownRounds = 0;
           const out = await executeTool(c.name, c.args);
+          // KF-023/024：确定性结局累计——只有真实执行成功（postcondition 通过）的工具计入验证副作用
+          if (lastToolOutcome === 'verified') rs.verifiedEffects++;
           if (out.includes('失败') || out.includes('异常')) anyFail = true;
           executed.push({ id: c.id, name: c.name, args: c.args, out, reasoning: c.reasoning, reasoningField: c.reasoningField });
           // 架构 P4：工具消息写 parts 分段（错误标记/截断标记独立 part——消息粒度可审计）
@@ -951,14 +971,19 @@ export function createAgent(opts: AgentOptions) {
         opts.mem.setTitleIfEmpty(sessionId, title);
       } catch { /* 标题写入失败不阻断 */ }
     }
+    // KF-023/024：ok 绝不从文本长度推导——完成声明（「完成了」/[GOAL_DONE]/done）且零验证副作用
+    // → incomplete（诚实：普通问答/叙事文本不受影响；有验证副作用的完成声明正常成功）
+    const claimedUnverified = finalText.length > 0 && isCompletionClaim(finalText) && rs.verifiedEffects === 0;
+    ok = finalText.length > 0 && !claimedUnverified;
+    status = claimedUnverified ? 'incomplete' : undefined;
     // C8 修复：错误路径也发 agent.end（ok:false）——事件契约对齐参考（错误也完成回合）
-    bus.emit('agent.end', { ok: finalText.length > 0, turns });
+    bus.emit('agent.end', { ok, turns });
     // 架构 P3：回合结束入事件流
     try {
       const { appendSessionEvent } = await import('./sessionStream.js');
-      appendSessionEvent(opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, { type: 'end', ok: finalText.length > 0, turns, ts: Date.now() });
+      appendSessionEvent(opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, { type: 'end', ok, turns, ts: Date.now() });
     } catch { /* 静默 */ }
-    hooks?.sessionEnd?.({ ok: finalText.length > 0, turns });
+    hooks?.sessionEnd?.({ ok, turns });
     // P2-全方面：自动 checkpoint（Claude Code 每 prompt 快照对齐）——回合结束自动快照，
     // 保留最近 10 个（saveCheckpoint 内部循环清理）；/rewind 可回滚任意自动快照
     if (!opts2.subagent) {
@@ -968,13 +993,13 @@ export function createAgent(opts: AgentOptions) {
         saveCheckpoint(opts.db, sessionId, { kind: 'auto', messages: msgsSnap, ts: Date.now() });
       } catch { /* 快照失败不阻断（临时目录等） */ }
     }
-    return { ok: finalText.length > 0, text: finalText, turns, interrupted: st.interrupted };
+    return { ok, text: finalText, turns, interrupted: st.interrupted, ...(status ? { status } : {}) };
     } finally {
       if (turn === st) turn = null; // C1：当前回合结束，释放 turn 引用
       // Stop hook：无论正常结束/中断/提前 return 都触发（不改 agent.end 总线语义）
-      hooks?.stop?.({ ok: finalText.length > 0, turns });
+      hooks?.stop?.({ ok, turns });
       if (opts2.subagent) {
-        bus.emit('agent.subagent', { goal: prompt, phase: 'complete', ok: finalText.length > 0, turns, session_id: sessionId, subagent_id: sessionId });
+        bus.emit('agent.subagent', { goal: prompt, phase: 'complete', ok, turns, session_id: sessionId, subagent_id: sessionId });
       }
     }
   }
@@ -983,19 +1008,20 @@ export function createAgent(opts: AgentOptions) {
   // 模型自主规划/执行/自判完成（输出 [GOAL_DONE] 结束），直到完成或轮次上限；
   // 每轮 loop 独立回合（历史经 working 窗口延续上下文）
   const MAX_GOAL_ROUNDS = 10;
-  const GOAL_DONE_MARK = '[GOAL_DONE]';
   async function runWithGoalLoop(prompt: string, images?: Array<{ dataUrl: string; mime: string }>): Promise<AgentResult> {
     if (mode !== 'goal') return loop(sessionId, prompt, { images });
+    // KF-023：verifiedEffects 跨 goal 轮次累计——[GOAL_DONE] 声明须有 ≥1 个真实验证副作用才可 ok
+    const rs = { verifiedEffects: 0 };
     const goalPrompt = `${prompt}\n\n（goal 模式：自主规划并持续执行直到目标全部完成。全部完成时回复末尾输出 ${GOAL_DONE_MARK}，未完成则继续执行。每轮都可以调用工具。）`;
     // A24：goal 进度实时上报（UI 后台面板「目标循环」区 + 状态行）
     bus.emit('agent.goal', { round: 1, maxRounds: MAX_GOAL_ROUNDS, done: false, text: prompt.slice(0, 80) });
-    let result = await loop(sessionId, goalPrompt, { images });
+    let result = await loop(sessionId, goalPrompt, { images, runState: rs });
     let rounds = 1;
     while (rounds < MAX_GOAL_ROUNDS && !result.interrupted && !result.text.includes(GOAL_DONE_MARK)) {
       rounds++;
       bus.emit('agent.stage', { stage: `goal 循环第 ${rounds}/${MAX_GOAL_ROUNDS} 轮…` });
       bus.emit('agent.goal', { round: rounds, maxRounds: MAX_GOAL_ROUNDS, done: false, text: result.text.slice(0, 80) });
-      result = await loop(sessionId, `（goal 模式第 ${rounds} 轮）继续执行直到目标全部完成，完成后输出 ${GOAL_DONE_MARK}。以上文历史为当前进度。`);
+      result = await loop(sessionId, `（goal 模式第 ${rounds} 轮）继续执行直到目标全部完成，完成后输出 ${GOAL_DONE_MARK}。以上文历史为当前进度。`, { runState: rs });
     }
     const done = result.text.includes(GOAL_DONE_MARK);
     bus.emit('agent.goal', { round: rounds, maxRounds: MAX_GOAL_ROUNDS, done, text: result.text.slice(0, 80) });

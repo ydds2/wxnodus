@@ -188,6 +188,8 @@ describe('子代理派发', () => {
     const agent = createAgent({
       db, bus, mem, sessionId: 't-delegate',
       config: { settings: { apiKeyEnc: null as any } } as any,
+      // KF-010 修复后默认审批 fail-closed——本测试意图为「批准后执行」，显式声明放行
+      onApproval: async () => true,
       callModel: async (req: any) => {
         const last = req.messages[req.messages.length - 1]!.content;
         if (last.includes('主任务')) return { type: 'tool_call', name: 'delegate', args: { goal: '子任务：计算答案' } };
@@ -483,7 +485,7 @@ describe('自动压缩与 DB 联动', () => {
       db, bus, mem, sessionId: 't-autocmp',
       config: { settings: { apiKeyEnc: null as any } } as any,
       maxContextTokens: 600, // 小预算：>510 token 即触发压缩
-      callModel: async () => ({ type: 'text', content: '完成' }),
+      callModel: async () => ({ type: 'text', content: '这是压缩后的回复' }),
     });
     // 预填充大量历史（触发压缩）
     const longText = '这是一段用于撑大上下文的长文本内容。'.repeat(40); // ~400+ token
@@ -604,7 +606,9 @@ describe('AI 审批预审（autoReview）', () => {
   it('预审 deny → 拒绝执行', async () => {
     const { agent, approvals } = makeReviewAgent('deny');
     const r = await agent.run('写入文件');
-    expect(r.ok).toBe(true); // 回合仍完成（工具被拒不中断）
+    // KF-024 诚实语义：唯一动作被拒 + 完成声明「完成」→ 零验证副作用 → incomplete（绝不自述成功）
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe('incomplete');
     expect(approvals()).toBe(0);
   });
   it('预审 ask → 回落到人工弹窗', async () => {
@@ -690,7 +694,7 @@ describe('会话 token 预算', () => {
     const agent = createAgent({
       db, bus, mem, sessionId: 't-budget-1',
       config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', budgetTokens: 500 } } as any,
-      callModel: async () => ({ type: 'text', content: '完成' }) as any,
+      callModel: async () => ({ type: 'text', content: '这是回复' }) as any,
     } as any);
     try {
       const r = await agent.run('你好');
@@ -708,7 +712,7 @@ describe('会话 token 预算', () => {
     const agent = createAgent({
       db, bus, mem, sessionId: 't-budget-2',
       config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
-      callModel: async () => ({ type: 'text', content: '完成' }) as any,
+      callModel: async () => ({ type: 'text', content: '这是回复' }) as any,
     } as any);
     try {
       await agent.run('你好');
@@ -902,7 +906,9 @@ describe('wx_cmd AI 自主调用通道（分级裁决）', () => {
       onApproval: async () => false,
     } as any);
     const r2 = await agent2.run('压缩上下文');
-    expect(r2.ok).toBe(true);
+    // KF-024 诚实语义：命令被拒（零验证副作用）+ 完成声明「完成」→ incomplete；拒绝结果仍真实回填
+    expect(r2.ok).toBe(false);
+    expect(r2.status).toBe('incomplete');
     expect(toolMsg).toContain('拒绝'); // 拒绝结果真实回填给模型
     expect(executed2).toEqual([]);     // 命令未执行
   });
@@ -1018,7 +1024,10 @@ describe('A24 goal 模式进度事件（agent.goal）', () => {
     });
     agent.setMode('goal');
     const r = await agent.run('目标');
-    expect(r.ok).toBe(true);
+    // KF-023 诚实语义：零验证副作用 + [GOAL_DONE] → incomplete（自述完成绝不伪造 succeeded）；
+    // 本测试焦点仍是 agent.goal 事件契约（开场 + done 态）
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe('incomplete');
     // 开场（round 1 进行中）+ 结束（done=true）至少两条
     expect(goalEvents.length).toBeGreaterThanOrEqual(2);
     expect(goalEvents[0]).toMatchObject({ round: 1, done: false, maxRounds: 10 });
