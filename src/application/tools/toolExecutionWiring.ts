@@ -21,6 +21,7 @@ import { provisionSecurityControlPlane } from '../../infrastructure/sqlite/secur
 import { SqliteAuthorizationUnitOfWork } from '../../infrastructure/sqlite/authorizationUnitOfWork.js';
 import { SqlitePolicyRepository } from '../../infrastructure/sqlite/policyRepository.js';
 import { executeToolId, instantiateEffectResource, verifyToolPostcondition } from './toolExecutors.js';
+import { checkRedlineViolation } from './redlineGate.js';
 import { createToolEvidenceStore } from './toolEvidenceStore.js';
 import type { AgentToolSurface } from './agentToolSurface.js';
 
@@ -127,6 +128,11 @@ export function createProductionToolExecution(options: ToolExecutionWiringOption
       return ok({ args, argsHash, effect, toolId: tool.id });
     },
     decide: async input => {
+      // W8-01：硬红线管线闸——先于策略独立复检（任何模式/策略/审批不可绕过；命中即拒，零副作用）
+      const redline = checkRedlineViolation(input.args);
+      if (redline.id) {
+        return err(gatewayError('HARD_REDLINE_DENIED', `命中硬红线：${redline.id}（任何模式不可绕过）`, 'redline.denied'));
+      }
       const policy = policies.loadActive();
       if (!policy.ok) return err(gatewayError('POLICY_UNAVAILABLE', 'policy 快照不可用', 'policy.unavailable'));
       const verdict = decideEffect(policy.value.document, input.effect.kind);

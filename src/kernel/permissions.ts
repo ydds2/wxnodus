@@ -15,7 +15,7 @@ import type { NormativeRedlineCategory, PolicyMatcher } from '../policy/schema.j
 export type Mode = 'smart' | 'auto' | 'manual' | 'plan' | 'yolo' | 'goal';
 export type Verdict = 'approve' | 'reject' | 'confirm' | 'plan';
 
-export interface Redline { pattern: RegExp; desc: string }
+export interface Redline { id: string; pattern: RegExp; desc: string }
 
 /** 规范性规则描述符：稳定 id/version/category——Policy Manifest 与运行时 HARD_REDLINES 的单一事实源 */
 export interface PolicyRuleSource {
@@ -73,7 +73,7 @@ const matcherToRegex = (matcher: PolicyMatcher): RegExp =>
 // 硬红线清单（任何模式不可绕过——安全底线）：由规范性规则目录派生（单一事实源，杜绝双写漂移）
 export const HARD_REDLINES: Redline[] = POLICY_RULE_SOURCES
   .filter(rule => rule.kind === 'hard_redline')
-  .map(rule => ({ pattern: matcherToRegex(rule.matcher), desc: rule.descriptionKey }));
+  .map(rule => ({ id: rule.id, pattern: matcherToRegex(rule.matcher), desc: rule.descriptionKey }));
 
 /** 规范性规则目录（Policy Manifest 生成输入） */
 export function policyRuleSources(): readonly PolicyRuleSource[] {

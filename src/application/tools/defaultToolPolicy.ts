@@ -2,7 +2,8 @@
 // allow：memory.read / filesystem.read（工作区隔离读）；require_approval：filesystem.write /
 // network.request / process.spawn / memory.write / config.write / extension.manage / ui.external
 // （高危副作用走人工审批桥）；其余 effect kind 无规则 → deny。
-// 8 条硬红线在 PDP 上层合规层强制（审批/存证/审计），不经 effect kind 表达——hardRedlineKinds 留空。
+// W8-01：硬红线已下沉管线——decide 阶段先于本策略经 redlineGate 独立复检（args 确定性匹配），
+// 不经 effect kind 表达——hardRedlineKinds 留空（kind 级红线槽位保留给未来按 kind 拒绝的红线）。
 import type { PolicyDocument } from '../../domain/security/pdp.js';
 
 export const DEFAULT_TOOL_POLICY: PolicyDocument = {
