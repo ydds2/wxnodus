@@ -298,3 +298,15 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - `TUI_ADAPTER_DONE` 翻转 true——modern TUI 路由 live；`w3-tui-routing.test.ts` 更新（modern 路由；shadow/legacy 不变）。
 - 全量：219 文件 / 1744 通过 / 10 跳过 / 0 失败；build/typecheck×2/discovery 干净；dist 进程 smoke（--version / -p 确定性计算）通过。
 - 剩余 W3：Memory 生产切换（数据模型决策阻塞）+ 生产 ToolExecutionPipeline（W1-08 11 ports，plugin broker 前置）。
+
+## Wave 4 完成（DX-01/03/04/05 + W1-08 UoW 补全）— 2026-08-13
+
+- DX-01 data-dir（`5783172`）：`--data-dir` 唯一 parser（优先级 CLI > env > cwd；CLI 胜出即写回 `WXNODUS_DATA_DIR` 全链路传播）；help/version 零副作用（不建目录不挂起）；`tests/wave4/w4-data-dir.test.ts` 6/6。
+- DX-03 npm 边界（`0eaad1f`）：根包正向 `files` allowlist（仅 dist/ink dist/入口/README/LICENSE）+ `@wxnodus/ink` bundledDependencies（ink 自身 files 收紧，src/test 绝不入包）+ prepack 构建链；真实 `npm pack` 清单逐项校验。诚实记录：clean-install 运行时步骤（prebuild 下载）网络 blocked，未把清单当运行证据。
+- DX-05 English/first-run（`40f9fd8`）：`cli.usage` 双语目录；`--lang en --help` 纯英文（en 目录无 CJK fallback）；help/version 携带解析后 locale；`tests/wave4/w4-english-first-run.test.ts` 4/4。
+- DX-04 installer lifecycle（`65c221e`）：冻结 candidate 校验器（ID/commit/tgz sha256/cell/stagedTree/entry 在树内）+ 依赖闭包（collect/scanDistImport/verify fail-closed `INSTALLER_DEPENDENCY_CLOSURE_INCOMPLETE`）；`scripts/package-installer.ts --candidate` 消费冻结 candidate 不再猜 `dist/cli`；install.ps1 lifecycle（全量 sha256 前置校验 → staging → postcondition → atomic switch backup/rollback → `.wxnodus-journal.json` ownership journal → `-Uninstall` 只删 journal 内文件）；确定性 zip 读回自校验。
+- 转义回归修复：JS 模板字面量 escape 层级错误曾使生成脚本 `-replace '/',''` 丢失反斜杠（真实 PowerShell exit 1）；修正为源码 `'\'`/`'\\'` → 脚本 `'\'`/`'\'`，`$env:LOCALAPPDATA\Programs` 同步修复。
+- 契约：`tests/installer-packager.contract.test.ts` 真实 PowerShell 安装 exit 0 + 篡改 → `INSTALLER_SHA256_MISMATCH` exit 1；`w4-installer-lifecycle` 12/12；`p0-installer-path-security` 20/20。
+- W1-08 UoW 补全（`28beefa`）：`activePolicySnapshotId()`（authorize 上下文以仓储为唯一可信源）+ `release()` 退款归零即清键（不留 `{"externalWrites":0}` 预算残渣）。
+- 全量：227 文件 / 1796 通过 / 10 跳过 / 0 失败；known-failures 31/31；typecheck×2 + check:test-discovery 干净。
+- 剩余：Wave 5（Market 信任根 + HAR 预存储脱敏）、Wave 6（evidence 索引 / Gate E blocked 保持 / Gate H/I / release:finalize）；agent 主路径 executeTool 切生产 pipeline（遗留接线）。
