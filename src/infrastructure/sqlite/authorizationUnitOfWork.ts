@@ -13,12 +13,12 @@ class Rollback extends Error { constructor(readonly result: { ok: false; error: 
 const value = <T>(result: OperationResult<T>): T => { if (!result.ok) throw new Rollback(result); return result.value; };
 
 export function installSecuritySchema(db: Database.Database): void { db.exec(`
-  CREATE TABLE policy_snapshots(id TEXT PRIMARY KEY,document_json TEXT NOT NULL,checksum TEXT NOT NULL,active INTEGER NOT NULL);
-  CREATE UNIQUE INDEX policy_one_active ON policy_snapshots(active) WHERE active=1;
-  CREATE TABLE budget_snapshots(id TEXT PRIMARY KEY,limits_json TEXT NOT NULL,used_json TEXT NOT NULL,active INTEGER NOT NULL);
-  CREATE UNIQUE INDEX budget_one_active ON budget_snapshots(active) WHERE active=1;
-  CREATE TABLE approval_grants(id TEXT PRIMARY KEY,context_hash TEXT NOT NULL UNIQUE,context_json TEXT NOT NULL,effect_hash TEXT NOT NULL,nonce TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,status TEXT NOT NULL);
-  CREATE TABLE effect_journal(sequence INTEGER PRIMARY KEY AUTOINCREMENT,effect_id TEXT NOT NULL,state TEXT NOT NULL,payload_json TEXT NOT NULL,prev_hash TEXT NOT NULL,entry_hash TEXT NOT NULL,created_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS policy_snapshots(id TEXT PRIMARY KEY,document_json TEXT NOT NULL,checksum TEXT NOT NULL,active INTEGER NOT NULL);
+  CREATE UNIQUE INDEX IF NOT EXISTS policy_one_active ON policy_snapshots(active) WHERE active=1;
+  CREATE TABLE IF NOT EXISTS budget_snapshots(id TEXT PRIMARY KEY,limits_json TEXT NOT NULL,used_json TEXT NOT NULL,active INTEGER NOT NULL);
+  CREATE UNIQUE INDEX IF NOT EXISTS budget_one_active ON budget_snapshots(active) WHERE active=1;
+  CREATE TABLE IF NOT EXISTS approval_grants(id TEXT PRIMARY KEY,context_hash TEXT NOT NULL UNIQUE,context_json TEXT NOT NULL,effect_hash TEXT NOT NULL,nonce TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,status TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS effect_journal(sequence INTEGER PRIMARY KEY AUTOINCREMENT,effect_id TEXT NOT NULL,state TEXT NOT NULL,payload_json TEXT NOT NULL,prev_hash TEXT NOT NULL,entry_hash TEXT NOT NULL,created_at TEXT NOT NULL);
 `); }
 
 export class SqliteAuthorizationUnitOfWork {
@@ -65,6 +65,47 @@ export class SqliteAuthorizationUnitOfWork {
       previous = String(row.entry_hash);
     }
     return { ok: true, value: undefined };
+  }
+  /** 活动预算快照 id（pipeline authorize 上下文绑定用；无活动快照 → BUDGET_SNAPSHOT_CHANGED 语义 fail） */
+  activeBudgetSnapshotId(): OperationResult<string> {
+    try {
+      const budget = this.db.prepare('SELECT id FROM budget_snapshots WHERE active=1').get() as { id: string } | undefined;
+      return budget ? { ok: true, value: budget.id } : { ok: false, error: { code: 'BUDGET_SNAPSHOT_CHANGED', message: 'BUDGET_SNAPSHOT_CHANGED', messageKey: 'BUDGET_SNAPSHOT_CHANGED', retryable: false } };
+    } catch { return { ok: false, error: { code: 'BUDGET_SNAPSHOT_CHANGED', message: 'BUDGET_SNAPSHOT_CHANGED', messageKey: 'BUDGET_SNAPSHOT_CHANGED', retryable: false } }; }
+  }
+  /** W1-08：pipeline 生命周期 journal 状态追加（applied/failed/cancelled/committed/released）——哈希链单一事实 */
+  appendJournalEntry(effectId: string, state: string, payload: unknown, createdAt: string): OperationResult<void> {
+    try {
+      this.db.transaction(() => { this.appendJournal(effectId, state, payload, createdAt); })();
+      return { ok: true, value: undefined };
+    } catch { return fail('POLICY_UNAVAILABLE'); }
+  }
+  /** W1-08：commit——预算已在 reserve 扣除；commit 只落链（committed） */
+  commit(reservationId: string, value: unknown, createdAt: string): OperationResult<void> {
+    try {
+      this.db.transaction(() => {
+        const grant = this.db.prepare(`SELECT status FROM approval_grants WHERE id=?`).get(reservationId) as { status: string } | undefined;
+        if (!grant || grant.status !== 'consumed') throw new Rollback(fail('APPROVAL_REPLAYED'));
+        this.appendJournal(reservationId, 'committed', { value }, createdAt);
+      })();
+      return { ok: true, value: undefined };
+    } catch (error) { return error instanceof Rollback ? error.result : fail('POLICY_UNAVAILABLE'); }
+  }
+  /** W1-08：release——执行失败/取消后退还预算（used 回减）并落链（released） */
+  release(reservationId: string, reservation: Budget, createdAt: string): OperationResult<void> {
+    try {
+      this.db.transaction(() => {
+        const grant = this.db.prepare(`SELECT status FROM approval_grants WHERE id=?`).get(reservationId) as { status: string } | undefined;
+        if (!grant || grant.status !== 'consumed') throw new Rollback(fail('APPROVAL_REPLAYED'));
+        const budget = this.db.prepare('SELECT id,used_json FROM budget_snapshots WHERE active=1').get() as { id: string; used_json: string } | undefined;
+        if (!budget) throw new Rollback(fail('BUDGET_SNAPSHOT_CHANGED'));
+        const used = JSON.parse(budget.used_json) as Budget;
+        for (const [key, amount] of Object.entries(reservation)) used[key] = Math.max(0, (used[key] ?? 0) - amount);
+        this.db.prepare('UPDATE budget_snapshots SET used_json=? WHERE id=?').run(JSON.stringify(used), budget.id);
+        this.appendJournal(reservationId, 'released', { reservation }, createdAt);
+      })();
+      return { ok: true, value: undefined };
+    } catch (error) { return error instanceof Rollback ? error.result : fail('POLICY_UNAVAILABLE'); }
   }
   private appendJournal(effectId: string, state: string, payload: unknown, createdAt: string): void {
     const tail = this.db.prepare('SELECT sequence,entry_hash FROM effect_journal ORDER BY sequence DESC LIMIT 1').get() as { sequence: number; entry_hash: string } | undefined;
