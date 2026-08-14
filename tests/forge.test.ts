@@ -35,14 +35,17 @@ describe('forge Skill 打包', () => {
 });
 
 describe('组件注册表', () => {
-  it('添加/列表/搜索/状态三态（quarantine/verified/installed）', () => {
+  it('添加/列表/搜索/状态机（quarantine→verified 须证据→installed）', () => {
     const reg: Registry = createRegistry(join(dir, 'registry.json'));
     const id = reg.add({ name: 'calc', kind: 'mcp', source: 'forge', version: '1.0.0' });
     expect(id).toBeTruthy();
     expect(reg.list().length).toBe(1);
     expect(reg.search('calc').length).toBe(1);
     expect(reg.search('nope').length).toBe(0);
+    // KF-017 诚实语义：无证据不得伪 verified；验证须经 verify() 携带证据
     reg.setStatus(id, 'verified');
+    expect(reg.list()[0].status).toBe('quarantine');
+    expect(reg.verify(id, { built: true, sha256: 'a'.repeat(64) })).toMatchObject({ ok: true });
     expect(reg.list()[0].status).toBe('verified');
     reg.setStatus(id, 'installed');
     expect(reg.list()[0].status).toBe('installed');

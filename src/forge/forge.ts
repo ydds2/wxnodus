@@ -2,7 +2,7 @@
 // 设计：工具签名 → 可运行 MCP Server（stdio JSON-RPC，零依赖）+ Skill 打包（agentskills.io 规范）
 //       合规红线：产物强制 AI 生成标注（深度合成办法）——README/SKILL.md 必须含标注
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 export interface ToolSignature {
   name: string;
@@ -10,9 +10,13 @@ export interface ToolSignature {
   inputSchema: { type: 'object'; properties: Record<string, any>; required?: string[] };
 }
 
+// KF-016：目录组合幂等——调用方已按组件名建目录（outDir basename === name）时直接落位该目录，
+// 不再二次 join 组件名（路径双拼）；outDir 为父目录时仍创建命名子目录（向后兼容两种调用约定）
+const componentDir = (outDir: string, name: string): string => (basename(outDir) === name ? outDir : join(outDir, name));
+
 // 生成可运行 MCP Server（stdio JSON-RPC——@modelcontextprotocol/sdk 协议兼容，零外部依赖）
 export function forgeMcpServer(outDir: string, name: string, tools: ToolSignature[]): string {
-  const dir = join(outDir, name);
+  const dir = componentDir(outDir, name);
   mkdirSync(dir, { recursive: true });
   const toolList = tools.map(t => `  ${JSON.stringify({ name: t.name, description: t.description, inputSchema: t.inputSchema })}`).join(',\n');
   const server = `// ${name} — WxNodus forge 锻造的 MCP Server（stdio JSON-RPC，零依赖）
@@ -49,7 +53,7 @@ rl.on('line', line => {
 
 // Skill 打包（agentskills.io 规范：SKILL.md + frontmatter）
 export function forgeSkillDir(outDir: string, name: string, description: string, workflow: string): string {
-  const dir = join(outDir, name);
+  const dir = componentDir(outDir, name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'SKILL.md'),
     `---
