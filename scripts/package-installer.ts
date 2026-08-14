@@ -1,45 +1,68 @@
-// scripts/package-installer.ts — 完整安装器打包 demo（§10-4 产品化入口）：
-// 用法：npm exec -- tsx scripts/package-installer.ts --name <名称> --version <x.y.z> --entry <dist/cli.js> [--out <目录>] [--icon <emoji/文本>]
-// 产出：<out>/<名称>-<版本>.zip（manifest.json + install.ps1 + 文件树）——解压后运行 install.ps1 即安装
+// scripts/package-installer.ts — DX-04：安装器打包入口（只消费冻结 candidate，绝不猜 dist/cli）
+// 用法：npm exec -- tsx scripts/package-installer.ts --candidate <candidate.json> --name <appName> --version <x.y.z> [--out <dir>] [--icon <text>]
+// candidate.json（冻结）：{ candidateId, commit, tgzSha256, cell:{os,arch,node}, entrypoint, dynamicImportDeclarations: [] }
+// 流程：validateFrozenInstallerCandidate → dist 树 + node_modules 生产依赖闭包（collectDependencyClosure）
+//       → scanDistImportSpecifiers + verifyDependencyClosure（缺依赖 → INSTALLER_DEPENDENCY_CLOSURE_INCOMPLETE）
+//       → buildInstallerPackage（manifest 全量 sha256 + 确定性 zip + 读回自校验）
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildInstallerPackage } from '../src/application/release/installerPackager.js';
+import { validateFrozenInstallerCandidate, type FrozenInstallerCandidate } from '../src/application/release/installerCandidate.js';
+import { collectDependencyClosure, scanDistImportSpecifiers, verifyDependencyClosure } from '../src/application/release/dependencyClosure.js';
 
 const args = process.argv.slice(2);
 const flag = (name: string): string | undefined => {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
 };
+const candidateFile = flag('--candidate');
 const name = flag('--name');
 const version = flag('--version');
-const entry = flag('--entry');
 const outDir = resolve(flag('--out') ?? 'dist-installer');
 const icon = flag('--icon') ?? null;
 
-if (!name || !version || !entry) {
-  console.error('usage: package-installer.ts --name <appName> --version <x.y.z> --entry <entryFile> [--out <dir>] [--icon <text>]');
+if (!candidateFile || !name || !version) {
+  console.error('usage: package-installer.ts --candidate <candidate.json> --name <appName> --version <x.y.z> [--out <dir>] [--icon <text>]');
   process.exit(2);
 }
 
-// 收集入口文件所在目录树（相对路径 → 字节）——打包边界 = 目录，不越界
-const entryAbs = resolve(entry);
-const rootDir = join(entryAbs, '..');
-const files = new Map<string, Buffer>();
-const collect = (dir: string) => {
+const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
+// 冻结 candidate 文件（只读输入——candidate 由发布冻结流程生成，脚本绝不猜测）
+const raw = JSON.parse(readFileSync(candidateFile, 'utf8')) as FrozenInstallerCandidate;
+const staged = new Map<string, Buffer>();
+const collect = (dir: string, base: string) => {
   for (const item of readdirSync(dir)) {
     const full = join(dir, item);
-    if (statSync(full).isDirectory()) collect(full);
-    else files.set(relative(rootDir, full).replace(/\\/g, '/'), readFileSync(full));
+    if (statSync(full).isDirectory()) collect(full, base);
+    else staged.set(relative(base, full).replace(/\\/g, '/'), readFileSync(full));
   }
 };
-collect(rootDir);
+// staged tree：dist（candidate 冻结的入口所在运行时树）+ node_modules 生产依赖闭包
+collect(join(ROOT, 'dist'), ROOT);
+const rootPkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> };
+const closure = collectDependencyClosure(join(ROOT, 'node_modules'), Object.keys(rootPkg.dependencies ?? {}));
+for (const [path, bytes] of closure.files) staged.set(path, bytes);
+
+const candidate: FrozenInstallerCandidate = { ...raw, stagedTree: staged };
+const validated = validateFrozenInstallerCandidate(candidate);
+if (!validated.ok) {
+  console.error(`CANDIDATE_INVALID: ${validated.error.code} ${JSON.stringify(validated.error.details ?? {})}`);
+  process.exit(2);
+}
+const specifiers = scanDistImportSpecifiers(join(ROOT, 'dist'));
+const closureCheck = verifyDependencyClosure(specifiers, closure, raw.dynamicImportDeclarations ?? []);
+if (!closureCheck.ok) {
+  console.error(`DEPENDENCY_CLOSURE_INCOMPLETE: ${JSON.stringify(closureCheck.error.details ?? {})}`);
+  process.exit(2);
+}
 
 const packed = await buildInstallerPackage({
   appName: name,
   version,
   icon,
-  entryPath: relative(rootDir, entryAbs).replace(/\\/g, '/'),
-  files,
+  entryPath: candidate.entrypoint,
+  files: staged,
   outDir,
 });
 if (!packed.ok) {
@@ -47,6 +70,7 @@ if (!packed.ok) {
   process.exit(1);
 }
 console.log(`PACKAGED: ${packed.value.zipPath}`);
+console.log(`  candidate: ${candidate.candidateId} @ ${candidate.commit}`);
 console.log(`  zipSha256: ${packed.value.zipSha256}`);
 console.log(`  entries: ${packed.value.entryCount} files + manifest.json + install.ps1`);
-console.log(`  安装：解压后 powershell -ExecutionPolicy Bypass -File install.ps1 [-TargetDir <目录>]`);
+console.log(`  安装：解压后 powershell -ExecutionPolicy Bypass -File install.ps1 [-TargetDir <目录>]（-Uninstall 只删 journal 内文件）`);
