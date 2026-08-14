@@ -260,3 +260,16 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 
 - `/delegate` modern branch: live process host — `WorktreeManager` (git add + realpath double check) → real `dist/cli` child process → `SubagentStartReceipt` (taskId/pid/startedAt) with narrowed budget/scope. Stop semantics via `SubagentHost` (fence → taskkill process tree → stop receipt; tree failure → `SUBAGENT_STOP_FAILED`). `SUBAGENT_WIRED` flipped true.
 - Full suite: 217 files / 1732 passed / 10 skipped / 0 failed (one known heapdump flaky under parallel load — passes in isolation).
+
+
+## Wave 3 progress (MCP facade done) — 2026-08-14
+
+- `/mcp` modern branch wired for real: SDK auto-negotiation client host (`connectMcp`) + `McpTransportPolicy` SSRF precheck (real DNS `assertHttpTarget` before connect) + `InMemoryMcpTranscriptStore` redacted audit record. Per-command connect is a one-shot probe (connect → record → dispose) — no leaked resource.
+- Incoming server production wiring (`src/application/mcp/mcpServerWiring.ts`): real `CapabilityPort` (Wave1CapabilityRegistry) + fail-closed pipeline — production `ToolExecutionPipeline` (W1-08, blocked on plugin broker) not wired, so every pipeline-reaching surface returns structured `NOT_DELIVERED` (never fake success) + redacted transcript.
+- Incoming stdio: `--mcp-server` CLI mode — pre-bootstrap accepts the flag as non-interactive; missing `WXNODUS_MCP_REQUEST_STATE_KEY` fails closed (exit 2, clear message); with key the real `StdioServerTransport` answers initialize (process-level smoke verified, stdout clean of non-protocol bytes).
+- Incoming Streamable HTTP: `/mcp` route in `--serve` (POST/GET/DELETE) mounted after CSRF + Bearer — no token → 401; with token the SDK handler answers structured JSON-RPC errors (no fake success).
+- Shutdown 纳入: incoming server `close()` registered in the unified idempotent shutdown for both `--mcp-server` and `--serve` (disposer id `mcp-incoming`); outgoing legacy `connectAllMcp` stays under the existing `mcp` disposer.
+- `MCP_WIRED` flipped true — modern MCP routing live; routing test updated (modern routes now; shadow/legacy unchanged).
+- Tests: `tests/wave3/w3-mcp-wiring.test.ts` 3/3 (key-gate fail-closed, idempotent close, structured HTTP error) + updated `w3-extension-routing.test.ts`; wave2 duplex contract 5/5 unchanged.
+- Full suite: 218 files / 1735 passed / 10 skipped / 0 failed.
+- Remaining MCP: declared-delivered incoming surfaces (`session`/`memory`) stay honest `CAPABILITY_UNAVAILABLE` / structured `NOT_DELIVERED` until the production `ToolExecutionPipeline` is wired.
