@@ -208,3 +208,12 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 
 - `src/kernel/voice.ts` `stopAndTranscribe` now delegates execution to `VoiceSessionService` (production deps: async whisper supervisor with AbortSignal + process-tree kill, temp cleanup, transcript store persisting under `dataDir/voice/transcripts/<id>.txt` with opaque-ref-only reads). Kernel keeps capture/device enumeration/TTS as a platform adapter. `VOICE_FACADE_DONE` flipped true — modern voice routing is now live; voice suites 20/20.
 - Full suite: 213 files / 1716 passed / 10 skipped / 0 failed.
+
+
+## Wave 3 progress (Computer wiring) — 2026-08-14
+
+- `src/application/computer/computerWiring.ts`: production port assembly for `ComputerUseService` — observer/driver delegate to kernel ComputerUse (screenshots/robotjs), postconditions reuse the 16 builtin verifiers (unimplemented verifiers crash honestly; observation values pass through fully so re-observe anchors like `path` reach verifier inputs), injected pdp/approvals/evidence fail closed when absent.
+- `src/application/computer/computerEvidenceStore.ts`: real on-disk audit evidence (JSON + sha256 binding + atomic write + read-back recomputation; tamper rejected `COMPUTER_EVIDENCE_INTEGRITY_FAILED`).
+- Tests 4/4: full pipeline stage order with evidence read-back, fail-closed without pdp, tampered-evidence rejection, high-impact kind recognition.
+- Full suite: 214 files / 1720 passed / 10 skipped / 0 failed (two flaky timeouts under parallel load — taskRunner log-flush and heapdump — pass 20/20 in isolation, unrelated to this change).
+- Remaining: `/computer` handler modern branch assembly (approval bridge type + request mapping) then COMPUTER_SERVICE_WIRED flip; browser wiring.
