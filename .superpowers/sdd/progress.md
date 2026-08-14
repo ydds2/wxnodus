@@ -38,7 +38,7 @@ Baseline is accepted as accurately characterized, not green. Wave work must pres
 | W0-01 Completion authority | core-complete | WeakSet receipt + coordinator + gate + evidence write perimeter + BuildService + gate:completion adapter + Gate G wired; transport cutoffs (CommandBus/agent/CLI/HTTP/Wire) deferred to Wave 3 wiring. |
 | W0-02 Release eligibility | core-complete | `releaseEligibility` + `check-release-eligibility` adapter; open KF blocks with `RELEASE_BLOCKED_OPEN_P0`; required gate failed/blocked/cancelled/inconclusive/incomplete/na never release; resolved-KF regression existence enforced. |
 | W0-03 Evidence/requirements | core-complete | Versioned evidence index + requirement resolver; verified requirements must bind current candidate/index fully; current all-planned requirements stay unverifiable (20/20 `REQUIREMENT_NOT_VERIFIED` in release mode). |
-| Wave 1 security | pending | No production bypass may be called fixed before wiring regression passes. |
+| Wave 1 security | in progress | P0-04 pathBoundary + staging transaction; P0-05 memory scope authority; P0-06 hook fail-closed + KF-026 migrated; P0-08 bounded reader + outbound target policy. P0-01/02/03/07 and kernel/ssrf full rewiring remain. |
 | Wave 2 composition root | pending | Legacy production root still active. |
 | Wave 3 capabilities | pending | Modern service islands not fully wired. |
 | Wave 4 distribution/DX | pending | Includes local ink build boundary and voice asset portability. |

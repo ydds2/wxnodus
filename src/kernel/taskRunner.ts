@@ -56,7 +56,8 @@ export interface TaskRunnerOptions {
   db: import('../store/db.js').Db;
   bus: import('./events.js').EventBus;
   dataDir: string;
-  spawnSubagent: (goal: string) => Promise<{ ok: boolean; output: string; turns: number }>;
+  /** P0-07：第二个参数是可撤销信号——kill 后子代理必须停止产生副作用（effect fence） */
+  spawnSubagent: (goal: string, signal?: AbortSignal) => Promise<{ ok: boolean; output: string; turns: number }>;
   /** 并发线数上限（默认 2） */
   maxConcurrent?: number;
 }
@@ -96,6 +97,8 @@ export function createTaskRunner(opts: TaskRunnerOptions): TaskRunner {
   const pausedIds = new Set<string>();
   let running = 0;
   const timers = new Map<string, NodeJS.Timeout>();
+  // P0-07：agent 线的 effect fence——kill 时 abort，子代理不得继续跑完
+  const agentAborts = new Map<string, AbortController>();
 
   const row = (id: string): TaskRow | null =>
     (db.prepare(`SELECT * FROM tasks WHERE id=?`).get(id) as TaskRow | undefined) ?? null;
@@ -224,11 +227,21 @@ export function createTaskRunner(opts: TaskRunnerOptions): TaskRunner {
 
   // ── agent 线：独立子代理会话（不污染主对话）──
   async function runAgent(t: TaskRow): Promise<void> {
-    const r = await spawnSubagent(t.goal);
-    // 审查修复：kill 后不得覆盖状态（cancelled 保持）
-    if (row(t.id)?.status === 'cancelled') return;
-    if (r.ok) finish(t.id, 'success', 0, r.output.slice(0, 4000), '');
-    else finish(t.id, 'failed', 1, r.output.slice(0, 4000), '子代理执行失败');
+    // P0-07：effect fence——kill 时 abort 撤销子代理，其副作用与迟到结果均不得落定
+    const controller = new AbortController();
+    agentAborts.set(t.id, controller);
+    try {
+      const r = await spawnSubagent(t.goal, controller.signal);
+      // 审查修复：kill 后不得覆盖状态（cancelled 保持）
+      if (row(t.id)?.status === 'cancelled' || controller.signal.aborted) return;
+      if (r.ok) finish(t.id, 'success', 0, r.output.slice(0, 4000), '');
+      else finish(t.id, 'failed', 1, r.output.slice(0, 4000), '子代理执行失败');
+    } catch (e: any) {
+      if (controller.signal.aborted || row(t.id)?.status === 'cancelled') return;
+      finish(t.id, 'failed', 1, '', String(e?.message ?? e).slice(0, 300));
+    } finally {
+      agentAborts.delete(t.id);
+    }
   }
 
   // ── 完成收口：状态/事件/通知 + 父任务聚合 ──
@@ -289,8 +302,10 @@ export function createTaskRunner(opts: TaskRunnerOptions): TaskRunner {
           if (c.status === 'queued' || c.status === 'running') await this.kill(c.id);
         }
       } else {
-        // 叶子（shell/agent 执行线）：杀进程（如有）+ 结束
+        // 叶子（shell/agent 执行线）：杀进程（如有）+ 撤销 agent effect fence + 结束
         killTree(t.pid);
+        const controller = agentAborts.get(id);
+        if (controller) controller.abort();
         const ti = timers.get(id); if (ti) clearTimeout(ti);
         if (t.status === 'queued') {
           const qi = queue.indexOf(id); if (qi >= 0) queue.splice(qi, 1);

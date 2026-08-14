@@ -47,7 +47,7 @@ export const KNOWN_FAILURES: readonly KnownFailureEntry[] = [
   { id: 'KF-022', status: 'open', caseFile: 'tests/known-failures/cases/kf-022-scaffold-build-pipeline.case.ts', expectedFailureCode: 'SCAFFOLD_PIPELINE_BYPASS', timeoutMs: 15000 },
   { id: 'KF-023', status: 'open', caseFile: 'tests/known-failures/cases/kf-023-goal-verifier-fail-open.case.ts', expectedFailureCode: 'GOAL_VERIFIER_FAIL_OPEN', timeoutMs: 15000 },
   { id: 'KF-024', status: 'open', caseFile: 'tests/known-failures/cases/kf-024-agent-text-success.case.ts', expectedFailureCode: 'AGENT_TEXT_FALSE_SUCCESS', timeoutMs: 15000 },
-  { id: 'KF-025', status: 'open', caseFile: 'tests/known-failures/cases/kf-025-task-kill-effect-fence.case.ts', expectedFailureCode: 'TASK_KILL_EFFECT_CONTINUES', timeoutMs: 15000 },
+  { id: 'KF-025', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-025-task-kill-effect-fence.regression.test.ts', resolvedBy: 'task kill aborts the agent line effect fence; subagent side effects and late results are dropped', timeoutMs: 15000 },
   { id: 'KF-026', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-026-hook-fail-closed.regression.test.ts', resolvedBy: 'security-critical hook decision is structured and fail-closed (crash/timeout/missing/non-zero exit deny)', timeoutMs: 15000 },
   { id: 'KF-027', status: 'open', caseFile: 'tests/known-failures/cases/kf-027-wire-readiness.case.ts', expectedFailureCode: 'WIRE_REGISTERED_BEFORE_READY', timeoutMs: 15000 },
   { id: 'KF-028', status: 'open', caseFile: 'tests/known-failures/cases/kf-028-session-restore-gateway.case.ts', expectedFailureCode: 'SESSION_RESTORE_DEFAULTED', timeoutMs: 15000 },
