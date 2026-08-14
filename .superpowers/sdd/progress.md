@@ -224,3 +224,11 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - `/computer` modern branch assembled for real: `ComputerUseService` shared pipeline with kernel driver, high-impact approval bridge via `ctx.gateway.requestApproval` (no bridge → `COMPUTER_HIGH_IMPACT_APPROVAL_REQUIRED` fail-closed), on-disk evidence via `createComputerEvidenceStore`. Unverifiable actions return `COMPUTER_POSTCONDITION_FAILED` honestly (never fake success). Kernel construction routes through `createKernelComputerUse` compat so the legacy-import gate stays green. `COMPUTER_SERVICE_WIRED` flipped true.
 - Full suite: 214 files / 1720 passed / 10 skipped / 0 failed.
 - Remaining computer: browser wiring (Playwright via service), observe/uia modern migration.
+
+
+## Wave 3 progress (Browser facade done) — 2026-08-14
+
+- `src/application/computer/browserWiring.ts`: production browser assembly — `UrlPolicy` with real dns resolution (loopback/private/link-local/multicast/userinfo/scheme all denied), `PlaywrightBrowserDriver` with per-session contexts and connectedAddress resolution-layer verification; launch failure honest (`BROWSER_LAUNCH_FAILED`).
+- `/browser` modern branch: entry URL authorization first, then `BrowserSessionService` (owner-checked) open/navigate/close, evidence via `createComputerEvidenceStore`. `BROWSER_SERVICE_WIRED` flipped true.
+- Tests 5/5: public URL authorized, loopback/private/unknown-host denied, owned session lifecycle, connectedAddress unavailable fail-closed.
+- Full suite: 215 files / 1725 passed / 10 skipped / 0 failed.
