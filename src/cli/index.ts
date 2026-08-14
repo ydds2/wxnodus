@@ -54,16 +54,23 @@ if (opts.cwd) {
 
 // W2-01：pre-bootstrap onboarding——首次进入选择系统语言（zh-CN/en）；
 // 在 _initErrorLog/mkdirSync/DB/MCP/Plugin/网络/TUI 之前执行（干净环境零副作用）。
-const { decidePreBootstrap, readLocaleFile, promptLanguageOnStdio, persistPreBootstrapLocale } = await import('../application/bootstrap/preBootstrapOnboarding.js');
+// DX-01：--data-dir 唯一 parser——优先级 CLI > env（WXNODUS_DATA_DIR）> cwd 默认；
+// 结果贯穿 locale 读取、SQLite、logs、MCP、plugins、models/cache、HAR（全部以 dataDir 为根）。
+const { decidePreBootstrap, parsePreBootstrapArgs, readLocaleFile, promptLanguageOnStdio, persistPreBootstrapLocale } = await import('../application/bootstrap/preBootstrapOnboarding.js');
+const preArgs = parsePreBootstrapArgs(process.argv.slice(2));
+const dataDir = (preArgs.ok && preArgs.value.dataDir ? preArgs.value.dataDir : resolveDataDir(process.cwd()));
+// DX-01：CLI flag 胜出时经 env 通道全链路传播——kernel 内 resolveDataDir(process.cwd()) 各点
+// （agent 权限规则/session 事件/浏览器/离线模型缓存等）统一生效，不留第二条数据目录事实源。
+if (preArgs.ok && preArgs.value.dataDir) process.env.WXNODUS_DATA_DIR = dataDir;
 const pre = await decidePreBootstrap({
   argv: process.argv.slice(2),
   env: process.env,
   isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
   systemLocale: Intl.DateTimeFormat().resolvedOptions().locale,
   readWorkspaceLocale: () => readLocaleFile(join(process.cwd(), '.wxnodus', 'config.yaml')),
-  readUserLocale: () => readLocaleFile(join(resolveDataDir(process.cwd()), 'config.json')),
+  readUserLocale: () => readLocaleFile(join(dataDir, 'config.json')),
   promptLanguage: promptLanguageOnStdio,
-  persistUserLocale: locale => persistPreBootstrapLocale(join(resolveDataDir(process.cwd()), 'config.json'), locale),
+  persistUserLocale: locale => persistPreBootstrapLocale(join(dataDir, 'config.json'), locale),
 });
 if (pre.mode === 'error') {
   process.stderr.write(`${pre.output ?? 'CONFIG_SCHEMA_INVALID'}\n`);
@@ -81,7 +88,7 @@ if (pre.mode === 'error') {
 
   async function main() {
     const cwd = process.cwd();
-    const dataDir = resolveDataDir(cwd);
+    // DX-01：dataDir 已在 pre-bootstrap 唯一解析（CLI > env > cwd 默认）——此处不再二次解析
     _initErrorLog(dataDir);
     mkdirSync(dataDir, { recursive: true });
 
