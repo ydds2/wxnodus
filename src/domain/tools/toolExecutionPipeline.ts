@@ -7,7 +7,7 @@ import type { OperationContext } from '../../protocol/operationContext.js';
 import { err, ok, type OperationResult } from '../../protocol/results.js';
 
 export interface ToolExecutionRequest { id: string; toolId: ToolId; args: unknown }
-export interface NormalizedExecution { args: unknown; argsHash: string; effect: EffectDescriptor }
+export interface NormalizedExecution { args: unknown; argsHash: string; effect: EffectDescriptor; toolId?: ToolId }
 export interface ToolExecutionReceipt { effectId: string; toolId: ToolId; state: 'verified'; value: unknown; evidenceIds: string[]; reservationId?: string }
 type Decision = { action: 'allow'; reasonCode: string; obligations: unknown[] } | { action: 'deny'; reasonCode: string } | { action: 'require_approval'; reasonCode: string; obligations: unknown[] };
 export interface PipelinePorts {
