@@ -240,3 +240,10 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - Tests 4/4: truthful probe, untrusted quarantine, trusted allow, real child-process start/stop.
 - Full suite: 216 files / 1729 passed / 10 skipped / 0 failed.
 - Remaining plugin: `/plugin` modern branch wiring (broker pipeline injection + scope manager + evidence) then PLUGIN_WIRED flip.
+
+
+## Wave 3 progress (Build facade done) — 2026-08-14
+
+- `src/build/specAcceptance.ts`: spec → structured acceptance contract — rule-brain scaffolds map to deterministic artifact anchors (`file.exists` on server/index.js + healthcheck.js); unknown scaffolds fail closed (`BUILD_ACCEPTANCE_UNSPECIFIED`) — natural-language acceptance is never disguised as verifiable assertions.
+- `/build` modern branch wired for real: staging → scaffold (legacy instantiate as a node) → static entry → verifier → evidence → Ed25519 reviewer (AES-persisted key service) → CompletionGate owned receipt. Snapshot sources: environment (platform/arch/node deterministic), capability (builtin verifier capability union), policy (hooks config canonical hash). `BUILD_SERVICE_WIRED` flipped true.
+- Full suite: 217 files / 1732 passed / 10 skipped / 0 failed.
