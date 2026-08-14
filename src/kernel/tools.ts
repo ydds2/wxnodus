@@ -40,6 +40,8 @@ function hostOf(url: string): string {
 export interface ToolCtx {
   cwd: string;
   dataDir: string;
+  /** W3 Memory：可信会话 id（agent 内部状态注入——memory_* 工具的 scope 唯一来源，参数不可伪造） */
+  sessionId?: string;
   /** 数据库（cron_create 等持久化工具；未装配时为 undefined） */
   db?: import('../store/db.js').Db;
   /** 事件总线（notify 等通知工具；未装配时为 undefined） */
@@ -443,14 +445,15 @@ export function coreTools(): Record<string, ToolDef> {
       return `HTTP ${r.status}\n${r.text.slice(0, 8000)}`;
     },
   };
-  // memory_search：黑洞引擎主动检索（建议清单 P0-1 落地）——模型需要回忆历史时调用，
-  // 走 FTS5 bigram + 向量混合召回（与每轮自动召回同一引擎）
+  // memory_search：黑洞引擎主动检索（建议清单 P0-1 落地）——模型需要回忆历史时调用。
+  // W3 Memory：切 modern 权威层——scope 只来自可信 ToolCtx.sessionId（会话隔离），
+  // 显式记忆记录（memory_records）FTS 检索（召回策略一致性验证后另行决定）
   const memorySearch: ToolDef = {
     schema: {
       type: 'function',
       function: {
         name: 'memory_search',
-        description: '检索历史记忆（黑洞引擎：关键词/语义混合召回）。需要回忆之前讨论过的内容、决策、数据时调用。',
+        description: '检索历史记忆（modern 显式记忆记录，会话隔离）。需要回忆之前讨论过的内容、决策、数据时调用。',
         parameters: {
           type: 'object',
           properties: {
@@ -466,44 +469,60 @@ export function coreTools(): Record<string, ToolDef> {
       const q = String(args?.query ?? '').trim();
       if (!q) return '参数错误：query 不能为空';
       try {
-        const { createMemory } = await import('./memory.js');
-        const mem = createMemory(ctx.db as any);
-        const hits = await mem.recallHybrid(q, { limit: Math.min(Math.max(Number(args?.limit) || 5, 1), 20) });
-        if (!hits.length) return `未检索到与「${q.slice(0, 40)}」相关的历史记忆`;
-        return `历史记忆命中 ${hits.length} 条：\n${hits.map(h => `- [${h.id}] ${h.content.slice(0, 300)}`).join('\n')}`;
+        const { memoryServiceForTool } = await import('../application/memory/memoryToolService.js');
+        const svc = memoryServiceForTool(ctx);
+        const result = svc.search({ text: q, limit: Math.min(Math.max(Number(args?.limit) || 5, 1), 20) });
+        if (!result.ok) return `记忆检索失败：${result.error.code}`;
+        if (!result.value.length) return `未检索到与「${q.slice(0, 40)}」相关的历史记忆`;
+        return `历史记忆命中 ${result.value.length} 条：\n${result.value.map(h => `- [${h.record.id}] ${h.record.content.slice(0, 300)}`).join('\n')}`;
       } catch (e: any) {
         return `记忆检索失败：${String(e?.message ?? e).slice(0, 120)}`;
       }
     },
   };
   const memoryWrite: ToolDef = {
-    schema: { type: 'function', function: { name: 'memory_write', description: '写入长期记忆（黑洞引擎 archival——写入专用记忆会话，FTS+向量双索引，/hole 与 /memory search 可检索）', parameters: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] } } },
+    schema: { type: 'function', function: { name: 'memory_write', description: '写入长期记忆（modern 显式记忆记录，会话隔离，/memory search 与 /hole 可检索）', parameters: { type: 'object', properties: { content: { type: 'string' } }, required: ['content'] } } },
     danger: true, // 外联/写库/调度/敏感输入——需确认
     async run({ content }, ctx) {
       const c = String(content ?? '').trim();
       if (!c) return '记忆内容为空';
       try {
-        // 修复：此前写 memory-notes.md 文件——黑洞检索（recallHybrid 查 messages 表）
-        // 永远召回不到，AI 记忆闭环断裂。改为 append 到专用记忆会话（FTS+向量自动索引）。
-        const { createMemory } = await import('./memory.js');
-        const mem = createMemory(ctx.db as any);
-        mem.append('memory-archive', 'assistant', c);
-        return '已写入黑洞记忆（/hole 或 /memory search 可检索）';
-      } catch (e: any) { return `记忆写入失败：${e.message}`; }
+        const { memoryServiceForTool } = await import('../application/memory/memoryToolService.js');
+        const svc = memoryServiceForTool(ctx);
+        const result = svc.append({
+          role: 'assistant',
+          content: c,
+          salience: 0.5,
+          retention: { class: 'session', retainUntil: null },
+          provenance: {
+            sourceType: 'tool',
+            sourceId: ctx.sessionId ?? 'default',
+            sourceUri: undefined,
+            capturedAt: new Date().toISOString(),
+            actorId: ctx.sessionId ?? 'default',
+            correlationId: 'memory_write',
+            policySnapshotId: 'tool',
+            sourceTrust: 1,
+          },
+        });
+        if (!result.ok) return `记忆写入失败：${result.error.code}`;
+        return '已写入长期记忆（/memory search 可检索）';
+      } catch (e: any) { return `记忆写入失败：${String(e?.message ?? e).slice(0, 120)}`; }
     },
   };
   // P0-2：记忆删改闭环——memory_search（查）/memory_write（增）已有，补 update/delete：
   // 模型发现记忆过时/错误时可主动纠正（改），或按 id 清理（删）——「增删改查」四操作齐
+  // W3 Memory：id 为 modern 字符串 id（memory_search 返回的 [id]）
   const memoryUpdate: ToolDef = {
     schema: {
       type: 'function',
       function: {
         name: 'memory_update',
-        description: '改写历史记忆（按 id 更新内容，FTS 全文索引同步、旧向量清除）。发现记忆过时/错误/不完整时调用纠正——比重复写入更准确。id 来自 memory_search 结果。',
+        description: '改写历史记忆（按 id 更新内容，FTS 全文索引同步）。发现记忆过时/错误/不完整时调用纠正——比重复写入更准确。id 来自 memory_search 结果。',
         parameters: {
           type: 'object',
           properties: {
-            id: { type: 'number', description: '记忆 id（memory_search 返回的 [id]）' },
+            id: { type: 'string', description: '记忆 id（memory_search 返回的 [id]）' },
             content: { type: 'string', description: '纠正后的完整内容' },
           },
           required: ['id', 'content'],
@@ -512,13 +531,15 @@ export function coreTools(): Record<string, ToolDef> {
     },
     danger: true, // 写库——需确认
     async run({ id, content }, ctx) {
-      const n = Number(id);
+      const sid = String(id ?? '').trim();
       const c = String(content ?? '').trim();
-      if (!Number.isInteger(n) || n < 1) return '参数错误：id 必填（正整数）';
+      if (!sid) return '参数错误：id 必填（字符串 id，见 memory_search 结果）';
       if (!c) return '参数错误：content 不能为空';
-      const { updateMessage } = await import('../store/db.js');
       try {
-        return updateMessage(ctx.db as any, n, c) ? `已更新记忆 #${n}（FTS 同步）` : `记忆 #${n} 不存在（/memory list 查看 id）`;
+        const { memoryServiceForTool } = await import('../application/memory/memoryToolService.js');
+        const svc = memoryServiceForTool(ctx);
+        const result = svc.update(sid, { content: c });
+        return result.ok ? `已更新记忆 ${sid}（FTS 同步）` : `记忆 ${sid} 不存在或越权（${result.error.code}——/memory search 查看 id）`;
       } catch (e: any) {
         return `记忆更新失败：${String(e?.message ?? e).slice(0, 120)}`;
       }
@@ -529,11 +550,11 @@ export function coreTools(): Record<string, ToolDef> {
       type: 'function',
       function: {
         name: 'memory_delete',
-        description: '删除历史记忆（按 id 物理删除 + FTS/向量索引清理）。记忆内容错误且无法通过 memory_update 纠正时调用。id 来自 memory_search 结果。',
+        description: '删除历史记忆（按 id 删除 + FTS 索引清理）。记忆内容错误且无法通过 memory_update 纠正时调用。id 来自 memory_search 结果。',
         parameters: {
           type: 'object',
           properties: {
-            id: { type: 'number', description: '记忆 id（memory_search 返回的 [id]）' },
+            id: { type: 'string', description: '记忆 id（memory_search 返回的 [id]）' },
           },
           required: ['id'],
         },
@@ -541,11 +562,13 @@ export function coreTools(): Record<string, ToolDef> {
     },
     danger: true, // 写库/删除——需确认
     async run({ id }, ctx) {
-      const n = Number(id);
-      if (!Number.isInteger(n) || n < 1) return '参数错误：id 必填（正整数）';
-      const { deleteMessage } = await import('../store/db.js');
+      const sid = String(id ?? '').trim();
+      if (!sid) return '参数错误：id 必填（字符串 id，见 memory_search 结果）';
       try {
-        return deleteMessage(ctx.db as any, n) ? `已删除记忆 #${n}（索引已清理）` : `记忆 #${n} 不存在（/memory list 查看 id）`;
+        const { memoryServiceForTool } = await import('../application/memory/memoryToolService.js');
+        const svc = memoryServiceForTool(ctx);
+        const result = svc.delete(sid);
+        return result.ok ? `已删除记忆 ${sid}（索引已清理）` : `记忆 ${sid} 不存在或越权（${result.error.code}——/memory search 查看 id）`;
       } catch (e: any) {
         return `记忆删除失败：${String(e?.message ?? e).slice(0, 120)}`;
       }

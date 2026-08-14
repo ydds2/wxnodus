@@ -29,6 +29,7 @@ const memoryService = (sessionId: string): MemoryService => {
       return { ok: true as const, value: undefined };
     },
     search: input => ({ ok: true as const, value: records.filter(r => r.owner === sessionId && r.content.includes(input.text)).map(r => ({ record: r as never, score: 1, components: { fts: 1, vector: 0, recency: 1, salience: 0.5, sourceTrust: 1, scopeWeight: 1 } })) }),
+    list: input => ({ ok: true as const, value: records.filter(r => r.owner === sessionId).slice(0, input.limit ?? 20) as never }),
   };
 };
 

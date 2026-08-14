@@ -59,23 +59,26 @@ describe('find_files 文件搜索', () => {
 });
 
 describe('memory_search 黑洞检索', () => {
-  it('FTS5 检索历史记忆（真实 DB）', async () => {
+  it('modern 显式记忆记录检索（真实 DB，session scope）', async () => {
     const { coreTools } = await import('../src/kernel/tools.js');
     const { openDB, closeDB } = await import('../src/store/db.js');
+    const { openMemoryRepository } = await import('../src/infrastructure/sqlite/memoryRepository.js');
+    const { createMemoryService } = await import('../src/application/memoryService.js');
     const d = mkdtempSync(join(tmpdir(), 'wx-ms-'));
     const db = openDB(d);
     try {
-      // 写入历史消息（会话 s1）
-      db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`).run('s1', '测试', Date.now(), Date.now());
-      db.prepare(`INSERT INTO messages (session_id, role, content, archived, ts) VALUES (?,?,?,?,?)`)
-        .run('s1', 'user', '我们讨论了黑洞引擎的 FTS5 bigram 分词方案', 0, Date.now());
-      db.prepare(`INSERT INTO messages (session_id, role, content, archived, ts) VALUES (?,?,?,?,?)`)
-        .run('s1', 'assistant', '结论：bigram 滑窗对中文检索有效', 0, Date.now());
+      const svc = createMemoryService(openMemoryRepository(db, { now: () => Date.now(), idFactory: p => `${p}-${Date.now()}` }), { sessionId: 's1' });
+      const append = (role: 'user' | 'assistant', content: string) => svc.append({
+        role, content, salience: 0.5, retention: { class: 'session', retainUntil: null },
+        provenance: { sourceType: 'conversation', sourceId: 's1', sourceUri: undefined, capturedAt: new Date().toISOString(), actorId: 's1', correlationId: 't', policySnapshotId: 't', sourceTrust: 1 },
+      });
+      append('user', '我们讨论了黑洞引擎的 FTS5 bigram 分词方案');
+      append('assistant', '结论：bigram 滑窗对中文检索有效');
       const t = coreTools().memory_search!;
-      const out = await t.run({ query: 'bigram 分词' }, { db } as any);
+      const out = await t.run({ query: 'bigram 分词' }, { db, sessionId: 's1' } as any);
       expect(out).toContain('历史记忆命中');
       expect(out).toContain('bigram');
-      const out2 = await t.run({ query: '不存在的关键词xyz' }, { db } as any);
+      const out2 = await t.run({ query: '不存在的关键词xyz' }, { db, sessionId: 's1' } as any);
       expect(out2).toContain('未检索到');
     } finally { closeDB(db); try { rmSync(d, { recursive: true, force: true }); } catch {} }
   });
@@ -83,21 +86,23 @@ describe('memory_search 黑洞检索', () => {
 
 // ── P0-2 巩固：memory_write 写入黑洞（不再写孤儿 md 文件）──
 describe('memory_write 黑洞记忆闭环', () => {
-  it('写入后 recallHybrid 可检索（AI 记忆闭环不断裂）', async () => {
+  it('写入后 modern 权威层可检索（AI 记忆闭环不断裂）', async () => {
     const d = mkdtempSync(join(tmpdir(), 'wx-mw-'));
     const db = openDB(d);
     try {
-      const { createMemory } = await import('../src/kernel/memory.js');
+      const { openMemoryRepository } = await import('../src/infrastructure/sqlite/memoryRepository.js');
+      const { createMemoryService } = await import('../src/application/memoryService.js');
       const tools = coreTools();
       const t = tools.memory_write!;
       const tag = `闭环验证${Date.now()}`;
-      const out = await t.run({ content: `${tag}：用户偏好 TypeScript 严格模式` }, { db, dataDir: d } as any);
-      expect(out).toContain('已写入黑洞记忆');
+      const out = await t.run({ content: `${tag}：用户偏好 TypeScript 严格模式` }, { db, dataDir: d, sessionId: 's1' } as any);
+      expect(out).toContain('已写入长期记忆');
 
-      // 关键断言：写入内容能被黑洞混合召回命中（此前写 md 文件永远召不回）
-      const mem = createMemory(db);
-      const hits = await mem.recallHybrid(tag, { limit: 5 });
-      expect(hits.some(h => h.content.includes('TypeScript 严格模式'))).toBe(true);
+      // 关键断言：写入内容能被 modern 权威层检索命中（此前写 md 文件永远召不回）
+      const svc = createMemoryService(openMemoryRepository(db, { now: () => Date.now(), idFactory: p => `${p}-${Date.now()}` }), { sessionId: 's1' });
+      const hits = svc.search({ text: tag, limit: 5 });
+      expect(hits.ok).toBe(true);
+      if (hits.ok) expect(hits.value.some(h => h.record.content.includes('TypeScript 严格模式'))).toBe(true);
 
       // 空内容拒绝
       expect(await t.run({ content: '   ' }, { db } as any)).toContain('记忆内容为空');

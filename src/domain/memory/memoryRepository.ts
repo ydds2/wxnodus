@@ -24,6 +24,8 @@ export interface MemoryRepository {
   update(id: string, patch: MemoryPatch, scope: MemoryScope): OperationResult<MemoryRecord>;
   delete(id: string, scope: MemoryScope): OperationResult<void>;
   search(query: MemoryQuery, scope: MemoryScope): OperationResult<MemorySearchHit[]>;
+  /** W3 Memory：作用域内活跃记录列表（updated_at 降序，limit 有界）——/memory list 数据源 */
+  list(scope: MemoryScope, options: { limit: number }): OperationResult<MemoryRecord[]>;
   rebuild(scope: MemoryScope): OperationResult<RebuildReport>;
   inspectIndexHealth(nowMs: number, maxStaleTimeMs: number): IndexHealthIssue[];
   retentionPlan(nowMs: number): RetentionAction[];

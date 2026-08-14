@@ -418,6 +418,8 @@ export function createAgent(opts: AgentOptions) {
   const toolCtx: ToolCtx = {
     // getter：setCwd 后工具侧实时跟随（值快照会滞留旧目录）
     get cwd() { return ctxCwd; },
+    // W3 Memory：可信 sessionId（agent 内部状态，绝不经工具参数伪造——memory_* 工具的 scope 来源）
+    get sessionId() { return sessionId; },
     dataDir: resolveDataDir(process.cwd()), // 开放兼容：WXNODUS_DATA_DIR 覆盖数据目录
     db: opts.db, // cron_create 等需要持久化能力的工具
     bus: opts.bus, // notify 通知工具（system.notice 事件）

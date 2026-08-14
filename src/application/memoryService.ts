@@ -29,6 +29,8 @@ export interface MemoryService {
   update(id: string, patch: MemoryPatch): OperationResult<MemoryRecord>;
   delete(id: string): OperationResult<void>;
   search(input: MemorySearchInput): OperationResult<readonly MemorySearchHit[]>;
+  /** W3 Memory：作用域内活跃记录列表（/memory list 数据源） */
+  list(input: { limit?: number }): OperationResult<readonly MemoryRecord[]>;
 }
 
 /**
@@ -52,5 +54,6 @@ export function createMemoryService(repository: MemoryRepository, context: Memor
     update: (id, patch) => repository.update(id, patch, scope()),
     delete: id => repository.delete(id, scope()),
     search: input => repository.search(query(input), scope()),
+    list: input => repository.list(scope(), { limit: input.limit ?? 20 }),
   };
 }

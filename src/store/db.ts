@@ -11,6 +11,8 @@ import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
 import { migrateMemory } from '../infrastructure/sqlite/memoryMigrations.js';
 import { runDbMigrationsTo } from '../migrations/db/runner.js';
+// 中文 bigram 预处理（单一实现：legacy messages_fts 与 modern memory_fts 共用）
+import { bigramZh } from '../infrastructure/sqlite/bigramZh.js';
 
 // ESM 下加载 CJS 扩展（sqlite-vec 为 CommonJS 包——require 在 ESM 不可用）
 const requireCjs = createRequire(import.meta.url);
@@ -19,30 +21,7 @@ export type Db = InstanceType<typeof Database>;
 
 const SCHEMA_VERSION = 5;
 
-// 中文 bigram 预处理：FTS5 unicode61 无法切中文词——按 2 字滑窗生成 bigram 空格串
-// 例：「黑洞引擎」→「黑洞 洞引 引擎」——检索「黑洞」可命中；英文/数字连续段保留为单词
-export function bigramZh(text: string): string {
-  const tokens: string[] = [];
-  let buf = '';
-  let word = '';
-  const flushWord = () => { if (word) { tokens.push(word); word = ''; } };
-  for (const ch of text) {
-    if (/[\u4e00-\u9fff]/.test(ch)) {
-      flushWord();
-      buf += ch;
-      if (buf.length >= 2) { tokens.push(buf); buf = buf.slice(1); }
-    } else if (/[a-zA-Z0-9_]/.test(ch)) {
-      buf = '';
-      word += ch;
-    } else {
-      buf = '';
-      flushWord();
-      if (ch.trim()) tokens.push(ch);
-    }
-  }
-  flushWord();
-  return tokens.join(' ');
-}
+export { bigramZh };
 
 // 审计哈希：SHA-256 链（prev_hash + event + payload + ts）
 export function auditHash(prev: string, event: string, payload: string, ts: number): string {

@@ -3,8 +3,8 @@
 import type { Config } from '../store/config.js';
 import type { Db } from '../store/db.js';
 import type { Memory } from '../kernel/memory.js';
-import { parseSinceArg } from '../kernel/memory.js';
-import { deleteMessage, updateMessage, appendAudit } from '../store/db.js';
+import { appendAudit } from '../store/db.js';
+import { salienceFlag, salienceFromMultiplier } from './memorySalience.js';
 import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias } from './registry.js';
@@ -60,6 +60,8 @@ export interface HandlerCtx {
   sessionStart?: {
     ensure(sessionId: string): Promise<import('../protocol/results.js').OperationResult<import('../domain/sessions/sessionStart.js').SessionStartDocument>>;
   };
+  /** W3 Memory：session-scoped modern 权威服务（/memory 命令只经此端口读写显式记忆记录） */
+  memoryServiceFor?(sessionId: string): import('../application/memoryService.js').MemoryService;
 }
 
 const lines = (title: string, body: string[]): string => {
@@ -355,78 +357,89 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ]);
     }
 
-    // A21：检索（混合召回 + 时间过滤）——/memory search <词> [--limit N] [--since X]
+    // W3 Memory：modern 权威分支——search/delete/update/pin|fade|reset/list 全部经 session-scoped
+    // MemoryService（scope 只来自当前会话）；端口缺失时诚实 fail-closed（绝不静默回退 legacy 假成功）
+    const svcFor = (): import('../application/memoryService.js').MemoryService | null =>
+      ctx.memoryServiceFor ? ctx.memoryServiceFor(ctx.agent?.getSessionId?.() ?? 'default') : null;
+
+    // 检索——/memory search <词> [--limit N]
     if (sub === 'search') {
-      // 查询词剔除 flags 及其值（--limit/--since）
       const q = args
         .slice(1)
         .filter((a, i, arr) => {
           if (a.startsWith('--')) return false;
-          const prev = arr[i - 1];
-          return prev !== '--limit' && prev !== '--since';
+          return arr[i - 1] !== '--limit';
         })
         .join(' ')
         .trim();
-      if (!q) return '用法：/memory search <关键词> [--limit N] [--since 7d|2026-08-01]';
+      if (!q) return '用法：/memory search <关键词> [--limit N]（modern 显式记忆记录，会话隔离）';
       const limit = (() => {
         const i = args.indexOf('--limit');
         const n = Number(args[i + 1]);
         return Number.isInteger(n) && n > 0 ? Math.min(n, 30) : 10;
       })();
-      const sinceIdx = args.indexOf('--since');
-      const since = parseSinceArg(sinceIdx >= 0 ? args[sinceIdx + 1] : undefined) ?? undefined;
-      const hits = await ctx.mem.recallHybrid(q, { limit, since });
+      const svc = svcFor();
+      if (!svc) return '记忆权威层未装配（memoryServiceFor 缺失——fail-closed，不回退 legacy）';
+      const result = svc.search({ text: q, limit });
+      if (!result.ok) return `记忆检索失败：${result.error.code}`;
+      const hits = result.value;
       if (!hits.length) return `未检索到与「${q}」相关的记忆`;
       return lines(` 记忆检索「${q}」(${hits.length} 条) `, hits.map(h => {
-        const when = new Date(h.ts ?? Date.now()).toLocaleString();
-        return ` #${h.id} ${h.content.slice(0, 70)}${h.session_id && h.session_id !== 'default' ? ` [${h.session_id.slice(0, 10)}]` : ''}（${when}）`;
+        const when = new Date(h.record.updatedAt).toLocaleString();
+        return ` [${h.record.id}] ${h.record.content.slice(0, 70)}（${when}）`;
       }));
     }
 
-    // A21：删除（物理删除 + 向量索引同步清）——/memory delete <id>
+    // 删除——/memory delete <id>（字符串 id）
     if (sub === 'delete') {
-      const id = Number(args[1]);
-      if (!Number.isInteger(id) || id < 1) return '用法：/memory delete <消息id>（id 见 /memory list）';
-      const ok = deleteMessage(ctx.db, id);
-      if (!ok) return `消息 #${id} 不存在`;
-      return `已删除消息 #${id}（FTS/向量索引同步清理）`;
+      const id = String(args[1] ?? '').trim();
+      if (!id) return '用法：/memory delete <记忆id>（id 见 /memory list）';
+      const svc = svcFor();
+      if (!svc) return '记忆权威层未装配（memoryServiceFor 缺失——fail-closed，不回退 legacy）';
+      const result = svc.delete(id);
+      if (!result.ok) return `记忆 ${id} 不存在或越权（${result.error.code}）`;
+      return `已删除记忆 ${id}（FTS 索引同步清理）`;
     }
 
-    // P0-2：改写（记忆纠错/更新——FTS 同步 + 旧向量清除）——/memory update <id> <新内容>
+    // 改写——/memory update <id> <新内容>
     if (sub === 'update') {
-      const id = Number(args[1]);
+      const id = String(args[1] ?? '').trim();
       const content = args.slice(2).join(' ').trim();
-      if (!Number.isInteger(id) || id < 1 || !content) return '用法：/memory update <消息id> <新内容>（id 见 /memory list）';
-      const ok = updateMessage(ctx.db, id, content);
-      if (!ok) return `消息 #${id} 不存在`;
-      return `已更新消息 #${id}（FTS 同步，旧向量已清除）`;
+      if (!id || !content) return '用法：/memory update <记忆id> <新内容>（id 见 /memory list）';
+      const svc = svcFor();
+      if (!svc) return '记忆权威层未装配（memoryServiceFor 缺失——fail-closed，不回退 legacy）';
+      const result = svc.update(id, { content });
+      if (!result.ok) return `记忆 ${id} 不存在或越权（${result.error.code}）`;
+      return `已更新记忆 ${id}（FTS 同步）`;
     }
 
-    // 置顶/淡化（salience 加权召回）：/memory pin|fade|reset <id> [倍率]
+    // 置顶/淡化——/memory pin|fade|reset <id> [倍率]（modern salience 更新）
     if (sub === 'pin' || sub === 'fade' || sub === 'reset') {
-      const id = Number(args[1]);
-      if (!Number.isInteger(id) || id < 1) {
-        return '用法：/memory pin|fade|reset <消息id> [倍率]（id 见 /memory list；/hole 检索结果亦可定位）';
-      }
+      const id = String(args[1] ?? '').trim();
+      if (!id) return '用法：/memory pin|fade|reset <记忆id> [倍率]（id 见 /memory list）';
       const mult = sub === 'reset' ? 1 : Number(args[2] ?? (sub === 'pin' ? 3 : 0.3));
       if (!Number.isFinite(mult) || mult <= 0) return '倍率需为正数（pin 建议 3，fade 建议 0.3，范围 0.05-10）';
-      const ok = ctx.mem.setSalience(id, mult);
-      if (!ok) return `消息 #${id} 不存在（/memory list 查看可用 id）`;
+      const svc = svcFor();
+      if (!svc) return '记忆权威层未装配（memoryServiceFor 缺失——fail-closed，不回退 legacy）';
+      // legacy 倍率语义 → modern salience[0,1] 单调映射（见 memorySalience.ts）
+      const result = svc.update(id, { salience: salienceFromMultiplier(mult) });
+      if (!result.ok) return `记忆 ${id} 不存在或越权（${result.error.code}——/memory list 查看可用 id）`;
       const label = sub === 'pin' ? '置顶' : sub === 'fade' ? '淡化' : '还原';
-      return `已${label}消息 #${id}（salience ×${mult}，召回加权生效）——/memory list 查看置顶项`;
+      return `已${label}记忆 ${id}（salience ×${mult}）——/memory list 查看置顶项`;
     }
 
+    // 列表——/memory list [N]（modern 显式记录，updated_at 降序）
     if (sub === 'list') {
       const n = Math.min(Number(args[1] ?? 10) || 10, 30);
-      // A21：--since 时间过滤
-      const sinceIdx = args.indexOf('--since');
-      const since = parseSinceArg(sinceIdx >= 0 ? args[sinceIdx + 1] : undefined);
-      const rows = ctx.db.prepare(
-        `SELECT id, role, content, salience FROM messages WHERE archived=0 ${since ? `AND ts >= ${Math.floor(since)}` : ''} ORDER BY id DESC LIMIT ?`
-      ).all(n) as Array<{ id: number; role: string; content: string; salience: number }>;
-      return lines(' 记忆消息（/memory pin|fade <id> 加权） ', rows.reverse().map(m => {
-        const flag = m.salience > 1.01 ? '★' : m.salience < 0.99 ? '☆' : ' ';
-        return ` ${flag} #${m.id} [${m.role}] ${String(m.content).slice(0, 60)}${m.salience > 1.01 ? `（×${m.salience}）` : ''}`;
+      const svc = svcFor();
+      if (!svc) return '记忆权威层未装配（memoryServiceFor 缺失——fail-closed，不回退 legacy）';
+      const result = svc.list({ limit: n });
+      if (!result.ok) return `记忆列表失败：${result.error.code}`;
+      const records = result.value;
+      if (!records.length) return lines(' 记忆（modern 显式记录） ', [' 无显式记忆记录（对话影子写见 /memory shadow）']);
+      return lines(' 记忆（modern 显式记录，/memory pin|fade <id> 加权） ', records.map(m => {
+        const flag = salienceFlag(m.salience);
+        return ` ${flag} [${m.id}] [${m.role}] ${String(m.content).slice(0, 60)}${flag === '★' ? `（×${m.salience.toFixed(2)}）` : ''}`;
       }));
     }
 
@@ -435,6 +448,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ` 全量消息：${c(`${rec.length} 条`, '36')}`,
       ` 已吸附归档：${c(`${absorbed} 条`, '35')}（黑洞引擎）`,
       ` 窗口：${Math.min(rec.length, 20)}/20`,
+      ' modern：/memory list 查看显式记忆 · /memory shadow 观察双写',
       ...(salient.length
         ? [` 置顶记忆：${c(`${salient.length} 条`, '33')}（召回加权优先）`,
            ...salient.slice(0, 8).map(s => `   ★ #${s.id} ×${s.salience} ${s.content.slice(0, 40)}`)]

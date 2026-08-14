@@ -107,17 +107,17 @@ if (pre.mode === 'error') {
   const bus = createEventBus(dataDir);
   // W3 Memory 影子双写（决策：影子双写、观察后切换）：legacy 消息写入是唯一行为事实源，
   // 影子同步写 modern 显式记忆记录（session scope，失败只计数不上抛）；召回观察期保持 legacy。
-  const mem = await (async () => {
-    const { randomUUID: uuid } = await import('node:crypto');
-    const base = createMemory(db);
-    const { openMemoryRepository } = await import('../infrastructure/sqlite/memoryRepository.js');
-    const { createMemoryShadow } = await import('../application/memory/memoryShadow.js');
-    const repository = openMemoryRepository(db, {
-      now: () => Date.now(),
-      idFactory: prefix => `${prefix}-${uuid()}`,
-    });
-    return createMemoryShadow({ legacy: base, repository, db });
-  })();
+  // memoryRepository 同一实例供影子写与 /memory 命令（memoryServiceFor）共用。
+  const memBase = createMemory(db);
+  const { openMemoryRepository: openMemoryRepo } = await import('../infrastructure/sqlite/memoryRepository.js');
+  const { createMemoryShadow } = await import('../application/memory/memoryShadow.js');
+  const { createMemoryService } = await import('../application/memoryService.js');
+  const { randomUUID: uuid } = await import('node:crypto');
+  const memoryRepository = openMemoryRepo(db, {
+    now: () => Date.now(),
+    idFactory: prefix => `${prefix}-${uuid()}`,
+  });
+  const mem = createMemoryShadow({ legacy: memBase, repository: memoryRepository, db });
   const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string; mode?: string; theme?: string; thinking?: boolean };
   // 默认模型/端点兜底：/key 只保存密钥时，若 config 无 model/baseURL，
   // agent 的 defaultCallModel 会因 `!s.model || !s.baseURL` 降级规则脑
@@ -357,6 +357,8 @@ if (pre.mode === 'error') {
     dataDir, cwd, db, mem, config, bus, commandBus,
     agent,
     sessionStart: sessionStartService,
+    // W3 Memory：/memory 命令经 session-scoped modern 权威服务（scope 只来自当前会话）
+    memoryServiceFor: (sid: string) => createMemoryService(memoryRepository, { sessionId: sid }),
     getModel: () => model,
     getMode: () => mode,
     setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
