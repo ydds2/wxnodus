@@ -37,5 +37,6 @@ export interface ApplicationInstance {
   services: ApplicationServices;
   gateway: GatewayPort;
   capabilities: CapabilityPort;
-  shutdown(reason: string): Promise<void>;
+  /** 统一幂等关闭：返回失败资源的 id 列表（空 = 全部干净关闭） */
+  shutdown(reason: string): Promise<string[]>;
 }

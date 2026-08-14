@@ -3,6 +3,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { decodeDdgUrl, parseBingHtml, parseDuckDuckGoHtml, searchWeb } from '../src/kernel/search.js'
 
+// P0-08：searchWeb 走 outboundTargetPolicy（DNS fail-closed）——fixture 固定搜索域名解析，避免依赖真实网络
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn(async (host: string, options: { all?: boolean }) => {
+    if (host === 'html.duckduckgo.com' || host === 'www.bing.com' || host === 'example.com') {
+      return options.all ? [{ address: '93.184.216.34' }] : '93.184.216.34';
+    }
+    throw new Error('ENOTFOUND');
+  }),
+}));
+
 // DDG HTML 结果页 fixture（真实结构：result__a + result__snippet）
 const FIXTURE_HTML = `
 <html><body>
@@ -128,7 +138,14 @@ describe('searchWeb — P0-3 搜索缓存', () => {
     let calls = 0
     vi.stubGlobal('fetch', vi.fn(async () => {
       calls++
-      return { ok: true, status: 200, arrayBuffer: async () => Buffer.from(DDG_OK) } as any
+      // P0-08：safeFetchText 消费 ReadableStream body + headers.get（bounded reader 契约）
+      return {
+        ok: true, status: 200,
+        headers: { get: () => null },
+        body: new ReadableStream({
+          start(controller) { controller.enqueue(Buffer.from(DDG_OK)); controller.close(); },
+        }),
+      } as any
     }))
     return () => calls
   }

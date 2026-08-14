@@ -1,8 +1,18 @@
 // tests/kernel-ssrf.test.ts — SSRF 防护：IPv4/IPv6 私网形态/DNS 重绑定/协议/重定向
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { isBlockedHostname, checkUrlSafety, safeFetchText } from '../src/kernel/ssrf.js';
 import { createServer } from 'node:http';
 import { afterEach } from 'vitest';
+
+// P0-08：safeFetchText 走 outboundTargetPolicy（DNS fail-closed）——stub 测试固定公网解析，避免依赖真实网络
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn(async (host: string, options: { all?: boolean }) => {
+    if (host === 'example.com' || host === 'api.example.com') {
+      return options.all ? [{ address: '93.184.216.34' }] : '93.184.216.34';
+    }
+    throw new Error('ENOTFOUND');
+  }),
+}));
 
 const servers: ReturnType<typeof createServer>[] = [];
 afterEach(() => { for (const s of servers.splice(0)) s.close(); });

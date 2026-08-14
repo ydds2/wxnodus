@@ -59,7 +59,8 @@ const makeStore = () => {
     async appendClosed(record: unknown, pending: Array<{ attachmentId: string; bytes: Buffer }>) {
       records.push(record);
       for (const item of pending) attachments.set(item.attachmentId, item.bytes);
-      return { ok: true as const, value: { evidenceId: (record as { id: string }).id } };
+      const ref = { id: (record as { id: string }).id, sha256: 'a'.repeat(64) };
+      return { ok: true as const, value: { evidenceId: ref.id, ref } };
     },
   };
 };

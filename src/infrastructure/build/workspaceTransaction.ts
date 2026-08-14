@@ -1,8 +1,10 @@
 // src/infrastructure/build/workspaceTransaction.ts — staging 事务：安全子目录 + 原子换入（路径逃逸/失败回滚 fail closed）
+// P0-04：路径校验走 pathBoundary（lexical + realpath/symlink/junction 双检），不再只做 lexical 比较。
 import { mkdtemp, mkdir, readdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { OperationResult } from '../../protocol/results.js';
+import { validateWorkspaceTarget } from '../fs/pathBoundary.js';
 
 const fail = <T = never>(code: string, details?: Record<string, unknown>): OperationResult<T> => ({
   ok: false,
@@ -17,12 +19,8 @@ export interface WorkspaceTransactionOptions {
 export class WorkspaceTransaction {
   constructor(private readonly options: WorkspaceTransactionOptions) {}
 
-  private withinRoot(target: string): string | null {
-    const root = resolve(this.options.root);
-    const resolved = resolve(target);
-    const rel = relative(root, resolved);
-    if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
-    return resolved;
+  private async safeTarget(target: string): Promise<{ ok: true; target: string } | { ok: false; code: string }> {
+    return validateWorkspaceTarget(this.options.root, target);
   }
 
   stage(): Promise<OperationResult<{ stagingDir: string }>> {
@@ -32,10 +30,14 @@ export class WorkspaceTransaction {
   }
 
   async commit(stagingDir: string, targetDir: string): Promise<OperationResult<void>> {
-    const target = this.withinRoot(targetDir);
-    if (!target) return fail('BUILD_PATH_OUTSIDE_WORKSPACE', { stagingDir, targetDir });
+    const boundary = await this.safeTarget(targetDir);
+    if (!boundary.ok) return fail(boundary.code, { stagingDir, targetDir });
+    const target = boundary.target;
     try {
       await mkdir(dirname(target), { recursive: true });
+      // mkdir 后再校验一次：创建过程不得经过 symlink/junction 祖先
+      const rechecked = await this.safeTarget(targetDir);
+      if (!rechecked.ok) return fail(rechecked.code, { stagingDir, targetDir });
       const backup = `${target}.bak-${Date.now().toString(36)}`;
       let movedOld = false;
       try { await rename(target, backup); movedOld = true; } catch (error) {
@@ -59,8 +61,9 @@ export class WorkspaceTransaction {
   }
 
   async diff(targetDir: string): Promise<OperationResult<{ changed: string[] }>> {
-    const target = this.withinRoot(targetDir);
-    if (!target) return fail('BUILD_PATH_OUTSIDE_WORKSPACE', { targetDir });
+    const boundary = await this.safeTarget(targetDir);
+    if (!boundary.ok) return fail(boundary.code, { targetDir });
+    const target = boundary.target;
     try {
       const changed: string[] = [];
       const walk = async (dir: string, prefix = '') => {

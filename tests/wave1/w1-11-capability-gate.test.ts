@@ -10,6 +10,8 @@ import { Wave1CapabilityRegistry } from '../../src/application/capabilities/capa
 import type { CapabilityPort } from '../../src/domain/capabilities/capability.js';
 import { evaluateWave1Gates } from '../../src/release/gateDefinitions.js';
 import { FileEvidenceStore } from '../../src/infrastructure/quality/fileEvidenceStore.js';
+import { CompletionCoordinator } from '../../src/application/quality/completionCoordinator.js';
+import { CompletionGate } from '../../src/domain/quality/completionGate.js';
 import { createReviewerAttestation, ReviewerAttestationVerifier, type ReviewBinding, type ReviewRun } from '../../src/domain/quality/review.js';
 import { FileReviewNonceStore } from '../../src/infrastructure/quality/fileReviewNonceStore.js';
 import type { EvidenceAttachment, EvidenceRecord } from '../../src/domain/quality/evidence.js';
@@ -44,7 +46,7 @@ const record = (): EvidenceRecord => ({
 const reviewRun = (): ReviewRun => ({
   id: 'review-1', runId: 'gate-wave1', maker: { actorId: 'maker-1', contextHash: sha('1') },
   reviewer: { actorId: 'reviewer-1', contextHash: sha('2') }, artifact, environment, policy,
-  evidence: [], status: 'completed', startedAt: '2026-08-13T00:01:00.000Z', completedAt: '2026-08-13T00:01:30.000Z', nonce: 'nonce-gate',
+  evidence: [], requiredCriterionIds: ['gate-g'], status: 'completed', startedAt: '2026-08-13T00:01:00.000Z', completedAt: '2026-08-13T00:01:30.000Z', nonce: 'nonce-gate',
 });
 function reviewFixture(root: string) {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
@@ -52,7 +54,7 @@ function reviewFixture(root: string) {
   const verifier = new ReviewerAttestationVerifier({ resolve: (issuer, keyId) => issuer === signer.issuer && keyId === signer.keyId ? {
     issuer, keyId, algorithm: 'Ed25519' as const, publicKey, reviewerActorIds: ['reviewer-1'],
     activeFrom: '2026-08-01T00:00:00.000Z', activeUntil: '2026-09-01T00:00:00.000Z', maxAgeMs: 600_000, maxClockSkewMs: 5_000,
-  } : undefined }, new FileReviewNonceStore(join(root, 'review-nonces')));
+  } : undefined }, new FileReviewNonceStore(join(root, 'review-nonces')), () => '2026-08-13T00:03:00.000Z');
   return { signer, verifier };
 }
 
@@ -70,21 +72,31 @@ describe('W1-11 capability and gate boundary', () => {
     const trusted = await store.readVerified(ref.value); if (!trusted.ok) throw new Error(trusted.error.code);
 
     const { signer, verifier } = reviewFixture(root);
-    const binding: ReviewBinding = { runId: 'gate-wave1', artifact, environment, policy, evidence: [ref.value] };
+    const binding: ReviewBinding = { runId: 'gate-wave1', artifact, environment, policy, evidence: [ref.value], requiredCriterionIds: ['gate-g'] };
     const signed = await createReviewerAttestation({ ...reviewRun(), evidence: [ref.value] }, 'passed', signer,
       { issuedAt: '2026-08-13T00:02:00.000Z', expiresAt: '2026-08-13T00:07:00.000Z' });
     if (!signed.ok) throw new Error(signed.error.code);
-    const reviewer = await verifier.verify(signed.value, binding, '2026-08-13T00:03:00.000Z');
+    const reviewer = await verifier.verify(signed.value, binding);
     if (!reviewer.ok) throw new Error(reviewer.error.code);
 
-    const gates = evaluateWave1Gates([{ id: 'G', required: true, evidence: [trusted.value], reviewer: reviewer.value }], { evidenceStore: store, reviewerVerifier: verifier });
+    // Gate G 唯一 authority：genuine CompletionCoordinator 签发的 owned succeeded receipt
+    const coordinator = new CompletionCoordinator(new CompletionGate(store, verifier), () => '2026-08-13T00:03:01.000Z');
+    const trust = { evidenceStore: store, reviewerVerifier: verifier, coordinator };
+    const gates = evaluateWave1Gates([{ id: 'G', required: true, evidence: [trusted.value], reviewer: reviewer.value }], trust);
     expect(gates).toMatchObject({ ok: true, value: { passed: true } });
     // spread 拷贝不是 store 拥有的 receipt → 必须 GATE_EVIDENCE_UNTRUSTED（无法伪造 trusted:true）
-    expect(evaluateWave1Gates([{ id: 'G', required: true, evidence: [{ ...trusted.value, trusted: true }] as never, reviewer: reviewer.value }], { evidenceStore: store, reviewerVerifier: verifier }))
+    expect(evaluateWave1Gates([{ id: 'G', required: true, evidence: [{ ...trusted.value, trusted: true }] as never, reviewer: reviewer.value }], trust))
       .toMatchObject({ ok: false, error: { code: 'GATE_EVIDENCE_UNTRUSTED' } });
     // review 伪造（自报对象）→ GATE_REVIEW_UNTRUSTED
-    expect(evaluateWave1Gates([{ id: 'G', required: true, evidence: [trusted.value], reviewer: { trusted: true, attestation: signed.value } as never }], { evidenceStore: store, reviewerVerifier: verifier }))
+    expect(evaluateWave1Gates([{ id: 'G', required: true, evidence: [trusted.value], reviewer: { trusted: true, attestation: signed.value } as never }], trust))
       .toMatchObject({ ok: false, error: { code: 'GATE_REVIEW_UNTRUSTED' } });
+    // 缺 coordinator / fake coordinator → GATE_COMPLETION_AUTHORITY_UNTRUSTED（不得回退本地 criteria 判定）
+    expect(evaluateWave1Gates([{ id: 'G', required: true, evidence: [trusted.value], reviewer: reviewer.value }],
+      { evidenceStore: store, reviewerVerifier: verifier }))
+      .toMatchObject({ ok: false, error: { code: 'GATE_COMPLETION_AUTHORITY_UNTRUSTED' } });
+    expect(evaluateWave1Gates([{ id: 'G', required: true, evidence: [trusted.value], reviewer: reviewer.value }],
+      { evidenceStore: store, reviewerVerifier: verifier, coordinator: {} as never }))
+      .toMatchObject({ ok: false, error: { code: 'GATE_COMPLETION_AUTHORITY_UNTRUSTED' } });
     // 落盘篡改 → 完整性失败（不可变存储检测）
     await chmod(join(root, 'records', ref.value.id, 'record.json'), 0o644);
     await writeFile(join(root, 'records', ref.value.id, 'record.json'), '{}');

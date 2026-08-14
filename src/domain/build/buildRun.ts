@@ -4,11 +4,14 @@ import type { OperationResult } from '../../protocol/results.js';
 
 export interface BuildVerificationSnapshot {
   runId: string;
+  artifactId: string;
   artifactHash: string;
   verificationId: string;
   environmentSnapshotId: string;
+  environmentHash: string;
   capabilitySnapshotId: string;
   policySnapshotId: string;
+  policyHash: string;
 }
 
 export function createBuildVerificationSnapshot(input: Omit<BuildVerificationSnapshot, 'verificationId'>): BuildVerificationSnapshot {
