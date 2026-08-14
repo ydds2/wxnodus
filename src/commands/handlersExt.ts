@@ -2231,6 +2231,36 @@ export const commands = {
     if (!browserRoute.ok) {
       throw new Error(`[${browserRoute.error.code}] ${browserRoute.error.message}`);
     }
+    // W3 Browser facade：modern 路由经 BrowserSessionService（P0-02 权威：owner 校验/独立 context/URL 逐跳授权）
+    // + 入口 UrlPolicy 先验（私网/loopback/DNS fail-closed）+ 证据落盘。
+    if (browserRoute.value.route === 'modern') {
+      const { BrowserSessionService } = await import('../application/computer/browserSessionService.js');
+      const { createProductionBrowserDriver, authorizeBrowserUrl } = await import('../application/computer/browserWiring.js');
+      const { createComputerEvidenceStore } = await import('../application/computer/computerEvidenceStore.js');
+      const sub = String(args[0] ?? '').toLowerCase();
+      const sid = ctx.agent?.getSessionId?.() ?? 'default';
+      if (sub === 'open') {
+        const url = args.slice(1).join(' ').trim();
+        if (!url) return '用法：/browser open <URL>（SSRF 防护拦截内网）';
+        const authorized = await authorizeBrowserUrl({ url });
+        if (!authorized.ok) return `[${authorized.error.code}] ${authorized.error.message}（${String((authorized.error.details as Record<string, unknown> | undefined)?.reason ?? '')}）`;
+        const service = new BrowserSessionService(createProductionBrowserDriver());
+        const opened = await service.open(sid);
+        if (!opened.ok) return `[${opened.error.code}] ${opened.error.message}`;
+        const navigated = await opened.value.navigate(authorized.value.url);
+        if (!navigated.ok) return `[${navigated.error.code}] ${navigated.error.message}`;
+        const evidence = createComputerEvidenceStore(ctx.dataDir);
+        const closed = await evidence.closeComputerAction({ kind: 'browser.open', url: authorized.value.url, sessionId: sid });
+        return closed.ok ? `已打开 ${authorized.value.url}（证据 ${closed.value.evidenceId}）` : `已打开 ${authorized.value.url}（证据落盘失败：${closed.error.code}）`;
+      }
+      if (sub === 'close') {
+        const service = new BrowserSessionService(createProductionBrowserDriver());
+        const closed = await service.close(sid);
+        if (!closed.ok) return `[${closed.error.code}] ${closed.error.message}`;
+        return '已关闭浏览器会话';
+      }
+      return 'modern 路由：/browser open <URL> ｜ close（每会话独立 context，URL 逐跳授权 + 证据落盘）';
+    }
     const sub = String(args[0] ?? '').toLowerCase();
     const { browserProbe, browserClose, browserNavigate } = await import('../kernel/browser.js');
     if (sub === 'close') return await browserClose();

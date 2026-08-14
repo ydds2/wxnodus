@@ -20,8 +20,8 @@ export interface ComputerRouteDecision {
 
 // ComputerUseService 生产接线状态：wiring + 证据 store + /computer modern 分支已装配（PDP/审批桥/postcondition/evidence 全端口）
 const COMPUTER_SERVICE_WIRED = true;
-// Playwright 经 ComputerUseService + URL policy 的接线状态——同上
-const BROWSER_SERVICE_WIRED = false;
+// Browser 接线状态：UrlPolicy 先验 + PlaywrightBrowserDriver 生产组装 + /browser modern 分支已装配
+const BROWSER_SERVICE_WIRED = true;
 
 function decideCapability(input: {
   operatorFlag?: string;
@@ -66,7 +66,7 @@ export function decideBrowserRoute(input: { operatorFlag?: string; env?: string 
     capability: 'browser',
     wired: BROWSER_SERVICE_WIRED,
     unavailableCode: 'BROWSER_MODERN_UNAVAILABLE',
-    unavailableMessage: 'browser 能力的 modern 路由尚未完成生产接线（Playwright 经 ComputerUseService + URL policy）',
+    unavailableMessage: 'browser 能力的 modern 路由不可用',
     unavailableKey: 'browser.modern.unavailable',
   });
 }

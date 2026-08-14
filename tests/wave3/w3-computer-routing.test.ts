@@ -17,11 +17,11 @@ describe('computer/browser capability routing', () => {
     expect(decision.value.route).toBe('modern');
   });
 
-  it('modern browser root fails closed with BROWSER_MODERN_UNAVAILABLE', () => {
+  it('modern browser root routes to the wired browser service', () => {
     const decision = decideBrowserRoute({ env: 'modern' });
-    expect(decision.ok).toBe(false);
-    if (decision.ok) throw new Error('unreachable');
-    expect(decision.error.code).toBe('BROWSER_MODERN_UNAVAILABLE');
+    expect(decision.ok).toBe(true);
+    if (!decision.ok) throw new Error('unreachable');
+    expect(decision.value.route).toBe('modern');
   });
 
   it('browser legacy/shadow stays on the legacy pipeline', () => {
