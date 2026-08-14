@@ -3,6 +3,7 @@
 // 端口化设计：探针不依赖 playwright 类型，真实实现见 playwrightCdpPorts.ts（可无浏览器单元测试）
 import type { OperationResult } from '../../protocol/results.js';
 import { HarCaptureAdapter, type HarSession } from './harCaptureAdapter.js';
+import { redactHarUrl } from './redactionPolicy.js';
 import type { SegmentableEvent } from '../../domain/computer/segmentReplay.js';
 
 export interface CdpNetworkRequestEvent {
@@ -57,9 +58,12 @@ export class CdpHarProbe {
     try {
       await client.enableNetwork();
       client.onRequest(event => {
+        // W5-02：secret 不得进入内存——CDP 事件边界即脱敏（pending 只存脱敏 URL）；不可 parse 丢弃
+        const redacted = redactHarUrl(event.url);
+        if (!redacted.ok) return;
         pending.set(event.requestId, {
           method: event.method,
-          url: event.url,
+          url: redacted.value.url,
           wallTimeSeconds: event.wallTimeSeconds,
           monotonicSeconds: event.monotonicSeconds,
         });
@@ -87,6 +91,7 @@ export class CdpHarProbe {
       await sleep(settleMs);
       if (options?.signal?.aborted) return fail('CDP_PROBE_ABORTED');
     } finally {
+      pending.clear(); // W5-02：complete/fail/abort 一律清空 pending（不残留未配对请求）
       await client.close();
     }
     if (opened.value.events.length === 0) return fail('CDP_PROBE_NO_EVENTS', { url });

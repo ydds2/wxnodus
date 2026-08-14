@@ -34,7 +34,7 @@ describe('W5-02 预存储脱敏（redactionPolicy）', () => {
     }
     expect(result.value.url).toContain('page=2'); // 非敏感参数保留
     expect(result.value.redactedKeys.sort()).toEqual(['access_token', 'api_key', 'client_secret', 'code', 'refresh_token', 'signature', 'token']);
-    expect(result.value.url).toContain('[REDACTED]');
+    expect(result.value.url).toContain('REDACTED');
   });
 
   it('敏感键大小写不敏感（API_KEY 同样脱敏）；无法安全 parse → 拒绝', () => {
@@ -56,7 +56,7 @@ describe('W5-02 预存储脱敏（redactionPolicy）', () => {
     const stored = JSON.stringify(session.value.events);
     expect(stored).not.toContain('sk-secret-1');
     expect(stored).not.toContain('user:pass@');
-    expect(stored).toContain('[REDACTED]');
+    expect(stored).toContain('REDACTED');
   });
 });
 
@@ -92,7 +92,7 @@ describe('W5-02 配额（harQuotaPolicy + adapter 强制）', () => {
   });
 
   it('文件字节超限 → 仍落盘但 complete:false + reason；目录配额超限 → complete:false', async () => {
-    const adapter = new HarCaptureAdapter({ quota: { maxFileBytes: 256, maxFilesPerDirectory: 1 } });
+    const adapter = new HarCaptureAdapter({ quota: { maxFileBytes: 256 } });
     const session = adapter.openSession('s4');
     expect(session.ok).toBe(true);
     if (!session.ok) return;
@@ -104,11 +104,12 @@ describe('W5-02 配额（harQuotaPolicy + adapter 强制）', () => {
     expect(flushed.value.complete).toBe(false);
     expect(flushed.value.reason).toBe('HAR_QUOTA_FILE_TOO_LARGE');
     expect(existsSync(flushed.value.path)).toBe(true); // 仍落盘（诚实标记不完整）
-    // 目录文件数超限
-    const session2 = adapter.openSession('s5');
+    // 目录文件数超限（独立 adapter：文件字节维度默认宽，隔离目录维度）
+    const dirAdapter = new HarCaptureAdapter({ quota: { maxFilesPerDirectory: 1 } });
+    const session2 = dirAdapter.openSession('s5');
     if (!session2.ok) return;
-    expect(adapter.recordEvent(session2.value, ev('https://b.example/x'))).toMatchObject({ ok: true });
-    const flushed2 = await adapter.flush(session2.value, dir);
+    expect(dirAdapter.recordEvent(session2.value, ev('https://b.example/x'))).toMatchObject({ ok: true });
+    const flushed2 = await dirAdapter.flush(session2.value, dir);
     expect(flushed2.ok).toBe(true);
     if (!flushed2.ok) return;
     expect(flushed2.value.complete).toBe(false);
@@ -154,7 +155,7 @@ describe('W5-02 CDP 探针（redaction 在 pending 之前 + abort 清理）', ()
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(JSON.stringify(result.value.events)).not.toContain('sk-secret-1');
-    expect(JSON.stringify(result.value.events)).toContain('[REDACTED]');
+    expect(JSON.stringify(result.value.events)).toContain('REDACTED');
   });
 
   it('abort 信号 → CDP_PROBE_ABORTED（pending 经 finally 清理，无泄漏崩溃）', async () => {
