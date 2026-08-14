@@ -180,3 +180,10 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 
 - `src/commands/computerRouting.ts`: computer + browser capability routing (shared generic, same fail-closed shape as build/voice) — modern/required fails closed with `COMPUTER_MODERN_UNAVAILABLE` / `BROWSER_MODERN_UNAVAILABLE` while ComputerUseService full-port wiring (PDP/approval/postcondition/evidence) is incomplete; legacy/shadow unchanged; `/computer` and `/browser` handlers enforce it.
 - Full suite: 210 files / 1703 passed / 10 skipped / 0 failed.
+
+
+## Wave 3 progress (Plugin/Subagent/MCP step 1) — 2026-08-14
+
+- `src/commands/extensionRouting.ts`: plugin/subagent/mcp capability routing (shared generic) — modern/required fails closed (`PLUGIN_MODERN_UNAVAILABLE` / `SUBAGENT_MODERN_UNAVAILABLE` / `MCP_MODERN_UNAVAILABLE`) while the respective production wiring (OS sandbox/permission broker/signature; live process host/effect fence; extensions phase + shutdown) is incomplete; legacy/shadow unchanged. `/plugin`, `/mcp`, `/delegate` handlers enforce it.
+- Wave 3 routing coverage now spans build, voice, computer, browser, plugin, subagent, mcp — all fail-closed, all legacy-preserving.
+- Full suite: 211 files / 1708 passed / 10 skipped / 0 failed.
