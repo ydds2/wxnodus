@@ -338,3 +338,18 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - 全量：**233 文件 / 1814 通过 / 10 跳过 / 0 失败**；known-failures 31/31（18 open oracle + 12 migrated 绿回归）；typecheck×2/build/discovery 干净。
 - KF 账本现状：30 条中 12 条 resolved-with-green-regression，18 条 open（环境/legacy 路径缺陷稳定复现）。
 - 剩余：Wave 5（Market 信任根 + HAR 预存储脱敏）、Wave 6（evidence 索引接线 / Gate E-H-I / release:finalize）。
+
+## W5-01 Market 信任加固完成 — 2026-08-15
+
+- RED 先行（`b7653ff`）：12 用例契约（canonical 封套逐字段篡改/expiry/版本冲突/重启持久化/审计链/根轮换/攻击场景/权限四件套/完整发布流）。
+- 实现（`efb458f`）：
+  - `marketSigning.ts` 重写：`MarketEnvelope { id, kind, version, publisher, payloadDigest, expiry, scope }` 全字段入签（排序键 canonical JSON）；payload 摘要绑定；过期 → `MARKET_ITEM_EXPIRED`；`signRootAuthorization` 供根轮换。
+  - `marketTrustRoot.ts`（新）：文件 pinned 根库（fsync+rename 原子写）；bootstrap 根 generation=1（操作员离线）；轮换 generation 严格递增 + 旧 active 根签名验证；retire/revoke。
+  - `marketPolicy.ts`（新）：Bearer 仅存 sha256（明文绝不落盘）+ timingSafeEqual + 按 action 的 scope + nonce 一次性（TTL 集）+ maxBodyBytes。
+  - `marketMigrations.ts`/`marketRepository.ts`（新）：schema 5→6（market_items PRIMARY KEY(id,version)/market_keys/market_audit 哈希链/market_nonces）；publish 事务（版本冲突 + nonce + 审计链任一失败整体回滚）；verifyAuditChain 全链重算。
+  - `marketAuthority.ts`：SQLite 持久化（重启不丢）；bootstrap/授权轮换/退休/吊销；同 id/version → `MARKET_ITEM_VERSION_CONFLICT`。
+  - `marketServer.ts`：三变更端点前置 policy（401/403/409/413 分层）；审计 journal 落库。
+  - `marketClient.ts`：只信本地 pinned 根——绝不从 item server 取公钥（攻击者同时替换 server key+item → 客户端 `MARKET_SIGNATURE_INVALID` 实证）。
+  - 契约更新：market-distribution 重写（5 用例含攻击场景）、forge-compliance 封套段、db-migrations/kf-030 对齐 schema 6。
+- 全量：**234 文件 / 1826 通过 / 10 跳过 / 0 失败**；known-failures 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
+- 诚实边界：Market 仍无生产消费入口（纯库 + 真实 HTTP 契约测试）；/market 命令接线留 Wave 6；W5-02 HAR 脱敏/配额/留存未开始。
