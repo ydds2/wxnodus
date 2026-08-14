@@ -1,7 +1,7 @@
 // tests/session-start-mcp-generation.contract.test.ts — 目标导出物验证：
 // SessionStart 显式生成（身份/locale/模型/钩子/能力 + sha256 绑定 + 原子持久化）
 // MCP server 显式生成（工具签名 → 可运行 stdio 源码 + 绑定 manifest，确定性字节输出）
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -43,8 +43,13 @@ describe('SessionStart 显式生成', () => {
     expect(zh.value.locale).toBe('zh-CN');
     expect(en.value.locale).toBe('en');
     expect(zh.value.sha256).not.toBe(en.value.sha256);
-    // 校验器只验证形态（sha256 必须是 64-hex）；绑定验证由重算比对完成
-    expect(validateSessionStart({ ...en.value, sha256: '0'.repeat(64) })).toMatchObject({ ok: true });
+    // W3 Session 第 1 步：validate 重算 canonical 哈希并比对——全零/漂移一律拒绝
+    expect(validateSessionStart({ ...en.value, sha256: '0'.repeat(64) })).toMatchObject({
+      ok: false, error: { code: 'SESSION_START_HASH_MISMATCH' },
+    });
+    expect(validateSessionStart({ ...en.value, model: 'drifted-model' })).toMatchObject({
+      ok: false, error: { code: 'SESSION_START_HASH_MISMATCH' },
+    });
     // 字段漂移 → 哈希漂移（同 sessionId 不同模型）
     const otherModel = new SessionStartGenerator({ ...generatorPorts('en'), model: () => 'deepseek-v4' }).generate('sess-1');
     expect(otherModel.ok && otherModel.value.sha256).not.toBe(en.value.sha256);
@@ -59,6 +64,18 @@ describe('SessionStart 显式生成', () => {
     expect(existsSync(file)).toBe(true);
     const readBack = JSON.parse(readFileSync(file, 'utf8'));
     expect(readBack.sha256).toBe(generated.value.sha256);
+    // 读回重算：磁盘上的合法文档通过 readSessionStart
+    const { readSessionStart } = await import('../src/application/sessions/sessionStartGenerator.js');
+    const reread = await readSessionStart(file);
+    expect(reread.ok && reread.value.sha256).toBe(generated.value.sha256);
+    // 磁盘篡改（改字段不改哈希）→ 读回拒绝
+    writeFileSync(file, JSON.stringify({ ...generated.value, model: 'tampered' }), 'utf8');
+    const tampered = await readSessionStart(file);
+    expect(tampered).toMatchObject({ ok: false, error: { code: 'SESSION_START_HASH_MISMATCH' } });
+    // 半写/非 JSON → 拒绝
+    writeFileSync(file, '{broken', 'utf8');
+    const malformed = await readSessionStart(file);
+    expect(malformed).toMatchObject({ ok: false, error: { code: 'SESSION_START_INVALID' } });
     await expect(persistSessionStart(file, { ...generated.value, locale: 'fr' } as never)).resolves.toMatchObject({
       ok: false, error: { code: 'SESSION_START_INVALID' },
     });
