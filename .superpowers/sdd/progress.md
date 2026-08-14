@@ -310,3 +310,20 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - W1-08 UoW 补全（`28beefa`）：`activePolicySnapshotId()`（authorize 上下文以仓储为唯一可信源）+ `release()` 退款归零即清键（不留 `{"externalWrites":0}` 预算残渣）。
 - 全量：227 文件 / 1796 通过 / 10 跳过 / 0 失败；known-failures 31/31；typecheck×2 + check:test-discovery 干净。
 - 剩余：Wave 5（Market 信任根 + HAR 预存储脱敏）、Wave 6（evidence 索引 / Gate E blocked 保持 / Gate H/I / release:finalize）；agent 主路径 executeTool 切生产 pipeline（遗留接线）。
+
+## Priority 1 完成（agent 主路径接入生产 pipeline + KF-010/023/024 修复）— 2026-08-15
+
+- RED 先行（`a02bac5`）：3 个回归测试锁定缺陷（manual 默认审批旁路 / goal [GOAL_DONE] 无验证成功 / 文本「完成了」假成功）——修复前 3 红实证。
+- 最小修复（`17fc675`）：
+  - `src/kernel/completionClaim.ts`：确定性完成声明判定（保守模式「完成了/完成/done/[GOAL_DONE]」；「读完了」等叙事不误伤）。
+  - `agent.ts`：默认 `onApproval` fail-closed（`?? (() => false)`）；`lastToolOutcome` 确定性结局 + `runState.verifiedEffects` 跨 goal 轮次累计；`ok` 绝不从文本长度推导——完成声明且零验证副作用 → `AgentResult.status='incomplete'`（CLI exit 3 走共享 completionTransport）；`agent.end`/sessionEnd/stop 事件同源。
+  - KF-010/023/024 原子迁移：case 删除 + registry 改 `resolved-with-green-regression`（validator 形状锁定）+ 3 个绿色回归；1 个内核测试按诚实语义更新（agent.goal 事件测试零副作用声明 → incomplete）。
+- pipeline 接线（`ff495dd`，分层复用）：
+  - `src/application/tools/agentToolSurface.ts`：24 个 danger/写类工具映射 `agent:*` 描述符（effect kind 九维全覆盖）；executor 包装 legacy `tool.run`（toolCtx 经串行槽绑定）；postcondition 真实再探（fs_write/fs_edit 存在性）；`AgentApprovalBridge`（WeakMap<args, true>——legacy 前置链放行后由 runner 标记，CLI approver 读桥，不二次弹窗）。
+  - `toolExecutionWiring.ts`：`registerAgentTools` 晚绑定注册（execute/verify/resource 端口调用时分派 agent:* 前缀）。
+  - `defaultToolPolicy.ts`：补 memory.write/config.write/extension.manage/ui.external 四规则（PDP 无规则即 deny——不补则 agent 工具全被拒）。
+  - `agent.ts` 接缝：runner 分支替换 `tool.run`（失败以「工具执行失败（code）」回填保住 5 连败终止语义）；CLI 组合根装配 surface + runner + 审批桥；MCP 热重载同步换表。
+  - 诚实边界：只读工具维持 legacy（shadow）；直调 pipeline 无 runner 绑定 → `AGENT_TOOL_CONTEXT_UNBOUND` fail-closed；agent 主路径现在真实消耗预算（externalWrites/networkRequests/processSpawns），超限 fail-closed。
+- 契约：`tests/wave3/w3-agent-pipeline-wiring.test.ts` 9/9（全链 grant/journal/evidence、桥语义、超预算、postcondition、agent 级 goal/chat 集成）。
+- 全量：**231 文件 / 1809 通过 / 10 跳过 / 0 失败**；known-failures 31/31（27 open 稳定复现 + 3 migrated 绿回归 + 1 原有）；typecheck×2/build/discovery 干净；dist smoke（--version / 确定性计算）通过。
+- 剩余：forge KF-016/017 修复（下轮）；Wave 5（Market 信任根 + HAR 脱敏）；Wave 6（evidence 索引接线/Gate E-H-I/finalizer）。
