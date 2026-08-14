@@ -36,6 +36,8 @@ export interface BuildCompletionContext {
   criteria: AcceptanceCriterion[];
   nodes: Record<string, NodeResult>;
   snapshot: BuildVerificationSnapshot;
+  /** W3 接线修正：verifier input 的相对路径解析基准（脚手架已落盘） */
+  stagingDir: string;
 }
 
 export interface BuildServicePorts {
@@ -47,9 +49,11 @@ export interface BuildServicePorts {
   };
   /** 每个验收标准 → W3-01 verifier；缺失即 BUILD_VERIFIER_MAPPING_MISSING */
   verifierMap: { resolve(criterion: AcceptanceCriterion): OperationResult<{ verifierId: string }> };
-  /** 构建节点（install/build/start/readiness/business-write/stop-port-release/restart/business-read/test/evidence/decision） */
-  nodes(stagingDir: string, snapshot: BuildVerificationSnapshot): PlanNode[];
-  /** 静态入口校验：生成的 server 必须在 / 提供前端，否则 BUILD_STATIC_ENTRY_MISSING */
+  /** 构建节点（install/build/start/readiness/business-write/stop-port-release/restart/business-read/test/evidence/decision）。
+   *  W3 接线修正：节点工厂接收 spec——脚手架节点在 staging 内真实落盘（此前 spec 无通道进入节点）。 */
+  nodes(stagingDir: string, snapshot: BuildVerificationSnapshot, spec: unknown): PlanNode[];
+  /** 静态入口校验：生成的 server 必须在 / 提供前端，否则 BUILD_STATIC_ENTRY_MISSING。
+   *  W3 接线修正：在 DAG 执行后校验（脚手架节点已把项目写入 staging）——此前在空 staging 上预检必失败。 */
   staticEntry: { verify(stagingDir: string, signal: AbortSignal): Promise<OperationResult<{ servesRoot: boolean }>> };
   /** 仅组装未受信任的 completion input；唯一 authority 是 injected CompletionCoordinator。 */
   completionInput(context: BuildCompletionContext): Promise<OperationResult<CompletionGateInput>>;
@@ -100,6 +104,10 @@ export class BuildService {
         await abandon();
         return fail('COMPLETION_COORDINATOR_UNTRUSTED');
       }
+      // W3 接线修正：先执行 DAG（scaffold 节点真实落盘 staging），再校验静态入口——
+      // 此前在空 staging 上预检，生产上必然 BUILD_STATIC_ENTRY_MISSING。
+      const nodes = this.ports.nodes(stagingDir, snapshot, request.spec);
+      const executed = await executePlanDag(nodes, signal);
       const staticEntry = await this.ports.staticEntry.verify(stagingDir, signal);
       if (!staticEntry.ok) {
         await abandon();
@@ -109,15 +117,13 @@ export class BuildService {
         await abandon();
         return fail('BUILD_STATIC_ENTRY_MISSING', { stagingDir });
       }
-      const nodes = this.ports.nodes(stagingDir, snapshot);
-      const executed = await executePlanDag(nodes, signal);
       for (const [nodeId, nodeResult] of Object.entries(executed.nodes)) {
         if (nodeResult.status === 'failed' && nodeResult.code !== 'BUILD_NODE_FAILED' && nodeResult.code) {
           await abandon();
           return fail(nodeResult.code, { nodeId });
         }
       }
-      const completionInput = await this.ports.completionInput({ criteria, nodes: executed.nodes, snapshot });
+      const completionInput = await this.ports.completionInput({ criteria, nodes: executed.nodes, snapshot, stagingDir });
       if (!completionInput.ok) {
         await abandon();
         return completionInput;
