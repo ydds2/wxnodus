@@ -46,13 +46,19 @@ function makeRun(repoRoot: string): RunFixture {
     candidateId: 'cand-test', commit: COMMIT, tgzSha256: 'b'.repeat(64),
     cell: { os: process.platform, arch: process.arch, node: process.version }, entrypoint: 'dist/cli/index.js', dynamicImportDeclarations: [],
   }, null, 2));
+  // import 步骤产物（evidence index——finalizer 校验存在性）
+  writeFileSync(join(runDir, 'evidence-index.json'), JSON.stringify({
+    schemaVersion: 1,
+    candidate: { runId, commit: COMMIT, artifactId: 'cand-test', artifactSha256: 'b'.repeat(64) },
+    evidence: [],
+  }, null, 2));
   return { repoRoot, evidenceRoot, runId, candidateFile };
 }
 
 /** 全绿 spawn 假件：顺序记录 + 每步成功（pack 重算返回与 candidate 一致的哈希） */
 function greenSpawn(): { spawn: FinalizeSpawn; calls: string[] } {
   const calls: string[] = [];
-  const spawn: FinalizeSpawn = (command, args) => {
+  const spawn: FinalizeSpawn = (command: string, args: string[]) => {
     calls.push(`${command} ${args.join(' ')}`);
     if (args.includes('pack')) return { status: 0, stdout: `sha256=${'b'.repeat(64)}` };
     return { status: 0, stdout: '{"ok":true}' };
@@ -81,13 +87,13 @@ describe('W6-04 release:finalize', () => {
     expect(result.result.status).toBe('succeeded');
     expect(result.result.certificatePath).toBeTruthy();
     if (result.result.certificatePath) expect(existsSync(result.result.certificatePath)).toBe(true);
-    // 固定顺序：import → coverage → pack 重算 → eligibility → completion（其余步骤进程内执行）
-    const stepOrder = calls.map(call => call.split(' ')[0]).join('>');
-    expect(stepOrder).toContain('import');
+    // 固定顺序：import → coverage → pack 重算 → eligibility → completion（按 spawn 调用序列审计）
+    const stepOrder = calls.join('>');
     const importIndex = stepOrder.indexOf('import');
     const packIndex = stepOrder.indexOf('pack');
     const eligibilityIndex = stepOrder.indexOf('eligibility');
     const completionIndex = stepOrder.indexOf('completion');
+    expect(importIndex).toBeGreaterThanOrEqual(0);
     expect(packIndex).toBeGreaterThan(importIndex);
     expect(eligibilityIndex).toBeGreaterThan(packIndex);
     expect(completionIndex).toBeGreaterThan(eligibilityIndex);
@@ -96,7 +102,7 @@ describe('W6-04 release:finalize', () => {
   it('候选漂移（重算 tgz sha256 ≠ candidate.tgzSha256）→ blocked RELEASE_CANDIDATE_DRIFT', async () => {
     const repoRoot = tmp('w6-fin-drift-');
     const fixture = makeRun(repoRoot);
-    const spawn: FinalizeSpawn = (command, args) => {
+    const spawn: FinalizeSpawn = (command: string, args: string[]) => {
       if (args.includes('pack')) return { status: 0, stdout: 'sha256=ffffffff' };
       return { status: 0, stdout: '{}' };
     };
@@ -105,7 +111,7 @@ describe('W6-04 release:finalize', () => {
       candidateFile: fixture.candidateFile, requirementsFile: join(repoRoot, 'requirements.json'), spawn,
     });
     expect(result.result.status).toBe('blocked');
-    expect(result.result.steps.find(step => step.code === 'RELEASE_CANDIDATE_DRIFT')).toBeTruthy();
+    expect(result.result.steps.find((step: { code?: string }) => step.code === 'RELEASE_CANDIDATE_DRIFT')).toBeTruthy();
     expect(result.result.certificatePath).toBeUndefined();
   });
 
@@ -119,7 +125,7 @@ describe('W6-04 release:finalize', () => {
       candidateFile: fixture.candidateFile, requirementsFile: join(repoRoot, 'requirements.json'), spawn,
     });
     expect(result.result.status).toBe('blocked');
-    expect(result.result.steps.find(step => step.code === 'RELEASE_GATE_E_BLOCKED')).toBeTruthy();
+    expect(result.result.steps.find((step: { code?: string }) => step.code === 'RELEASE_GATE_E_BLOCKED')).toBeTruthy();
     expect(result.result.certificatePath).toBeUndefined();
   });
 
@@ -127,7 +133,7 @@ describe('W6-04 release:finalize', () => {
     const repoRoot = tmp('w6-fin-fails-');
     const fixture = makeRun(repoRoot);
     // completion gate 非零
-    let spawn: FinalizeSpawn = (command, args) => {
+    let spawn: FinalizeSpawn = (command: string, args: string[]) => {
       if (args.includes('pack')) return { status: 0, stdout: `sha256=${'b'.repeat(64)}` };
       if (args.join(' ').includes('completion')) return { status: 2, stdout: '{"status":"blocked"}' };
       return { status: 0, stdout: '{}' };
@@ -137,9 +143,9 @@ describe('W6-04 release:finalize', () => {
       candidateFile: fixture.candidateFile, requirementsFile: join(repoRoot, 'requirements.json'), spawn,
     });
     expect(result.result.status).toBe('blocked');
-    expect(result.result.steps.find(step => step.code === 'RELEASE_COMPLETION_GATE_FAILED')).toBeTruthy();
+    expect(result.result.steps.find((step: { code?: string }) => step.code === 'RELEASE_COMPLETION_GATE_FAILED')).toBeTruthy();
     // 需求解析非零（resolve exit 3）
-    spawn = (command, args) => {
+    spawn = (command: string, args: string[]) => {
       if (args.includes('pack')) return { status: 0, stdout: `sha256=${'b'.repeat(64)}` };
       if (args.join(' ').includes('resolve-requirement-evidence')) return { status: 3, stdout: '{"ok":false}' };
       return { status: 0, stdout: '{}' };
@@ -149,18 +155,18 @@ describe('W6-04 release:finalize', () => {
       candidateFile: fixture.candidateFile, requirementsFile: join(repoRoot, 'requirements.json'), spawn,
     });
     expect(result.result.status).toBe('blocked');
-    expect(result.result.steps.find(step => step.code === 'RELEASE_REQUIREMENT_COVERAGE_BLOCKED')).toBeTruthy();
-    // 索引缺失（runDir 无 gate-report 可导入 → import 步骤 blocked）
+    expect(result.result.steps.find((step: { code?: string }) => step.code === 'RELEASE_REQUIREMENT_COVERAGE_BLOCKED')).toBeTruthy();
+    // 索引缺失（import 产物不存在 → import 步骤 blocked）
     const bareRepo = tmp('w6-fin-noidx-');
     const bareFixture = makeRun(bareRepo);
-    rmSync(join(bareFixture.evidenceRoot, bareFixture.runId, 'gate-report.json'), { force: true });
+    rmSync(join(bareFixture.evidenceRoot, bareFixture.runId, 'evidence-index.json'), { force: true });
     spawn = greenSpawn().spawn;
     result = await finalizeRelease({
       repoRoot: bareRepo, evidenceRoot: bareFixture.evidenceRoot, runId: bareFixture.runId,
       candidateFile: bareFixture.candidateFile, requirementsFile: join(bareRepo, 'requirements.json'), spawn,
     });
     expect(result.result.status).toBe('blocked');
-    expect(result.result.steps.find(step => step.code === 'RELEASE_EVIDENCE_IMPORT_FAILED')).toBeTruthy();
+    expect(result.result.steps.find((step: { code?: string }) => step.code === 'RELEASE_EVIDENCE_IMPORT_FAILED')).toBeTruthy();
   });
 
   it('事实报告：rootDigest 与步骤状态落盘（finalize-report.json）', async () => {

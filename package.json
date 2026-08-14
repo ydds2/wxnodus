@@ -80,7 +80,12 @@
     "demo:installer": "npm exec -- tsx scripts/package-installer.ts",
     "check:release-eligibility": "node scripts/check-release-eligibility.mjs",
     "import:release-evidence": "node scripts/import-release-evidence.mjs",
-    "resolve:requirement-evidence": "node scripts/resolve-requirement-evidence.mjs"
+    "resolve:requirement-evidence": "node scripts/resolve-requirement-evidence.mjs",
+    "pack:release": "node scripts/freeze-candidate.mjs",
+    "gate:h": "node scripts/run-gate-h.mjs",
+    "gate:i": "node scripts/run-gate-i.mjs",
+    "release:finalize": "node scripts/finalize-release.mjs",
+    "check:release-surface": "node scripts/check-release-surface.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
