@@ -130,3 +130,11 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - Contract test fixed: the old assertion that an all-zero hash passes now asserts rejection; new tamper/malformed read-back cases added (7/7).
 - Full suite: 204 files / 1681 passed / 10 skipped / 0 failed.
 - Remaining Session: generate once per session lifecycle + atomic persistence after capability/hook snapshot + production entry wiring (TUI/kernel session creation).
+
+
+## Wave 3 progress (Session step 2) — 2026-08-14
+
+- `src/application/sessions/sessionStartService.ts`: per-session artifact service — generate exactly once per session lifecycle (in-flight dedup for concurrent ensure, disk reuse with read-back recomputation, tamper rejection without silent regeneration), atomic persistence (tmp+rename) confirmed by read-back.
+- Tests 4/4: exactly-once generation, concurrent dedup, disk reuse, tamper rejection.
+- Full suite: 205 files / 1685 passed / 10 skipped / 0 failed.
+- Remaining Session: production entry wiring (TUI/kernel session creation calling ensure with real capability/hook snapshots).
