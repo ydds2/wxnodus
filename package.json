@@ -78,7 +78,9 @@
     "migration:drill:wave1": "node scripts/run-wave1-migration-drill.mjs",
     "memory:curate": "npm exec -- tsx scripts/memory-curator.ts",
     "demo:installer": "npm exec -- tsx scripts/package-installer.ts",
-    "check:release-eligibility": "node scripts/check-release-eligibility.mjs"
+    "check:release-eligibility": "node scripts/check-release-eligibility.mjs",
+    "import:release-evidence": "node scripts/import-release-evidence.mjs",
+    "resolve:requirement-evidence": "node scripts/resolve-requirement-evidence.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",

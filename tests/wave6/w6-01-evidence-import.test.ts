@@ -76,9 +76,9 @@ describe('W6-01 evidence 索引导入（importRunEvidence）', () => {
     });
     expect(imported.ok).toBe(true);
     if (!imported.ok) return;
-    const requirements: RequirementCoverage[] = [{ id: 'R01', subprojects: ['S1'], artifacts: ['a'], profiles: ['core'], platforms: ['windows'], positiveScenarios: ['gate-run'], negativeScenarios: [], gates: ['A'], evidenceRequirements: ['x'], evidenceIds: ['gate-A'], status: 'verified' }];
+    const requirements: RequirementCoverage[] = [{ id: 'R01', subprojects: ['S1'], artifacts: ['a'], profiles: ['core'], platforms: ['windows'], positiveScenarios: ['gate-run'], negativeScenarios: [], gates: ['A'], evidenceRequirements: ['x'], evidenceIds: [`gate-A-${runId}`], status: 'verified' }];
     // 当前候选（不同 artifactSha256）——历史索引证据不得关闭需求
-    const resolved = resolveRequirementEvidence(requirements, imported, { commit: COMMIT, artifactId: 'wxnodus-art', artifactSha256: 'c'.repeat(64) });
+    const resolved = resolveRequirementEvidence(requirements, validateEvidenceIndex(imported.value.index), { runId, commit: COMMIT, artifactId: 'wxnodus-art', artifactSha256: 'c'.repeat(64) });
     expect(resolved.ok).toBe(false);
     expect(resolved.issues).toContain('REQUIREMENT_CANDIDATE_MISMATCH:index');
     expect(resolved.issues.some(issue => issue.includes('REQUIREMENT_CANDIDATE_MISMATCH:R01'))).toBe(true);
@@ -111,7 +111,7 @@ describe('W6-01 evidence 索引导入（importRunEvidence）', () => {
       platforms: ['windows'], positiveScenarios: ['gate-run'], negativeScenarios: [], gates: ['A'],
       evidenceRequirements: ['x'], evidenceIds: [], status: 'planned',
     }));
-    const resolved = resolveRequirementEvidence(requirements, imported, { commit: COMMIT, artifactId: 'wxnodus-art', artifactSha256: ARTIFACT_SHA });
+    const resolved = resolveRequirementEvidence(requirements, validateEvidenceIndex(imported.value.index), { runId, commit: COMMIT, artifactId: 'wxnodus-art', artifactSha256: ARTIFACT_SHA });
     expect(resolved.ok).toBe(false);
     expect(resolved.issues.filter(issue => issue.startsWith('REQUIREMENT_NOT_VERIFIED:'))).toHaveLength(20);
   });

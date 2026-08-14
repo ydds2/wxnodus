@@ -12,6 +12,7 @@ import type { RequirementCoverage } from '../../src/release/requirementSchema.js
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const candidate = {
+  runId: 'run-p0-1',
   commit: '7'.repeat(40),
   artifactId: 'artifact-1',
   artifactSha256: 'a'.repeat(64),
@@ -27,6 +28,8 @@ const index = {
       platform: 'windows',
       profile: 'core',
       scenarios: ['无 TUI 启动'],
+      suite: 'wave0-gates',
+      importProvenance: { source: 'docs/superpowers/evidence/wave0/gate-a.json', importedAt: '2026-08-15T00:00:00.000Z' },
       artifactSha256: candidate.artifactSha256,
       attachments: [{ path: 'docs/superpowers/evidence/wave0/attachments/stdout-a.txt', sha256: 'b'.repeat(64) }],
     },
@@ -36,6 +39,8 @@ const index = {
       platform: 'windows',
       profile: 'core',
       scenarios: ['无 TUI 启动'],
+      suite: 'wave0-gates',
+      importProvenance: { source: 'docs/superpowers/evidence/wave0/gate-b.json', importedAt: '2026-08-15T00:00:00.000Z' },
       artifactSha256: candidate.artifactSha256,
       attachments: [],
     },
