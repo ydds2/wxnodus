@@ -187,3 +187,10 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - `src/commands/extensionRouting.ts`: plugin/subagent/mcp capability routing (shared generic) — modern/required fails closed (`PLUGIN_MODERN_UNAVAILABLE` / `SUBAGENT_MODERN_UNAVAILABLE` / `MCP_MODERN_UNAVAILABLE`) while the respective production wiring (OS sandbox/permission broker/signature; live process host/effect fence; extensions phase + shutdown) is incomplete; legacy/shadow unchanged. `/plugin`, `/mcp`, `/delegate` handlers enforce it.
 - Wave 3 routing coverage now spans build, voice, computer, browser, plugin, subagent, mcp — all fail-closed, all legacy-preserving.
 - Full suite: 211 files / 1708 passed / 10 skipped / 0 failed.
+
+
+## Wave 3 progress (TUI step 1) — 2026-08-14
+
+- `src/bootstrap/tuiRouting.ts`: TUI assembly routing — modern/required fails closed (`TUI_MODERN_UNAVAILABLE`, unified shutdown then exit 2) while `WxGatewayKernel` is not yet collapsed to a presentation adapter; legacy/shadow unchanged. CLI TUI assembly enforces it before constructing GatewayClient.
+- Wave 3 routing now covers all eight capabilities: build, voice, computer, browser, plugin, subagent, mcp, tui — every modern request fails closed with a specific code until the real wiring lands; every legacy/shadow path preserves current behavior.
+- Full suite: 212 files / 1713 passed / 10 skipped / 0 failed.
