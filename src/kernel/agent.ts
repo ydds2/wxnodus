@@ -116,9 +116,10 @@ function makeAbortSignal(): { promise: Promise<void>; resolve: () => void; abort
 }
 
 export function createAgent(opts: AgentOptions) {
-  // P1b：tools 可变——插件热重载（updateTools 重建，不重启进程）
+  // P1b：tools 可变——插件热重载（updateTools 增量合并，不重启进程、不覆盖先前注册）
+  let extraTools = { ...(opts.extraTools ?? {}) };
   let tools = Object.fromEntries(
-    Object.entries({ ...coreTools(), ...(opts.extraTools ?? {}) }).filter(([n]) => !(opts.excludeTools ?? []).includes(n)),
+    Object.entries({ ...coreTools(), ...extraTools }).filter(([n]) => !(opts.excludeTools ?? []).includes(n)),
   );
   const bus = opts.bus;
   let sessionId = opts.sessionId; // 可变：setSessionId 热切换（多会话）
@@ -1087,8 +1088,10 @@ export function createAgent(opts: AgentOptions) {
     steer(text: string): boolean { return steer(text); },
     // P1b：插件热重载——重建工具表（extraTools 合并 + excludeTools 过滤）
     updateTools(extra: Record<string, import('./tools.js').ToolDef>) {
+      // KF-015：增量合并——多次 updateTools 各自 scope 共存（绝不整体重建覆盖先前注册）
+      extraTools = { ...extraTools, ...extra };
       tools = Object.fromEntries(
-        Object.entries({ ...coreTools(), ...extra }).filter(([n]) => !(opts.excludeTools ?? []).includes(n)),
+        Object.entries({ ...coreTools(), ...extraTools }).filter(([n]) => !(opts.excludeTools ?? []).includes(n)),
       );
     },
     // 会话切换：多会话 UI 复用同一 agent 实例（消息经 mem.append 落库到目标会话）

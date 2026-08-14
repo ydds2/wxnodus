@@ -7,11 +7,13 @@ import { createRequire } from 'node:module';
 
 const requireCjs = createRequire(import.meta.url);
 
-let browser: any = null;
-let page: any = null;
+// KF-012：会话隔离——浏览器上下文按 sessionId 分槽（绝不模块级共享 browser/page 单例）；
+// 无 sessionId 传入时回退 'default' 槽（单会话调用兼容）。全部操作仍经串行链（操作互斥）。
+type BrowserSession = { browser: any; page: any };
+const sessions = new Map<string, BrowserSession>();
 let launchError: string | null = null;
 
-// 审查修复：操作互斥——并行剧本分支/多任务会并发调用 browser_*，而 page 是模块级单例；
+// 审查修复：操作互斥——并行剧本分支/多任务会并发调用 browser_*，而 page 是共享资源；
 // 不经串行化时导航中点击、截图与导航交错（竞态错位）。全部操作经此链排队。
 let opChain: Promise<unknown> = Promise.resolve();
 function serialized<T>(fn: () => Promise<T>): Promise<T> {
@@ -19,6 +21,7 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
   opChain = run.then(() => undefined, () => undefined); // 前序失败不阻塞后续
   return run;
 }
+const pageOf = (sessionId: string) => sessions.get(sessionId)?.page ?? null;
 
 /** 浏览器可用性探测（不启动）：系统 Edge/Chrome 可执行文件或 playwright 内置 */
 export function browserProbe(): { ok: boolean; browser?: string; error?: string } {
@@ -46,51 +49,55 @@ export function browserProbe(): { ok: boolean; browser?: string; error?: string 
   }
 }
 
-/** 惰性启动浏览器会话（单例）；失败记录归因（探测层已提示，这里不再重复） */
-async function ensureBrowser(): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (browser) return { ok: true };
+/** 惰性启动浏览器会话（按 sessionId 分槽）；失败记录归因（探测层已提示，这里不再重复） */
+async function ensureBrowser(sessionId = 'default'): Promise<{ ok: true } | { ok: false; error: string }> {
+  const existing = sessions.get(sessionId);
+  if (existing?.browser) return { ok: true };
   const probe = browserProbe();
   if (!probe.ok) return { ok: false, error: probe.error ?? '浏览器不可用' };
   try {
     const { chromium } = requireCjs('playwright-core');
     const channel = probe.browser?.startsWith('chrome') ? 'chrome' : 'msedge';
-    browser = await chromium.launch({
+    const browser = await chromium.launch({
       channel,
       headless: false, // 有头模式：用户可见浏览器窗口（可交互；无头回退在失败时尝试）
       args: ['--disable-blink-features=AutomationControlled'],
     });
-    page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     page.setDefaultTimeout(15000);
+    sessions.set(sessionId, { browser, page });
     return { ok: true };
   } catch (e: any) {
     launchError = String(e?.message ?? e).slice(0, 300);
     // 有头失败回退无头（CI/无显示环境）
     try {
       const { chromium } = requireCjs('playwright-core');
-      browser = await chromium.launch({ headless: true });
-      page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      const browser = await chromium.launch({ headless: true });
+      const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
       page.setDefaultTimeout(15000);
+      sessions.set(sessionId, { browser, page });
       return { ok: true };
     } catch {
-      browser = null;
       return { ok: false, error: `浏览器启动失败：${launchError}` };
     }
   }
 }
 
-/** 关闭浏览器会话（/browser close 或工具调用；释放进程） */
-export function browserClose(): Promise<string> {
+/** 关闭浏览器会话（/browser close 或工具调用；释放进程——只关本会话槽） */
+export function browserClose(sessionId = 'default'): Promise<string> {
   return serialized(async () => {
-    try { if (page) await page.close(); } catch { /* 忽略 */ }
-    try { if (browser) await browser.close(); } catch { /* 忽略 */ }
-    browser = null;
-    page = null;
+    const session = sessions.get(sessionId);
+    if (session) {
+      try { await session.page.close(); } catch { /* 忽略 */ }
+      try { await session.browser.close(); } catch { /* 忽略 */ }
+      sessions.delete(sessionId);
+    }
     return '浏览器会话已关闭';
   });
 }
 
 /** 可交互元素清单（深度：AI 精准选择器的依据——按钮/链接/输入框/下拉的稳定选择器建议） */
-async function interactiveElements(): Promise<string> {
+async function interactiveElements(page: any): Promise<string> {
   try {
     // 字符串函数在浏览器上下文执行（Node tsconfig 无 DOM lib，避免类型报错）
     const els = await page.evaluate(`(() => {
@@ -121,13 +128,13 @@ ${els.join('\n')}`;
 }
 
 /** 可访问性树 → 紧凑文本快照（AI 理解页面结构；深度：含可交互元素清单） */
-async function snapshotText(): Promise<string> {
+async function snapshotText(page: any): Promise<string> {
   try {
     const title = await page.title();
     const url = page.url();
     const body = await page.locator('body').innerText({ timeout: 8000 }).catch(() => '');
     const clean = String(body ?? '').replace(/\s+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').slice(0, 2500);
-    const els = await interactiveElements();
+    const els = await interactiveElements(page);
     return `标题：${title}\n地址：${url}\n正文：\n${clean}${els ? `\n\n${els}` : ''}`;
   } catch (e: any) {
     return `快照失败：${String(e?.message ?? e).slice(0, 200)}`;
@@ -135,7 +142,7 @@ async function snapshotText(): Promise<string> {
 }
 
 /** 截图保存到 data/browser-*.png（AI 视觉模型可分析；返回路径） */
-async function takeShot(): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
+async function takeShot(page: any): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
   try {
     const { join } = await import('node:path');
     const { mkdirSync } = await import('node:fs');
@@ -153,17 +160,19 @@ async function takeShot(): Promise<{ ok: true; path: string } | { ok: false; err
 export interface BrowserToolResult { ok: boolean; text: string }
 
 /** browser_navigate：打开 URL（SSRF 三层防护——内网/重绑定/重定向逐跳）→ 页面快照 */
-export function browserNavigate(url: string): Promise<BrowserToolResult> {
+export function browserNavigate(url: string, sessionId = 'default'): Promise<BrowserToolResult> {
   return serialized(async () => {
     const target = String(url ?? '').trim();
     if (!target) return { ok: false, text: '参数错误：url 必填' };
     const safe = await checkUrlSafety(target);
     if (!safe.ok) return { ok: false, text: `已拦截：${safe.reason}` };
-    const boot = await ensureBrowser();
+    const boot = await ensureBrowser(sessionId);
     if (!boot.ok) return { ok: false, text: boot.error };
+    const page = pageOf(sessionId);
+    if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
     try {
       await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      const snap = await snapshotText();
+      const snap = await snapshotText(page);
       return { ok: true, text: `已打开 ${target}\n${snap}` };
     } catch (e: any) {
       return { ok: false, text: `导航失败：${String(e?.message ?? e).slice(0, 300)}` };
@@ -172,15 +181,16 @@ export function browserNavigate(url: string): Promise<BrowserToolResult> {
 }
 
 /** browser_click：CSS 选择器点击 */
-export function browserClick(selector: string): Promise<BrowserToolResult> {
+export function browserClick(selector: string, sessionId = 'default'): Promise<BrowserToolResult> {
   return serialized(async () => {
-    const boot = await ensureBrowser();
+    const boot = await ensureBrowser(sessionId);
     if (!boot.ok) return { ok: false, text: boot.error };
+    const page = pageOf(sessionId);
     if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
     try {
       await page.locator(String(selector ?? '')).first().click({ timeout: 10000 });
       const url = page.url();
-      return { ok: true, text: `已点击「${selector}」→ ${url}\n${(await snapshotText()).slice(0, 1500)}` };
+      return { ok: true, text: `已点击「${selector}」→ ${url}\n${(await snapshotText(page)).slice(0, 1500)}` };
     } catch (e: any) {
       return { ok: false, text: `点击失败（选择器「${selector}」未命中？）：${String(e?.message ?? e).slice(0, 200)}` };
     }
@@ -188,10 +198,11 @@ export function browserClick(selector: string): Promise<BrowserToolResult> {
 }
 
 /** browser_type：输入文本（可回车提交） */
-export function browserType(selector: string, text: string, submit = false): Promise<BrowserToolResult> {
+export function browserType(selector: string, text: string, submit = false, sessionId = 'default'): Promise<BrowserToolResult> {
   return serialized(async () => {
-    const boot = await ensureBrowser();
+    const boot = await ensureBrowser(sessionId);
     if (!boot.ok) return { ok: false, text: boot.error };
+    const page = pageOf(sessionId);
     if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
     try {
       const loc = page.locator(String(selector ?? '')).first();
@@ -205,32 +216,35 @@ export function browserType(selector: string, text: string, submit = false): Pro
 }
 
 /** browser_screenshot：截图落盘（/img 可分析；返回路径） */
-export function browserScreenshot(): Promise<BrowserToolResult> {
+export function browserScreenshot(sessionId = 'default'): Promise<BrowserToolResult> {
   return serialized(async () => {
-    const boot = await ensureBrowser();
+    const boot = await ensureBrowser(sessionId);
     if (!boot.ok) return { ok: false, text: boot.error };
+    const page = pageOf(sessionId);
     if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
-    const shot = await takeShot();
+    const shot = await takeShot(page);
     if (!shot.ok) return { ok: false, text: shot.error };
     return { ok: true, text: `截图已保存：${shot.path}（/img <路径> 可视觉分析）` };
   });
 }
 
 /** browser_snapshot：当前页面可访问性快照（深度：含可交互元素清单） */
-export function browserSnapshot(): Promise<BrowserToolResult> {
+export function browserSnapshot(sessionId = 'default'): Promise<BrowserToolResult> {
   return serialized(async () => {
-    const boot = await ensureBrowser();
+    const boot = await ensureBrowser(sessionId);
     if (!boot.ok) return { ok: false, text: boot.error };
+    const page = pageOf(sessionId);
     if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
-    return { ok: true, text: await snapshotText() };
+    return { ok: true, text: await snapshotText(page) };
   });
 }
 
 /** browser_wait：等待元素出现（SPA 动态加载）或固定毫秒——交互前确保页面就绪 */
-export function browserWait(selector: string, timeoutMs = 15000): Promise<BrowserToolResult> {
+export function browserWait(selector: string, timeoutMs = 15000, sessionId = 'default'): Promise<BrowserToolResult> {
   return serialized(async () => {
-    const boot = await ensureBrowser();
+    const boot = await ensureBrowser(sessionId);
     if (!boot.ok) return { ok: false, text: boot.error };
+    const page = pageOf(sessionId);
     if (!page) return { ok: false, text: '浏览器未打开页面——先 browser_navigate' };
     const sel = String(selector ?? '').trim();
     try {

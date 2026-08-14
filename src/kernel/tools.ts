@@ -581,7 +581,7 @@ export function coreTools(): Record<string, ToolDef> {
     danger: true, // 外联/副作用——需确认
     async run({ url }, ctx) {
       const { browserNavigate } = await import('./browser.js');
-      const r = await browserNavigate(String(url ?? ''));
+      const r = await browserNavigate(String(url ?? ''), ctx.sessionId);
       // 审查接线（授权存证）：导航成功即留痕（scope=host；SSRF 已放行的公网目标）
       if (r.ok) { try { await recordConsent(ctx.db, hostOf(String(url ?? '')), 'browser_navigate'); } catch { /* 静默 */ } }
       return r.text;
@@ -590,54 +590,54 @@ export function coreTools(): Record<string, ToolDef> {
   const browserClick: ToolDef = {
     schema: { type: 'function', function: { name: 'browser_click', description: '点击页面元素（CSS 选择器）。导航后操作页面交互（链接/按钮/标签页切换）。', parameters: { type: 'object', properties: { selector: { type: 'string', description: 'CSS 选择器，如 a[href*="docs"]、#submit、button:has-text("登录")' } }, required: ['selector'] } } },
     danger: true, // 外联/副作用——需确认
-    async run({ selector }) {
+    async run({ selector }, ctx) {
       const { browserClick } = await import('./browser.js');
-      const r = await browserClick(String(selector ?? ''));
+      const r = await browserClick(String(selector ?? ''), ctx.sessionId);
       return r.text;
     },
   };
   const browserType: ToolDef = {
     schema: { type: 'function', function: { name: 'browser_type', description: '向输入框输入文本（CSS 选择器定位；submit=true 回车提交——表单/搜索框）。', parameters: { type: 'object', properties: { selector: { type: 'string', description: 'CSS 选择器（input/textarea）' }, text: { type: 'string', description: '输入内容' }, submit: { type: 'boolean', description: '输入后回车（默认 false）' } }, required: ['selector', 'text'] } } },
     danger: true, // 外联/副作用——需确认
-    async run({ selector, text, submit }) {
+    async run({ selector, text, submit }, ctx) {
       const { browserType } = await import('./browser.js');
-      const r = await browserType(String(selector ?? ''), String(text ?? ''), submit === true);
+      const r = await browserType(String(selector ?? ''), String(text ?? ''), submit === true, ctx.sessionId);
       return r.text;
     },
   };
   const browserScreenshot: ToolDef = {
     schema: { type: 'function', function: { name: 'browser_screenshot', description: '当前页面截图保存（返回文件路径——配合 /img 或视觉模型分析页面视觉状态）。', parameters: { type: 'object', properties: {} } } },
     danger: false,
-    async run() {
+    async run(_args, ctx) {
       const { browserScreenshot } = await import('./browser.js');
-      const r = await browserScreenshot();
+      const r = await browserScreenshot(ctx.sessionId);
       return r.text;
     },
   };
   const browserSnapshot: ToolDef = {
     schema: { type: 'function', function: { name: 'browser_snapshot', description: '当前页面快照（标题/地址/正文 + 可交互元素清单——按钮/链接/输入框的选择器建议）。交互前先调用本工具确定选择器。', parameters: { type: 'object', properties: {} } } },
     danger: false,
-    async run() {
+    async run(_args, ctx) {
       const { browserSnapshot } = await import('./browser.js');
-      const r = await browserSnapshot();
+      const r = await browserSnapshot(ctx.sessionId);
       return r.text;
     },
   };
   const browserWait: ToolDef = {
     schema: { type: 'function', function: { name: 'browser_wait', description: '等待元素出现（SPA 动态加载后交互前调用）或固定毫秒。selector 为空时按毫秒等待（默认 2s）。', parameters: { type: 'object', properties: { selector: { type: 'string', description: 'CSS 选择器（空则按 timeout_ms 等待）' }, timeout_ms: { type: 'number', description: '超时毫秒（默认 15000）' } } } } },
     danger: false,
-    async run({ selector, timeout_ms }) {
+    async run({ selector, timeout_ms }, ctx) {
       const { browserWait } = await import('./browser.js');
-      const r = await browserWait(String(selector ?? ''), Number(timeout_ms) || 15000);
+      const r = await browserWait(String(selector ?? ''), Number(timeout_ms) || 15000, ctx.sessionId);
       return r.text;
     },
   };
   const browserClose: ToolDef = {
     schema: { type: 'function', function: { name: 'browser_close', description: '关闭浏览器会话（释放进程；下次 browser_navigate 自动重启）。', parameters: { type: 'object', properties: {} } } },
     danger: false,
-    async run() {
+    async run(_args, ctx) {
       const { browserClose } = await import('./browser.js');
-      return await browserClose();
+      return await browserClose(ctx.sessionId);
     },
   };
   // P2-全方面：notify——AI 主动发系统通知（Codex notify 对齐）：长任务完成/关键事件提醒用户

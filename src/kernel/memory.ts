@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import type { Db } from '../store/db.js';
 import { searchMessages } from '../store/db.js';
 import { openMemoryRepository } from '../infrastructure/sqlite/memoryRepository.js';
+import { bigramZh } from '../infrastructure/sqlite/bigramZh.js';
 import type { MemoryRecord, MemoryRepository } from '../domain/memory/memoryRepository.js';
 
 // ── token 估算（CJK=1/字，ASCII≈1/4）───────────────────────
@@ -180,7 +181,7 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
   const lastMsgStmt = db.prepare(`SELECT id, role, content FROM messages WHERE session_id=? ORDER BY id DESC LIMIT 1`);
   // F5 修复：向量写入与 KNN 查询（vec 不可用时降级——prepare 抛错即禁用）
   const insertVecStmt = (() => { try { return db.prepare(`INSERT OR IGNORE INTO archival_vec (id, embedding) VALUES (?, ?)`); } catch { return null; } })();
-  const knnStmt = (() => { try { return db.prepare(`SELECT id FROM archival_vec WHERE embedding MATCH ? ORDER BY distance LIMIT ?`); } catch { return null; } })();
+  const knnStmt = (() => { try { return db.prepare(`SELECT v.id FROM archival_vec v JOIN messages m ON m.id=v.id WHERE v.embedding MATCH ? AND (? IS NULL OR m.session_id=?) ORDER BY distance LIMIT ?`); } catch { return null; } })();
 
   // F5：异步向量写入（fire-and-forget，失败静默；embedding 不可用走冷却）
   const embedAndStore = (messageId: number, content: string) => {
@@ -259,7 +260,8 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
         const qv = await embed(query.slice(0, 2000)).catch(() => null);
         if (qv) {
           try {
-            const knn = knnStmt.all(JSON.stringify(qv), limit - out.length) as Array<{ id: number }>;
+            // KF-013：KNN 按 session 过滤（跨会话向量召回泄漏修复——? IS NULL 保持全局召回兼容）
+            const knn = knnStmt.all(JSON.stringify(qv), opts.sessionId ?? null, opts.sessionId ?? null, limit - out.length) as Array<{ id: number }>;
             for (const k of knn) {
               if (seen.has(k.id)) continue;
               const row = db.prepare(`SELECT id, content, salience, session_id, ts FROM messages WHERE id=?`).get(k.id) as { id: number; content: string; salience: number; session_id: string; ts: number } | undefined;
@@ -305,13 +307,19 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
       if (summary) {
         // F6 修复：不硬 DELETE——中部消息置 archived（recall 全量仍可检索），
         // 摘要写入第一条中部消息原位（保持时间序），其余中部消息归档
+        // KF-014：压缩归档同步维护 FTS——归档消息退出检索、摘要原文刷新索引（绝不留下陈旧索引）
         const midIds = mid.map((m: any) => m.id);
         const [firstId, ...restIds] = midIds;
         if (firstId !== undefined) {
           db.prepare(`UPDATE messages SET content=?, role='system', archived=0 WHERE id=?`)
             .run(`（自动压缩摘要）${summary.slice(0, 500)}`, firstId);
+          // 摘要替换原文 → 刷新该行 FTS（先删后插，bigram 预处理与入库一致）
+          db.prepare(`DELETE FROM messages_fts WHERE rowid=?`).run(firstId);
+          db.prepare(`INSERT INTO messages_fts(rowid, content) VALUES (?, ?)`)
+            .run(firstId, bigramZh(`（自动压缩摘要）${summary.slice(0, 500)}`));
           if (restIds.length) {
             db.prepare(`UPDATE messages SET archived=1 WHERE id IN (${restIds.map(() => '?').join(',')})`).run(...restIds);
+            db.prepare(`DELETE FROM messages_fts WHERE rowid IN (${restIds.map(() => '?').join(',')})`).run(...restIds);
           }
         }
       } else {
@@ -319,6 +327,7 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
         const keep = [...ids.slice(0, 3), ...ids.slice(-Math.min(tailGuard, ids.length - 3))];
         const drop = ids.filter(id => !keep.includes(id));
         db.prepare(`UPDATE messages SET archived=1 WHERE id IN (${drop.map(() => '?').join(',')})`).run(...drop);
+        if (drop.length) db.prepare(`DELETE FROM messages_fts WHERE rowid IN (${drop.map(() => '?').join(',')})`).run(...drop);
       }
     },
     setTitleIfEmpty(sessionId, title) {

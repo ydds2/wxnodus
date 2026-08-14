@@ -9,7 +9,7 @@ import { createProductionToolExecution } from '../../src/application/tools/toolE
 import { checkRedlineViolation } from '../../src/application/tools/redlineGate.js';
 import { openDB, closeDB } from '../../src/store/db.js';
 import { openMemoryRepository } from '../../src/infrastructure/sqlite/memoryRepository.js';
-import type { OperationContext } from '../../src/domain/tools/toolExecutionPipeline.js';
+import type { OperationContext } from '../../src/protocol/operationContext.js';
 import type { ToolId } from '../../src/domain/tools/toolIds.js';
 
 const cleanup: Array<() => void> = [];
