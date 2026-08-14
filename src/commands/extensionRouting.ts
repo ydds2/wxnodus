@@ -17,8 +17,9 @@ export interface ExtensionRouteDecision {
   reason: string;
 }
 
-// 各能力生产接线状态——Wave 3 完成前为 false
-const PLUGIN_WIRED = false;
+// Plugin 已接线：生产 sandbox + lifecycle（manifest→checksum→probe→沙箱门→owned scope）+ /plugin modern 分支
+// （broker 权限请求在生产 ToolExecutionPipeline 接线前 fail-closed——不假执行）
+const PLUGIN_WIRED = true;
 const SUBAGENT_WIRED = false;
 const MCP_WIRED = false;
 
@@ -54,7 +55,7 @@ export function decidePluginRoute(input: { operatorFlag?: string; env?: string }
     capability: 'plugin',
     wired: PLUGIN_WIRED,
     unavailableCode: 'PLUGIN_MODERN_UNAVAILABLE',
-    unavailableMessage: 'plugin 能力的 modern 路由尚未完成生产接线（OS 沙箱/权限 broker/签名验证）',
+    unavailableMessage: 'plugin 能力的 modern 路由不可用',
     unavailableKey: 'plugin.modern.unavailable',
   });
 }

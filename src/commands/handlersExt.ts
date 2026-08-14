@@ -1733,6 +1733,64 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (!pluginRoute.ok) {
       throw new Error(`[${pluginRoute.error.code}] ${pluginRoute.error.message}`);
     }
+    // W3 Plugin facade：modern 路由经 PluginLifecycleService（manifest→checksum→probe→沙箱门→owned scope 原子换入）。
+    // 生产 sandbox=crash-isolation（Untrusted 自动 quarantined）；broker 权限请求在 ToolExecutionPipeline
+    // 生产接线前 fail-closed（PLUGIN_BROKER_PIPELINE_UNAVAILABLE——绝不假执行）；生命周期证据落盘。
+    if (pluginRoute.value.route === 'modern') {
+      const { join } = await import('node:path');
+      const { createProcessIsolationSandbox } = await import('../infrastructure/plugins/processIsolationSandbox.js');
+      const { createPluginBroker } = await import('../infrastructure/plugins/pluginProtocol.js');
+      const { createPluginLifecycleService } = await import('../application/extensions/pluginLifecycleService.js');
+      const { ExtensionScopeManager } = await import('../application/extensions/extensionScopeManager.js');
+      const { createComputerEvidenceStore } = await import('../application/computer/computerEvidenceStore.js');
+      const [sub, ...rest] = args;
+      const name = rest[0];
+      const sandbox = createProcessIsolationSandbox();
+      const broker = createPluginBroker({
+        pipeline: {
+          execute: async () => ({
+            ok: false as const,
+            error: { code: 'PLUGIN_BROKER_PIPELINE_UNAVAILABLE', message: 'ToolExecutionPipeline 生产接线未完成——插件能力请求 fail-closed', messageKey: 'PLUGIN_BROKER_PIPELINE_UNAVAILABLE', retryable: false },
+          }),
+        } as never,
+      });
+      const service = createPluginLifecycleService({
+        dataDir: ctx.dataDir,
+        sandbox,
+        broker,
+        scopeManager: new ExtensionScopeManager(),
+      });
+      const evidence = createComputerEvidenceStore(join(ctx.dataDir, 'evidence'));
+      const context = { actorId: 'cli', sessionId: ctx.agent?.getSessionId?.() ?? 'default', runId: `cli-${Date.now()}`, correlationId: `corr-${Date.now()}` } as never;
+      if (sub === 'enable' && name) {
+        const sourceDir = join(ctx.dataDir, 'plugins', name);
+        const result = await service.enable(sourceDir, context, AbortSignal.timeout(60_000));
+        await evidence.closeComputerAction({ kind: 'plugin.enable', plugin: name, result: result.ok ? 'enabled' : result.error.code }).catch(() => undefined);
+        if (!result.ok) return `[${result.error.code}] ${result.error.message}`;
+        const state = service.snapshot(name);
+        return `插件已启用：${name}（沙箱 ${state?.sandboxStrength}，owner ${state?.owner}）`;
+      }
+      if (sub === 'disable' && name) {
+        const result = await service.disable(name, context, AbortSignal.timeout(60_000));
+        await evidence.closeComputerAction({ kind: 'plugin.disable', plugin: name }).catch(() => undefined);
+        if (!result.ok) return `[${result.error.code}] ${result.error.message}`;
+        return `插件已禁用：${name}`;
+      }
+      if (sub === 'uninstall' && name) {
+        const result = await service.uninstall(name, context, AbortSignal.timeout(60_000));
+        if (!result.ok) return `[${result.error.code}] ${result.error.message}`;
+        return `插件已卸载：${name}`;
+      }
+      if (!sub || sub === 'list') {
+        return lines(' 插件（modern 路由） ', [
+          ' /plugin enable <名称> —— manifest→checksum→probe→沙箱门→owned scope 原子换入',
+          ' /plugin disable|uninstall <名称> —— owner 校验的原子降级/卸载',
+          ' Untrusted 插件需 OS-enforced 沙箱（当前 crash-isolation → 自动 quarantined，绝不降级宣称安全）',
+          ' 插件能力请求（workspace/network/process）在生产 ToolExecutionPipeline 接线前 fail-closed',
+        ]);
+      }
+      return 'modern 路由：/plugin list ｜ enable|disable|uninstall <名称>';
+    }
     const { loadAllPlugins, setPluginEnabled } = await import('../kernel/plugins.js');
     const [sub, ...rest] = args;
     const all = await loadAllPlugins(ctx.dataDir, ctx.cwd);

@@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { decideMcpRoute, decidePluginRoute, decideSubagentRoute } from '../../src/commands/extensionRouting.js';
 
 describe('extension capability routing', () => {
-  it('plugin defaults to legacy and fails closed on modern', () => {
+  it('plugin defaults to legacy and routes to the wired lifecycle on modern', () => {
     const legacy = decidePluginRoute({});
     const modern = decidePluginRoute({ operatorFlag: 'modern' });
     expect(legacy.ok && legacy.value.route).toBe('legacy');
-    expect(modern.ok).toBe(false);
-    if (modern.ok) throw new Error('unreachable');
-    expect(modern.error.code).toBe('PLUGIN_MODERN_UNAVAILABLE');
+    expect(modern.ok).toBe(true);
+    if (!modern.ok) throw new Error('unreachable');
+    expect(modern.value.route).toBe('modern');
   });
 
   it('subagent defaults to legacy and fails closed on modern', () => {
