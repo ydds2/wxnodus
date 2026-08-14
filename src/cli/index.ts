@@ -188,6 +188,9 @@ if (pre.mode === 'error') {
       if (!gateway) return false;
       const choice = await gateway.requestApproval(String(request.toolId), {
         ...(request.args as Record<string, unknown> ?? {}), _effectKind: request.effect.kind,
+        // W7-02：system-touch 等决策理由透出到确认弹窗（分类 + 理由展示）
+        ...(request.reasonCode ? { _reasonCode: request.reasonCode } : {}),
+        ...(Array.isArray(request.obligations) && request.obligations.length ? { _obligations: request.obligations } : {}),
       });
       return choice !== 'deny';
     },
