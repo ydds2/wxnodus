@@ -18,7 +18,7 @@ export const SLASH: string[] = [
   // 视觉与媒体（可视化 AI 技能）
   '/vision', '/img', '/video', '/render', '/capture', '/input', '/computer',
   // 网络与集成
-  '/claw', '/web', '/search', '/browser', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
+  '/claw', '/web', '/search', '/browser', '/download', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
   // 协作
   '/swarm', '/duo', '/cron', '/jobs', '/term', '/task', '/delegate', '/agent', '/arena', '/review', '/understand', '/session-stream', '/goal', '/btw',
   // 工具（确定性）
@@ -37,7 +37,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨', '/offline': '⬇',
   '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉', '/voice': '◉', '/fortune': '◉', '/workspace': '◉',
   '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿', '/computer': '⛭',
-  '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
+  '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/download': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
   '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/arena': '◍', '/review': '◍', '/understand': '◍', '/session-stream': '◍', '/goal': '◍', '/btw': '◍',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
   '/map': '⬡', '/rewind': '⬡', '/reload-skills': '⬡',
@@ -121,6 +121,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/web': '抓取网页（/claw 别名）',
   '/search': '联网搜索（DuckDuckGo）',
   '/browser': '浏览器自动化（打开/点击/输入/截图，AI 可自主操作）',
+  '/download': '下载文件到主工作区（SSRF 防护 + sha256 证据）',
   '/mcp': 'MCP 服务器管理',
   '/gateway': 'HTTP 网关',
   '/proxy': '代理转发',
@@ -164,7 +165,6 @@ export { ALIASES, resolveAlias } from '../kernel/commandLevels.js';
 export const COMMAND_MERGE: Record<string, string> = {
   '/task': '/jobs',
   '/vision': '/img',
-  '/hole': '/memory search',
   '/learn': '/assimilate',
   '/rewind': '/checkpoint restore',
   '/yolo': '/perm yolo',

@@ -6,10 +6,9 @@ import { resolveAlias, isSlash } from '../commands/registry.js';
 import type { RunFinalStatus } from '../protocol/runs.js';
 
 // A22 指令融合：子命令注入别名（目标命令 + 注入参数）。
-// /hole <查询> → /memory search <查询>；/rewind → /checkpoint restore。
+// /rewind → /checkpoint restore。（/hole 已注册真实处理器——W7-03 扩展 --code 同化语料检索）
 // 与 registry.ALIASES（单 token 纯重定向）互补——语义需子命令的走这里。
 const ALIAS_INJECT: Record<string, { args: string[]; cmd: string }> = {
-  '/hole': { cmd: '/memory', args: ['search'] },
   '/rewind': { cmd: '/checkpoint', args: ['restore'] },
 };
 

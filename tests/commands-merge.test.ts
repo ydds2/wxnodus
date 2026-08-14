@@ -23,13 +23,13 @@ describe('指令融合：分发重定向', () => {
     expect((await bus.execute('/vision a.png')).output).toBe('img:a.png')
   })
 
-  it('/hole <查询> → /memory search <查询>（子命令注入）', async () => {
+  it('/hole 是真实命令（W7-03：记忆检索语义内聚，--code 扩展同化语料检索）', async () => {
     const bus = createCommandBus()
     bus.register('/memory', (args) => `memory:${args.join(',')}`)
     bus.register('/hole', (args) => `hole:${args.join(',')}`)
 
-    expect((await bus.execute('/hole 检索 待办')).output).toBe('memory:search,检索,待办')
-    expect((await bus.execute('/hole')).output).toBe('memory:search')
+    expect((await bus.execute('/hole 检索 待办')).output).toBe('hole:检索,待办')
+    expect((await bus.execute('/hole')).output).toBe('hole:')
   })
 
   it('/rewind → /checkpoint restore（回滚最近快照）', async () => {

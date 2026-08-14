@@ -1095,6 +1095,76 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const flow = flag('--flow');
     const effort = flag('--effort') as 'low' | 'medium' | 'high' | undefined;
     const pos = args.filter(a => !a.startsWith('--'));
+
+    // W7-03 通道 C：代码/模块只读同化（FTS 索引——绝不执行同化的代码）
+    if (hasFlag('--code')) {
+      const dir = flag('--code');
+      if (!dir) return '用法：/assimilate --code <目录>（代码/模块只读同化入黑洞索引）';
+      if (!existsSync(dir) || !statSync(dir).isDirectory()) return 'ASSIMILATE_CODE_DIR_NOT_FOUND：目录不存在';
+      if (!ctx.codeIndex) return '代码同化索引未装配（fail-closed）';
+      const { scanCodeTargets } = await import('../infrastructure/code/codeIndexer.js');
+      const scanned = scanCodeTargets(dir, {});
+      if (!scanned.ok) return `扫描失败：${scanned.error.code}`;
+      ctx.codeIndex.indexChunks(scanned.value.chunks);
+      const r = scanned.value.report;
+      return lines(' 黑洞同化（代码/模块） ', [
+        ` 来源：${dir}`,
+        ` ✅ 索引 ${r.counts.indexed} 个文本文件（块）· 扫描 ${r.counts.scanned}`,
+        r.counts.skipped ? ` ⏭ 跳过 ${r.counts.skipped}：${r.skipped.slice(0, 5).map(s => `${s.path.slice(0, 60)}(${s.reason})`).join(' · ')}${r.skipped.length > 5 ? ' …' : ''}` : '',
+        r.complete ? '' : ' ⚠ 配额截断——部分索引（complete:false，绝不假装全量）',
+        ` 检索：/hole --code <词>（来源标注 [代码]/[插件]/[MCP]）`,
+      ].filter(Boolean));
+    }
+
+    // W7-03：插件清单面同化（dataDir/plugins/<名>/plugin.json）
+    if (hasFlag('--plugins')) {
+      if (!ctx.codeIndex) return '代码同化索引未装配（fail-closed）';
+      const dir = join(ctx.dataDir, 'plugins');
+      const entries: Array<{ source: 'plugin'; id: string; title: string; body: string }> = [];
+      if (existsSync(dir)) {
+        for (const pname of readdirSync(dir)) {
+          const mf = join(dir, pname, 'plugin.json');
+          if (!existsSync(mf)) continue;
+          try {
+            const manifest = JSON.parse(readFileSync(mf, 'utf8')) as { name?: string; description?: string; commands?: unknown; tools?: unknown };
+            entries.push({
+              source: 'plugin',
+              id: manifest.name ?? pname,
+              title: manifest.name ?? pname,
+              body: [manifest.description ?? '', JSON.stringify(manifest.commands ?? {}), JSON.stringify(manifest.tools ?? {})].join('\n'),
+            });
+          } catch { /* 坏清单跳过 */ }
+        }
+      }
+      if (!entries.length) return '无已安装插件可同化（/plugin install <目录> 后重试）';
+      ctx.codeIndex.indexSurfaces(entries);
+      return lines(' 黑洞同化（插件） ', [` ✅ 索引 ${entries.length} 个插件清单（/hole --code 检索，来源 [插件]）`]);
+    }
+
+    // W7-03：MCP 描述面同化（项目 .mcp.json + 用户 data/mcp.json 的 mcpServers）
+    if (hasFlag('--mcp')) {
+      if (!ctx.codeIndex) return '代码同化索引未装配（fail-closed）';
+      const files = [join(ctx.cwd, '.mcp.json'), join(ctx.dataDir, 'mcp.json')];
+      const entries: Array<{ source: 'mcp'; id: string; title: string; body: string }> = [];
+      for (const f of files) {
+        if (!existsSync(f)) continue;
+        try {
+          const doc = JSON.parse(readFileSync(f, 'utf8')) as { mcpServers?: Record<string, { command?: string; args?: unknown; url?: string; description?: string }> };
+          for (const [mname, def] of Object.entries(doc.mcpServers ?? {})) {
+            entries.push({
+              source: 'mcp',
+              id: mname,
+              title: mname,
+              body: [def.description ?? '', def.command ?? def.url ?? '', JSON.stringify(def.args ?? {})].join('\n'),
+            });
+          }
+        } catch { /* 坏配置跳过 */ }
+      }
+      if (!entries.length) return '无 MCP server 可同化（/mcp add <名称> <命令> 后重试）';
+      ctx.codeIndex.indexSurfaces(entries);
+      return lines(' 黑洞同化（MCP） ', [` ✅ 索引 ${entries.length} 个 MCP 描述（/hole --code 检索，来源 [MCP]）`]);
+    }
+
     const { assimilateDir, assimilateMaterial, readMaterial } = await import('../kernel/assimilate.js');
     // LLM 消化回调（无 key 前置拦截——不产生假内容；与 /learn 同款调用模式）
     const makeDigest = (key: string) => async (prompt: string): Promise<string> => {

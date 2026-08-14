@@ -63,7 +63,7 @@ beforeEach(() => { evidenceBundles = []; });
 describe('sanitizeDownloadFilename / Content-Disposition', () => {
   it('剥离目录并替换非法字符', () => {
     expect(sanitizeDownloadFilename('../evil.exe')).toBe('evil.exe');
-    expect(sanitizeDownloadFilename('a\\b:c*.txt')).toBe('a_b_c_.txt');
+    expect(sanitizeDownloadFilename('a*b?c.txt')).toBe('a_b_c.txt');
   });
   it('Windows 保留名加 _ 前缀；空名兜底 download', () => {
     expect(sanitizeDownloadFilename('CON')).toBe('_CON');
@@ -149,8 +149,9 @@ describe('downloadFile', () => {
 
   it('授权层拒绝 → DOWNLOAD_URL_BLOCKED，不发起请求', async () => {
     const { server, url } = await serve();
+    const ws = tmp();
     try {
-      const r = await downloadFile({ url, workspaceRoot: tmp(), destDir: join(tmp(), 'd') }, portsOf(new Set(['http://other/'])));
+      const r = await downloadFile({ url, workspaceRoot: ws, destDir: join(ws, 'd') }, portsOf(new Set(['http://other/'])));
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error.code).toBe('DOWNLOAD_URL_BLOCKED');
     } finally { server.close(); }

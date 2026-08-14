@@ -68,6 +68,14 @@ export interface HandlerCtx {
   workspaceRoot?: string;
   workspaceSource?: string;
   setWorkspace?: (dir: string | null) => void;
+  /** W7-01：下载服务（生产端口：SSRF 逐跳授权 + undici 流式 + 证据落盘；未装配 fail-closed） */
+  download?: (url: string, destDir: string, fileName?: string) => Promise<import('../protocol/results.js').OperationResult<import('../application/download/downloadService.js').DownloadResult>>;
+  /** W7-03：黑洞同化索引（代码/模块/插件/MCP——/assimilate 写入、/hole --code 检索） */
+  codeIndex?: {
+    search(query: string, opts?: { limit?: number; sources?: Array<'code' | 'plugin' | 'mcp'> }): Array<{ source: string; path?: string; id?: string; head: string; title: string }>;
+    indexChunks(chunks: Array<{ source: 'code'; path: string; chunkIndex: number; head: string; text: string }>): void;
+    indexSurfaces(entries: Array<{ source: 'plugin' | 'mcp'; id: string; title: string; body: string }>): void;
+  };
 }
 
 const lines = (title: string, body: string[]): string => {
@@ -372,6 +380,60 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       return `主工作区已重置：${ctx.cwd}（默认项目文件夹）`;
     }
     return '用法：/workspace [show|set <dir> [--create]|reset]';
+  });
+
+  // W7-01：下载框架——URL → 主工作区内原子落盘（SSRF 逐跳授权 + 双上限 + sha256 证据）
+  bus.register('/download', async (args) => {
+    const url = args[0];
+    if (!url) return '用法：/download <url> [--out <工作区内目录>]（默认落 <工作区>/downloads）';
+    const root = ctx.workspaceRoot ?? ctx.cwd;
+    const outIdx = args.indexOf('--out');
+    const outArg = outIdx >= 0 ? args[outIdx + 1] : undefined;
+    const destDir = outArg ? (isAbsolute(outArg) ? outArg : join(root, outArg)) : join(root, 'downloads');
+    if (!ctx.download) return '下载服务未装配（fail-closed，不回退）';
+    const r = await ctx.download(url, destDir);
+    if (!r.ok) return `下载失败：${r.error.code}${r.error.details ? ` ${JSON.stringify(r.error.details)}` : ''}`;
+    return `已下载：${r.value.filePath}（${r.value.bytes} 字节 · sha256=${r.value.sha256}）`;
+  });
+
+  // W7-03：黑洞检索——默认记忆检索（原 /hole 语义）；--code 扩展同化语料（代码/插件/MCP，来源标注）
+  bus.register('/hole', async (args) => {
+    const codeIdx = args.indexOf('--code');
+    if (codeIdx >= 0) {
+      const rest = args.slice(codeIdx + 1);
+      const limit = (() => {
+        const i = rest.indexOf('--limit');
+        const n = Number(rest[i + 1]);
+        return Number.isInteger(n) && n > 0 ? Math.min(n, 30) : 10;
+      })();
+      const q = rest.filter((a, i, arr) => !a.startsWith('--') && arr[i - 1] !== '--limit').join(' ').trim();
+      if (!q) return '用法：/hole --code <关键词> [--limit N]（代码/模块/插件/MCP 同化语料——先 /assimilate --code <目录> 等）';
+      if (!ctx.codeIndex) return '代码同化索引未装配（fail-closed）';
+      const hits = ctx.codeIndex.search(q, { limit });
+      if (!hits.length) return `未检索到与「${q}」相关的代码/插件/MCP 语料（先 /assimilate --code <目录> / --plugins / --mcp）`;
+      return lines(` 黑洞检索「${q}」(${hits.length} 条) `, hits.map(h => {
+        if (h.source === 'code') return ` [代码] ${h.path}${h.head ? ` · ${h.head}` : ''}`;
+        return ` [${h.source === 'plugin' ? '插件' : 'MCP'}] ${h.id} · ${h.title}`;
+      }));
+    }
+    // 默认：记忆检索（与 /memory search 同一权威层）
+    const q = args.filter((a, i, arr) => !a.startsWith('--') && arr[i - 1] !== '--limit').join(' ').trim();
+    if (!q) return '用法：/hole <关键词>（记忆检索）｜ /hole --code <关键词>（代码/插件/MCP 同化语料）';
+    const limit = (() => {
+      const i = args.indexOf('--limit');
+      const n = Number(args[i + 1]);
+      return Number.isInteger(n) && n > 0 ? Math.min(n, 30) : 10;
+    })();
+    const svc = ctx.memoryServiceFor ? ctx.memoryServiceFor(ctx.agent?.getSessionId?.() ?? 'default') : null;
+    if (!svc) return '记忆权威层未装配（memoryServiceFor 缺失——fail-closed，不回退 legacy）';
+    const result = svc.search({ text: q, limit });
+    if (!result.ok) return `记忆检索失败：${result.error.code}`;
+    const hits = result.value;
+    if (!hits.length) return `未检索到与「${q}」相关的记忆`;
+    return lines(` 记忆检索「${q}」(${hits.length} 条) `, hits.map(h => {
+      const when = new Date(h.record.updatedAt).toLocaleString();
+      return ` [${h.record.id}] ${h.record.content.slice(0, 70)}（${when}）`;
+    }));
   });
 
   bus.register('/memory', async (args) => {

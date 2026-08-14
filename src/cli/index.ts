@@ -111,6 +111,10 @@ if (pre.mode === 'error') {
 
   const config = createConfig(dataDir);
   const db = openDB(dataDir);
+  // W7-03：黑洞同化索引（代码/模块/插件/MCP）——与记忆同库，FTS5 + bigram_zh
+  const { CodeIndexRepository } = await import('../infrastructure/code/codeIndexRepository.js');
+  const codeIndex = new CodeIndexRepository(db);
+  codeIndex.install();
   // W2-03：统一幂等关闭——全部 disposer 尝试、聚合失败 id（bootstrapShutdown 语义）；
   // serve/keepalive/TUI/SIGINT/SIGTERM 共用同一条关闭路径（此前各分支各写各的 process.exit）。
   const { createShutdown } = await import('../bootstrap/bootstrapShutdown.js');
@@ -425,6 +429,12 @@ if (pre.mode === 'error') {
   let liveWorkspaceRoot = workspaceRoot;
   let liveWorkspaceSource: string = workspaceSource;
 
+  // W7-01：下载框架生产端口——SSRF 逐跳授权（checkUrlSafety）+ undici 流式（无自动重定向）
+  // + 证据原子落盘；destDir 边界由 service 经 pathBoundary 以 workspaceRoot 校验。
+  const { downloadFile, writeDownloadEvidence } = await import('../application/download/downloadService.js');
+  const { checkUrlSafety } = await import('../kernel/ssrf.js');
+  const { Readable } = await import('node:stream');
+
   const makeHandlerCtx = () => ({
     dataDir, cwd, db, mem, config, bus, commandBus,
     agent,
@@ -436,7 +446,24 @@ if (pre.mode === 'error') {
       liveWorkspaceRoot = dir ?? cwd;
       liveWorkspaceSource = dir ? 'persisted' : 'cwd';
     },
+    // W7-01：下载服务（destDir 固定主工作区 downloads/——文件名 sanitize 在 service 内）
+    download: async (url: string, destDir: string, fileName?: string) =>
+      downloadFile({ url, workspaceRoot: liveWorkspaceRoot, destDir, fileName }, {
+        authorizeUrl: checkUrlSafety,
+        fetchOnce: async (target) => {
+          const { fetch } = await import('undici');
+          const res = await fetch(target, { redirect: 'manual', signal: AbortSignal.timeout(120_000) });
+          return {
+            status: res.status,
+            headers: Object.fromEntries([...res.headers.entries()].map(([k, v]) => [k, String(v)])),
+            body: Readable.fromWeb(res.body as unknown as import('node:stream/web').ReadableStream),
+          };
+        },
+        evidence: (bundle) => { try { writeDownloadEvidence(dataDir, bundle); } catch { /* 证据失败不阻断下载主链路 */ } },
+      }),
     sessionStart: sessionStartService,
+    // W7-03：黑洞同化索引（/assimilate --code/--plugins/--mcp 写入；/hole --code 检索）
+    codeIndex,
     // W3 Memory：/memory 命令经 session-scoped modern 权威服务（scope 只来自当前会话）
     memoryServiceFor: (sid: string) => createMemoryService(memoryRepository, { sessionId: sid }),
     // W1-08：plugin broker 能力请求的真实执行入口（未装配组合根时 handlersExt 保持 fail-closed）

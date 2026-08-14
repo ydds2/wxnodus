@@ -15,7 +15,7 @@ const tmp = () => { const d = mkdtempSync(join(tmpdir(), 'w7-ws-')); tempDirs.pu
 describe('resolveWorkspaceRoot 优先级与 fail-closed', () => {
   it('cli > env > persisted > cwd，逐级回退并标注来源', () => {
     const [a, b, c, d] = [tmp(), tmp(), tmp(), tmp()];
-    const cases: Array<[Partial<Parameters<typeof resolveWorkspaceRoot>[0]>, string, string]> = [
+    const cases: Array<[Partial<Omit<Parameters<typeof resolveWorkspaceRoot>[0], 'cwd'>> & { cwd: string }, string, string]> = [
       [{ cli: a, env: b, persisted: c, cwd: d }, a, 'cli'],
       [{ env: b, persisted: c, cwd: d }, b, 'env'],
       [{ persisted: c, cwd: d }, c, 'persisted'],
