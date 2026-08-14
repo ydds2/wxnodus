@@ -155,10 +155,15 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - Remaining Memory: production wiring of legacy `/memory` command + `memory_search` tool + agent recall onto these gateway methods (kernel memory stays as migration read source).
 
 
-## Wave 3 Memory status — 2026-08-14 (authority layer done, wiring blocked on a product decision)
+## Wave 3 Memory status — 2026-08-14 (decision made, facade done)
 
-- Delivered: `memoryGatewayMethods.ts` — memory.append/update/delete/search as Gateway methods with scope from the trusted `request.sessionId` (committed `3bd9afc`, full suite 207 files / 1691 passed / 0 failed).
-- Remaining wiring is NOT a mechanical step: legacy memory is the message history (messages + archival_vec + FTS), while the modern authority (`openMemoryRepository` + `memory_records` schema) is an explicit-memory model. Switching `/memory` / `memory_search` / agent recall to the modern authority requires a data-model decision (how message history becomes explicit memories) — no silent empty-result switching, no fake migration. This is the next atomic step, deliberately not started here.
+- 数据模型决策（用户定夺）：**影子双写、观察后切换**——legacy 消息写入是唯一行为事实源，影子同步写 modern 显式记忆记录（session scope，失败只计数不上抛，零行为回退）；召回观察期保持 legacy，一致性验证后再定召回策略。
+- 影子双写（`4f77baa`）：`src/application/memory/memoryShadow.ts`——append 委托 legacy + 影子写 user/assistant 到 memory_records（contentHash 去重）；`/memory shadow` 观察报告（两模型计数 + 影子健康 + `recallSource:'legacy'` 诚实声明）；CLI 组合根统一装配（agent/handlers/serve 全部经影子包装）；进程级 smoke 验证（legacy 2 条 → shadow 2 条）。
+- 入口切换（`aaad645`）：`/memory`（search/delete/update/pin|fade|reset/list）与 `memory_*` 四工具全部切 session-scoped `MemoryService`；scope 只来自可信 `ToolCtx.sessionId`（agent 内部状态注入，参数不可伪造）；端口缺失 fail-closed（`memoryServiceFor 缺失——不回退 legacy 假成功`）。仓库层新增 `list`（作用域隔离）。
+- 切换暴露的两个真实缺陷已修：① modern `memory_fts` 原用 unicode61（中文检索退化）→ 统一 `bigramZh` 预处理（`src/infrastructure/sqlite/bigramZh.ts` 单一实现 + `bigram_zh` SQLite 函数注册 + `memory_schema_meta` marker one-time 回填，绝不重复）；② legacy 倍率语义（×3 置顶）与 modern salience∈[0,1] 的语义冲突 → `salienceFromMultiplier` 单调映射（1→0.5、3→0.75、0.3→0.23）+ `salienceFlag` 旗标阈值（0.55/0.45）。
+- 测试：`w3-memory-shadow.test.ts` 5/5、`w3-memory-entry-switch.test.ts` 4/4（工具增删改查全闭环走 modern、跨会话隔离、legacy messages 表零触碰）、kernel-tools/store-db/w3-memory-gateway/kernel-memory 全绿。
+- 全量：221 文件 / 1753 通过 / 10 跳过 / 0 失败；build/typecheck×2/discovery 干净；CLI 进程 smoke（/memory shadow、/memory list 经 modern 路径）通过。
+- 剩余观察项：agent 自动召回仍走 legacy（决策既定——一致性验证后另定）；embedding 向量召回需 worker 接线（pending 状态诚实保持）。
 
 
 ## Wave 3 progress (transport readiness) — 2026-08-14
