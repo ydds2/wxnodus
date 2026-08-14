@@ -159,11 +159,17 @@ if (pre.mode === 'error') {
   // 唯一真实执行入口。approver：无网关/拒绝 → fail-closed；policy/budget 为 CLI 默认（诚实 fail-closed 默认）。
   const { createProductionToolExecution } = await import('../application/tools/toolExecutionWiring.js');
   const { DEFAULT_TOOL_POLICY, DEFAULT_TOOL_BUDGET_LIMITS } = await import('../application/tools/defaultToolPolicy.js');
+  // C3：agent 审批桥——agent:* 工具调用经 runner 标记「legacy 前置链已放行」，approver 读桥返回（不二次弹窗）
+  const { createAgentApprovalBridge } = await import('../application/tools/agentToolSurface.js');
+  const agentApprovalBridge = createAgentApprovalBridge();
   const toolExecution = createProductionToolExecution({
     db, dataDir, workspaceRoot: cwd, memoryRepository,
     policy: { id: 'policy-cli-v1', document: DEFAULT_TOOL_POLICY },
     budget: { id: 'budget-cli-v1', limits: { ...DEFAULT_TOOL_BUDGET_LIMITS } },
     approver: async (request) => {
+      if (String(request.toolId).startsWith('agent:')) {
+        return agentApprovalBridge.consume(request.args);
+      }
       if (!gateway) return false;
       const choice = await gateway.requestApproval(String(request.toolId), {
         ...(request.args as Record<string, unknown> ?? {}), _effectKind: request.effect.kind,
@@ -228,13 +234,15 @@ if (pre.mode === 'error') {
   const mcpOpts = { cwd, strict: (settings as any).strictMcpConfig === true || opts.strictMcpConfig === true };
   let mcpClients = await connectAllMcp(dataDir, mcpOpts);
   disposers.push({ id: 'mcp', dispose: () => { closeAllMcp(mcpClients); } });
-  // MCP 热重载（/reload-mcp）：断开 → 重连 → updateTools 热换工具表（不重启进程）
+  // MCP 热重载（/reload-mcp）：断开 → 重连 → updateTools 热换工具表（不重启进程）；
+  // C3：agent 工具表面同步换表（runner.handles 实时生效——闭包引用下方声明，调用时已初始化）
   const reloadMcp = async (): Promise<{ ok: boolean; count: number; message: string }> => {
     try {
       closeAllMcp(mcpClients);
       const clients = await connectAllMcp(dataDir, mcpOpts);
       mcpClients = clients;
       agent.updateTools({ ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) });
+      agentTool.updateTools({ ...coreTools(), ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) });
       return { ok: true, count: clients.length, message: `MCP 服务器已重载（${clients.length} 个在线）` };
     } catch (e: any) {
       return { ok: false, count: 0, message: `MCP 重载失败：${String(e?.message ?? e).slice(0, 120)}` };
@@ -263,8 +271,19 @@ if (pre.mode === 'error') {
   const { deriveReadonlyTools, setReadonlyTools } = await import('../kernel/permissions.js');
   const { coreTools } = await import('../kernel/tools.js');
   setReadonlyTools(deriveReadonlyTools(coreTools()));
+  // C3：agent 工具表面（生产 pipeline 分层复用）——danger/写类工具经 11 ports 记账执行，
+  // 只读工具维持 legacy（诚实 shadow，不伪装全面接管）；runner 标记审批桥 → 不二次弹窗
+  const { createAgentToolSurface } = await import('../application/tools/agentToolSurface.js');
+  const agentTool = createAgentToolSurface({ tools: { ...coreTools(), ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) } });
+  const agentToolRegistration = toolExecution.registerAgentTools(agentTool.surface);
+  if (!agentToolRegistration.ok) {
+    process.stderr.write(`wxnodus: agent 工具表面注册失败：${agentToolRegistration.error.code}\n`);
+    process.exit(1);
+  }
+  const agentToolRunner = agentTool.attach(toolExecution.pipeline, agentApprovalBridge);
   const agent = createAgent({
     db, bus, mem, sessionId: 'default', config: { settings },
+    agentToolRunner,
     mode: (config.get('settings') as any).mode ?? 'smart',
     onApproval: async (name, args) => {
       if (approvalCache.has(name, args)) return true; // 本会话已批准（Allow this session）

@@ -16,12 +16,13 @@ import type { ToolId } from '../../domain/tools/toolIds.js';
 import type { EffectDescriptor } from '../../domain/effects/effectDescriptor.js';
 import type { MemoryRepository } from '../../domain/memory/memoryRepository.js';
 import { gatewayError } from '../../protocol/errors.js';
-import { err, ok } from '../../protocol/results.js';
+import { err, ok, type OperationResult } from '../../protocol/results.js';
 import { provisionSecurityControlPlane } from '../../infrastructure/sqlite/securityProvisioning.js';
 import { SqliteAuthorizationUnitOfWork } from '../../infrastructure/sqlite/authorizationUnitOfWork.js';
 import { SqlitePolicyRepository } from '../../infrastructure/sqlite/policyRepository.js';
 import { executeToolId, instantiateEffectResource, verifyToolPostcondition } from './toolExecutors.js';
 import { createToolEvidenceStore } from './toolEvidenceStore.js';
+import type { AgentToolSurface } from './agentToolSurface.js';
 
 export interface ToolExecutionWiringOptions {
   db: Database.Database;
@@ -40,6 +41,8 @@ export interface ProductionToolExecution {
   pipeline: ToolExecutionPipeline;
   catalog: ToolCatalog;
   uow: SqliteAuthorizationUnitOfWork;
+  /** C3：晚绑定装配 agent 工具表面——execute/verify/resource 端口按调用时注册表分派（agent:* 前缀） */
+  registerAgentTools(surface: AgentToolSurface): OperationResult<void>;
 }
 
 const BUDGET_KEY: Partial<Record<EffectDescriptor['kind'], Record<string, number>>> = {
@@ -86,6 +89,14 @@ export function createProductionToolExecution(options: ToolExecutionWiringOption
   const catalog = createToolCatalog();
   const registered = catalog.register('builtin:core', CORE_DESCRIPTORS);
   if (!registered.ok) throw Object.assign(new Error(registered.error.code), { code: registered.error.code });
+  // C3：agent 工具表面晚绑定注册表（CLI 在 mcp/plugin 加载后 attach——execute/verify/resource 端口调用时分派）
+  const agentSurface: { value?: AgentToolSurface } = {};
+  const registerAgentTools = (surface: AgentToolSurface): OperationResult<void> => {
+    const reg = catalog.register('agent:core', [...surface.descriptors]);
+    if (!reg.ok) return reg;
+    agentSurface.value = surface;
+    return ok(undefined);
+  };
   const evidenceStore = createToolEvidenceStore(options.dataDir);
   const reservations = new Map<string, Record<string, number>>();
   const traces = new Map<string, ExecutionTrace>();
@@ -108,7 +119,10 @@ export function createProductionToolExecution(options: ToolExecutionWiringOption
     },
     normalize: async (tool, args, context) => {
       const argsHash = sha256Canonical(args);
-      const effect = { ...tool.effects[0]!, resource: instantiateEffectResource(tool.id, args, context, options.workspaceRoot) };
+      const agent = agentSurface.value;
+      const resource = (agent && String(tool.id).startsWith('agent:') ? agent.instantiateResource(tool.id, args, context) : undefined)
+        ?? instantiateEffectResource(tool.id, args, context, options.workspaceRoot);
+      const effect = { ...tool.effects[0]!, resource };
       traces.set(context.correlationId, { effectId: context.correlationId, toolId: tool.id, argsHash, states: [] });
       return ok({ args, argsHash, effect, toolId: tool.id });
     },
@@ -156,16 +170,22 @@ export function createProductionToolExecution(options: ToolExecutionWiringOption
       reservations.set(consumed.value.reservationId, reservation);
       return ok({ reservationId: consumed.value.reservationId });
     },
-    execute: async (tool, args, context, signal) =>
-      executeToolId(tool.id, args, context, { workspaceRoot: options.workspaceRoot, memoryRepository: options.memoryRepository }, signal),
+    execute: async (tool, args, context, signal) => {
+      const agent = agentSurface.value;
+      if (agent && String(tool.id).startsWith('agent:')) return agent.execute(tool.id, args, context, signal);
+      return executeToolId(tool.id, args, context, { workspaceRoot: options.workspaceRoot, memoryRepository: options.memoryRepository }, signal);
+    },
     appendJournal: async (state, payload, context) => {
       const effectId = String((payload as { effectId?: unknown } | undefined)?.effectId ?? context.correlationId);
       const trace = traces.get(context.correlationId);
       if (trace) trace.states.push(state);
       return uow.appendJournalEntry(effectId, state, payload, now());
     },
-    verifyPostcondition: async (tool, value, context) =>
-      verifyToolPostcondition(tool.id, value, context, { workspaceRoot: options.workspaceRoot, memoryRepository: options.memoryRepository }),
+    verifyPostcondition: async (tool, value, context) => {
+      const agent = agentSurface.value;
+      if (agent && String(tool.id).startsWith('agent:')) return agent.verifyPostcondition(tool.id, value, context);
+      return verifyToolPostcondition(tool.id, value, context, { workspaceRoot: options.workspaceRoot, memoryRepository: options.memoryRepository });
+    },
     captureEvidence: async (tool, value, context) => {
       const trace = traces.get(context.correlationId) ?? {
         effectId: context.correlationId, toolId: tool.id, argsHash: sha256Canonical(value), states: [],
@@ -191,5 +211,5 @@ export function createProductionToolExecution(options: ToolExecutionWiringOption
     },
   });
 
-  return { pipeline, catalog, uow };
+  return { pipeline, catalog, uow, registerAgentTools };
 }

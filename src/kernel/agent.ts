@@ -61,6 +61,12 @@ export interface AgentOptions {
   toolLazyLoad?: boolean;
   /** AI 自主调用通道（wx_cmd 工具）：执行斜杠指令并返回文本输出（cli 装配 bus.execute 包装） */
   onCommand?: (input: string) => Promise<string>;
+  /** C3：agent 工具 runner（生产 11-port pipeline 分层复用）——danger/写类工具经 pipeline 记账执行；
+   * 未装配（测试/降级）完全走 legacy（行为不变）。approver 桥由 runner 标记 legacy 已放行，不二次弹窗 */
+  agentToolRunner?: {
+    handles(name: string): boolean;
+    execute(name: string, args: Record<string, any>, toolCtx: ToolCtx): Promise<import('../protocol/results.js').OperationResult<{ output: string }>>;
+  };
 }
 
 export interface AgentResult {
@@ -583,7 +589,22 @@ export function createAgent(opts: AgentOptions) {
         }
       }
       // F4：危险/外部工具输出统一 untrusted 包裹（提示注入防护）
-      const raw = await tool.run(args, toolCtx);
+      // C3：runner 已装配且覆盖该工具 → 经生产 pipeline 真实执行（PDP 复核/grant/budget/journal/evidence/postcondition）；
+      // 失败（预算超限/策略拒/pipeline 异常）以「工具执行失败（code）」回填（保住 5 连败终止语义）
+      const runner = opts.agentToolRunner;
+      let raw: string;
+      if (runner?.handles(name)) {
+        const pres = await runner.execute(name, args, toolCtx);
+        if (!pres.ok) {
+          bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId, session_id: sessionId });
+          auditTool('tool.executed', { tool: name, ok: false, ms: Date.now() - t0, error: pres.error?.code, pipeline: true });
+          lastToolOutcome = 'failed';
+          return `工具执行失败（${pres.error?.code ?? 'TOOL_EXECUTE_FAILED'}）：${pres.error?.message ?? ''}`;
+        }
+        raw = pres.value.output;
+      } else {
+        raw = await tool.run(args, toolCtx);
+      }
       // P0-2：vault 值输出脱敏——工具输出回填模型前，按内存敏感值精确替换（最后防线）
       const v = toolCtx.secrets?.vault;
       const vaultValues = v ? v.secretNames().map(n => v.getSecret(n)).filter((x): x is string => !!x) : [];
