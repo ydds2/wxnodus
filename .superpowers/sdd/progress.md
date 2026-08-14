@@ -407,3 +407,13 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
   - `release:finalize`：import-evidence 步骤 blocked（gate-report 缺失——物理门未跑）→ 事实报告 + rootDigest + exit 2（预期）。
   - `check:release-surface`：事实报告 missing（evidence-index/gate-report/gate-e-aggregate/gate-i）+ exit 2（预期）。
 - 终局诚实边界：Gate E（无真实双 OS 物理 receipt）/ Gate I（无 Linux/macOS worker）/ 网络干净安装（离线缓存缺失）保持诚实 blocked——机制全就绪、证据真实、绝不伪造；不标 goal complete、不发布。
+
+## Wave 7（W7-00 主工作区 + W7-01 下载框架 + W7-03 黑洞同化通道 C）— 2026-08-15
+
+- RED 先行（`48d35b0`）：三契约（工作区优先级/fail-closed、真实 localhost 下载双上限/原子写/证据、扫描分块/配额/只读/来源标注检索）全红实证。
+- W7-00（`8fadb7c`）：主工作区**用户动态指定**——`--workspace`（cli）> `WXNODUS_WORKSPACE`（env）> `settings.workspace`（persisted）> cwd（默认项目文件夹）；显式非法（相对/不存在）`WORKSPACE_INVALID/NOT_FOUND` fail-closed 绝不静默降级；`/workspace show|set [--create]|reset`（命令层 getter 即时生效，工具管线边界随下次启动——如实声明）；ToolExecutionPipeline 边界根改解析值（不再裸 cwd）；进程 smoke：合法 workspace 正常计算、非法 exit 2。
+- W7-01（`d658b2a`）：下载框架 `downloadService`——流式原子落盘（tmp+fsync+rename，中断零残留）+ sha256 证据原子落盘；双上限（Content-Length 预拒绝 / 真实字节超限取消流，绝不静默截断）；文件名三源 sanitize（目录穿越/非法字符/Windows 保留名）；逐跳授权+重定向上限，生产接 `checkUrlSafety`（SSRF 三层——命令路径实测回环地址被诚实拒绝）；`/download` 命令 + `dataDir/evidence/downloads` 证据目录。
+- W7-03（`d658b2a`）：黑洞同化**通道 C**——`codeIndexer`（只读扫描分块：二进制 NUL 探测/超大跳过报告、配额超限 `complete:false` 绝不假装全量）+ `CodeIndexRepository`（SQLite FTS5 + bigram_zh 与 memory_fts 同款中文预处理，来源标注 code/plugin/mcp）；`/assimilate --code <目录> | --plugins | --mcp`；`/hole --code <词>` 检索（[代码]/[插件]/[MCP] 标注）；`/hole` 升级真实命令（默认记忆检索语义内聚，移除 alias 注入与过期合并标注）；同化=索引+检索，绝不执行同化的代码。
+- 验证：Wave 7 四文件 27/27 绿（含真实 localhost 下载、真实 SQLite FTS、真实 CommandBus 接线）；全量 **244 文件 / 1893 通过 / 10 跳过 / 0 失败**；known-failures 31/31；typecheck×2/build/discovery 干净；dist smoke（--version / 确定性计算）通过。
+- 诚实边界：W7-02（windowsPathClassifier 系统目录感知确认）仍在计划中未实现——本轮按用户指定顺序完成工作区/下载/同化三项；下载 v1 无断点续传；代码同化 v1 无 AST 级语义索引/向量召回（FTS-only 明确）。
+
