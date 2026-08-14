@@ -153,3 +153,9 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - `src/application/memory/memoryGatewayMethods.ts`: memory append/update/delete/search exposed as Gateway methods; scope is built only from the trusted `GatewayServiceRequest.sessionId` (params-carried forged sessionId is ignored — proven by test); missing text fails closed with specific codes; cross-session update/delete denied at the service boundary.
 - Full suite: 207 files / 1691 passed / 10 skipped / 0 failed.
 - Remaining Memory: production wiring of legacy `/memory` command + `memory_search` tool + agent recall onto these gateway methods (kernel memory stays as migration read source).
+
+
+## Wave 3 Memory status — 2026-08-14 (authority layer done, wiring blocked on a product decision)
+
+- Delivered: `memoryGatewayMethods.ts` — memory.append/update/delete/search as Gateway methods with scope from the trusted `request.sessionId` (committed `3bd9afc`, full suite 207 files / 1691 passed / 0 failed).
+- Remaining wiring is NOT a mechanical step: legacy memory is the message history (messages + archival_vec + FTS), while the modern authority (`openMemoryRepository` + `memory_records` schema) is an explicit-memory model. Switching `/memory` / `memory_search` / agent recall to the modern authority requires a data-model decision (how message history becomes explicit memories) — no silent empty-result switching, no fake migration. This is the next atomic step, deliberately not started here.
