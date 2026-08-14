@@ -26,8 +26,9 @@ export function validateInstallerPaths(
       return { ok: false, error: configError('INSTALLER_PATH_INVALID', 'installer.path.invalid', { path }) };
     }
     for (const segment of segments) {
-      // 白名单字符集：cmd/PS 双层安全（拒绝 %、&、$、`、空格、引号等一切插值字符）
-      if (!/^[A-Za-z0-9._-]+$/.test(segment)) {
+      // 白名单字符集：cmd/PS 双层安全（拒绝 %、&、$、`、空格、引号等一切插值字符）；
+      // @ 允许——scoped npm 包（@huggingface/...）是合法运行时依赖段，且安装脚本按变量引用（非源码插值）消费路径
+      if (!/^[A-Za-z0-9._@-]+$/.test(segment)) {
         return { ok: false, error: configError('INSTALLER_PATH_INVALID', 'installer.path.invalid', { path, segment }) };
       }
       const base = segment.split('.')[0]!.toUpperCase();

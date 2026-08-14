@@ -2,7 +2,7 @@
 // 检查：candidate 冻结文件存在且字段合法、evidence index 存在、gate-report/E/H/I 产物存在、requirements 文件存在。
 // 全部齐备 → exit 0；任一缺失 → 事实报告 + exit 2（blocked）。
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');

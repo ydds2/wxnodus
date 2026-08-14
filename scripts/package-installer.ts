@@ -9,7 +9,7 @@ import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildInstallerPackage } from '../src/application/release/installerPackager.js';
 import { validateFrozenInstallerCandidate, type FrozenInstallerCandidate } from '../src/application/release/installerCandidate.js';
-import { collectDependencyClosure, scanDistImportSpecifiers, verifyDependencyClosure } from '../src/application/release/dependencyClosure.js';
+import { collectDependencyClosure, scanDistImportSpecifiers, stageClosureEntries, verifyDependencyClosure } from '../src/application/release/dependencyClosure.js';
 
 const args = process.argv.slice(2);
 const flag = (name: string): string | undefined => {
@@ -39,10 +39,11 @@ const collect = (dir: string, base: string) => {
   }
 };
 // staged tree：dist（candidate 冻结的入口所在运行时树）+ node_modules 生产依赖闭包
+// （闭包键相对 node_modules——必须还原 node_modules/ 前缀，否则依赖平铺到安装根目录、运行时解析失败）
 collect(join(ROOT, 'dist'), ROOT);
 const rootPkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> };
 const closure = collectDependencyClosure(join(ROOT, 'node_modules'), Object.keys(rootPkg.dependencies ?? {}));
-for (const [path, bytes] of closure.files) staged.set(path, bytes);
+for (const [path, bytes] of stageClosureEntries(closure.files)) staged.set(path, bytes);
 
 const candidate: FrozenInstallerCandidate = { ...raw, stagedTree: staged };
 const validated = validateFrozenInstallerCandidate(candidate);

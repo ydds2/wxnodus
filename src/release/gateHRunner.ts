@@ -128,6 +128,8 @@ const defaultInstallerLifecycle = async (context: GateHStepContext): Promise<Gat
     const tsx = join(context.repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
     const installerScript = join(context.repoRoot, 'scripts', 'package-installer.ts');
     const zipOut = join(context.evidenceDir, 'installer');
+    // 每次全新目录：复用 unpacked 会残留旧 zip 文件（类型产物等），污染本 run 安装树并掩盖真实布局
+    rmSync(zipOut, { recursive: true, force: true });
     const packedZip = spawnSync(process.execPath, [tsx, installerScript, '--candidate', context.candidateFile, '--name', 'WxNodusGateH', '--version', '3.0.0', '--out', zipOut], {
       cwd: context.repoRoot, encoding: 'utf8', timeout: 600_000, maxBuffer: 64 * 1024 * 1024,
     });
@@ -158,6 +160,22 @@ const defaultInstallerLifecycle = async (context: GateHStepContext): Promise<Gat
     const entryFile = join(targetDir, 'dist', 'cli', 'index.js');
     if (!existsSync(entryFile)) {
       return { id: 'installer-lifecycle', status: 'blocked', reason: 'entry missing after install', attachments: [writeAttachment(context.evidenceDir, 'installer-lifecycle.log', logs.join('\n'))] };
+    }
+    // 安装物真实运行：installed CLI --version + 确定性计算（空 HOME/独立 data-dir——依赖闭包布局错误在此暴露）
+    const runHome = join(zipOut, 'run-home');
+    const runData = join(zipOut, 'run-data');
+    mkdirSync(runHome, { recursive: true });
+    mkdirSync(runData, { recursive: true });
+    const runEnv = { ...process.env, HOME: runHome, USERPROFILE: runHome, WXNODUS_DATA_DIR: runData, WXNODUS_NO_DEBUG: '1', MSYS_NO_PATHCONV: '1' };
+    const runVersion = spawnSync(process.execPath, [entryFile, '--version'], { encoding: 'utf8', timeout: 60_000, env: runEnv });
+    record('run-version', `${runVersion.stdout}\n${runVersion.stderr}`);
+    if (runVersion.status !== 0 || !/^wxnodus \d+\.\d+\.\d+/.test(`${runVersion.stdout ?? ''}`.trim())) {
+      return { id: 'installer-lifecycle', status: 'blocked', reason: 'installed app version check failed', attachments: [writeAttachment(context.evidenceDir, 'installer-lifecycle.log', logs.join('\n'))] };
+    }
+    const runCalc = spawnSync(process.execPath, [entryFile, '-p', '算一下 2+3*4'], { encoding: 'utf8', timeout: 120_000, env: runEnv });
+    record('run-calc', `${runCalc.stdout}\n${runCalc.stderr}`);
+    if (runCalc.status !== 0 || !`${runCalc.stdout ?? ''}`.includes('14')) {
+      return { id: 'installer-lifecycle', status: 'blocked', reason: 'installed app calc failed', attachments: [writeAttachment(context.evidenceDir, 'installer-lifecycle.log', logs.join('\n'))] };
     }
     // tamper 拒装：篡改安装包内文件 → 重跑 install 必须 INSTALLER_SHA256_MISMATCH exit 1
     writeFileSync(join(unpackDir, 'dist', 'cli', 'index.js'), 'evil', 'utf8');

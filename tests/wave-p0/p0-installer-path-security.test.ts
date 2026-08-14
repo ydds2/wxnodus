@@ -35,6 +35,20 @@ describe('installer path policy', () => {
     expect(result).toMatchObject({ ok: true });
   });
 
+  it('accepts scoped npm package segments (@huggingface/...)', () => {
+    // Gate H installer-lifecycle 实测暴露：依赖闭包含 scoped 包段，@ 是合法白名单字符
+    const result = validateInstallerPaths(
+      ['dist/cli/index.js', 'node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.mjs'],
+      'dist/cli/index.js',
+    );
+    expect(result).toMatchObject({ ok: true });
+  });
+
+  it('still rejects interpolation characters inside scoped segments', () => {
+    const result = validateInstallerPaths(['dist/cli/index.js', 'node_modules/@scope/pa%th.js'], 'dist/cli/index.js');
+    expect(result).toMatchObject({ ok: false, error: { code: 'INSTALLER_PATH_INVALID' } });
+  });
+
   it.each([
     { name: 'parent traversal', files: ['../escape.js'], entry: 'index.js', code: 'INSTALLER_PATH_INVALID' },
     { name: 'backslash separator', files: ['dist\\cli\\index.js'], entry: 'index.js', code: 'INSTALLER_PATH_INVALID' },

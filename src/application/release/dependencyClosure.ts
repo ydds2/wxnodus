@@ -28,8 +28,11 @@ export function collectDependencyClosure(nodeModulesDir: string, rootDependencie
   const walkDir = (dir: string, base: string) => {
     for (const item of readdirSync(dir)) {
       const full = join(dir, item);
-      if (statSync(full).isDirectory()) walkDir(full, base);
-      else files.set(relative(base, full).split(sep).join('/'), readFileSync(full));
+      if (statSync(full).isDirectory()) { walkDir(full, base); continue; }
+      // 类型产物与 sourcemap 运行时永不加载（声明/调试期文件），排除后既缩体积又避免
+      // 深度路径（types/**/*.d.ts.map）在安装 staging 时突破 Windows MAX_PATH；LICENSE 保留（合规红线）
+      if (item.endsWith('.d.ts') || item.endsWith('.d.ts.map') || item.endsWith('.map')) continue;
+      files.set(relative(base, full).split(sep).join('/'), readFileSync(full));
     }
   };
   while (queue.length) {
@@ -56,6 +59,14 @@ export function collectDependencyClosure(nodeModulesDir: string, rootDependencie
   return { files, packages };
 }
 
+/** 组装 staged 树时还原 node_modules/ 布局：闭包键相对 node_modules，直接平铺会导致
+ * 安装后运行时依赖解析失败（依赖落在安装根目录而非 node_modules/ 下） */
+export function stageClosureEntries(closureFiles: ReadonlyMap<string, Buffer>): Map<string, Buffer> {
+  const staged = new Map<string, Buffer>();
+  for (const [path, bytes] of closureFiles) staged.set(`node_modules/${path}`, bytes);
+  return staged;
+}
+
 /** dist 内全部裸 import specifier（静态 + 字面量动态 import）——近似扫描（引号内 '...' 字面量） */
 export function scanDistImportSpecifiers(distDir: string): Set<string> {
   const specifiers = new Set<string>();
@@ -75,14 +86,26 @@ export function scanDistImportSpecifiers(distDir: string): Set<string> {
   return specifiers;
 }
 
-/** fail-closed 完整性校验：每个裸 specifier 必须落在闭包内（或显式声明为非字面量动态 import） */
+/** 裸 specifier → 包根（@scope/pkg/sub → @scope/pkg；react/jsx-runtime → react） */
+export function specifierPackageRoot(spec: string): string {
+  if (spec.startsWith('@')) {
+    const parts = spec.split('/');
+    return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : spec;
+  }
+  return spec.split('/')[0]!;
+}
+
+/** fail-closed 完整性校验：每个裸 specifier 的包根必须落在闭包内（或显式声明为非字面量动态 import） */
 export function verifyDependencyClosure(
   distSpecifiers: ReadonlySet<string>,
   closure: DependencyClosure,
   declaredDynamicImports: readonly string[] = [],
 ): OperationResult<void> {
+  // 闭包按包目录整体收集（walkDir 收全量文件），因此子路径 specifier（react/jsx-runtime、
+  // @modelcontextprotocol/client/stdio）只要包根在闭包内即被完整打包
   const missing = [...distSpecifiers]
-    .filter(spec => !isBuiltin(spec) && !closure.packages.has(spec) && !declaredDynamicImports.includes(spec))
+    .filter(spec => !isBuiltin(spec) && !declaredDynamicImports.includes(spec) &&
+      !closure.packages.has(spec) && !closure.packages.has(specifierPackageRoot(spec)))
     .sort();
   if (missing.length) {
     return {

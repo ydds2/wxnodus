@@ -99,19 +99,31 @@ $Parent = Split-Path -Parent $TargetDir
 New-Item -ItemType Directory -Force -Path $Parent | Out-Null
 $Staging = Join-Path $Parent ('.wxnodus-staging-' + [System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Force -Path $Staging | Out-Null
-Get-ChildItem -Path $Root -Force | Where-Object { $_.Name -ne 'install.ps1' } | Copy-Item -Recurse -Force -Destination $Staging
+# robocopy：字面路径 + 长路径（>260）安全（Copy-Item 在深路径下失败）；/XF install.ps1 保持其不属安装物
+& robocopy $Root $Staging /E /NFL /NDL /NJH /NJS /NP /XF install.ps1 | Out-Null
+if ($LASTEXITCODE -ge 8) {
+  Remove-Item $Staging -Recurse -Force -ErrorAction SilentlyContinue
+  Write-Error "INSTALLER_STAGING_FAILED: robocopy exit $LASTEXITCODE"
+  exit 1
+}
 Set-Content -Path (Join-Path $Staging 'start.cmd') -Encoding ASCII -Value "@echo off\`r\`nnode \`"%~dp0$entryRelative\`" %*"
 if (-not (Test-Path (Join-Path $Staging $entryRelative))) {
   Write-Error "INSTALLER_POSTCONDITION_FAILED: $entryRelative"
   Remove-Item $Staging -Recurse -Force -ErrorAction SilentlyContinue
   exit 1
 }
-$OwnedFiles = @()
-$OwnedDirs = @()
-Get-ChildItem -Path $Staging -Recurse | ForEach-Object {
-  $rel = $_.FullName.Substring($Staging.Length + 1) -replace '\\\\', '/'
-  if ($_.PSIsContainer) { $OwnedDirs += $rel } else { $OwnedFiles += $rel }
+# journal 由 manifest 确定性推导（绝不递归深路径）：manifest 全量文件 + start.cmd + manifest.json；
+# 目录 = 文件祖先集，长度降序（先删子目录再删父目录，只删空目录）
+$OwnedFiles = @($Manifest.files | ForEach-Object { $_.path }) + @('start.cmd', 'manifest.json')
+$DirSet = @{}
+foreach ($f in $OwnedFiles) {
+  $parts = ($f -replace '/', '\\').Split('\\')
+  for ($i = 0; $i -lt ($parts.Count - 1); $i++) {
+    $d = ($parts[0..$i] -join '\\')
+    if ($d) { $DirSet[$d] = $true }
+  }
 }
+$OwnedDirs = @($DirSet.Keys | Sort-Object { $_.Length } -Descending)
 $JournalContent = @{ files = $OwnedFiles; dirs = $OwnedDirs } | ConvertTo-Json
 if (Test-Path $TargetDir) {
   $Backup = Join-Path $Parent ('.wxnodus-backup-' + [System.IO.Path]::GetRandomFileName())

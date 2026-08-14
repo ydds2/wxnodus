@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { validateFrozenInstallerCandidate, type FrozenInstallerCandidate } from '../../src/application/release/installerCandidate.js';
-import { collectDependencyClosure, scanDistImportSpecifiers, verifyDependencyClosure } from '../../src/application/release/dependencyClosure.js';
+import { collectDependencyClosure, scanDistImportSpecifiers, stageClosureEntries, verifyDependencyClosure } from '../../src/application/release/dependencyClosure.js';
 import { buildInstallerPackage } from '../../src/application/release/installerPackager.js';
 import { readZip } from '../../src/application/release/zipArchive.js';
 import { readFile } from 'node:fs/promises';
@@ -95,6 +95,60 @@ describe('DX-04 dependency closure', () => {
     expect(specifiers.has('another-pkg')).toBe(true);
     expect(specifiers.has('./local.js')).toBe(false);
   });
+
+  it('accepts subpath specifiers of closure packages (react/jsx-runtime, @scope/pkg/sub)', () => {
+    // Gate H 实测暴露：dist 引入 react/jsx-runtime、@modelcontextprotocol/client/stdio 等
+    // 子路径 specifier——包在闭包内即满足，不能要求 specifier 恰为包名
+    const dir = tmp();
+    mkdirSync(join(dir, 'node_modules', 'react'), { recursive: true });
+    writeFileSync(join(dir, 'node_modules', 'react', 'package.json'), JSON.stringify({ name: 'react', version: '19.2.0' }));
+    mkdirSync(join(dir, 'node_modules', '@scope', 'pkg'), { recursive: true });
+    writeFileSync(join(dir, 'node_modules', '@scope', 'pkg', 'package.json'), JSON.stringify({ name: '@scope/pkg', version: '1.0.0' }));
+    const closure = collectDependencyClosure(join(dir, 'node_modules'), ['react', '@scope/pkg']);
+    const check = verifyDependencyClosure(
+      new Set(['react/jsx-runtime', '@scope/pkg/sub/path']),
+      closure,
+      [],
+    );
+    expect(check.ok).toBe(true);
+    // 根包不在闭包的子路径 specifier 仍 fail-closed
+    const missing = verifyDependencyClosure(new Set(['react-other/jsx']), closure, []);
+    expect(missing.ok).toBe(false);
+  });
+
+  it('excludes type artifacts and sourcemaps from the runtime closure (MAX_PATH + bloat)', () => {
+    // Gate H 实测暴露：@huggingface/transformers 的 types/**/*.d.ts.map 深度路径在
+    // staging Copy-Item 时突破 MAX_PATH（260）；类型产物运行时永不加载 → 不入闭包
+    const dir = tmp();
+    mkdirSync(join(dir, 'node_modules', 'pkg-a'), { recursive: true });
+    writeFileSync(join(dir, 'node_modules', 'pkg-a', 'package.json'), JSON.stringify({ name: 'pkg-a', version: '1.0.0' }));
+    writeFileSync(join(dir, 'node_modules', 'pkg-a', 'index.js'), 'module.exports = 1');
+    writeFileSync(join(dir, 'node_modules', 'pkg-a', 'types.d.ts'), 'export {}');
+    writeFileSync(join(dir, 'node_modules', 'pkg-a', 'types.d.ts.map'), '{}');
+    writeFileSync(join(dir, 'node_modules', 'pkg-a', 'index.js.map'), '{}');
+    writeFileSync(join(dir, 'node_modules', 'pkg-a', 'LICENSE'), 'MIT');
+    const closure = collectDependencyClosure(join(dir, 'node_modules'), ['pkg-a']);
+    expect(closure.files.has('pkg-a/index.js')).toBe(true);
+    expect(closure.files.has('pkg-a/LICENSE')).toBe(true); // 合规红线：许可证保留
+    expect(closure.files.has('pkg-a/types.d.ts')).toBe(false);
+    expect(closure.files.has('pkg-a/types.d.ts.map')).toBe(false);
+    expect(closure.files.has('pkg-a/index.js.map')).toBe(false);
+  });
+
+  it('stages closure entries under node_modules/ so the installed app can resolve deps', () => {
+    // Gate H 实测暴露：闭包键缺 node_modules/ 前缀 → 安装器把依赖平铺到安装根目录，
+    // 运行时 node_modules 解析必然失败。staged 树必须还原 node_modules/ 布局
+    const staged = stageClosureEntries(new Map([['pkg-a/index.js', Buffer.from('x')]]));
+    expect(staged.has('node_modules/pkg-a/index.js')).toBe(true);
+    expect(staged.has('pkg-a/index.js')).toBe(false);
+  });
+
+  it('runtime build excludes src test files so vitest never leaks into the dist closure', () => {
+    // Gate H 实测暴露：src/**/*.test.ts 被 tsc 编进 dist → vitest（devDependency）污染闭包。
+    // 源检：基础 tsconfig 必须排除 src 测试文件（tests 型检走 tsconfig.tests.json，不受影响）
+    const tsconfig = JSON.parse(readFileSync(join(process.cwd(), 'tsconfig.json'), 'utf8')) as { exclude?: string[] };
+    expect(tsconfig.exclude ?? []).toContain('src/**/*.test.ts');
+  });
 });
 
 describe('DX-04 install.ps1 lifecycle', () => {
@@ -125,5 +179,8 @@ describe('DX-04 install.ps1 lifecycle', () => {
     expect(script).toContain('$Owned.dirs');
     // manifest 全量 sha256 校验仍在（漂移即拒）
     expect(script).toContain('INSTALLER_SHA256_MISMATCH');
+    // 转义回归：PS 里路径分隔符必须是 '\'（TS 模板字面量 '\' 会被吞成 ''，曾致 journal dirs=0）
+    expect(script).toContain("($f -replace '/', '\\').Split('\\')");
+    expect(script).toContain("($parts[0..$i] -join '\\')");
   });
 });
