@@ -2,10 +2,12 @@
 // 设计：三层校验——① 主机名形态（IPv4 私网/保留段、IPv6 私网段、localhost、0.0.0.0）
 //       ② DNS 解析后逐 IP 校验（防 DNS 重绑定：公网域名解析到内网 IP）
 //       ③ 重定向逐跳校验（防 3xx 跳转进入内网；最多 5 跳）
-// 安全审查修复：IPv6 变体归一化——::ffff:a.b.c.d（含 hex 形式 7f00:1）与
-// 64:ff9b::/96 NAT64 前缀映射回 IPv4 后复用私网校验（防云元数据/本机绕过）
+// P0-08：safeFetchText 的逐跳授权与响应体限制已接线 outboundTargetPolicy / boundedResponseReader
+//（DNS 失败 fail-closed、按真实字节拒绝超限）；checkUrlSafety 保留为兼容导出（KF-011 regression 依赖）。
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { authorizeOutboundUrl } from '../infrastructure/http/outboundTargetPolicy.js';
+import { readBoundedBody } from '../infrastructure/http/boundedResponseReader.js';
 
 // IPv4 私网/保留段（正则形态校验）
 const IPV4_PRIVATE_RE =
@@ -115,8 +117,9 @@ export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): P
   let current = url;
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
-    const check = await checkUrlSafety(current);
-    if (!check.ok) return { error: `已拦截：${check.reason}` };
+    // P0-08：逐跳授权走 outboundTargetPolicy（DNS 失败 fail-closed；解析集含私网即拒）
+    const check = await authorizeOutboundUrl(current);
+    if (!check.ok) return { error: `已拦截：${check.error.code}` };
 
     if (proxy) {
       // 代理通道：Windows 10+ 内置 curl（SSRF 逐跳校验仍在 JS 侧完成）
@@ -144,12 +147,12 @@ export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): P
         current = new URL(loc, current).toString();
         continue; // 下一跳继续校验
       }
-      // A20：响应体上限（防内存炸弹）
-      const buf = Buffer.from(await resp.arrayBuffer());
-      if (buf.length > maxBytes) {
-        return { status: resp.status, text: buf.subarray(0, maxBytes).toString('utf8') + `\n[截断：响应超过 ${maxBytes} 字节上限]` };
+      // P0-08：按真实字节限制响应（Content-Length 预拒绝；超限取消流并拒绝——不再静默截断）
+      const bounded = await readBoundedBody(resp, maxBytes);
+      if (!bounded.ok) {
+        return { error: `响应超过 ${maxBytes} 字节上限——已拒绝（${bounded.error.code}）` };
       }
-      return { status: resp.status, text: buf.toString('utf8') };
+      return { status: resp.status, text: bounded.value.bytes.toString('utf8') };
     } catch (e: any) {
       return { error: `请求失败：${String(e?.message ?? e).slice(0, 300)}` };
     }
