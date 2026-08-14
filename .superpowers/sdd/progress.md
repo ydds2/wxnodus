@@ -353,3 +353,15 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
   - 契约更新：market-distribution 重写（5 用例含攻击场景）、forge-compliance 封套段、db-migrations/kf-030 对齐 schema 6。
 - 全量：**234 文件 / 1826 通过 / 10 跳过 / 0 失败**；known-failures 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
 - 诚实边界：Market 仍无生产消费入口（纯库 + 真实 HTTP 契约测试）；/market 命令接线留 Wave 6；W5-02 HAR 脱敏/配额/留存未开始。
+
+## W5-02 HAR 隐私加固完成 — 2026-08-15
+
+- RED 先行（w5-har-privacy 9 用例：脱敏/配额/留存/探针清理，模块未实现时红）。
+- 实现：
+  - `redactionPolicy.ts`（新）：userinfo 全删 + 敏感 query（token/access_token/refresh_token/api_key/client_secret/signature/code/auth/password/key…，大小写不敏感）值替换为 URL-safe 占位；不可 parse/非 http(s) → 拒绝（fail-closed）。
+  - `harQuotaPolicy.ts`（新）：event/URL/file/directory 五维限额 + policyDigest（策略 canonical 摘要随落盘）。
+  - `harRetention.ts`（新）：只删 owned 模式 `session-<SAFE_ID>.har`；超龄优先 + 数量上限；外来文件/子目录绝不动。
+  - `harCaptureAdapter.ts`：recordEvent 在进内存前即脱敏（session.events 只存脱敏 URL）；配额超限 → 仍落盘但 `complete:false + reason + counts + policyDigest`（诚实标记不完整）；原子写（tmp→fsync→rename）。
+  - `cdpHarProbe.ts`：CDP 事件边界即脱敏（pending 只存脱敏 URL，不可 parse 丢弃）；finally 全路径（complete/fail/abort）清空 pending。
+- 全量：**235 文件 / 1835 通过 / 10 跳过 / 0 失败**（exit 0，两次复核；其中一次并行负载下 1 文件 flaky——既有 heapdump flake，单跑稳定）；known-failures 31/31；typecheck×2/build/discovery 干净。
+- 诚实边界：HAR 采集链仍无生产触发入口（/browser 不落 HAR——纯库 + 契约测试）；生产接线留 Wave 6。
