@@ -2,11 +2,12 @@
 // 设计：settings.hooks 配置事件 → 本地 shell 命令（PowerShell/bash 适配），
 //       上下文经环境变量 WXNODUS_HOOK_EVENT / WXNODUS_HOOK_DATA（JSON）传入，
 //       全部本地进程执行（本地化为准）；preToolUse 输出 DENY: 开头即真实拦截工具。
-//       失败不阻断主流程（记录 system.notice），10s 超时防挂死。
+//       P0-06：安全关键 hook 崩溃/超时/缺失/非零退出 fail-closed（结构化决策，见 domain/hooks/hookDecision）。
 import { execFileSync } from 'node:child_process';
 import { platform } from 'node:os';
 import type { EventBus } from './events.js';
 import { sanitizedEnv } from './env.js';
+import { decideSecurityHook, type HookExecutionOutcome } from '../domain/hooks/hookDecision.js';
 
 export type HookEvent =
   | 'userPromptSubmit' | 'preToolUse' | 'postToolUse' | 'stop'
@@ -32,34 +33,35 @@ export function hooksFromConfig(settings: Record<string, any> | undefined): Hook
 }
 
 // 执行单条 hook 命令（execFileSync 精确 shell 参数，10s 超时，stdout 截断）
-export function runHook(cmd: string, event: HookEvent, data: unknown): string {
+// P0-06：返回结构化结果（成功/非零退出/超时/缺失/错误），不再用空输出吞噬失败。
+export function runHook(cmd: string, event: HookEvent, data: unknown): HookExecutionOutcome {
   const isWin = platform() === 'win32';
   const args = isWin ? ['-NoProfile', '-Command', cmd] : ['-c', cmd];
+  const env = {
+    // P0-3 环境净化：hook 子进程不继承密钥类变量（env.ts 统一策略），
+    // WXNODUS_HOOK_* 为显式白名单传入（配置在 settings.hooks，非密钥）
+    ...sanitizedEnv(),
+    WXNODUS_HOOK_EVENT: event,
+    WXNODUS_HOOK_DATA: JSON.stringify(data ?? {}),
+  };
   try {
     const out = execFileSync(isWin ? 'powershell.exe' : '/bin/bash', args, {
       encoding: 'utf8',
       timeout: 10_000,
       maxBuffer: 4 * 1024 * 1024,
       windowsHide: true,
-      env: {
-        // P0-3 环境净化：hook 子进程不继承密钥类变量（env.ts 统一策略），
-        // WXNODUS_HOOK_* 为显式白名单传入（配置在 settings.hooks，非密钥）
-        ...sanitizedEnv(),
-        WXNODUS_HOOK_EVENT: event,
-        WXNODUS_HOOK_DATA: JSON.stringify(data ?? {}),
-      },
+      env,
     });
-    return String(out ?? '').trim().slice(0, 4000);
-  } catch (e: any) {
-    // 命令本身失败（非零退出）也回传 stdout 供 DENY 判断；超时/其他异常返回空
-    if (e?.stdout) return String(e.stdout).trim().slice(0, 4000);
-    // A25：hook 执行失败（shell 缺失/超时）如实通知——此前静默返回空，
-    // 配置了 hooks 的用户以为 hook 生效了，实际从未执行
-    const code = (e as NodeJS.ErrnoException)?.code
-    if (code === 'ENOENT') {
-      return `[hook:${event}] 执行失败：未找到 ${isWin ? 'powershell.exe' : '/bin/bash'}（hook 未运行——请检查 PATH）`;
+    return { kind: 'ok', output: String(out ?? '').trim().slice(0, 4000) };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException & { stdout?: string };
+    // 超时优先判定：Node 22 的超时错误可能附带空 stdout，不能误判为非零退出
+    if (err.code === 'ETIMEDOUT') return { kind: 'timeout' };
+    if (err.stdout !== undefined) {
+      return { kind: 'exited-nonzero', output: String(err.stdout).trim().slice(0, 4000) };
     }
-    return `[hook:${event}] 执行失败：${String(e?.message ?? e).slice(0, 100)}（hook 未运行）`;
+    if (err.code === 'ENOENT') return { kind: 'missing' };
+    return { kind: 'error', message: String(err.message ?? err).slice(0, 100) };
   }
 }
 
@@ -82,20 +84,25 @@ export interface HookRunner {
 
 // 构建 hook 运行器（订阅配置快照——每次读取当前 settings，热生效）
 export function createHookRunner(getSettings: () => Record<string, any> | undefined, bus: EventBus): HookRunner {
-  const fire = (event: HookEvent, data: unknown): string => {
+  const fire = (event: HookEvent, data: unknown): HookExecutionOutcome | null => {
     const cfg = hooksFromConfig(getSettings());
     const cmd = cfg[event];
-    if (!cmd) return '';
-    const out = runHook(cmd, event, data);
-    if (out) bus.emit('system.notice', { text: `[hook:${event}] ${out.slice(0, 120)}` });
-    return out;
+    if (!cmd) return null;
+    const outcome = runHook(cmd, event, data);
+    const text = outcome.kind === 'ok' || outcome.kind === 'exited-nonzero' ? outcome.output
+      : outcome.kind === 'timeout' ? `[hook:${event}] 超时未响应（10s）`
+      : outcome.kind === 'missing' ? `[hook:${event}] 执行失败：未找到 shell（hook 未运行——请检查 PATH）`
+      : `[hook:${event}] 执行失败：${outcome.message}（hook 未运行）`;
+    if (text) bus.emit('system.notice', { text: text.slice(0, 120) });
+    return outcome;
   };
 
   return {
     async preToolUse(name, args) {
-      const out = fire('preToolUse', { tool: name, args });
-      // DENY: 开头（或包含 DENY 行）→ 真实拦截工具执行
-      return !(out.startsWith('DENY') || /\nDENY/.test(out));
+      const outcome = fire('preToolUse', { tool: name, args });
+      if (outcome === null) return true;
+      // P0-06：安全关键事件走结构化 fail-closed 决策；DENY 只来自干净退出的合法协议
+      return decideSecurityHook(outcome).allow;
     },
     postToolUse(name, out) {
       fire('postToolUse', { tool: name, output: out.slice(0, 2000) });
@@ -116,8 +123,9 @@ export function createHookRunner(getSettings: () => Record<string, any> | undefi
       fire('sessionEnd', { ok: result.ok, turns: result.turns });
     },
     preCompact(reason) {
-      const out = fire('preCompact', { reason });
-      return out.startsWith('BLOCK') || /\nBLOCK/.test(out);
+      const outcome = fire('preCompact', { reason });
+      const output = outcome && (outcome.kind === 'ok' || outcome.kind === 'exited-nonzero') ? outcome.output : '';
+      return output.startsWith('BLOCK') || /\nBLOCK/.test(output);
     },
     postCompact(prevTokens, nextTokens) {
       fire('postCompact', { prev_tokens: prevTokens, next_tokens: nextTokens });

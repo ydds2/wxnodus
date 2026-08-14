@@ -43,15 +43,16 @@ describe('hooksFromConfig 配置解析', () => {
 describe('runHook 命令执行', () => {
   it('注入事件名与数据环境变量', () => {
     const out = runHook(echoCmd('WXNODUS_HOOK_EVENT'), 'preToolUse', { tool: 'bash' });
-    expect(out).toBe('preToolUse');
+    expect(out).toMatchObject({ kind: 'ok', output: 'preToolUse' });
   });
   it('输出 DENY 开头可被识别为拦截', () => {
     const out = runHook('node -e "console.log(\'DENY: 安全规则\')"', 'preToolUse', {});
-    expect(out.startsWith('DENY')).toBe(true);
+    expect(out.kind === 'ok' ? out.output.startsWith('DENY') : false).toBe(true);
   });
   it('超时不挂死（10s 上限内快速失败）', () => {
     const t0 = Date.now();
-    runHook('node -e "setTimeout(()=>{}, 60000)"', 'stop', {});
+    const out = runHook('node -e "setTimeout(()=>{}, 60000)"', 'stop', {});
+    expect(out).toMatchObject({ kind: 'timeout' });
     expect(Date.now() - t0).toBeLessThan(15_000);
   });
 });
@@ -82,13 +83,12 @@ describe('createHookRunner 集成', () => {
 describe('runHook 边界', () => {
   it('长输出截断至 4000 字符', () => {
     const out = runHook('node -e "console.log(\\"x\\".repeat(9000))"', 'stop', {});
-    expect(out.length).toBeLessThanOrEqual(4000);
+    expect(out.kind === 'ok' ? out.output.length : 0).toBeLessThanOrEqual(4000);
   });
-  // A25：命令失败如实返回失败信息（此前静默空串——配置了 hooks 的用户
-  // 以为 hook 生效了，实际从未执行）
-  it('命令崩溃返回失败说明（不抛、不静默）', () => {
-    expect(runHook('node -e "process.exit(3)"', 'preToolUse', {})).toContain('[hook:preToolUse] 执行失败');
-    expect(runHook('不存在的命令xyz', 'preToolUse', {})).toContain('[hook:preToolUse] 执行失败');
+  // P0-06：命令失败结构化返回（不抛、不静默）；崩溃/未知命令均归类为非零退出
+  it('命令崩溃返回结构化非零退出（不抛、不静默）', () => {
+    expect(runHook('node -e "process.exit(3)"', 'preToolUse', {})).toMatchObject({ kind: 'exited-nonzero' });
+    expect(runHook('不存在的命令xyz', 'preToolUse', {})).toMatchObject({ kind: 'exited-nonzero' });
   });
   it('HOOK_EVENTS 枚举 12 类', () => {
     expect(HOOK_EVENTS).toEqual(['userPromptSubmit', 'preToolUse', 'postToolUse', 'stop', 'sessionStart', 'sessionEnd', 'preCompact', 'postCompact', 'subagentStart', 'subagentStop', 'postToolUseFailure', 'notification']);
@@ -112,11 +112,12 @@ describe('createHookRunner 事件覆盖', () => {
     expect(notices.some(t => t.includes('userPromptSubmit'))).toBe(true);
     expect(notices.some(t => t.includes('postToolUse'))).toBe(true);
   });
-  it('hook 崩溃不阻断主流程（放行）', async () => {
+  // P0-06：安全关键 hook 崩溃必须 fail-closed（拦截工具），不再放行
+  it('hook 崩溃时安全关键事件 fail-closed（拦截工具）', async () => {
     const bus = createEventBus(dir);
     const runner = createHookRunner(() => ({ hooks: { preToolUse: 'node -e "process.exit(9)"' } }), bus);
     const r = await runner.preToolUse('bash', {});
-    expect(r).toBe(true); // 崩溃无输出 → 非 DENY → 放行
+    expect(r).toBe(false); // 崩溃无 DENY 协议输出 → fail closed
   });
 });
 
