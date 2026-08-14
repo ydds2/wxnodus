@@ -247,3 +247,10 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - `src/build/specAcceptance.ts`: spec → structured acceptance contract — rule-brain scaffolds map to deterministic artifact anchors (`file.exists` on server/index.js + healthcheck.js); unknown scaffolds fail closed (`BUILD_ACCEPTANCE_UNSPECIFIED`) — natural-language acceptance is never disguised as verifiable assertions.
 - `/build` modern branch wired for real: staging → scaffold (legacy instantiate as a node) → static entry → verifier → evidence → Ed25519 reviewer (AES-persisted key service) → CompletionGate owned receipt. Snapshot sources: environment (platform/arch/node deterministic), capability (builtin verifier capability union), policy (hooks config canonical hash). `BUILD_SERVICE_WIRED` flipped true.
 - Full suite: 217 files / 1732 passed / 10 skipped / 0 failed.
+
+
+## Wave 3 progress (Plugin facade done) — 2026-08-14
+
+- `/plugin` modern branch wired: `PluginLifecycleService` (manifest → checksum → probe → sandbox gate → owned-scope atomic swap) with the production crash-isolation sandbox, `ExtensionScopeManager`, lifecycle evidence on disk. Broker permission requests fail closed (`PLUGIN_BROKER_PIPELINE_UNAVAILABLE`) until the production `ToolExecutionPipeline` (W1-08 contract) is wired — never fake-executed. `PLUGIN_WIRED` flipped true.
+- Full suite: 217 files / 1732 passed / 10 skipped / 0 failed.
+- Remaining plugin: production ToolExecutionPipeline (11 ports) for broker capability requests.
