@@ -131,6 +131,12 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // /voice：语音模式（审查修复：此前仅 TUI 本地命令、/help 查不到、-p 报未知命令——
   // 现注册进命令面；TUI 内由麦克风钮/Ctrl+B 走 gateway voice RPC，此处提供状态与指引）
   bus.register('/voice', async (args) => {
+    // W3 Voice 第 1 步：组合路由决策——modern/required 在 facade 接线完成前 fail-closed
+    const { decideVoiceRoute } = await import('./voiceRouting.js');
+    const voiceRoute = decideVoiceRoute({ env: process.env.WXNODUS_COMPOSITION_ROOT });
+    if (!voiceRoute.ok) {
+      throw new Error(`[${voiceRoute.error.code}] ${voiceRoute.error.message}`);
+    }
     const sub = args[0];
     const tip = 'TUI 内按 Ctrl+B 或点击麦克风钮开启语音（ffmpeg 录音 → whisper 本地转写 → 自动提交 → TTS 回复）；/voice status 查看组件可用性';
     if (sub === 'status') {
