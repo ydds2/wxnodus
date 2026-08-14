@@ -596,6 +596,17 @@ if (pre.mode === 'error') {
     }
   } catch { /* 非 git 仓库/无 origin 时保持 null——诚实降级 */ }
 
+  // W3 TUI 第 1 步：组合路由决策——modern/required 在 WxGatewayKernel 收缩完成前 fail-closed
+  {
+    const { decideTuiRoute } = await import('../bootstrap/tuiRouting.js');
+    const tuiRoute = decideTuiRoute({ env: process.env.WXNODUS_COMPOSITION_ROOT });
+    if (!tuiRoute.ok) {
+      console.error(`wxnodus: ${tuiRoute.error.message}`);
+      void shutdown('tui-route-denied').finally(() => process.exit(2));
+      return;
+    }
+  }
+
   // WxNodus UI 装配
   gateway = new GatewayClient({
     bus, db, config, mem, agent, commandBus,
