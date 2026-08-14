@@ -365,3 +365,19 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
   - `cdpHarProbe.ts`：CDP 事件边界即脱敏（pending 只存脱敏 URL，不可 parse 丢弃）；finally 全路径（complete/fail/abort）清空 pending。
 - 全量：**235 文件 / 1835 通过 / 10 跳过 / 0 失败**（exit 0，两次复核；其中一次并行负载下 1 文件 flaky——既有 heapdump flake，单跑稳定）；known-failures 31/31；typecheck×2/build/discovery 干净。
 - 诚实边界：HAR 采集链仍无生产触发入口（/browser 不落 HAR——纯库 + 契约测试）；生产接线留 Wave 6。
+
+## Wave 6 本轮（W6-01 evidence 接线 + W6-02 Gate E 结构硬化）— 2026-08-15
+
+- RED 先行（w6-01/w6-02 契约 6 红实证）。
+- W6-01（`0eb8587`）：
+  - `evidenceIndexSchema.ts`：candidate 绑定 runId；entry 绑定 suite + importProvenance（source repo 相对路径 + importedAt）；附件路径去重改条目内（多条目共享来源文件为合法导入形态）。
+  - `evidenceIndexImporter.ts`（新）：`importRunEvidence` 从 run 目录只收 passed 门证据（gate-report 逐门过滤 + Gate E aggregate passed 才入索引）；附件逐文件 sha256 绑定；repo 越界即拒。
+  - `scripts/import-release-evidence`（原子落盘+读回自校验）与 `scripts/resolve-requirement-evidence`（事实报告；R01–R20 全 verified 才 exit 0，否则 3——绝不伪 verified）两个 CLI + npm scripts。
+- W6-02（`a6eb78e`）：
+  - `run-windows-acceptance.mjs`：显式 `--runner-snapshot`（缺失/坏 JSON → WINDOWS_RUNNER_SNAPSHOT_MISSING/INVALID exit 2）；produce 产出 receipt 三件套（core 无 manifest hash/无 closure → manifest hash core+附件 rootDigest 重算 → manifest 外 index 引用两者 hash）；`--scenario-dir` 收集场景结果与附件。
+  - `windowsAcceptanceContract.mjs`：aggregator **先重算** index→manifest→rootDigest→entries，再解析 core；closure 由 validator 从 REQUIRED_WINDOWS_SCENARIOS（7 场景）计算（全 passed + attachmentId 全部落在哈希锁定条目）；新错误码 CORE/MANIFEST/ATTACHMENT/SCENARIO 系列；双 receipt 同候选强绑定。
+  - 五个场景脚本去假探测：voice 第二次运行真实启动+取消+终止确认；computer-multimonitor PMv2 真实 GetProcessDpiAwareness + GetDpiForMonitor 坐标变换；build-restart-readback 真实 stop→端口释放→新 PID→读回；emergency-stop 真实进程树终止；preflight 真实 OpenInputDesktop/GetDpiForMonitor。provision 脚本同步真实探测（失败如实 null/blocked）。
+  - 契约测试迁 receipt 目录三件套（合成目录真实哈希）。
+- 全量：**237 文件 / 1848 通过 / 10 跳过 / 0 失败**；known-failures 31/31（exit 0）；typecheck×2/build/discovery 干净；dist smoke 通过；Gate E produce 本机诚实 blocked（11 项物理前置缺失如实列出，receipt 三件套真实哈希）。
+- 诚实边界：Gate E 依旧 blocked（无物理环境——结构真实、探测真实、绝不伪造 passed）；场景 PowerShell 只改源码未在本机执行。
+- 剩余：W6-03（Gate H 离线证据运行器 / Gate I 诚实 blocked）、W6-04（pack:release 冻结器 + release:finalize + check-release-surface）。
