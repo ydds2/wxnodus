@@ -1,4 +1,4 @@
-# build-fixtures.ps1 — UIA fixture 锁验证/刷新
+﻿# build-fixtures.ps1 — UIA fixture 锁验证/刷新
 # -VerifyLock：验证生成器 hash → 干净临时目录重新生成 → 与已提交源码树逐字节/路径比对 → 构建 → 校验输出锁
 # -WriteLock：维护者专属刷新（生成器/输出 hash 均可变）；CI 绝不传 -WriteLock
 param(

@@ -1,4 +1,4 @@
-# browser.ps1 — Playwright service worker 阻断 + 每次请求 URL 策略 + DNS rebinding 比对（真实路由观测）
+﻿# browser.ps1 — Playwright service worker 阻断 + 每次请求 URL 策略 + DNS rebinding 比对（真实路由观测）
 $ErrorActionPreference = 'SilentlyContinue'
 $out = [ordered]@{ scenarioId = 'browser'; status = 'blocked' }
 $script = @'

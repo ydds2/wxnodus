@@ -1,4 +1,4 @@
-# voice.ps1 — 真实 MMDevice 端点录音 → WAV(RIFF/fmt/data) → whisper → SAPI → 第二次运行真实取消
+﻿# voice.ps1 — 真实 MMDevice 端点录音 → WAV(RIFF/fmt/data) → whisper → SAPI → 第二次运行真实取消
 # 无物理端点/whisper 不可用/取消无法终止时输出 blocked（诚实：绝不硬编码通过）
 $ErrorActionPreference = 'SilentlyContinue'
 $out = [ordered]@{ scenarioId = 'voice'; status = 'blocked' }

@@ -86,7 +86,9 @@
     "gate:i": "node scripts/run-gate-i.mjs",
     "release:finalize": "node scripts/finalize-release.mjs",
     "check:release-surface": "node scripts/check-release-surface.mjs",
-    "evidence:memory-capacity": "node scripts/evidence-memory-capacity.mjs"
+    "evidence:memory-capacity": "node scripts/evidence-memory-capacity.mjs",
+    "evidence:mcp-e2e": "node scripts/evidence-mcp-e2e.mjs",
+    "evidence:voice-capture": "node scripts/evidence-voice-capture.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",

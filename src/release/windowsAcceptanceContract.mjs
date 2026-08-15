@@ -131,7 +131,9 @@ export function evaluateWindowsRunner(snapshot) {
   if (physicalMonitors.length < 2) missing.push('WINDOWS_MULTIMONITOR_REQUIRED');
   if (physicalMonitors.length === 0 || Math.min(...physicalMonitors.map(monitor => monitor.x)) >= 0) missing.push('WINDOWS_NEGATIVE_ORIGIN_REQUIRED');
   if (new Set(physicalMonitors.map(monitor => monitor.scale)).size < 2) missing.push('WINDOWS_MIXED_DPI_REQUIRED');
-  return missing.length === 0 ? { status: 'passed' } : {
-    status: 'blocked', code: 'WINDOWS_PHYSICAL_PRECONDITION_BLOCKED', missing,
+  // 同一前置可能被多个检查命中（如实报缺失但绝不重复计数）
+  const unique = [...new Set(missing)];
+  return unique.length === 0 ? { status: 'passed' } : {
+    status: 'blocked', code: 'WINDOWS_PHYSICAL_PRECONDITION_BLOCKED', missing: unique,
   };
 }

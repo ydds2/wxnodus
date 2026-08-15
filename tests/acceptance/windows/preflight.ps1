@@ -1,4 +1,4 @@
-# preflight.ps1 — 受控 runner 前置探测：会话/桌面/OS/Node/显示器（真实 DPI）/麦克风/SAPI（真实探测，缺失即 blocked）
+﻿# preflight.ps1 — 受控 runner 前置探测：会话/桌面/OS/Node/显示器（真实 DPI）/麦克风/SAPI（真实探测，缺失即 blocked）
 $ErrorActionPreference = 'SilentlyContinue'
 $out = [ordered]@{}
 $out.scenarioId = 'preflight'

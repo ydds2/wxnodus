@@ -75,6 +75,15 @@ describe('controlled Windows runner', () => {
     expect(evaluateWindowsRunner(healthy)).toEqual({ status: 'passed' });
   });
 
+  it('missing 前置清单不重复（同一前置被多个检查命中只报一次）', () => {
+    const result = evaluateWindowsRunner({ ...healthy, microphones: [], sapiVoices: [] }) as
+      { status: string; code: string; missing: string[] };
+    expect(result.status).toBe('blocked');
+    expect(new Set(result.missing).size).toBe(result.missing.length);
+    expect(result.missing).toContain('WINDOWS_MICROPHONE_REQUIRED');
+    expect(result.missing).toContain('WINDOWS_SAPI_REQUIRED');
+  });
+
   it.each([
     ['microphone', { microphones: [] }],
     ['SAPI', { sapiVoices: [] }],

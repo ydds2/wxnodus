@@ -1,4 +1,4 @@
-# build-restart-readback.ps1 — 真实进程替换：读数据 → 停树+端口释放 → 新进程（PID 不同）→ 读回同一数据
+﻿# build-restart-readback.ps1 — 真实进程替换：读数据 → 停树+端口释放 → 新进程（PID 不同）→ 读回同一数据
 # 任一步无法验证 → blocked（诚实：绝不硬编码 true）
 $ErrorActionPreference = 'SilentlyContinue'
 $out = [ordered]@{ scenarioId = 'build-restart-readback'; status = 'blocked' }

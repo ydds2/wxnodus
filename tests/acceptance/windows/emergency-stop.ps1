@@ -1,4 +1,4 @@
-# emergency-stop.ps1 — 全局急停（真实执行）：终止目标进程树 → 确认无残留 → passed；无目标/终止失败 → blocked
+﻿# emergency-stop.ps1 — 全局急停（真实执行）：终止目标进程树 → 确认无残留 → passed；无目标/终止失败 → blocked
 $ErrorActionPreference = 'SilentlyContinue'
 $out = [ordered]@{ scenarioId = 'emergency-stop'; status = 'blocked' }
 $targetPid = $env:WXNODUS_EMERGENCY_TARGET_PID

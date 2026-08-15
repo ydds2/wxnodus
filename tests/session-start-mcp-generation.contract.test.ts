@@ -108,6 +108,11 @@ describe('MCP server 显式生成', () => {
       expect(source).toContain(`registerTool('${tool.name}'`);
       expect(source).toContain(`'${tool.name}',`);
     }
+    // SDK 2.0 三参契约：registerTool(name, config, cb)——config 形状 { description, inputSchema }
+    // （旧四参形式把 schema 当回调 → tools/call 运行时 'callback is not a function'；
+    //  裸 JSON Schema 也会被 SDK 拒绝——须经 fromJsonSchema 转 Standard Schema）
+    expect(source).toContain(`registerTool('memory_search', { description:`);
+    expect(source).toContain('inputSchema: fromJsonSchema(');
     const manifest = JSON.parse(generated.value.files[1].content);
     expect(manifest).toMatchObject({ schemaVersion: 1, serverName: 'wxnodus-demo', protocolVersion: '2026-07-28', tools: ['memory_search', 'calc_eval'] });
     expect(manifest.sha256).toMatch(/^[a-f0-9]{64}$/);

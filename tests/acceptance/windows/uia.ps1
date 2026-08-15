@@ -1,4 +1,4 @@
-# uia.ps1 — 四个 fixture 的 Invoke/Selection/Value 场景 + 无动作/高完整性/受保护 UI/SecureDesktop 边界
+﻿# uia.ps1 — 四个 fixture 的 Invoke/Selection/Value 场景 + 无动作/高完整性/受保护 UI/SecureDesktop 边界
 # 边界断言：任何被阻断边界绝不尝试坐标 fallback（UIA_COORDINATE_FALLBACK_FORBIDDEN）
 $ErrorActionPreference = 'SilentlyContinue'
 $out = [ordered]@{ scenarioId = 'uia'; status = 'blocked' }

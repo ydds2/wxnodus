@@ -1,4 +1,4 @@
-# computer-multimonitor.ps1 — PMv2 + 负原点/混合 DPI 显示器：真实探测（PMv2 声明 + GetDpiForMonitor 缩放）
+﻿# computer-multimonitor.ps1 — PMv2 + 负原点/混合 DPI 显示器：真实探测（PMv2 声明 + GetDpiForMonitor 缩放）
 # 任一探测无法验证 → blocked（诚实：绝不硬编码 pmv2Declared/coordinateTransformVerified）
 $ErrorActionPreference = 'SilentlyContinue'
 $out = [ordered]@{ scenarioId = 'computer-multimonitor'; status = 'blocked' }

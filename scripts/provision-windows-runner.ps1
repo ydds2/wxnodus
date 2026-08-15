@@ -1,4 +1,4 @@
-# provision-windows-runner.ps1 — 受控 runner 前置准备（W6-02 诚实版）：
+﻿# provision-windows-runner.ps1 — 受控 runner 前置准备（W6-02 诚实版）：
 # 校验标签/OS 基线；会话/桌面/解锁状态、显示器 DPI、麦克风、SAPI 全部真实探测——失败即如实输出（绝不硬编码通过）
 $ErrorActionPreference = 'SilentlyContinue'
 $out = [ordered]@{}

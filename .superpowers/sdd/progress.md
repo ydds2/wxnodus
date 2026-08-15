@@ -464,3 +464,13 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - 迁移：5 case 文件删除（cases 目录清空）、账本全部 resolved-with-green-regression、release-signal 测试契约随账本清零诚实更新（零 open → 不再以 open-KF 阻塞；注入 blocker 的阻断语义保留）。
 - 验证：oracle **31/31（30 resolved + 磁盘闭包）**；全量 **261 文件 / 1952 通过 / 10 跳过 / 0 失败**；typecheck×2/build/discovery 干净；dist smoke 通过。
 - 缺陷账本终态：**30/30 resolved**——可编程缺陷清零。
+
+## 放弃离线模型后的推进轮（MCP E2E + 语音采集 + Gate E/I 诚实 receipt + PS 编码缺陷）— 2026-08-15
+
+- **MCP 真实 E2E（`npm run evidence:mcp-e2e`）**：生成 → 生产客户端 connectAllMcp 真实 stdio 连接（635ms）→ tools/call 真实往返 → mcp__demo__* 工具表映射——receipt passed。**E2E 纪律当场抓到真实缺陷**：生成器 emit 旧 SDK 四参 registerTool + 裸 JSON Schema（SDK 2.0 要求 `registerTool(name, {description, inputSchema: fromJsonSchema(...)}, cb)`——旧形式 tools/call 运行时 'callback is not a function'、裸 schema 直接 throw）——修复 + 契约测试锁定三参/fromJsonSchema 形状。
+- **语音采集真实链路（`npm run evidence:voice-capture`）**：真实麦克风（Realtek）→ ffmpeg dshow 实录 2s（63,616 字节）→ 块遍历头校验（真实世界 WAV 带 LIST/INFO 元数据块——校验器按块走查）passed。转写环节按用户指示**诚实 blocked**（whisper 资产放弃，不伪造转写文本）。
+- **Gate E 供给链缺陷修复**：provision-windows-runner.ps1 无 BOM 导致 PS 5.1 按 GBK 读 UTF-8 中文 → 解析错误（第 41 行当场复现）——此前 Gate E 用 EMPTY_RUNNER 占位快照（麦克风/SAPI/交互全误报缺失）。修复：9 个中文 .ps1 全部加 UTF-8 BOM（PS 5.1 解析 9/9 通过）+ w8-06 编码回归锁定 + evaluateWindowsRunner missing 去重（同一前置不重复报）。
+- **Gate E 真实快照重跑**：本机快照（2 麦克风/3 SAPI 音色/交互会话/单显示器/OS 26200）→ 6 项真实前置缺失（OS 基线 26200≠26100、候选绑定、fixture 锁、多显示器/负原点/混合 DPI）——诚实 blocked，不再占位误报。
+- **Gate I**：`GATE_I_PLATFORM_UNAVAILABLE`（win32——只接受真实 Linux/macOS worker receipt）诚实 blocked。
+- 验证：全量 **265 文件 / 1966 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
+- 诚实边界保持：Gate E 需真实双 OS 验收机、Gate I 需 Linux/macOS worker、语音转写需 whisper 资产（放弃）——机制就绪、证据真实、绝不伪造。
