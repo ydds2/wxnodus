@@ -25,15 +25,18 @@ describe('presentationStore seam', () => {
     expect(getPresentationState().sessionId).toBeNull();
   });
 
-  it('旧 session/旧 generation 事件经 store 同样被丢弃', () => {
+  it('同会话旧 generation 事件被丢弃；跨会话事件 = 会话切换（重置投影）', () => {
     dispatchPresentationEvent({ sessionId: 's1', generation: 1, type: 'turn.start' });
     const before = getPresentationState();
 
-    dispatchPresentationEvent({ sessionId: 's-old', generation: 1, type: 'message.delta', text: '迟到' });
-    expect(getPresentationState()).toEqual(before);
-
+    // 同会话旧代数 → 丢弃
     dispatchPresentationEvent({ sessionId: 's1', generation: 0, type: 'message.delta', text: '旧代数' });
     expect(getPresentationState()).toEqual(before);
+
+    // 跨会话 → 会话切换重置（adapter 层已按 session_id 过滤真正迟到的旧会话事件）
+    dispatchPresentationEvent({ sessionId: 's-old', generation: 1, type: 'message.delta', text: '切换' });
+    expect(getPresentationState().sessionId).toBe('s-old');
+    expect(getPresentationState().history).toEqual([]);
   });
 
   it('证据事件进入 read-model 且只经 verification 事件', () => {
@@ -43,5 +46,17 @@ describe('presentationStore seam', () => {
       event: { type: 'verification.succeeded', id: 'e1', sourceEvent: 'v#1', at: 1 },
     });
     expect(getPresentationState().evidence.items['e1']?.status).toBe('verified');
+  });
+
+  it('会话切换：新会话事件重置投影（旧会话快照不残留）', () => {
+    dispatchPresentationEvent({ sessionId: 's1', generation: 1, type: 'turn.start' });
+    dispatchPresentationEvent({ sessionId: 's1', generation: 1, type: 'message.delta', text: '残留' });
+
+    dispatchPresentationEvent({ sessionId: 's2', generation: 1, type: 'turn.start' });
+    const s = getPresentationState();
+
+    expect(s.sessionId).toBe('s2');
+    expect(s.streaming).toBe('');
+    expect(s.history).toEqual([]);
   });
 });

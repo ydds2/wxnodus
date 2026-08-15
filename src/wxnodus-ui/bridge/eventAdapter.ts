@@ -22,6 +22,9 @@ import { turnController } from '../runtime/flowController.js'
 import { getUiState, patchUiState } from '../runtime/viewStore.js'
 // W3-02：事件流接入纯投影管线（run 生命周期 → presentation 纯层 reducer/projector）
 import { feedTuiProjection } from '../runtime/tuiProjection.js'
+// 阶段 2b：presentation read-model 喂入（与既有 side effect 路径平行，纯投影不动 operational stores）
+import { dispatchPresentationEvent } from '../runtime/presentationStore.js'
+import type { PresentationEventBody } from '../runtime/presentationReducer.js'
 
 // 审查修复：匹配中文「未配置模型密钥」——内核 agent.ts 返回中文文案（非英文 provider 错误），
 // 此前「需要配置模型提供方」面板永不触发（死代码）；双语言覆盖
@@ -87,6 +90,42 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   const { setProcessing: setVoiceProcessing, setRecording: setVoiceRecording, setVoiceEnabled } = ctx.voice
 
   let startupPromptSubmitted = false
+
+  // 阶段 2b：presentation read-model 平行喂入（session/generation 守卫由
+  // reducer + store 的会话切换重置承担；本 adapter 外层已按 session_id 过滤）。
+  // generation 恒为 0：跨会话由 store 的「会话切换 → 重置投影」承接，
+  // 同会话迟到事件由 adapter 的 session_id 过滤 + reducer 的守卫双重丢弃。
+  const feed = (body: PresentationEventBody): void =>
+    dispatchPresentationEvent({ sessionId: getUiState().sid ?? '', generation: 0, ...body })
+
+  const feedTodos = (raw: unknown): void => {
+    if (!Array.isArray(raw)) {
+      return
+    }
+
+    const items = raw
+      .map(item => {
+        if (!item || typeof item !== 'object') {
+          return null
+        }
+
+        const row = item as Record<string, unknown>
+        const status = row.status === 'completed' || row.status === 'cancelled' || row.status === 'in_progress' ? row.status : 'pending'
+
+        return {
+          id: String(row.id ?? '').trim(),
+          content: String(row.content ?? '').trim(),
+          status
+        }
+      })
+      .filter((item): item is { id: string; content: string; status: 'pending' | 'in_progress' | 'completed' | 'cancelled' } =>
+        Boolean(item?.id && item.content)
+      )
+
+    if (items.length) {
+      feed({ type: 'todo.update', items })
+    }
+  }
 
   // Request IDs of clarify prompts we've already flushed to the transcript as
   // an abandoned-prompt record, so the tool.complete and message.complete
@@ -418,9 +457,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       case 'message.start':
         resetAgentsNudgeTurnState()
         turnController.startMessage()
+        feed({ type: 'turn.start' })
         // A22：回合开场骨架清单（复杂度启发式合成）——LiveTodoPanel 立即可见
         if (ev.payload?.todos) {
           turnController.recordTodos(ev.payload.todos)
+          feedTodos(ev.payload.todos)
         }
 
         return
@@ -638,6 +679,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           ev.payload.context ?? '',
           ev.payload.args_text ? stripAnsi(String(ev.payload.args_text)) : undefined
         )
+        feed({ type: 'tool.start', id: ev.payload.tool_id, name: ev.payload.name ?? 'tool', context: ev.payload.context })
 
         return
       case 'tool.complete': {
@@ -653,6 +695,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           ev.payload.inline_diff && getUiState().inlineDiffs ? stripAnsi(String(ev.payload.inline_diff)).trim() : ''
 
         const resultText = ev.payload.result_text ? stripAnsi(String(ev.payload.result_text)) : undefined
+
+        feed({ type: 'tool.complete', id: ev.payload.tool_id, ok: !ev.payload.error, summary: ev.payload.summary })
 
         if (inlineDiffText) {
           turnController.recordInlineDiffToolComplete(
@@ -683,6 +727,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           clarify: { choices: ev.payload.choices, question: ev.payload.question, requestId: ev.payload.request_id }
         })
         setStatus('waiting for input…')
+        feed({ type: 'prompt.opened', kind: 'clarify', id: ev.payload.request_id, summary: ev.payload.question })
 
         return
       case 'approval.request': {
@@ -701,6 +746,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           },
         })
         setStatus('approval needed')
+        feed({ type: 'prompt.opened', kind: 'approval', id: `approval:${String(ev.payload.command ?? '')}`, summary: description })
 
         return
       }
@@ -708,6 +754,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       case 'sudo.request':
         patchOverlayState({ sudo: { requestId: ev.payload.request_id } })
         setStatus('sudo password needed')
+        feed({ type: 'prompt.opened', kind: 'sudo', id: ev.payload.request_id, summary: 'sudo' })
 
         return
 
@@ -716,6 +763,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           secret: { envVar: ev.payload.env_var, prompt: ev.payload.prompt, requestId: ev.payload.request_id }
         })
         setStatus('secret input needed')
+        // 秘密值永不进入展示/日志/投影——只投影变量名与提示文案
+        feed({ type: 'prompt.opened', kind: 'secret', id: ev.payload.request_id, summary: ev.payload.env_var })
 
         return
 
@@ -729,6 +778,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           }
         })
         setStatus('动态内容表：敏感输入')
+        feed({ type: 'prompt.opened', kind: 'form', id: ev.payload.request_id, summary: ev.payload.prompt })
 
         return
 
@@ -824,10 +874,16 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
       case 'message.delta':
         turnController.recordMessageDelta(ev.payload ?? {})
+        if (ev.payload?.text) {
+          feed({ type: 'message.delta', text: ev.payload.text })
+        }
 
         return
       case 'message.complete': {
         const { finalMessages, finalText, wasInterrupted } = turnController.recordMessageComplete(ev.payload ?? {})
+
+        feed({ type: 'message.complete', text: finalText })
+        feedTodos(ev.payload?.todos)
 
         if (!wasInterrupted) {
           const msgs: Msg[] = finalMessages.length ? finalMessages : [{ role: 'assistant', text: finalText }]
@@ -849,6 +905,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
       case 'error':
         turnController.recordError()
+        feed({ type: 'turn.phase', phase: 'failed' })
 
         {
           const message = String(ev.payload?.message || 'unknown error')
