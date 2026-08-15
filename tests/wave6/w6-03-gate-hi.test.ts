@@ -30,7 +30,8 @@ describe('W6-03 候选冻结器（freezeCandidate）', () => {
     const outDir = tmp('w6-freeze-out-');
     const result = await freezeCandidate({
       repoRoot, runId: 'run-freeze-1', outDir,
-      // 注入 pack（单测不跑真实构建链；C4 用真实 npm pack smoke 覆盖）
+      // 注入构建链 + pack（单测不跑真实构建链；C4 用真实 npm pack smoke 覆盖）
+      build: async () => ({ ok: true as const }),
       pack: async (packDestination) => {
         const file = join(packDestination, 'wxnodus-3.0.0.tgz');
         writeFileSync(file, FAKE_TGZ);
@@ -57,6 +58,16 @@ describe('W6-03 候选冻结器（freezeCandidate）', () => {
       pack: async () => ({ ok: true, tgzFile: join(repoRoot, 'x.tgz') }),
     });
     expect(result).toMatchObject({ ok: false, error: { code: 'FREEZE_DIST_MISSING' } });
+  });
+
+  it('构建链失败 → FREEZE_BUILD_FAILED（W8-18：pack 前显式构建，绝不冻结陈旧 dist）', async () => {
+    const repoRoot = resolve(join(fileURLToPath(new URL('.', import.meta.url)), '..', '..'));
+    const result = await freezeCandidate({
+      repoRoot, runId: 'run-freeze-3', outDir: tmp('w6-freeze-buildfail-'),
+      build: async () => ({ ok: false, error: 'injected build failure' }),
+      pack: async () => ({ ok: true, tgzFile: 'unused.tgz' }),
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: 'FREEZE_BUILD_FAILED' } });
   });
 });
 

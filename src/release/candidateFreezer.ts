@@ -8,11 +8,14 @@ import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import type { OperationResult } from '../protocol/results.js';
 import { configError } from '../domain/config/configSchema.js';
+import { runBuildChain } from './buildChain.js';
 
 export interface FreezeCandidateOptions {
   repoRoot: string;
   runId: string;
   outDir: string;
+  /** 注入构建链（测试用）；缺省真实 npm run build（W8-18：npm pack 不触发 prepack，绝不冻结陈旧 dist） */
+  build?: (repoRoot: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** 注入 pack（测试用）；缺省真实 npm pack（prepack 构建链） */
   pack?: (packDestination: string) => Promise<{ ok: true; tgzFile: string } | { ok: false; error: string }>;
   now?: () => string;
@@ -58,6 +61,11 @@ export async function freezeCandidate(options: FreezeCandidateOptions): Promise<
   }
   if (!/^[a-f0-9]{40}$/.test(commit)) {
     return { ok: false, error: configError('FREEZE_COMMIT_INVALID', 'freeze.commit.invalid', { commit }) };
+  }
+  // W8-18：pack 前显式构建（npm pack 在本仓库不触发 prepack——绝不冻结陈旧 dist）
+  const build = await (options.build ?? (async (root: string) => runBuildChain(root)))(repoRoot);
+  if (!build.ok) {
+    return { ok: false, error: configError('FREEZE_BUILD_FAILED', 'freeze.build.failed', { cause: build.error.slice(0, 300) }) };
   }
   const { mkdirSync } = await import('node:fs');
   mkdirSync(outDir, { recursive: true });

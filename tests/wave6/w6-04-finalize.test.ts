@@ -201,4 +201,18 @@ describe('W6-04 release:finalize', () => {
     expect(src).toContain('/\\.(cmd|bat)$/i.test(command)');
     expect(src).toContain('shell: useShell');
   });
+
+  // W8-18（实盘缺陷）：npm pack 在本仓库不触发 prepack——pack 复验/重算必须显式构建，否则漂移检测恒 trivial。
+  it('源锚点：pack 复验与 finalize 重算均先显式构建再 npm pack', () => {
+    const hSrc = readFileSync(join(__dirname, '..', '..', 'src', 'release', 'gateHRunner.ts'), 'utf8');
+    const pvBlock = hSrc.slice(hSrc.indexOf('const defaultPackVerify'), hSrc.indexOf('const defaultPackVerify') + 1600);
+    expect(pvBlock.indexOf('runBuildChain')).toBeGreaterThanOrEqual(0);
+    expect(pvBlock.indexOf('runBuildChain')).toBeLessThan(pvBlock.indexOf("'pack'"));
+    const fSrc = readFileSync(join(__dirname, '..', '..', 'src', 'release', 'finalizeRelease.ts'), 'utf8');
+    const rcBlock = fSrc.slice(fSrc.indexOf('// 6) recompute hashes'), fSrc.indexOf('// 7)'));
+    expect(rcBlock.indexOf("['run', 'build']")).toBeGreaterThanOrEqual(0);
+    expect(rcBlock.indexOf("['run', 'build']")).toBeLessThan(rcBlock.indexOf("['pack'"));
+    const zSrc = readFileSync(join(__dirname, '..', '..', 'src', 'release', 'candidateFreezer.ts'), 'utf8');
+    expect(zSrc.indexOf('options.build')).toBeLessThan(zSrc.indexOf('options.pack'));
+  });
 });

@@ -5,10 +5,11 @@
 // （--version + 确定性计算）。任一步 blocked → 整体 blocked（绝不把部分通过当完整边界证据）。
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, cpSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { OperationResult } from '../protocol/results.js';
 import { configError } from '../domain/config/configSchema.js';
+import { runBuildChain } from './buildChain.js';
 
 export interface GateHAttachment { path: string; sha256: string }
 export interface GateHStepResult {
@@ -87,9 +88,14 @@ const writeAttachment = (evidenceDir: string, name: string, content: string): Ga
   return { path: file, sha256: sha256(readFileSync(file)) };
 };
 
-/** ① pack 复验：真实 npm pack 重算 tgz sha256 === candidate.tgzSha256（漂移即 blocked） */
+/** ① pack 复验：先显式构建（W8-18：npm pack 不触发 prepack，否则复验恒对陈旧 dist trivial），
+ *  再真实 npm pack 重算 tgz sha256 === candidate.tgzSha256（漂移即 blocked） */
 const defaultPackVerify = async (context: GateHStepContext): Promise<GateHStepResult> => {
   try {
+    const build = runBuildChain(context.repoRoot);
+    if (!build.ok) {
+      return { id: 'pack-verify', status: 'blocked', reason: `build chain failed: ${build.error.slice(0, 200)}`, attachments: [] };
+    }
     const candidate = JSON.parse(readFileSync(context.candidateFile, 'utf8')) as { tgzSha256: string };
     const stage = join(context.evidenceDir, 'gate-h-pack');
     mkdirSync(stage, { recursive: true });

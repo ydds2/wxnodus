@@ -162,6 +162,12 @@ export async function finalizeRelease(options: FinalizeReleaseOptions): Promise<
   push('report', 'passed');
 
   // 6) recompute hashes（真实 npm pack 重算 tgz sha256 vs candidate——漂移即 blocked）
+  // W8-18：pack 前显式构建（npm pack 在本仓库不触发 prepack——重算必须对当前源码，否则漂移检测恒 trivial）
+  const buildRun = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build']);
+  if (buildRun.status !== 0) {
+    push('recompute-hashes', 'blocked', 'RELEASE_RECOMPUTE_BUILD_FAILED');
+    return finish();
+  }
   const packDest = join(runDir, 'finalize-pack');
   mkdirSync(packDest, { recursive: true });
   const packRun = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['pack', '--json', '--pack-destination', packDest]);
