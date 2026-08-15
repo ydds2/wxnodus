@@ -549,3 +549,17 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 
 - 验证：全量 **276 文件 / 2013 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净。
 - 剩余（全部可归因，无隐瞒）：① uia 场景 runner 驱动交互机制（item 4）；② 单屏档 computer-multimonitor 场景级 waiver（item 3——需用户拍板）；③ R01–R20 需求↔证据映射；④ G-W3 闭合（依赖 E）。多屏 OS 物理层按降级档决策不再阻断。
+
+## cmd 风险 UI 重构轮（W8-20~W8-25，用户决策：PS 开 VT + 全量字形注册表）— 2026-08-15
+
+**设计交付**（`docs/ui-cmd-tier-design.md`）：风险清单 10 项（无 VT 机制/2026/DECSTBM/truecolor/OSC/QuickEdit/扩展键/字形/3J/IME）→ **三级能力档**（modern 零回归 / cmd 安全画像 / no-vt 诚实行模式）。
+
+- **W8-20 层级探测**（terminalTier.ts）：现代信号零探测；conhost 候选走 CPR 探测 fail-closed；能力集含 glyphSet；WXNODUS_TUI_TIER 逃生门。15 测试。
+- **W8-21 PS 控制台引导**（consoleBootstrap.ts）：PS P/Invoke SetConsoleMode——输出句柄开 VT、输入句柄关 QuickEdit/行/回显（EXTENDED_FLAGS），终态回读核验 QuickEdit 是否真关；CPR 探测 300ms；Tier 0 → 中文指引（Windows Terminal/注册表/-p）+ 原模式恢复；退出 disposer best-effort 恢复。5 测试。
+- **W8-22 渲染器能力插管**（ink capabilities.ts）：sync2026/decstbm/truecolor/osc8/oscNotify/mouse/extendedKeys 七项门控；cmd 档 chalk 钳 level 2（256 色）；DECSTBM/帧包裹/退出帧（**第二调用点漏网一并修**）/鼠标预设/扩展键/OSC 全门控；capabilities↔terminal 循环导入 → terminal.ts 初始化注入。5 契约测试（FakeTty 帧级）。
+- **W8-23 全量字形注册表**（glyphs.ts）：30+ 语义字形三变体 + icon() + translateText；契约测试禁 astral/盲文/低覆盖 BMP；迁移 20+ 文件（banner 盲文→ASCII 同心环、FaceTicker 档位强制 ascii、全部组件图标、pager/fortune translateText）。
+- **W8-24 文档**：设计文档 + README 三级终端矩阵 + /terminal-setup cmd 提示（如实告知 256 色/BMP 字形）。
+- **W8-25 真 conhost 验收**：cmd-sweep 扩展层级断言段——**本机真实 conhost（node-pty useConpty:false）实测 120/120 命令可用 + 7/7 序列/字形断言全过**（无 2026/DECSTBM/OSC8/truecolor/astral/盲文/低覆盖 BMP）；实盘抓到 brandBar ◉ 漏网点并修复。**IME 中文组合输入如实 UNVERIFIED**（node-pty 无法模拟 OS 级输入法组合——需真人真机）。
+
+- 验证：全量 **282 文件 / 2043 通过 / 10 跳过**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
+- 诚实边界：lib/text.ts 工具线 ✓/✗ 协议标记（写读同模块耦合）保留待后续轮；faces.ts kaomoji 由指示器风格强制 ascii 覆盖；IME 真机实测待做。
