@@ -191,7 +191,10 @@ export class WavWriter {
     h.writeUInt16LE(16, 34);
     h.write('data', 36);
     h.writeUInt32LE(0, 40);
-    writeSync(this.fd, h, 0, 44, 0);
+    // KF-005（第二层）：Windows 上带 position 的写入不推进文件指针——若指定 position=0，
+    // 后续 write() 追加会从指针 0 起覆盖整个头部。header 顺序写（不指定 position）→
+    // 指针推进到 44，数据追加其后再 finalize 回填大小字段
+    writeSync(this.fd, h, 0, 44);
   }
 
   write(buf: Buffer): void {
@@ -205,11 +208,15 @@ export class WavWriter {
     if (this.closed) return;
     this.closed = true;
     try {
-      const size = Buffer.alloc(8);
-      size.writeUInt32LE(36 + this.bytes, 0);
-      size.writeUInt32LE(this.bytes, 4);
-      writeSync(this.fd, size, 0, 8, 4);
-      writeSync(this.fd, size, 0, 4, 40);
+      // KF-005：分别写两个 4 字节字段——RIFF size 在 4-7、data size 在 40-43。
+      // 此前 8 字节整块从偏移 4 写起：覆盖 8-11 的 'WAVE' 标识，且把 RIFF size
+      // 错写进 data size 字段（头损坏，播放器拒读）
+      const riff = Buffer.alloc(4);
+      riff.writeUInt32LE(36 + this.bytes, 0);
+      const data = Buffer.alloc(4);
+      data.writeUInt32LE(this.bytes, 0);
+      writeSync(this.fd, riff, 0, 4, 4);
+      writeSync(this.fd, data, 0, 4, 40);
     } catch { /* 忽略 */ }
     try { closeSync(this.fd); } catch { /* 忽略 */ }
   }
@@ -283,7 +290,9 @@ function voiceSessionDepsFor(dataDir: string, settings: Record<string, any> | un
   const cfg = resolveVoiceConfig(settings, dataDir, env);
   const transcriptsDir = join(dataDir, 'voice', 'transcripts');
   return {
-    sttReady: () => checkVoice(settings, dataDir).sttAvailable,
+    // KF-006：sttReady 只做存在性检查（whisper bin + 模型）——不调 checkVoice（其 hasFfmpeg
+    // spawnSync 同步探测阻塞事件循环）。ffmpeg 是采集依赖，转写已有 wav 文件不需要
+    sttReady: () => Boolean(findWhisperBin(cfg)) && Boolean(cfg.modelPath),
     supervisor: {
       spawn: async (_exe, args, options, signal) => {
         const bin = findWhisperBin(cfg);
@@ -353,6 +362,9 @@ function voiceSessionDepsFor(dataDir: string, settings: Record<string, any> | un
 
 /** 结束 ffmpeg 采集进程（Windows taskkill / 其余 SIGTERM）。 */
 function stopRecordingProcess(proc: ReturnType<typeof spawn>): void {
+  // KF-006：pid<=0 无真实进程（伪造/占位 record）——跳过 taskkill 同步 spawn
+  // （Windows taskkill spawnSync 实测 ~500ms 事件循环阻塞）
+  if (!proc.pid || proc.pid <= 0) return;
   try {
     if (isWindows()) {
       spawnSync('taskkill', ['/pid', String(proc.pid), '/t', '/f'], { stdio: 'ignore', timeout: 5000 });

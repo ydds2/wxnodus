@@ -452,3 +452,15 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - 真实证据 `npm run evidence:memory-capacity`（本机实跑 receipt `artifacts/release-evidence/mem-cap-2026-08-15/memory-capacity/outcome.json`）：**13,802 条消息 / 1,000,655 token 真实写入**——working 有界 20（吸附 13,782 条）、recall 全量 13,802、深历史针点 FTS 召回 3 命中、generic 召回 10、compactSmart 可用、1M 级混合召回 19ms（embedding 关闭走纯 FTS——向量路径由 suite 小规模真实覆盖，如实声明）。
 - 验证：w8-04 3/3 绿；全量 **260 文件 / 1940 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
 - 剩余：5 条环境类 KF（需真实环境，保持诚实 open）。
+
+## 环境类 KF 重探清零（账本 30/30 全 resolved）— 2026-08-15
+
+- 重探结论：原「5 条环境类」中 4 条实为本机可编程（假资产/伪造可执行文件/真实原生模块），仅需重判；全部本机真实复现后逐条 RED→修复→原子迁移。
+- KF-001（`离线预检`）：defaultCallModel 无 key + offline: 模型就绪 → 走本地 LLM 通道（绝不 /key set 引导）；未就绪 → /offline pack download 引导；推理加载 env.allowRemoteModels=false（缺失快速失败 ~30ms 不联网——「断网可用」事实层），下载通道显式重开。
+- KF-005（`WAV 头`）：双层根因——finalize 8 字节整块从偏移 4 写起覆盖 WAVE + RIFF size 错写进 data size；且 Windows 上 position 写入不推进文件指针（header 顺序写修复，追加数据不再覆盖头部）。
+- KF-006（`whisper 阻塞`）：转写链路零同步 spawn——sttReady 改存在性检查（whisper bin+模型；不再 checkVoice 的 ffmpeg spawnSync 同步探测，ffmpeg 是采集依赖）+ stopRecordingProcess pid<=0 跳过 taskkill（实测 ~500ms 阻塞）。阈值校准：Windows 定时器粒度 ~15.6ms，≤100ms 可靠区分（同步 >500ms）。
+- KF-007（`截图尺寸`）：captureScreen 调用 m.width()/m.height() 方法取真实物理像素（node-screenshots Monitor 的 width/height 是方法非属性——读属性得函数本体 → NaN）。本机真实捕获验证 1920×1080。
+- KF-008（`robotjs 双击`）：mouseClick(button, double) 布尔第二参——绝不把 'double' 当按钮名传入（原生层参数不匹配）。
+- 迁移：5 case 文件删除（cases 目录清空）、账本全部 resolved-with-green-regression、release-signal 测试契约随账本清零诚实更新（零 open → 不再以 open-KF 阻塞；注入 blocker 的阻断语义保留）。
+- 验证：oracle **31/31（30 resolved + 磁盘闭包）**；全量 **261 文件 / 1952 通过 / 10 跳过 / 0 失败**；typecheck×2/build/discovery 干净；dist smoke 通过。
+- 缺陷账本终态：**30/30 resolved**——可编程缺陷清零。

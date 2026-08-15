@@ -30,8 +30,10 @@ export async function captureScreen(opts: { region?: CaptureRegion } = {}): Prom
     const m = monitors[0];
     let img = m.captureImageSync();
     const scale = Number(m.scaleFactor()) || 1;
-    let width = (m as any).width;
-    let height = (m as any).height;
+    // KF-007：Monitor 的 width/height 是方法不是属性——读属性拿到函数本身（→NaN）。
+    // 必须调用 width()/height() 取真实物理像素
+    let width = m.width();
+    let height = m.height();
     if (opts.region) {
       const r = opts.region;
       // 越界裁剪为有效区（与屏幕边界求交）
@@ -73,7 +75,9 @@ export class ComputerUse {
           case 'click': {
             const r = getRobot();
             r.moveMouse(a.x, a.y);
-            r.mouseClick(a.button === 'right' ? 'right' : a.button === 'double' ? 'double' : 'left');
+            // KF-008：robotjs mouseClick 无 'double' 按钮语义——双击走布尔第二参
+            // mouseClick(button, double)；把 'double' 当按钮名传入是参数不匹配
+            r.mouseClick(a.button === 'right' ? 'right' : 'left', a.button === 'double');
             return `已点击 (${a.x},${a.y})`;
           }
           case 'type': {

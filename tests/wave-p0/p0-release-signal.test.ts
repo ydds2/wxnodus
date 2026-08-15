@@ -22,10 +22,12 @@ describe('release eligibility signal', () => {
       .toEqual({ status: 'succeeded', code: null, reasons: [] });
   });
 
-  it('blocks with RELEASE_BLOCKED_OPEN_P0 while any open known failure remains', () => {
-    const open = KNOWN_FAILURES.filter(entry => entry.status === 'open').map(entry => entry.id);
-    expect(open.length).toBeGreaterThan(0);
-    expect(releaseEligibility({ requiredGates: required, outcomes: outcomes(), openBlockers: open }))
+  it('known failure ledger fully resolved（零 open——账本 30/30 迁移完毕）', () => {
+    expect(KNOWN_FAILURES.filter(entry => entry.status === 'open')).toEqual([]);
+  });
+
+  it('blocks with RELEASE_BLOCKED_OPEN_P0 while any open blocker is supplied', () => {
+    expect(releaseEligibility({ requiredGates: required, outcomes: outcomes(), openBlockers: ['KF-023'] }))
       .toMatchObject({ status: 'blocked', code: 'RELEASE_BLOCKED_OPEN_P0' });
   });
 
@@ -77,13 +79,13 @@ describe('release eligibility signal', () => {
 });
 
 describe('release eligibility adapter', () => {
-  it('blocks with exit 2 while open known failures exist, even when all gates passed', async () => {
+  it('passes with exit 0 when all gates passed and no open known failures remain（账本已清零）', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wxnodus-release-eligibility-'));
     try {
       const gatesPath = join(root, 'gates.json');
       await writeFile(gatesPath, JSON.stringify(required.map(gate => ({ gate, status: 'passed' }))));
       const exit = checkReleaseEligibility(['--gates', gatesPath, '--required', 'A,B,C,F,G']);
-      expect(exit).toBe(2);
+      expect(exit).toBe(0);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

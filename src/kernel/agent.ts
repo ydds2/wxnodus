@@ -294,6 +294,30 @@ export function createAgent(opts: AgentOptions) {
       return { type: 'text', content: '密钥无法解密（机器环境变化或数据损坏？）——请用 /key set <密钥> 重新配置。' };
     }
 
+    // KF-001：离线 token 包预检——无 key 但 offline: 模型已就绪 → 走本地 LLM 通道
+    // （离线优先：数据不出机、模型可不出机），绝不输出密钥配置引导。
+    // 未就绪 → 明确引导离线下载（同样是事实，不是 /key set 误导）
+    if (!keyRes.key && String(s.model ?? '').startsWith('offline:')) {
+      const { isOfflineModelReady } = await import('./offlineModel.js');
+      if (isOfflineModelReady(s.model)) {
+        const { callLlmStream } = await import('./llmStream.js');
+        const r = await callLlmStream({
+          baseURL: '', model: s.model!, key: '',
+          messages: req.messages as any,
+          tools: undefined,
+          signal: streamCtx?.signal,
+          onToken: streamCtx?.onToken,
+          onReasoning: streamCtx?.onReasoning,
+        });
+        if (!r.ok) return { type: 'text', content: r.error };
+        return { type: 'text', content: r.content };
+      }
+      return {
+        type: 'text',
+        content: '离线模型未下载——请用 /offline pack download 预下载后断网可用（或 /key set 配置云端密钥）。',
+      };
+    }
+
     if (!keyRes.key) {
       // 无 key：所有对话输出必须经 AI 模型——不做规则脑假装回答，
       // 明确引导配置（配置类命令 /key 等仍本地可用）

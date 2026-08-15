@@ -53,6 +53,9 @@ async function getPipe(modelId: string): Promise<{ pipe: any } | { error: string
     loadings.set(modelId, (async () => {
       try {
         const { pipeline } = await import('@huggingface/transformers');
+        // KF-001（离线保证）：推理加载禁止远程——本地缓存缺失立即快速失败（~30ms 实测），
+        // 绝不为补文件静默联网（「断网可用」承诺的事实层）
+        env.allowRemoteModels = false;
         const p = await pipeline('text-generation', modelId, { dtype: 'q4' });
         pipes.set(modelId, p);
         return p;
@@ -136,6 +139,8 @@ export async function downloadOfflineModel(model: string): Promise<{ ok: boolean
   if (!hfId) return { ok: false, message: `未知离线模型：${model}` };
   try {
     const { pipeline } = await import('@huggingface/transformers');
+    // 下载通道显式允许远程（getPipe 推理通道已禁网——此处重新打开，仅此入口联网）
+    env.allowRemoteModels = true;
     await pipeline('text-generation', hfId, { dtype: 'q4' });
     return { ok: true, message: `离线模型已就绪：${model}（缓存 ${resolveDataDir(process.cwd())}）——断网可用` };
   } catch (e: any) {
