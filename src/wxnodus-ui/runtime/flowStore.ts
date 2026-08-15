@@ -2,10 +2,11 @@ import { createAtom as atom } from '../../app/stores/engine.js'
 import { useSyncExternalStore } from 'react'
 
 import { isTodoDone } from '../lib/liveProgress.js'
-import type { ActiveTool, ActivityItem, Msg, SubagentProgress, TodoItem } from '../types.js'
+import type { ActiveTool, ActivityItem, DoneTool, Msg, SubagentProgress, TodoItem } from '../types.js'
 
 const buildTurnState = (): TurnState => ({
   activity: [],
+  doneTools: [],
   outcome: '',
   reasoning: '',
   reasoningActive: false,
@@ -68,6 +69,8 @@ export const resetTurnState = () => $turnState.set(buildTurnState())
 
 export interface TurnState {
   activity: ActivityItem[]
+  /** 结构化完成的工具记录（活动分区）——startMessage 清空，turn 结束保留供分区展示 */
+  doneTools: DoneTool[]
   outcome: string
   reasoning: string
   reasoningActive: boolean

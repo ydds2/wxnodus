@@ -22,6 +22,7 @@ import { changesLabel, diffSummary } from '../lib/diffSummary.js'
 import { ACTIVITY_LABELS, SECTION_EMPTY, SECTION_TITLES } from '../lib/uiCopy.js'
 import type { Theme } from '../theme.js'
 
+import { icon } from '../glyphs.js'
 import { InlineHint, SectionHeader, SingleColumnPanel, StatusBadge } from './uiPrimitives.js'
 
 // ── 计划分区（PlanSection）───────────────────────────────────────────────
@@ -70,24 +71,52 @@ const PlanSection = memo(function PlanSection({ t }: { t: Theme }) {
 })
 
 // ── 活动分区（ActivitySection）────────────────────────────────────────────
-// 紧凑单行摘要：运行中工具（名称/上下文）+ 已完成计数；完整工具记录仍在
-// MessageLine 的 ToolTrail 里（不重复渲染——低噪声）。
+// 参考 Codex/Claude Code 的工具生命周期展示：每行一个工具 + 状态。
+// 数据：turnState.tools（运行中，recordToolProgress 后带 hasProgress → 输出中）+
+//       turnState.doneTools（结构化完成记录：succeeded/failed/cancelled——中断时在飞工具
+//       如实标记 cancelled）。完整参数/输出仍在 MessageLine ToolTrail，这里不重复。
+// 诚实边界：UI 模型没有 queued 工具队列、approval_required 由审批弹层本身呈现——
+// 不为不存在的状态伪造行。
 const ActivitySection = memo(function ActivitySection({ t }: { t: Theme }) {
   const activeTools = useTurnSelector(s => s.tools)
-  const turnTrail = useTurnSelector(s => s.turnTrail)
+  const doneTools = useTurnSelector(s => s.doneTools)
 
-  if (!activeTools.length && !turnTrail.length) {
+  if (!activeTools.length && !doneTools.length) {
     return null
   }
 
-  const running = activeTools.map(tool => (tool.context ? `${tool.name}(${tool.context})` : tool.name)).join(' · ')
+  const fmtDuration = (s?: number) => (typeof s === 'number' ? ` (${s.toFixed(1)}s)` : '')
 
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <SectionHeader t={t} title={SECTION_TITLES.activity} />
+      <SectionHeader right={`${activeTools.length + doneTools.length} 项`} t={t} title={SECTION_TITLES.activity} />
       <SingleColumnPanel>
-        {running ? <InlineHint t={t} text={`${running} · ${ACTIVITY_LABELS.running}`} /> : null}
-        {turnTrail.length > 0 ? <InlineHint t={t} text={ACTIVITY_LABELS.completed(turnTrail.length)} /> : null}
+        {activeTools.map(tool => (
+          <Box flexDirection="row" flexShrink={1} key={tool.id} overflow="hidden">
+            <Text color={t.color.warn}>{icon('hourglass')} </Text>
+            <Text color={t.color.text} wrap="truncate-end">
+              {tool.name}
+              {tool.context ? `(${tool.context})` : ''} · {tool.hasProgress ? ACTIVITY_LABELS.progress : ACTIVITY_LABELS.running}
+            </Text>
+          </Box>
+        ))}
+        {doneTools.map(tool => (
+          <Box flexDirection="row" flexShrink={1} key={tool.id} overflow="hidden">
+            <Text color={tool.status === 'succeeded' ? t.color.ok : tool.status === 'failed' ? t.color.error : t.color.warn}>
+              {tool.status === 'succeeded' ? icon('check') : tool.status === 'failed' ? icon('cross') : icon('close')}{' '}
+            </Text>
+            <Text color={tool.status === 'failed' ? t.color.error : t.color.muted} wrap="truncate-end">
+              {tool.name}
+              {tool.context ? `(${tool.context})` : ''}
+              {fmtDuration(tool.durationSeconds)} ·{' '}
+              {tool.status === 'succeeded'
+                ? ACTIVITY_LABELS.succeeded
+                : tool.status === 'failed'
+                  ? `${ACTIVITY_LABELS.failed}${tool.summary ? ` · ${tool.summary}` : ''}`
+                  : ACTIVITY_LABELS.cancelled}
+            </Text>
+          </Box>
+        ))}
       </SingleColumnPanel>
     </Box>
   )

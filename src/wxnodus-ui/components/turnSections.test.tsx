@@ -54,19 +54,32 @@ describe('计划分区', () => {
 });
 
 describe('活动分区', () => {
-  it('运行中工具 + 已完成计数单行摘要', () => {
+  it('工具生命周期逐行：输出中 / 成功 / 失败（含摘要）/ 已取消', () => {
     patchUiState({ busy: true });
     patchTurnState({
-      tools: [{ id: 't1', name: 'Bash', context: 'npm test', startedAt: 1 }],
-      turnTrail: ['line-1', 'line-2'],
+      tools: [{ id: 't1', name: 'Bash', context: 'npm test', startedAt: 1, hasProgress: true }],
+      doneTools: [
+        { id: 't2', name: 'Read', context: 'src/a.ts', status: 'succeeded', durationSeconds: 0.8 },
+        { id: 't3', name: 'Bash', context: 'npm test', status: 'failed', summary: 'exit 1' },
+        { id: 't4', name: 'Edit', status: 'cancelled' },
+      ],
     });
     const { lastFrame } = renderSections();
     const frame = lastFrame() ?? '';
 
     expect(frame).toContain('活动');
-    expect(frame).toContain('Bash(npm test)');
-    expect(frame).toContain('运行中');
-    expect(frame).toContain('2 项已完成');
+    expect(frame).toContain('4 项');
+    expect(frame).toContain('输出中');
+    expect(frame).toContain('Read(src/a.ts)');
+    expect(frame).toContain('成功');
+    expect(frame).toContain('失败 · exit 1');
+    expect(frame).toContain('已取消');
+  });
+
+  it('无工具时活动分区不渲染', () => {
+    patchUiState({ busy: true });
+    const { lastFrame } = renderSections();
+    expect(lastFrame() ?? '').not.toContain('活动');
   });
 });
 

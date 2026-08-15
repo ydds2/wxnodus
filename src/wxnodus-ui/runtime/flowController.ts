@@ -17,7 +17,7 @@ import {
   sameToolTrailGroup,
   toolTrailLabel
 } from '../lib/text.js'
-import type { ActiveTool, ActivityItem, Msg, SubagentProgress, TodoItem } from '../types.js'
+import type { ActiveTool, ActivityItem, DoneTool, Msg, SubagentProgress, TodoItem } from '../types.js'
 
 import type { Notice } from '../bridge/interfaces.js'
 import { resetFlowOverlays } from './promptStore.js'
@@ -124,6 +124,7 @@ export class TurnController {
   turnTools: string[] = []
 
   private activeTools: ActiveTool[] = []
+  private doneToolsAcc: DoneTool[] = []
   private activeReasoningText = ''
   private reasoningSegmentIndex: null | number = null
   private activityId = 0
@@ -302,6 +303,19 @@ export class TurnController {
     const segments = this.segmentMessages
     const partial = this.bufRef.trimStart()
     const tools = this.pendingSegmentTools
+
+    // 中断时在飞工具如实标记 cancelled（结构化记录，活动分区展示用）。
+    // 在 idle() 清空 activeTools 之前落账并发布。
+    this.doneToolsAcc = [
+      ...this.doneToolsAcc,
+      ...this.activeTools.map(t => ({
+        id: t.id,
+        name: t.name,
+        context: t.context,
+        status: 'cancelled' as const
+      }))
+    ]
+    patchTurnState({ doneTools: this.doneToolsAcc })
 
     // Drain streaming/segment state off the nanostore before writing the
     // preserved snapshot to the transcript — otherwise each flushed segment
@@ -751,6 +765,19 @@ export class TurnController {
           )
         : buildToolTrailLine(name, done?.context || '', Boolean(error), error || summary || '', effectiveDuration)
 
+    // 结构化完成记录（活动分区）——与字符串 trail 并行维护，不互相替代。
+    this.doneToolsAcc = [
+      ...this.doneToolsAcc,
+      {
+        id: toolId,
+        name,
+        context: done?.context || '',
+        status: error ? 'failed' : 'succeeded',
+        summary: error || summary || '',
+        durationSeconds: effectiveDuration
+      }
+    ]
+
     this.activeTools = this.activeTools.filter(tool => tool.id !== toolId)
 
     const next = this.turnTools.filter(item => !sameToolTrailGroup(label, item))
@@ -764,7 +791,8 @@ export class TurnController {
     patchTurnState({
       streamPendingTools: this.pendingSegmentTools,
       tools: this.activeTools,
-      turnTrail: this.turnTools
+      turnTrail: this.turnTools,
+      doneTools: this.doneToolsAcc
     })
   }
 
@@ -779,7 +807,7 @@ export class TurnController {
       return
     }
 
-    this.activeTools = this.activeTools.map((tool, i) => (i === index ? { ...tool, context: preview } : tool))
+    this.activeTools = this.activeTools.map((tool, i) => (i === index ? { ...tool, context: preview, hasProgress: true } : tool))
 
     if (this.toolProgressTimer) {
       return
@@ -827,7 +855,7 @@ export class TurnController {
     // Session boundary: drop notice state so session A's sticky can't bleed
     // into session B (R3-H5). reset()/fullReset() CLEAR — they never flush.
     this.clearNoticeState()
-    patchTurnState({ activity: [], outcome: '' })
+    patchTurnState({ activity: [], doneTools: [], outcome: '' })
   }
 
   fullReset() {
@@ -874,6 +902,7 @@ export class TurnController {
     this.endReasoningPhase()
     this.clearReasoning()
     this.activeTools = []
+    this.doneToolsAcc = []
     this.activeReasoningText = ''
     this.reasoningSegmentIndex = null
     this.turnTools = []
@@ -892,7 +921,7 @@ export class TurnController {
       this.clearNotice(yieldingNoticeKey)
     }
     patchUiState({ busy: true })
-    patchTurnState({ activity: [], outcome: '', subagents: [], toolTokens: 0, tools: [], turnTrail: [] })
+    patchTurnState({ activity: [], doneTools: [], outcome: '', subagents: [], toolTokens: 0, tools: [], turnTrail: [] })
   }
 
   upsertSubagent(

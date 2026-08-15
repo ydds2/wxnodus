@@ -35,8 +35,11 @@ export const SECTION_EMPTY = {
   noChanges: '暂无文件变更'
 } as const
 
-/** 活动区摘要文案片段。 */
+/** 活动区工具子状态文案（数据来自 turnState.tools/doneTools 结构化记录）。 */
 export const ACTIVITY_LABELS = {
   running: '运行中',
-  completed: (n: number) => `${n} 项已完成`
+  progress: '输出中',
+  succeeded: '成功',
+  failed: '失败',
+  cancelled: '已取消'
 } as const

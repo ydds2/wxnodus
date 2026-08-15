@@ -4,6 +4,18 @@ export interface ActiveTool {
   name: string
   verboseArgs?: string
   startedAt?: number
+  /** recordToolProgress 后置位——活动分区据此区分 running/progress */
+  hasProgress?: boolean
+}
+
+/** 结构化完成的工具记录（活动分区数据源；字符串 trail 仍供 MessageLine ToolTrail 用）。 */
+export interface DoneTool {
+  id: string
+  name: string
+  context?: string
+  status: 'succeeded' | 'failed' | 'cancelled'
+  summary?: string
+  durationSeconds?: number
 }
 
 export interface TodoItem {

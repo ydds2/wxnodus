@@ -192,3 +192,61 @@ describe('runtime TurnController characterization', () => {
     expect(getTurnState()).toMatchObject({ streamSegments: [], streaming: '', subagents: [], tools: [], turnTrail: [] })
   })
 })
+
+describe('doneTools 结构化完成记录（活动分区数据源）', () => {
+  it('工具成功/失败分别落 succeeded/failed 记录（含摘要与耗时）', () => {
+    controller.startMessage()
+    controller.recordToolStart('t1', 'bash', 'npm install')
+    controller.recordToolComplete('t1', 'bash', undefined, 'ok', 0.8)
+    controller.recordToolStart('t2', 'bash', 'npm test')
+    controller.recordToolComplete('t2', 'bash', 'exit 1', undefined, 1.25)
+
+    expect(getTurnState().doneTools).toMatchObject([
+      { id: 't1', name: 'bash', status: 'succeeded', summary: 'ok', durationSeconds: 0.8 },
+      { id: 't2', name: 'bash', status: 'failed', summary: 'exit 1', durationSeconds: 1.25 },
+    ])
+  })
+
+  it('progress 更新把运行中工具标为 hasProgress（输出中）', () => {
+    controller.startMessage()
+    controller.recordToolStart('t1', 'bash', 'pwd')
+    controller.recordToolProgress('bash', '安装中 50%')
+    // progress 状态发布经 toolProgressTimer 节流（STREAM_BATCH_MS）——推进定时器后读回
+    vi.advanceTimersByTime(200)
+
+    expect(getTurnState().tools[0]?.hasProgress).toBe(true)
+    expect(getTurnState().tools[0]?.context).toBe('安装中 50%')
+  })
+
+  it('中断把在飞工具如实标记 cancelled（不伪装成功）', () => {
+    const messages: Array<{ role: string; text: string }> = []
+    const gw = { request: vi.fn(async () => ({})) } as InterruptDeps['gw']
+    controller.startMessage()
+    controller.recordToolStart('t1', 'bash', 'npm test')
+    controller.interruptTurn(
+      {
+        appendMessage: msg => messages.push({ role: msg.role, text: msg.text }),
+        gw,
+        sid: 's1',
+        sys: () => {}
+      },
+      { keepBusy: false }
+    )
+
+    expect(getTurnState().doneTools).toMatchObject([{ id: 't1', name: 'bash', status: 'cancelled' }])
+    expect(getTurnState().tools).toEqual([])
+  })
+
+  it('startMessage 清空 doneTools；turn 结束（idle）保留供分区展示', () => {
+    controller.startMessage()
+    controller.recordToolStart('t1', 'bash', 'pwd')
+    controller.recordToolComplete('t1', 'bash', undefined, 'ok', 0.5)
+    expect(getTurnState().doneTools).toHaveLength(1)
+
+    controller.recordMessageComplete({ text: '完成' })
+    expect(getTurnState().doneTools).toHaveLength(1)
+
+    controller.startMessage()
+    expect(getTurnState().doneTools).toEqual([])
+  })
+})
