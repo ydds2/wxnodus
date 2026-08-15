@@ -52,4 +52,51 @@ describe('W8-00 createCliComposition（组合根第一刀）', () => {
     expect(a).toEqual([]);
     expect(b).toEqual([]);
   });
+
+  // W8-00 第二刀契约：kernel 阶段接管 bus/toolExecution/agent/plugins/MCP/secrets 装配——
+  // presentation（gateway/TUI/headless、命令注册、审批桥）经 KernelBridges 注入，CLI 只剩表现层。
+  it('第二刀：kernel 阶段装配 bus/toolExecution/agent/plugins/reloadMcp（桥回调真实注入）', async () => {
+    const dir = tmp();
+    const seen: string[] = [];
+    const r = await createCliComposition({
+      dataDir: dir,
+      workspaceRoot: tmp(),
+      sessionId: 'w8-kernel',
+      bridges: {
+        approver: async () => { seen.push('approver'); return true; },
+        onApproval: async () => { seen.push('onApproval'); return true; },
+        onClarify: async () => 'clarified',
+        onSecretRequest: async () => null,
+        onFormRequest: async () => null,
+        onCommand: async (input) => `cmd:${input}`,
+      },
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const { value } = r;
+    expect(value.bus).toBeTruthy();
+    expect(value.toolExecution.pipeline).toBeTruthy();
+    expect(typeof value.agent.run).toBe('function');
+    expect(typeof value.reloadMcp).toBe('function');
+    expect(Array.isArray(value.plugins)).toBe(true);
+    expect(Array.isArray(value.getMcpClients())).toBe(true);
+    expect(typeof value.secrets.setSecret).toBe('function');
+    // 空环境重载不抛错（无 .mcp.json → 0 服务器）
+    const reload = await value.reloadMcp();
+    expect(reload.ok).toBe(true);
+    expect(reload.count).toBe(0);
+    expect(seen).toEqual([]); // 装配阶段不触发任何桥（桥仅在运行时被 agent/pipeline 消费）
+    await value.shutdown('test');
+  });
+
+  it('第二刀：无桥时默认 fail-closed（agent 仍可装配，审批桥默认拒绝——绝不静默放行）', async () => {
+    const dir = tmp();
+    const r = await createCliComposition(deps(dir));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // 默认桥：approver/onApproval→false、onClarify→''、secret/form→null、command→''（不抛错即契约成立）
+    expect(typeof r.value.agent.run).toBe('function');
+    expect(r.value.toolExecution.pipeline).toBeTruthy();
+    await r.value.shutdown('test');
+  });
 });

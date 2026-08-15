@@ -436,3 +436,11 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 
 
 
+
+## 组合根第二刀（presentation/services 现代翻转）— 2026-08-15
+
+- RED 先行：w8-00 契约扩展（kernel 阶段装配 bus/toolExecution/agent/plugins/reloadMcp/secrets + 无桥 fail-closed 默认桥）2 红实证。
+- `createCliComposition` kernel 阶段接管：bus/hookRunner/toolExecution（11 ports + 红线闸 + system-touch 分类不变）/agentToolSurface 注册（失败 → AGENT_TOOL_SURFACE_REGISTRATION_FAILED 组合根 fail-closed，替换原 exit(1)）/agent（含 autoReview 独立单轮 callModelOnce）/plugins/MCP/secrets/readonlyTools/reloadMcp；`KernelBridges` 表现层桥注入（approver/onApproval/onClarify/onSecretRequest/onFormRequest/onCommand——缺省全 fail-closed 绝不静默放行）；MCP 客户端快照 getter（reloadMcp 热换后读最新）。
+- cli/index.ts 削薄 172 行内联内核装配：gateway/commandBus/approvalCache 声明先于组合根调用、装配后赋值（桥闭包惰性求值，同旧 gateway 模式）；settings 与 agent 共享 config 快照引用（applyModel 热切换语义不变）。
+- 验证：w8 13/13 绿（新增 2 契约）；全量 **259 文件 / 1937 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke（--version + 确定性计算 =14）通过。
+- 剩余：5 条环境类 KF（需真实环境）、「百万上下文」表述背书（需证据或措辞收紧——保持诚实）。

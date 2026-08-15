@@ -4,7 +4,6 @@
 
 import { join } from 'node:path';
 import { mkdirSync, appendFileSync } from 'node:fs';
-import { createAutoReview } from '../kernel/autoReview.js';
 import { parseCronExpr, parseIntervalExpr, cronMatches } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { resolveDataDir } from '../kernel/paths.js';
@@ -100,23 +99,59 @@ if (pre.mode === 'error') {
     _initErrorLog(dataDir);
     mkdirSync(dataDir, { recursive: true });
 
-  const [{ createEventBus }, { createAgent }, { createCommandBus }, { createHookRunner }, { GatewayClient }] = await Promise.all([
-    import('../kernel/events.js'),
-    import('../kernel/agent.js'),
+  const [{ createCommandBus }, { GatewayClient }] = await Promise.all([
     import('../app/CommandBus.js'),
-    import('../kernel/hooks.js'),
     import('../wxnodus-ui/wxGateway.js'),
   ]);
 
-  // W8-00：组合根接管第一刀——config/repositories/kernel 依赖装配统一走 createCliComposition
-  // （固定阶段 + 失败只 dispose 已启动资源 + shutdown 幂等；db 关闭由组合根统一负责）
+  // W8-00 第二刀：组合根接管 config/repositories/kernel 全量装配（固定阶段 + 失败只 dispose 已启动资源 +
+  // shutdown 幂等）。presentation（gateway/TUI/headless、命令注册、审批桥）经 KernelBridges 注入——
+  // gateway/commandBus/approvalCache 声明先于组合根调用、装配后赋值（桥闭包调用时才求值，同旧 gateway 模式）。
+  let gateway: any = null;
+  let commandBus: any = null;
+  const { createApprovalCache } = await import('../kernel/permissions.js');
+  const approvalCache = createApprovalCache();
+
   const { createCliComposition } = await import('../bootstrap/cliComposition.js');
-  const composition = await createCliComposition({ dataDir, workspaceRoot: cwd });
+  const composition = await createCliComposition({
+    dataDir,
+    workspaceRoot: cwd,
+    mcpStrict: opts.strictMcpConfig === true,
+    bridges: {
+      // 非 agent:* 工具的审批 overlay（agent:* 在组合根内经审批桥消费，不二次弹窗）
+      approver: async (request) => {
+        if (!gateway) return false;
+        const choice = await gateway.requestApproval(String(request.toolId), {
+          ...(request.args as Record<string, unknown> ?? {}), _effectKind: request.effect.kind,
+          // W7-02：system-touch 等决策理由透出到确认弹窗（分类 + 理由展示）
+          ...(request.reasonCode ? { _reasonCode: request.reasonCode } : {}),
+          ...(Array.isArray(request.obligations) && request.obligations.length ? { _obligations: request.obligations } : {}),
+        });
+        return choice !== 'deny';
+      },
+      // 会话级批准缓存（Kimi auto_approve_actions 同款）：「Allow this session」记入缓存，
+      // 本次进程内同 action 自动放行不再弹——危险确认不再频繁
+      onApproval: async (name, args) => {
+        if (approvalCache.has(name, args)) return true;
+        if (!gateway) return false;
+        const choice = await gateway.requestApproval(name, args);
+        if (choice === 'session') approvalCache.grant(name, args);
+        return choice !== 'deny';
+      },
+      onClarify: async (question, choices) => (gateway ? gateway.requestClarify(question, choices) : ''),
+      onSecretRequest: async (kind, prompt, name) => (gateway ? gateway.requestSecretInput(kind, prompt, name) : null),
+      onFormRequest: async (fields, prompt) => (gateway ? gateway.requestCredentialForm(fields, prompt) : null),
+      onCommand: async (input) => {
+        const r = await commandBus.execute(String(input));
+        return r.output || r.dispatch?.message || r.error || (r.ok ? '' : `命令执行失败：${r.error ?? ''}`);
+      },
+    },
+  });
   if (!composition.ok) {
     console.error(`wxnodus: ${composition.error.code} ${JSON.stringify(composition.error.details ?? {})}`);
     process.exit(2);
   }
-  const { config, db, codeIndex, memoryRepository, mem } = composition.value;
+  const { config, db, codeIndex, memoryRepository, mem, bus, toolExecution, agent, plugins, reloadMcp, secrets, getMcpClients } = composition.value;
   // W2-03：统一幂等关闭——全部 disposer 尝试、聚合失败 id（bootstrapShutdown 语义）；
   // serve/keepalive/TUI/SIGINT/SIGTERM 共用同一条关闭路径（组合根资源 + CLI 层资源一并聚合）。
   const { createShutdown } = await import('../bootstrap/bootstrapShutdown.js');
@@ -125,7 +160,6 @@ if (pre.mode === 'error') {
     ...disposers,
     { id: 'composition', dispose: () => composition.value.shutdown(reason).then(ids => { if (ids.length) throw new Error(`composition failed: ${ids.join(',')}`); }) },
   ])(reason);
-  const bus = createEventBus(dataDir);
   // W3 Memory 影子双写（决策：影子双写、观察后切换）：legacy 消息写入是唯一行为事实源，
   // 影子同步写 modern 显式记忆记录（session scope，失败只计数不上抛）；召回观察期保持 legacy。
   // mem/memoryRepository 已由组合根装配（同一实例供影子写与 /memory 命令 memoryServiceFor 共用）。
@@ -165,36 +199,6 @@ if (pre.mode === 'error') {
     }
   }
   let model = settings.model ?? (settings.apiKeyEnc ? resolveDefaultModel({}) : '');
-
-  // 审批桥：agent 工具确认 → GatewayClient.requestApproval（审批 overlay）
-  // W1-08：生产 ToolExecutionPipeline 的 approver 闭包引用此变量（TUI/headless 装配后可用）
-  let gateway: any = null;
-
-  // W1-08：生产 ToolExecutionPipeline（11 ports 真实装配）——plugin broker 与 MCP delivered surface 的
-  // 唯一真实执行入口。approver：无网关/拒绝 → fail-closed；policy/budget 为 CLI 默认（诚实 fail-closed 默认）。
-  const { createProductionToolExecution } = await import('../application/tools/toolExecutionWiring.js');
-  const { DEFAULT_TOOL_POLICY, DEFAULT_TOOL_BUDGET_LIMITS } = await import('../application/tools/defaultToolPolicy.js');
-  // C3：agent 审批桥——agent:* 工具调用经 runner 标记「legacy 前置链已放行」，approver 读桥返回（不二次弹窗）
-  const { createAgentApprovalBridge } = await import('../application/tools/agentToolSurface.js');
-  const agentApprovalBridge = createAgentApprovalBridge();
-  const toolExecution = createProductionToolExecution({
-    db, dataDir, workspaceRoot, memoryRepository,
-    policy: { id: 'policy-cli-v1', document: DEFAULT_TOOL_POLICY },
-    budget: { id: 'budget-cli-v1', limits: { ...DEFAULT_TOOL_BUDGET_LIMITS } },
-    approver: async (request) => {
-      if (String(request.toolId).startsWith('agent:')) {
-        return agentApprovalBridge.consume(request.args);
-      }
-      if (!gateway) return false;
-      const choice = await gateway.requestApproval(String(request.toolId), {
-        ...(request.args as Record<string, unknown> ?? {}), _effectKind: request.effect.kind,
-        // W7-02：system-touch 等决策理由透出到确认弹窗（分类 + 理由展示）
-        ...(request.reasonCode ? { _reasonCode: request.reasonCode } : {}),
-        ...(Array.isArray(request.obligations) && request.obligations.length ? { _obligations: request.obligations } : {}),
-      });
-      return choice !== 'deny';
-    },
-  });
 
   // W3 MCP facade：incoming server 共享构造（--mcp-server stdio 与 --serve /mcp Streamable HTTP 同一 ports）——
   // CapabilityPort 用真实 registry（require 决定 surface）；pipeline 为生产 ToolExecutionPipeline
@@ -240,128 +244,6 @@ if (pre.mode === 'error') {
     const { createHeadlessWireGateway } = await import('./headlessGateway.js');
     gateway = createHeadlessWireGateway({ sessionId: opts.session ?? 'default' });
   }
-  // 会话级批准缓存（Kimi auto_approve_actions 同款）：用户选「Allow this session」的
-  // action 记入缓存，本次进程内同 action 自动放行不再弹——危险确认不再频繁
-  const { createApprovalCache } = await import('../kernel/permissions.js');
-  const approvalCache = createApprovalCache();
-  // Hooks：settings.hooks 热生效（每次触发读当前配置），本地命令执行
-  const hookRunner = createHookRunner(() => config.get('settings') as Record<string, any>, bus);
-  // MCP 客户端（本地 stdio）：项目级 .mcp.json + 用户级 data/mcp.json 合并；
-  // strictMcpConfig 开启时仅信任项目声明（生态对齐 Claude Code --strict-mcp-config）
-  const { connectAllMcp, mcpClientsToTools, closeAllMcp } = await import('../kernel/mcp.js');
-  const mcpOpts = { cwd, strict: (settings as any).strictMcpConfig === true || opts.strictMcpConfig === true };
-  let mcpClients = await connectAllMcp(dataDir, mcpOpts);
-  disposers.push({ id: 'mcp', dispose: () => { closeAllMcp(mcpClients); } });
-  // MCP 热重载（/reload-mcp）：断开 → 重连 → updateTools 热换工具表（不重启进程）；
-  // C3：agent 工具表面同步换表（runner.handles 实时生效——闭包引用下方声明，调用时已初始化）
-  const reloadMcp = async (): Promise<{ ok: boolean; count: number; message: string }> => {
-    try {
-      closeAllMcp(mcpClients);
-      const clients = await connectAllMcp(dataDir, mcpOpts);
-      mcpClients = clients;
-      agent.updateTools({ ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) });
-      agentTool.updateTools({ ...coreTools(), ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) });
-      return { ok: true, count: clients.length, message: `MCP 服务器已重载（${clients.length} 个在线）` };
-    } catch (e: any) {
-      return { ok: false, count: 0, message: `MCP 重载失败：${String(e?.message ?? e).slice(0, 120)}` };
-    }
-  };
-  // 插件系统（P0）：data/plugins/*/ 加载 → 工具并入 extraTools（命令注册在 commandBus 创建后）
-  const { loadAllPlugins, pluginToolsToExtra } = await import('../kernel/plugins.js');
-  // 插件 API 层（阶段 3）：事件订阅（bus）+ 配置只读访问注入插件 ctx
-  const plugins = await loadAllPlugins(dataDir, cwd, {
-    on: (type, cb) => {
-      const off = bus.on(type, (e: any) => { try { cb(e?.payload ?? {}); } catch { /* 插件回调异常不阻断 */ } });
-      return off;
-    },
-    getConfig: (partition, key) => {
-      try {
-        const obj = config.get(partition as any);
-        return key ? (obj as any)?.[key] : obj;
-      } catch { return undefined; }
-    },
-  });
-  // P3 安全注入通道：敏感数据内存保险库（sudo 密码/环境变量密钥——用户亲手输入、仅内存、关闭即清）
-  const { createSecretVault } = await import('../kernel/secrets.js');
-  const secrets = createSecretVault();
-  // 开放兼容：只读工具名单由内置工具表自动推导（danger!==true 即只读）——
-  // 不再手工双写（旧名单已漂移：幽灵名/缺 find_files），新增工具自动生效
-  const { deriveReadonlyTools, setReadonlyTools } = await import('../kernel/permissions.js');
-  const { coreTools } = await import('../kernel/tools.js');
-  setReadonlyTools(deriveReadonlyTools(coreTools()));
-  // C3：agent 工具表面（生产 pipeline 分层复用）——danger/写类工具经 11 ports 记账执行，
-  // 只读工具维持 legacy（诚实 shadow，不伪装全面接管）；runner 标记审批桥 → 不二次弹窗
-  const { createAgentToolSurface } = await import('../application/tools/agentToolSurface.js');
-  const agentTool = createAgentToolSurface({ tools: { ...coreTools(), ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) } });
-  const agentToolRegistration = toolExecution.registerAgentTools(agentTool.surface);
-  if (!agentToolRegistration.ok) {
-    process.stderr.write(`wxnodus: agent 工具表面注册失败：${agentToolRegistration.error.code}\n`);
-    process.exit(1);
-  }
-  const agentToolRunner = agentTool.attach(toolExecution.pipeline, agentApprovalBridge);
-  const agent = createAgent({
-    db, bus, mem, sessionId: 'default', config: { settings },
-    agentToolRunner,
-    mode: (config.get('settings') as any).mode ?? 'smart',
-    onApproval: async (name, args) => {
-      if (approvalCache.has(name, args)) return true; // 本会话已批准（Allow this session）
-      if (!gateway) return false;
-      const choice = await gateway.requestApproval(name, args);
-      if (choice === 'session') approvalCache.grant(name, args);
-      return choice !== 'deny';
-    },
-    // C6：clarify 文字提问（UI clarify 面板真实回答）
-    onClarify: async (question, choices) => (gateway ? gateway.requestClarify(question, choices) : ''),
-    // P3 安全注入：敏感输入走 UI overlay（用户亲手输入）；非交互/未装配时返回 null（工具拒绝并提示）
-    security: {
-      sudoInjection: (settings as any).security?.sudoInjection === true,
-      secretInjection: (settings as any).security?.secretInjection === true,
-      vault: secrets,
-    },
-    onSecretRequest: async (kind, prompt, name) => (gateway ? gateway.requestSecretInput(kind, prompt, name) : null),
-    // 动态内容表（credential_form 工具）：经 gateway 弹多字段表单——闭包引用 gateway 变量（装配后可用）
-    onFormRequest: async (fields, prompt) => (gateway ? gateway.requestCredentialForm(fields, prompt) : null),
-    // 简化人工操作（阶段 C）：smart 模式工作区内文件编辑自动放行（默认开启，/perm 说明）
-    lowRiskAutoApprove: (settings as any).lowRiskAutoApprove !== false,
-    dataDir,
-    toolLazyLoad: (settings as any).toolLazyLoad === true,
-    // D 批次：AI 审批预审（settings.autoReview=true 开启）——用主模型单轮判断 allow/deny/ask
-    autoReview: createAutoReview(
-      () => (settings as any).autoReview === true,
-      async (prompt) => {
-        // 架构修复：独立单轮调用（callModelOnce）——不再递归 agent.run。
-        // 此前递归同一 agent 实例：executeTool 内触发评审 → 覆盖 turn 状态、
-        // 相同 sessionId 消息互相污染、轮次计数错乱（竞品 Codex 用独立评审代理）。
-        try {
-          const { resolveApiKey } = await import('../kernel/providers.js');
-          const { resolveDefaultModel, resolveDefaultBaseURL } = await import('../kernel/defaults.js');
-          const { callModelOnce } = await import('../kernel/llmOnce.js');
-          const keyRes = resolveApiKey(settings);
-          if (!keyRes.key) return 'ask';
-          const r = await callModelOnce({
-            baseURL: resolveDefaultBaseURL(settings),
-            model: resolveDefaultModel(settings),
-            key: keyRes.key,
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0,
-            timeoutMs: 30_000,
-          });
-          return r.ok ? r.content : 'ask';
-        } catch {
-          return 'ask';
-        }
-      },
-    ),
-    hooks: hookRunner,
-    extraTools: { ...mcpClientsToTools(mcpClients), ...pluginToolsToExtra(plugins) },
-    // AI 自主调用通道（wx_cmd 工具）：闭包引用 commandBus 变量（命令注册在 agent 之后完成，
-    // 调用时才求值——与 gateway 同模式）；分级裁决在 agent.executeTool（commandLevels）
-    onCommand: async (input) => {
-      const r = await commandBus.execute(String(input));
-      return r.output || r.dispatch?.message || r.error || (r.ok ? '' : `命令执行失败：${r.error ?? ''}`);
-    },
-  });
-
   // 模式/主题状态
   let mode = (config.get('settings') as any).mode ?? 'smart';
   let themeName = (config.get('settings') as any).theme ?? 'wxnodus';
@@ -382,7 +264,7 @@ if (pre.mode === 'error') {
   const term = createTerminalManager({ dataDir, cwd });
 
   // 命令注册
-  const commandBus = createCommandBus();
+  commandBus = createCommandBus();
   // 插件命令注册为 /<插件名>.<命令名>（如 /example.hello），防与内置命令冲突；
   // 同时动态注册进 SLASH 命令表——routeInput 白名单校验与 UI 补全才能识别。
   // 开放兼容：注册逻辑在 plugins.ts（registerPluginCommands），/plugin reload 复用（热更新）
@@ -786,7 +668,7 @@ if (pre.mode === 'error') {
     }),
     dataDir, cwd, settings, reloadMcp, updateBehind,
     // A24 第三类修复：MCP 服务器真实状态（连接/工具数/传输方式）——buildInfo 填充 mcp_servers
-    mcpStatus: () => mcpClients.map(c => ({
+    mcpStatus: () => getMcpClients().map(c => ({
       connected: c.connected,
       name: c.server.name,
       tools: c.tools.length,
