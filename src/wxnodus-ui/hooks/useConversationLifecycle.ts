@@ -4,7 +4,7 @@ import type { ScrollBoxHandle } from '@wxnodus/ink'
 import { evictInkCaches } from '@wxnodus/ink'
 import { type RefObject, useCallback } from 'react'
 
-import { introMsg, toTranscriptMessages } from '../domain/messages.js'
+import { startupHistory, toTranscriptMessages } from '../domain/messages.js'
 import { ZERO } from '../domain/usage.js'
 import { type GatewayClient } from '../gatewayClient.js'
 import type {
@@ -141,7 +141,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       turnController.turnTools = []
       turnController.persistedToolLabels.clear()
 
-      setHistoryItems(info ? [introMsg(info)] : [])
+      setHistoryItems(startupHistory(info))
       setStickyPrompt('')
       setLastUserMsg('')
       composerActions.setPasteSnips([])
@@ -189,9 +189,8 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
         usage: usageFrom(info)
       })
 
-      if (info) {
-        setHistoryItems([introMsg(info)])
-      }
+      // 无 info 也保留 bare intro（品牌面板常驻——防空 transcript 回归）
+      setHistoryItems(startupHistory(info))
 
       if (info?.credential_warning) {
         sys(`warning: ${info.credential_warning}`)
@@ -270,7 +269,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
           resetSession()
           setSessionStartedAt(r.started_at ? r.started_at * 1000 : Date.now())
           const transcript = [...toTranscriptMessages(r.messages), ...liveSessionInflightMessages(r.inflight)]
-          setHistoryItems(info ? [introMsg(info), ...transcript] : transcript)
+          setHistoryItems(startupHistory(info, transcript))
           writeActiveSessionFile(r.session_key ?? r.session_id)
           patchUiState({
             busy: running,
@@ -322,7 +321,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
             const resumed = [...toTranscriptMessages(r.messages), ...liveSessionInflightMessages(r.inflight)]
 
-            setHistoryItems(info ? [introMsg(info), ...resumed] : resumed)
+            setHistoryItems(startupHistory(r.info ?? null, resumed))
             writeActiveSessionFile(r.resumed ?? r.session_id)
             patchUiState({
               busy: running,

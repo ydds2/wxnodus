@@ -4,6 +4,17 @@ import type { Msg, SessionInfo } from '../types.js'
 
 export const introMsg = (info: SessionInfo): Msg => ({ info, kind: 'intro', role: 'system', text: '' })
 
+export const bareIntro = (): Msg => ({ kind: 'intro', role: 'system', text: '' })
+
+/**
+ * 启动历史投影：info 缺失时也必须保留 bare intro——否则 brand 面板从启动屏消失
+ * （空 transcript 回归：无 key 环境下 session.resume 无 info/无消息时，
+ *  `info ? [introMsg(info), ...m] : m` 会清空整屏；品牌 logo/口号/会话卡随之丢失）。
+ * session.info 事件随后经 setHistoryItems 把 info 并入既有 intro 行。
+ */
+export const startupHistory = (info: null | SessionInfo, messages: Msg[] = []): Msg[] =>
+  [info ? introMsg(info) : bareIntro(), ...messages]
+
 export const imageTokenMeta = (info?: ImageMeta | null) => {
   const { width, height, token_estimate: t } = info ?? {}
 
