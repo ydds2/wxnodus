@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { parseGateBindings } from '../src/release/gateBindings.js';
+import { parseGateBindings } from '../src/release/gateBindings.mjs';
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
