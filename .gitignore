@@ -6,3 +6,9 @@ data/
 .zcode/
 .playwright-mcp/
 artifacts/
+
+# fixture 构建产物（验收机现场构建——锁哈希核验，不入库）
+tests/fixtures/windows/uia/*/bin/
+tests/fixtures/windows/uia/*/obj/
+tests/fixtures/windows/uia/electron/node_modules/
+tests/fixtures/windows/uia/electron/dist/
