@@ -148,7 +148,6 @@ describe('A19 消息行鼠标意图（messageClickIntent / messageMultiClickInte
 
 describe('A19 状态条提示（StatusRule）', () => {
   const base = {
-    bgCount: 0,
     busy: false,
     cols: 120,
     cwdLabel: 'test',

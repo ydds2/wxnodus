@@ -149,7 +149,7 @@ export async function bootstrapConsoleForTui(
     return {
       tier: 'cmd',
       capabilities: {
-        sync2026: false, decstbm: false, truecolor: false, osc8: false, oscNotify: false,
+        sync2026: false, decstbm: false, truecolor: false, osc8: false, clipboard: false, oscNotify: false,
         mouse: false, extendedKeys: false, glyphSet: 'bmp',
       },
       reason: `PS 引导不可用（${enableFailure}），按 OS 1903+ 默认 VT 开启假设直接进入（鼠标保守关闭）`,

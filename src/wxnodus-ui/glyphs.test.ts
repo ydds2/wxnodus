@@ -46,7 +46,7 @@ describe('W8-23 字形注册表', () => {
       tier: 'cmd',
       reason: 'test',
       capabilities: {
-        sync2026: false, decstbm: false, truecolor: false, osc8: false, oscNotify: false,
+        sync2026: false, decstbm: false, truecolor: false, osc8: false, clipboard: false, oscNotify: false,
         mouse: false, extendedKeys: false, glyphSet: 'bmp',
       },
     });
@@ -60,7 +60,7 @@ describe('W8-23 字形注册表', () => {
       tier: 'cmd',
       reason: 'test',
       capabilities: {
-        sync2026: false, decstbm: false, truecolor: false, osc8: false, oscNotify: false,
+        sync2026: false, decstbm: false, truecolor: false, osc8: false, clipboard: false, oscNotify: false,
         mouse: false, extendedKeys: false, glyphSet: 'bmp',
       },
     });

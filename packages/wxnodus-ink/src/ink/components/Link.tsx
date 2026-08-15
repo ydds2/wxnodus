@@ -22,7 +22,7 @@ export default function Link({ children, url }: Props): React.ReactNode {
   // not on the OSC 8 allowlist — the cell's hyperlink field stayed empty,
   // so the click pipeline had nothing to open.
   //
-  // The OSC 8 escape itself is emitted unconditionally by the renderer
+  // The OSC 8 escape is capability-gated by the renderer
   // (wrapWithOsc8Link in render-node-to-output.ts, oscLink in log-update.ts).
   // Terminals that don't understand OSC 8 silently strip it — including
   // Apple Terminal, which is why hover/click affordance has to come from

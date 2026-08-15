@@ -93,7 +93,7 @@ export function PromptZone({
   if (overlay.sudo) {
     return (
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
-        <MaskedPrompt cols={cols} icon={icon('lock')} label="sudo password required" onCancel={cancelSudo} onSubmit={onSudoSubmit} t={theme} />
+          <MaskedPrompt cols={cols} icon={icon('lock')} label="需要 sudo 密码" onCancel={cancelSudo} onSubmit={onSudoSubmit} t={theme} />
       </Box>
     )
   }
@@ -107,7 +107,7 @@ export function PromptZone({
           label={overlay.secret.prompt}
           onCancel={cancelSecret}
           onSubmit={onSecretSubmit}
-          sub={`for ${overlay.secret.envVar}`}
+          sub={`环境变量：${overlay.secret.envVar}`}
           t={theme}
         />
       </Box>

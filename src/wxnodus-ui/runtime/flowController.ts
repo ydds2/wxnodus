@@ -109,7 +109,7 @@ const clear = (t: Timer): null => {
   return null
 }
 
-class TurnController {
+export class TurnController {
   bufRef = ''
   interrupted = false
   lastStatusNote = ''
@@ -573,12 +573,10 @@ class TurnController {
     // render two stacked copies of the same patch. Only touches segments
     // with `kind: 'diff'` emitted by pushInlineDiffSegment — real
     // assistant narration stays put.
-    const finalHasOwnDiffFence = /```(?:diff|patch)\b/i.test(finalText)
-
     const segments = this.segmentMessages.filter(msg => {
       const body = diffSegmentBody(msg)
 
-      return body === null || (!finalHasOwnDiffFence && !finalText.includes(body))
+      return body === null || !finalText.includes(body)
     })
 
     const hasReasoningSegment =
@@ -980,5 +978,3 @@ class TurnController {
 }
 
 export const turnController = new TurnController()
-
-export type { TurnController }

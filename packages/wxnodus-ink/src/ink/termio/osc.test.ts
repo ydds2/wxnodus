@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { env, supportsOsc52Clipboard } from '../../utils/env.js'
+import { setRendererCapabilities } from '../capabilities.js'
 
-import { shouldEmitClipboardSequence, shouldUseNativeClipboard } from './osc.js'
+import {
+  CLEAR_ITERM2_PROGRESS,
+  CLEAR_TAB_STATUS,
+  notificationCleanupSequences,
+  shouldEmitClipboardSequence,
+  shouldUseNativeClipboard
+} from './osc.js'
 
 describe('shouldEmitClipboardSequence', () => {
   it('suppresses local multiplexer clipboard OSC by default', () => {
@@ -15,6 +22,12 @@ describe('shouldEmitClipboardSequence', () => {
       shouldEmitClipboardSequence({ SSH_CONNECTION: '1', TMUX: '/tmp/tmux-1/default,1,0' } as NodeJS.ProcessEnv)
     ).toBe(true)
     expect(shouldEmitClipboardSequence({ TERM: 'xterm-256color' } as NodeJS.ProcessEnv)).toBe(true)
+  })
+
+  it('capability gate wins over env overrides', () => {
+    expect(
+      shouldEmitClipboardSequence({ WXNODUS_TUI_FORCE_OSC52: '1' } as NodeJS.ProcessEnv, false)
+    ).toBe(false)
   })
 
   it('honors explicit env override', () => {
@@ -88,6 +101,30 @@ describe('supportsOsc52Clipboard', () => {
   })
 })
 
+describe('notificationCleanupSequences', () => {
+  afterEach(() => setRendererCapabilities(null))
+
+  it('returns empty when oscNotify is disabled (cmd-tier exit emits no notification OSC)', () => {
+    expect(notificationCleanupSequences({ oscNotify: false, tabStatus: true })).toBe('')
+  })
+
+  it('emits only the iTerm2 progress clear when tab status is unsupported', () => {
+    expect(notificationCleanupSequences({ oscNotify: true, tabStatus: false })).toBe(CLEAR_ITERM2_PROGRESS)
+  })
+
+  it('emits both clear sequences when tab status is supported', () => {
+    const seq = notificationCleanupSequences({ oscNotify: true, tabStatus: true })
+
+    expect(seq).toContain(CLEAR_ITERM2_PROGRESS)
+    expect(seq).toContain(CLEAR_TAB_STATUS)
+  })
+
+  it('defaults to the injected renderer capability when args are omitted', () => {
+    setRendererCapabilities({ oscNotify: false })
+    expect(notificationCleanupSequences()).toBe('')
+  })
+})
+
 // shouldUseNativeClipboard() encodes the gating logic that setClipboard()
 // uses to decide whether to fire copyNative(). Testing it directly (rather
 // than mocking copyNative inside setClipboard) matches the package's
@@ -113,6 +150,11 @@ describe('shouldUseNativeClipboard', () => {
     expect(shouldUseNativeClipboard({} as NodeJS.ProcessEnv, 'Apple_Terminal')).toBe(true)
     expect(shouldUseNativeClipboard({} as NodeJS.ProcessEnv, 'alacritty')).toBe(true)
     expect(shouldUseNativeClipboard({} as NodeJS.ProcessEnv, null)).toBe(true)
+  })
+
+  it('keeps native fallback enabled when OSC 52 capability is disabled', () => {
+    expect(shouldUseNativeClipboard({} as NodeJS.ProcessEnv, 'ghostty', false)).toBe(true)
+    expect(shouldUseNativeClipboard({} as NodeJS.ProcessEnv, 'windows-terminal', false)).toBe(true)
   })
 
   it('returns false on allowlisted local terminals (the race-fix case)', () => {

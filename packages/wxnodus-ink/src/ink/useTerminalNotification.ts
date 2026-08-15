@@ -33,6 +33,8 @@ export function useTerminalNotification(): TerminalNotification {
 
   const notifyITerm2 = useCallback(
     ({ message, title }: { message: string; title?: string }) => {
+      if (!getRendererCapabilities().oscNotify) return
+
       const displayString = title ? `${title}:\n${message}` : message
       writeRaw(wrapForMultiplexer(osc(OSC.ITERM2, `\n\n${displayString}`)))
     },
@@ -67,7 +69,7 @@ export function useTerminalNotification(): TerminalNotification {
 
   const progress = useCallback(
     (state: Progress['state'] | null, percentage?: number) => {
-      if (!isProgressReportingAvailable()) {
+      if (!getRendererCapabilities().oscNotify || !isProgressReportingAvailable()) {
         return
       }
 

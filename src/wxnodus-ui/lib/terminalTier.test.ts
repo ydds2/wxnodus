@@ -7,7 +7,7 @@ import { detectTerminalTier } from './terminalTier.js';
 const win = { platform: 'win32', tty: true };
 const noProbe = async () => { throw new Error('不应触发探测'); };
 const MODERN_CAPABILITIES = {
-  sync2026: true, decstbm: true, truecolor: true, osc8: true, oscNotify: true,
+  sync2026: true, decstbm: true, truecolor: true, osc8: true, clipboard: true, oscNotify: true,
   mouse: true, extendedKeys: true, glyphSet: 'full',
 };
 
@@ -30,7 +30,7 @@ describe('W8-20 terminalTier 层级探测', () => {
     const r = await detectTerminalTier({}, { ...win, probeVt: async () => ({ vt: true, quickEditDisabled: true }) });
     expect(r.tier).toBe('cmd');
     expect(r.capabilities).toEqual({
-      sync2026: false, decstbm: false, truecolor: false, osc8: false, oscNotify: false,
+      sync2026: false, decstbm: false, truecolor: false, osc8: false, clipboard: false, oscNotify: false,
       mouse: true, extendedKeys: false, glyphSet: 'bmp',
     });
   });

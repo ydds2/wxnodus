@@ -11,6 +11,8 @@ import { DEV_CREDITS_MODE } from '../config/env.js'
 import { FACES } from '../content/faces.js'
 import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
+import { statusSegmentsFor, type StatusSegments } from '../lib/layoutProfile.js'
+import { getTuiTerminalTier } from '../lib/terminalTier.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { fmtK } from '../lib/text.js'
@@ -45,12 +47,20 @@ interface IndicatorRender {
   showVerb: boolean
 }
 
-const renderIndicator = (style: IndicatorStyle, tick: number): IndicatorRender => {
+// cmd/ascii 档：emoji 帧含 astral 字形、unicode 帧含盲文——均退回 ASCII 帧
+// （即使用户显式 /indicator emoji|unicode，也不在 conhost 上发射不安全字形）。
+const tierGlyphSet = (): 'full' | 'bmp' | 'ascii' => getTuiTerminalTier()?.capabilities.glyphSet ?? 'full'
+
+export const renderIndicator = (style: IndicatorStyle, tick: number): IndicatorRender => {
   if (style === 'kaomoji') {
     return { frame: FACES[tick % FACES.length] ?? '', intervalMs: FACE_TICK_MS, showVerb: true }
   }
 
   if (style === 'emoji') {
+    if (tierGlyphSet() !== 'full') {
+      return { frame: ASCII_FRAMES[tick % ASCII_FRAMES.length] ?? '|', intervalMs: SPINNER_TICK_MS, showVerb: true }
+    }
+
     return {
       frame: EMOJI_FRAMES[tick % EMOJI_FRAMES.length] ?? '⚕ ',
       intervalMs: SPINNER_TICK_MS * 6,
@@ -70,6 +80,11 @@ const renderIndicator = (style: IndicatorStyle, tick: number): IndicatorRender =
   // ~80ms; honour it but bound below at a safe minimum so React
   // re-renders stay reasonable.  This style is for users who want
   // the cleanest possible status, so no verb rotation either.
+  // cmd/ascii 档盲文不可用 → 退回 ASCII 单列帧（仍无 verb 旋转）。
+  if (tierGlyphSet() !== 'full') {
+    return { frame: ASCII_FRAMES[tick % ASCII_FRAMES.length] ?? '|', intervalMs: SPINNER_TICK_MS, showVerb: false }
+  }
+
   const spinner = unicodeSpinners.braille
   const frame = spinner.frames[tick % spinner.frames.length] ?? '⠋'
 
@@ -261,33 +276,16 @@ export function statusRuleWidths(cols: number, cwdLabel: string, minLeftContent 
   return { leftWidth, rightWidth, separatorWidth }
 }
 
-// Progressive disclosure for the status rule's lower-priority tail segments.
-// As the terminal narrows we shed the least important pieces first (cost →
-// bg → voice → compressions → duration → context bar), and below the bar
-// breakpoint the context read-out collapses to a bare token count. Status and
-// model are never gated here — they're guaranteed room by `statusRuleWidths`.
-export interface StatusBarSegments {
-  bar: boolean
-  bg: boolean
-  compactCtx: boolean
-  compressions: boolean
-  cost: boolean
-  duration: boolean
-  voice: boolean
-}
+  // Progressive disclosure for the status rule's lower-priority tail segments.
+  // As the terminal narrows we shed the least important pieces first (cost →
+  // voice → compressions → duration → context bar). Background activity has
+  // one canonical composer summary, so it is not repeated in the status rule.
+  // Status and model are never gated here — they're guaranteed room by
+  // `statusRuleWidths`.
+export interface StatusBarSegments extends StatusSegments {}
 
 export function statusBarSegments(cols: number): StatusBarSegments {
-  const w = Math.max(1, Math.floor(cols || 1))
-
-  return {
-    compactCtx: w < 72,
-    bar: w >= 72,
-    duration: w >= 76,
-    compressions: w >= 80,
-    voice: w >= 84,
-    bg: w >= 88,
-    cost: w >= 96
-  }
+  return statusSegmentsFor(cols)
 }
 
 function SpawnHud({ t }: { t: Theme }) {
@@ -440,7 +438,6 @@ export function StatusRule({
   notice,
   selectionHint,
   usage,
-  bgCount,
   lastTurnEndedAt,
   liveSessionCount,
   sessionStartedAt,
@@ -451,7 +448,6 @@ export function StatusRule({
   onVoiceClick,
   onCwdClick,
   onModelClick,
-  onBgClick,
   t
 }: StatusRuleProps) {
   const pct = usage.context_percent
@@ -517,7 +513,7 @@ export function StatusRule({
   // Whole-segment progressive disclosure for the tail: a segment renders only
   // if it fits in the space left after the pinned essentials, evaluated in
   // descending priority order — bar, duration, compressions, voice, session
-  // count, bg, cost. Lower-priority segments drop first and nothing truncates
+  // count, cost. Lower-priority segments drop first and nothing truncates
   // mid-segment, so status/model/context are never crushed.
   const SEP = stringWidth(' │ ')
   let tailBudget = Math.max(0, leftWidth - essentialWidth)
@@ -560,7 +556,6 @@ export function StatusRule({
     : ''
   const showBattery = battery?.available && fits(SEP + stringWidth(batteryLabel))
   const showSessionCount = !!sessionCountText && fits(SEP + stringWidth(sessionCountText))
-  const showBg = segs.bg && bgCount > 0 && fits(SEP + stringWidth(`${bgCount} bg`))
   const showCostSeg = segs.cost && showCost && !!costText && fits(SEP + stringWidth(costText))
   // No segs flag / no showCost coupling — it's a server-gated dev readout, lowest priority,
   // so it consumes tail budget LAST and drops first on a narrow terminal.
@@ -739,28 +734,6 @@ export function StatusRule({
           </Text>
         ) : null}
         {showSessionCount ? sessionCountNode : null}
-        {showBg ? (
-          // A24 第三类修复：bg 段可点——直达后台面板（onSessionCountClick 同款模式）
-          onBgClick ? (
-            <Box
-              flexShrink={0}
-              onClick={(e: { stopImmediatePropagation?: () => void }) => {
-                e.stopImmediatePropagation?.()
-                onBgClick()
-              }}
-            >
-              <Text color={t.color.muted} wrap="truncate-end">
-                {' │ '}
-                {bgCount} bg
-              </Text>
-            </Box>
-          ) : (
-            <Text color={t.color.muted} wrap="truncate-end">
-              {' │ '}
-              {bgCount} bg
-            </Text>
-          )
-        ) : null}
         {showCostSeg ? (
           <Text color={t.color.muted} wrap="truncate-end">
             {' │ '}
@@ -916,7 +889,6 @@ export function TranscriptScrollbar({ scrollRef, t }: TranscriptScrollbarProps) 
 }
 
 interface StatusRuleProps {
-  bgCount: number
   /** A7：电池状态（无电池/不可用 → null，段自动隐藏） */
   battery?: BatteryInfo | null
   lastTurnEndedAt?: null | number
@@ -948,8 +920,6 @@ interface StatusRuleProps {
   onCwdClick?: () => void
   /** A24：模型段点击（打开模型选择器） */
   onModelClick?: () => void
-  /** A24：bg 段点击（直达后台面板——镜像 BgSummaryLine 链路） */
-  onBgClick?: () => void
 }
 
 interface StickyPromptTrackerProps {

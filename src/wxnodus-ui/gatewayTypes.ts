@@ -86,7 +86,6 @@ export interface ConfigDisplayConfig {
   // validation anyway.
   tui_status_indicator?: string
   tui_statusbar?: 'bottom' | 'off' | 'on' | 'top' | boolean
-  /** A23：右侧详情面板（双栏布局）开关——/pane 持久化 */
 }
 
 export interface ConfigVoiceConfig {

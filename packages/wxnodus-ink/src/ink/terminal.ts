@@ -210,6 +210,7 @@ initializeRendererCapabilities({
   decstbm: SYNC_OUTPUT_SUPPORTED,
   truecolor: true,
   osc8: true,
+  clipboard: true,
   oscNotify: true,
   mouse: true,
   extendedKeys: supportsExtendedKeys(),

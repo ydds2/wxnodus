@@ -12,6 +12,8 @@ export interface TerminalCapabilities {
   truecolor: boolean;
   /** OSC 8 超链接 */
   osc8: boolean;
+  /** OSC 52 剪贴板发射；false 时仍可使用 clip.exe 等本机路径 */
+  clipboard: boolean;
   /** OSC 9/99/777/21337 通知/进度/tab——conhost 不支持（标题走 process.title） */
   oscNotify: boolean;
   /** 鼠标跟踪可用（cmd 需 QuickEdit 已关） */
@@ -39,6 +41,7 @@ export interface RendererCapabilityMap {
   decstbm: boolean;
   truecolor: boolean;
   osc8: boolean;
+  clipboard: boolean;
   oscNotify: boolean;
   mouse: boolean;
   extendedKeys: boolean;
@@ -47,7 +50,7 @@ export function rendererCapabilitiesFor(result: TerminalTierResult): RendererCap
   const c = result.capabilities;
   return {
     sync2026: c.sync2026, decstbm: c.decstbm, truecolor: c.truecolor, osc8: c.osc8,
-    oscNotify: c.oscNotify, mouse: c.mouse, extendedKeys: c.extendedKeys,
+    clipboard: c.clipboard, oscNotify: c.oscNotify, mouse: c.mouse, extendedKeys: c.extendedKeys,
   };
 }
 
@@ -56,7 +59,7 @@ export type VtProbeResult = boolean | { vt: boolean; quickEditDisabled?: boolean
 export interface TerminalTierOptions {
   platform?: string;
   tty?: boolean;
-  /** 真实 VT 探测（CPR 应答）；缺省 fail-closed → no-vt */
+  /** conhost 的 VT 输出位回读；缺省 fail-closed → no-vt */
   probeVt?: () => VtProbeResult | Promise<VtProbeResult>;
 }
 
@@ -66,17 +69,17 @@ const MODERN_TERM_PROGRAMS = new Set([
 ]);
 
 const modernCapabilities = (): TerminalCapabilities => ({
-  sync2026: true, decstbm: true, truecolor: true, osc8: true, oscNotify: true,
+  sync2026: true, decstbm: true, truecolor: true, osc8: true, clipboard: true, oscNotify: true,
   mouse: true, extendedKeys: true, glyphSet: 'full',
 });
 
 const cmdCapabilities = (mouse: boolean): TerminalCapabilities => ({
-  sync2026: false, decstbm: false, truecolor: false, osc8: false, oscNotify: false,
+  sync2026: false, decstbm: false, truecolor: false, osc8: false, clipboard: false, oscNotify: false,
   mouse, extendedKeys: false, glyphSet: 'bmp',
 });
 
 const noVtCapabilities = (): TerminalCapabilities => ({
-  sync2026: false, decstbm: false, truecolor: false, osc8: false, oscNotify: false,
+  sync2026: false, decstbm: false, truecolor: false, osc8: false, clipboard: false, oscNotify: false,
   mouse: false, extendedKeys: false, glyphSet: 'ascii',
 });
 

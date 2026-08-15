@@ -1,12 +1,13 @@
 // capabilities.test.ts — W8-22：渲染器能力集（cmd 档序列/颜色门控）契约
 import { EventEmitter } from 'events'
 import React from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, afterEach } from 'vitest'
 import chalk from 'chalk'
 
 import Text from './components/Text.js'
 import Ink from './ink.js'
 import { getRendererCapabilities, mousePresetFor, setRendererCapabilities } from './capabilities.js'
+import { link } from './termio/osc.js'
 import { DISABLE_MOUSE_TRACKING } from './termio/dec.js'
 
 class FakeTty extends EventEmitter {
@@ -23,6 +24,10 @@ class FakeTty extends EventEmitter {
 
 const tick = () => new Promise<void>(resolve => queueMicrotask(resolve))
 
+afterEach(() => {
+  setRendererCapabilities(null)
+})
+
 describe('W8-22 渲染器能力集', () => {
   it('set/get：部分注入与缺省合并；null 重置缺省', () => {
     setRendererCapabilities({ sync2026: false, decstbm: false, truecolor: false, mouse: false })
@@ -34,6 +39,38 @@ describe('W8-22 渲染器能力集', () => {
   it('truecolor=false → chalk 钳到 level 2（256 色）', () => {
     setRendererCapabilities({ truecolor: false })
     expect(chalk.level).toBe(2)
+    setRendererCapabilities(null)
+  })
+
+  it('reset restores the chalk level captured before capability overrides', () => {
+    const baseline = chalk.level
+
+    setRendererCapabilities({ truecolor: false })
+    expect(chalk.level).toBe(2)
+
+    setRendererCapabilities(null)
+    expect(chalk.level).toBe(baseline)
+  })
+
+  it('osc8=false suppresses hyperlink sequences', () => {
+    setRendererCapabilities({ osc8: false })
+    expect(link('https://example.test')).toBe('')
+
+    setRendererCapabilities({ osc8: true })
+    expect(link('https://example.test')).toContain('\x1b]8;')
+  })
+
+  it('capability overrides can disable multiple independent gates together', () => {
+    setRendererCapabilities({ decstbm: false, extendedKeys: false, mouse: false, oscNotify: false, sync2026: false })
+
+    expect(getRendererCapabilities()).toMatchObject({
+      decstbm: false,
+      extendedKeys: false,
+      mouse: false,
+      oscNotify: false,
+      sync2026: false
+    })
+
     setRendererCapabilities(null)
   })
 

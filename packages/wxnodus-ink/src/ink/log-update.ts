@@ -24,7 +24,7 @@ import {
   RESET_SCROLL_REGION,
   setScrollRegion
 } from './termio/csi.js'
-import { LINK_END, link as oscLink } from './termio/osc.js'
+import { link as oscLink } from './termio/osc.js'
 
 type State = {
   previousOutput: string
@@ -77,7 +77,7 @@ export class LogUpdate {
           // Handle hyperlink transitions
           if (cell.hyperlink !== currentHyperlink) {
             if (currentHyperlink !== undefined) {
-              line += LINK_END
+              line += oscLink('')
             }
 
             if (cell.hyperlink !== undefined) {
@@ -101,7 +101,7 @@ export class LogUpdate {
 
       // Close any open hyperlink before resetting styles
       if (currentHyperlink !== undefined) {
-        line += LINK_END
+        line += oscLink('')
         currentHyperlink = undefined
       }
 

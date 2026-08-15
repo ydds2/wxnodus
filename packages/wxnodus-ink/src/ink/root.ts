@@ -159,7 +159,8 @@ export async function createRoot({
   exitOnCtrlC = true,
   patchConsole = true,
   onFrame,
-  onHyperlinkClick
+  onHyperlinkClick,
+  capabilities
 }: RenderOptions = {}): Promise<Root> {
   // See wrappedRender — preserve microtask boundary from the old WASM await.
   await Promise.resolve()
@@ -171,7 +172,8 @@ export async function createRoot({
     exitOnCtrlC,
     patchConsole,
     onFrame,
-    onHyperlinkClick
+    onHyperlinkClick,
+    capabilities
   })
 
   // Register in the instances map so that code that looks up the Ink

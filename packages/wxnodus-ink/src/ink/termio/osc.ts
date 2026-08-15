@@ -84,7 +84,14 @@ export function getClipboardPath(): ClipboardPath {
   return 'osc52'
 }
 
-export function shouldEmitClipboardSequence(env: NodeJS.ProcessEnv = process.env): boolean {
+export function shouldEmitClipboardSequence(
+  env: NodeJS.ProcessEnv = process.env,
+  capabilityEnabled = true
+): boolean {
+  if (!capabilityEnabled) {
+    return false
+  }
+
   const override = (
     env.WXNODUS_TUI_FORCE_OSC52 ??
     env.WXNODUS_TUI_CLIPBOARD_OSC52 ??
@@ -144,7 +151,8 @@ export function shouldEmitClipboardSequence(env: NodeJS.ProcessEnv = process.env
  */
 export function shouldUseNativeClipboard(
   env: NodeJS.ProcessEnv = process.env,
-  terminal: string | null = envModule.terminal
+  terminal: string | null = envModule.terminal,
+  clipboardCapability = true
 ): boolean {
   // Over SSH the native tools would write to the wrong machine's clipboard.
   if (env.SSH_CONNECTION) {
@@ -164,7 +172,7 @@ export function shouldUseNativeClipboard(
 
   // If OSC 52 won't actually emit (user override or env state), the
   // native tool is the only path left — keep it on.
-  if (!shouldEmitClipboardSequence(env)) {
+  if (!shouldEmitClipboardSequence(env, clipboardCapability)) {
     return true
   }
 
@@ -256,14 +264,10 @@ export type ClipboardResult = {
 }
 
 export async function setClipboard(text: string): Promise<ClipboardResult> {
-  // W8-22：cmd 档不发 OSC 52（剪贴板走宿主 clip.exe 原生路径）
-  if (!getRendererCapabilities().osc8) {
-    return { sequence: '', success: false }
-  }
-
+  const allowOsc52 = getRendererCapabilities().clipboard
   const b64 = Buffer.from(text, 'utf8').toString('base64')
   const raw = osc(OSC.CLIPBOARD, 'c', b64)
-  const emitSequence = shouldEmitClipboardSequence(process.env)
+  const emitSequence = shouldEmitClipboardSequence(process.env, allowOsc52)
 
   // Native safety net — fire FIRST, before the tmux await, so a quick
   // focus-switch after selecting doesn't race pbcopy. Previously this ran
@@ -290,7 +294,7 @@ export async function setClipboard(text: string): Promise<ClipboardResult> {
   // WXNODUS_TUI_FORCE_OSC52=0 (otherwise the clipboard write becomes a
   // complete no-op). Fire-and-forget, but `nativeAttempted` tells us
   // whether ANY native path will be tried.
-  const nativeAttempted = shouldUseNativeClipboard(process.env, envModule.terminal) && copyNative(text)
+  const nativeAttempted = shouldUseNativeClipboard(process.env, envModule.terminal, allowOsc52) && copyNative(text)
 
   const tmuxBufferLoaded = await tmuxLoadBuffer(text)
 
@@ -706,6 +710,25 @@ export const CLEAR_TAB_STATUS = osc(OSC.TAB_STATUS, 'indicator=;status=;status-c
  */
 export function supportsTabStatus(): boolean {
   return process.env.USER_TYPE === 'ant'
+}
+
+/**
+ * Exit-cleanup notification sequences (written on unmount): iTerm2 progress
+ * clear plus the OSC 21337 tab-status clear when supported.
+ * `oscNotify=false` (cmd tier) returns '' — a conhost exit must not emit
+ * notification/progress OSC even as cleanup. Both knobs are injectable so
+ * the contract is deterministic without terminal/muxer env state.
+ */
+export function notificationCleanupSequences(
+  opts: { oscNotify?: boolean; tabStatus?: boolean } = {}
+): string {
+  if (!(opts.oscNotify ?? getRendererCapabilities().oscNotify)) {
+    return ''
+  }
+
+  const tab = opts.tabStatus ?? supportsTabStatus()
+
+  return CLEAR_ITERM2_PROGRESS + (tab ? wrapForMultiplexer(CLEAR_TAB_STATUS) : '')
 }
 
 /**

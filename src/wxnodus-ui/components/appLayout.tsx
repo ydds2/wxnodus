@@ -65,7 +65,7 @@ const modelBarLabel = (model: string, profile: string) => {
   return parts.join(' · ')
 }
 
-// A24：后台活动摘要行——运行中任务/终端/goal 循环一览，点击直达右侧面板「后台」标签
+// A24：后台活动摘要行——运行中任务/终端/goal 循环一览
 const BgSummaryLine = memo(function BgSummaryLine() {
   const ui = useStore($uiState)
   const bg = useBgSelector(s => s)
@@ -82,10 +82,6 @@ const BgSummaryLine = memo(function BgSummaryLine() {
       <Text color={ui.theme.color.muted}>
         <Text color={ui.theme.color.accent}>{icon('copy')} 后台：</Text>
         {parts.join(' · ')}
-        <Text color={ui.theme.color.statusFg} dim>
-          {' '}
-          ▶
-        </Text>
       </Text>
     </Box>
   )
@@ -304,25 +300,16 @@ const ComposerPane = memo(function ComposerPane({
         t={ui.theme}
       />
 
-      {ui.bgTasks.size > 0 && (
-        // A24：旧 bg 行点击也直达后台面板（与 BgSummaryLine 一致）
-        <Box>
-          <Text color={ui.theme.color.muted}>
-            {ui.bgTasks.size} background {ui.bgTasks.size === 1 ? 'task' : 'tasks'} running
-          </Text>
-        </Box>
-      )}
-
-      {/* A24：后台活动摘要——点击直达右侧面板「后台」标签（zcode 风格后台可见性） */}
       <BgSummaryLine />
 
       {status.showStickyPrompt ? (
         // A24：点击 sticky prompt 载入输入框编辑（键盘输入本就会替换它——鼠标给同款出口）
         <Box onClick={() => composer.updateInput(status.stickyPrompt)}>
           <Text color={ui.theme.color.muted} wrap="truncate-end">
-            <Text color={ui.theme.color.label}>↳ </Text>
+              <Text color={ui.theme.color.label}>{`${icon('arrowRight')} `}</Text>
 
-            {status.stickyPrompt}
+              {status.stickyPrompt}
+
           </Text>
         </Box>
       ) : (
@@ -420,7 +407,11 @@ const ComposerPane = memo(function ComposerPane({
         )}
       </Box>
 
-      {!composer.empty && !ui.sid && <Text color={ui.theme.color.muted}>⚕ {ui.status}</Text>}
+      {!composer.empty && !ui.sid && (
+        <Text color={ui.theme.color.muted}>
+          {icon('warn')} {ui.status}
+        </Text>
+      )}
 
       <StatusRulePane actions={actions} at="bottom" composer={composer} status={status} />
     </NoSelect>
@@ -457,7 +448,6 @@ const StatusRulePane = memo(function StatusRulePane({
   return (
     <Box marginTop={at === 'top' ? 1 : 0}>
       <StatusRule
-        bgCount={ui.bgTasks.size}
         battery={ui.battery}
         busy={ui.busy}
         cols={composer.cols}
@@ -474,7 +464,6 @@ const StatusRulePane = memo(function StatusRulePane({
         onVoiceClick={actions.toggleVoiceMode}
         onCwdClick={() => patchOverlayState({ dirPicker: true })}
         onModelClick={() => patchOverlayState({ modelPicker: true })}
-        onBgClick={() => {}}
         selectionHint={ui.selectionHint}
         sessionStartedAt={status.sessionStartedAt}
         showCost={ui.showCost}
@@ -509,6 +498,9 @@ export const AppLayout = memo(function AppLayout({
   return (
     <Shell {...shellProps}>
       <Box flexDirection="column" flexGrow={1}>
+        {/* 单栏内容结构：row 只包住 transcript 与其右侧滚动条（滚动条横向占 1 列、
+            高度跟随整行拉伸——避免滚动条高度=视口高度形成的纵向反馈回路，否则
+            ±1 行取整翻转会导致内容持续上下抖动）。这不是第二内容列。 */}
         <Box flexDirection="row" flexGrow={1}>
           {overlay.agents ? (
             <PerfPane id="agents">

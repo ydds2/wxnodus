@@ -78,7 +78,6 @@ import {
 } from './selection.js'
 import {
   needsAltScreenResizeScrollbackClear,
-  supportsExtendedKeys,
   type Terminal,
   writeDiffToTerminal
 } from './terminal.js'
@@ -104,11 +103,8 @@ import {
   SHOW_CURSOR
 } from './termio/dec.js'
 import {
-  CLEAR_ITERM2_PROGRESS,
-  CLEAR_TAB_STATUS,
-  setClipboard,
-  supportsTabStatus,
-  wrapForMultiplexer
+  notificationCleanupSequences,
+  setClipboard
 } from './termio/osc.js'
 import { TerminalWriteProvider } from './useTerminalNotification.js'
 
@@ -677,7 +673,9 @@ export default class Ink {
     // without the pop we'd accumulate depth on each editor round-trip).
     this.options.stdout.write(
       '\x1b[?1004h' +
-        (supportsExtendedKeys() ? DISABLE_KITTY_KEYBOARD + ENABLE_KITTY_KEYBOARD + ENABLE_MODIFY_OTHER_KEYS : '')
+        (getRendererCapabilities().extendedKeys
+          ? DISABLE_KITTY_KEYBOARD + ENABLE_KITTY_KEYBOARD + ENABLE_MODIFY_OTHER_KEYS
+          : '')
     )
   }
   onRender() {
@@ -1101,7 +1099,7 @@ export default class Ink {
     const { bytes: writeBytes, backpressure } = writeDiffToTerminal(
       this.terminal,
       optimized,
-      this.altScreenActive && !getRendererCapabilities().sync2026,
+      !getRendererCapabilities().sync2026,
       trackDrain
         ? () => {
             // Callback fires once Node has flushed the chunk to the OS.
@@ -1346,7 +1344,7 @@ export default class Ink {
     // allowlisted terminals at raw-mode entry; a terminal reset clears them).
     // Pop-before-push keeps Kitty stack depth at 1 instead of accumulating
     // on each call.
-    if (supportsExtendedKeys()) {
+    if (getRendererCapabilities().extendedKeys) {
       this.options.stdout.write(DISABLE_KITTY_KEYBOARD + ENABLE_KITTY_KEYBOARD + ENABLE_MODIFY_OTHER_KEYS)
     }
 
@@ -2432,13 +2430,9 @@ export default class Ink {
       writeSync(1, DBP)
       // Show cursor
       writeSync(1, SHOW_CURSOR)
-      // Clear iTerm2 progress bar
-      writeSync(1, CLEAR_ITERM2_PROGRESS)
-
-      // Clear tab status (OSC 21337) so a stale dot doesn't linger
-      if (supportsTabStatus()) {
-        writeSync(1, wrapForMultiplexer(CLEAR_TAB_STATUS))
-      }
+      // Notification cleanup (iTerm2 progress + tab status) — gated by the
+      // oscNotify capability: a cmd-tier exit emits no notification OSC.
+      writeSync(1, notificationCleanupSequences())
     }
 
     this.isUnmounted = true

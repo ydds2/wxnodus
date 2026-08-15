@@ -13,6 +13,8 @@ export interface RendererCapabilities {
   truecolor: boolean
   /** OSC 8 超链接发射 */
   osc8: boolean
+  /** OSC 52 剪贴板发射（独立于 OSC 8；false 时仍可走本机 clipboard 工具） */
+  clipboard: boolean
   /** OSC 9/99/777/21337 通知/进度发射 */
   oscNotify: boolean
   /** 鼠标跟踪（cmd 需 QuickEdit 已关才为 true） */
@@ -28,10 +30,13 @@ let defaultCapabilities: RendererCapabilities = {
   decstbm: true,
   truecolor: true,
   osc8: true,
+  clipboard: true,
   oscNotify: true,
   mouse: true,
   extendedKeys: true,
 }
+
+const chalkBaselineLevel = chalk.level
 
 /** terminal.ts 模块初始化时注入环境探测缺省（避免 capabilities→terminal 循环导入）。 */
 export function initializeRendererCapabilities(defaults: RendererCapabilities): void {
@@ -50,6 +55,8 @@ export function setRendererCapabilities(capabilities: Partial<RendererCapabiliti
   // modern 档不动 chalk.level（supports-color 既有行为零变化）。
   if (!currentCapabilities.truecolor) {
     chalk.level = 2
+  } else {
+    chalk.level = chalkBaselineLevel
   }
 }
 

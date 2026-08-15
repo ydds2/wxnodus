@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, afterEach } from 'vitest'
 
+import { setRendererCapabilities } from './capabilities.js'
 import type { Frame } from './frame.js'
 import { LogUpdate } from './log-update.js'
 import { CellWidth, CharPool, createScreen, HyperlinkPool, type Screen, setCellAt, StylePool } from './screen.js'
@@ -44,6 +45,10 @@ const stdoutOnly = (diff: ReturnType<LogUpdate['render']>) =>
 
 const ESC = '\u001b'
 const hasDecstbm = (text: string) => new RegExp(`${ESC}\\[\\d+;\\d+r`).test(text)
+
+afterEach(() => {
+  setRendererCapabilities(null)
+})
 
 describe('LogUpdate.render diff contract', () => {
   it('emits only changed cells when most rows match', () => {
@@ -197,6 +202,27 @@ describe('LogUpdate.render diff contract', () => {
     const diff = log.render(prevFrame, nextFrame, true, true)
 
     expect(hasDecstbm(stdoutOnly(diff))).toBe(true)
+  })
+
+  it('skips DECSTBM when capability safety is disabled', () => {
+    const w = 12
+    const h = 6
+    const prev = mkScreen(w, h)
+    const next = mkScreen(w, h)
+
+    paint(prev, 1, 'row one')
+    paint(next, 1, 'row one')
+
+    const nextFrame: Frame = {
+      ...mkFrame(next, w, h),
+      scrollHint: { top: 1, bottom: 4, delta: 1 }
+    }
+
+    setRendererCapabilities({ decstbm: false })
+    const log = new LogUpdate({ isTTY: true, stylePool })
+    const diff = log.render(mkFrame(prev, w, h), nextFrame, true, false)
+
+    expect(hasDecstbm(stdoutOnly(diff))).toBe(false)
   })
 
   it('skips DECSTBM when scroll region touches the bottom row', () => {

@@ -15,7 +15,10 @@ const APPROVAL_OPTS_NO_ALWAYS = APPROVAL_OPTS.filter(o => o !== 'always')
 const LABELS = { always: '总是允许', deny: '拒绝', once: '允许一次', session: '本会话允许' } as const
 const CMD_PREVIEW_LINES = 10
 
-type ApprovalChoice = 'always' | 'deny' | 'once' | 'session'
+export type ApprovalChoice = 'always' | 'deny' | 'once' | 'session'
+
+export const APPROVAL_OPTIONS = APPROVAL_OPTS
+export const APPROVAL_OPTIONS_NO_ALWAYS = APPROVAL_OPTS_NO_ALWAYS
 
 type ApprovalKey = {
   downArrow?: boolean

@@ -1,6 +1,5 @@
 // src/wxnodus-ui/content/features.ts — WxNodus 旗舰能力速览（单一事实来源）
-// 用途：intro SessionPanel「特色能力」区（branding.tsx）+ 右侧面板「特色」标签
-//       （detailPane.tsx——点击行执行示例命令）。cmd 一律为斜杠命令。
+// 用途：intro SessionPanel「特色能力」区（branding.tsx）。cmd 一律为斜杠命令。
 export interface FeatureSpotlight {
   cmd: string
   desc: string
