@@ -41,6 +41,8 @@ const groups = {
 }
 
 const results = []
+// 层级断言记录（fail-closed 汇总用）
+const tierChecks = []
 for (const [group, cmds] of Object.entries(groups)) {
   for (const cmd of cmds) {
     const before = out.length
@@ -63,7 +65,6 @@ if (broken.length) {
   for (const b of broken) console.log(`  ✗ [${b.group}] ${b.cmd}`)
 }
 try { p.kill() } catch {}
-
 // ── W8-25：cmd 档层级断言（逃生门 WXNODUS_TUI_TIER=cmd → 全 cmd 安全画像）──
 // 真实 conhost（useConpty:false）下验证：序列门控 + 256 色 + 无豆腐块字形。
 await sleep(400)
@@ -90,7 +91,10 @@ const glyphChecks = [
   ['无低覆盖 BMP（✓✗⧉⏎⌛◈❯◉⚠ 等）', !/[\u2713\u2717\u2715\u2611\u2610\u29C9\u23CE\u231B\u25C8\u276F\u25C9\u2699\u26A0]/.test(screen2)],
 ]
 console.log('\n===== W8-25 cmd 档层级断言（真实 conhost）=====')
-for (const [label, ok] of [...seqChecks, ...glyphChecks]) console.log(`${ok ? '✓' : '✗'} ${label}`)
+for (const [label, ok] of [...seqChecks, ...glyphChecks]) {
+  console.log(`${ok ? '✓' : '✗'} ${label}`)
+  tierChecks.push({ label, ok })
+}
 console.log('首屏内容（strip 后前 120 字）：' + screen2.slice(0, 120).replace(/\n/g, ' '))
 // ── W8-26：真实探测路径（无逃生门）——清除现代信号 + TERM=msys → 必须走 PS 引导 + VT 位回读 ──
 await sleep(400)
@@ -110,9 +114,19 @@ const realChecks = [
   ['真实探测路径：TUI 已进入（alt-screen 或品牌栏出现）', realChunks.join('').includes(String.fromCharCode(27) + '[?1049h') || realScreen.includes('WxNodus')],
 ]
 console.log('\n===== W8-26 真实探测路径（无逃生门，PS 引导 + VT 位回读）=====')
-for (const [label, ok] of realChecks) console.log(`${ok ? '✓' : '✗'} ${label}`)
+for (const [label, ok] of realChecks) {
+  console.log(`${ok ? '✓' : '✗'} ${label}`)
+  tierChecks.push({ label, ok })
+}
 // IME 诚实边界：node-pty 写键模拟 ≠ OS 级 IME 组合（候选窗/上屏走输入法进程）——如实 UNVERIFIED
 console.log('⚠ IME 中文组合输入：node-pty 无法模拟 OS 级 IME——UNVERIFIED（需真人真机实测）')
 try { p2.kill() } catch {}
 try { p3.kill() } catch {}
-process.exit(0)
+
+// ── W8-19/阶段 11：fail-closed 汇总——任一断言失败即非零退出（绝不静默全绿）──
+const tierFailed = tierChecks.filter(c => !c.ok)
+const totalFailed = broken.length + tierFailed.length
+console.log(`\n===== cmd-sweep 总报告：命令 ${results.length - broken.length}/${results.length} 可用；层级断言 ${tierChecks.length - tierFailed.length}/${tierChecks.length} 通过 =====`)
+if (broken.length) for (const b of broken) console.log(`  ✗ [${b.group}] ${b.cmd}`)
+if (tierFailed.length) for (const c of tierFailed) console.log(`  ✗ ${c.label}`)
+process.exit(totalFailed ? 1 : 0)
