@@ -72,7 +72,8 @@ export function brandBarLayout(
 
   const leftBudget = Math.floor(w * 0.35)
   const rightBudget = Math.floor(w * 0.3)
-  const leftFull = `${brand.icon} ${brand.name}`
+  // W8-23：品牌图标层级感知（cmd 档 ◆——绝不输出 ◉ 豆腐块）
+  const leftFull = `${icon('brand')} ${brand.name}`
 
   // 窄终端：右侧上下文让位（保留品牌 + 规则线），再窄则截断品牌名
   const keepRight = rightBudget >= 8

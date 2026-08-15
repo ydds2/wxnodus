@@ -63,4 +63,36 @@ if (broken.length) {
   for (const b of broken) console.log(`  ✗ [${b.group}] ${b.cmd}`)
 }
 try { p.kill() } catch {}
+
+// ── W8-25：cmd 档层级断言（逃生门 WXNODUS_TUI_TIER=cmd → 全 cmd 安全画像）──
+// 真实 conhost（useConpty:false）下验证：序列门控 + 256 色 + 无豆腐块字形。
+await sleep(400)
+const rawChunks = []
+const p2 = spawn(process.execPath, ['dist/cli/index.js'], {
+  name: 'xterm-256color', cols: 110, rows: 34,
+  cwd: process.cwd(),
+  env: { ...process.env, TERM: 'xterm-256color', WXNODUS_TUI_TIER: 'cmd' },
+  useConpty: false
+})
+p2.onData(d => rawChunks.push(d))
+await sleep(4000)
+const rawOut = rawChunks.join('')
+const screen2 = strip(rawOut)
+const seqChecks = [
+  ['无 DEC 2026（BSU/ESU 帧包裹）', !rawOut.includes('\x1b[?2026')],
+  ['无 DECSTBM 滚动区域', !/\x1b\[\d+;\d+r/.test(rawOut)],
+  ['无 OSC 8 超链接', !rawOut.includes('\x1b]8;')],
+  ['无 truecolor SGR（256 色收敛）', !/\x1b\[38;2;/.test(rawOut)],
+]
+const glyphChecks = [
+  ['无 astral emoji（豆腐块）', !/[\u{1F000}-\u{1FAFF}]/u.test(screen2)],
+  ['无盲文字形', !/[\u2800-\u28FF]/.test(screen2)],
+  ['无低覆盖 BMP（✓✗⧉⏎⌛◈❯◉⚠ 等）', !/[\u2713\u2717\u2715\u2611\u2610\u29C9\u23CE\u231B\u25C8\u276F\u25C9\u2699\u26A0]/.test(screen2)],
+]
+console.log('\n===== W8-25 cmd 档层级断言（真实 conhost）=====')
+for (const [label, ok] of [...seqChecks, ...glyphChecks]) console.log(`${ok ? '✓' : '✗'} ${label}`)
+console.log('首屏内容（strip 后前 120 字）：' + screen2.slice(0, 120).replace(/\n/g, ' '))
+// IME 诚实边界：node-pty 写键模拟 ≠ OS 级 IME 组合（候选窗/上屏走输入法进程）——如实 UNVERIFIED
+console.log('⚠ IME 中文组合输入：node-pty 无法模拟 OS 级 IME——UNVERIFIED（需真人真机实测）')
+try { p2.kill() } catch {}
 process.exit(0)
