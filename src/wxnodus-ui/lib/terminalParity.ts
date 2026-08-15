@@ -4,6 +4,7 @@ import {
   isRemoteShellSession,
   shouldPromptForTerminalSetup
 } from './terminalSetup.js'
+import { getTuiTerminalTier } from './terminalTier.js'
 
 export type MacTerminalHint = {
   key: string
@@ -71,6 +72,16 @@ export async function terminalParityHints(
       tone: 'warn',
       message:
         'SSH session detected · text clipboard can bridge via OSC52, but image clipboard and local screenshot paths still depend on the machine running WxNodus'
+    })
+  }
+
+  // W8-24：cmd（经典 conhost）档提示——VT/QuickEdit 已自动处理，剩余风险如实告知
+  const tier = getTuiTerminalTier()?.tier
+  if (tier === 'cmd') {
+    hints.push({
+      key: 'cmd-conhost',
+      tone: 'info',
+      message: '经典 cmd 控制台 · 已自动开启 VT 并关闭快速编辑；颜色收敛 256 色、图形为 BMP 安全集——如需 emoji 全量显示，建议 Windows Terminal'
     })
   }
 

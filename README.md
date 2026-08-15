@@ -80,6 +80,17 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 
 Node 22 + TypeScript 严格 ESM · 自研状态引擎（createStore/createAtom/computed，零第三方状态依赖）· gateway RPC 协议 · 黑洞记忆（本地 embedding）· 概念编译器 · agent 循环/权限/工具链——核心逻辑全部自研；UI 层为自研五域架构（runtime 回合流 / bridge 内核桥 / commands 命令路由 / hooks 交互 / components 组件）。渲染器 @wxnodus/ink 为 **ink(MIT, vadimdemedes) 的派生 fork**：组件 API 骨架继承 ink，渲染管线深度自研重写（自研 TS yoga 布局移植替代官方 WASM、行级差分、屏幕缓冲、DECSTBM/BSU-ESU），来源与版权声明见 packages/wxnodus-ink/LICENSE。其余：micromark+GFM+math（Markdown）· better-sqlite3+sqlite-vec+FTS5 · robotjs+playwright-core+node-screenshots（computer use）· @huggingface/transformers（本地 embedding）· vitest
 
+## 支持的终端（三级能力档）
+
+| 档 | 终端 | 体验 |
+|---|---|---|
+| modern | Windows Terminal / VS Code / WezTerm / mintty(Git Bash) / ConEmu / 各现代 xterm | 全量：真彩 + BSU/ESU 同步帧 + 鼠标 + emoji |
+| cmd | 经典 conhost（cmd.exe / PowerShell 老控制台，Win10 1511+） | 自动开启 VT + 关快速编辑；256 色 + BMP 安全图形（无豆腐块）；键盘优先 |
+| no-vt | VT 不可用（老于 1511 或开启失败） | 诚实行模式：输出中文指引（Windows Terminal / 注册表开 VT / `-p` 行模式），绝不输出乱码 |
+
+探测与降级为启动时真实探测（PowerShell SetConsoleMode + CPR 应答），非环境变量猜测；
+`WXNODUS_TUI_TIER=modern|cmd|no-vt` 可强制档位。设计文档：`docs/ui-cmd-tier-design.md`。
+
 ## 验收证据
 
 - ✅ 838 单元/契约/进程级测试全绿（71 测试文件）+ 类型检查零错误
