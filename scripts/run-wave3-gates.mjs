@@ -2,9 +2,13 @@
 // 1. 建 artifacts/release-evidence/<runId> 并在执行任何 gate 之前原子写 latest-run.json
 // 2. 只执行 A-W3/B-W3/C-W3/D-W3/E-W3/F-W3；C-W3 绑定当前候选；E-W3 要求两个 OS-keyed receipt；G-W3 走 completion gate
 // 3. 退出码：0 succeeded / 1 failed / 2 blocked / 3 incomplete / 4 inconclusive / 130 cancelled
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { parseGateBindings } from '../src/release/gateBindings.js';
+
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 const rootDir = resolve(process.env.WXNODUS_ROOT ?? process.cwd());
 const args = process.argv.slice(2);
@@ -24,11 +28,8 @@ function run(command, extraArgs = []) {
 }
 
 // 前置：候选绑定（--candidate-commit/--artifact-id/--artifact-sha256/--environment-snapshot）
-const binding = {};
-for (const key of ['--candidate-commit', '--artifact-id', '--artifact-sha256', '--environment-snapshot']) {
-  const index = args.indexOf(key);
-  if (index >= 0) binding[key.slice(2)] = args[index + 1];
-}
+// W8-19：parseGateBindings 统一转 camelCase（此前 kebab 存/camel 读——绑定恒空，C-W3 假 blocked）
+const binding = parseGateBindings(args);
 const drillArgs = [
   '--run', runId,
   '--candidate-commit', binding.candidateCommit ?? process.env.WXNODUS_W3_CANDIDATE_COMMIT ?? '',
@@ -84,8 +85,17 @@ runGate('B-W3', 'npm.cmd', ['exec', '--', 'vitest', 'run',
   'tests/integration/wave3-legacy-bypass.test.ts',
   'tests/integration/wave3-gate-scope.test.ts',
 ]);
-// C-W3：当前候选 recovery drill
+// C-W3：当前候选 recovery drill。drill 从 repo 根读 candidate-artifact.bin——装配时由冻结 tgz 供给：
+// 哈希与绑定一致才放置（不一致绝不放置，drill 如实 blocked）；跑完即清，绝不残留。
+const artifactBin = join(rootDir, 'candidate-artifact.bin');
+const frozenTgz = join(runDir, 'wxnodus-3.0.0.tgz');
+let placedArtifactBin = false;
+if (binding.artifactSha256 && existsSync(frozenTgz) && sha256(readFileSync(frozenTgz)) === binding.artifactSha256) {
+  copyFileSync(frozenTgz, artifactBin);
+  placedArtifactBin = true;
+}
 runGate('C-W3', 'node', ['scripts/drill-wave3-recovery.mjs', ...drillArgs]);
+if (placedArtifactBin) rmSync(artifactBin, { force: true });
 // D-W3：headless e2e
 runGate('D-W3', 'npm.cmd', ['exec', '--', 'vitest', 'run', 'tests/integration/wave3-headless-e2e.test.ts']);
 // E-W3：双 OS-keyed 真实验收 receipt 聚合（缺失 → blocked）
