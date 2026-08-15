@@ -7,6 +7,10 @@ data/
 .playwright-mcp/
 artifacts/
 
+# W3 recovery drill 运行产物（每次 drill 真实重演产生：config 回滚备份 + drill 数据库）
+.wxnodus/wave3-config.json*
+.wxnodus/wave3-drill.db
+
 # fixture 构建产物（验收机现场构建——锁哈希核验，不入库）
 tests/fixtures/windows/uia/*/bin/
 tests/fixtures/windows/uia/*/obj/
