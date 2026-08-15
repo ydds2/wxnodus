@@ -5,11 +5,11 @@ import instances from '../instances.js'
 import { CURSOR_HOME, ERASE_SCREEN, ERASE_SCROLLBACK } from '../termio/csi.js'
 import {
   DISABLE_MOUSE_TRACKING,
-  enableMouseTrackingFor,
   ENTER_ALT_SCREEN,
   EXIT_ALT_SCREEN,
   type MouseTrackingMode
 } from '../termio/dec.js'
+import { mousePresetFor } from '../capabilities.js'
 import { TerminalWriteContext } from '../useTerminalNotification.js'
 
 import Box from './Box.js'
@@ -65,7 +65,9 @@ export function AlternateScreen(t0: Props) {
         return
       }
 
-      const enableMouse = enableMouseTrackingFor(mouseTracking)
+      // W8-22：鼠标段按能力集门控（cmd 档 mouse=false → 不发射跟踪序列）；
+      // 其余（ENTER_ALT_SCREEN/清屏/home）保持不变。
+      const mousePreset = mousePresetFor(mouseTracking)
 
       // Always reset every mouse mode before enabling the requested preset
       // so the terminal lands in an exact state. If a previous instance
@@ -78,8 +80,7 @@ export function AlternateScreen(t0: Props) {
           ERASE_SCROLLBACK +
           ERASE_SCREEN +
           CURSOR_HOME +
-          DISABLE_MOUSE_TRACKING +
-          enableMouse
+          mousePreset
       )
       ink?.setAltScreenActive(true, mouseTracking)
       // setAltScreenActive(true, mouseTracking) above stores the mode for

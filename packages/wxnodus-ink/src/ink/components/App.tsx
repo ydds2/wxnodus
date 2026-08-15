@@ -23,7 +23,8 @@ import reconciler from '../reconciler.js'
 import { clearSelection, finishSelection, hasSelection, type SelectionState, startSelection } from '../selection.js'
 import { getTerminalFocused, setTerminalFocused } from '../terminal-focus-state.js'
 import { TerminalQuerier, xtversion } from '../terminal-querier.js'
-import { isXtermJs, setXtversionName, supportsExtendedKeys } from '../terminal.js'
+import { isXtermJs, setXtversionName } from '../terminal.js'
+import { getRendererCapabilities } from '../capabilities.js'
 import {
   DISABLE_KITTY_KEYBOARD,
   DISABLE_MODIFY_OTHER_KEYS,
@@ -297,7 +298,8 @@ export default class App extends PureComponent<Props, State> {
         // push (CSI >1u) and xterm modifyOtherKeys level 2 (CSI >4;2m) —
         // terminals honor whichever they implement (tmux only accepts the
         // latter).
-        if (supportsExtendedKeys()) {
+        // W8-22：扩展键按能力集门控（cmd 档 extendedKeys=false → 不发射）
+        if (getRendererCapabilities().extendedKeys) {
           this.props.stdout.write(ENABLE_KITTY_KEYBOARD)
           this.props.stdout.write(ENABLE_MODIFY_OTHER_KEYS)
         }

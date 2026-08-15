@@ -5,6 +5,7 @@
 import { Buffer } from 'buffer'
 
 import { env as envModule, supportsOsc52Clipboard } from '../../utils/env.js'
+import { getRendererCapabilities } from '../capabilities.js'
 import { execFileNoThrow } from '../../utils/execFileNoThrow.js'
 
 import { BEL, ESC, ESC_TYPE, SEP } from './ansi.js'
@@ -255,6 +256,11 @@ export type ClipboardResult = {
 }
 
 export async function setClipboard(text: string): Promise<ClipboardResult> {
+  // W8-22：cmd 档不发 OSC 52（剪贴板走宿主 clip.exe 原生路径）
+  if (!getRendererCapabilities().osc8) {
+    return { sequence: '', success: false }
+  }
+
   const b64 = Buffer.from(text, 'utf8').toString('base64')
   const raw = osc(OSC.CLIPBOARD, 'c', b64)
   const emitSequence = shouldEmitClipboardSequence(process.env)
@@ -625,6 +631,11 @@ function* splitTabStatusPairs(data: string): Generator<[string, string]> {
  *  wrapped line is a separate link — inconsistent hover, partial tooltips).
  *  Empty url = close sequence (empty params per spec). */
 export function link(url: string, params?: Record<string, string>): string {
+  // W8-22：cmd 档 osc8=false → 不发 OSC 8（超链接在 conhost 无意义）
+  if (!getRendererCapabilities().osc8) {
+    return ''
+  }
+
   if (!url) {
     return LINK_END
   }

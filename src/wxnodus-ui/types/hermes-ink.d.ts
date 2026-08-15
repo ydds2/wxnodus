@@ -67,6 +67,16 @@ declare module '@wxnodus/ink' {
     readonly patchConsole?: boolean
     readonly onFrame?: (event: FrameEvent) => void
     readonly onHyperlinkClick?: (url: string) => void
+    /** W8-22：渲染器能力集（cmd 档由宿主注入——序列/颜色门控） */
+    readonly capabilities?: Partial<{
+      readonly sync2026: boolean
+      readonly decstbm: boolean
+      readonly truecolor: boolean
+      readonly osc8: boolean
+      readonly oscNotify: boolean
+      readonly mouse: boolean
+      readonly extendedKeys: boolean
+    }>
   }
 
   export type Instance = {

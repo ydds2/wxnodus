@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useMemo } from 'react'
 
+import { getRendererCapabilities } from './capabilities.js'
 import { isProgressReportingAvailable, type Progress } from './terminal.js'
 import { BEL } from './termio/ansi.js'
 import { ITERM2, OSC, osc, PROGRESS, wrapForMultiplexer } from './termio/osc.js'
@@ -40,6 +41,8 @@ export function useTerminalNotification(): TerminalNotification {
 
   const notifyKitty = useCallback(
     ({ message, title, id }: { message: string; title: string; id: number }) => {
+      if (!getRendererCapabilities().oscNotify) return
+
       writeRaw(wrapForMultiplexer(osc(OSC.KITTY, `i=${id}:d=0:p=title`, title)))
       writeRaw(wrapForMultiplexer(osc(OSC.KITTY, `i=${id}:p=body`, message)))
       writeRaw(wrapForMultiplexer(osc(OSC.KITTY, `i=${id}:d=1:a=focus`, '')))
@@ -49,6 +52,8 @@ export function useTerminalNotification(): TerminalNotification {
 
   const notifyGhostty = useCallback(
     ({ message, title }: { message: string; title: string }) => {
+      if (!getRendererCapabilities().oscNotify) return
+
       writeRaw(wrapForMultiplexer(osc(OSC.GHOSTTY, 'notify', title, message)))
     },
     [writeRaw]

@@ -722,7 +722,9 @@ if (pre.mode === 'error') {
   }
   let app: any = null
   try {
-    app = render(React.createElement(App, { gw: gateway }), { exitOnCtrlC: false })
+    // W8-22：终端层级能力注入渲染器（cmd 档门控序列/颜色；modern 档 = 现状零变化）
+    const { rendererCapabilitiesFor } = await import('../wxnodus-ui/lib/terminalTier.js');
+    app = render(React.createElement(App, { gw: gateway }), { exitOnCtrlC: false, capabilities: rendererCapabilitiesFor(consoleEnv) })
   } catch (e: any) {
     if (process.env.WXNODUS_DEBUG_EVENTS) process.stdout.write('[boot] render FAILED: ' + String(e?.message ?? e).slice(0, 200) + '\n')
     throw e

@@ -33,6 +33,24 @@ let runtimeTier: TerminalTierResult | null = null;
 export function setTuiTerminalTier(result: TerminalTierResult): void { runtimeTier = result; }
 export function getTuiTerminalTier(): TerminalTierResult | null { return runtimeTier; }
 
+// ── 渲染器能力映射（ink RendererCapabilities 的结构子集——字段同名，结构类型直通）──
+export interface RendererCapabilityMap {
+  sync2026: boolean;
+  decstbm: boolean;
+  truecolor: boolean;
+  osc8: boolean;
+  oscNotify: boolean;
+  mouse: boolean;
+  extendedKeys: boolean;
+}
+export function rendererCapabilitiesFor(result: TerminalTierResult): RendererCapabilityMap {
+  const c = result.capabilities;
+  return {
+    sync2026: c.sync2026, decstbm: c.decstbm, truecolor: c.truecolor, osc8: c.osc8,
+    oscNotify: c.oscNotify, mouse: c.mouse, extendedKeys: c.extendedKeys,
+  };
+}
+
 export type VtProbeResult = boolean | { vt: boolean; quickEditDisabled?: boolean };
 
 export interface TerminalTierOptions {

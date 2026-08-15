@@ -79,10 +79,10 @@ import {
 import {
   needsAltScreenResizeScrollbackClear,
   supportsExtendedKeys,
-  SYNC_OUTPUT_SUPPORTED,
   type Terminal,
   writeDiffToTerminal
 } from './terminal.js'
+import { getRendererCapabilities, mousePresetFor, setRendererCapabilities, type RendererCapabilities } from './capabilities.js'
 import {
   CURSOR_HOME,
   cursorMove,
@@ -98,7 +98,6 @@ import {
   DBP,
   DFE,
   DISABLE_MOUSE_TRACKING,
-  enableMouseTrackingFor,
   ENTER_ALT_SCREEN,
   EXIT_ALT_SCREEN,
   type MouseTrackingMode,
@@ -169,6 +168,8 @@ export type Options = {
    * (Cmd+click is consumed by the TUI, not Terminal.app).
    */
   onHyperlinkClick?: (url: string) => void
+  /** W8-22：渲染器能力集（cmd 档由宿主注入——序列/颜色门控）；缺省 = 既有环境探测（modern 零变化） */
+  capabilities?: Partial<RendererCapabilities>
 }
 export default class Ink {
   private readonly log: LogUpdate
@@ -578,7 +579,7 @@ export default class Ink {
     // even if an external app/terminal/tmux left DEC 1003 hover asserted.
     // DISABLE_MOUSE_TRACKING is idempotent (resets all four modes
     // unconditionally), safe to send even when current preset is 'off'.
-    this.options.stdout.write(DISABLE_MOUSE_TRACKING + enableMouseTrackingFor(this.altScreenMouseTracking))
+    this.options.stdout.write(mousePresetFor(this.altScreenMouseTracking))
 
     this.resetFramesForAltScreen()
     this.needsEraseBeforePaint = true
@@ -615,7 +616,7 @@ export default class Ink {
       // kitty/modifyOtherKeys stays active. exitAlternateScreen re-enables.
       DISABLE_KITTY_KEYBOARD +
         DISABLE_MODIFY_OTHER_KEYS +
-        (this.altScreenMouseTracking !== 'off' ? DISABLE_MOUSE_TRACKING : '') +
+        (getRendererCapabilities().mouse && this.altScreenMouseTracking !== 'off' ? DISABLE_MOUSE_TRACKING : '') +
         // disable mouse (no-op if off)
         (this.altScreenActive ? '' : '\x1b[?1049h') +
         // enter alt (already in alt if fullscreen)
@@ -654,8 +655,7 @@ export default class Ink {
         // DISABLE first so external editors/tmux that left DEC 1003 hover
         // on can't survive the handoff back — same pattern as
         // setAltScreenMouseTracking / reenterAltScreen.
-        DISABLE_MOUSE_TRACKING +
-        enableMouseTrackingFor(this.altScreenMouseTracking) +
+        mousePresetFor(this.altScreenMouseTracking) +
         (this.altScreenActive ? '' : '\x1b[?1049l') +
         // exit alt (non-fullscreen only)
         '\x1b[?25l' // hide cursor (Ink manages)
@@ -914,7 +914,8 @@ export default class Ink {
       // renders the scrolled-but-not-yet-repainted intermediate state.
       // tmux is the main case (re-emits DECSTBM with its own timing and
       // doesn't implement DEC 2026, so SYNC_OUTPUT_SUPPORTED is false).
-      SYNC_OUTPUT_SUPPORTED
+      // W8-22：cmd 档能力集直接关闭。
+      getRendererCapabilities().decstbm
     )
 
     const diffMs = performance.now() - tDiff
@@ -1100,7 +1101,7 @@ export default class Ink {
     const { bytes: writeBytes, backpressure } = writeDiffToTerminal(
       this.terminal,
       optimized,
-      this.altScreenActive && !SYNC_OUTPUT_SUPPORTED,
+      this.altScreenActive && !getRendererCapabilities().sync2026,
       trackDrain
         ? () => {
             // Callback fires once Node has flushed the chunk to the OS.
@@ -1301,7 +1302,7 @@ export default class Ink {
     this.altScreenMouseTracking = mode
 
     if (this.altScreenActive) {
-      this.options.stdout.write(DISABLE_MOUSE_TRACKING + enableMouseTrackingFor(mode))
+      this.options.stdout.write(mousePresetFor(mode))
     }
   }
   get isAltScreenActive(): boolean {
@@ -1357,7 +1358,7 @@ export default class Ink {
     // DISABLE first so we land in the exact preset state even if an
     // external app or tmux left DEC 1003 hover asserted out from under us
     // since the last assertion.
-    this.options.stdout.write(DISABLE_MOUSE_TRACKING + enableMouseTrackingFor(this.altScreenMouseTracking))
+    this.options.stdout.write(mousePresetFor(this.altScreenMouseTracking))
 
     // Alt-screen re-entry — destructive (ERASE_SCREEN). Only for callers that
     // have a strong signal the terminal actually dropped mode 1049.
@@ -1422,8 +1423,7 @@ export default class Ink {
       ENTER_ALT_SCREEN +
         ERASE_SCREEN +
         CURSOR_HOME +
-        DISABLE_MOUSE_TRACKING +
-        enableMouseTrackingFor(this.altScreenMouseTracking)
+        mousePresetFor(this.altScreenMouseTracking)
     )
     this.resetFramesForAltScreen()
     // ERASE_SCREEN above leaves the physical alt screen blank, and
@@ -2343,6 +2343,8 @@ export default class Ink {
   }
   render(node: ReactNode): void {
     this.currentNode = node
+    // W8-22：注入能力集（cmd 档门控序列/颜色；缺省保持既有环境探测）
+    setRendererCapabilities(this.options.capabilities ?? null)
 
     const tree = (
       <App
@@ -2397,7 +2399,8 @@ export default class Ink {
     // Non-TTY environments don't handle erasing ansi escapes well, so it's better to
     // only render last frame of non-static output
     const diff = this.log.renderPreviousOutput_DEPRECATED(this.frontFrame)
-    writeDiffToTerminal(this.terminal, optimize(diff))
+    // W8-22：退出帧同样尊重能力集（cmd 档不发射 2026）
+    writeDiffToTerminal(this.terminal, optimize(diff), !getRendererCapabilities().sync2026)
 
     // Clean up terminal modes synchronously before process exit.
     // React's componentWillUnmount won't run in time when process.exit() is called,

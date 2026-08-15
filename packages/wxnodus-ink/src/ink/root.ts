@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { logForDebugging } from '../utils/debug.js'
 
 import type { FrameEvent } from './frame.js'
+import type { RendererCapabilities } from './capabilities.js'
 import Ink, { type Options as InkOptions } from './ink.js'
 import instances from './instances.js'
 
@@ -60,6 +61,9 @@ export type RenderOptions = {
    * click in any terminal where mouse tracking is on.
    */
   onHyperlinkClick?: (url: string) => void
+
+  /** W8-22：渲染器能力集（cmd 档由宿主注入——序列/颜色门控）；缺省 = 既有环境探测（modern 零变化） */
+  capabilities?: Partial<RendererCapabilities>
 }
 
 export type Instance = {
