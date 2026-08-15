@@ -92,7 +92,27 @@ const glyphChecks = [
 console.log('\n===== W8-25 cmd 档层级断言（真实 conhost）=====')
 for (const [label, ok] of [...seqChecks, ...glyphChecks]) console.log(`${ok ? '✓' : '✗'} ${label}`)
 console.log('首屏内容（strip 后前 120 字）：' + screen2.slice(0, 120).replace(/\n/g, ' '))
+// ── W8-26：真实探测路径（无逃生门）——清除现代信号 + TERM=msys → 必须走 PS 引导 + VT 位回读 ──
+await sleep(400)
+const envReal = { ...process.env }
+for (const k of ['MSYSTEM','TERM_PROGRAM','WT_SESSION','ANSICON','ConEmuANSI','ConEmuPID','ConEmuTask','KITTY_WINDOW_ID','ZED_TERM','VTE_VERSION','COLORTERM','TERM_SESSION_ID','WXNODUS_TUI_TIER']) delete envReal[k]
+envReal.TERM = 'msys'
+const p3 = spawn(process.execPath, ['dist/cli/index.js'], {
+  name: 'msys', cols: 110, rows: 34,
+  cwd: process.cwd(), env: envReal, useConpty: false
+})
+const realChunks = []
+p3.onData(d => realChunks.push(d))
+await sleep(6000)
+const realScreen = strip(realChunks.join(''))
+const realChecks = [
+  ['真实探测路径：未落入 no-vt（Tier 0 指引未出现）', !realScreen.includes('无法在此控制台运行')],
+  ['真实探测路径：TUI 已进入（alt-screen 或品牌栏出现）', realChunks.join('').includes(String.fromCharCode(27) + '[?1049h') || realScreen.includes('WxNodus')],
+]
+console.log('\n===== W8-26 真实探测路径（无逃生门，PS 引导 + VT 位回读）=====')
+for (const [label, ok] of realChecks) console.log(`${ok ? '✓' : '✗'} ${label}`)
 // IME 诚实边界：node-pty 写键模拟 ≠ OS 级 IME 组合（候选窗/上屏走输入法进程）——如实 UNVERIFIED
 console.log('⚠ IME 中文组合输入：node-pty 无法模拟 OS 级 IME——UNVERIFIED（需真人真机实测）')
 try { p2.kill() } catch {}
+try { p3.kill() } catch {}
 process.exit(0)

@@ -8,7 +8,7 @@
 
 | # | 风险 | 后果 | 防线 |
 |---|---|---|---|
-| R1 | conhost 无 VT 开启机制（仓库零 SetConsoleMode） | 老控制台把整屏 ANSI 打成乱码 | **W8-21 PS 引导** + CPR 探测 → Tier 0 行模式 |
+| R1 | conhost 无 VT 开启机制（仓库零 SetConsoleMode） | 老控制台把整屏 ANSI 打成乱码 | **W8-21 PS 引导** + 终态 VT 位回读核验 → Tier 0 行模式 |
 | R2 | 无条件发射 DEC 2026（BSU/ESU）每帧包裹 | conhost 不支持（静默忽略，无益） | **W8-22** 能力集门控（退出帧第二调用点一并修复） |
 | R3 | DECSTBM 硬件滚动 | conhost 不支持 → 垂直跳变 | 能力集 `decstbm=false` → 整行重写 |
 | R4 | truecolor SGR | 老 conhost（1511–1607）不支持 24 位 | 能力集 `truecolor=false` → chalk 钳 level 2（256 色，hex 自动映射） |
@@ -24,13 +24,13 @@
 | 档 | 终端判定 | 画像 |
 |---|---|---|
 | **modern** | WT_SESSION / TERM_PROGRAM(vscode/Cursor/Windsurf/WezTerm/mintty/…) / MSYSTEM / ConEmuANSI / ANSICON / TERM=xterm\*；非 Windows 平台 | 现状全量：2026+DECSTBM+truecolor+OSC+鼠标+扩展键，**行为零变化** |
-| **cmd** | win32 且无上述信号 → PS 开 VT + CPR 探测通过 | 安全画像：无 2026/DECSTBM/OSC、256 色、BMP 字形集、鼠标仅在 QuickEdit 已关时开 |
+| **cmd** | win32 且无上述信号 → PS 开 VT + 终态 VT 位回读通过 | 安全画像：无 2026/DECSTBM/OSC、256 色、BMP 字形集、鼠标仅在 QuickEdit 已关时开 |
 | **no-vt** | 探测无应答（VT 未开启或老于 1511） | 诚实行模式：中文指引（Windows Terminal / 注册表 `HKCU\Console` `VirtualTerminalLevel=1` / `-p` 行模式）+ 恢复控制台模式后退出 |
 
 探测链（`src/wxnodus-ui/lib/`）：
 `terminalTier.ts`（纯函数 + 探测注入，fail-closed）→ `consoleBootstrap.ts`（PS P/Invoke
 SetConsoleMode：输出句柄 -11 开 `VT|PROCESSED_OUTPUT`，输入句柄 -10 关 `QUICK_EDIT|LINE_INPUT|ECHO_INPUT`
-并回读终态核验）→ CPR 探测（`\x1b[?6n` → `\x1b[r;cR`，300ms）→ CLI 注入渲染器
+）→ **输出句柄终态 VT 位（0x4）直接回读核验**（OS 契约、权威且同步——W8-26 起替代 CPR 回程探测，后者在 winpty/部分 conhost 下应答不可达）→ CLI 注入渲染器
 （`render({capabilities})`，ink `capabilities.ts`）。
 
 逃生门：`WXNODUS_TUI_TIER=modern|cmd|no-vt`。

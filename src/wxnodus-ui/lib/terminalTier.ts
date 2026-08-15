@@ -119,7 +119,7 @@ export async function detectTerminalTier(
   const probed: VtProbeResult = await probe();
   const result = typeof probed === 'boolean' ? { vt: probed } : probed;
   if (!result.vt) {
-    return { tier: 'no-vt', capabilities: noVtCapabilities(), reason: 'conhost VT 探测无应答（VT 未开启或老于 1511）' };
+    return { tier: 'no-vt', capabilities: noVtCapabilities(), reason: 'conhost VT 位未置位（VT 未开启或老于 1511）' };
   }
   return { tier: 'cmd', capabilities: cmdCapabilities(result.quickEditDisabled === true), reason: 'conhost（VT 已开启，cmd 安全画像）' };
 }
