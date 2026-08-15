@@ -6,6 +6,7 @@
 // 终态核验：PS 回写 <orig> <final> 输入模式，QuickEdit 是否真关以 final 为准（绝不假设）。
 // Tier 0（VT 不可用）：restore() 恢复原输入模式 + 诚实中文指引——绝不输出乱码 TUI。
 import { spawnSync } from 'node:child_process';
+import { release as osRelease } from 'node:os';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -98,6 +99,14 @@ export interface ConsoleBootstrapOptions {
   tty?: boolean;
   runner?: ConsoleModeRunner;
   probeTimeoutMs?: number;
+  /** W8-27：OS 构建号注入（测试用）；缺省从 os.release() 解析（Windows 10.0.<build>） */
+  osBuild?: number;
+}
+
+/** os.release() 10.0.xxxxx → xxxxx；非 Windows 返回 0 */
+export function parseOsBuild(release: string): number {
+  const match = /^10\.0\.(\d+)$/.exec(release.trim());
+  return match ? Number(match[1]) : 0;
 }
 
 export async function bootstrapConsoleForTui(
@@ -106,6 +115,7 @@ export async function bootstrapConsoleForTui(
 ): Promise<ConsoleBootstrapResult> {
   const runner = options.runner ?? defaultConsoleModeRunner;
   const platform = options.platform ?? process.platform;
+  const osBuild = options.osBuild ?? parseOsBuild(osRelease());
   let originalInputMode: number | undefined;
   let touched = false;
   let enableFailure: string | undefined;
@@ -131,6 +141,22 @@ export async function bootstrapConsoleForTui(
     if (!touched || originalInputMode === undefined) return;
     runner.run(PS_RESTORE.replace('__MODE__', String(originalInputMode)), env);
   };
+
+  // W8-27：PS 引导失败但 OS ≥ 1903（build 18362）——conhost 自 1903 起 VT 默认开启，
+  // 按 OS 契约回退为 cmd 档直接进 TUI（鼠标保守关闭，QuickEdit 未关）。绝无手动步骤。
+  // 老于 1903 且 PS 失败 → 保持 Tier 0 诚实指引（该代 conhost 无法自动开 VT）。
+  if (decision.tier === 'no-vt' && enableFailure && platform === 'win32' && osBuild >= 18362) {
+    return {
+      tier: 'cmd',
+      capabilities: {
+        sync2026: false, decstbm: false, truecolor: false, osc8: false, oscNotify: false,
+        mouse: false, extendedKeys: false, glyphSet: 'bmp',
+      },
+      reason: `PS 引导不可用（${enableFailure}），按 OS 1903+ 默认 VT 开启假设直接进入（鼠标保守关闭）`,
+      restore,
+    };
+  }
+
   const reason = decision.tier === 'no-vt' && enableFailure ? enableFailure : decision.reason;
   return { tier: decision.tier, capabilities: decision.capabilities, reason, restore };
 }

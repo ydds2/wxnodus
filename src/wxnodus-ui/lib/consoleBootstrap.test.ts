@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import {
-  bootstrapConsoleForTui, noVtGuidance, PS_ENABLE, PS_RESTORE, runConsoleModeScript,
+  bootstrapConsoleForTui, noVtGuidance, parseOsBuild, PS_ENABLE, PS_RESTORE, runConsoleModeScript,
   type ConsoleModeRunner,
 } from './consoleBootstrap.js';
 
@@ -81,10 +81,34 @@ describe('W8-21/26 PS 控制台引导', () => {
     expect(guidance).toContain(result.reason);
   });
 
-  it('PS 引导失败 → no-vt 且原因如实上报失败细节（绝不吞成「无应答」）', async () => {
+  it('PS 引导失败（老 OS）→ no-vt 且原因如实上报失败细节（绝不吞成「无应答」）', async () => {
     const runner: ConsoleModeRunner = { run: vi.fn(() => ({ ok: false, error: 'powershell 退出码 1' })) };
-    const result = await bootstrapConsoleForTui({} as NodeJS.ProcessEnv, { ...win, runner });
+    const result = await bootstrapConsoleForTui({} as NodeJS.ProcessEnv, { ...win, runner, osBuild: 17763 });
     expect(result.tier).toBe('no-vt');
     expect(result.reason).toContain('powershell 退出码 1');
+  });
+
+  // W8-27：用户需求「cmd 直接打开、零手动」——PS 坏了也不能挡住 TUI。
+  it('W8-27：PS 引导失败 + OS ≥ 1903 → 按默认 VT 假设直接 cmd 档进 TUI（鼠标保守关闭，零手动步骤）', async () => {
+    const runner: ConsoleModeRunner = { run: vi.fn(() => ({ ok: false, error: 'powershell 退出码 1' })) };
+    const result = await bootstrapConsoleForTui({} as NodeJS.ProcessEnv, { ...win, runner, osBuild: 26200 });
+    expect(result.tier).toBe('cmd');
+    expect(result.capabilities.mouse).toBe(false);
+    expect(result.capabilities.glyphSet).toBe('bmp');
+    expect(result.reason).toContain('1903');
+  });
+
+  it('W8-27：PS 引导失败 + 老于 1903 → 保持 no-vt 诚实指引（该代 conhost 无法自动开 VT）', async () => {
+    const runner: ConsoleModeRunner = { run: vi.fn(() => ({ ok: false, error: 'powershell 退出码 1' })) };
+    const result = await bootstrapConsoleForTui({} as NodeJS.ProcessEnv, { ...win, runner, osBuild: 17763 });
+    expect(result.tier).toBe('no-vt');
+    expect(result.reason).toContain('powershell 退出码 1');
+  });
+
+  it('parseOsBuild：10.0.<build> 解析；非 Windows 形式返回 0', () => {
+    expect(parseOsBuild('10.0.26200')).toBe(26200);
+    expect(parseOsBuild('10.0.19045')).toBe(19045);
+    expect(parseOsBuild('6.3.9600')).toBe(0);
+    expect(parseOsBuild('not-windows')).toBe(0);
   });
 });
