@@ -525,3 +525,27 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - release:finalize 实跑：blocked 于 import-evidence（legacy gate-report 工件缺失——下一轮生成）；requirement-coverage **OK（20 requirements / 13 subprojects）**。
 - 验证：全量 **275 文件 / 1999 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
 - 剩余（全部可归因）：uia 场景 runner 驱动机制（真实缺口）、场景结果喂给 receipt 的装配、legacy gate-report 工件、多屏物理层（数学层已证）。
+
+## 发行链实跑修复轮（W8-13~W8-19，用户批准：1→2→5 装配推进）— 2026-08-15
+
+**真实 E2E 装配链实跑暴露 7 处真缺陷（全部修复 + 测试 + 提交）：**
+- **W8-13**：场景结果目录供给——证据脚本按场景落 `<id>.json + <id>.log`（真实 stdout 附件）；`writeScenarioFiles` 可测 helper。produce 接 `--scenario-dir` 后 receipt 场景闭包 7/7 由本机证据真实喂入（5 passed / uia+multimonitor 如实 blocked）。
+- **W8-14**：receipt 审计链——produce `candidateCommit` 空串遮蔽（`??` 不拦空串）修复（candidate.commit 优先）；契约新增 40-hex commit 校验 `WINDOWS_RUNNER_CANDIDATE_COMMIT_INVALID`（无 commit 绝不放行）。
+- **W8-15**：Gate H clean-install ENOTCACHED——seed 由真实 npmmirror 流量构建，干净 HOME 让 npm 回退 registry.npmjs.org → 缓存键空间不匹配（假阴性）。修复：`npm_config_registry` 注入 repo registry（offlineRegistryFor 可测）。
+- **W8-16**：gate-report schema——wave3 生产者曾写 `{status}` 对象，importer/finalize 契约是数字 map → importer 全跳过（entries=0）+ F-W3 永不为 0。修复：gates 数字码 + details 保留每门细节。
+- **W8-17**：finalize spawn shell——win32 `shell:true` 把含空格 execPath（C:\Program Files\nodejs\node.exe）不加引号拼进 cmd 行 → 'C:\Program' 不是命令 → import spawn 恒失败。修复：仅 .cmd/.bat 开 shell。
+- **W8-18**：npm pack 在本仓库不触发 prepack（实证：dist 不重建）→ 冻结器冻结陈旧 dist（两次冻结 sha 恒等）、pack-verify/漂移重算恒 trivial。修复：buildChain.ts 显式 npm run build，freeze/pack-verify/recompute 三处 pack 前必构建；FREEZE_BUILD_FAILED 新错误码。
+- **W8-19**：wave3 门绑定 kebab/camel 缺陷——`binding['candidate-commit']` 存、`binding.candidateCommit` 读 → 恒 undefined → C-W3 drill 收到空绑定（missing bin / hash drift 假 blocked）。修复：`parseGateBindings` 统一 camelCase（.mjs/.d.mts 双端可载）+ C-W3 工件由冻结 tgz 哈希绑定自动供给（跑完清理）。**C-W3 首次 0**。
+
+**最终事实报告（release:finalize 实跑，统一 run 目录 release-2026-08-15 / 候选 cand-52db70e43c）：**
+- import-evidence **passed**（gate-report 数字码：A/B/C/D/F 五门 0 入索引）
+- legacy-reachability **passed**（F-W3=0）
+- requirement-coverage **blocked**：`REQUIREMENT_NOT_VERIFIED` R01–R20 全 planned、verified=0（覆盖检查 OK 20/13，但需求↔证据映射从未落地——真实缺口如实记录）
+- Gate H **4/4 passed**（pack-verify/clean-install/installer-lifecycle/blank-home-run，附件逐条哈希锁定）
+- Gate E aggregate blocked `WINDOWS_ACCEPTANCE_SCENARIO_FAILED`（uia + computer-multimonitor 两场景本机如实 blocked）
+- wave3：A/B/C/D/F=0、E-W3=2（legacy 双 receipt 要求，win11-only 档走 gate-e-aggregate 路径）、G-W3=2（EVIDENCE_INTEGRITY_FAILED——E 证据未闭合，诚实传导）
+
+**本机 Windows 验收证据（5/7 场景真实通过）**：preflight/voice/browser/build-restart-readback/emergency-stop 全过；uia（需 runner 驱动交互机制——真实缺口）、computer-multimonitor（单屏无负原点）如实 blocked。多屏数学层证据 passed。
+
+- 验证：全量 **276 文件 / 2013 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净。
+- 剩余（全部可归因，无隐瞒）：① uia 场景 runner 驱动交互机制（item 4）；② 单屏档 computer-multimonitor 场景级 waiver（item 3——需用户拍板）；③ R01–R20 需求↔证据映射；④ G-W3 闭合（依赖 E）。多屏 OS 物理层按降级档决策不再阻断。
