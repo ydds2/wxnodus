@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { resolveReleaseScope, requiredReleaseGates, type ReleaseScope } from './releaseScope.js';
 
 export type FinalizeSpawn = (command: string, args: string[], opts?: { cwd?: string }) => { status: number | null; stdout: string };
 
@@ -29,6 +30,8 @@ export interface FinalizeReleaseOptions {
   runId: string;
   candidateFile: string;
   requirementsFile: string;
+  /** W6-05 发布范围：缺省 windows（用户决策——只需在 Windows 上跑）；all 才要求跨平台 Gate I */
+  scope?: ReleaseScope;
   spawn?: FinalizeSpawn;
   now?: () => string;
 }
@@ -52,6 +55,7 @@ const buildGateOutcomes = (
   eAggregate: Record<string, unknown> | null,
   hOutcome: Record<string, unknown> | null,
   iOutcome: Record<string, unknown> | null,
+  scope: ReleaseScope,
 ): Array<{ gate: string; status: string }> => {
   const codeToStatus = (code: number): string => code === 0 ? 'passed' : code === 1 ? 'failed' : code === 2 ? 'blocked' : code === 3 ? 'incomplete' : code === 4 ? 'inconclusive' : 'cancelled';
   const outcomes: Array<{ gate: string; status: string }> = [];
@@ -60,12 +64,18 @@ const buildGateOutcomes = (
   }
   if (eAggregate) outcomes.push({ gate: 'E', status: eAggregate.status === 'passed' ? 'passed' : 'blocked' });
   if (hOutcome) outcomes.push({ gate: 'H', status: hOutcome.status === 'passed' ? 'passed' : 'blocked' });
-  if (iOutcome) outcomes.push({ gate: 'I', status: iOutcome.status === 'passed' ? 'passed' : 'blocked' });
+  if (scope === 'all') {
+    if (iOutcome) outcomes.push({ gate: 'I', status: iOutcome.status === 'passed' ? 'passed' : 'blocked' });
+  } else {
+    // W6-05 Windows-only 范围：Gate I 不适用（跨平台验收退出必选——用户决策落码）
+    outcomes.push({ gate: 'I', status: 'not_applicable' });
+  }
   return outcomes;
 };
 
 export async function finalizeRelease(options: FinalizeReleaseOptions): Promise<{ result: FinalizeResult; report: Record<string, unknown> }> {
   const { repoRoot, evidenceRoot, runId, candidateFile } = options;
+  const scope = resolveReleaseScope(options.scope);
   const now = options.now ?? (() => new Date().toISOString());
   const runDir = join(evidenceRoot, runId);
   const tsx = join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
@@ -176,17 +186,19 @@ export async function finalizeRelease(options: FinalizeReleaseOptions): Promise<
     return finish();
   }
   const iOutcome = readJsonSafe(join(runDir, 'gate-i', 'outcome.json'));
-  if (iOutcome?.status !== 'passed') {
+  // W6-05 Windows-only 范围：Gate I 不适用（跨平台验收退出必选）——不读取即不阻断；
+  // all 范围行为不变（缺失/非 passed → blocked）
+  if (scope === 'all' && iOutcome?.status !== 'passed') {
     push('gate-digests', 'blocked', 'RELEASE_GATE_I_NOT_PASSED');
     return finish();
   }
   push('gate-digests', 'passed');
 
   // 8) release gate（outcomes → check-release-eligibility）
-  const outcomes = buildGateOutcomes(gateReport, eAggregate, hOutcome, iOutcome);
+  const outcomes = buildGateOutcomes(gateReport, eAggregate, hOutcome, iOutcome, scope);
   const outcomesFile = join(runDir, 'gate-outcomes.json');
   writeJsonAtomic(outcomesFile, outcomes);
-  const eligibilityRun = spawn(process.execPath, [join(repoRoot, 'scripts', 'check-release-eligibility.mjs'), '--gates', outcomesFile, '--required', 'A,B,C,D,E,F,G,H,I']);
+  const eligibilityRun = spawn(process.execPath, [join(repoRoot, 'scripts', 'check-release-eligibility.mjs'), '--gates', outcomesFile, '--required', requiredReleaseGates(scope).join(',')]);
   if (eligibilityRun.status !== 0) {
     push('release-gate', 'blocked', 'RELEASE_ELIGIBILITY_FAILED');
     return finish();

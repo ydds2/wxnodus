@@ -13,9 +13,11 @@ const flag = (name) => {
 };
 const runId = flag('run');
 if (!runId) {
-  console.error('SURFACE_USAGE: --run <runId>');
+  console.error('SURFACE_USAGE: --run <runId> [--scope windows|all]');
   process.exit(2);
 }
+// W6-05：--scope windows（缺省）不要求 gate-i 产物（跨平台验收退出必选）；all 照常要求
+const scope = flag('scope') ?? 'windows';
 const runDir = join(ROOT, 'artifacts', 'release-evidence', runId);
 const checks = [
   ['candidate.json', join(runDir, 'candidate.json')],
@@ -23,7 +25,7 @@ const checks = [
   ['gate-report.json', join(runDir, 'gate-report.json')],
   ['gate-e-aggregate.json', join(runDir, 'gate-e-aggregate.json')],
   ['gate-h/outcome.json', join(runDir, 'gate-h', 'outcome.json')],
-  ['gate-i/outcome.json', join(runDir, 'gate-i', 'outcome.json')],
+  ...(scope === 'all' ? [['gate-i/outcome.json', join(runDir, 'gate-i', 'outcome.json')]] : []),
   ['requirements', join(ROOT, 'docs/superpowers/requirements/2026-08-13-wxnodus-production-cli-requirements.json')],
 ];
 const missing = [];

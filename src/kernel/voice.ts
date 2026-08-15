@@ -9,7 +9,7 @@
 // A20：vad 模式——ffmpeg 输出裸 PCM 到管道，Node 侧自研能量检测（见 vad.ts），
 //      静音达阈值自动停止（免提闭环：说话→静音→自动转写→提交）。
 import { spawnSync, spawn } from 'node:child_process';
-import { mkdirSync, existsSync, readdirSync, openSync, writeSync, closeSync } from 'node:fs';
+import { mkdirSync, existsSync, readdirSync, openSync, writeSync, closeSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -120,7 +120,8 @@ export function checkVoice(settings: Record<string, any> | undefined, dataDir: s
   else details.push('STT provider: ffmpeg（采集）就绪');
   const bin = findWhisperBin(cfg);
   if (!bin) {
-    details.push('Whisper: MISSING — 未找到 whisper-cli（whisper.cpp），请安装或设置 WXNODUS_VOICE_BIN');
+    // W8-07：whisper 缺失但 SAPI 可用 → 兜底成立（Windows-only 定位）
+    details.push(`Whisper: MISSING — 未找到 whisper-cli（whisper.cpp），请安装或设置 WXNODUS_VOICE_BIN${probeSapiStt() ? '（转写兜底：Windows SAPI 识别器可用）' : ''}`);
   } else {
     details.push(`Whisper: ${bin}（本地转写）`);
   }
@@ -299,7 +300,11 @@ function voiceSessionDepsFor(dataDir: string, settings: Record<string, any> | un
         if (!bin) {
           return { processId: -1, exitCode: 1, signal: null, stdout: '', stderr: 'whisper-cli 未找到', timedOut: false, aborted: false };
         }
-        const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        // W8-08：必须传 -m 模型路径与 -l zh——此前只传 -f，whisper-cli 回落到 CWD 相对的
+        // 默认模型 models/ggml-base.en.bin → failed to open → 真实资产在场仍 VOICE_WORKER_CRASHED；
+        // -otxt：纯文本输出（默认 SRT 带时间戳——转写文本被字幕元数据污染）
+        const fullArgs = ['-m', cfg.modelPath ?? '', '-l', 'zh', '-otxt', ...args];
+        const child = spawn(bin, fullArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
         let out = '';
         let err = '';
         child.stdout!.on('data', (c: Buffer) => { out += c; });
@@ -318,6 +323,16 @@ function voiceSessionDepsFor(dataDir: string, settings: Record<string, any> | un
           child.on('close', code => {
             clearTimeout(timer);
             signal.removeEventListener('abort', onAbort);
+            // -otxt：纯文本落在 <wav>.txt（stdout 是带时间戳的 SRT——读回干净文本）
+            if (code === 0) {
+              const fIdx = args.indexOf('-f');
+              if (fIdx >= 0 && args[fIdx + 1]) {
+                try {
+                  const t = readFileSync(`${args[fIdx + 1]}.txt`, 'utf8').trim();
+                  if (t) out = t;
+                } catch { /* 产物缺失用 stdout 兜底 */ }
+              }
+            }
             resolve({ processId: child.pid ?? -1, exitCode: code, signal: null, stdout: out, stderr: err, timedOut: false, aborted: false });
           });
         });
@@ -374,9 +389,73 @@ function stopRecordingProcess(proc: ReturnType<typeof spawn>): void {
   } catch { /* 忽略 */ }
 }
 
+// ── SAPI STT 兜底（Windows-only 定位：whisper 缺失时用系统原生识别器，零模型下载）──
+let sapiSttCache: boolean | null = null;
+
+/** Windows 原生语音识别器探测（结果缓存——状态展示不反复 spawnSync） */
+export function probeSapiStt(): boolean {
+  if (!isWindows()) return false;
+  if (sapiSttCache !== null) return sapiSttCache;
+  try {
+    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      'Add-Type -AssemblyName System.Speech; [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers().Count'],
+      { stdio: 'pipe', timeout: 8000, windowsHide: true, encoding: 'utf8' });
+    const n = Number(String(r.stdout ?? '').trim());
+    sapiSttCache = Number.isFinite(n) && n > 0;
+  } catch { sapiSttCache = false; }
+  return sapiSttCache;
+}
+
+/** SAPI 识别器转写 wav（异步 spawn——不阻塞事件循环，KF-006 同款纪律） */
+export function sapiTranscribe(wavPath: string, locale = 'zh-CN'): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  return new Promise(resolve => {
+    const ps = [
+      'Add-Type -AssemblyName System.Speech',
+      "$recs = [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers()",
+      `$rid = ($recs | Where-Object { $_.Culture.Name -eq '${locale}' } | Select-Object -First 1).Id`,
+      "if (-not $rid) { $rid = ($recs | Select-Object -First 1).Id }",
+      '$rec = New-Object System.Speech.Recognition.SpeechRecognitionEngine($rid)',
+      '$rec.LoadGrammar((New-Object System.Speech.Recognition.DictationGrammar))',
+      `$rec.SetInputToWaveFile('${wavPath.replace(/'/g, "''")}')`,
+      '$r = $rec.Recognize()',
+      '$rec.Dispose()',
+      "if ($r) { Write-Output ('SAPI_TEXT:' + $r.Text) } else { Write-Output 'SAPI_TEXT:' }",
+    ].join('; ');
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    let out = '';
+    let err = '';
+    child.stdout!.on('data', (c: Buffer) => { out += c.toString('utf8'); });
+    child.stderr!.on('data', (c: Buffer) => { err += c.toString('utf8'); });
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch { /* 忽略 */ }
+      resolve({ ok: false, error: 'SAPI 转写超时（>60s）' });
+    }, 60_000);
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve({ ok: false, error: 'SAPI 识别器进程启动失败' });
+    });
+    child.on('close', code => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        resolve({ ok: false, error: `SAPI 转写失败：${String(err.trim() || `exit ${code}`).slice(0, 200)}` });
+        return;
+      }
+      const line = out.split(/\r?\n/).map(l => l.trim()).find(l => l.startsWith('SAPI_TEXT:'));
+      if (!line) {
+        resolve({ ok: false, error: `SAPI 转写失败：${String(err.trim()).slice(0, 200) || '无识别结果'}` });
+        return;
+      }
+      const text = line.slice('SAPI_TEXT:'.length).trim();
+      resolve(text ? { ok: true, text } : { ok: false, error: 'SAPI 识别结果为空（音频无语音或识别器不匹配）' });
+    });
+  });
+}
+
 /**
- * 停止采集并本地转写（whisper.cpp）——W3 Voice facade：执行委托 VoiceSessionService
- * （状态机强制 + 产物落盘 + opaque ref 唯一出口），kernel 读回文本仅供 TUI 兼容面。
+ * 停止采集并本地转写（whisper.cpp 优先 / Windows SAPI 兜底）——W3 Voice facade：
+ * whisper 路径执行委托 VoiceSessionService（状态机强制 + 产物落盘 + opaque ref 唯一出口），
+ * kernel 读回文本仅供 TUI 兼容面；whisper 缺失时兜底 Windows 原生识别器（W8-07，
+ * Windows-only 定位——系统组件零模型下载）。
  */
 export async function stopAndTranscribe(rec: RecordingSession, dataDir: string, settings: Record<string, any> | undefined, env: NodeJS.ProcessEnv = process.env): Promise<{ ok: true; text: string; ms: number } | { ok: false; error: string }> {
   const t0 = Date.now();
@@ -391,7 +470,14 @@ export async function stopAndTranscribe(rec: RecordingSession, dataDir: string, 
     }
     if (!existsSync(rec.wavPath)) return { ok: false, error: '录音文件未生成（麦克风无输入？）' };
     const cfg = resolveVoiceConfig(settings, dataDir, env);
-    if (!findWhisperBin(cfg)) return { ok: false, error: '未找到 whisper-cli（whisper.cpp）——安装后设置 WXNODUS_VOICE_BIN' };
+    // W8-07 Windows-only：whisper 缺失 → SAPI 原生识别器兜底（系统组件零下载——用户决策）
+    if (!findWhisperBin(cfg)) {
+      if (probeSapiStt()) {
+        const r = await sapiTranscribe(rec.wavPath, 'zh-CN');
+        return r.ok ? { ok: true, text: r.text.trim(), ms: Date.now() - t0 } : { ok: false, error: r.error };
+      }
+      return { ok: false, error: '未找到 whisper-cli（whisper.cpp）——安装后设置 WXNODUS_VOICE_BIN' };
+    }
     if (!cfg.modelPath) return { ok: false, error: '缺少 whisper 模型——放置 ggml-*.bin 到 data/voice/models/' };
     // 权威委托：VoiceSessionService 执行转写（状态机 + 落盘 + opaque ref）
     const service = new VoiceSessionService(voiceSessionDepsFor(dataDir, settings, env));

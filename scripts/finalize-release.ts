@@ -22,7 +22,9 @@ if (!runId) {
 const runDir = resolve(evidenceRoot, runId);
 const candidateFile = resolve(flag('candidate') ?? `${runDir}/candidate.json`);
 const requirementsFile = resolve(flag('requirements') ?? 'docs/superpowers/requirements/2026-08-13-wxnodus-production-cli-requirements.json');
+// W6-05：--scope windows|all（缺省 windows——只需在 Windows 上跑；all 才要求跨平台 Gate I）
+const scope = flag('scope') as 'windows' | 'all' | undefined;
 
-const { result } = await finalizeRelease({ repoRoot, evidenceRoot, runId, candidateFile, requirementsFile });
+const { result } = await finalizeRelease({ repoRoot, evidenceRoot, runId, candidateFile, requirementsFile, ...(scope ? { scope } : {}) });
 console.log(JSON.stringify(result, null, 2));
 process.exit(processExitForCompletion(result.status));

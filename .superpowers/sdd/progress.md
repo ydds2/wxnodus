@@ -474,3 +474,15 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - **Gate I**：`GATE_I_PLATFORM_UNAVAILABLE`（win32——只接受真实 Linux/macOS worker receipt）诚实 blocked。
 - 验证：全量 **265 文件 / 1966 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
 - 诚实边界保持：Gate E 需真实双 OS 验收机、Gate I 需 Linux/macOS worker、语音转写需 whisper 资产（放弃）——机制就绪、证据真实、绝不伪造。
+
+## Windows-only 定位轮（发布范围 + 语音双通道闭环 + 本机 Windows 验收）— 2026-08-15
+
+- **发布范围（用户决策：只需在 Windows 上跑）**：`releaseScope`（缺省 windows——Gate I 跨平台验收退出必选范围，all 时照常要求）；finalizer 的 gate-digests/eligibility 必选表按范围收缩（w6-05 5 契约绿）；check-release-surface --scope windows 不再要求 gate-i 产物。
+- **语音端到端双通道闭环**（放弃离线 LLM 后，语音不再受 whisper 资产限制）：
+  - SAPI STT 兜底（w8-07）：whisper 缺失 → Windows 原生识别器（系统组件零下载）；probe 缓存 + 异步 spawn（KF-006 纪律）；本机 TTS→SAPI 回路「一二三四五」→「12345」。
+  - whisper 通道缺陷修复（w8-08，E2E 实跑发现）：supervisor spawn 缺 `-m`（回落 CWD 默认模型 → failed to open → 真实资产在场仍 CRASH）——加 `-m/-l zh/-otxt` 且读回 `<wav>.txt` 纯文本（stdout 是 SRT 带时间戳）。本机真实 whisper.cpp 资产（data/voice/bin/Release + ggml-small.bin）回路「一二三四五」→「1,2,3,4,5」。
+  - 语音证据 receipt **passed**（采集 + SAPI 回路 + whisper 回路 + 生产路径四段全真实）。
+- **本机 Windows 验收**（`npm run evidence:windows-acceptance`，receipt `win-accept-2026-08-15`）：**5/5 可运行场景 passed**（preflight/voice/browser/build-restart-readback/emergency-stop）；uia（dotnet 工具链缺失）/computer-multimonitor（单显示器）如实 blocked。顺带修复验收场景缺陷：voice.ps1 WAV 校验硬编码 data@36（真实 ffmpeg 写 LIST 块必炸）→ 块走查。
+- **Gate H 新鲜实跑**（`gate-h-2026-08-15`）：pack-verify/installer-lifecycle/blank-home-run **passed**；clean-install 网络缓存 ENOTCACHED 如实 blocked → 整体 blocked（预期，诚实）。
+- 验证：全量 **270 文件 / 1976 通过 / 10 跳过 / 0 失败**（首跑观察 1 例瞬态 flake，连跑两次全绿 + w8-07/08 三连稳定）；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
+- 诚实边界：Gate E 生产 receipt 需完整物理前置（双屏/OS 基线/dotnet fixtures——本机部分满足）；Gate I 按范围不适用；离线 LLM 按用户指示放弃。

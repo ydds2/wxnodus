@@ -15,9 +15,19 @@ $bytes = [System.IO.File]::ReadAllBytes($wavPath)
 $riff = [System.Text.Encoding]::ASCII.GetString($bytes, 0, 4)
 $wave = [System.Text.Encoding]::ASCII.GetString($bytes, 8, 4)
 $fmt  = [System.Text.Encoding]::ASCII.GetString($bytes, 12, 4)
-$data = [System.Text.Encoding]::ASCII.GetString($bytes, 36, 4)
-$out.wavHeader = [ordered]@{ riff = $riff; wave = $wave; fmt = $fmt; data = $data; bytes = $bytes.Length }
-if ($riff -ne 'RIFF' -or $wave -ne 'WAVE' -or $fmt -ne 'fmt ' -or $data -ne 'data') {
+# 真实世界 WAV 按块走查：ffmpeg dshow 会写 LIST/INFO 元数据块——data 不一定在偏移 36
+# （旧断言硬编码 36 位——真实录制必炸 'WAV header invalid'；本机 E2E 实跑发现的场景缺陷）
+$data = ''
+$dataFound = $false
+$off = 12
+while ($off + 8 -le $bytes.Length) {
+  $tag = [System.Text.Encoding]::ASCII.GetString($bytes, $off, 4)
+  $sz = [BitConverter]::ToUInt32($bytes, $off + 4)
+  if ($tag -eq 'data') { $data = 'data'; $dataFound = $true; break }
+  $off += 8 + $sz + ($sz % 2)
+}
+$out.wavHeader = [ordered]@{ riff = $riff; wave = $wave; fmt = $fmt; data = $data; dataFound = $dataFound; bytes = $bytes.Length }
+if ($riff -ne 'RIFF' -or $wave -ne 'WAVE' -or $fmt -ne 'fmt ' -or -not $dataFound) {
   $out.reason = 'WAV header invalid'; $out | ConvertTo-Json -Depth 8; exit 0
 }
 

@@ -88,7 +88,8 @@
     "check:release-surface": "node scripts/check-release-surface.mjs",
     "evidence:memory-capacity": "node scripts/evidence-memory-capacity.mjs",
     "evidence:mcp-e2e": "node scripts/evidence-mcp-e2e.mjs",
-    "evidence:voice-capture": "node scripts/evidence-voice-capture.mjs"
+    "evidence:voice-capture": "node scripts/evidence-voice-capture.mjs",
+    "evidence:windows-acceptance": "node scripts/evidence-windows-acceptance.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
