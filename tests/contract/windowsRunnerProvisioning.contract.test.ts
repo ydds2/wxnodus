@@ -98,6 +98,23 @@ describe('controlled Windows runner', () => {
     });
   });
 
+  it('blocks Gate E when candidateCommit is missing, empty or malformed (W8-14 审计链绑定)', () => {
+    const cases: Array<Record<string, unknown>> = [{ candidateCommit: undefined }, { candidateCommit: '' }, { candidateCommit: 'not-a-commit' }];
+    for (const patch of cases) {
+      const result = evaluateWindowsRunner({ ...healthy, ...patch }) as { status: string; missing: string[] };
+      expect(result.status).toBe('blocked');
+      expect(result.missing).toContain('WINDOWS_RUNNER_CANDIDATE_COMMIT_INVALID');
+    }
+  });
+
+  it('aggregate：receipt runner 无有效 commit → WINDOWS_RECEIPT_KEY_MISMATCH（先重算后校验，绝不放行）', () => {
+    const win11Dir = writeReceiptDir('windows-11-24h2-production-real', { ...healthy, candidateCommit: '' });
+    expect(aggregateGateEReceipts([win11Dir], { scope: 'win11-only' })).toMatchObject({
+      status: 'blocked',
+      code: 'WINDOWS_RECEIPT_KEY_MISMATCH',
+    });
+  });
+
   it('accepts controlled Win10 22H2 only as legacy compatibility', () => {
     expect(evaluateWindowsRunner({
       ...healthy,

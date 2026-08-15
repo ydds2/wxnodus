@@ -140,7 +140,8 @@ if (has('--produce-receipt')) {
     artifact: boundArtifact,
     environment: boundEnvironment,
     capability: boundCapability,
-    candidateCommit: runner.candidateCommit ?? candidate.commit ?? '',
+    // W8-14：candidate.json 的 commit 优先（run 目录冻结候选是绑定真相）；runner 快照空串/旧值不得遮蔽（?? 不拦空串）
+    candidateCommit: candidate.commit || runner.candidateCommit || '',
   };
   const decision = evaluateWindowsRunner(boundRunner, { tier });
   const receiptKey = osKey === 'win11-24h2' ? 'windows-11-24h2-production-real' : 'windows-10-22h2-legacy-compatibility';

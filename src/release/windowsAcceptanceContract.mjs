@@ -138,6 +138,8 @@ export function evaluateWindowsRunner(snapshot, opts = {}) {
   const osLabels = snapshot.labels.filter(label => label === 'win10-22h2' || label === 'win11-24h2');
   if (osLabels.length !== 1) missing.push('WINDOWS_OS_BASELINE_UNSUPPORTED');
   if (!snapshot.interactive || !snapshot.unlocked || snapshot.sessionId <= 0 || snapshot.inputDesktop !== 'Default') missing.push('WINDOWS_INTERACTIVE_SESSION_REQUIRED');
+  // W8-14：receipt 必须绑定 40-hex git commit（审计链——receipt 无 commit 即无法定位被验收的候选代码）
+  if (!/^[a-f0-9]{40}$/.test(snapshot.candidateCommit ?? '')) missing.push('WINDOWS_RUNNER_CANDIDATE_COMMIT_INVALID');
   // W6-07：node.arch 接受 amd64（Windows PROCESSOR_ARCHITECTURE 真实值——与 x64 同义，不是不同架构）
   if (!snapshot.node.version.startsWith('22.') || (snapshot.node.arch !== 'x64' && snapshot.node.arch !== 'amd64') ||
       !/^[a-f0-9]{64}$/.test(snapshot.artifact.sha256) ||

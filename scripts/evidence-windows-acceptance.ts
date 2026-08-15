@@ -10,6 +10,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSy
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeScenarioFiles } from '../src/release/evidenceScenarioFiles.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -42,7 +43,7 @@ const runScenario = (name: string, extraEnv: Record<string, string> = {}): { sta
       if (start >= 0 && end > start) parsed = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
     } catch { /* 保留 raw */ }
   }
-  return { status: String(parsed?.status ?? 'unknown'), raw: raw.slice(0, 2000), parsed };
+  return { status: String(parsed?.status ?? 'unknown'), raw, parsed };
 };
 
 const results: Record<string, unknown> = {};
@@ -109,6 +110,9 @@ const scenarios = Object.entries(results).map(([id, r]) => ({
   ...(r.parsed?.screens ? { screens: r.parsed.screens } : {}),
   rawTail: r.raw.slice(-400),
 }));
+// W8-13：场景结果目录（per-scenario JSON + 真实 stdout 附件）——Gate E produce --scenario-dir 的直接供给
+const scenarioFilesDir = join(workdir, 'scenarios');
+const scenarioFiles = writeScenarioFiles(scenarioFilesDir, results as Record<string, { status: string; raw: string; parsed: Record<string, unknown> | null }>);
 const passed = scenarios.filter(s => s.status === 'passed').map(s => s.id);
 const blocked = scenarios.filter(s => s.status === 'blocked').map(s => s.id);
 const runnable = ['preflight', 'voice', 'browser', 'build-restart-readback', 'emergency-stop'];
@@ -129,5 +133,5 @@ const outcome = {
     : 'Windows 本机验收存在可运行场景失败——如实记录',
 };
 writeFileSync(join(workdir, 'outcome.json'), JSON.stringify(outcome, null, 2));
-console.log(JSON.stringify({ status: outcome.status, passed, blocked, durationMs: outcome.durationMs, receipt: join(workdir, 'outcome.json') }, null, 2));
+console.log(JSON.stringify({ status: outcome.status, passed, blocked, durationMs: outcome.durationMs, receipt: join(workdir, 'outcome.json'), scenarioFiles: scenarioFiles.length, scenarioDir: scenarioFilesDir }, null, 2));
 process.exit(runnableAllPassed ? 0 : 2);
