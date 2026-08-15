@@ -563,3 +563,19 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 
 - 验证：全量 **282 文件 / 2043 通过 / 10 跳过**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
 - 诚实边界：lib/text.ts 工具线 ✓/✗ 协议标记（写读同模块耦合）保留待后续轮；faces.ts kaomoji 由指示器风格强制 ascii 覆盖；IME 真机实测待做。
+
+## Tier 0 假 no-vt 修复轮（W8-26，用户实盘报告）— 2026-08-15
+
+**用户实盘**：`wxnodus` 输出「无法在此控制台运行（VT 探测无应答）」——cmd 档探测链实盘首跑即失败。
+
+**三层真根因**（此前 W8-21 单测全走注入假件，真 PS 脚本从未执行过——诚实缺口由此暴露）：
+1. `New-Object uint[] 1` 是非法 PS 语法（TypeNotFound）→ 脚本恒 exit 1 → 假 no-vt（用户所见「探测无应答」的直接原因）
+2. `GetStdHandle(-10/-11)` 在 std 句柄被重定向时返回管道而非控制台（winpty/mintty 场景）→ 改 `CreateFileW('CONOUT$'/'CONIN$')` 直接开控制台
+3. `0xC0000000`（GENERIC_READ|WRITE）被 PS 解析为负 Int32、UInt32 转换被拒 → 十进制 3221225472
+
+**架构改进**：VT 可用性改为**输出句柄终态 VT 位（0x4）直接回读核验**（OS 契约、权威且同步）——废弃 CPR 回程探测（winpty/部分 conhost 下应答不可达）；PS 失败原因如实上报（绝不吞成「无应答」）。
+
+**验收**（cmd-sweep 新增「真实探测路径」阶段——无逃生门、清现代信号、TERM=msys）：
+- 真 conhost **2/2**：未落入 no-vt + TUI 正常进入
+- 120/120 命令 + 7/7 cmd 档断言保持
+- 全门绿：2043 过 / oracle 31-31 / typecheck×2 / discovery
