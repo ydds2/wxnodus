@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { Theme } from '../theme.js'
 
 import { TextInput } from './textInput.js'
+import { icon as glyph } from '../glyphs.js'
 
 export function MaskedPrompt({ cols = 80, icon, label, onCancel, onSubmit, sub, t }: MaskedPromptProps) {
   const [value, setValue] = useState('')
@@ -29,7 +30,7 @@ export function MaskedPrompt({ cols = 80, icon, label, onCancel, onSubmit, sub, 
             color={value.trim().length > 0 ? t.color.warn : t.color.muted}
             inverse={value.trim().length > 0}
           >
-            {value.trim().length > 0 ? '⏎ 提交' : '⏎ 提交（尚未输入）'}
+            {value.trim().length > 0 ? `${glyph('submit')} 提交` : `${glyph('submit')} 提交（尚未输入）`}
           </Text>
         </Box>
         {/* A24：取消按钮（此前仅 Esc 可取消） */}

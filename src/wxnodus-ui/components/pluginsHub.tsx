@@ -6,6 +6,7 @@ import { rpcErrorMessage } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayHint, useOverlayKeys, windowItems, windowOffset } from './overlayControls.js'
+import { icon } from '../glyphs.js'
 
 const VISIBLE = 12
 const MIN_WIDTH = 44
@@ -35,8 +36,8 @@ interface PluginsToggleResponse {
 type Scope = 'all' | 'user'
 
 const GLYPH: Record<string, string> = {
-  disabled: '✗',
-  enabled: '✓'
+  disabled: icon('cross'),
+  enabled: icon('check')
 }
 
 export function PluginsHub({ gw, onClose, t }: PluginsHubProps) {

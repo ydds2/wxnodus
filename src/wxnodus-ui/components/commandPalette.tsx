@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { fuzzyScoreMulti } from '../lib/fuzzy.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { Theme } from '../theme.js'
+import { icon } from '../glyphs.js'
 
 interface PaletteEntry {
   desc?: string
@@ -22,7 +23,7 @@ const MAX_ROWS = 9
 const kindGlyph: Record<PaletteEntry['kind'], string> = {
   cmd: '/',
   skill: '◆',
-  session: '◈'
+  session: icon('diamond')
 }
 
 export function CommandPalette({

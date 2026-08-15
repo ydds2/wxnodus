@@ -19,6 +19,7 @@ import { PluginsHub } from './pluginsHub.js'
 import { ApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
 import { DynamicFormPrompt } from './dynamicFormPrompt.js'
 import { SkillsHub } from './skillsHub.js'
+import { icon, translateText } from '../glyphs.js'
 
 const COMPLETION_WINDOW = 16
 
@@ -92,7 +93,7 @@ export function PromptZone({
   if (overlay.sudo) {
     return (
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
-        <MaskedPrompt cols={cols} icon="🔐" label="sudo password required" onCancel={cancelSudo} onSubmit={onSudoSubmit} t={theme} />
+        <MaskedPrompt cols={cols} icon={icon('lock')} label="sudo password required" onCancel={cancelSudo} onSubmit={onSudoSubmit} t={theme} />
       </Box>
     )
   }
@@ -102,7 +103,7 @@ export function PromptZone({
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
         <MaskedPrompt
           cols={cols}
-          icon="🔑"
+          icon={icon('key')}
           label={overlay.secret.prompt}
           onCancel={cancelSecret}
           onSubmit={onSecretSubmit}
@@ -248,10 +249,10 @@ export function FloatingOverlays({
                 {/* A24：标题行右侧 ✕ 关闭（此前仅 Esc/q） */}
                 <Box flexDirection="row" justifyContent="space-between">
                   <Text bold color={theme.color.accent}>
-                    ◈ {overlay.pager.title}
+                    {icon('diamond')} {overlay.pager.title}
                   </Text>
                   <Box onClick={() => patchOverlayState({ pager: null })}>
-                    <Text color={theme.color.muted}>✕</Text>
+                    <Text color={theme.color.muted}>{icon('close')}</Text>
                   </Box>
                 </Box>
                 {/* 分隔线：按可见行最大宽度（strip ANSI 后算宽，防止转义序列干扰） */}
@@ -272,7 +273,7 @@ export function FloatingOverlays({
               hasAnsi(line) ? (
                 <Ansi key={i}>{sanitizeAnsiForRender(line)}</Ansi>
               ) : (
-                <Text key={i}>{line}</Text>
+                <Text key={i}>{translateText(line)}</Text>
               )
             )}
 

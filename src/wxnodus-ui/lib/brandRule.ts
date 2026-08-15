@@ -1,3 +1,4 @@
+import { icon } from '../glyphs.js'
 // src/wxnodus-ui/lib/brandRule.ts — 品牌差异化布局纯函数
 // 概念：黑洞引擎——吸积盘分隔线（外缘 border → 内环 accent → 中心事件视界辉光 ◉）；
 // 常驻品牌顶栏（左品牌名 + 右上下文 + 中间弹性吸积盘规则线），窄终端渐进收缩。
@@ -12,7 +13,7 @@ export interface AccretionColors {
   primary: string
 }
 
-export const BLACKHOLE_CORE = '◉'
+export const BLACKHOLE_CORE = icon('brand')
 
 const MIN_ACCENT_RING = 1
 const MAX_ACCENT_RING = 4

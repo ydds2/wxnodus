@@ -7,6 +7,7 @@ import { normalizeExternalUrl, urlSlugTitleLabel, useLinkTitle } from '../lib/ex
 import { BOX_CLOSE, BOX_OPEN, texToUnicode } from '../lib/mathUnicode.js'
 import { highlightLine, isHighlightable } from '../lib/syntax.js'
 import type { Theme } from '../theme.js'
+import { icon } from '../glyphs.js'
 
 // `\boxed{X}` regions in `texToUnicode` output are marked with the
 // non-printable U+0001 / U+0002 sentinels. Split on them and render the
@@ -797,7 +798,7 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
         const rawWidth = block.reduce((w, l) => Math.max(w, stringWidth(l)), 0)
         const contentWidth = Math.max(1, cols ? Math.min(rawWidth, Math.max(4, cols - 6)) : rawWidth)
         // A24：顶边尾缀「⧉ 复制」——点击整块复制（此前代码块只能整条消息复制）
-        const copyTag = ' ⧉'
+        const copyTag = ` ${icon('copy')}`
         const topPad = Math.max(1, contentWidth - 1 - langLabel.length - stringWidth(copyTag))
 
         nodes.push(
@@ -1045,7 +1046,7 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
         start('list')
 
         const task = bullet[2]!.match(TASK_RE)
-        const marker = task ? (task[1]!.toLowerCase() === 'x' ? '☑' : '☐') : '•'
+        const marker = task ? (task[1]!.toLowerCase() === 'x' ? icon('taskDone') : icon('taskOpen')) : icon('bullet')
 
         nodes.push(
           <Box key={key} paddingLeft={indentDepth(bullet[1]!) * 2}>

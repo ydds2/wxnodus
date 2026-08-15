@@ -18,16 +18,17 @@ import type { Theme } from '../theme.js'
 import type { PaneTab } from '../types.js'
 
 import { TodoPanel } from './todoPanel.js'
+import { icon } from '../glyphs.js'
 
 // 子代理状态 glyph（与 agentsOverlay STATUS_GLYPH 同语义——紧凑版）
 const SUB_GLYPH: Record<string, { color: (t: Theme) => string; glyph: string }> = {
   running: { color: t => t.color.accent, glyph: '●' },
   queued: { color: t => t.color.muted, glyph: '○' },
-  completed: { color: t => t.color.statusGood, glyph: '✓' },
+  completed: { color: t => t.color.statusGood, glyph: icon('check') },
   interrupted: { color: t => t.color.warn, glyph: '■' },
-  failed: { color: t => t.color.error, glyph: '✗' },
-  timeout: { color: t => t.color.warn, glyph: '⌛' },
-  error: { color: t => t.color.error, glyph: '⚠' },
+  failed: { color: t => t.color.error, glyph: icon('cross') },
+  timeout: { color: t => t.color.warn, glyph: icon('hourglass') },
+  error: { color: t => t.color.error, glyph: icon('warn') },
 }
 
 const fmtElapsed = (ms: number) => {
@@ -85,7 +86,7 @@ export const DetailPane = memo(function DetailPane({ cols, onCommand }: { cols: 
         </Text>
         {/* A22 鼠标化：✕ 关闭（onClick 模式） */}
         <Box onClick={() => patchUiState({ dualPane: false })}>
-          <Text color={t.color.muted}>✕</Text>
+          <Text color={t.color.muted}>{icon('close')}</Text>
         </Box>
       </Box>
 
@@ -194,7 +195,7 @@ function ToolsTab({ innerWidth, t }: { innerWidth: number; t: Theme }) {
       return next
     })
 
-  const rows: Array<{ key: string; mark?: '✓' | '✗'; label: string; detail: string; startedAt?: number }> = []
+  const rows: Array<{ key: string; mark?: string; label: string; detail: string; startedAt?: number }> = []
 
   for (const tool of activeTools) {
     rows.push({
@@ -209,7 +210,7 @@ function ToolsTab({ innerWidth, t }: { innerWidth: number; t: Theme }) {
     const parsed = parseToolTrailResultLine(line)
 
     if (parsed) {
-      rows.push({ key: `tr:${i}`, mark: parsed.mark === '✗' ? '✗' : '✓', label: parsed.call, detail: parsed.detail })
+      rows.push({ key: `tr:${i}`, mark: parsed.mark === '✗' ? icon('cross') : icon('check'), label: parsed.call, detail: parsed.detail })
     }
   }
 
@@ -228,7 +229,7 @@ function ToolsTab({ innerWidth, t }: { innerWidth: number; t: Theme }) {
             <Box onClick={() => row.detail && toggle(row.key)}>
               <Text color={row.mark === '✗' ? t.color.error : t.color.text} wrap="truncate-end">
                 <Text color={row.mark === '✗' ? t.color.error : row.mark ? t.color.statusGood : t.color.accent}>
-                  {row.mark === '✗' ? '✗ ' : row.mark ? '✓ ' : '● '}
+                  {row.mark === '✗' ? `${icon('cross')} ` : row.mark ? `${icon('check')} ` : `${icon('circleF')} `}
                 </Text>
                 {row.label}
                 {row.startedAt ? <Text color={t.color.statusFg} dim>{` (${fmtElapsed(now - row.startedAt)})`}</Text> : null}
@@ -365,9 +366,9 @@ function SubagentsTab({ innerWidth, t }: { innerWidth: number; t: Theme }) {
 const JOB_GLYPH: Record<string, { color: (t: Theme) => string; glyph: string }> = {
   queued: { color: t => t.color.muted, glyph: '○' },
   running: { color: t => t.color.accent, glyph: '●' },
-  success: { color: t => t.color.statusGood, glyph: '✓' },
-  done: { color: t => t.color.statusGood, glyph: '✓' },
-  failed: { color: t => t.color.error, glyph: '✗' },
+  success: { color: t => t.color.statusGood, glyph: icon('check') },
+  done: { color: t => t.color.statusGood, glyph: icon('check') },
+  failed: { color: t => t.color.error, glyph: icon('cross') },
   cancelled: { color: t => t.color.muted, glyph: '−' },
 }
 
@@ -388,7 +389,7 @@ function BgTab({ t }: { t: Theme }) {
       {running > 0 ? (
         <Text color={t.color.accent} wrap="truncate-end">
           {' '}
-          ⧉ {running} 项后台活动进行中
+          {icon('copy')} {running} 项后台活动进行中
         </Text>
       ) : null}
 
@@ -397,7 +398,7 @@ function BgTab({ t }: { t: Theme }) {
         <Box flexDirection="column">
           <Text color={t.color.accent} wrap="truncate-end">
             {' '}
-            🎯 goal 第 {bg.goal.round}/{bg.goal.maxRounds} 轮
+            {icon('target')} goal 第 {bg.goal.round}/{bg.goal.maxRounds} 轮
           </Text>
           {bg.goal.text ? (
             <Text color={t.color.muted} wrap="truncate-end">

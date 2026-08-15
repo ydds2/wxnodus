@@ -17,6 +17,7 @@ import { fmtK } from '../lib/text.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
 import { mix, type Theme } from '../theme.js'
 import type { Msg, Usage } from '../types.js'
+import { icon } from '../glyphs.js'
 
 const FACE_TICK_MS = 2500
 
@@ -336,7 +337,7 @@ function SpawnHud({ t }: { t: Theme }) {
       const extra = Math.max(0, active - widestLevel)
       const widthLabel = maxConc ? `${widestLevel}/${maxConc}` : `${widestLevel}`
       const suffix = extra > 0 ? `+${extra}` : ''
-      pieces.push(`⚡${widthLabel}${suffix}`)
+      pieces.push(`${icon('battery')}${widthLabel}${suffix}`)
     }
   }
 
@@ -344,7 +345,7 @@ function SpawnHud({ t }: { t: Theme }) {
 
   return (
     <Text color={color}>
-      {atCap ? ' │ ⚠ ' : ' │ '}
+      {atCap ? ` │ ${icon('warn')} ` : ' │ '}
       {pieces.join(' ')}
     </Text>
   )
@@ -375,7 +376,7 @@ function IdleSince({ endedAt }: { endedAt: number }) {
     return () => clearInterval(id)
   }, [endedAt])
 
-  return `✓ ${fmtDuration(now - endedAt)}`
+  return `${icon('check')} ${fmtDuration(now - endedAt)}`
 }
 
 const effortLabel = (effort?: string) => {
@@ -547,7 +548,7 @@ export function StatusRule({
   // Idle clock — time since the last final agent response. Hidden while busy
   // (the FaceTicker's elapsed tail covers the live turn) and before the first
   // turn completes. Shares the duration breakpoint and width reservation.
-  const showIdle = segs.duration && !busy && lastTurnEndedAt != null && fits(SEP + stringWidth('✓ ') + MAX_DURATION_WIDTH)
+  const showIdle = segs.duration && !busy && lastTurnEndedAt != null && fits(SEP + stringWidth(`${icon('check')} `) + MAX_DURATION_WIDTH)
   const showCompressions = segs.compressions && compressions > 0 && fits(SEP + stringWidth(`cmp ${compressions}`))
   const showVoice = segs.voice && !!voiceLabel && fits(SEP + stringWidth(voiceLabel))
   // A7：电池段（⚡ 充电中 / ◌ 放电中；分级着色 good/warn/bad/critical）——

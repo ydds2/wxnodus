@@ -8,6 +8,7 @@ import { useState } from 'react'
 import type { Theme } from '../theme.js'
 
 import { TextInput } from './textInput.js'
+import { icon } from '../glyphs.js'
 
 export interface DynamicFormField {
   name: string
@@ -58,7 +59,7 @@ export function DynamicFormPrompt({ cols = 80, fields, prompt, onSubmit, onCance
   return (
     <Box flexDirection="column" borderColor={t.color.warn} borderStyle="double" paddingX={1}>
       <Text bold color={t.color.warn}>
-        🔐 动态内容表（敏感输入——仅内存，不保存）
+        {icon('lock')} 动态内容表（敏感输入——仅内存，不保存）
       </Text>
       {prompt && <Text color={t.color.muted}> {prompt}</Text>}
 
@@ -94,7 +95,7 @@ export function DynamicFormPrompt({ cols = 80, fields, prompt, onSubmit, onCance
       <Box flexDirection="row" marginTop={1}>
         <Box onClick={() => onSubmit(values)}>
           <Text bold color={t.color.warn}>
-            ⏎ 提交全部
+            {icon('submit')} 提交全部
           </Text>
         </Box>
         <Text>{'   '}</Text>

@@ -10,6 +10,7 @@ import type { Diff } from './frame.js'
 import { cursorMove, cursorTo, eraseLines } from './termio/csi.js'
 import { BSU, ESU, HIDE_CURSOR, SHOW_CURSOR } from './termio/dec.js'
 import { link } from './termio/osc.js'
+import { initializeRendererCapabilities } from './capabilities.js'
 
 export type Progress = {
   state: 'running' | 'completed' | 'error' | 'indeterminate'
@@ -201,6 +202,18 @@ export function hasCursorUpViewportYankBug(): boolean {
 // Computed once at module load — terminal capabilities don't change mid-session.
 // Exported so callers can pass a sync-skip hint gated to specific modes.
 export const SYNC_OUTPUT_SUPPORTED = isSynchronizedOutputSupported()
+
+// W8-22：环境探测缺省注入能力集（capabilities 模块不反向依赖 terminal——循环导入防护）。
+// 在此处初始化后，renderer 缺省行为与既有 SYNC_OUTPUT_SUPPORTED/supportsExtendedKeys 一致（modern 零变化）。
+initializeRendererCapabilities({
+  sync2026: SYNC_OUTPUT_SUPPORTED,
+  decstbm: SYNC_OUTPUT_SUPPORTED,
+  truecolor: true,
+  osc8: true,
+  oscNotify: true,
+  mouse: true,
+  extendedKeys: supportsExtendedKeys(),
+})
 
 export type Terminal = {
   stdout: Writable

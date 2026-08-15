@@ -17,6 +17,7 @@ import type { Theme } from '../theme.js'
 import { ModelPicker } from './modelPicker.js'
 import { windowOffset } from './overlayControls.js'
 import { TextInput } from './textInput.js'
+import { icon } from '../glyphs.js'
 
 const VISIBLE = 12
 const MIN_WIDTH = 64
@@ -24,7 +25,7 @@ const MAX_WIDTH = 128
 const TITLE_MAX = 64
 
 const STATUS_GLYPH: Record<string, string> = {
-  idle: '✓',
+  idle: icon('check'),
   starting: '…',
   waiting: '?',
   working: '▶'
@@ -884,7 +885,7 @@ export function ActiveSessionSwitcher({
                 void closeSession(s.id)
               }}
             >
-              <Text color={t.color.muted}> ✕</Text>
+              <Text color={t.color.muted}> {icon('close')}</Text>
             </Box>
           </Box>
         )

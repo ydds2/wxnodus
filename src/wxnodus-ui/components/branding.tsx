@@ -8,13 +8,17 @@ import { flat } from '../lib/text.js'
 import { patchOverlayState } from '../runtime/promptStore.js'
 import type { Theme } from '../theme.js'
 import type { PanelSection, SessionInfo } from '../types.js'
+import { getTuiTerminalTier } from '../lib/terminalTier.js'
+import { icon } from '../glyphs.js'
 
 const LOADER_TICK_MS = 120
 
 function InlineLoader({ label, t }: { label: string; t: Theme }) {
   const [tick, setTick] = useState(0)
-  const spinner = unicodeSpinners.braille
-  const frame = spinner.frames[tick % spinner.frames.length] ?? '⠋'
+  // W8-23：cmd 档用 ASCII 旋转帧（盲文在经典 conhost 字体无字形）
+  const glyphSet = getTuiTerminalTier()?.capabilities.glyphSet ?? 'full'
+  const spinner = glyphSet === 'full' ? unicodeSpinners.braille : { frames: ['|', '/', '-', '\\'], interval: 120 }
+  const frame = spinner.frames[tick % spinner.frames.length] ?? '|'
 
   useEffect(() => {
     const id = setInterval(() => setTick(n => n + 1), Math.max(LOADER_TICK_MS, spinner.interval))
@@ -100,7 +104,7 @@ export function Banner({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
       <Box flexDirection="column" marginBottom={1}>
         <ArtLines lines={logoLines} />
         <Text color={t.color.muted} wrap="truncate-end">
-          {t.brand.icon} {TAG_FULL}
+          {icon('brand')} {TAG_FULL}
         </Text>
       </Box>
     )
@@ -115,8 +119,8 @@ export function Banner({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
 
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Text bold color={t.color.primary} wrap="truncate-end">{t.brand.icon} {name}</Text>
-      <Text color={t.color.muted} wrap="truncate-end">{t.brand.icon} {tag}</Text>
+      <Text bold color={t.color.primary} wrap="truncate-end">{icon('brand')} {name}</Text>
+      <Text color={t.color.muted} wrap="truncate-end">{icon('brand')} {tag}</Text>
     </Box>
   )
 }

@@ -7,6 +7,7 @@ import type { ImageAttachResponse, SessionCloseResponse } from '../gatewayTypes.
 import type { ParsedVoiceRecordKey } from '../lib/platform.js'
 import type { RpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
+import { getTuiTerminalTier } from '../lib/terminalTier.js'
 import type {
   ApprovalReq,
   ClarifyReq,
@@ -54,7 +55,8 @@ export interface Notice {
 // validation + usage hint) both import it.
 export const INDICATOR_STYLES = ['ascii', 'emoji', 'kaomoji', 'unicode'] as const
 export type IndicatorStyle = (typeof INDICATOR_STYLES)[number]
-export const DEFAULT_INDICATOR_STYLE: IndicatorStyle = 'kaomoji'
+// W8-23：cmd/ascii 档强制 ascii 指示器风格（kaomoji 有 BMP 风险字形、emoji/unicode 有盲文/astral）
+export const DEFAULT_INDICATOR_STYLE: IndicatorStyle = (getTuiTerminalTier()?.capabilities.glyphSet ?? 'full') === 'full' ? 'kaomoji' : 'ascii'
 
 export interface SelectionApi {
   captureScrolledRows: (firstRow: number, lastRow: number, side: 'above' | 'below') => void

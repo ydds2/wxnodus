@@ -2,7 +2,6 @@
 // 渲染器发射哪些序列/颜色由「能力集」决定：modern 档 = 现状零变化（默认值即模块加载时的环境探测）；
 // cmd 档由宿主注入（sync2026/decstbm/truecolor/osc8/oscNotify/mouse/extendedKeys 全关，256 色钳制）。
 import chalk from 'chalk'
-import { isSynchronizedOutputSupported, supportsExtendedKeys } from './terminal.js'
 import { DISABLE_MOUSE_TRACKING, enableMouseTrackingFor, type MouseTrackingMode } from './termio/dec.js'
 
 export interface RendererCapabilities {
@@ -22,22 +21,31 @@ export interface RendererCapabilities {
   extendedKeys: boolean
 }
 
-// 缺省 = 模块加载时的既有环境探测结果（modern 行为零变化）
-export const DEFAULT_RENDERER_CAPABILITIES: RendererCapabilities = {
-  sync2026: isSynchronizedOutputSupported(),
-  decstbm: isSynchronizedOutputSupported(),
+// 缺省初值（终端模块加载时以环境探测结果覆写——见 terminal.ts initializeRendererCapabilities）。
+// 初值全 true = 发射一切（无终端模块参与时不保守降级，保持旧行为）。
+let defaultCapabilities: RendererCapabilities = {
+  sync2026: true,
+  decstbm: true,
   truecolor: true,
   osc8: true,
   oscNotify: true,
   mouse: true,
-  extendedKeys: supportsExtendedKeys(),
+  extendedKeys: true,
 }
 
-let currentCapabilities: RendererCapabilities = DEFAULT_RENDERER_CAPABILITIES
+/** terminal.ts 模块初始化时注入环境探测缺省（避免 capabilities→terminal 循环导入）。 */
+export function initializeRendererCapabilities(defaults: RendererCapabilities): void {
+  defaultCapabilities = defaults
+  currentCapabilities = { ...defaultCapabilities, ...(currentOverride ?? {}) }
+}
+
+let currentOverride: Partial<RendererCapabilities> | null = null
+let currentCapabilities: RendererCapabilities = { ...defaultCapabilities }
 
 /** 宿主（CLI 引导层）注入能力集；null 重置为缺省。缺省之外的部分与 DEFAULT 合并。 */
 export function setRendererCapabilities(capabilities: Partial<RendererCapabilities> | null): void {
-  currentCapabilities = { ...DEFAULT_RENDERER_CAPABILITIES, ...(capabilities ?? {}) }
+  currentOverride = capabilities ?? null
+  currentCapabilities = { ...defaultCapabilities, ...(currentOverride ?? {}) }
   // cmd 档：256 色钳制——conhost（1511+）支持 256 色；hex 主题由 chalk 自动映射到 6×6×6 色立方。
   // modern 档不动 chalk.level（supports-color 既有行为零变化）。
   if (!currentCapabilities.truecolor) {

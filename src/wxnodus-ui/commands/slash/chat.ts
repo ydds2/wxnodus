@@ -19,6 +19,7 @@ import type { StatusBarMode } from '../../bridge/interfaces.js'
 import { patchOverlayState } from '../../runtime/promptStore.js'
 import { patchUiState } from '../../runtime/viewStore.js'
 import type { SlashCommand } from '../slashTypes.js'
+import { translateText } from '../../glyphs.js'
 
 // `/mouse` toggles between full tracking and off when called bare so the
 // old binary muscle-memory still works. Explicit presets (wheel / buttons /
@@ -245,11 +246,11 @@ export const coreCommands: SlashCommand[] = [
       const key = arg.trim().toLowerCase()
 
       if (!arg || key === 'random') {
-        return ctx.transcript.sys(randomFortune())
+        return ctx.transcript.sys(translateText(randomFortune()))
       }
 
       if (['daily', 'stable', 'today'].includes(key)) {
-        return ctx.transcript.sys(dailyFortune(ctx.sid))
+        return ctx.transcript.sys(translateText(dailyFortune(ctx.sid)))
       }
 
       ctx.transcript.sys('usage: /fortune [random|daily]')

@@ -11,6 +11,7 @@ import { patchOverlayState } from '../runtime/promptStore.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayHint } from './overlayControls.js'
+import { icon } from '../glyphs.js'
 
 interface DirEntry {
   isDir: boolean
@@ -171,7 +172,7 @@ export function DirPicker({ t }: { t: Theme }) {
   return (
     <Box borderColor={t.color.border} borderStyle="round" flexDirection="column" width={width} paddingX={1}>
       <Text bold color={t.color.accent} wrap="truncate-end">
-        ◈ 目录选择器 · {path || '…'}
+        {icon('diamond')} 目录选择器 · {path || '…'}
       </Text>
       <Text color={t.color.muted}>点击目录进入 · Enter 进入 · Esc 上级 · q 关闭 · 底部按钮执行动作</Text>
 
@@ -203,7 +204,7 @@ export function DirPicker({ t }: { t: Theme }) {
                   wrap="truncate-end"
                 >
                   {absolute ? '▸ ' : '  '}
-                  {row.isDir ? '📁 ' : '   '}
+                  {row.isDir ? `${icon('folder')} ` : '   '}
                   {row.name}
                   {row.isDir ? '/' : ''}
                 </Text>
@@ -218,7 +219,7 @@ export function DirPicker({ t }: { t: Theme }) {
       <Box flexDirection="row" marginTop={1}>
         <Box onClick={switchHere}>
           <Text bold color={switching ? t.color.muted : t.color.accent}>
-            {switching ? '⏳ 切换中…' : '⏎ 切换到此目录'}
+            {switching ? `${icon('hourglass')} 切换中…` : `${icon('submit')} 切换到此目录`}
           </Text>
         </Box>
         <Text>{'   '}</Text>
@@ -227,7 +228,7 @@ export function DirPicker({ t }: { t: Theme }) {
         </Box>
         <Text>{'   '}</Text>
         <Box onClick={openExplorer}>
-          <Text color={t.color.muted}>⧉ 资源管理器</Text>
+          <Text color={t.color.muted}>{icon('copy')} 资源管理器</Text>
         </Box>
       </Box>
 

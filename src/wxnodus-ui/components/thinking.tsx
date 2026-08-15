@@ -28,6 +28,7 @@ import {
   toolTrailLabel
 } from '../lib/text.js'
 import type { Theme } from '../theme.js'
+import { icon } from '../glyphs.js'
 import type {
   ActiveTool,
   ActivityItem,
@@ -160,7 +161,7 @@ function TreeNode({
 export function Spinner({ color, variant = 'think' }: { color: string; variant?: 'think' | 'tool' }) {
   const spin = useMemo(() => {
     const raw = spinners[pick(variant === 'tool' ? TOOL : THINK)]
-    const frames: string[] = raw.frames.map(f => [...f][0] ?? '⠀')
+    const frames: string[] = raw.frames.map(f => [...f][0] ?? icon('bullet'))
 
     return { ...raw, frames }
   }, [variant])
@@ -691,8 +692,8 @@ interface Group {
   details: DetailRow[]
   key: string
   label: string
-  /** A20：完成标记（trail 行 ✓/✗）——渲染在行首，一眼看成败 */
-  mark?: '✓' | '✗'
+  /** A20：完成标记（trail 行 ✓/✗）——渲染在行首，一眼看成败；W8-23 层级感知后为字符串变体 */
+  mark?: string
 }
 
 export const ToolTrail = memo(function ToolTrail({
@@ -814,7 +815,7 @@ export const ToolTrail = memo(function ToolTrail({
         key: `tr-${i}`,
         label: parsed.call,
         // A20：✓/✗ 完成标记（此前解析了 mark 却不显示）
-        mark: parsed.mark === '✗' ? '✗' : '✓'
+        mark: parsed.mark === '✗' ? icon('cross') : icon('check')
       })
 
       if (parsed.detail) {
@@ -874,7 +875,7 @@ export const ToolTrail = memo(function ToolTrail({
   }
 
   for (const item of activity.slice(-4)) {
-    const glyph = item.tone === 'error' ? '✗' : item.tone === 'warn' ? '!' : '·'
+    const glyph = item.tone === 'error' ? icon('cross') : item.tone === 'warn' ? '!' : icon('bullet')
     const color = item.tone === 'error' ? t.color.error : item.tone === 'warn' ? t.color.warn : t.color.muted
     meta.push({ color, content: `${glyph} ${item.text}`, dimColor: item.tone === 'info', key: `a-${item.id}` })
   }
@@ -937,7 +938,7 @@ export const ToolTrail = memo(function ToolTrail({
       <Box flexDirection="column">
         {alerts.map(i => (
           <Text color={i.tone === 'error' ? t.color.error : t.color.warn} key={`ha-${i.id}`}>
-            {i.tone === 'error' ? '✗' : '!'} {i.text}
+            {i.tone === 'error' ? icon('cross') : '!'} {i.text}
           </Text>
         ))}
       </Box>

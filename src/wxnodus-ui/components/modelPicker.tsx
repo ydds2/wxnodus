@@ -10,6 +10,7 @@ import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayHint, useOverlayKeys, windowItems } from './overlayControls.js'
+import { icon } from '../glyphs.js'
 
 const VISIBLE = 12
 const MIN_WIDTH = 40
@@ -431,7 +432,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
     return (
       <Box flexDirection="column" width={width}>
         <Text bold color={t.color.accent} wrap="truncate-end">
-          🔑 配置 {provider.name}
+          {icon('key')} 配置 {provider.name}
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
@@ -474,7 +475,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
         <Box flexDirection="row">
           <Box onClick={saveKey}>
             <Text bold color={keyInput.trim() ? t.color.accent : t.color.muted}>
-              {keyInput.trim() ? '⏎ 保存' : '⏎ 保存（空）'}
+              {keyInput.trim() ? `${icon('submit')} 保存` : `${icon('submit')} 保存（空）`}
             </Text>
           </Box>
           <Text>{'   '}</Text>
@@ -563,7 +564,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
     return (
       <Box flexDirection="column" width={width}>
         <Text bold color={t.color.accent} wrap="truncate-end">
-          🛰 选择提供商（第 1/2 步）
+          {icon('satellite')} 选择提供商（第 1/2 步）
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
@@ -638,7 +639,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   return (
     <Box flexDirection="column" width={width}>
       <Text bold color={t.color.accent} wrap="truncate-end">
-        🛰 选择模型（第 2/2 步）
+        {icon('satellite')} 选择模型（第 2/2 步）
       </Text>
 
       <Text color={t.color.muted} wrap="truncate-end">

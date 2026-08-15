@@ -7,6 +7,7 @@ import type { Theme } from '../theme.js'
 import type { ApprovalReq, ClarifyReq, ConfirmReq } from '../types.js'
 
 import { TextInput } from './textInput.js'
+import { icon } from '../glyphs.js'
 
 const APPROVAL_OPTS = ['once', 'session', 'always', 'deny'] as const
 // tirith warning present → backend downgrades "always" to session scope, so drop it.
@@ -96,7 +97,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
   return (
     <Box borderColor={t.color.warn} borderStyle="double" flexDirection="column" paddingX={1}>
       <Text bold color={t.color.warn}>
-        ⚠ 需要批准 · {req.tool ?? req.command}
+        {icon('warn')} 需要批准 · {req.tool ?? req.command}
       </Text>
       {req.icon && req.category ? (
         <Text color={t.color.muted}>
@@ -197,7 +198,7 @@ export function ClarifyPrompt({ cols = 80, onAnswer, onCancel, req, t }: Clarify
         <Box flexDirection="row" marginTop={1}>
           <Box onClick={() => custom.trim() && onAnswer(custom)}>
             <Text bold color={custom.trim() ? t.color.warn : t.color.muted} inverse={custom.trim().length > 0}>
-              {custom.trim() ? '⏎ 提交' : '⏎ 提交（空）'}
+              {custom.trim() ? `${icon('submit')} 提交` : `${icon('submit')} 提交（空）`}
             </Text>
           </Box>
           {choices.length ? (
@@ -279,7 +280,7 @@ export function ConfirmPrompt({ onCancel, onConfirm, req, t }: ConfirmPromptProp
   return (
     <Box borderColor={accent} borderStyle="double" flexDirection="column" paddingX={1}>
       <Text bold color={accent}>
-        {req.danger ? '⚠' : '?'} {req.title}
+        {req.danger ? icon('warn') : '?'} {req.title}
       </Text>
 
       {req.detail ? (

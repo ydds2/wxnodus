@@ -34,6 +34,7 @@ import { Md } from './markdown.js'
 import { StreamingMd } from './streamingMarkdown.js'
 import { ToolTrail } from './thinking.js'
 import { TodoPanel } from './todoPanel.js'
+import { icon } from '../glyphs.js'
 
 // Collapse threshold for long system messages (system prompt etc.)
 const SYSTEM_COLLAPSE_CHARS = 400
@@ -162,9 +163,9 @@ export const MessageLine = memo(function MessageLine({
     clearSelectedMessage()
 
     if (ok) {
-      showSelectionHint(`✓ 已复制 ${msg.text.length} 字符`)
+      showSelectionHint(`${icon('check')} 已复制 ${msg.text.length} 字符`)
     } else {
-      showSelectionHint('⚠ 复制失败：无可用剪贴板通道')
+      showSelectionHint(`${icon('warn')} 复制失败：无可用剪贴板通道`)
     }
   }
 
@@ -221,7 +222,7 @@ export const MessageLine = memo(function MessageLine({
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text color={evColor} wrap="truncate-end">
-          {' '}◈ {msg.text}
+          {' '}{icon('diamond')} {msg.text}
         </Text>
       </Box>
     )

@@ -33,6 +33,7 @@ import { dualPaneWidths } from '../lib/paneLayout.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
+import { icon } from '../glyphs.js'
 
 const PromptPrefix = memo(function PromptPrefix({
   bold = false,
@@ -81,7 +82,7 @@ const BgSummaryLine = memo(function BgSummaryLine() {
   return (
     <Box onClick={() => patchUiState({ dualPane: true, paneTab: 'bg' })}>
       <Text color={ui.theme.color.muted}>
-        <Text color={ui.theme.color.accent}>⧉ 后台：</Text>
+        <Text color={ui.theme.color.accent}>{icon('copy')} 后台：</Text>
         {parts.join(' · ')}
         <Text color={ui.theme.color.statusFg} dim>
           {' '}
@@ -247,7 +248,7 @@ const ComposerPane = memo(function ComposerPane({
   const ui = useStore($uiState)
   const isBlocked = useStore($isBlocked)
   const sh = (composer.inputBuf[0] ?? composer.input).startsWith('!')
-  const promptText = composerPromptText(ui.theme.brand.prompt, ui.info?.profile_name, sh, TERMUX_TUI_MODE, composer.cols)
+  const promptText = composerPromptText(icon('prompt'), ui.info?.profile_name, sh, TERMUX_TUI_MODE, composer.cols)
   const promptWidth = composerPromptWidth(promptText)
   const promptBlank = ' '.repeat(promptWidth)
   const inputColumns = stableComposerColumns(composer.cols, promptWidth, TERMUX_TUI_MODE)
@@ -409,13 +410,13 @@ const ComposerPane = memo(function ComposerPane({
         {status.voiceEnabled ? (
           <Box onClick={actions.toggleVoice} flexDirection="row">
             <Text color={status.voiceRecording ? ui.theme.color.error : ui.theme.color.accent}>
-              {status.voiceRecording ? '●REC ' : '◉ '}
+              {status.voiceRecording ? `${icon('rec')} ` : `${icon('mic')} `}
             </Text>
             <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
           </Box>
         ) : (
           <Box onClick={actions.toggleVoiceMode}>
-            <Text color={ui.theme.color.muted}>🎤 </Text>
+            <Text color={ui.theme.color.muted}>{icon('mic')} </Text>
           </Box>
         )}
       </Box>

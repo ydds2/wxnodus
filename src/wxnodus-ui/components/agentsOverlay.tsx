@@ -32,6 +32,7 @@ import {
 import { compactPreview } from '../lib/text.js'
 import type { Theme } from '../theme.js'
 import type { SubagentNode, SubagentProgress } from '../types.js'
+import { icon } from '../glyphs.js'
 
 // ── Types + lookup tables ────────────────────────────────────────────
 
@@ -89,11 +90,11 @@ const FILTER_PREDICATES: Record<FilterMode, (n: SubagentNode) => boolean> = {
 const STATUS_GLYPH: Record<Status, { color: (t: Theme) => string; glyph: string }> = {
   running: { color: t => t.color.accent, glyph: '●' },
   queued: { color: t => t.color.muted, glyph: '○' },
-  completed: { color: t => t.color.statusGood, glyph: '✓' },
+  completed: { color: t => t.color.statusGood, glyph: icon('check') },
   interrupted: { color: t => t.color.warn, glyph: '■' },
-  failed: { color: t => t.color.error, glyph: '✗' },
-  timeout: { color: t => t.color.warn, glyph: '⌛' },
-  error: { color: t => t.color.error, glyph: '⚠' }
+  failed: { color: t => t.color.error, glyph: icon('cross') },
+  timeout: { color: t => t.color.warn, glyph: icon('hourglass') },
+  error: { color: t => t.color.error, glyph: icon('warn') }
 }
 
 // Heatmap palette — cold → hot, resolved against the active theme.
@@ -1013,7 +1014,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
           </Text>
         </Box>
         <Box flexShrink={0} onClick={closeWithCleanup}>
-          <Text color={t.color.muted}>✕</Text>
+          <Text color={t.color.muted}>{icon('close')}</Text>
         </Box>
       </Box>
 
@@ -1072,13 +1073,13 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
           <Box flexDirection="row">
             <Box onClick={() => selected && killOne(selected.item.id)}>
               <Text bold color={t.color.error}>
-                ✕ kill
+                {icon('close')} kill
               </Text>
             </Box>
             <Text>{'  '}</Text>
             <Box onClick={() => selected && killSubtree(selected)}>
               <Text bold color={t.color.warn}>
-                ✕ subtree
+                {icon('close')} subtree
               </Text>
             </Box>
             <Text>{'  '}</Text>
