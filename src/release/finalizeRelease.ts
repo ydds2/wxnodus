@@ -80,8 +80,12 @@ export async function finalizeRelease(options: FinalizeReleaseOptions): Promise<
   const runDir = join(evidenceRoot, runId);
   const tsx = join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
   const defaultSpawn: FinalizeSpawn = (command, args, opts) => {
+    // W8-17（实盘缺陷）：win32 上 shell:true 会把含空格的 execPath（C:\Program Files\nodejs\node.exe）
+    // 不加引号拼进 cmd 行 → cmd 报 'C:\Program' 不是命令 → import/coverage spawn 恒失败。
+    // node 直 spawn 不需要 shell；只有 .cmd/.bat（npm.cmd）需要 shell 解析。
+    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(command);
     const result = spawnSync(command, args, {
-      cwd: opts?.cwd ?? repoRoot, encoding: 'utf8', stdio: 'pipe', shell: process.platform === 'win32',
+      cwd: opts?.cwd ?? repoRoot, encoding: 'utf8', stdio: 'pipe', shell: useShell,
       timeout: 900_000, maxBuffer: 64 * 1024 * 1024,
     });
     return { status: result.status, stdout: String(result.stdout ?? '') };

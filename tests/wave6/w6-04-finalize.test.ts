@@ -193,4 +193,12 @@ describe('W6-04 release:finalize', () => {
     expect(src).toContain('details: gateResults');
     expect(src).toContain('r.status');
   });
+
+  // W8-17（实盘缺陷）：defaultSpawn 在 win32 上对 execPath（含空格路径）开 shell:true →
+  // cmd 把 'C:\Program' 当命令 → import-evidence spawn 恒失败。只有 .cmd/.bat 需要 shell。
+  it('源锚点：defaultSpawn 仅对 .cmd/.bat 开 shell（execPath 含空格直 spawn）', () => {
+    const src = readFileSync(join(__dirname, '..', '..', 'src', 'release', 'finalizeRelease.ts'), 'utf8');
+    expect(src).toContain('/\\.(cmd|bat)$/i.test(command)');
+    expect(src).toContain('shell: useShell');
+  });
 });
