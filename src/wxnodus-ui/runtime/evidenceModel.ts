@@ -37,7 +37,7 @@ export interface EvidenceSnapshot {
  */
 export type EvidenceEvent =
   | { type: 'verification.started'; id: string; taskId?: string; summary: string; at: number }
-  | { type: 'verification.succeeded'; id: string; sourceEvent: string; artifactRef?: string; at: number }
+  | { type: 'verification.succeeded'; id: string; sourceEvent: string; artifactRef?: string; summary?: string; at: number }
   | { type: 'verification.failed'; id: string; reason: string; at: number }
   | { type: 'verification.interrupted'; id: string; at: number }
   | { type: 'verification.unavailable'; id: string; reason?: string; at: number }
@@ -78,7 +78,8 @@ export function evidenceReducer(state: EvidenceSnapshot, event: EvidenceEvent): 
         items: {
           ...state.items,
           [event.id]: {
-            ...(existing ?? base(event.id, event.id)),
+            ...(existing ?? base(event.id, event.summary ?? event.id)),
+            summary: event.summary ?? existing?.summary ?? event.id,
             status: 'verified',
             sourceEvent: event.sourceEvent,
             artifactRef: event.artifactRef ?? existing?.artifactRef,

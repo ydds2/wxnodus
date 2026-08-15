@@ -29,8 +29,9 @@ import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
 import { MessageLine } from './messageLine.js'
 import { QueuedMessages } from './queuedMessages.js'
-import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
+import { StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
+import { TurnSections } from './turnSections.js'
 import { icon } from '../glyphs.js'
 
 const PromptPrefix = memo(function PromptPrefix({
@@ -97,21 +98,6 @@ const TranscriptPane = memo(function TranscriptPane({
 
   // 单栏布局（双栏已取消）：消息渲染宽度恒等于终端宽度。
   const msgCols = composer.cols
-
-  // LiveTodoPanel rides as a child of the latest user-message row so it
-  // visually belongs to the prompt and follows it during scroll. -1 when
-  // empty → row.index === -1 is always false → no render.
-  const lastUserIdx = useMemo(() => {
-    const items = transcript.historyItems
-
-    for (let i = items.length - 1; i >= 0; i--) {
-      if (items[i].role === 'user') {
-        return i
-      }
-    }
-
-    return -1
-  }, [transcript.historyItems])
 
   // Index of the first user-role message; every later user message gets a
   // small dash above it so multi-turn transcripts visually segment by
@@ -198,8 +184,6 @@ const TranscriptPane = memo(function TranscriptPane({
                 />
               )}
 
-              {/* 单栏布局（双栏已取消）：清单随最新用户消息行显示 */}
-              {row.index === lastUserIdx && <LiveTodoPanel />}
             </Box>
           ))}
 
@@ -214,6 +198,9 @@ const TranscriptPane = memo(function TranscriptPane({
             progress={progress}
             sections={ui.sections}
           />
+
+          {/* 阶段 6：回合分区展示（计划/活动/修改/验证/证据——单栏内纵向排列） */}
+          <TurnSections cols={msgCols} />
         </Box>
       </ScrollBox>
 
