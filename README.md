@@ -64,7 +64,7 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 
 **主线：概念编译**（`/build` 正向 + `/understand` 逆向 + `/gate` 质量门 + `/evidence` 证据重验证 + `/plan` 规格计划 + `/import`/`/flow`/`/fdr` 工程流）——证据链产物 `data/projects/<id>/evidence.json`，全部真实落盘可查。
 
-**副线 1：黑洞引擎**（编译的上下文来源）——百万上下文三层记忆（working/archival/recall）+ 自动吸附 + FTS5 中文 bigram + 本地 embedding 向量检索（sqlite-vec KNN，embedding 不可用自动降级纯 FTS）；agent 每轮自动召回相关记忆（`/hole`、`/memory search`、`/assimilate` 同化、`/digest`、`/compact`）。
+**副线 1：黑洞引擎**（编译的上下文来源）——百万字级记忆库三层记忆（working 窗口受限 / archival 无限 / recall 全量，1M 级容量背书 `npm run evidence:memory-capacity`）+ 自动吸附 + FTS5 中文 bigram + 本地 embedding 向量检索（sqlite-vec KNN，embedding 不可用自动降级纯 FTS）；agent 每轮自动召回相关记忆（`/hole`、`/memory search`、`/assimilate` 同化、`/digest`、`/compact`）。**记忆容量 ≠ 模型上下文窗口**：每轮送入模型的上下文受 64k token 上限约束，超压自动压缩。
 
 **副线 2：安全与合规**——6 权限模式（smart/auto/manual/plan/yolo/goal）+ 13 条硬红线（任何模式不可绕过，含 sudo/env/bash -lc 解包变体）+ AES-256-GCM 密钥加密（明文绝不落盘，机器指纹绑定）+ `/security` 内存 vault（10 分钟过期、输出精确脱敏、关闭即清）；合规五项（`/compliance`）：授权存证（`/consent` 六元组存证簿，外部访问自动留痕）/ AI 生成标注（深度合成办法第二十条）/ 审计导出（SHA-256 哈希链，`/audit` 过滤查询）/ 许可证扫描（AGPL/BUSL/SSPL 拦截）/ robots 护栏（`/claw` 与 `http_get` 尊重 robots.txt + 验证码提示）。
 

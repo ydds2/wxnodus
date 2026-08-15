@@ -85,7 +85,8 @@
     "gate:h": "node scripts/run-gate-h.mjs",
     "gate:i": "node scripts/run-gate-i.mjs",
     "release:finalize": "node scripts/finalize-release.mjs",
-    "check:release-surface": "node scripts/check-release-surface.mjs"
+    "check:release-surface": "node scripts/check-release-surface.mjs",
+    "evidence:memory-capacity": "node scripts/evidence-memory-capacity.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",

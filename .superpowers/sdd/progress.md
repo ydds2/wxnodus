@@ -444,3 +444,11 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - cli/index.ts 削薄 172 行内联内核装配：gateway/commandBus/approvalCache 声明先于组合根调用、装配后赋值（桥闭包惰性求值，同旧 gateway 模式）；settings 与 agent 共享 config 快照引用（applyModel 热切换语义不变）。
 - 验证：w8 13/13 绿（新增 2 契约）；全量 **259 文件 / 1937 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke（--version + 确定性计算 =14）通过。
 - 剩余：5 条环境类 KF（需真实环境）、「百万上下文」表述背书（需证据或措辞收紧——保持诚实）。
+
+## 「百万上下文」表述背书（W8-04）— 2026-08-15
+
+- RED 先行：w8-04 三契约红实证（README 须声明「记忆容量 ≠ 模型上下文窗口」+ 64k 窗口约束；memory.ts 头注释不得再出现歧义「百万上下文」短句；证据入口存在）。
+- 措辞收紧：README 副线 1 改「**百万字级记忆库**（working 窗口受限 / archival 无限 / recall 全量）」+ 显式「记忆容量 ≠ 模型上下文窗口：每轮送入模型受 64k token 上限约束」；memory.ts 头注释同步（存储/召回无上限——模型每轮 64k 上限）。
+- 真实证据 `npm run evidence:memory-capacity`（本机实跑 receipt `artifacts/release-evidence/mem-cap-2026-08-15/memory-capacity/outcome.json`）：**13,802 条消息 / 1,000,655 token 真实写入**——working 有界 20（吸附 13,782 条）、recall 全量 13,802、深历史针点 FTS 召回 3 命中、generic 召回 10、compactSmart 可用、1M 级混合召回 19ms（embedding 关闭走纯 FTS——向量路径由 suite 小规模真实覆盖，如实声明）。
+- 验证：w8-04 3/3 绿；全量 **260 文件 / 1940 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
+- 剩余：5 条环境类 KF（需真实环境，保持诚实 open）。

@@ -1,4 +1,4 @@
-// src/kernel/memory.ts — L2-2 黑洞引擎（百万上下文）
+// src/kernel/memory.ts — L2-2 黑洞引擎（百万字级记忆库——存储/召回无上限；模型每轮上下文 64k 上限）
 // 设计（MemGPT 思想 + 成熟技术）：
 //   三层记忆——working（会话窗口，超压自动吸附）/ archival（FTS5+向量 无限）/ recall（全量永不删）
 //   黑洞吸附 absorb：working > limit 时旧消息自动吸入 archival（消息仍在 recall 全量）
