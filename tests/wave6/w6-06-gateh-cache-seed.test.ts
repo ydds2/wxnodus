@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { seedNpmCache } from '../../src/release/gateHRunner.js';
+import { offlineRegistryFor, seedNpmCache } from '../../src/release/gateHRunner.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const cleanup: Array<() => void> = [];
@@ -49,5 +49,21 @@ describe('W6-06 Gate H 缓存注入（airgap clean-install 可完成）', () => 
     const src = readFileSync(resolve(ROOT, 'scripts/run-gate-h.ts'), 'utf8');
     expect(src).toContain('cache-seed');
     expect(src).toContain('cacheSeed');
+  });
+
+  // W8-15（实盘缺陷）：seed 由真实 registry 流量构建；干净 HOME 让 npm 回退 npmjs.org →
+  // 缓存键空间不匹配 → ENOTCACHED 假阴性。离线安装必须与 seed 同 registry 键空间。
+  it('offlineRegistryFor：读 repo registry 配置（http(s) 形）；失败回退 npmjs.org 缺省', () => {
+    const registry = offlineRegistryFor(ROOT);
+    expect(/^https?:\/\//.test(registry)).toBe(true);
+    const fallback = offlineRegistryFor(join(tmp('w8-15-'), 'no-such-repo'));
+    expect(fallback).toBe('https://registry.npmjs.org');
+  });
+
+  it('源锚点：defaultCleanInstall 注入 npm_config_registry（与 seed 键空间一致）', () => {
+    const src = readFileSync(resolve(ROOT, 'src/release/gateHRunner.ts'), 'utf8');
+    const block = src.slice(src.indexOf('const defaultCleanInstall'), src.indexOf('const defaultCleanInstall') + 2400);
+    expect(block).toContain('npm_config_registry');
+    expect(block).toContain('offlineRegistryFor');
   });
 });

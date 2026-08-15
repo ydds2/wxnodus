@@ -65,6 +65,18 @@ export function seedNpmCache(destDir: string, seedDir: string): { ok: boolean; r
   }
 }
 
+/** 离线安装的 registry 键空间：seed 由真实 registry 流量构建（本机 npmmirror）；干净 HOME 会让 npm
+ *  回退 registry.npmjs.org → 缓存键不匹配 → ENOTCACHED 假阴性。必须与 seed 同 registry 键空间。 */
+export function offlineRegistryFor(repoRoot: string): string {
+  try {
+    const value = String(execFileSync(npm(), ['config', 'get', 'registry'], {
+      cwd: repoRoot, encoding: 'utf8', stdio: 'pipe', shell: process.platform === 'win32', timeout: 60_000,
+    })).trim();
+    if (/^https?:\/\//.test(value)) return value;
+  } catch { /* 读取失败走缺省 */ }
+  return 'https://registry.npmjs.org';
+}
+
 const sha256 = (bytes: Buffer | string): string => createHash('sha256').update(bytes).digest('hex');
 const npm = () => (process.platform === 'win32' ? 'npm.cmd' : 'npm');
 
@@ -123,6 +135,8 @@ const defaultCleanInstall = async (context: GateHStepContext): Promise<GateHStep
     const env = {
       ...process.env, HOME: home, USERPROFILE: home, WXNODUS_NO_DEBUG: '1', MSYS_NO_PATHCONV: '1',
       npm_config_prefix: prefix, npm_config_cache: cacheDir,
+      // W8-15：registry 键空间必须与 seed 构建时的真实 registry 一致（干净 HOME 默认 npmjs.org 会 ENOTCACHED 假阴性）
+      npm_config_registry: offlineRegistryFor(context.repoRoot),
     };
     let output: string;
     try {
@@ -137,7 +151,7 @@ const defaultCleanInstall = async (context: GateHStepContext): Promise<GateHStep
         attachments: [writeAttachment(context.evidenceDir, 'clean-install.log', message.slice(0, 4000))],
       };
     }
-    return { id: 'clean-install', status: 'passed', attachments: [writeAttachment(context.evidenceDir, 'clean-install.log', output.slice(0, 4000))] };
+    return { id: 'clean-install', status: 'passed', attachments: [writeAttachment(context.evidenceDir, 'clean-install.log', `registry=${env.npm_config_registry}\n${output.slice(0, 4000)}`)] };
   } catch (cause) {
     return { id: 'clean-install', status: 'blocked', reason: String((cause as Error)?.message ?? cause).slice(0, 300), attachments: [] };
   } finally {
