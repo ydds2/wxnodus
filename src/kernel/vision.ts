@@ -127,8 +127,38 @@ export async function describeImageStatus(target: string, apiKeyEnc: string | nu
   }
   // 远程：settings key > env > 加密配置
   const key = vs.key ?? visionKey(apiKeyEnc);
-  if (!key) return { ok: false, reason: '未配置视觉密钥——/key set <密钥> 或 settings.visionKey；或用 settings.visionLocal=true 本地离线视觉' };
+  if (!key) {
+    // W8-09 Windows 生态互依：无视觉密钥 → 系统原生 OCR 兜底（离线、零模型下载——提取画面文字；
+    // 语义诚实：返回 OCR 文本而非视觉描述）
+    const ocrText = await windowsOcrFallback(target);
+    if (ocrText) return { ok: true, text: ocrText };
+    return { ok: false, reason: '未配置视觉密钥——/key set <密钥> 或 settings.visionKey；或用 settings.visionLocal=true 本地离线视觉（本机 Windows OCR 亦无文字结果）' };
+  }
   return remoteVision(target, key, prompt, vs);
+}
+
+/** Windows 系统 OCR 兜底（file 路径直读；data: 写临时文件；http 不做下载——诚实跳过） */
+async function windowsOcrFallback(target: string): Promise<string | null> {
+  if (process.platform !== 'win32') return null;
+  if (/^https?:\/\//i.test(target)) return null;
+  try {
+    const { ocrWindowsImage } = await import('./computer/ocr.js');
+    if (target.startsWith('data:')) {
+      const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const dir = mkdtempSync(join(tmpdir(), 'wxn-ocr-'));
+      const png = join(dir, 'frame.png');
+      writeFileSync(png, Buffer.from(target.split(',')[1] ?? '', 'base64'));
+      const r = await ocrWindowsImage(png);
+      rmSync(dir, { recursive: true, force: true });
+      return r.ok ? r.text : null;
+    }
+    const r = await ocrWindowsImage(target);
+    return r.ok ? r.text : null;
+  } catch {
+    return null;
+  }
 }
 
 /** 兼容旧签名：失败返回 null（调用方按无描述处理） */

@@ -49,7 +49,66 @@ export async function captureScreen(opts: { region?: CaptureRegion } = {}): Prom
     }
     const png = await img.toPng();
     return { png: Buffer.from(png), width, height, scale };
-  } catch { return null; } // 原生模块不可用（CI/无桌面）→ null
+  } catch {
+    // W8-09 Windows 生态互依：node-screenshots 原生模块失败 → 系统 .NET CopyFromScreen 兜底
+    // （消除 npm 原生模块单点——npm install 原生编译失败时截屏仍可用）
+    return captureScreenNativeFallback(opts);
+  }
+}
+
+/** 系统原生截屏兜底（System.Drawing CopyFromScreen——异步 spawn 不阻塞；非 Windows 返回 null） */
+export async function captureScreenNativeFallback(opts: { region?: CaptureRegion } = {}): Promise<ScreenShot | null> {
+  if (process.platform !== 'win32') return null;
+  const { spawn } = await import('node:child_process');
+  const { mkdtempSync, readFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'wxn-shot-'));
+  const pngPath = join(dir, 'screen.png');
+  const region = opts.region;
+  const bounds = region
+    ? `[System.Drawing.Rectangle]::new(${Math.max(0, Math.floor(region.x))}, ${Math.max(0, Math.floor(region.y))}, ${Math.floor(region.width)}, ${Math.floor(region.height)})`
+    : '[System.Windows.Forms.Screen]::PrimaryScreen.Bounds';
+  const ps = [
+    'Add-Type -AssemblyName System.Drawing',
+    'Add-Type -AssemblyName System.Windows.Forms',
+    `$bounds = ${bounds}`,
+    '$b = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)',
+    '$g = [System.Drawing.Graphics]::FromImage($b)',
+    '$g.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $b.Size)',
+    '$g.Dispose()',
+    `$b.Save('${pngPath.replace(/'/g, "''").replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png)`,
+    '$b.Dispose()',
+    "Write-Output ('SHOT_OK:' + $bounds.Width + 'x' + $bounds.Height)",
+  ].join('; ');
+  return new Promise(resolve => {
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    let out = '';
+    child.stdout!.on('data', (c: Buffer) => { out += c.toString('utf8'); });
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch { /* 忽略 */ }
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* 忽略 */ }
+      resolve(null);
+    }, 15_000);
+    child.on('error', () => {
+      clearTimeout(timer);
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* 忽略 */ }
+      resolve(null);
+    });
+    child.on('close', code => {
+      clearTimeout(timer);
+      let result: ScreenShot | null = null;
+      if (code === 0) {
+        try {
+          const m = /SHOT_OK:(\d+)x(\d+)/.exec(out);
+          const png = readFileSync(pngPath);
+          if (m && png.length > 0) result = { png, width: Number(m[1]), height: Number(m[2]), scale: 1 };
+        } catch { result = null; }
+      }
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* 忽略 */ }
+      resolve(result);
+    });
+  });
 }
 
 export class ComputerUse {

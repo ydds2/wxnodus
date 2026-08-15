@@ -486,3 +486,13 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - **Gate H 新鲜实跑**（`gate-h-2026-08-15`）：pack-verify/installer-lifecycle/blank-home-run **passed**；clean-install 网络缓存 ENOTCACHED 如实 blocked → 整体 blocked（预期，诚实）。
 - 验证：全量 **270 文件 / 1976 通过 / 10 跳过 / 0 失败**（首跑观察 1 例瞬态 flake，连跑两次全绿 + w8-07/08 三连稳定）；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
 - 诚实边界：Gate E 生产 receipt 需完整物理前置（双屏/OS 基线/dotnet fixtures——本机部分满足）；Gate I 按范围不适用；离线 LLM 按用户指示放弃。
+
+## Windows 生态互依轮（用户方向：积极依靠 Windows 生态、减轻负荷）— 2026-08-15
+
+- 审计：browser（系统 Edge 优先）/ clipboard（PowerShell）/ UIA（System.Windows.Automation）/ TTS+STT（SAPI）已深度依靠 Windows 生态；空白在视觉 OCR 与截屏原生模块单点。
+- **Windows.Media.Ocr 原生 OCR**（w8-09，零模型下载、离线）：`ocrWindowsImage` WinRT 异步桥（非阻塞 spawn + zh-Hans-CN→用户档语言链 + probe 缓存）；真实回路「WxNodus Ecosystem 2026」精确读回；非 Windows 诚实 ok:false。probe 修复：PowerShell 多行输出（类型装载回显 + Count）→ 正则提取首个数字（此前 Number 整串 → NaN 误判 false）。
+- **vision 无 key 兜底**：describeImageStatus 无视觉密钥 → 系统 OCR 提取画面文字（语义诚实：OCR 文本而非视觉描述；http 目标不下载跳过）。
+- **截屏原生兜底**：captureScreen 失败 → `captureScreenNativeFallback`（System.Drawing CopyFromScreen，异步 spawn）——消除 node-screenshots 原生模块单点；本机实测 1536×864 真实屏幕 PNG（109KB）。
+- 证据 receipt `win-eco-2026-08-15` **passed**（OCR 回路/vision 兜底/截屏兜底三段全真实）；`npm run evidence:windows-ecosystem`。
+- 验证：全量 **271 文件 / 1980 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
+- 互依格局：Edge（浏览器）/ SAPI（语音双通道）/ WinRT OCR（视觉文字）/ .NET 截屏兜底 / PowerShell UIA+剪贴板——系统生态承担，npm 原生模块仅剩 robotjs（主通道）+ node-screenshots（主通道，兜底已备）。
