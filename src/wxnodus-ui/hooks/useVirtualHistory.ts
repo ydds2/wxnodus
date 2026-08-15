@@ -1,4 +1,5 @@
 import type { ScrollBoxHandle } from '@wxnodus/ink'
+import { appendFileSync } from 'node:fs'
 import {
   type RefObject,
   useCallback,
@@ -244,6 +245,21 @@ export function useVirtualHistory(
   const vp = Math.max(0, scrollRef.current?.getViewportHeight() ?? 0)
   const sticky = scrollRef.current?.isSticky() ?? true
   const recentManual = Date.now() - (scrollRef.current?.getLastManualScrollAt() ?? 0) < 1200
+
+  // WXNODUS_DEBUG_VHIST=1：逐帧虚拟化诊断（winpty 环境虚拟行不绘制根因定位用；
+  // 缺省零开销，生产不启用）。日志写文件（console 被 Ink patchConsole 劫持进帧缓冲）。
+  if (process.env.WXNODUS_DEBUG_VHIST) {
+    try {
+      appendFileSync(
+        process.env.WXNODUS_DEBUG_VHIST_LOG || '/tmp/vhist.log',
+        JSON.stringify({
+          n, total, top, pendingDelta, vp, sticky, hasScrollRef,
+          heights: Array.from(heights.current.entries()).slice(0, 6),
+          offsetsHead: Array.from(offsets.slice(0, Math.min(8, n + 1)))
+        }) + '\n'
+      )
+    } catch { /* 诊断日志失败不影响主流程 */ }
+  }
 
   // During a freeze, drop the frozen range if items shrank past its start
   // (/clear, compaction) — clamping would collapse to an empty mount and
@@ -534,6 +550,15 @@ export function useVirtualHistory(
       bumpMeasuredHeightVersion(n => n + 1)
     }
   }, [effEnd, effStart, items, liveTailActive, measuredHeightVersion, n, offsets, scrollRef, sticky, total, vp])
+
+  if (process.env.WXNODUS_DEBUG_VHIST) {
+    try {
+      appendFileSync(
+        process.env.WXNODUS_DEBUG_VHIST_LOG || '/tmp/vhist.log',
+        JSON.stringify({ start, end, effStart, effEnd, topSpacer: offsets[effStart] ?? 0, bottomSpacer: Math.max(0, total - (offsets[effEnd] ?? total)) }) + '\n'
+      )
+    } catch { /* 诊断日志失败不影响主流程 */ }
+  }
 
   return {
     bottomSpacer: Math.max(0, total - (offsets[effEnd] ?? total)),
