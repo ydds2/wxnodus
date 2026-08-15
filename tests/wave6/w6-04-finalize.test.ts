@@ -184,4 +184,13 @@ describe('W6-04 release:finalize', () => {
     expect(Array.isArray(report.steps)).toBe(true);
     void result;
   });
+
+  // W8-16（实盘缺陷）：run-wave3-gates 曾写 {status} 对象 → importer 全跳过（entries=0）+ F-W3 永不为 0。
+  // 生产者 gates 必须是数字状态码 map（0/1/2/3/4/130），细节保留在 details——与 importer/finalize 契约一致。
+  it('源锚点：run-wave3-gates 产出数字状态码 gates（与 importer/finalize 契约 schema 一致）', () => {
+    const src = readFileSync(join(__dirname, '..', '..', 'scripts', 'run-wave3-gates.mjs'), 'utf8');
+    expect(src).toContain('gates: gateStatuses');
+    expect(src).toContain('details: gateResults');
+    expect(src).toContain('r.status');
+  });
 });

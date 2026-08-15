@@ -101,7 +101,11 @@ runGate('F-W3', 'npm.cmd', ['exec', '--', 'vitest', 'run', 'tests/integration/wa
 // G-W3：completion gate（只消费闭合证据）
 runGate('G-W3', 'npm.cmd', ['run', 'gate:completion', '--', '--run', runId]);
 
-const report = { runId, wave: 3, gates: gateResults, firstFailure };
+// W8-16（实盘缺陷）：gates 必须为数字状态码 map（0 passed/1 failed/2 blocked/…）——
+// evidenceIndexImporter/finalize legacy-reachability/buildGateOutcomes 的契约 schema 均为数字；
+// 此前写 {status} 对象导致 importer 全跳过（entries=0）且 F-W3 永不为 0。每门细节保留在 details。
+const gateStatuses = Object.fromEntries(Object.entries(gateResults).map(([id, r]) => [id, r.status]));
+const report = { runId, wave: 3, gates: gateStatuses, details: gateResults, firstFailure };
 const reportPath = join(runDir, 'gate-report.json');
 writeFileSync(reportPath, JSON.stringify(report, null, 2), 'utf8');
 process.stdout.write(`${JSON.stringify(report)}\n`);
