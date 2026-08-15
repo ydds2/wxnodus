@@ -1,0 +1,14 @@
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\obj\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\obj\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.AssemblyInfoInputs.cache
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\obj\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.AssemblyInfo.cs
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\obj\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.csproj.CoreCompileInputs.cache
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\bin\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.exe
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\bin\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.deps.json
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\bin\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.runtimeconfig.json
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\bin\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.dll
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\bin\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.pdb
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\obj\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.dll
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\obj\Release\net8.0-windows\win-x64\refint\WxNodus.Win32Fixture.dll
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\obj\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.pdb
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\obj\Release\net8.0-windows\win-x64\WxNodus.Win32Fixture.genruntimeconfig.cache
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\obj\Release\net8.0-windows\win-x64\ref\WxNodus.Win32Fixture.dll

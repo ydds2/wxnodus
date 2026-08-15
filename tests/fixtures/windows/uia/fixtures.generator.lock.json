@@ -1,20 +1,53 @@
-{
-  "schemaVersion": 1,
-  "generator": {
-    "id": "wxnodus-uia-isomorphic-fixture-generator",
-    "version": "1.0.0",
-    "entrypoint": "tests/fixtures/windows/uia/generate-fixtures.mjs",
-    "sha256": "c39d3e4a39df9da660907c27026a9ea5769707f41573193dcae8d37fd7e92229"
-  },
-  "targets": ["win32", "wpf", "winui", "electron"],
-  "model": {
-    "windowTitle": "WxNodus UIA Fixture",
-    "controls": [
-      { "automationId": "invoke", "type": "button", "patterns": ["Invoke"] },
-      { "automationId": "selection", "type": "list", "patterns": ["Selection"] },
-      { "automationId": "value", "type": "textbox", "patterns": ["Value"] },
-      { "automationId": "status", "type": "text", "patterns": [] }
-    ],
-    "transitions": ["invoke->invoked", "selection:item-2->selected:item-2", "value:text->value:text"]
-  }
+﻿{
+    "schemaVersion":  1,
+    "generator":  {
+                      "id":  "wxnodus-uia-isomorphic-fixture-generator",
+                      "version":  "1.0.0",
+                      "entrypoint":  "tests/fixtures/windows/uia/generate-fixtures.mjs",
+                      "sha256":  "c39d3e4a39df9da660907c27026a9ea5769707f41573193dcae8d37fd7e92229"
+                  },
+    "targets":  [
+                    "win32",
+                    "wpf",
+                    "winui",
+                    "electron"
+                ],
+    "model":  {
+                  "windowTitle":  "WxNodus UIA Fixture",
+                  "controls":  [
+                                   {
+                                       "automationId":  "invoke",
+                                       "type":  "button",
+                                       "patterns":  [
+                                                        "Invoke"
+                                                    ]
+                                   },
+                                   {
+                                       "automationId":  "selection",
+                                       "type":  "list",
+                                       "patterns":  [
+                                                        "Selection"
+                                                    ]
+                                   },
+                                   {
+                                       "automationId":  "value",
+                                       "type":  "textbox",
+                                       "patterns":  [
+                                                        "Value"
+                                                    ]
+                                   },
+                                   {
+                                       "automationId":  "status",
+                                       "type":  "text",
+                                       "patterns":  [
+
+                                                    ]
+                                   }
+                               ],
+                  "transitions":  [
+                                      "invoke-\u003einvoked",
+                                      "selection:item-2-\u003eselected:item-2",
+                                      "value:text-\u003evalue:text"
+                                  ]
+              }
 }

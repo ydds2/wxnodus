@@ -1,0 +1,41 @@
+﻿{
+    "schemaVersion":  1,
+    "fixtures":  [
+                     {
+                         "source":  "tests/fixtures/windows/uia/win32",
+                         "id":  "win32",
+                         "version":  "1.0.0",
+                         "artifactSha256":  "bd4a44e52932675ee2f84f5395d00c94c9ae60d44b5713f57c335772f7d28c9f",
+                         "artifact":  "tests/fixtures/windows/uia/win32/bin/Release/net8.0-windows/win-x64/publish/WxNodus.Win32Fixture.exe",
+                         "sourceSha256":  "33d89a401095e077d01c433ae17c105561f26bec4b00ad1c9dd65318349dd665",
+                         "build":  "dotnet publish tests/fixtures/windows/uia/win32/WxNodus.Win32Fixture.csproj -c Release --no-restore"
+                     },
+                     {
+                         "source":  "tests/fixtures/windows/uia/wpf",
+                         "id":  "wpf",
+                         "version":  "1.0.0",
+                         "artifactSha256":  "25ef4ec203b34059fade41524eab75cf02352b987889362049c646bc54363d06",
+                         "artifact":  "tests/fixtures/windows/uia/wpf/bin/Release/net8.0-windows/publish/WxNodus.WpfFixture.exe",
+                         "sourceSha256":  "55a935e2a7b2dd2ef4f68fc75916eed89db3b544cf49bac90d19901dbcca0f7d",
+                         "build":  "dotnet publish tests/fixtures/windows/uia/wpf/WxNodus.WpfFixture.csproj -c Release --no-restore"
+                     },
+                     {
+                         "source":  "tests/fixtures/windows/uia/winui",
+                         "id":  "winui",
+                         "version":  "1.0.0",
+                         "artifactSha256":  "8c0b62fac036a8b4fa239d137831822c316e32f7030abc017cc815e056053eac",
+                         "artifact":  "tests/fixtures/windows/uia/winui/bin/Release/net8.0-windows10.0.19041.0/publish/WxNodus.WinUiFixture.exe",
+                         "sourceSha256":  "48ff03acb6ac4b6b5e925a78318ca07231caf793a61fd30cb62b8a15cb2f716a",
+                         "build":  "dotnet publish tests/fixtures/windows/uia/winui/WxNodus.WinUiFixture.csproj -c Release --no-restore"
+                     },
+                     {
+                         "source":  "tests/fixtures/windows/uia/electron",
+                         "id":  "electron",
+                         "version":  "31.7.7",
+                         "artifactSha256":  "56c30266c64cae969af22ce0a64851998aa3cd0926b505302459c7b7690ccf58",
+                         "artifact":  "tests/fixtures/windows/uia/electron/dist/WxNodus Electron Fixture-win32-x64/WxNodus Electron Fixture.exe",
+                         "sourceSha256":  "0cfad0e22e7c873720b9e4198d351ca2527521174e3e31315630208d673cf11d",
+                         "build":  "npm.cmd --prefix tests/fixtures/windows/uia/electron ci \u0026\u0026 npm.cmd --prefix tests/fixtures/windows/uia/electron run build"
+                     }
+                 ]
+}

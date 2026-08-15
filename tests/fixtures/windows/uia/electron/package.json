@@ -5,7 +5,7 @@
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "build": "electron-packager . "WxNodus Electron Fixture" --platform=win32 --arch=x64 --out=dist --overwrite --prune"
+    "build": "electron-packager . \"WxNodus Electron Fixture\" --platform=win32 --arch=x64 --out=dist --overwrite --prune"
   },
   "devDependencies": {
     "electron": "31.7.7",

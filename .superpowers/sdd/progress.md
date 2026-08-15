@@ -512,3 +512,16 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - **Gate E 候选绑定修复**：produce 路径此前直接取快照空 sha256（RUNNER_NOT_SELF_HOSTED 恒命中）——现在评估前真实绑定（候选 tgz hash + 环境快照 hash + 场景能力清单 hash）并入快照。
 - dotnet 8 SDK 安装 + fixture 供给本轮**如实跳过**（~200MB 下载 + electron 构建——留待下轮，uia 场景保持 blocked）。
 - 验证：全量 **275 文件 / 1994 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
+
+## 降级档位 + fixture 供给链修复轮（W6-08，用户决策：单屏降级档）— 2026-08-15
+
+- **单屏降级档（契约 16/16）**：`evaluateWindowsRunner(tier='single-display')` 显示器三项 waived（full 档形状不变零破坏）；aggregate 单屏档要求 **waiver 数学证据真实在场且哈希匹配**（绝不无背书放行）；`--scope win11-only` 单 OS 档（win10 遗赠 receipt 声明性豁免——需 19045 真机）；CLI --tier/--waiver-evidence/--scope 全接线。
+- **dotnet 8 SDK 用户级安装 + fixture 供给链全线修复**（此前从未真实编译过，E2E 实跑暴露 6 处真缺陷）：
+  - win32 fixture：lpfnWndProc 方法组→nint（.NET 8 报错）改委托类型；SendMessageW/DefWindowProcW 声明缺失补齐；win-x64 产物路径锁对齐
+  - electron fixture：package.json 嵌套引号非法 JSON；npm ci 无 lockfile → 生成 package-lock.json（npmmirror 镜像）；electron-packager 产物路径锁对齐
+  - build-fixtures.ps1：PSScriptRoot 双拼路径（×4 处）；Add-Member 不持久化 hashtable（锁里键从未存在）→ 直接赋值
+  - provision-windows-runner.ps1：fixture 字段恒空 → 真实读取 fixtures.lock.json（lock sha256 + 生成器 hash + 4 产物逐一哈希核验）——快照 fixtures **全部真实通过**
+- **Gate E produce 首次产出真实 receipt**（tier single-display + 数学证据绑定 + 候选/环境/能力三哈希真实绑定）：前置全部通过、waived 三项如实记录。aggregate 诚实 blocked 于 `WINDOWS_RECEIPT_SCENARIO_MISSING`（6/7 场景——**uia 场景需要 runner 驱动的 fixture 交互会话机制，repo 缺失——真实缺口如实记录**）。
+- release:finalize 实跑：blocked 于 import-evidence（legacy gate-report 工件缺失——下一轮生成）；requirement-coverage **OK（20 requirements / 13 subprojects）**。
+- 验证：全量 **275 文件 / 1999 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
+- 剩余（全部可归因）：uia 场景 runner 驱动机制（真实缺口）、场景结果喂给 receipt 的装配、legacy gate-report 工件、多屏物理层（数学层已证）。

@@ -1,0 +1,5 @@
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\bin\Release\net8.0-windows\win-x64\publish\WxNodus.Win32Fixture.exe
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\bin\Release\net8.0-windows\win-x64\publish\WxNodus.Win32Fixture.dll
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\bin\Release\net8.0-windows\win-x64\publish\WxNodus.Win32Fixture.deps.json
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\bin\Release\net8.0-windows\win-x64\publish\WxNodus.Win32Fixture.runtimeconfig.json
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\win32\bin\Release\net8.0-windows\win-x64\publish\WxNodus.Win32Fixture.pdb

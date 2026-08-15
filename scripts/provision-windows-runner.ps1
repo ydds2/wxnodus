@@ -58,7 +58,26 @@ try {
 $out.sapiVoices = $sapi
 $out.sapiPlaybackPassed = $playback
 
+# W6-08：fixture 锁真实读取（此前恒空——WINDOWS_FIXTURE_LOCK_INVALID 恒命中，机制不完整）
 $out.fixtures = [ordered]@{ lockSha256 = ''; sourceHashesValid = $false; artifactHashesValid = $false }
+try {
+  $uiaRoot = Join-Path $PSScriptRoot '..\tests\fixtures\windows\uia'
+  $lockPath = Join-Path $uiaRoot 'fixtures.lock.json'
+  $genLockPath = Join-Path $uiaRoot 'fixtures.generator.lock.json'
+  $genPath = Join-Path $uiaRoot 'generate-fixtures.mjs'
+  if ((Test-Path $lockPath) -and (Test-Path $genLockPath) -and (Test-Path $genPath)) {
+    $lock = Get-Content $lockPath -Raw | ConvertFrom-Json
+    $genLock = Get-Content $genLockPath -Raw | ConvertFrom-Json
+    $out.fixtures.lockSha256 = (Get-FileHash -Algorithm SHA256 $lockPath).Hash.ToLowerInvariant()
+    $out.fixtures.sourceHashesValid = ((Get-FileHash -Algorithm SHA256 $genPath).Hash.ToLowerInvariant() -eq $genLock.generator.sha256)
+    $out.fixtures.artifactHashesValid = $true
+    foreach ($f in $lock.fixtures) {
+      $artPath = Join-Path (Join-Path $PSScriptRoot '..') (($f.artifact -replace '/', '\'))
+      if (-not (Test-Path $artPath)) { $out.fixtures.artifactHashesValid = $false; break }
+      if ((Get-FileHash -Algorithm SHA256 $artPath).Hash.ToLowerInvariant() -ne $f.artifactSha256) { $out.fixtures.artifactHashesValid = $false; break }
+    }
+  }
+} catch { $out.fixtures = [ordered]@{ lockSha256 = ''; sourceHashesValid = $false; artifactHashesValid = $false } }
 
 # 显示器（真实 GetDpiForMonitor 缩放——失败记 null，绝不硬编码 1.0）
 Add-Type -AssemblyName System.Windows.Forms

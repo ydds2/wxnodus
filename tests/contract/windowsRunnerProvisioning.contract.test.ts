@@ -41,6 +41,7 @@ const REQUIRED = ['preflight', 'voice', 'computer-multimonitor', 'browser', 'bui
 function writeReceiptDir(
   receiptKey: 'windows-11-24h2-production-real' | 'windows-10-22h2-legacy-compatibility',
   runner: Parameters<typeof evaluateWindowsRunner>[0],
+  extraCore: Record<string, unknown> = {},
 ): string {
   const dir = mkdtempSync(join(tmpdir(), 'w3-e-receipt-'));
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
@@ -49,7 +50,7 @@ function writeReceiptDir(
     receiptId: `receipt-${receiptKey}`, receiptKey, runId: 'run-w3-e',
     candidateCommit: runner.candidateCommit, artifact: runner.artifact,
     environment: runner.environment, capability: runner.capability,
-    runner, fixtures: runner.fixtures, scenarios,
+    runner, fixtures: runner.fixtures, scenarios, ...extraCore,
   };
   const coreBytes = Buffer.from(`${JSON.stringify(core, null, 2)}\n`, 'utf8');
   const entries = [{ path: 'receipt-core.json', bytes: coreBytes.length, sha256: sha256(coreBytes) }];
@@ -150,5 +151,63 @@ describe('controlled Windows runner', () => {
       status: 'blocked',
       code: 'WINDOWS_RECEIPT_CORE_MISMATCH',
     });
+  });
+});
+
+describe('single-display tier（W6-08 用户决策：零安装数学层方案）', () => {
+  const singleDisplay = { ...healthy, monitors: [healthy.monitors[0]] };
+
+  it('evaluateWindowsRunner tier=single-display：单屏快照 passed + waived 三项；full 档仍 blocked', () => {
+    const d = evaluateWindowsRunner(singleDisplay, { tier: 'single-display' }) as { status: string; waived?: string[] };
+    expect(d.status).toBe('passed');
+    expect(d.waived).toEqual(['WINDOWS_MULTIMONITOR_REQUIRED', 'WINDOWS_NEGATIVE_ORIGIN_REQUIRED', 'WINDOWS_MIXED_DPI_REQUIRED']);
+    const full = evaluateWindowsRunner(singleDisplay) as { status: string };
+    expect(full.status).toBe('blocked');
+  });
+
+  it('aggregate：single-display 档双 receipt + 有效数学证据哈希 → passed（waiver 有真实背书）', () => {
+    const evidence = mkdtempSync(join(tmpdir(), 'w6-08-evidence-')); cleanup.push(() => rmSync(evidence, { recursive: true, force: true }));
+    const evidenceFile = join(evidence, 'outcome.json');
+    writeFileSync(evidenceFile, '{"status":"passed","schema":"multimonitor-math-evidence@1"}');
+    const evidenceSha = sha256(readFileSync(evidenceFile));
+    const tierCore = { tier: 'single-display', waived: ['WINDOWS_MULTIMONITOR_REQUIRED', 'WINDOWS_NEGATIVE_ORIGIN_REQUIRED', 'WINDOWS_MIXED_DPI_REQUIRED'], waiverEvidence: { sha256: evidenceSha } };
+    const win11Dir = writeReceiptDir('windows-11-24h2-production-real', singleDisplay, tierCore);
+    const win10Dir = writeReceiptDir('windows-10-22h2-legacy-compatibility', {
+      ...singleDisplay,
+      labels: ['self-hosted', 'windows', 'x64', 'interactive', 'win10-22h2'],
+      os: { family: 'win10', version: '10.0.19045' },
+    }, tierCore);
+    expect(aggregateGateEReceipts([win11Dir, win10Dir], { waiverEvidenceFile: evidenceFile })).toMatchObject({ status: 'passed' });
+  });
+
+  it('aggregate：数学证据哈希不匹配 → blocked（waiver 无背书绝不放行）', () => {
+    const evidence = mkdtempSync(join(tmpdir(), 'w6-08-evidence-bad-')); cleanup.push(() => rmSync(evidence, { recursive: true, force: true }));
+    const evidenceFile = join(evidence, 'outcome.json');
+    writeFileSync(evidenceFile, '{"status":"blocked"}');
+    const tierCore = { tier: 'single-display', waived: ['WINDOWS_MULTIMONITOR_REQUIRED', 'WINDOWS_NEGATIVE_ORIGIN_REQUIRED', 'WINDOWS_MIXED_DPI_REQUIRED'], waiverEvidence: { sha256: 'f'.repeat(64) } };
+    const win11Dir = writeReceiptDir('windows-11-24h2-production-real', singleDisplay, tierCore);
+    const win10Dir = writeReceiptDir('windows-10-22h2-legacy-compatibility', {
+      ...singleDisplay,
+      labels: ['self-hosted', 'windows', 'x64', 'interactive', 'win10-22h2'],
+      os: { family: 'win10', version: '10.0.19045' },
+    }, tierCore);
+    expect(aggregateGateEReceipts([win11Dir, win10Dir], { waiverEvidenceFile: evidenceFile })).toMatchObject({
+      status: 'blocked',
+      code: 'WINDOWS_RECEIPT_WAIVER_EVIDENCE_MISMATCH',
+    });
+  });
+});
+
+describe('win11-only scope（W6-08 用户决策：单 OS 档）', () => {
+  it('aggregate scope=win11-only：仅 win11 receipt → passed + win10 waiver 声明', () => {
+    const win11Dir = writeReceiptDir('windows-11-24h2-production-real', healthy);
+    const r = aggregateGateEReceipts([win11Dir], { scope: 'win11-only' }) as { status: string; waivedReceiptKeys?: string[] };
+    expect(r.status).toBe('passed');
+    expect(r.waivedReceiptKeys).toEqual(['windows-10-22h2-legacy-compatibility']);
+  });
+
+  it('aggregate full 档：仅 win11 receipt → blocked（双 OS 要求保持）', () => {
+    const win11Dir = writeReceiptDir('windows-11-24h2-production-real', healthy);
+    expect(aggregateGateEReceipts([win11Dir])).toMatchObject({ status: 'blocked', code: 'WINDOWS_REQUIRED_RECEIPT_MISSING' });
   });
 });

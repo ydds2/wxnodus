@@ -6,7 +6,8 @@ param(
   [switch]$WriteLock
 )
 $ErrorActionPreference = 'Stop'
-$Root = Join-Path $PSScriptRoot 'tests\fixtures\windows\uia'
+$Root = $PSScriptRoot  # W6-08: PSScriptRoot is the script dir (was double-joined)
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $GenLock = Join-Path $Root 'fixtures.generator.lock.json'
 $OutLock = Join-Path $Root 'fixtures.lock.json'
 $Generator = Join-Path $Root 'generate-fixtures.mjs'
@@ -24,13 +25,13 @@ if ($WriteLock) {
   node $Generator $tmp | Out-Null
   $sources = Get-ChildItem -Recurse -File $Root | Where-Object { $_.Name -ne 'fixtures.lock.json' -and $_.Name -ne 'fixtures.generator.lock.json' -and $_.Name -ne 'generate-fixtures.mjs' }
   $fixtures = @(
-    @{ id = 'win32'; version = '1.0.0'; source = 'tests/fixtures/windows/uia/win32'; build = 'dotnet publish tests/fixtures/windows/uia/win32/WxNodus.Win32Fixture.csproj -c Release --no-restore'; artifact = 'tests/fixtures/windows/uia/win32/bin/Release/net8.0-windows/publish/WxNodus.Win32Fixture.exe' },
+    @{ id = 'win32'; version = '1.0.0'; source = 'tests/fixtures/windows/uia/win32'; build = 'dotnet publish tests/fixtures/windows/uia/win32/WxNodus.Win32Fixture.csproj -c Release --no-restore'; artifact = 'tests/fixtures/windows/uia/win32/bin/Release/net8.0-windows/win-x64/publish/WxNodus.Win32Fixture.exe' },
     @{ id = 'wpf'; version = '1.0.0'; source = 'tests/fixtures/windows/uia/wpf'; build = 'dotnet publish tests/fixtures/windows/uia/wpf/WxNodus.WpfFixture.csproj -c Release --no-restore'; artifact = 'tests/fixtures/windows/uia/wpf/bin/Release/net8.0-windows/publish/WxNodus.WpfFixture.exe' },
     @{ id = 'winui'; version = '1.0.0'; source = 'tests/fixtures/windows/uia/winui'; build = 'dotnet publish tests/fixtures/windows/uia/winui/WxNodus.WinUiFixture.csproj -c Release --no-restore'; artifact = 'tests/fixtures/windows/uia/winui/bin/Release/net8.0-windows10.0.19041.0/publish/WxNodus.WinUiFixture.exe' },
-    @{ id = 'electron'; version = '31.7.7'; source = 'tests/fixtures/windows/uia/electron'; build = 'npm.cmd --prefix tests/fixtures/windows/uia/electron ci && npm.cmd --prefix tests/fixtures/windows/uia/electron run build'; artifact = 'tests/fixtures/windows/uia/electron/dist/WxNodus Electron Fixture.exe' }
+    @{ id = 'electron'; version = '31.7.7'; source = 'tests/fixtures/windows/uia/electron'; build = 'npm.cmd --prefix tests/fixtures/windows/uia/electron ci && npm.cmd --prefix tests/fixtures/windows/uia/electron run build'; artifact = 'tests/fixtures/windows/uia/electron/dist/WxNodus Electron Fixture-win32-x64/WxNodus Electron Fixture.exe' }
   )
   foreach ($f in $fixtures) {
-    $src = Join-Path $PSScriptRoot ($f.source -replace '/', '\')
+    $src = Join-Path $RepoRoot ($f.source -replace '/', '\')
     $files = Get-ChildItem -Recurse -File $src | Sort-Object FullName
     $hash = [System.Security.Cryptography.SHA256]::Create()
     foreach ($file in $files) {
@@ -41,13 +42,13 @@ if ($WriteLock) {
       $hash.TransformBlock($fileBytes, 0, $fileBytes.Length, $null, 0) | Out-Null
     }
     $hash.TransformFinalBlock([byte[]]@(), 0, 0) | Out-Null
-    $f | Add-Member -NotePropertyName sourceSha256 -NotePropertyValue ([BitConverter]::ToString($hash.Hash).Replace('-', '').ToLowerInvariant())
-    $artifactPath = Join-Path $PSScriptRoot ($f.artifact -replace '/', '\')
+    $f.sourceSha256 = [BitConverter]::ToString($hash.Hash).Replace('-', '').ToLowerInvariant()
+    $artifactPath = Join-Path $RepoRoot ($f.artifact -replace '/', '\')
     if (Test-Path $artifactPath) {
-      $f | Add-Member -NotePropertyName artifactSha256 -NotePropertyValue (Get-Sha256 $artifactPath)
+      $f.artifactSha256 = (Get-Sha256 $artifactPath)
     } else {
-      $f | Add-Member -NotePropertyName artifactSha256 -NotePropertyValue $null
-      $f | Add-Member -NotePropertyName artifactNotBuilt -NotePropertyValue $true
+      $f.artifactSha256 = $null
+      $f.artifactNotBuilt = $true
     }
   }
   $out = @{ schemaVersion = 1; fixtures = $fixtures }
@@ -90,7 +91,7 @@ if ($VerifyLock) {
   }
   $out = Get-Content $OutLock -Raw | ConvertFrom-Json
   foreach ($f in $out.fixtures) {
-    $artifactPath = Join-Path $PSScriptRoot ($f.artifact -replace '/', '\')
+    $artifactPath = Join-Path $RepoRoot ($f.artifact -replace '/', '\')
     if (-not (Test-Path $artifactPath)) {
       Write-Error "WINDOWS_FIXTURE_ARTIFACT_HASH_MISMATCH: artifact not built ($($f.id)) — run build on a provisioned runner"
       exit 2

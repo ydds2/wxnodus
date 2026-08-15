@@ -124,6 +124,17 @@ if (has('--produce-receipt')) {
   const boundArtifact = { id: candidate.artifactId ?? candidate.candidateId ?? '', sha256: candidate.tgzSha256 ?? '' };
   const boundEnvironment = { snapshotId: envSnapshotHash.slice(0, 16), sha256: envSnapshotHash };
   const boundCapability = { snapshotId: 'windows-acceptance-scenarios-v1', sha256: capabilityHash };
+  // W6-08：tier=single-display（用户决策）——数学层证据必须真实在场并哈希绑定
+  const tier = flag('--tier') === 'single-display' ? 'single-display' : 'full';
+  let waiverEvidence = null;
+  if (tier === 'single-display') {
+    const mathFile = join(receiptsRoot, runId, 'multimonitor-math', 'outcome.json');
+    if (!existsSync(mathFile)) {
+      console.error('SINGLE_DISPLAY_TIER_REQUIRES_MATH_EVIDENCE: multimonitor-math outcome.json missing');
+      process.exit(2);
+    }
+    waiverEvidence = { path: 'multimonitor-math/outcome.json', sha256: sha256(readFileSync(mathFile)) };
+  }
   const boundRunner = {
     ...runner,
     artifact: boundArtifact,
@@ -131,7 +142,7 @@ if (has('--produce-receipt')) {
     capability: boundCapability,
     candidateCommit: runner.candidateCommit ?? candidate.commit ?? '',
   };
-  const decision = evaluateWindowsRunner(boundRunner);
+  const decision = evaluateWindowsRunner(boundRunner, { tier });
   const receiptKey = osKey === 'win11-24h2' ? 'windows-11-24h2-production-real' : 'windows-10-22h2-legacy-compatibility';
   const receiptId = `receipt-${receiptKey}`;
   const receiptDir = join(receiptsRoot, runId, `receipt-${receiptKey}`);
@@ -143,6 +154,7 @@ if (has('--produce-receipt')) {
     : scenarios.map(scenario => ({ ...scenario, status: 'blocked', attachmentIds: [] }));
   const core = {
     receiptId, receiptKey, runId,
+    ...(tier === 'single-display' ? { tier: 'single-display', waived: decision.waived ?? [], waiverEvidence } : {}),
     candidateCommit: boundRunner.candidateCommit,
     artifact: boundArtifact,
     environment: boundEnvironment,
@@ -163,11 +175,15 @@ if (has('--produce-receipt')) {
 if (has('--aggregate-receipts')) {
   const runId = flag('--run');
   const receiptDirs = args.reduce((acc, value, index) => (value === '--receipt' ? [...acc, args[index + 1]] : acc), []);
-  if (!runId || receiptDirs.length !== 2) {
-    console.error('usage: --aggregate-receipts --run <uuid> --receipt <dir> --receipt <dir>');
+  const scope = flag('--scope');
+  // W6-08：win11-only 档只需 1 个 receipt（win10 遗赠 receipt 声明性豁免）；full 档仍要求 2 个
+  const requiredCount = scope === 'win11-only' ? 1 : 2;
+  if (!runId || receiptDirs.length !== requiredCount) {
+    console.error('usage: --aggregate-receipts --run <uuid> --receipt <dir> [--receipt <dir>] [--scope win11-only]');
     process.exit(2);
   }
-  const decision = aggregateGateEReceipts(receiptDirs.map(dir => resolve(dir)));
+  const waiverEvidenceFile = flag('--waiver-evidence') ? resolve(flag('--waiver-evidence')) : undefined;
+  const decision = aggregateGateEReceipts(receiptDirs.map(dir => resolve(dir)), { waiverEvidenceFile, scope });
   const dir = join(receiptsRoot, runId);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'gate-e-aggregate.json'), JSON.stringify(decision, null, 2), 'utf8');

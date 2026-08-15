@@ -20,7 +20,10 @@ export interface WindowsRunnerSnapshot {
 }
 export type WindowsRunnerDecision =
   | { status: 'passed' }
-  | { status: 'blocked'; code: 'WINDOWS_PHYSICAL_PRECONDITION_BLOCKED'; missing: string[] };
+  | { status: 'passed'; tier: 'single-display'; waived: string[] }
+  | { status: 'blocked'; code: 'WINDOWS_PHYSICAL_PRECONDITION_BLOCKED'; missing: string[] }
+  | { status: 'blocked'; code: 'WINDOWS_PHYSICAL_PRECONDITION_BLOCKED'; missing: string[]; tier: 'single-display'; waived: string[] };
+export interface WindowsRunnerTierOptions { tier?: 'single-display'; waiverEvidenceFile?: string; scope?: 'win11-only' }
 export type WindowsReceiptKey = 'windows-11-24h2-production-real' | 'windows-10-22h2-legacy-compatibility';
 /** receipt-core：无 manifest hash、无 closure（closure 由 aggregator 从 required 场景计算） */
 export interface WindowsAcceptanceReceiptCore {
@@ -49,6 +52,6 @@ export type GateEAggregateDecision =
 
 export declare const REQUIRED_WINDOWS_SCENARIOS: readonly string[];
 export declare const computeRootDigest: (entries: ReceiptManifestEntry[]) => string;
-export declare function evaluateWindowsRunner(snapshot: WindowsRunnerSnapshot): WindowsRunnerDecision;
+export declare function evaluateWindowsRunner(snapshot: WindowsRunnerSnapshot, opts?: WindowsRunnerTierOptions): WindowsRunnerDecision;
 /** receipt 目录（含 receipt-index.json/receipt-core.json/manifest.json + 附件）——aggregator 先重算再解析 */
-export declare function aggregateGateEReceipts(receiptDirs: readonly string[]): GateEAggregateDecision;
+export declare function aggregateGateEReceipts(receiptDirs: readonly string[], opts?: WindowsRunnerTierOptions): GateEAggregateDecision;

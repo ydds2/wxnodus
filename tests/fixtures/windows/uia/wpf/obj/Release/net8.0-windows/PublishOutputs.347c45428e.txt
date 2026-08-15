@@ -1,0 +1,5 @@
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\wpf\bin\Release\net8.0-windows\publish\WxNodus.WpfFixture.exe
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\wpf\bin\Release\net8.0-windows\publish\WxNodus.WpfFixture.dll
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\wpf\bin\Release\net8.0-windows\publish\WxNodus.WpfFixture.deps.json
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\wpf\bin\Release\net8.0-windows\publish\WxNodus.WpfFixture.runtimeconfig.json
+C:\Users\20164\Desktop\WxNodusV3CLI\tests\fixtures\windows\uia\wpf\bin\Release\net8.0-windows\publish\WxNodus.WpfFixture.pdb
