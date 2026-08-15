@@ -5,7 +5,7 @@
 // （--version + 确定性计算）。任一步 blocked → 整体 blocked（绝不把部分通过当完整边界证据）。
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { OperationResult } from '../protocol/results.js';
 import { configError } from '../domain/config/configSchema.js';
@@ -31,6 +31,8 @@ export interface GateHStepContext {
   repoRoot: string;
   evidenceDir: string;
   tgzFile: string;
+  /** W6-06：airgap 预热缓存（npm cache 目录）——clean-install 注入后离线安装可完成 */
+  cacheSeed?: string;
 }
 
 export interface GateHStepOverrides {
@@ -46,7 +48,21 @@ export interface RunGateHOptions {
   runId: string;
   candidateFile: string;
   steps?: GateHStepOverrides;
+  /** W6-06：airgap 预热缓存目录（npm cache 结构）——clean-install 注入 */
+  cacheSeed?: string;
   now?: () => string;
+}
+
+/** 预热缓存注入（airgap）：seed 目录复制进 stage 缓存位；seed 缺失/不可读诚实 ok:false */
+export function seedNpmCache(destDir: string, seedDir: string): { ok: boolean; reason?: string } {
+  try {
+    if (!existsSync(seedDir)) return { ok: false, reason: `cache seed 不存在：${seedDir}` };
+    mkdirSync(destDir, { recursive: true });
+    cpSync(seedDir, destDir, { recursive: true });
+    return { ok: true };
+  } catch (cause) {
+    return { ok: false, reason: String((cause as Error)?.message ?? cause).slice(0, 200) };
+  }
 }
 
 const sha256 = (bytes: Buffer | string): string => createHash('sha256').update(bytes).digest('hex');
@@ -94,9 +110,19 @@ const defaultCleanInstall = async (context: GateHStepContext): Promise<GateHStep
     mkdirSync(prefix, { recursive: true });
     mkdirSync(home, { recursive: true });
     writeFileSync(join(stage, 'package.json'), '{"name":"gate-h-clean-install","private":true}\n');
+    // W6-06：预热缓存注入——airgap 步骤可完成（此前全新空缓存 + --offline 恒 ENOTCACHED，机制不完整）
+    const cacheDir = join(stage, 'npm-cache');
+    if (context.cacheSeed) {
+      const seeded = seedNpmCache(cacheDir, context.cacheSeed);
+      if (!seeded.ok) {
+        return { id: 'clean-install', status: 'blocked', reason: `cache seed 注入失败：${seeded.reason ?? ''}`, attachments: [] };
+      }
+    } else {
+      mkdirSync(cacheDir, { recursive: true });
+    }
     const env = {
       ...process.env, HOME: home, USERPROFILE: home, WXNODUS_NO_DEBUG: '1', MSYS_NO_PATHCONV: '1',
-      npm_config_prefix: prefix, npm_config_cache: join(stage, 'npm-cache'),
+      npm_config_prefix: prefix, npm_config_cache: cacheDir,
     };
     let output: string;
     try {
@@ -238,7 +264,7 @@ export async function runGateH(options: RunGateHOptions): Promise<OperationResul
   }
   const tgzFile = readdirSync(dirname(candidateFile)).map(name => join(dirname(candidateFile), name)).find(file => file.endsWith('.tgz')) ?? '';
   mkdirSync(evidenceDir, { recursive: true });
-  const context: GateHStepContext = { candidateFile, repoRoot, evidenceDir, tgzFile };
+  const context: GateHStepContext = { candidateFile, repoRoot, evidenceDir, tgzFile, cacheSeed: options.cacheSeed };
   const steps: GateHStepResult[] = [];
   steps.push(await (options.steps?.packVerify ?? defaultPackVerify)(context));
   steps.push(await (options.steps?.cleanInstall ?? defaultCleanInstall)(context));

@@ -115,14 +115,16 @@ export function evaluateWindowsRunner(snapshot) {
   const osLabels = snapshot.labels.filter(label => label === 'win10-22h2' || label === 'win11-24h2');
   if (osLabels.length !== 1) missing.push('WINDOWS_OS_BASELINE_UNSUPPORTED');
   if (!snapshot.interactive || !snapshot.unlocked || snapshot.sessionId <= 0 || snapshot.inputDesktop !== 'Default') missing.push('WINDOWS_INTERACTIVE_SESSION_REQUIRED');
-  if (!snapshot.node.version.startsWith('22.') || snapshot.node.arch !== 'x64' ||
+  // W6-07：node.arch 接受 amd64（Windows PROCESSOR_ARCHITECTURE 真实值——与 x64 同义，不是不同架构）
+  if (!snapshot.node.version.startsWith('22.') || (snapshot.node.arch !== 'x64' && snapshot.node.arch !== 'amd64') ||
       !/^[a-f0-9]{64}$/.test(snapshot.artifact.sha256) ||
       !/^[a-f0-9]{64}$/.test(snapshot.environment.sha256) ||
       !/^[a-f0-9]{64}$/.test(snapshot.capability.sha256)) missing.push('WINDOWS_RUNNER_NOT_SELF_HOSTED');
   const build = Number(snapshot.os.version.split('.')[2]);
+  // W6-07（用户决策）：win11-24h2 接受 26100 与 26200（同代际构建——本机矩阵扩增，只扩矩阵不降标准）
   const baseline = snapshot.os.family === 'win10'
     ? build === 19045 && osLabels[0] === 'win10-22h2'
-    : build === 26100 && osLabels[0] === 'win11-24h2';
+    : (build === 26100 || build === 26200) && osLabels[0] === 'win11-24h2';
   if (!baseline) missing.push('WINDOWS_OS_BASELINE_UNSUPPORTED');
   if (!snapshot.microphones.some(device => device.active && device.physical)) missing.push('WINDOWS_MICROPHONE_REQUIRED');
   if (snapshot.sapiVoices.length === 0 || !snapshot.sapiPlaybackPassed) missing.push('WINDOWS_SAPI_REQUIRED');

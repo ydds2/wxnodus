@@ -19,7 +19,8 @@ if (!runId) {
 const runDir = resolve(repoRoot, 'artifacts', 'release-evidence', runId);
 const candidateFile = resolve(flag('candidate') ?? `${runDir}/candidate.json`);
 
-const result = await runGateH({ repoRoot, evidenceDir: resolve(runDir, 'gate-h'), runId, candidateFile });
+const cacheSeed = flag('cache-seed') ? resolve(flag('cache-seed')!) : undefined;
+const result = await runGateH({ repoRoot, evidenceDir: resolve(runDir, 'gate-h'), runId, candidateFile, ...(cacheSeed ? { cacheSeed } : {}) });
 if (!result.ok) {
   process.stderr.write(`GATE_H_FAILED: ${result.error.code} ${result.error.message ?? ''}\n`);
   process.exit(2);

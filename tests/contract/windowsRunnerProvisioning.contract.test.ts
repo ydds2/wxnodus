@@ -105,6 +105,14 @@ describe('controlled Windows runner', () => {
     })).toEqual({ status: 'passed' });
   });
 
+  it('accepts Win11 24H2 代际构建 26200（用户决策：本机矩阵扩增——与 26100 同为 24H2）', () => {
+    expect(evaluateWindowsRunner({
+      ...healthy,
+      labels: ['self-hosted', 'windows', 'x64', 'interactive', 'win11-24h2'],
+      os: { family: 'win11', version: '10.0.26200' },
+    })).toEqual({ status: 'passed' });
+  });
+
   it('requires OS-keyed immutable receipts for production-real Win11 and legacy-compatible Win10', () => {
     const win11Dir = writeReceiptDir('windows-11-24h2-production-real', healthy);
     const win10Runner = {

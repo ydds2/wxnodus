@@ -5,7 +5,8 @@ $out = [ordered]@{}
 $out.selfHosted = $true
 $out.labels = @('self-hosted', 'windows', 'x64', 'interactive')
 $os = Get-CimInstance Win32_OperatingSystem
-if ($os.Version -like '10.0.261*') { $out.labels += 'win11-24h2'; $out.family = 'win11' }
+# W6-07（用户决策）：24H2 代际构建 26100 与 26200 均入矩阵（同代际，只扩矩阵不降标准）
+if ($os.Version -like '10.0.261*' -or $os.Version -like '10.0.262*') { $out.labels += 'win11-24h2'; $out.family = 'win11' }
 elseif ($os.Version -like '10.0.190*') { $out.labels += 'win10-22h2'; $out.family = 'win10' }
 else { $out.labels += 'unsupported-os'; $out.family = 'unknown' }
 $out.os = [ordered]@{ family = $out.family; version = $os.Version }

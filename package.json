@@ -90,7 +90,8 @@
     "evidence:mcp-e2e": "node scripts/evidence-mcp-e2e.mjs",
     "evidence:voice-capture": "node scripts/evidence-voice-capture.mjs",
     "evidence:windows-acceptance": "node scripts/evidence-windows-acceptance.mjs",
-    "evidence:windows-ecosystem": "node scripts/evidence-windows-ecosystem.mjs"
+    "evidence:windows-ecosystem": "node scripts/evidence-windows-ecosystem.mjs",
+    "evidence:multimonitor-math": "node scripts/evidence-multimonitor-math.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",

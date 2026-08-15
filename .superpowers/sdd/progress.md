@@ -503,3 +503,12 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - **/eco 生态互依面板（w8-11）**：`probeEcosystem` 真实探测 11 项系统能力（Edge 浏览器/SAPI TTS/SAPI STT/whisper 本地资产/ffmpeg/WinRT OCR/PowerShell 剪贴板/UIA/dotnet/robotjs/node-screenshots）——结果缓存（面板高频读不反复 spawn）、非 Windows 诚实降级；`/eco` 命令真实注册进总线。契约 3/3。
 - 互依格局终态：系统生态承担 11 项能力的 9 项；npm 原生模块仅剩 robotjs + node-screenshots 两个**主通道**，且**双双各有系统兜底**（SendInput / CopyFromScreen）——原生模块编译失败不再阻断可用性。
 - 验证：全量 **273 文件 / 1987 通过 / 10 跳过 / 0 失败**（连跑两次全绿，flake 观察稳定）；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
+
+## 关卡消解轮（用户决策：零安装数学层 + 26200 入矩阵；其余继续）— 2026-08-15
+
+- **Gate H 缓存注入（w6-06，缺口修复）**：clean-install 此前硬编码全新空 npm 缓存 + --offline——任何机器恒 ENOTCACHED（机制不完整）。新增 `seedNpmCache`（预热缓存复制进 stage）+ `--cache-seed` CLI 透传；本机真实预热：在线装依赖进 seed（189 包）+ **本机已有 better-sqlite3 二进制自建 prebuild 缓存条目**（GitHub 源被阻断、MSVC 工具链缺失——两条路都不通，第三条路用本机二进制按 prebuild-install 缓存格式 sha512 前 6 位命名 tar.gz 入 _prebuilds）+ 迭代补齐 7.1.2 等离线解析差异版本。**Gate H 首次全步 passed**（pack-verify/clean-install/installer-lifecycle/blank-home-run）。
+- **26200 入 Gate E 矩阵（用户决策，w6-07）**：evaluateWindowsRunner win11-24h2 接受 26100/26200（同代际，只扩矩阵不降标准）；provision 脚本 262* 打 win11-24h2 标签；node.arch 接受 amd64（PROCESSOR_ARCHITECTURE 真实值）；契约 11/11。Gate E 本机前置收敛到 2 类：fixture 锁（dotnet 缺失）+ 多屏硬件。
+- **多屏数学层验证（用户决策：零安装，w8-12）**：convertCoords 混合 DPI 4 案例 + 真实截屏区域裁剪钳制 + 负原点变换公式规范锚点（3/3 绿）；evidence receipt `multimonitor-math-2026-08-15` passed——诚实标注「数学层已证、OS 级物理层待双屏真机」，不冒充 physical receipt。
+- **Gate E 候选绑定修复**：produce 路径此前直接取快照空 sha256（RUNNER_NOT_SELF_HOSTED 恒命中）——现在评估前真实绑定（候选 tgz hash + 环境快照 hash + 场景能力清单 hash）并入快照。
+- dotnet 8 SDK 安装 + fixture 供给本轮**如实跳过**（~200MB 下载 + electron 构建——留待下轮，uia 场景保持 blocked）。
+- 验证：全量 **275 文件 / 1994 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。

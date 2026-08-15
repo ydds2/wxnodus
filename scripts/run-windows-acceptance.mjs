@@ -107,7 +107,31 @@ if (has('--produce-receipt')) {
     process.exit(2);
   }
   const runner = loadRunnerSnapshot(flag('--runner-snapshot'));
-  const decision = evaluateWindowsRunner(runner);
+  // W6-07：候选绑定真实计算并在评估前并入快照（此前快照三哈希恒空 →
+  // WINDOWS_RUNNER_NOT_SELF_HOSTED 恒命中；供给脚本只做机器探测，绑定在 receipt 生产时完成）
+  const runDir = join(receiptsRoot, runId);
+  let candidate = {};
+  try { candidate = existsSync(join(runDir, 'candidate.json')) ? JSON.parse(readFileSync(join(runDir, 'candidate.json'), 'utf8')) : {}; } catch { candidate = {}; }
+  const envSnapshotJson = JSON.stringify(runner);
+  const envSnapshotHash = sha256(envSnapshotJson);
+  const capabilityHash = (() => {
+    const dir = resolve('tests/acceptance/windows');
+    try {
+      const parts = readdirSync(dir).filter(name => name.endsWith('.ps1')).sort().map(name => `${name}:${sha256(readFileSync(join(dir, name)))}`);
+      return sha256(parts.join('\n'));
+    } catch { return ''; }
+  })();
+  const boundArtifact = { id: candidate.artifactId ?? candidate.candidateId ?? '', sha256: candidate.tgzSha256 ?? '' };
+  const boundEnvironment = { snapshotId: envSnapshotHash.slice(0, 16), sha256: envSnapshotHash };
+  const boundCapability = { snapshotId: 'windows-acceptance-scenarios-v1', sha256: capabilityHash };
+  const boundRunner = {
+    ...runner,
+    artifact: boundArtifact,
+    environment: boundEnvironment,
+    capability: boundCapability,
+    candidateCommit: runner.candidateCommit ?? candidate.commit ?? '',
+  };
+  const decision = evaluateWindowsRunner(boundRunner);
   const receiptKey = osKey === 'win11-24h2' ? 'windows-11-24h2-production-real' : 'windows-10-22h2-legacy-compatibility';
   const receiptId = `receipt-${receiptKey}`;
   const receiptDir = join(receiptsRoot, runId, `receipt-${receiptKey}`);
@@ -119,11 +143,11 @@ if (has('--produce-receipt')) {
     : scenarios.map(scenario => ({ ...scenario, status: 'blocked', attachmentIds: [] }));
   const core = {
     receiptId, receiptKey, runId,
-    candidateCommit: runner.candidateCommit ?? '',
-    artifact: runner.artifact ?? { id: '', sha256: '' },
-    environment: runner.environment ?? { snapshotId: '', sha256: '' },
-    capability: runner.capability ?? { snapshotId: '', sha256: '' },
-    runner,
+    candidateCommit: boundRunner.candidateCommit,
+    artifact: boundArtifact,
+    environment: boundEnvironment,
+    capability: boundCapability,
+    runner: boundRunner,
     fixtures: runner.fixtures ?? { lockSha256: '', sourceHashesValid: false, artifactHashesValid: false },
     scenarios: effectiveScenarios,
   };
