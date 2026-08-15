@@ -18,7 +18,7 @@ import { getInputSelection } from '../runtime/selectionStore.js'
 import type { InputHandlerContext, InputHandlerResult } from '../bridge/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../runtime/promptStore.js'
 import { turnController } from '../runtime/flowController.js'
-import { clearSelectedMessage, patchUiState, showSelectionHint } from '../runtime/viewStore.js'
+import { clearSelectedMessage, showSelectionHint } from '../runtime/viewStore.js'
 import { writeClipboardText } from '../lib/clipboard.js'
 import { patchTurnState } from '../runtime/flowStore.js'
 import { getUiState } from '../runtime/viewStore.js'
@@ -379,13 +379,6 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // A3 修复：Ctrl+O 打开模型选择器（保留草稿；参考热键同款）
     if (isCtrl(key, ch, 'o')) {
       patchOverlayState({ modelPicker: true })
-      return
-    }
-
-    // A23：Alt+D（meta+d——Ctrl+D 已被「退出」占用，见 isAction('d')）切换右侧
-    // 详情面板（双栏布局；Alt+G 编辑器同款便携修饰键模式）
-    if (ch.toLowerCase() === 'd' && key.meta) {
-      patchUiState(s => ({ ...s, dualPane: !s.dualPane }))
       return
     }
 

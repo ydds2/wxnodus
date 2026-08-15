@@ -1526,10 +1526,6 @@ export class GatewayClient extends EventEmitter {
     } else if (key === 'statusbar') {
       ;(s as Record<string, any>).tui_statusbar = value
       this.kernel.config.setKey('settings', 'tui_statusbar', value)
-    } else if (key === 'dual_pane') {
-      // A23：/pane 持久化（display.tui_dual_pane——重启保持双栏状态）
-      ;(s as Record<string, any>).tui_dual_pane = value ? 1 : 0
-      this.kernel.config.setKey('settings', 'tui_dual_pane', (s as Record<string, any>).tui_dual_pane)
     } else if (key === 'skin') {
       // 开放兼容：/skin <名称> 真实生效——落盘 settings.skin + 广播 skin.changed
       // （前端 eventAdapter applySkin 已有，缺数据源——此处分发皮肤对象）

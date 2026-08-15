@@ -5,7 +5,7 @@ import { Fragment, memo, useMemo, useRef } from 'react'
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { AppLayoutProps } from '../bridge/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../runtime/promptStore.js'
-import { clearSelectedMessage, patchUiState, $uiState } from '../runtime/viewStore.js'
+import { clearSelectedMessage, $uiState } from '../runtime/viewStore.js'
 import { bgActiveCount, useBgSelector } from '../runtime/backgroundStore.js'
 import { INLINE_MODE, SHOW_FPS, TERMUX_TUI_MODE } from '../config/env.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
@@ -25,11 +25,9 @@ import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { Banner, Panel, SessionPanel } from './branding.js'
 import { BrandBar } from './brandBar.js'
 import { accretionRule } from '../lib/brandRule.js'
-import { DetailPane } from './detailPane.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
 import { MessageLine } from './messageLine.js'
-import { dualPaneWidths } from '../lib/paneLayout.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
@@ -80,7 +78,7 @@ const BgSummaryLine = memo(function BgSummaryLine() {
   if (bgActiveCount(bg) === 0 || !parts.length) return null
 
   return (
-    <Box onClick={() => patchUiState({ dualPane: true, paneTab: 'bg' })}>
+    <Box>
       <Text color={ui.theme.color.muted}>
         <Text color={ui.theme.color.accent}>{icon('copy')} 后台：</Text>
         {parts.join(' · ')}
@@ -101,11 +99,8 @@ const TranscriptPane = memo(function TranscriptPane({
 }: Pick<AppLayoutProps, 'actions' | 'composer' | 'progress' | 'transcript'>) {
   const ui = useStore($uiState)
 
-  // A23 双栏布局：面板开启且终端足够宽时，消息渲染宽度 = 主区宽度
-  // （扣除面板本体 + 边框）；过窄时面板不渲染、消息用全宽。
-  const pane = dualPaneWidths(composer.cols)
-  const paneVisible = ui.dualPane && pane.show
-  const msgCols = paneVisible ? pane.left : composer.cols
+  // 单栏布局（双栏已取消）：消息渲染宽度恒等于终端宽度。
+  const msgCols = composer.cols
 
   // LiveTodoPanel rides as a child of the latest user-message row so it
   // visually belongs to the prompt and follows it during scroll. -1 when
@@ -207,8 +202,8 @@ const TranscriptPane = memo(function TranscriptPane({
                 />
               )}
 
-              {/* A23：面板开启时清单由右侧面板接管（避免同一清单两处显示） */}
-              {!paneVisible && row.index === lastUserIdx && <LiveTodoPanel />}
+              {/* 单栏布局（双栏已取消）：清单随最新用户消息行显示 */}
+              {row.index === lastUserIdx && <LiveTodoPanel />}
             </Box>
           ))}
 
@@ -311,7 +306,7 @@ const ComposerPane = memo(function ComposerPane({
 
       {ui.bgTasks.size > 0 && (
         // A24：旧 bg 行点击也直达后台面板（与 BgSummaryLine 一致）
-        <Box onClick={() => patchUiState({ dualPane: true, paneTab: 'bg' })}>
+        <Box>
           <Text color={ui.theme.color.muted}>
             {ui.bgTasks.size} background {ui.bgTasks.size === 1 ? 'task' : 'tasks'} running
           </Text>
@@ -479,7 +474,7 @@ const StatusRulePane = memo(function StatusRulePane({
         onVoiceClick={actions.toggleVoiceMode}
         onCwdClick={() => patchOverlayState({ dirPicker: true })}
         onModelClick={() => patchOverlayState({ modelPicker: true })}
-        onBgClick={() => patchUiState({ dualPane: true, paneTab: 'bg' })}
+        onBgClick={() => {}}
         selectionHint={ui.selectionHint}
         sessionStartedAt={status.sessionStartedAt}
         showCost={ui.showCost}
@@ -522,12 +517,6 @@ export const AppLayout = memo(function AppLayout({
           ) : (
             <PerfPane id="transcript">
               <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
-            </PerfPane>
-          )}
-          {/* A23 双栏布局：右侧详情面板（固定宽；过窄终端自动隐藏；agents 全屏时让位） */}
-          {!overlay.agents && ui.dualPane && dualPaneWidths(composer.cols).show && (
-            <PerfPane id="detail">
-              <DetailPane cols={composer.cols} onCommand={text => composer.submit(text)} />
             </PerfPane>
           )}
         </Box>
