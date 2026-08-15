@@ -615,6 +615,20 @@ if (pre.mode === 'error') {
       execSync('chcp 65001 >nul', { stdio: 'ignore' });
     } catch { /* 无权限/非 cmd 时静默 */ }
   }
+
+  // W8-20/21：终端能力层级引导（cmd/conhost 风险防线）——conhost 候选走 PS 开 VT + CPR 探测；
+  // VT 不可用 → 诚实指引退出（绝不输出乱码 TUI）。结果缓存在模块级供渲染器能力注入（W8-22）。
+  const { bootstrapConsoleForTui, noVtGuidance } = await import('../wxnodus-ui/lib/consoleBootstrap.js');
+  const { setTuiTerminalTier } = await import('../wxnodus-ui/lib/terminalTier.js');
+  const consoleEnv = await bootstrapConsoleForTui(process.env);
+  if (consoleEnv.tier === 'no-vt') {
+    consoleEnv.restore();
+    process.stderr.write(`${noVtGuidance(consoleEnv.reason)}\n`);
+    void shutdown('no-vt-console').finally(() => process.exit(2));
+    return;
+  }
+  setTuiTerminalTier(consoleEnv);
+
   try { process.stdout.write('\x1b]0;WxNodus — 概念编译器\x07'); } catch {}
 
   // 简化人工操作（阶段 C）：启动自动恢复上次未完成会话（settings.autoResume=false 关闭）
@@ -718,6 +732,8 @@ if (pre.mode === 'error') {
   // B1/W2-03 统一退出清理：MCP 子进程 + DB + UI 全部回收（SIGINT/SIGTERM/requestExit 共用
   // main 顶部定义的共享幂等 shutdown——聚合全部 disposer 失败，不再各分支手写 process.exit）
   disposers.push({ id: 'ui', dispose: () => { app?.unmount(); } });
+  // W8-21：退出时 best-effort 恢复 conhost 输入模式（QuickEdit/行/回显）
+  disposers.push({ id: 'console-restore', dispose: () => { consoleEnv.restore(); } });
 
   process.on('SIGINT', () => {
     if (exitRequested) { void shutdown('sigint').finally(() => process.exit(0)); return; }
