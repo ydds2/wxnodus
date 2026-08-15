@@ -90,6 +90,11 @@ function safeEval(expr: string): number | null {
 export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // 启动时订阅既有 webhook 配置（热注册由 /webhook add 处理）
   subscribeWebhooks(ctx);
+  // /eco —— Windows 生态互依状态面板（真实探测、结果缓存——反复打开不反复 spawn）
+  bus.register('/eco', async () => {
+    const { renderEcosystem } = await import('../application/ecosystemStatus.js');
+    return renderEcosystem(ctx.dataDir);
+  });
   // ── 工具类（确定性）────────────────────────────
   bus.register('/calc', (args) => {
     const expr = args.join(' ');

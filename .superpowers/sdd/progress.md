@@ -496,3 +496,10 @@ Committed as `251c21a` (W2-03/04 CLI lifecycle), `6c8edcb` (merge to master), an
 - 证据 receipt `win-eco-2026-08-15` **passed**（OCR 回路/vision 兜底/截屏兜底三段全真实）；`npm run evidence:windows-ecosystem`。
 - 验证：全量 **271 文件 / 1980 通过 / 10 跳过 / 0 失败**；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。
 - 互依格局：Edge（浏览器）/ SAPI（语音双通道）/ WinRT OCR（视觉文字）/ .NET 截屏兜底 / PowerShell UIA+剪贴板——系统生态承担，npm 原生模块仅剩 robotjs（主通道）+ node-screenshots（主通道，兜底已备）。
+
+## 完善轮：robotjs 输入兜底 + /eco 生态互依面板（W8-10/11）— 2026-08-15
+
+- **robotjs 输入兜底（w8-10）**：最后一个 npm 原生模块单点消除——robotjs 加载失败（robotFailed 记忆不反复抛）→ 各输入分支兜底系统 user32 SendInput（PowerShell 桥：click=MOUSEEVENTF_LEFT/RIGHTDOWN+UP、double=两轮、type/key=SendWait 转义、scroll=MOUSEEVENTF_WHEEL 0x0800；异步 spawn 非阻塞）。契约 4/4：纯脚本构建器锚点 + 非 Windows 诚实 ok:false + 主通道优先源锚点。
+- **/eco 生态互依面板（w8-11）**：`probeEcosystem` 真实探测 11 项系统能力（Edge 浏览器/SAPI TTS/SAPI STT/whisper 本地资产/ffmpeg/WinRT OCR/PowerShell 剪贴板/UIA/dotnet/robotjs/node-screenshots）——结果缓存（面板高频读不反复 spawn）、非 Windows 诚实降级；`/eco` 命令真实注册进总线。契约 3/3。
+- 互依格局终态：系统生态承担 11 项能力的 9 项；npm 原生模块仅剩 robotjs + node-screenshots 两个**主通道**，且**双双各有系统兜底**（SendInput / CopyFromScreen）——原生模块编译失败不再阻断可用性。
+- 验证：全量 **273 文件 / 1987 通过 / 10 跳过 / 0 失败**（连跑两次全绿，flake 观察稳定）；oracle 31/31；typecheck×2/build/discovery 干净；dist smoke 通过。

@@ -12,9 +12,19 @@ const requireCjs = createRequire(import.meta.url);
 export interface ScreenShot { png: Buffer; width: number; height: number; scale: number }
 
 // 桌面控制（robotjs 0.9.1 封装——Node-API 预编译，Unicode 中文支持）
+// W8-10：加载失败记忆（robotFailed）——不反复抛；各动作分支在 getRobot() 为空时
+// 兜底系统 user32 SendInput（nativeInput.ts，零原生模块单点）
 let robot: any = null;
+let robotFailed = false;
 function getRobot(): any {
-  if (!robot) { robot = requireCjs('robotjs'); }
+  if (!robot && !robotFailed) {
+    try {
+      robot = requireCjs('robotjs');
+    } catch {
+      robotFailed = true;
+      robot = null;
+    }
+  }
   return robot;
 }
 
@@ -133,6 +143,11 @@ export class ComputerUse {
         switch (a.type) {
           case 'click': {
             const r = getRobot();
+            if (!r) {
+              const { nativeInput } = await import('./nativeInput.js');
+              const fb = await nativeInput(a);
+              return fb.ok ? `已点击 (${a.x},${a.y})（系统 SendInput 兜底）` : `动作失败（robotjs 不可用且系统兜底失败）：${fb.error ?? ''}`;
+            }
             r.moveMouse(a.x, a.y);
             // KF-008：robotjs mouseClick 无 'double' 按钮语义——双击走布尔第二参
             // mouseClick(button, double)；把 'double' 当按钮名传入是参数不匹配
@@ -140,6 +155,12 @@ export class ComputerUse {
             return `已点击 (${a.x},${a.y})`;
           }
           case 'type': {
+            const r = getRobot();
+            if (!r) {
+              const { nativeInput } = await import('./nativeInput.js');
+              const fb = await nativeInput(a);
+              return fb.ok ? `已输入 ${a.text.length} 字符（系统 SendInput 兜底）` : `动作失败（robotjs 不可用且系统兜底失败）：${fb.error ?? ''}`;
+            }
             // 中文走剪贴板粘贴（调研结论：typeString 对 CJK 不可靠）
             if (/[\u4e00-\u9fff]/.test(a.text)) {
               const { pasteText } = await import('./clipboard.js');
@@ -151,16 +172,34 @@ export class ComputerUse {
             return `已输入 ${a.text.length} 字符`;
           }
           case 'key': {
+            const r = getRobot();
+            if (!r) {
+              const { nativeInput } = await import('./nativeInput.js');
+              const fb = await nativeInput(a);
+              return fb.ok ? `已按键 ${a.key}（系统 SendInput 兜底）` : `动作失败（robotjs 不可用且系统兜底失败）：${fb.error ?? ''}`;
+            }
             getRobot().keyTap(a.key);
             return `已按键 ${a.key}`;
           }
           case 'paste': {
             const { pasteText } = await import('./clipboard.js');
             await pasteText(a.text);
+            const r = getRobot();
+            if (!r) {
+              const { nativeInput } = await import('./nativeInput.js');
+              const fb = await nativeInput({ type: 'key', key: 'v' });
+              return fb.ok ? '已粘贴（系统 SendInput 兜底）' : `动作失败（robotjs 不可用且系统兜底失败）：${fb.error ?? ''}`;
+            }
             getRobot().keyTap('v', ['control']);
             return '已粘贴';
           }
           case 'scroll': {
+            const r = getRobot();
+            if (!r) {
+              const { nativeInput } = await import('./nativeInput.js');
+              const fb = await nativeInput(a);
+              return fb.ok ? `已滚动 ${a.amount}（系统 SendInput 兜底）` : `动作失败（robotjs 不可用且系统兜底失败）：${fb.error ?? ''}`;
+            }
             getRobot().scrollMouse(a.x, a.y, a.amount);
             return `已滚动 ${a.amount}`;
           }
