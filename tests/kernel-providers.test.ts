@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { encryptKey, decryptKey } from '../src/kernel/providers.js';
 import { ruleBrain, mapHttpError, buildChatRequest } from '../src/kernel/providers.js';
-import { MODEL_CATALOG, capabilityBadges, filterModels, REASONING_FIELDS, detectProvider } from '../src/kernel/providers.js';
+import { MODEL_CATALOG, capabilityBadges, filterModels, REASONING_FIELDS, detectProvider, resolveApiKey } from '../src/kernel/providers.js';
 
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -225,4 +225,54 @@ describe('模型目录能力', () => {
     expect(capabilityBadges(undefined)).toBe('');
   });
 
+});
+
+// ── P3c：resolveApiKey per-provider 槽位 + 归属校验（多 provider 目录与单槽错配修复）──
+describe('resolveApiKey per-provider 槽位', () => {
+  const cleanEnv = { ...process.env };
+  delete cleanEnv.WXNODUS_DEEPSEEK_KEY; delete cleanEnv.WXNODUS_ZHIPU_KEY; delete cleanEnv.WXNODUS_API_KEY;
+
+  it('per-provider 槽位命中（baseURL 推断 provider）', () => {
+    const zk = encryptKey('sk-zhipu-real');
+    const res = resolveApiKey({ baseURL: 'https://open.bigmodel.cn/api/paas/v4', apiKeys: { zhipu: zk } }, cleanEnv);
+    expect(res.key).toBe('sk-zhipu-real');
+    expect(res.provider).toBe('zhipu');
+    expect(res.source).toBe('enc');
+  });
+
+  it('遗留单槽 + 归属不符 → provider-mismatch fail-closed（不再误发 401）', () => {
+    const zk = encryptKey('sk-zhipu-real');
+    const res = resolveApiKey({ baseURL: 'https://api.deepseek.com/v1', apiKeyEnc: zk, keyProvider: 'zhipu' }, cleanEnv);
+    expect(res.key).toBeNull();
+    expect(res.error).toBe('provider-mismatch');
+    expect(res.hint).toContain('deepseek');
+  });
+
+  it('遗留单槽 + 归属匹配 → 正常解密（向后兼容）', () => {
+    const zk = encryptKey('sk-zhipu-real');
+    const res = resolveApiKey({ baseURL: 'https://open.bigmodel.cn/api/paas/v4', apiKeyEnc: zk, keyProvider: 'zhipu' }, cleanEnv);
+    expect(res.key).toBe('sk-zhipu-real');
+    expect(res.error).toBeUndefined();
+  });
+
+  it('遗留单槽无归属标注 → 任意 provider 可用（老配置零回归）', () => {
+    const zk = encryptKey('sk-legacy');
+    const res = resolveApiKey({ baseURL: 'https://api.deepseek.com/v1', apiKeyEnc: zk }, cleanEnv);
+    expect(res.key).toBe('sk-legacy');
+  });
+
+  it('per-provider 槽位优先于遗留单槽', () => {
+    const dk = encryptKey('sk-deepseek-new');
+    const zk = encryptKey('sk-zhipu-old');
+    const res = resolveApiKey({ baseURL: 'https://api.deepseek.com/v1', apiKeyEnc: zk, keyProvider: 'zhipu', apiKeys: { deepseek: dk } }, cleanEnv);
+    expect(res.key).toBe('sk-deepseek-new');
+  });
+
+  it('env 优先于全部加密槽位', () => {
+    const env = { ...cleanEnv, WXNODUS_DEEPSEEK_KEY: 'sk-env-key' };
+    const dk = encryptKey('sk-deepseek-enc');
+    const res = resolveApiKey({ baseURL: 'https://api.deepseek.com/v1', apiKeys: { deepseek: dk } }, env);
+    expect(res.key).toBe('sk-env-key');
+    expect(res.source).toBe('env');
+  });
 });

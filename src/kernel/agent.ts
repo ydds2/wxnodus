@@ -288,10 +288,12 @@ export function createAgent(opts: AgentOptions) {
     const { resolveApiKey } = await import('./providers.js');
     const keyRes = resolveApiKey(s);
 
-    // enc 存在但解密失败（机器指纹变化/数据损坏）——明确提示重新配置，
-    // 而不是误导性的「未配置」
+    // enc 存在但解密失败（机器指纹变化/数据损坏）或密钥归属与当前模型 provider 不符——
+    // 明确提示修复路径，而不是误导性的「未配置」或对端 401
     if (keyRes.source === 'enc' && !keyRes.key) {
-      return { type: 'text', content: '密钥无法解密（机器环境变化或数据损坏？）——请用 /key set <密钥> 重新配置。' };
+      return { type: 'text', content: keyRes.error === 'provider-mismatch'
+        ? (keyRes.hint ?? '密钥与当前模型 provider 不符——/key set <密钥> 重配或 /model 切换')
+        : '密钥无法解密（机器环境变化或数据损坏？）——请用 /key set <密钥> 重新配置。' };
     }
 
     // KF-001：离线 token 包预检——无 key 但 offline: 模型已就绪 → 走本地 LLM 通道

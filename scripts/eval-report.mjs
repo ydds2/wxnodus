@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripAnsi } from './lib/evidence.mjs';
 import { createHash } from 'node:crypto';
 
 const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -24,7 +25,6 @@ const vitestCli = [join(ROOT, 'node_modules', 'vitest', 'vitest.mjs')];
 const tscCli = [join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc')];
 const tsxCli = [join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')];
 const vitestRun = (...files) => run(process.execPath, [...vitestCli, 'run', '--config', 'vitest.config.ts', ...files, '--reporter=basic'], { timeout: 600000 });
-const stripAnsi = s => String(s ?? '').replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
 const vitestPassedOf = t => Number((stripAnsi(t.out).match(/Tests\s+(\d+)\s+passed/i) ?? [])[1] ?? 0);
 
 const dims = [];
@@ -216,6 +216,9 @@ const md = [
   '| ✅ 已修 | full-scene 负载鲁棒性（回显重试/段间 settle）——commit 6263d4c |',
   '| ✅ 已修 | 真实 conhost Enter 失灵（批量读时 \\r 并入文本 token 被吞）——ink parse-keypress 拆分尾随换行 + \\r\\n→return（§12.3） |',
   '| ✅ 已修 | IME SendInput 采集脚本伪证风险（无条件标 passed）→ 采集/核验分离 + fail-closed |',
+  '| ✅ 已修 | 密钥槽与多 provider 目录错配（智谱密钥发往 deepseek 端点 401）——per-provider 密钥槽 apiKeys.<provider> + keyProvider 归属校验 fail-closed + 提示（§13.1） |',
+  '| ✅ 已修 | README 数字漂移 ×4（规则脑 47、内核工具 44、测试 2187、命令 108）——与实现同步（§13.2） |',
+  '| ✅ 已修 | 证据脚本重复样板——公共库 scripts/lib/evidence.mjs（JS）+ scripts/win-common.ps1（PS P/Invoke）五脚本去重（§13.2） |',
   '| ⏳ 人工门 | IME TSF 候选窗真机验证（见上） |',
   '',
 ].join('\n');

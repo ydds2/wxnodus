@@ -72,6 +72,8 @@ function deepGet(obj: Record<string, any>, path: string): any {
 // 单一事实源：同时驱动 V3 兼容清单（src/compat/configSurface.ts）
 export const SETTINGS_KEYS = new Set([
   'apiKeyEnc', 'model', 'baseURL', 'mode', 'theme', 'thinking', 'hooks', 'security',
+  // per-provider 密钥槽（apiKeys.<provider>=enc）+ 遗留槽归属标注（keyProvider）
+  'apiKeys', 'keyProvider',
   'lowRiskAutoApprove', 'autoResume', 'autoReview', 'webhooks', 'busy_input_mode',
   'strictMcpConfig', 'toolLazyLoad', 'budgetTokens', 'autoRepoMap',
   // 开放兼容：实际读写的键全部入白名单（此前 lang/skin/curator 被误报未知键）
@@ -91,7 +93,7 @@ export function unknownSettingsKeys(settings: Record<string, any>): string[] {
 
 /** 已知配置键全表（开放兼容：/config set 放开为白名单全键，仅排除密钥槽位） */
 export function knownSettingsKeys(): string[] {
-  return [...SETTINGS_KEYS].filter(k => k !== 'apiKeyEnc');
+  return [...SETTINGS_KEYS].filter(k => k !== 'apiKeyEnc' && k !== 'apiKeys');
 }
 
 export function createConfig(dataDir: string): Config {

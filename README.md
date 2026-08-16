@@ -36,7 +36,7 @@ Windows 本地优先的 AI agent CLI。把「需求」当源代码一样编译�
 
 **逆向编译**——代码 → 概念规格：`/understand <项目>` 扫描项目生成概念文档（`data/understand/<名>.md`），可再喂回 `/build` 重新编译——双向循环，代码与概念互为编译产物。`/gate <项目>` 可对历史项目重跑五门质量门。
 
-**规则脑**（零配置兜底）：48 个需求模板（待办/记账/笔记/简历/日程/商城/题库/考勤……）不依赖任何模型，离线编译；未命中且无密钥时**诚实引导配置**，绝不假装回答。`/calc` 等确定性能力同样毫秒级本地执行。
+**规则脑**（零配置兜底）：47 个需求模板（待办/记账/笔记/简历/日程/商城/题库/考勤……）不依赖任何模型，离线编译；未命中且无密钥时**诚实引导配置**，绝不假装回答。`/calc` 等确定性能力同样毫秒级本地执行。
 
 ## 快速开始
 
@@ -74,7 +74,7 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 
 **副线 3：本地能力**（无 key 全可用）——`/search` 自研 DDG/Bing 双引擎联网搜索（免 key）· `/claw` 网页抓取（SSRF 三层防护：内网/IPv6/NAT64 变体 + DNS 重绑定 + 重定向逐跳）· `/browser` 浏览器自动化（有头 Edge/Chrome，AI 可导航/点击/输入/截图）· `/computer` 桌面控制：**UIA 元素级**（Windows UI Automation 零依赖桥：窗口枚举/控件树/按名称或 AutomationId 定位/原生 Invoke 点击/ValuePattern 中文输入）+ robotjs 坐标层（DPI 换算 + 动作护栏），`computer_observe` 截图理解闭环 · `/video` 视频抽帧分析 · `/vision`/`/img` 图片理解 · `/capture` 截屏留证。**视觉开放通道**：默认智谱 glm-4v-flash（免费），`settings.visionBaseURL/visionModel/visionKey` 或环境变量可换任意 OpenAI 兼容端点（ollama 本地 qwen2.5-vl / OpenRouter / 自建网关），`visionLocal=true` 启用 transformers.js 本地 VLM（moondream2，完全离线无 key），失败可归因（无 key/端点被拒/网络）。
 
-**工具与自动化**——43 个内核工具（含 `computer_*` 十件套（坐标+UIA）、`browser_*` 七件套、`memory_search`、`repo_map`、`cron_create`、`credential_form`）；`/jobs` 并行后台任务（db 持久化，kill 幂等）· `/term` 后台终端 · `/cron` 定时任务（标准 5 字段 cron）· `/goal` 目标循环 · `/delegate` 子代理（只读工具集 + 危险工具剔除 + 安全钩子继承）· `/swarm` 1-8 并行子代理 · `/script` 剧本录制/回放（WxScript DSL，回放 CI；fs 修改后 auto 剧本**自动回归重放**）· `/self-evolve` 自举（AI 分析自身源码 → 补丁 → 自测 → 自动回滚，仅限 src/kernel 与 src/commands）· `/fork`/`/checkpoint`/`/undo` 分支与回滚（影子快照，零 git 依赖）· `/map` 仓库地图（aider repo-map 自研版）· `/arena` 多模型对战 · `/review` 自查。
+**工具与自动化**——44 个内核工具（含 `computer_*` 十件套（坐标+UIA）、`browser_*` 七件套、`memory_search`、`repo_map`、`cron_create`、`credential_form`）；`/jobs` 并行后台任务（db 持久化，kill 幂等）· `/term` 后台终端 · `/cron` 定时任务（标准 5 字段 cron）· `/goal` 目标循环 · `/delegate` 子代理（只读工具集 + 危险工具剔除 + 安全钩子继承）· `/swarm` 1-8 并行子代理 · `/script` 剧本录制/回放（WxScript DSL，回放 CI；fs 修改后 auto 剧本**自动回归重放**）· `/self-evolve` 自举（AI 分析自身源码 → 补丁 → 自测 → 自动回滚，仅限 src/kernel 与 src/commands）· `/fork`/`/checkpoint`/`/undo` 分支与回滚（影子快照，零 git 依赖）· `/map` 仓库地图（aider repo-map 自研版）· `/arena` 多模型对战 · `/review` 自查。
 
 **生态与协议**——`/skill` 本地技能（agentskills.io 兼容，`/learn` 从对话学习生成）· `/forge` 组件化构建（可运行 MCP Server + 技能打包）· `/mcp` 客户端（stdio + Streamable HTTP，热重载）· `/plugin` 插件（事件订阅/配置/日志 API）· `/gateway` HTTP JSON-RPC 网关 · `/a2a`/`/acp` 智能体协议 · `/webhook` 事件回调 · `/sandbox` L0-L3 分层沙盒 · 生态规范文件链（AGENTS.md > CLAUDE.md > GEMINI.md > .cursorrules > .clinerules > .roomodes）。
 
@@ -97,10 +97,10 @@ Node 22 + TypeScript 严格 ESM · 自研状态引擎（createStore/createAtom/c
 
 ## 验收证据
 
-- ✅ 838 单元/契约/进程级测试全绿（71 测试文件）+ 类型检查零错误
+- ✅ 2187 单元/契约/进程级测试全绿（71+ 测试文件）+ 类型检查零错误
 - ✅ NL 路由契约测试：README「说人话」六行承诺锁定（tests/commands-intent.test.ts）
 - ✅ TUI 冒烟（真实终端 node-pty）：首屏/输入/回复/命令面板/Esc/终止不挂死
-- ✅ 全命令扫描 105/105 可用（scripts/cmd-sweep.mjs 回归工具，106 命令注册表全覆盖）
+- ✅ 全命令扫描 108/108 可用（scripts/cmd-sweep.mjs 回归工具，108 命令注册表全覆盖）
 - ✅ 概念编译器端到端：「帮我做一个待办系统」→ todo 项目生成 → 启动 → API 增删查 → healthcheck 通过 → evidence.json
 - ✅ GLM-4V 视觉实测（/vision 识别 UI 截图）
 - ✅ 技能注入实测：`/skill:名` 技能正文注入对话；hooks 实测：userPromptSubmit/stop 副作用触发

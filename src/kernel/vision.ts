@@ -23,8 +23,13 @@ const pickSettings = (s: any): VisionSettings => {
 
 const visionBase = () => process.env.WXNODUS_VISION_BASE_URL ?? 'https://open.bigmodel.cn/api/paas/v4';
 const visionModel = () => process.env.WXNODUS_VISION_MODEL ?? 'glm-4v-flash';
-const visionKey = (enc: string | null): string | null => {
+// per-provider 密钥槽优先取 zhipu（视觉默认端点）；无则回退遗留单槽
+const visionKey = (enc: string | null, apiKeys?: Record<string, string> | null): string | null => {
   if (process.env.WXNODUS_VISION_KEY) return process.env.WXNODUS_VISION_KEY;
+  if (apiKeys?.zhipu) {
+    const d = decryptKey(apiKeys.zhipu);
+    if (d) return d;
+  }
   if (!enc) return null;
   return decryptKey(enc);
 };
@@ -125,8 +130,8 @@ export async function describeImageStatus(target: string, apiKeyEnc: string | nu
       return { ok: false, reason: `本地视觉不可用：${String(e?.message ?? e).slice(0, 120)}` };
     }
   }
-  // 远程：settings key > env > 加密配置
-  const key = vs.key ?? visionKey(apiKeyEnc);
+  // 远程：settings key > env > 加密配置（per-provider 槽 zhipu 优先，遗留单槽兜底）
+  const key = vs.key ?? visionKey(apiKeyEnc, (settings as Record<string, any> | undefined)?.apiKeys);
   if (!key) {
     // W8-09 Windows 生态互依：无视觉密钥 → 系统原生 OCR 兜底（离线、零模型下载——提取画面文字；
     // 语义诚实：返回 OCR 文本而非视觉描述）

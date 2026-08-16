@@ -325,3 +325,25 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 | SendInput 采集脚本伪证风险（截图后无条件标 passed） | 原 ps1 无内容核验 | 重构为「采集=status captured，内容核验归 GLM-4V 核验脚本」+ 前台/窗口定位失败即 blocked |
 | 窗口定位误中僵尸窗/0x0 窗 | 残留 conhost 僵尸窗口 + MainWindowHandle 不可靠 | 起前清理残留 + MainWindowHandle 主通道（rect>0 校验）+ conhost 父子关系枚举兜底 |
 | 屏幕缓冲读取宽字符重复 | 尾格 COMMON_LVB_TRAILING_BYTE(0x0200) 未跳过 | ReadBufferText 跳过 0x0200 尾格 |
+
+## 13. 全量修复轮：密钥槽错配 + 文档漂移 + 公共化去重（2026-08-16）
+
+### 13.1 密钥槽与多 provider 目录错配（缺陷 1，真实修复）
+
+**根因**：settings.apiKeyEnc 是单一加密槽，而 MODEL_CATALOG 是 5 provider 目录（deepseek/kimi/zhipu/offline）。智谱密钥存单槽 + model=deepseek → `resolveApiKey` 把智谱密钥当 deepseek 密钥发往 api.deepseek.com → 每次对话 401 且无提示。
+
+**修复（向后兼容）**：
+- `settings.apiKeys.<provider>` per-provider 加密槽（`/key set` 按当前模型 provider 归属写入）
+- 遗留单槽 + `settings.keyProvider` 归属标注：归属不符 → `resolveApiKey` 返回 `{error:'provider-mismatch', hint}` fail-closed（不误发、明确提示「重配或 /model 切换」）
+- 消费方更新：agent.ts（错配提示直出）、/key（状态含归属 + 各 provider 解密状态）、/doctor（resolveApiKey 口径）、vision.ts（视觉默认端点优先取 apiKeys.zhipu）、SETTINGS_KEYS 白名单、knownSettingsKeys 排除 apiKeys
+- 本机迁移：data/settings.json → keyProvider=zhipu + apiKeys.zhipu（deepseek 模型下不再 401）
+- 测试：resolveApiKey 6 用例（槽命中/错配 fail-closed/归属匹配/无归属零回归/槽优先/env 优先）——kernel-providers 33/33
+
+### 13.2 文档漂移同步 + 证据脚本公共化
+
+- README 数字与实现同步 ×4：规则脑 47（原 48，spec.ts RULES 实测 47）、内核工具 44（原 43）、测试 2187→2194（原 838）、命令 108（原 105/106）
+- **公共库（减轻负担）**：
+  - `scripts/lib/evidence.mjs`——sha256File/gitCommit/stripAnsi/runCmd/repoRoot：eval-report、ime-vision-verify、ime-unicode-inject、ime-human-watch、record-ime-verification 五脚本去重（同口径取数）
+  - `scripts/win-common.ps1`——C# P/Invoke 类型（WxWin）+ 截图/窗口/键流/控制台工具：ime-console-inject、ime-sendinput-verification、ime-capture-candidate、diag-windows 四脚本去重（每脚本 -60~80 行样板）
+  - 重构后全链路回归：ime-console-inject → ime-vision-verify status=passed（屏幕缓冲 hasNihao + DB 你好 + 视觉佐证）
+- 缺陷寄存器新增 4 项 ✅（eval-report 生成时并入）

@@ -4,15 +4,12 @@
 // ③ 产出 artifacts/ime-unicode-injection.json（含各步骤 exit/证据 hash）。
 // 背景：本机反作弊拦截 SendInput/keybd_event（见 artifacts/ime-evidence/injection-blocked.json），
 // 跨进程键注入不可用；WriteConsoleInputW 是 OS IME 提交后 conhost 投递应用的同一通道。
-import { createHash } from 'node:crypto';
+import { sha256File as sha256, gitCommit as commit, repoRoot } from './lib/evidence.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), '..'));
-const sha256 = p => createHash('sha256').update(readFileSync(p)).digest('hex');
-const commit = String(spawnSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout).trim();
+const ROOT = repoRoot();
 
 const out = {
   kind: 'ime-unicode-injection',

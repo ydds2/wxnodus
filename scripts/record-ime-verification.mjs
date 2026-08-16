@@ -2,16 +2,15 @@
 // 用法：node scripts/record-ime-verification.mjs "<验证人>"
 // 产出：artifacts/ime-verification.json（记录验证人/时间/commit + 六步声明逐项确认）
 // 诚实铁律：本脚本只记录人工声明——验证动作由真人执行，机器不代签。
-import { createHash } from 'node:crypto';
+import { sha256File as sha256, gitCommit as commit, repoRoot } from './lib/evidence.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), '..'));
+const ROOT = repoRoot();
 const name = process.argv[2] ?? '';
 if (!name) { console.error('usage: node scripts/record-ime-verification.mjs "<验证人>"'); process.exit(2); }
-const commit = String(spawnSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout).trim();
 
 const rec = {
   kind: 'ime-human-verification',

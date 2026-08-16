@@ -62,25 +62,45 @@ const KNOWN_PROVIDER_KEYS = new Set(['deepseek', 'kimi', 'zhipu']);
 export interface ApiKeyResolution {
   key: string | null;
   source: 'env' | 'enc' | 'none';
-  /** enc 解密失败（机器指纹变化等）时标记，调用方提示重新配置 */
-  error?: 'decrypt-failed';
+  /** 命中的 provider（detectProvider(baseURL)） */
+  provider?: string;
+  /** enc 解密失败（机器指纹变化等）或密钥归属与当前模型 provider 不符 */
+  error?: 'decrypt-failed' | 'provider-mismatch';
+  /** 面向用户的修复提示（调用方在无 key 提示中透出） */
+  hint?: string;
 }
 
+// per-provider 密钥槽（settings.apiKeys.<provider>=enc 串）——多 provider 目录（deepseek/kimi/zhipu/offline）
+// 与单一 apiKeyEnc 槽错配曾导致「智谱密钥发往 deepseek 端点 → 401」。apiKeys 按当前模型 provider 归属写入；
+// 遗留 apiKeyEnc + keyProvider 归属标注向后兼容，归属不符时 fail-closed 不误发。
 export function resolveApiKey(
-  settings: { apiKeyEnc?: string | null; baseURL?: string },
+  settings: { apiKeyEnc?: string | null; baseURL?: string; apiKeys?: Record<string, string> | null; keyProvider?: string | null },
   env: NodeJS.ProcessEnv = process.env
 ): ApiKeyResolution {
   const provider = detectProvider(settings.baseURL);
   const providerKey = KNOWN_PROVIDER_KEYS.has(provider) ? env[`WXNODUS_${provider.toUpperCase()}_KEY`] : undefined;
   const genericKey = env.WXNODUS_API_KEY;
   const fromEnv = (providerKey ?? genericKey)?.trim();
-  if (fromEnv) return { key: fromEnv, source: 'env' };
-  if (settings.apiKeyEnc) {
-    const dec = decryptKey(settings.apiKeyEnc);
-    if (dec) return { key: dec, source: 'enc' };
-    return { key: null, source: 'enc', error: 'decrypt-failed' };
+  if (fromEnv) return { key: fromEnv, source: 'env', provider };
+  // per-provider 槽位优先（/key set 按当前模型 provider 归属写入）
+  if (settings.apiKeys?.[provider]) {
+    const dec = decryptKey(settings.apiKeys[provider]);
+    if (dec) return { key: dec, source: 'enc', provider };
+    return { key: null, source: 'enc', provider, error: 'decrypt-failed', hint: `${provider} 密钥槽位解密失败（机器环境变化？）——/key set <密钥> 重新配置` };
   }
-  return { key: null, source: 'none' };
+  // 遗留单槽：归属校验——密钥属于别的 provider 时不误发（此前直接 401 且无提示）
+  if (settings.apiKeyEnc) {
+    if (settings.keyProvider && settings.keyProvider !== provider) {
+      return {
+        key: null, source: 'enc', provider, error: 'provider-mismatch',
+        hint: `密钥槽位配置的是 ${settings.keyProvider} 密钥，当前模型 provider 是 ${provider}——/key set <密钥> 重配，或 /model 切换到 ${settings.keyProvider} 系模型`,
+      };
+    }
+    const dec = decryptKey(settings.apiKeyEnc);
+    if (dec) return { key: dec, source: 'enc', provider };
+    return { key: null, source: 'enc', provider, error: 'decrypt-failed' };
+  }
+  return { key: null, source: 'none', provider };
 }
 
 // ── 模型目录（/model 选择器与直接切换共用）────────────────

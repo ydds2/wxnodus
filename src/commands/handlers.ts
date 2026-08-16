@@ -8,7 +8,7 @@ import { salienceFlag, salienceFromMultiplier } from './memorySalience.js';
 import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias } from './registry.js';
-import { capabilityBadges, decryptKey, encryptKey, filterModels, maskKey, MODEL_CATALOG } from '../kernel/providers.js';
+import { capabilityBadges, decryptKey, detectProvider, encryptKey, filterModels, maskKey, MODEL_CATALOG, resolveApiKey } from '../kernel/providers.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { makeSpec } from '../build/spec.js';
@@ -213,11 +213,14 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const fts = (ctx.db.prepare(`SELECT COUNT(*) c FROM messages_fts`).get() as { c: number }).c;
       checks.push(['全文索引', `${fts} 条可检索`]);
     } catch { checks.push(['全文索引', '未初始化']); }
-    // 密钥真实解密验证（加密 ≠ 可用——机器指纹变化会解密失败）
-    const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
-    if (enc) {
-      const dec = decryptKey(enc);
-      checks.push(['模型密钥', dec ? '已配置且可解密' : '已配置但无法解密（需 /key set 重配）']);
+    // 密钥真实解密验证 + provider 归属校验（加密 ≠ 可用；归属不符会 401——fail-closed 不误发）
+    const keyRes = resolveApiKey(ctx.config.get('settings') as Record<string, any>);
+    if (keyRes.key) {
+      checks.push(['模型密钥', `已配置且可解密（provider=${keyRes.provider}）`]);
+    } else if (keyRes.error === 'provider-mismatch') {
+      checks.push(['模型密钥', `provider 不符：${keyRes.hint}`]);
+    } else if (keyRes.source === 'enc') {
+      checks.push(['模型密钥', '已配置但无法解密（需 /key set 重配）']);
     } else {
       checks.push(['模型密钥', '未配置（/key set <密钥> 配置）']);
     }
@@ -264,35 +267,55 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return lines(' Hooks ', HOOK_EVENTS.map(ev => ` ${cfg[ev] ? '✓' : '○'} ${ev}${cfg[ev] ? ' → ' + cfg[ev] : ''}`));
   });
 
-  // 密钥
+  // 密钥（per-provider 槽位：apiKeys.<provider> 归属存储；遗留 apiKeyEnc+keyProvider 兼容）
   bus.register('/key', async (args) => {
     const sub = args[0] ?? 'status';
-    if (sub === 'set' && args[1]) {
-      ctx.config.setKey('settings', 'apiKeyEnc', encryptKey(args[1]));
+    const providerOf = () => detectProvider(ctx.config.getKey('settings', 'baseURL'));
+    // 写入：按当前模型 provider 归属入槽 + 遗留槽兼容（不误发给别的 provider 端点）
+    const storeKey = (plain: string) => {
+      const enc = encryptKey(plain);
+      const provider = providerOf();
+      const apiKeys = { ...((ctx.config.getKey('settings', 'apiKeys') as Record<string, string> | undefined) ?? {}) };
+      apiKeys[provider] = enc;
+      ctx.config.setKey('settings', 'apiKeys', apiKeys);
+      ctx.config.setKey('settings', 'apiKeyEnc', enc);           // 遗留单槽（向后兼容旧版本读取）
+      ctx.config.setKey('settings', 'keyProvider', provider);    // 归属标注（错配即 fail-closed）
       // 补默认模型/端点：有 key 但 model/baseURL 缺失时 agent 会降级规则脑
       // （提示「未配置」）——配置密钥即视为已配置，补齐默认并持久化
       if (!ctx.config.getKey('settings', 'model')) ctx.config.setKey('settings', 'model', resolveDefaultModel({}));
       if (!ctx.config.getKey('settings', 'baseURL')) ctx.config.setKey('settings', 'baseURL', resolveDefaultBaseURL({}));
-      return '密钥已配置（AES-256-GCM 加密存储，绝不回显）';
+    };
+    if (sub === 'set' && args[1]) {
+      storeKey(args[1]);
+      return `密钥已配置（provider=${providerOf()}，AES-256-GCM 加密存储，绝不回显）`;
     }
     // 兼容规则脑提示里的用法：/key <密钥> 直接配置（非已知子命令视为密钥）
     if (!['status', 'set', 'off'].includes(sub) && args.length >= 1) {
-      ctx.config.setKey('settings', 'apiKeyEnc', encryptKey(args[0]));
-      if (!ctx.config.getKey('settings', 'model')) ctx.config.setKey('settings', 'model', resolveDefaultModel({}));
-      if (!ctx.config.getKey('settings', 'baseURL')) ctx.config.setKey('settings', 'baseURL', resolveDefaultBaseURL({}));
-      return '密钥已配置（AES-256-GCM 加密存储，绝不回显）';
+      storeKey(args[0]);
+      return `密钥已配置（provider=${providerOf()}，AES-256-GCM 加密存储，绝不回显）`;
     }
     if (sub === 'off') {
+      const apiKeys = { ...((ctx.config.getKey('settings', 'apiKeys') as Record<string, string> | undefined) ?? {}) };
+      delete apiKeys[providerOf()];
+      ctx.config.setKey('settings', 'apiKeys', apiKeys);
       ctx.config.setKey('settings', 'apiKeyEnc', '');
+      ctx.config.setKey('settings', 'keyProvider', '');
       return '密钥已清除（对话将提示配置，直到重新 /key set）';
     }
-    const enc = ctx.config.getKey('settings', 'apiKeyEnc');
-    if (!enc) return `密钥状态：${c('未配置', '33')}——/key set <密钥> 配置后获得完整能力`;
-    // 验证可解密：enc 存在但机器指纹变化（hostname/用户名）会导致解密失败
-    const dec = decryptKey(enc);
-    return dec
-      ? `密钥状态：${c('已配置', '32')}（${maskKey(dec)}）`
-      : `密钥状态：${c('已配置但无法解密', '31')}（机器环境变化或数据损坏？）——请 /key set <密钥> 重新配置`;
+    const settings = ctx.config.get('settings') as Record<string, any>;
+    const keyRes = resolveApiKey(settings);
+    if (!keyRes.key) {
+      if (keyRes.error === 'provider-mismatch') return `密钥状态：${c('provider 不符', '33')}——${keyRes.hint}`;
+      return `密钥状态：${c('未配置', '33')}——/key set <密钥> 配置后获得完整能力`;
+    }
+    // 验证可解密 + 展示归属（per-provider 槽位多 key 时列出全部 provider）
+    const dec = keyRes.key;
+    const apiKeys = (settings.apiKeys as Record<string, string> | undefined) ?? {};
+    const decrypted = Object.entries(apiKeys).map(([p, e]) => `${p}:${decryptKey(e) ? c('✓', '32') : c('✗', '31')}`).join(' ');
+    const extra = Object.keys(apiKeys).length > 1 ? `（各 provider：${decrypted}）` : '';
+    return keyRes.source === 'enc'
+      ? `密钥状态：${c('已配置', '32')}（${maskKey(dec)} · provider=${keyRes.provider}）${extra}`
+      : `密钥状态：${c('已配置（环境变量）', '32')}（${maskKey(dec)} · provider=${keyRes.provider}）`;
   });
 
   bus.register('/version', () => 'WxNodus 3.0.0 · 概念进·证据出');

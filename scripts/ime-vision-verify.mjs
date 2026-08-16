@@ -6,15 +6,12 @@
 //   ② GLM-4V 视觉核验：对窗口截图逐图核验（输入框含「你好」、会话区回显「你好」）；
 //   ③ 确定性落库：nodus.db 近 10 分钟新增含「你好」的 user 消息（提交真发生的硬证据）。
 // 诚实铁律：②③任一不过 → status=blocked；视觉通道不可用 → 归因不冒充。
-import { createHash } from 'node:crypto';
+import { sha256File as sha256, gitCommit as commit, repoRoot } from './lib/evidence.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
 
-const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), '..'));
-const sha256 = p => createHash('sha256').update(readFileSync(p)).digest('hex');
-const commit = String(spawnSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout).trim();
+
+const ROOT = repoRoot();
 
 const settings = JSON.parse(readFileSync(join(ROOT, 'data', 'settings.json'), 'utf8'));
 const apiKeyEnc = settings.apiKeyEnc ?? null;
