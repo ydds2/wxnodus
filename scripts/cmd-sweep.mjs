@@ -1,10 +1,13 @@
 // scripts/cmd-sweep.mjs — 全功能深度扫描：逐个执行命令，检查「功能无法使用」
 import { spawn } from 'node-pty'
+// WXNODUS_ACCEPT_CONPTY=1 → ConPTY（真实 Windows 控制台 API/conhost 管线）；
+// 默认 false（winpty）保持历史绿行为。验收 receipt 以 ConPTY 运行留存为准。
+const useConpty = process.env.WXNODUS_ACCEPT_CONPTY === '1'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const p = spawn(process.execPath, ['dist/cli/index.js'], {
   name: 'xterm-256color', cols: 110, rows: 34,
   cwd: process.cwd(), env: { ...process.env, TERM: 'xterm-256color' },
-  useConpty: false
+  useConpty
 })
 let out = ''
 p.onData(d => { out += d })
@@ -66,14 +69,14 @@ if (broken.length) {
 }
 try { p.kill() } catch {}
 // ── W8-25：cmd 档层级断言（逃生门 WXNODUS_TUI_TIER=cmd → 全 cmd 安全画像）──
-// 真实 conhost（useConpty:false）下验证：序列门控 + 256 色 + 无豆腐块字形。
+// 控制台管线（useConpty 开关）下验证：序列门控 + 256 色 + 无豆腐块字形。
 await sleep(400)
 const rawChunks = []
 const p2 = spawn(process.execPath, ['dist/cli/index.js'], {
   name: 'xterm-256color', cols: 110, rows: 34,
   cwd: process.cwd(),
   env: { ...process.env, TERM: 'xterm-256color', WXNODUS_TUI_TIER: 'cmd' },
-  useConpty: false
+  useConpty
 })
 p2.onData(d => rawChunks.push(d))
 await sleep(4000)
@@ -90,7 +93,7 @@ const glyphChecks = [
   ['无盲文字形', !/[\u2800-\u28FF]/.test(screen2)],
   ['无低覆盖 BMP（✓✗⧉⏎⌛◈❯◉⚠ 等）', !/[\u2713\u2717\u2715\u2611\u2610\u29C9\u23CE\u231B\u25C8\u276F\u25C9\u2699\u26A0]/.test(screen2)],
 ]
-console.log('\n===== W8-25 cmd 档层级断言（真实 conhost）=====')
+console.log(`\n===== W8-25 cmd 档层级断言（${useConpty ? '真实 conhost（ConPTY）' : 'winpty'}）=====`)
 for (const [label, ok] of [...seqChecks, ...glyphChecks]) {
   console.log(`${ok ? '✓' : '✗'} ${label}`)
   tierChecks.push({ label, ok })

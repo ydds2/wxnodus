@@ -54,3 +54,57 @@
 | 工具延迟加载 | P2 | ❌ 未实施（BM25 检索） |
 | Flow skills | P2 | ❌ 未实施（SKILL.md 流程图驱动） |
 | 配置分层与校验 | P2 | ❌ 未实施（8 层配置 + strict） |
+
+## 7. ConPTY 真机验收轮（2026-08-16，Gate E 推进——本轮结论）
+
+> 范围：验收电池接入真实 Windows 控制台管线（ConPTY）+ full-scene 分段作用域重写 + 渲染器可移植性修复。
+> 结论：winpty 全绿（full-scene 29/29 ×3、cmd-verify 14/14、cmd-sweep 120/120+9/9）；ConPTY cmd-verify/cmd-sweep 全绿；
+> ConPTY full-scene 26/29 ×3（确定性）——三项 RED 是 W8-29 缺陷的活动态检测器，非脚本问题，未放宽断言。Gate E 仍诚实 blocked（物理 receipt 未产生）。
+
+### 7.1 验收电池 ConPTY 开关（W8-25 扩展）
+
+- `WXNODUS_ACCEPT_CONPTY=1` → 三条电池（cmd-verify/cmd-sweep/full-scene）走 ConPTY（真实 Windows 控制台 API/conhost 管线，Windows Terminal 同管线）；默认 winpty 保持历史绿行为。
+- cmd-sweep W8-25 层级断言在两种管线下均 9/9（无 DEC2026/DECSTBM/OSC8/truecolor/astral emoji/盲文/低覆盖 BMP）。
+- W8-26 真实探测路径（PS 引导 + VT 位回读，无逃生门）双管线均进入 TUI。
+- IME 中文组合输入：node-pty 无法模拟 OS 级候选窗——保持 UNVERIFIED（需真人真机）。
+
+### 7.2 full-scene 重写（分段作用域断言，与 cmd-verify 同纪律）
+
+旧版 25 项检查中多处可被陈帧真空通过（启动横幅/建议面板旧帧/状态栏旧文本）；本轮全部改为 `mark()/tailOf(m)` 分段作用域，并修复两个脚本级根因：
+
+1. **Esc 恢复窗口**：overlay 关闭后首批击键失效（cmd-verify 陷阱 3 同源）→ Esc 关闭验证后恢复 1.5s settle（旧版 25/25 依赖的 1800ms 语义）。
+2. **pager 吞键**：/help、/status 长输出打开 pager，pager 把 Space/Enter 当翻页——后续末尾空格提交全部损坏 → 每个 pager 命令后 `q` 关闭 + 分段验证关闭。
+3. 空闲态 Ctrl+C 渲染停摆 → 全程不盲发 Ctrl+C：先等就绪（分段作用域），仅当确实仍忙才中断。
+4. 200ms/字符键入（cmd-verify 实测稳定值）；命令末尾空格关补全面板再 Enter。
+
+检查数 25 → 29（新增：会话选择器 Esc 关闭、/help pager 关闭、/status pager 关闭、命令:状态回到 ready）。
+
+### 7.3 W8-28 修复：渲染器行分隔显式 CRLF
+
+`packages/wxnodus-ink/src/ink/log-update.ts` 的 `NEWLINE` patch 内容 `'\n'` → `'\r\n'`（含 `renderFullFrame` 的 `lines.join('\n')`）。
+裸 `\n` 依赖终端 ONLCR 隐式回车（winpty/xterm 行为）；ConPTY 下 LF 只下移不归列，多行推进路径光标列漂移。显式 CRLF 在所有终端等价，冗余 CR 为 no-op。测试全量 2151 绿 + 三电池双管线回归通过。
+
+### 7.4 W8-29 新发现缺陷（未修，已建检测器）
+
+**状态栏时钟（SessionDuration/IdleSince 每秒 tick）不产生自驱重绘**——空闲 10s 零时钟帧（双管线一致，检测器 `scripts/check-statusbar-clock-repaint.mjs` RED）；机制定位：时钟子树文本更新未进 damage（blit/dirty 路径），帧渲染（spinner 300 字形/125 同步帧）不覆盖该 cell。相邻活动（转录重绘等）恰好覆盖状态栏行时时钟才更新。
+
+- 活动态差异：ConPTY 下相邻活动不覆盖状态栏行 → full-scene「提交:状态回到 ready」「命令:状态回到 ready」「主屏幕:状态条在底部」三项确定性 RED（26/29 ×3）；winpty 下覆盖 → 29/29 绿。
+- 处置：三项断言保持 fail-closed 不放松——它们是 W8-29 的活动态检测器。修复 W8-29 后 ConPTY 应转 29/29。
+- 检测器用法：`node scripts/check-statusbar-clock-repaint.mjs`（winpty/ConPTY 均 RED=缺陷在场；修复后转 GREEN）。
+
+### 7.5 本轮验证矩阵（全部真实运行）
+
+| 门/电池 | 结果 |
+|---|---|
+| typecheck / typecheck:tests / check:test-discovery / build | ✓ |
+| 全量 vitest | ✓ 296 files / 2151 passed / 0 failed / 10 skipped |
+| full-scene（winpty，fail-closed） | ✓ 29/29 ×3（重写后） |
+| cmd-verify（winpty） | ✓ 14/14 |
+| cmd-sweep（winpty） | ✓ 120/120 + 9/9 |
+| full-scene（ConPTY，fail-closed） | 26/29 ×3（W8-29 三项 RED，诚实记录） |
+| cmd-verify（ConPTY） | ✓ 14/14 |
+| cmd-sweep（ConPTY） | ✓ 120/120 + 9/9 |
+| W8-29 时钟检测器 | RED（双管线）——缺陷在场，检测器生效 |
+| git diff --check | ✓（仅既有 CRLF 提示） |
+
+**不可伪造阻断项（不变）**：Gate E 物理 receipt（Win11/Win10 双机）blocked；Gate I（Linux/macOS worker）blocked；IME 组合输入 UNVERIFIED；协议 verification/evidence 事件待真实接入。goal 状态由 runtime completion verifier 判定，不标记 complete。

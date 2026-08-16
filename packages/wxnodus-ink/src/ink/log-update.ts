@@ -36,7 +36,11 @@ type Options = {
 }
 
 const CARRIAGE_RETURN = { type: 'carriageReturn' } as const
-const NEWLINE = { type: 'stdout', content: '\n' } as const
+// W8-28：行分隔必须显式 CR+LF。裸 \n 依赖终端 ONLCR 隐式回车（winpty/xterm 行为）——
+// ConPTY（真实 Windows 控制台管线）下 LF 只下移不归列，多行推进后光标列漂移，
+// overlay 关闭重绘后 composer 行残留陈帧（真机 ConPTY 验收 22/25 复现根因）。
+// 显式 \r\n 在所有终端等价；行尾 CARRIAGE_RETURN+NEWLINE 会多出一个冗余 CR（no-op）。
+const NEWLINE = { type: 'stdout', content: '\r\n' } as const
 
 export class LogUpdate {
   private state: State
@@ -120,7 +124,8 @@ export class LogUpdate {
       return []
     }
 
-    return [{ type: 'stdout', content: lines.join('\n') }]
+    // W8-28：全帧行分隔同样显式 CR+LF（ConPTY 下裸 LF 不归列——同 NEWLINE 根因）
+    return [{ type: 'stdout', content: lines.join('\r\n') }]
   }
 
   private getRenderOpsForDone(prev: Frame): Diff {

@@ -11,6 +11,10 @@
 // 5. 退格在补全面板重开期间吞键/停摆 → 全程不用退格（会话隔离消除回删需求）。
 import { spawn } from 'node-pty'
 
+// WXNODUS_ACCEPT_CONPTY=1 → ConPTY（真实 Windows 控制台 API/conhost 管线）；
+// 默认 false（winpty）保持历史绿行为。验收 receipt 以 ConPTY 运行留存为准。
+const useConpty = process.env.WXNODUS_ACCEPT_CONPTY === '1'
+
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const checks = []
 const record = (label, ok, extra = '') => {
@@ -23,7 +27,7 @@ async function withSession(name, body) {
   const p = spawn(process.execPath, ['dist/cli/index.js'], {
     name: 'xterm-256color', cols: 110, rows: 34,
     cwd: process.cwd(), env: { ...process.env, TERM: 'xterm-256color' },
-    useConpty: false
+    useConpty
   })
   let out = ''
   p.onData(d => { out += d })

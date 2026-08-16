@@ -1,9 +1,33 @@
 // scripts/full-scene-test.mjs — 全场景自动化测试（pty 驱动真实终端，WxNodus UI 版）
 // 覆盖：启动/品牌/输入/提交/命令/建议/模型选择器/会话/滚动/退出
 // 注意：WxNodus textInput 有 burst 处理——逐键写入，Enter 单独发送（模拟真实逐键）
+//
+// W8-19/阶段 12：分段作用域断言（与 cmd-verify 同一纪律）——每个检查只读本阶段
+// 标记点之后的新输出，杜绝陈帧误判（旧版多处检查可被启动横幅/建议面板旧帧真空通过）。
+// winpty/ConPTY 合成键盘环境实测陷阱（均已在脚本内规避）：
+// 1. 补全 RPC 往返窗口内击键被吞 → 200ms/字符慢速输入（cmd-verify 实测稳定值）。
+// 2. 补全面板打开时 Enter = 接受补全项 → 命令末尾加空格使过滤无匹配、面板关闭。
+// 3. 空闲态 Ctrl+C 使渲染停摆（agent 已就绪时中断 = 永久停帧）→ 全程不盲发 Ctrl+C：
+//    先等就绪（分段作用域），仅当 agent 确实仍忙（真实 key 流式回复）才中断。
+// 4. 消息用 ASCII：CJK 高速键入在 ConPTY/winpty 均有丢字竞态（CJK 由真机专项验证）。
+// 5. Esc 关闭 overlay 后存在输入恢复窗口，其后首批击键失效 → Esc 关闭验证后
+//    恢复 1.5s settle（旧版 25/25 绿行为依赖的 1800ms 语义）。
+// 6. 长输出命令（/help、/status…）打开 pager，pager 吞 Space/Enter（翻页）→
+//    每个 pager 命令检查后按 q 关闭并分段验证关闭，再进入下一阶段。
+// 7. W8-29（已知缺陷，检测器 scripts/check-statusbar-clock-repaint.mjs）：
+//    状态栏时钟等纯文本更新不产生自驱重绘（blit/dirty 路径不标 damage）。
+//    ConPTY 下「状态回到 ready」×2 与「状态条在底部」三个检查诚实 RED——
+//    就绪帧未被重发进流（winpty 下相邻活动恰好覆盖状态栏行 → 绿）。此三项
+//    为缺陷检测器，修复 W8-29 前 ConPTY 保持 26/29，不得放宽断言。
 import { spawn } from 'node-pty';
+
+// WXNODUS_ACCEPT_CONPTY=1 → ConPTY（真实 Windows 控制台 API/conhost 管线）；
+// 默认 false（winpty）保持历史绿行为。验收 receipt 以 ConPTY 运行留存为准。
+const useConpty = process.env.WXNODUS_ACCEPT_CONPTY === '1';
+
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeFileSync } from 'node:fs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(ROOT, 'dist', 'cli', 'index.js');
@@ -16,13 +40,14 @@ function check(name, cond, extra = '') {
 
 let out = '';
 let p;
+let exited = false;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const strip = s => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
-const last = () => strip(out).split('\n').slice(-40).join('\n');
-const typeKeys = async s => { for (const ch of s) { p.write(ch); await sleep(40); } };
-const submit = async s => { await typeKeys(s); await sleep(150); p.write('\r'); await sleep(900); };
-// W8-19：readiness-marker 轮询替代固定 sleep——渲染延迟抖动不再误报
-const waitFor = async (predicate, timeoutMs = 5000, stepMs = 250) => {
+const last = () => strip(out).slice(-2000);
+// 分段作用域：mark() 取游标，tailOf(m) 只读标记点之后的新输出
+const mark = () => out.length;
+const tailOf = m => strip(out.slice(m));
+const waitFor = async (predicate, timeoutMs = 6000, stepMs = 200) => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return true;
@@ -30,16 +55,24 @@ const waitFor = async (predicate, timeoutMs = 5000, stepMs = 250) => {
   }
   return predicate();
 };
+const typeKeys = async s => { for (const ch of s) { p.write(ch); await sleep(200); } };
+const submit = async s => { await typeKeys(s); await sleep(400); p.write('\r'); };
+// 命令输出断言：先打完（含末尾空格关面板），mark 再 Enter——面板旧帧不落入断言段
+const submitScoped = async s => { await typeKeys(s + ' '); await sleep(400); const m = mark(); p.write('\r'); return m; };
+const dump = async suffix => {
+  if (process.env.WXNODUS_DUMP) writeFileSync(process.env.WXNODUS_DUMP + suffix, out);
+};
 
 async function main() {
   p = spawn(process.execPath, [BIN], {
     name: 'xterm-256color', cols: 100, rows: 30,
     cwd: ROOT, env: { ...process.env, TERM: 'xterm-256color' },
-    useConpty: false,
+    useConpty,
   });
   p.onData(d => { out += d; });
+  p.onExit(() => { exited = true; });
 
-  // ── 1. 启动场景 ──────────────────────────
+  // ── 1. 启动场景（整段缓冲：启动横幅内容仅本会话产生） ──
   await sleep(2500);
   const f0 = strip(out);
   check('启动:WXNODUS 品牌 logo', f0.includes('WXNODUS') || f0.includes('WxNodus'));
@@ -51,94 +84,165 @@ async function main() {
   check('启动:状态条(目录)', f0.includes('WxNodusV3CLI'));
   check('启动:会话卡(品牌)', f0.includes('WxNodus V3'));
 
-  // ── 2a. 模型/会话选择器（agent 空闲时，避免 busy guard 拦截） ──
-  await submit('/model');
+  // ── 2a. 模型选择器（分段作用域；选择器标记只存在于选择器帧） ──
+  const mModel = mark();
+  await submit('/model ');
   const modelOpened = await waitFor(() => {
-    const f = last();
+    const f = tailOf(mModel);
     // 「DeepSeek」（首字母大写）只出现在选择器 provider 列表（状态栏是 lowercase deepseek）
-    return f.includes('model') || f.includes('Model') || f.includes('模型') || f.includes('Select provider') || f.includes('提供商') || f.includes('DeepSeek');
+    return f.includes('Select provider') || f.includes('选择提供商') || f.includes('DeepSeek');
   });
-  const f3 = last();
   check('模型选择器:打开', modelOpened);
-  check('模型选择器:provider 分组', f3.includes('DeepSeek') && (f3.includes('K2.7') || f3.includes('GLM') || f3.includes('kimi')));
-  p.write('\x1b');
-  await waitFor(() => !last().includes('Select provider'), 5000);
-  check('模型选择器:Esc 关闭', !last().includes('Select provider'));
+  if (!modelOpened) await dump('.model');
+  const pickerFrame = tailOf(mModel);
+  check('模型选择器:provider 分组', pickerFrame.includes('DeepSeek') && (pickerFrame.includes('K2.7') || pickerFrame.includes('GLM') || pickerFrame.includes('kimi')));
+  // 关闭键是 q（提示行「Esc 清空/返回 · q 关闭」——Esc 只清空过滤/返回上一步，不关闭选择器）
+  const mQ = mark();
+  p.write('q');
+  const pickerClosed = await waitFor(() => {
+    const f = tailOf(mQ);
+    return (f.includes('就绪') || f.includes('ready')) && !f.includes('Select provider') && !f.includes('选择提供商') && !f.includes('DeepSeek');
+  }, 5000);
+  check('模型选择器:q 关闭', pickerClosed);
+  if (!pickerClosed) await dump('.qclose');
 
-  await submit('/sessions');
-  await sleep(1600);
-  const f4 = last();
-  check('会话选择器:打开', f4.includes('Session') || f4.includes('会话') || f4.includes('session') || f4.includes('live') || f4.includes('resumable') || f4.includes('filter') || f4.includes('Ctrl+N'));
+  // ── 2b. 会话选择器（「resumable」只出现在会话面板头部；状态栏「20 会话」不含） ──
+  const mSess = mark();
+  await submit('/sessions ');
+  const sessOpened = await waitFor(() => tailOf(mSess).includes('resumable'));
+  check('会话选择器:打开', sessOpened);
+  if (!sessOpened) await dump('.sess');
+  const mEsc = mark();
   p.write('\x1b');
-  await sleep(1800); // overlay 关闭渲染延迟约 1.5s——未关闭前输入会被 overlay 拦截
+  const sessClosed = await waitFor(() => {
+    const f = tailOf(mEsc);
+    return !f.includes('resumable') && !f.includes('Select +new');
+  }, 5000);
+  check('会话选择器:Esc 关闭', sessClosed);
+  if (!sessClosed) await dump('.sessclose');
+  // 陷阱 5：Esc 关闭后输入恢复窗口——首批击键失效（cmd-verify 实测）。恢复 settle。
+  await sleep(1500);
 
   // ── 2. 输入与提交（规则脑回复） ─────────
-  await submit('你好');
-  await sleep(900);
-  const f1 = strip(out);
-  check('提交:用户消息渲染', f1.includes('❯ 你好') || f1.includes('你好'));
-  // 无真实 API key 时 agent 进入计算/合成状态即视为 UI 提交链路正常
-  check('提交:助手回复渲染', f1.includes('我是 WxNodus') || f1.includes('computing') || f1.includes('synthesizing') || f1.includes('抱歉') || f1.includes('/key'));
-  check('提交:回复含规则脑提示', f1.includes('/key') || f1.includes('WxNodus'));
-  // 中断 agent（无有效 key 时可能长时间挂起），保证后续命令不被 busy guard 拦截
-  p.write('\x03');
-  await sleep(800);
-  check('提交:状态回到 ready', strip(out).includes('ready') || strip(out).includes('就绪'));
+  await submit('hello');
+  const mHello = mark();
+  const userMsgRendered = await waitFor(() => tailOf(mHello).includes('hello'), 6000);
+  check('提交:用户消息渲染', userMsgRendered);
+  if (!userMsgRendered) await dump('.user');
+  // 无真实 API key 时规则脑即时回复（提示 /key）即视为 UI 提交链路正常
+  const replyRendered = await waitFor(() => {
+    const f = tailOf(mHello);
+    return f.includes('我是 WxNodus') || f.includes('computing') || f.includes('synthesizing') || f.includes('抱歉') || f.includes('/key');
+  }, 8000);
+  check('提交:助手回复渲染', replyRendered);
+  check('提交:回复含规则脑提示', tailOf(mHello).includes('/key'));
+  // 等就绪（分段作用域，回复之后的新帧）；仅当 agent 确实仍忙（真实 key 流式回复）才中断——
+  // 空闲态 Ctrl+C 会使渲染停摆，故先判定再发
+  const mReady = mark();
+  let readyAfterReply = await waitFor(() => {
+    const f = tailOf(mReady);
+    return f.includes('就绪') || f.includes('ready');
+  }, 6000);
+  if (!readyAfterReply) {
+    const stillBusy = /computing|synthesizing|running|formulating/.test(tailOf(mReady));
+    if (stillBusy) p.write('\x03');
+    const mRec = mark();
+    readyAfterReply = await waitFor(() => {
+      const f = tailOf(mRec);
+      return f.includes('就绪') || f.includes('ready');
+    }, 8000);
+  }
+  check('提交:状态回到 ready', readyAfterReply);
 
-  // ── 3. 命令建议（complete.slash RPC） ────
-  p.write('/');
-  const sugOpened = await waitFor(() => {
-    const f = last();
-    return f.includes('/help') || f.includes('/model');
-  });
+  // ── 3. 命令建议 → 4. 命令执行（链式：过滤后补齐命令 + 末尾空格 → Enter 提交）──
+  // 「翻页」页脚只在全量列表（32 条 > 16 行窗口）渲染——分段作用域 + 重发兜底
+  let sugOpened = false;
+  for (let attempt = 0; attempt < 3 && !sugOpened; attempt++) {
+    const mSug = mark();
+    p.write('/');
+    sugOpened = await waitFor(() => tailOf(mSug).includes('翻页'), 3000);
+  }
   check('建议:/ 弹出建议', sugOpened);
+  if (!sugOpened) await dump('.sug0');
+  const mFilter = mark();
   await typeKeys('calc');
-  const filtered = await waitFor(() => last().includes('/calc'), 5000);
+  const filtered = await waitFor(() => tailOf(mFilter).includes('/calc'), 5000);
   check('建议:过滤生效', filtered);
-  p.write('\x1b');
-  await sleep(400);
-  p.write('\x15'); // Ctrl+U：清空输入草稿——Esc 只关弹层不清空输入（否则后续命令粘连成 /calc/uuid）
-  await sleep(400);
+  if (!filtered) await dump('.sug');
+  const mCalc = await submitScoped(' 1+2');
+  const calcOut = await waitFor(() => tailOf(mCalc).includes('= 3'), 6000);
+  check('命令:/calc 输出', calcOut);
+  if (!calcOut) await dump('.calc');
 
-  // ── 4. 命令执行（slash.exec → wxnodus commandBus） ──
-  await submit('/help');
-  await sleep(800);
-  check('命令:/help 中文面板', strip(out).includes('查看帮助'));
-  await submit('/calc 1+2');
-  await sleep(800);
-  check('命令:/calc 输出', strip(out).includes('= 3') || strip(out).includes('3'));
-  // /uuid 经补全弹层：先 Esc+Ctrl+U 清场，再慢速输入 + readiness 轮询（补全面板 Enter 语义时序敏感）
-  p.write('\x1b'); await sleep(400);
-  p.write('\x15'); await sleep(400);
-  await typeKeys('/uuid'); await sleep(600);
-  p.write('\r');
-  const uuidOut = await waitFor(() => /[0-9a-f]{8}-/.test(strip(out)), 6000);
+  const mHelp = await submitScoped('/help');
+  check('命令:/help 中文面板', await waitFor(() => {
+    const f = tailOf(mHelp);
+    return f.includes('/clear') && f.includes('/usage') && f.includes('/help');
+  }, 6000));
+  // 陷阱 6：/help 长输出打开 pager（标题「命令帮助」），pager 吞 Space/Enter（翻页）——
+  // 不关闭则后续末尾空格提交全部损坏。q 关闭 + 分段验证。
+  const mHelpClose = mark();
+  p.write('q');
+  const helpPagerClosed = await waitFor(() => !tailOf(mHelpClose).includes('命令帮助'), 5000);
+  check('命令:/help pager 关闭', helpPagerClosed);
+  await sleep(300);
+  const mUuid = await submitScoped('/uuid');
+  const uuidOut = await waitFor(() => /[0-9a-f]{8}-/.test(tailOf(mUuid)), 6000);
   check('命令:/uuid 输出', uuidOut);
-  await submit('/status');
-  await sleep(800);
-  check('命令:/status 输出', strip(out).includes('状态') || strip(out).includes('模型'));
-  // 中断 agent（/status 无有效 key 时挂起 → 后续消息排队不显示），
-  // 保证测试消息直接进入 transcript；等满 interrupt cooldown（1.5s）+ 余量
-  p.write('\x03');
-  await sleep(2400);
+  if (!uuidOut) await dump('.uuid');
+  const mStatus = await submitScoped('/status');
+  check('命令:/status 输出', await waitFor(() => {
+    const f = tailOf(mStatus);
+    return f.includes('模型：') || f.includes('状态');
+  }, 6000));
+  // 陷阱 6：/status 同样打开 pager（多行输出）——q 关闭 + 分段验证，否则 msg 阶段损坏
+  const mStatusClose = mark();
+  p.write('q');
+  const statusPagerClosed = await waitFor(() => !tailOf(mStatusClose).includes('模型：'), 5000);
+  check('命令:/status pager 关闭', statusPagerClosed);
+  await sleep(300);
+  // /status 在无 key 时可能挂起 → 等就绪；仍忙才中断（同「先判定再发」纪律）
+  const mReady2 = mark();
+  let readyAfterStatus = await waitFor(() => {
+    const f = tailOf(mReady2);
+    return f.includes('就绪') || f.includes('ready');
+  }, 5000);
+  if (!readyAfterStatus) {
+    const stillBusy = /computing|synthesizing|running|formulating/.test(tailOf(mReady2));
+    if (stillBusy) p.write('\x03');
+    const mRec2 = mark();
+    readyAfterStatus = await waitFor(() => {
+      const f = tailOf(mRec2);
+      return f.includes('就绪') || f.includes('ready');
+    }, 8000);
+  }
+  check('命令:状态回到 ready', readyAfterStatus);
 
   // ── 7. 滚动（ScrollBox 应用内滚动） ───────
-  for (let i = 0; i < 3; i++) { await submit('测试' + i); await sleep(600); }
-  // 中断 agent（有真实 key 时 AI 回复流式输出会持续刷新屏幕，与渲染断言竞争——先停再查）
-  p.write('\x03');
-  await sleep(1000);
-  const historyAccumulated = await waitFor(() => strip(out).includes('测试2'), 6000);
-  const f5 = last();
+  // 每条消息等回显再发下一条（固定间隙会让后发消息在 agent 忙时排队不渲染）；
+  // 累积断言分段作用域自 msg0 提交起，杜绝会话面板旧帧（历史会话标题）误判
+  const mHist = mark();
+  for (let i = 0; i < 3; i++) {
+    const mM = mark();
+    await submit('msg' + i);
+    await waitFor(() => tailOf(mM).includes('msg' + i), 8000);
+  }
+  const historyAccumulated = await waitFor(() => {
+    const f = tailOf(mHist);
+    return f.includes('msg0') && f.includes('msg1') && f.includes('msg2');
+  }, 6000);
   check('主屏幕:历史消息累积', historyAccumulated);
+  if (!historyAccumulated) await dump('.hist');
+  const f5 = last();
   check('主屏幕:输入框固定底部', f5.includes('❯'));
   check('主屏幕:状态条在底部', f5.includes('deepseek') || f5.includes('Ctrl+C') || f5.includes('语音') || f5.includes('synthesizing') || f5.includes('ready') || f5.includes('running') || f5.includes('interrupted') || f5.includes('formulating'));
 
-  // ── 8. 退出 ─────────────────────────────
-  p.write('\x03'); // Ctrl+C
-  await sleep(800);
-  const f6 = strip(out);
-  check('退出:进程可终止', p.kill() || true);
-  try { p.kill(); } catch {}
+  // ── 8. 退出（/quit 干净退出路径；kill 兜底——进程可终止 = 真实 exit 事件） ──
+  await submitScoped('/quit');
+  const quitExit = await waitFor(() => exited, 4000);
+  if (!quitExit) { try { p.kill(); } catch {} }
+  const terminated = await waitFor(() => exited, 3000);
+  check('退出:进程可终止', terminated);
 
   // ── 汇总 ────────────────────────────────
   const pass = results.filter(r => r.ok).length;
@@ -147,6 +251,7 @@ async function main() {
   if (fails.length) {
     console.log('失败项：');
     fails.forEach(f => console.log('  ✗ ' + f.name));
+    await dump('.final');
   }
   process.exit(fails.length ? 1 : 0);
 }
