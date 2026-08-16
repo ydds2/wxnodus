@@ -222,6 +222,11 @@ const md = [
   '| ✅ 已修 | 密钥槽与多 provider 目录错配（智谱密钥发往 deepseek 端点 401）——per-provider 密钥槽 apiKeys.<provider> + keyProvider 归属校验 fail-closed + 提示（§13.1） |',
   '| ✅ 已修 | README 数字漂移 ×4（规则脑 47、内核工具 44、测试 2187、命令 108）——与实现同步（§13.2） |',
   '| ✅ 已修 | 证据脚本重复样板——公共库 scripts/lib/evidence.mjs（JS）+ scripts/win-common.ps1（PS P/Invoke）五脚本去重（§13.2） |',
+  '| ✅ 已修 | 「35 工具调用后无输出」——provider 错配循环（智谱密钥配 deepseek 模型）→ MODEL_CATALOG 补 GLM-4 Flash + 配置对齐，无头复现实质输出（§13.5） |',
+  '| ✅ 已修 | 电池与评估者密钥/模型耦合——三电池脚本洁净间数据目录（WXNODUS_DATA_DIR+LANG），与线上模型状态解耦（§13.6） |',
+  '| ✅ 已修 | 时钟改写形态随布局漂移——检测器三形态全收且 CUP 不锁列（\\b<digit>/CUP 任意列/winpty 整行）（§13.6） |',
+  '| ✅ 已修 | 一次性通告永久占据动词槽（curator 首跑必现，W8-29 契约破坏）——缺省 8s TTL 自过期，sticky 显式常驻（+2 单测）（§13.6） |',
+  '| ✅ 已修 | MODEL_CATALOG 12→13 计数断言漂移 + eval 证据行曾取 stderr 噪音——12→13、证据行改 stdout 末行（§13.6） |',
   '| ⏳ 人工门 | IME TSF 候选窗真机验证（见上） |',
   '',
 ].join('\n');
