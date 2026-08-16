@@ -19,6 +19,13 @@ const run = (cmd, args, opts = {}) => {
   const out = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim();
   return { exit: r.status ?? 1, out, lastLine: out.split('\n').filter(l => l.trim()).pop() ?? '' };
 };
+// 直接以 node 启动工具（npx/npm 的 .cmd 垫片在受限 spawn 环境下不可靠——仓库 freeze-candidate 同款模式）
+const vitestCli = [join(ROOT, 'node_modules', 'vitest', 'vitest.mjs')];
+const tscCli = [join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc')];
+const tsxCli = [join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')];
+const vitestRun = (...files) => run(process.execPath, [...vitestCli, 'run', '--config', 'vitest.config.ts', ...files, '--reporter=basic'], { timeout: 600000 });
+const stripAnsi = s => String(s ?? '').replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
+const vitestPassedOf = t => Number((stripAnsi(t.out).match(/Tests\s+(\d+)\s+passed/i) ?? [])[1] ?? 0);
 
 const dims = [];
 const dim = (id, name, target, basis) => { dims.push({ id, name, target, basis, evidence: [], score: null, status: 'pending' }); };
@@ -28,13 +35,12 @@ const scoreOf = (dimId, score, note = '') => { const d = dims.find(x => x.id ===
 // ── 1. 测试与质量门禁 ──
 dim('tests', '测试与质量门禁', 9.5, '全量 vitest + typecheck×2 + git diff --check');
 {
-  const vitest = run('npx', ['vitest', 'run', '--config', 'vitest.config.ts', '--reporter=basic']);
-  const m = vitest.out.match(/Tests\s+(\d+)\s+passed[\s\S]*?(\d+)\s+skipped/i) ?? [];
-  const passed = Number(m[1] ?? 0);
-  ev('tests', 'npx vitest run', vitest.exit, `passed=${passed}`);
-  const tc = run('npm', ['run', 'typecheck']);
-  const tct = run('npm', ['run', 'typecheck:tests']);
-  ev('tests', 'npm run typecheck && npm run typecheck:tests', tc.exit + tct.exit, 'both clean');
+  const vitest = vitestRun();
+  const passed = vitestPassedOf(vitest);
+  ev('tests', 'node vitest run（全量）', vitest.exit, `passed=${passed}`);
+  const tc = run(process.execPath, [...tscCli, '--noEmit'], { timeout: 300000 });
+  const tct = run(process.execPath, [...tscCli, '--noEmit', '-p', 'tsconfig.tests.json'], { timeout: 300000 });
+  ev('tests', 'tsc --noEmit ×2', tc.exit + tct.exit, 'both clean');
   const dc = run('git', ['diff', '--check']);
   ev('tests', 'git diff --check', dc.exit, dc.out);
   scoreOf('tests', vitest.exit === 0 && passed >= 2100 && tc.exit === 0 && tct.exit === 0 && dc.exit === 0 ? 9.5 : 0,
@@ -62,9 +68,8 @@ if (FULL) {
 // ── 3. 诚实交付纪律 ──
 dim('honesty', '诚实交付纪律（fail-closed）', 9.0, '命令层 fail-closed 测试组 + 驱动边界契约测试组');
 {
-  const t = run('npx', ['vitest', 'run', '--config', 'vitest.config.ts', 'tests/commands-goal.test.ts', 'tests/unit/computer/windowsUiaPorts.test.ts', 'tests/unit/computer/driverContracts.test.ts', 'tests/failure/driverFallback.test.ts', '--reporter=basic']);
-  const m = t.out.match(/Tests\s+(\d+)\s+passed/) ?? [];
-  ev('honesty', 'goal+uia fail-closed 测试组', t.exit, `passed=${m[1] ?? 0}`);
+  const t = vitestRun('tests/commands-goal.test.ts', 'tests/unit/computer/windowsUiaPorts.test.ts', 'tests/unit/computer/driverContracts.test.ts', 'tests/failure/driverFallback.test.ts');
+  ev('honesty', 'goal+uia fail-closed 测试组', t.exit, `passed=${vitestPassedOf(t)}`);
   scoreOf('honesty', t.exit === 0 ? 9.0 : 0, t.exit === 0 ? 'fail-closed 契约测试全绿' : '测试组失败');
 }
 
@@ -104,7 +109,7 @@ dim('render', '渲染层可移植性（winpty/ConPTY 契约）', 8.0, '时钟活
 // ── 7. 功能广度 ──
 dim('features', '功能广度（命令注册表）', 8.5, 'SLASH 计数 + 0 孤儿');
 {
-  const r = run('npx', ['tsx', '-e', "import {SLASH, COMMAND_DESC, COMMAND_CAT} from './src/commands/registry.ts'; console.log('count=' + SLASH.length + ' orphans=' + SLASH.filter(c=>!COMMAND_DESC[c]||!COMMAND_CAT[c]).length)"]);
+  const r = run(process.execPath, [...tsxCli, '-e', "import {SLASH, COMMAND_DESC, COMMAND_CAT} from './src/commands/registry.ts'; console.log('count=' + SLASH.length + ' orphans=' + SLASH.filter(c=>!COMMAND_DESC[c]||!COMMAND_CAT[c]).length)"], { timeout: 120000 });
   const m = r.out.match(/count=(\d+)\s+orphans=(\d+)/);
   const count = Number(m?.[1] ?? 0), orphans = Number(m?.[2] ?? 999);
   ev('features', 'registry SLASH 计数', r.exit, `count=${count} orphans=${orphans}`);
@@ -116,9 +121,8 @@ dim('security', '安全与合规（静态面）', 7.0, '红线模块/环境净�
 {
   const redlines = existsSync(join(ROOT, 'src', 'kernel', 'permissions.ts'));
   const env = readFileSync(join(ROOT, 'src', 'kernel', 'env.ts'), 'utf8').includes('sanitizedEnv');
-  const t = run('npx', ['vitest', 'run', '--config', 'vitest.config.ts', 'tests/compliance.test.ts', '--reporter=basic']);
-  const m = t.out.match(/Tests\s+(\d+)\s+passed/) ?? [];
-  ev('security', '红线/净化存在性 + compliance 测试', t.exit, `redlines=${redlines} sanitizedEnv=${env} passed=${m[1] ?? 0}`);
+  const t = vitestRun('tests/compliance.test.ts');
+  ev('security', '红线/净化存在性 + compliance 测试', t.exit, `redlines=${redlines} sanitizedEnv=${env} passed=${vitestPassedOf(t)}`);
   scoreOf('security', redlines && env && t.exit === 0 ? 7.0 : 0, '静态存在性（未做独立密码学审计——7.0 封顶）');
 }
 

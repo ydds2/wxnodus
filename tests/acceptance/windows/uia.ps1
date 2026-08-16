@@ -1,4 +1,4 @@
-# uia.ps1 — Gate E uia scenario (REAL execution on the interactive desktop)
+﻿# uia.ps1 — Gate E uia scenario (REAL execution on the interactive desktop)
 # Positive drives (production code path, tsx): Invoke (Button) / Value (TextBox, Chinese-native) /
 # Selection (ListBox item) with end-to-end readback via echo files.
 # Negative: nonexistent element -> honest UIA_ACTION_NOT_PERFORMED (no fake success).

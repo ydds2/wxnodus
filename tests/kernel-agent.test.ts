@@ -679,7 +679,7 @@ describe('工具延迟加载', () => {
     await agent.run('你好');
     const names = seenTools[0]!.map((t: any) => t.function.name);
     expect(names).not.toContain('tool_search');
-    expect(names.length).toBe(43); // 全表（42 内置含 notify/browser_* 七件套/computer_* 十件套（含 UIA 五件套）/web_search/memory_update/memory_delete/repo_map/cron_create/credential_form/memory_search/find_files/wx_cmd/command_search - tool_search 未注册）
+    expect(names.length).toBe(44); // 全表（43 内置含 notify/browser_* 七件套/computer_* 十一件套（含 UIA 六件套：windows/tree/find/click/type/act）/web_search/memory_update/memory_delete/repo_map/cron_create/credential_form/memory_search/find_files/wx_cmd/command_search - tool_search 未注册）
   });
 });
 

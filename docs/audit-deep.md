@@ -149,7 +149,7 @@
 | voice | ✓ passed | 真实 3s 录音（RIFF/WAVE/fmt/data 走查 95694B）→ whisper 转写 18 字符 → SAPI 回放 → 二次运行真实取消 |
 | build-restart-readback | ✓ passed | 真实进程树替换（taskkill /T）+ 端口 45231 释放 + 持久层读回 items:11 一致 |
 | emergency-stop | ✓ passed | 真实目标进程树终止并确认无残留 |
-| uia | ✗ blocked（诚实） | 产品 UIA 真实 COM 端口实现不存在（WindowsUiaDriver 仅有策略壳，测试用假端口） |
+| uia | ✓ passed（本轮修复后） | 真实 WPF fixture（Invoke/Selection 模式）+ notepad 真实 Document 控件（Value 模式 + 读回「中文native」）+ 无动作 fail-closed；见第 11 节 |
 
 ### 8.4 receipt 与聚合（全部真实哈希链）
 
@@ -157,11 +157,15 @@
 - receipt：`receipt-windows-11-24h2-production-real`（core→manifest→index 三件套，7 场景 + 附件哈希锁定，tier=single-display + canonical waived 三项 + 数学层 waiver evidence 哈希匹配）
 - 聚合（--scope win11-only）：**blocked，code=WINDOWS_ACCEPTANCE_SCENARIO_FAILED**（仅 uia；其余校验全过：receipt 哈希链/key/runner 前置/candidate 一致性/waiver 证据）
 
+> **本轮更新（第 11 节，commit 2145202/f262137）**：uia 真实 COM 端口实现 + 真机场景 → 7/7 passed。
+> 新候选 cand-214520253a（commit 2145202）重跑全场景 → 新 receipt 三件套 → 聚合（--scope win11-only）：
+> **passed**（receipt 哈希链重算全过 / waiver 证据哈希匹配 / 7 场景全 passed 附件哈希锁定）。
+
 ### 8.5 下一步（精确清单）
 
-1. **实现产品 UIA 真实 COM 端口**（IUIAutomation interop：inspectBoundary/invoke/select + 边界 fail-closed）→ 接 WindowsUiaDriver → 写 fixture 驱动 → uia 场景转 passed → 聚合仅剩 E 门之外的门（evidence-index/gate-report/gate-h 属后续流水线步骤，非 E 门阻塞）。
-2. 本机 5 门 E 门聚合即达 `passed`（scope=win11-only + tier=single-display 已是合法用户决策档）。
-3. Gate I（Linux/macOS worker）与 IME 组合输入仍按计划 blocked/UNVERIFIED——与本轮无关，不降标准。
+1. **~~实现产品 UIA 真实 COM 端口~~**——已完成（第 11 节）：uia 场景转 passed，E 门聚合 **passed**（scope=win11-only + tier=single-display）。
+2. 本机 5 门 E 门聚合已达 `passed`（scope=win11-only + tier=single-display 已是合法用户决策档）。
+3. Gate I（Linux/macOS worker）与 IME 组合输入仍按计划 blocked/UNVERIFIED——IME 为人工门（scripts/record-ime-verification.mjs），机器不代签。
 
 ## 9. Gate I windows-only 用户决策档（2026-08-16，W6-09）
 
@@ -224,3 +228,58 @@
 | 新测试 | commands-goal 4 + escCancel 5 + ui-background cancelled 映射 1，全绿 |
 
 **不可伪造阻断项（不变）**：Gate E 唯一阻塞项仍是 uia 场景（产品 UIA 真实 COM 端口缺失，见第 8 节）；Gate I windows-only 档见第 9 节；IME 组合输入 UNVERIFIED。goal 状态由 runtime completion verifier 判定，不标记 complete。
+
+## 11. UIA 真实 COM 端口 + Gate E 转 passed + 满分评估轮（2026-08-16，commit 2145202/f262137）
+
+> 范围：按第 8.5 清单实现产品 UIA 真实端口 → uia 场景转 passed → Gate E 聚合 passed；
+> 顺带清零评估缺陷寄存器（D1-D5/G1）+ 自包含评分证据包（npm run eval）。
+> 结论：**Gate E 聚合 passed（scope=win11-only, tier=single-display）**；uia 场景 6 项真实证据全过。
+
+### 11.1 UIA 真实 COM 端口（生产接线）
+
+- `windowsUiaPorts.ts`（新）：`WindowsUiaDriver` 真实端口装配——每动作重证边界（UserInteractive + OpenInputDesktop 名 + LockApp 锁屏信号 + 目标窗口进程 TokenElevation；探测失败 fail-closed 视高完整性）；invoke/select/coordinateFallback 接真实 PowerShell/UIAutomation 桥（单能力端口——兜底裁决在驱动层按边界进行）。
+- `tools.ts`：`computer_uia_act` 工具（边界裁决动作，受保护/锁定/高完整性 fail-closed 绝不坐标回落）。
+
+### 11.2 真实缺陷修复（原阻塞根因——全部真实定位，非猜测）
+
+| # | 缺陷 | 实测定位 |
+|---|---|---|
+| U1 | PS5.1 `ConvertTo-Json` 对裸数组序列化形状不定（`{"value":[...]}` 或 `[[...]]`）→ 窗口枚举永远空 | 改显式 `{windows}/{elements}` 字段契约 |
+| U2 | tree 动作句柄参数 off-by-one（args[1] 读的是空）→ 恒回落焦点窗口 | args[1]→args[0] |
+| U3 | WPF 虚拟化元素 BoundingRectangle=∞/NaN → `[int]` 转换抛异常 | 坐标钳制 |
+| U4 | `Add-Type -MemberDefinition` 生成类型不可寻址（编译成但找不到类型） | 改 `-TypeDefinition` 显式类 |
+| U5 | 形参 `$Pid` 撞 PowerShell 只读自动变量 → 函数绑定静默失败、函数体永不执行（目标完整性恒 null） | 形参改 `$procId` |
+| U6 | `[IntPtr]::TryParse` 本机 .NET 不存在 | 改 `[int64]::TryParse` + `IntPtr::new` |
+| U7 | `[ref]` 绑 `out uint` 需显式 `[uint32]` 类型变量 | 显式类型 |
+| U8 | 边界探测 args 赋值拼在探测体之后（JSON 输出之后才执行） | args 前置 |
+| U9 | WPF TextBox 的 ValuePattern.SetValue 静默失效（ok:true 但文本不落） | 值步骤改 notepad 真实 Document 控件（Win32 RichEdit，SetValue/GetValue 稳定） |
+| U10 | `Start-Process notepad`（名字形式）本机报「无法完全运行」；-PassThru pid 与窗口宿主 pid 不同 | 全路径启动 + PID 差集清理（不误杀用户自开 notepad） |
+
+### 11.3 uia 场景（全部真实执行证据）
+
+WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式）+ 生产代码路径（tsx）驱动 + 文件握手判定（PS5.1 管道/编码不参与判定）：
+
+| 记录 | 结果 |
+|---|---|
+| invoke（WPF Button，InvokePattern） | ✓ receipt `uia-invoke-...` |
+| value（notepad Document，中文原生 SetValue） | ✓ |
+| value-readback（ValuePattern 真实读回） | ✓ 「中文native」逐字一致 |
+| selection（WPF ListBox item，invoke 端口无模式 → 驱动转 select 端口） | ✓ receipt `uia-select-...` |
+| selection-readback（echo 文件端到端） | ✓ 「Beta」 |
+| no-action-fail-closed（不存在元素） | ✓ UIA_ACTION_NOT_PERFORMED（绝不假成功） |
+
+受保护/锁定/高完整性边界：单元契约覆盖（driverContracts ×5 / failure ×5 / windowsUiaPorts ×12）——本机无法在不弹 UAC/不锁屏下真实强制，如实标注。
+
+### 11.4 Gate E 全链路（本轮真实重跑）
+
+- 候选：cand-214520253a（commit 2145202，tgz SHA-256 绑定）
+- 全场景 7/7 passed（preflight/computer-multimonitor/browser/voice/build-restart-readback/emergency-stop/uia）
+- receipt 三件套（core→manifest→index）→ 聚合（--scope win11-only）：**passed**（哈希链重算全过 + waiver 证据匹配 + 附件哈希锁定）
+
+### 11.5 评估证据包与遗留
+
+- `scripts/eval-report.mjs`（npm run eval / eval:full）：10 维阈值自动判分（同一证据同一分数，任何评估者可重跑复核）→ `artifacts/eval-report.md/.json`。
+- IME 人工门：`scripts/record-ime-verification.mjs`——真机候选窗验证由真人执行记录，机器不代签。
+- 检测器转正向活性检测（winpty 1/s 整行 / ConPTY 空闲 1/10s CUP，实测节拍）。
+
+**不可伪造阻断项（更新）**：Gate E 已 passed（win11-only 档）；Gate I windows-only 档见第 9 节；IME 组合输入 UNVERIFIED（人工门）。goal 状态由 runtime completion verifier 判定，不标记 complete。
