@@ -396,4 +396,5 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
   - 轮次耗尽兜底：未中断且无最终文本 → **无工具强制总结调用**（tools:[]，模型把已执行工具结果收敛为答案）；总结失败 → 显式失败文案（「轮次上限…建议 /rewind 拆分子任务」）——**绝不静默空输出**；`ok` 对兜底文案强制 false（不冒充成功）
   - MAX_TURNS 16→32（批量调用下探索类任务有余量自然收敛）
 - **确定性回归（客观契约，非主观评分）**：`scripts/loop-closure-test.mjs`——本地 mock OpenAI SSE 服务前 32 轮只回 tool_call（真实 ls 调用、参数轮换避开循环检测），逼内核轮次耗尽 → 断言真实 TUI 渲染出第 33 次强制总结的最终答案且状态回归就绪。已接入 eval battery 维度（fail-closed：静默空输出 = 电池红）。
+- **工具调用浪费止血（同轮贬低复盘）**：用户 35 次调用中 7× Ls、5× Web Search、4× Command Search 大量同参重复——新增**回合内读工具结果缓存**（ls/grep/find_files/fs_read/web_search/http_get/repo_map/memory_search/command_search/tool_search）：同参重复读调用合并返回缓存 + 「已缓存」标记（提示模型无需重跑）；任何写/执行类工具（bash/fs_write/fs_edit…）执行后整体清空——缓存绝不跨写失效（+2 单测：缓存命中标记达模型上下文 / bash 清空后真实重执行）。与循环检测（同参 ≥3 终止）协同：先合并止血，再终止空转。
 - **验证**：+3 单测（耗尽收敛/总结失败显式文案/4xx 早退事件可见）kernel-agent 56/56；回合闭环电池 exit 0（mock 33 次调用，最终答案渲染 true）；真实 zhipu 端点 -p 复现用户同款 prompt → 完整最终答案。

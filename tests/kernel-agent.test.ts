@@ -348,6 +348,55 @@ describe('回合闭环（绝不静默空输出）', () => {
   });
 });
 
+// ── 读工具结果缓存（回合内去重——35 次工具调用大量重复浪费的止血）───
+describe('读工具结果缓存', () => {
+  // 注意：同参重复 ≥3 会触发内核循环检测（正确行为）——以下用例最多 2 次同参
+  // 断言取模型收到的上下文（DB 工具行截断 300 字符会切掉尾部「已缓存」标记）
+  it('同参重复读调用合并返回缓存（模型收到已缓存标记）', async () => {
+    const script: Array<ModelCall | ToolCallMsg> = [
+      { type: 'tool_call', id: 'c1', name: 'ls', args: { path: '.' } },
+      { type: 'tool_call', id: 'c2', name: 'ls', args: { path: '.' } }, // 同参 → 缓存合并
+      { type: 'text', content: '回答：一切正常。' },
+    ];
+    const seen: string[] = [];
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-cache-hit',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req, streamCtx) => {
+        seen.push(JSON.stringify(req?.messages ?? []));
+        const next = script.shift()!;
+        if (next.type === 'text' && streamCtx?.onToken) streamCtx.onToken(next.content);
+        return next;
+      },
+    });
+    const r = await agent.run('任务');
+    expect(r.ok).toBe(true);
+    expect(seen.some(s => s.includes('已缓存'))).toBe(true);
+  });
+  it('写/执行类工具（bash）执行后缓存清空——同参读调用重新真实执行', async () => {
+    const script: Array<ModelCall | ToolCallMsg> = [
+      { type: 'tool_call', id: 'c1', name: 'ls', args: { path: '.' } },
+      { type: 'tool_call', id: 'c2', name: 'bash', args: { command: 'echo hi' } }, // 清缓存
+      { type: 'tool_call', id: 'c3', name: 'ls', args: { path: '.' } }, // 未缓存 → 真实执行
+      { type: 'text', content: '回答：一切正常。' },
+    ];
+    const seen: string[] = [];
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-cache-clear',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req, streamCtx) => {
+        seen.push(JSON.stringify(req?.messages ?? []));
+        const next = script.shift()!;
+        if (next.type === 'text' && streamCtx?.onToken) streamCtx.onToken(next.content);
+        return next;
+      },
+    });
+    const r = await agent.run('任务');
+    expect(r.ok).toBe(true);
+    expect(seen.some(s => s.includes('已缓存'))).toBe(false); // bash 清空后无缓存合并
+  });
+});
+
 // ── loop-goal 模式（Kimi Ralph 同款）───
 describe('loop-goal 模式', () => {
   it('goal：目标驱动自主循环直到 [GOAL_DONE]（多轮调用 + 标记剥离）', async () => {

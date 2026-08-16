@@ -838,6 +838,11 @@ export function createAgent(opts: AgentOptions) {
     let consecutiveFail = 0;
     // 深度：签名级循环检测缓冲（最近 8 轮工具调用签名）
     const recentToolSigs: string[] = [];
+    // 读工具结果缓存（回合内）：模型探索型任务常见同参重读/重搜（实测 35 次工具调用
+    // 大量重复浪费）——重复读调用合并返回缓存省时省 token；任何写/执行类工具
+    // （bash/fs_write/fs_edit…）执行后整体清空——缓存绝不跨写失效
+    const READ_TOOL_CACHE = new Set(['ls', 'grep', 'find_files', 'fs_read', 'web_search', 'http_get', 'repo_map', 'memory_search', 'command_search', 'tool_search']);
+    const toolCache = new Map<string, string>();
     let unknownRounds = 0;
     let finalText = '';
     // KF-023/024：回合终态在函数作用域声明（finally 与尾部共用同一 ok）
@@ -983,9 +988,28 @@ export function createAgent(opts: AgentOptions) {
             continue;
           }
           unknownRounds = 0;
-          const out = await executeTool(c.name, c.args);
+          const cacheKey = `${c.name}:${JSON.stringify(c.args ?? {})}`;
+          let out: string;
+          let fromCache = false;
+          if (READ_TOOL_CACHE.has(c.name) && toolCache.has(cacheKey)) {
+            // 同参重复读调用：合并返回缓存（提示模型无需重跑）
+            out = `${toolCache.get(cacheKey)}\n（结果已缓存——同参重复调用已合并，无需重跑）`;
+            fromCache = true;
+          } else {
+            out = await executeTool(c.name, c.args);
+            if (READ_TOOL_CACHE.has(c.name)) {
+              if (toolCache.size >= 32) {
+                const oldest = toolCache.keys().next().value;
+                if (oldest !== undefined) toolCache.delete(oldest);
+              }
+              toolCache.set(cacheKey, out);
+            } else {
+              // 写/执行类工具：缓存全部失效（状态已变，旧读结果不可信）
+              toolCache.clear();
+            }
+          }
           // KF-023/024：确定性结局累计——只有真实执行成功（postcondition 通过）的工具计入验证副作用
-          if (lastToolOutcome === 'verified') rs.verifiedEffects++;
+          if (!fromCache && lastToolOutcome === 'verified') rs.verifiedEffects++;
           if (out.includes('失败') || out.includes('异常')) anyFail = true;
           executed.push({ id: c.id, name: c.name, args: c.args, out, reasoning: c.reasoning, reasoningField: c.reasoningField });
           // 架构 P4：工具消息写 parts 分段（错误标记/截断标记独立 part——消息粒度可审计）
