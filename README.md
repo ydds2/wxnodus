@@ -51,6 +51,16 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 
 > 无 key 时 TUI 首屏会提示配置；未配置也能使用 /build（规则模板）、/search、/calc、/hole、/compliance 等本地能力。
 
+## 模型接入与余额监控（接口开放）
+
+任意 **OpenAI 兼容端点**（厂商直连 / 第三方中转站）皆可接入——档案化多密钥管理：
+
+- `/profile add <id> <baseURL> [--models a,b,c]` 新建接入档案 → `/profile use <id>` 一键切换；密钥 AES-256-GCM 加密落盘（`/profile set-key`），模型名任意自定义（不再强制目录回退）
+- `/key import <路径/.env>` 批量导入密钥；`/key --profile <id>` 指定档案；`/config export|import` 配置整体导入导出
+- `/balance set <余额URL> [--json-path 路径]` 粘贴余额查询网址 → 状态栏 **💰 实时余额**（5 分钟轮询 + 点击强制刷新，厂商适配器自动识别 + 通用启发式兜底，拉取失败诚实 ⚠）；`/balance on|off` 独立开关
+- `/usage range today|7d|30d` 分区间 token 消耗（跨会话聚合）→ 状态栏 **📊**（点击轮换区间）；余额与 token 两段独立配置
+- 彩蛋：`/warp` 星际跳跃 · `/fortune` 幸运签
+
 ## 自然语言免记命令
 
 | 你说 | 触发 |
@@ -76,6 +86,8 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 
 **工具与自动化**——44 个内核工具（含 `computer_*` 十件套（坐标+UIA）、`browser_*` 七件套、`memory_search`、`repo_map`、`cron_create`、`credential_form`）；`/jobs` 并行后台任务（db 持久化，kill 幂等）· `/term` 后台终端 · `/cron` 定时任务（标准 5 字段 cron）· `/goal` 目标循环 · `/delegate` 子代理（只读工具集 + 危险工具剔除 + 安全钩子继承）· `/swarm` 1-8 并行子代理 · `/script` 剧本录制/回放（WxScript DSL，回放 CI；fs 修改后 auto 剧本**自动回归重放**）· `/self-evolve` 自举（AI 分析自身源码 → 补丁 → 自测 → 自动回滚，仅限 src/kernel 与 src/commands）· `/fork`/`/checkpoint`/`/undo` 分支与回滚（影子快照，零 git 依赖）· `/map` 仓库地图（aider repo-map 自研版）· `/arena` 多模型对战 · `/review` 自查。
 
+**UI 简约趣味**——状态栏黑洞宠物（busy 吸积盘 / error 坍缩 / idle 呼吸，三级动效档自动降级：modern 全量 / cmd 减频 / no-vt 或 `WXNODUS_NO_ANIM=1` 零动画）· 权限模式徽章（`[SMART]`/`[YOLO]` 语义着色，切换即刷新）· 启动欢迎卡片（吸积盘 6 帧自消散，`WXNODUS_NO_INTRO=1` 跳过）· 状态栏尾段点击交互（💰 刷新 / 📊 换区间 / 模型·cwd·语音可点）。
+
 **生态与协议**——`/skill` 本地技能（agentskills.io 兼容，`/learn` 从对话学习生成）· `/forge` 组件化构建（可运行 MCP Server + 技能打包）· `/mcp` 客户端（stdio + Streamable HTTP，热重载）· `/plugin` 插件（事件订阅/配置/日志 API）· `/gateway` HTTP JSON-RPC 网关 · `/a2a`/`/acp` 智能体协议 · `/webhook` 事件回调 · `/sandbox` L0-L3 分层沙盒 · 生态规范文件链（AGENTS.md > CLAUDE.md > GEMINI.md > .cursorrules > .clinerules > .roomodes）。
 
 **系统**——`/voice` 语音全链路（ffmpeg 录音 → VAD 静音自停 → whisper 本地转写 → 自动提交 → TTS 回复；二进制需按提示安装）· `/init` 项目分析生成 AGENTS.md · 生命周期 Hooks 12 类（preToolUse 输出 DENY 即真实拦截，子代理同样生效）· `/doctor` 健康检查 · `/audit`/`/logs`/`/evidence` 留痕 · 会话 token 预算 · `/theme`/`/lang` 个性化 · `/calc` 等确定性工具（毫秒级）。
@@ -97,7 +109,7 @@ Node 22 + TypeScript 严格 ESM · 自研状态引擎（createStore/createAtom/c
 
 ## 验收证据
 
-- ✅ 2187 单元/契约/进程级测试全绿（71+ 测试文件）+ 类型检查零错误
+- ✅ 2247 单元/契约/进程级测试全绿（306 测试文件）+ 类型检查零错误
 - ✅ NL 路由契约测试：README「说人话」六行承诺锁定（tests/commands-intent.test.ts）
 - ✅ TUI 冒烟（真实终端 node-pty）：首屏/输入/回复/命令面板/Esc/终止不挂死
 - ✅ 全命令扫描 108/108 可用（scripts/cmd-sweep.mjs 回归工具，108 命令注册表全覆盖）
