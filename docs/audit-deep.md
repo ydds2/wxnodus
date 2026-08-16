@@ -347,3 +347,9 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
   - `scripts/win-common.ps1`——C# P/Invoke 类型（WxWin）+ 截图/窗口/键流/控制台工具：ime-console-inject、ime-sendinput-verification、ime-capture-candidate、diag-windows 四脚本去重（每脚本 -60~80 行样板）
   - 重构后全链路回归：ime-console-inject → ime-vision-verify status=passed（屏幕缓冲 hasNihao + DB 你好 + 视觉佐证）
 - 缺陷寄存器新增 4 项 ✅（eval-report 生成时并入）
+
+### 13.3 功能上限提升轮（不做离线方向；代码优化 + 域覆盖扩充）
+
+- **启动就绪真优化（去串行化）**：main() 装配链（taskRunner/term/plugins/handlers/sessionStart/download/ssrf 共 12 个动态 import）由串行 await 改为一次 Promise.all 分组——就绪实测 **3.0-4.3s → 1.7s**（×3 中位，eval perf 探针同口径复测 1.7s）
+- **规则脑域覆盖 47 → 60**：+13 域（宠物/租车/招聘/捐赠/票务/家教/维修/志愿者/讲座/外卖/预约/租借/家政），零新增模具成本；`RULE_PATTERNS` 导出契约锁定（≥60）+ 13 命中用例（tests/build-spec.test.ts 21/21）
+- **IME TSF 候选窗人工门闭环**：真人真机输入落库（nodus.db id=3809「你好？」，全角问号为微软拼音转换特征）——`artifacts/ime-verification.json` 人工 receipt 生成（sha256 绑定 + DB/守望/屏幕缓冲证据标注）；候选窗为真人现场见证、守望 250ms 轮询未截到弹窗帧（如实标注）

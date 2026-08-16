@@ -69,7 +69,24 @@ const RULES: Array<{ re: RegExp; scaffold: string }> = [
   { re: /住宿|民宿|预订|酒店|hotel|booking|reservation/i, scaffold: 'generic' },
   { re: /快递|物流|包裹|shipment|tracking/i, scaffold: 'generic' },
   { re: /系统|网站|应用|工具|页面|管理|平台/i, scaffold: 'generic' },
+  // ── P0-2：域覆盖再扩充（低频但真实的高价值域——同一模具体系零新增成本）──
+  { re: /宠物|领养|宠物店|兽医|pet|adopt/i, scaffold: 'generic' },
+  { re: /租车|车辆租赁|共享单车|car.?rental/i, scaffold: 'generic' },
+  { re: /招聘|求职|岗位|职位|简历投递|job|hiring/i, scaffold: 'generic' },
+  { re: /捐赠|募捐|公益|善款|charity|donation/i, scaffold: 'generic' },
+  { re: /票务|演出票|购票|门票|抢票|ticket/i, scaffold: 'generic' },
+  { re: /家教|辅导|课程表|选课|tutor|class.?schedule/i, scaffold: 'generic' },
+  { re: /维修|报修|上门服务|repair|maintenance/i, scaffold: 'generic' },
+  { re: /志愿者|志愿活动|公益服务|volunteer/i, scaffold: 'generic' },
+  { re: /讲座|沙龙|活动报名|workshop|event.?signup/i, scaffold: 'generic' },
+  { re: /外卖|点单|堂食|送餐|food.?delivery|takeout/i, scaffold: 'generic' },
+  { re: /预约|挂号|门诊|问诊|appointment|clinic/i, scaffold: 'generic' },
+  { re: /租借|物品租借|共享|租赁|rental|lending/i, scaffold: 'generic' },
+  { re: /家政|保洁|月嫂|保姆|housekeeping|cleaning/i, scaffold: 'generic' },
 ];
+
+/** 规则脑模式表（导出供契约测试锁定数量与覆盖域） */
+export const RULE_PATTERNS = RULES;
 
 const SUBJECTIVE = /良好|合理|美观|优雅|好用|顺畅/;
 

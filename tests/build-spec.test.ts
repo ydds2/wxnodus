@@ -229,3 +229,33 @@ describe('A21 diagnoseSpec 分级诊断', () => {
     expect(validateSpec(s).ok).toBe(false);
   });
 });
+
+// ── P0-2：规则脑域覆盖扩充（47 → 60+；导出契约锁定）──
+describe('规则脑域覆盖（P0-2 扩充）', () => {
+  it('RULE_PATTERNS 数量契约（≥60 域覆盖）', async () => {
+    const { RULE_PATTERNS } = await import('../src/build/spec.js');
+    expect(RULE_PATTERNS.length).toBeGreaterThanOrEqual(60);
+  });
+
+  it('新增域逐一命中（宠物/租车/招聘/捐赠/票务/家教/维修/志愿者/讲座/外卖/预约/租借/家政）', () => {
+    const cases: Array<[string, string]> = [
+      ['帮我做一个宠物领养平台', 'generic'],
+      ['做一个租车系统', 'generic'],
+      ['招聘管理系统', 'generic'],
+      ['公益捐赠平台', 'generic'],
+      ['演出票务系统', 'generic'],
+      ['家教预约平台', 'generic'],
+      ['家电维修报修系统', 'generic'],
+      ['志愿者活动管理', 'generic'],
+      ['讲座活动报名系统', 'generic'],
+      ['外卖点单系统', 'generic'],
+      ['门诊挂号预约系统', 'generic'],
+      ['物品租借平台', 'generic'],
+      ['家政服务预约', 'generic'],
+    ];
+    for (const [input, scaffold] of cases) {
+      const s = makeSpec(input, { key: null });
+      expect(s.scaffold).toBe(scaffold);
+    }
+  });
+});

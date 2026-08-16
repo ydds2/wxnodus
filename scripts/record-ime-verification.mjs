@@ -29,5 +29,5 @@ const dir = join(ROOT, 'artifacts');
 mkdirSync(dir, { recursive: true });
 const path = join(dir, 'ime-verification.json');
 writeFileSync(path, `${JSON.stringify(rec, null, 2)}\n`, 'utf8');
-const sha = createHash('sha256').update(readFileSync(path)).digest('hex');
+const sha = sha256(path);
 console.log(`IME 人工验证已记录：${path}\nsha256=${sha}\n（本文件由真人验证后记录——机器不代签候选窗行为）`);

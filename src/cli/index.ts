@@ -99,18 +99,18 @@ if (pre.mode === 'error') {
     _initErrorLog(dataDir);
     mkdirSync(dataDir, { recursive: true });
 
-  const [{ createCommandBus }, { GatewayClient }] = await Promise.all([
+  const [{ createCommandBus }, { GatewayClient }, { createApprovalCache }] = await Promise.all([
     import('../app/CommandBus.js'),
     import('../wxnodus-ui/wxGateway.js'),
+    import('../kernel/permissions.js'),
   ]);
+  const approvalCache = createApprovalCache();
 
   // W8-00 第二刀：组合根接管 config/repositories/kernel 全量装配（固定阶段 + 失败只 dispose 已启动资源 +
   // shutdown 幂等）。presentation（gateway/TUI/headless、命令注册、审批桥）经 KernelBridges 注入——
   // gateway/commandBus/approvalCache 声明先于组合根调用、装配后赋值（桥闭包调用时才求值，同旧 gateway 模式）。
   let gateway: any = null;
   let commandBus: any = null;
-  const { createApprovalCache } = await import('../kernel/permissions.js');
-  const approvalCache = createApprovalCache();
 
   const { createCliComposition } = await import('../bootstrap/cliComposition.js');
   const composition = await createCliComposition({
@@ -249,9 +249,28 @@ if (pre.mode === 'error') {
   let themeName = (config.get('settings') as any).theme ?? 'wxnodus';
   let exitRequested = false;
 
+  // 装配并行化（启动就绪路径去串行化）：组合根之后的子系统互不依赖——一次 Promise.all 完成
+  // import（taskRunner/term/plugins/handlers/sessionStart/download/ssrf）；创建与注册顺序语义不变
+  const [{ createTaskRunner }, { createTerminalManager }, { registerPluginCommands, registerPluginNlTriggers },
+    { registerCoreHandlers }, { registerExtHandlers },
+    { createSessionStartService }, { SessionStartGenerator }, { BUILTIN_VERIFIER_DESCRIPTORS }, { hooksFromConfig },
+    { downloadFile, writeDownloadEvidence }, { checkUrlSafety }, { Readable }] = await Promise.all([
+    import('../kernel/taskRunner.js'),
+    import('../kernel/term.js'),
+    import('../kernel/plugins.js'),
+    import('../commands/handlers.js'),
+    import('../commands/handlersExt.js'),
+    import('../application/sessions/sessionStartService.js'),
+    import('../application/sessions/sessionStartGenerator.js'),
+    import('../domain/quality/verifier.js'),
+    import('../kernel/hooks.js'),
+    import('../application/download/downloadService.js'),
+    import('../kernel/ssrf.js'),
+    import('node:stream'),
+  ]);
+
   // 并行任务系统（/jobs）：shell 真进程 / agent 子代理 / 并行双线子任务——
   // 与主对话并行（三任务并行：主线 + 双支线）；启动恢复遗留孤儿任务
-  const { createTaskRunner } = await import('../kernel/taskRunner.js');
   const taskRunner = createTaskRunner({
     db, bus, dataDir,
     spawnSubagent: (goal) => agent.spawnSubagent(goal),
@@ -260,7 +279,6 @@ if (pre.mode === 'error') {
   taskRunner.recoverOrphans();
 
   // A20：后台终端（/term）——node-pty 真实交互会话（与 /jobs 一次性执行互补）
-  const { createTerminalManager } = await import('../kernel/term.js');
   const term = createTerminalManager({ dataDir, cwd });
 
   // 命令注册
@@ -268,11 +286,8 @@ if (pre.mode === 'error') {
   // 插件命令注册为 /<插件名>.<命令名>（如 /example.hello），防与内置命令冲突；
   // 同时动态注册进 SLASH 命令表——routeInput 白名单校验与 UI 补全才能识别。
   // 开放兼容：注册逻辑在 plugins.ts（registerPluginCommands），/plugin reload 复用（热更新）
-  const { registerPluginCommands, registerPluginNlTriggers } = await import('../kernel/plugins.js');
   registerPluginCommands(commandBus, plugins);
   registerPluginNlTriggers(plugins);
-  const { registerCoreHandlers } = await import('../commands/handlers.js');
-  const { registerExtHandlers } = await import('../commands/handlersExt.js');
 
   // 模型热切换：agent 持有 settings 对象引用——改内存字段即生效，再持久化
   const applyModel = (modelId: string, baseURL?: string) => {
@@ -284,10 +299,6 @@ if (pre.mode === 'error') {
   };
   // W3 Session 第 3 步：会话启动工件服务（能力/hook 快照 + sha256 绑定 + 原子持久化）——
   // /new 等会话创建点调用 ensure；能力清单取自内置 verifier 所需能力并集（真实快照来源）
-  const { createSessionStartService } = await import('../application/sessions/sessionStartService.js');
-  const { SessionStartGenerator } = await import('../application/sessions/sessionStartGenerator.js');
-  const { BUILTIN_VERIFIER_DESCRIPTORS } = await import('../domain/quality/verifier.js');
-  const { hooksFromConfig } = await import('../kernel/hooks.js');
   const sessionStartService = createSessionStartService({
     generator: new SessionStartGenerator({
       locale: () => (locale === 'zh-CN' ? 'zh-CN' : 'en'),
@@ -311,10 +322,6 @@ if (pre.mode === 'error') {
 
   // W7-01：下载框架生产端口——SSRF 逐跳授权（checkUrlSafety）+ undici 流式（无自动重定向）
   // + 证据原子落盘；destDir 边界由 service 经 pathBoundary 以 workspaceRoot 校验。
-  const { downloadFile, writeDownloadEvidence } = await import('../application/download/downloadService.js');
-  const { checkUrlSafety } = await import('../kernel/ssrf.js');
-  const { Readable } = await import('node:stream');
-
   const makeHandlerCtx = () => ({
     dataDir, cwd, db, mem, config, bus, commandBus,
     agent,
