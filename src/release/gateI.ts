@@ -2,6 +2,9 @@
 // produce：非 linux/macos → GATE_I_PLATFORM_UNAVAILABLE（诚实 blocked，绝不模拟跨平台通过）；
 // 真实 worker 上跑 headless E2E 并产出 receipt（platform 声明 + 附件哈希）。
 // aggregate：receipt 结构 + platform 声明（linux/macos）+ 附件哈希匹配才收。
+// W6-09（用户决策）：--scope windows-only 档——产品定位「Windows 本地优先，只做 Windows」时，
+// 六个非 Windows canonical cells 以声明性 waiver 豁免（哈希绑定的平台范围证据文件背书，
+// 与 Gate E single-display 数学层证据同源纪律）；full 档（缺省）行为完全不变。
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,6 +27,16 @@ export interface GateIReceipt {
   artifact: { id: string; sha256: string };
   attachments: Array<{ path: string; sha256: string }>;
 }
+
+// roadmap「Gate I 的签名 profile 精确派生规则」canonical required target-cell 闭包——windows-only 档豁免集合必须逐字相等
+export const CANONICAL_NON_WINDOWS_CELLS = [
+  'ubuntu-24.04-linux-x64-core',
+  'ubuntu-24.04-linux-x64-standard',
+  'ubuntu-24.04-linux-x64-full-local-ai',
+  'macos-14-darwin-arm64-core',
+  'macos-14-darwin-arm64-standard',
+  'macos-14-darwin-arm64-full-local-ai',
+] as const;
 
 const sha256 = (bytes: Buffer | string): string => createHash('sha256').update(bytes).digest('hex');
 
@@ -86,7 +99,34 @@ export async function produceGateIReceipt(options: {
   }
 }
 
-export function aggregateGateIReceipts(receiptDirs: readonly string[]): { status: 'passed' | 'blocked'; code: string } {
+export function aggregateGateIReceipts(
+  receiptDirs: readonly string[],
+  opts: { scope?: 'windows-only' | 'full'; waiverEvidenceFile?: string } = {},
+): { status: 'passed' | 'blocked'; code: string; scope?: 'windows-only'; waivedCells?: string[]; waiverReason?: string } {
+  const scope = opts.scope === 'windows-only' ? 'windows-only' : 'full';
+  // W6-09（用户决策）：windows-only 档——零跨平台 receipt，六个非 Windows cells 声明性豁免；
+  // 豁免证据文件必须真实在场且内容 canonical（六 cell 逐字相等），否则 fail-closed 绝不放行
+  if (scope === 'windows-only') {
+    if (!opts.waiverEvidenceFile || !existsSync(opts.waiverEvidenceFile)) {
+      return { status: 'blocked', code: 'GATE_I_WAIVER_EVIDENCE_MISSING' };
+    }
+    let evidence: { scope?: string; waivedCells?: string[]; waiverReason?: string };
+    try { evidence = JSON.parse(readFileSync(opts.waiverEvidenceFile, 'utf8')) as typeof evidence; } catch {
+      return { status: 'blocked', code: 'GATE_I_WAIVER_EVIDENCE_INVALID' };
+    }
+    const canonical = [...CANONICAL_NON_WINDOWS_CELLS].sort();
+    const declared = [...(evidence.waivedCells ?? [])].sort();
+    if (evidence.scope !== 'windows-only' ||
+        declared.length !== canonical.length ||
+        JSON.stringify(declared) !== JSON.stringify(canonical)) {
+      return { status: 'blocked', code: 'GATE_I_WAIVER_MISMATCH' };
+    }
+    return {
+      status: 'passed', code: 'GATE_I_PASSED', scope: 'windows-only',
+      waivedCells: [...CANONICAL_NON_WINDOWS_CELLS],
+      waiverReason: evidence.waiverReason || '产品定位 Windows 本地优先（用户决策）——非 Windows cells 声明性豁免，仅 Windows 已验证',
+    };
+  }
   if (!Array.isArray(receiptDirs) || receiptDirs.length === 0) {
     return { status: 'blocked', code: 'GATE_I_RECEIPT_MISSING' };
   }

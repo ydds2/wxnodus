@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { freezeCandidate } from '../../src/release/candidateFreezer.js';
 import { runGateH } from '../../src/release/gateHRunner.js';
-import { produceGateIReceipt, aggregateGateIReceipts } from '../../src/release/gateI.js';
+import { produceGateIReceipt, aggregateGateIReceipts, CANONICAL_NON_WINDOWS_CELLS } from '../../src/release/gateI.js';
 
 const sha256 = (bytes: string | Buffer): string => createHash('sha256').update(bytes).digest('hex');
 const cleanup: Array<() => void> = [];
@@ -155,5 +155,45 @@ describe('W6-03 Gate I（诚实 blocked，绝不模拟 Linux 通过）', () => {
     writeFileSync(join(dir, 'receipt.json'), JSON.stringify(receipt, null, 2));
     writeFileSync(join(dir, 'attachments', 'headless.log'), 'tampered');
     expect(aggregateGateIReceipts([dir])).toMatchObject({ status: 'blocked', code: 'GATE_I_RECEIPT_ATTACHMENT_MISMATCH' });
+  });
+});
+
+describe('W6-09 Gate I windows-only 档（用户决策：从始至终只做 Windows 本地 CLI）', () => {
+  const writeEvidence = (dir: string, content: Record<string, unknown>): string => {
+    const file = join(dir, 'platform-scope.json');
+    writeFileSync(file, JSON.stringify(content), 'utf8');
+    return file;
+  };
+
+  it('windows-only + canonical 六 cells 证据 → passed，记录 scope 与豁免清单', () => {
+    const dir = tmp('w6-gatei-wo-');
+    const ev = writeEvidence(dir, { scope: 'windows-only', waivedCells: [...CANONICAL_NON_WINDOWS_CELLS], waiverReason: 'test' });
+    const decision = aggregateGateIReceipts([], { scope: 'windows-only', waiverEvidenceFile: ev });
+    expect(decision).toMatchObject({ status: 'passed', code: 'GATE_I_PASSED', scope: 'windows-only' });
+    expect(decision.waivedCells).toEqual([...CANONICAL_NON_WINDOWS_CELLS]);
+    expect(decision.waivedCells).toHaveLength(6);
+  });
+
+  it('windows-only 缺证据文件 → blocked GATE_I_WAIVER_EVIDENCE_MISSING', () => {
+    const dir = tmp('w6-gatei-miss-');
+    expect(aggregateGateIReceipts([], { scope: 'windows-only', waiverEvidenceFile: join(dir, 'absent.json') }))
+      .toMatchObject({ status: 'blocked', code: 'GATE_I_WAIVER_EVIDENCE_MISSING' });
+  });
+
+  it('windows-only 证据 cells 非 canonical（少一项/多一项/scope 错误）→ blocked GATE_I_WAIVER_MISMATCH', () => {
+    const dir = tmp('w6-gatei-tamper-');
+    const file = writeEvidence(dir, { scope: 'windows-only', waivedCells: [...CANONICAL_NON_WINDOWS_CELLS].slice(0, 5) });
+    expect(aggregateGateIReceipts([], { scope: 'windows-only', waiverEvidenceFile: file }))
+      .toMatchObject({ status: 'blocked', code: 'GATE_I_WAIVER_MISMATCH' });
+    const file2 = writeEvidence(dir, { scope: 'windows-only', waivedCells: [...CANONICAL_NON_WINDOWS_CELLS, 'extra-cell'] });
+    expect(aggregateGateIReceipts([], { scope: 'windows-only', waiverEvidenceFile: file2 }))
+      .toMatchObject({ status: 'blocked', code: 'GATE_I_WAIVER_MISMATCH' });
+    const file3 = writeEvidence(dir, { scope: 'full', waivedCells: [...CANONICAL_NON_WINDOWS_CELLS] });
+    expect(aggregateGateIReceipts([], { scope: 'windows-only', waiverEvidenceFile: file3 }))
+      .toMatchObject({ status: 'blocked', code: 'GATE_I_WAIVER_MISMATCH' });
+  });
+
+  it('full 档（缺省）零 receipt → GATE_I_RECEIPT_MISSING（行为不变）', () => {
+    expect(aggregateGateIReceipts([])).toMatchObject({ status: 'blocked', code: 'GATE_I_RECEIPT_MISSING' });
   });
 });
