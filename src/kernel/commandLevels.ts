@@ -32,6 +32,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/theme': 'safe', '/lang': 'safe', '/config': 'safe', '/versions': 'safe',
   '/skill list': 'safe', '/skill inspect': 'safe', '/fs': 'safe',
   '/checkpoint list': 'safe', '/snapshot list': 'safe', '/undo list': 'safe',
+  '/usage range': 'safe', '/balance status': 'safe', '/warp': 'safe', '/config export': 'safe',
   '/computer': 'confirm', '/offline': 'confirm', '/voice': 'confirm', '/fortune': 'safe',
   // ── confirm：常规副作用，走现有模式确认链 ──
   '/clear': 'confirm', '/undo': 'confirm', '/resume': 'confirm', '/new': 'confirm', '/title': 'confirm',
@@ -46,6 +47,9 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/theme wxnodus': 'confirm', '/lang zh': 'confirm', '/lang en': 'confirm', '/config set': 'confirm',
   '/init': 'confirm', '/render': 'confirm', '/capture': 'confirm', '/input': 'confirm',
   '/mcp': 'confirm', '/plugin': 'confirm', '/proxy': 'confirm', '/webhook': 'confirm',
+  '/profile': 'confirm', '/profile add': 'confirm', '/profile use': 'confirm', '/profile set-key': 'confirm', '/profile rm': 'confirm',
+  '/balance': 'confirm', '/balance set': 'confirm', '/balance refresh': 'confirm', '/balance on': 'confirm', '/balance off': 'confirm',
+  '/key import': 'confirm', '/config import': 'confirm',
   '/a2a': 'confirm', '/acp': 'confirm', '/download': 'confirm', '/swarm': 'confirm', '/duo': 'confirm',
   '/cron': 'confirm', '/cron add': 'confirm', '/cron del': 'confirm', '/timer': 'confirm',
   '/delegate': 'confirm', '/goal': 'confirm', '/btw': 'confirm',

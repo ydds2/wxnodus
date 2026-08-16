@@ -22,6 +22,10 @@ import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.j
 import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissions.js';
 import { unknownSettingsKeys, knownSettingsKeys } from '../store/config.js';
 import { runCuratorReview, curatorConfigFrom, readCuratorState } from '../kernel/curator.js';
+import { usageSummary, type UsageRange } from '../kernel/usage.js';
+import { encryptKey } from '../kernel/providers.js';
+import { resolveProviderProfile } from '../kernel/profiles.js';
+import { fetchBalanceCached } from '../kernel/balance.js';
 import type { TaskSpec, TaskRow } from '../kernel/taskRunner.js';
 import { c, type HandlerCtx } from './handlers.js';
 import type { CommandBus, StructuredCommand } from '../app/CommandBus.js';
@@ -52,6 +56,27 @@ export function renderWaterfall(
     return ` ${t} ${r.model.slice(0, 14).padEnd(14)} ${bar} ${total.toLocaleString()} tok（入 ${r.input_tokens.toLocaleString()} / 出 ${r.output_tokens.toLocaleString()}）`;
   });
   return lines(' Token 瀑布（最近 ' + rows.length + ' 轮 · ░输入 █输出） ', out);
+}
+
+/** /profile add 参数解析（纯函数可单测） */
+export function parseProfileAddArgs(args: string[]): { name: string; baseURL: string; models: string[] } | null {
+  const name = String(args[0] ?? '').trim();
+  const baseURL = String(args[1] ?? '').trim();
+  if (!name || !/^[a-zA-Z0-9_-]{1,40}$/.test(name)) return null;
+  if (!/^https?:\/\//i.test(baseURL)) return null;
+  const mi = args.indexOf('--models');
+  const models = mi >= 0 ? (args[mi + 1] ?? '').split(',').map(s => s.trim()).filter(Boolean) : [];
+  return { name, baseURL, models };
+}
+
+/** /balance set 参数解析（纯函数可单测） */
+export function parseBalanceSetArgs(args: string[]): { url: string; jsonPath: string } {
+  let url = ''; let jsonPath = '';
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--path' || args[i] === '-p') { jsonPath = args[i + 1] ?? ''; i++; continue; }
+    if (!url && /^https?:\/\//i.test(String(args[i] ?? ''))) url = String(args[i]!);
+  }
+  return { url, jsonPath };
 }
 
 // ── Webhook 引擎（事件 → HTTP POST 回调；本地化为准，默认全部核心事件）──
@@ -760,6 +785,16 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   bus.register('/usage', (args) => {
+    // 分区间 token（状态栏 📊 同源）：/usage range <today|7d|30d> 跨会话聚合 + 持久化
+    if (args[0] === 'range') {
+      const range = args[1];
+      if (range !== 'today' && range !== '7d' && range !== '30d') {
+        return '用法：/usage range <today|7d|30d>（状态栏 📊 段点击可循环切换）';
+      }
+      ctx.config.setKey('settings', 'usageRange', range);
+      const s = usageSummary(ctx.db, range as UsageRange);
+      return `token 区间已切换：${range}——累计 ${s.total.toLocaleString()} token（入 ${s.input.toLocaleString()} / 出 ${s.output.toLocaleString()} / ${s.calls} 次调用，跨全部会话）`;
+    }
     // B2 修复：定位当前活跃会话（不再硬编码 'default'）+ 真实 token 统计（usage_stats）
     const sid = ctx.agent?.getSessionId?.() ?? 'default';
     const real = ctx.db.prepare(
@@ -788,6 +823,119 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ` 成本：本地运行，无 API 计费`,
       ` 瀑布：/usage --waterfall（最近 12 轮 input/output 条形图）`,
     ]);
+  });
+
+  // ── 档案体系（接入层开放：多厂商/中转站档案管理）──
+  bus.register('/profile', (args) => {
+    const sub = args[0] ?? 'list';
+    const providers = (Array.isArray(ctx.config.getKey('settings', 'providers')) ? ctx.config.getKey('settings', 'providers') : []) as Array<Record<string, any>>;
+    if (sub === 'list') {
+      if (!providers.length) return '无档案——/profile add <名称> <baseURL> 创建（旧配置首次启动已自动迁入档案）';
+      const active = ctx.config.getKey('settings', 'activeProvider');
+      const rows = providers.map((p) => `${p.id === active ? '◉' : '○'} ${p.id}（${p.name}）${p.baseURL}｜模型 ${(p.models ?? []).length} 个｜密钥 ${p.key ? '已配置' : '未配置'}${p.balanceUrl ? '｜余额接口 ✓' : ''}`);
+      return lines(' 档案 ', [...rows, ' ', '/profile use <id> 切换｜/profile set-key <id> <密钥>']);
+    }
+    if (sub === 'add') {
+      const parsed = parseProfileAddArgs(args.slice(1));
+      if (!parsed) return '用法：/profile add <名称> <baseURL> [--models a,b,c]（baseURL 需 http(s) 开头）';
+      const id = parsed.name;
+      const next = [...providers.filter((p) => p.id !== id), { id, name: parsed.name, baseURL: parsed.baseURL, models: parsed.models, key: '', balanceUrl: '', balancePath: '' }];
+      ctx.config.setKey('settings', 'providers', next);
+      ctx.config.setKey('settings', 'activeProvider', id);
+      ctx.config.setKey('settings', 'baseURL', parsed.baseURL);
+      ctx.config.setKey('settings', 'model', parsed.models[0] ?? '');
+      try { appendAudit(ctx.db, 'profile.add', { id, baseURL: parsed.baseURL }); } catch { /* 静默 */ }
+      return `档案已创建并激活：${id}（${parsed.baseURL}）\n下一步：/key set <密钥>（写入当前档案）→ /model <模型名>`;
+    }
+    if (sub === 'use') {
+      const id = String(args[1] ?? '').trim();
+      const hit = providers.find((p) => p.id === id);
+      if (!hit) return `档案不存在：${id}（/profile list 查看）`;
+      ctx.config.setKey('settings', 'activeProvider', id);
+      ctx.config.setKey('settings', 'baseURL', hit.baseURL);
+      if (Array.isArray(hit.models) && hit.models.length) ctx.config.setKey('settings', 'model', hit.models[0]);
+      return `已切换到档案 ${id}（${hit.name}）——模型 ${hit.models?.[0] ?? '（未设置，/model <名> 配置）'}`;
+    }
+    if (sub === 'rm') {
+      const id = String(args[1] ?? '').trim();
+      ctx.config.setKey('settings', 'providers', providers.filter((p) => p.id !== id));
+      if (ctx.config.getKey('settings', 'activeProvider') === id) ctx.config.setKey('settings', 'activeProvider', providers[0]?.id ?? '');
+      return `已移除档案 ${id}`;
+    }
+    if (sub === 'set-key') {
+      const id = String(args[1] ?? '').trim();
+      const key = String(args.slice(2).join(' ')).trim();
+      if (!key) return '用法：/profile set-key <id> <密钥>（AES 加密存入该档案密钥槽）';
+      const hit = providers.find((p) => p.id === id);
+      if (!hit) return `档案不存在：${id}`;
+      const enc = encryptKey(key);
+      ctx.config.setKey('settings', 'providers', providers.map((p) => (p.id === id ? { ...p, key: enc } : p)));
+      try { appendAudit(ctx.db, 'profile.set-key', { id }); } catch { /* 静默 */ }
+      return `密钥已写入档案 ${id}（AES 加密，不回显）`;
+    }
+    return '用法：/profile list | use <id> | add <名称> <baseURL> | rm <id> | set-key <id> <密钥>';
+  });
+
+  // ── 余额监控配置（合规：/balance set 写授权存证；抓取审计在 balance.ts）──
+  bus.register('/balance', async (args) => {
+    const sub = args[0] ?? 'status';
+    const bm = (ctx.config.getKey('settings', 'balanceMonitor') ?? {}) as Record<string, any>;
+    if (sub === 'set') {
+      const parsed = parseBalanceSetArgs(args.slice(1));
+      ctx.config.setKey('settings', 'balanceMonitor', { enabled: true, url: parsed.url, jsonPath: parsed.jsonPath });
+      try {
+        const { ConsentLedger } = await import('../compliance/compliance.js');
+        new ConsentLedger(ctx.db).grant({ grantor: 'user', scope: 'balance-monitor', purpose: '余额监控抓取（用户显式授权）', method: '/balance set', expiresAt: 0, evidenceRef: '' });
+      } catch { /* 存证失败不阻断 */ }
+      try { appendAudit(ctx.db, 'balance.set', { url: parsed.url, jsonPath: parsed.jsonPath }); } catch { /* 静默 */ }
+      return parsed.url ? `余额监控已配置：${parsed.url}${parsed.jsonPath ? `（路径 ${parsed.jsonPath}）` : ''}——/balance refresh 立即验证` : '余额监控已配置：跟随当前档案余额接口（/balance refresh 验证）';
+    }
+    if (sub === 'on') { ctx.config.setKey('settings', 'balanceMonitor', { ...bm, enabled: true }); return '余额监控已开启（状态栏 💰，5 分钟刷新，点击可强制刷新）'; }
+    if (sub === 'off') { ctx.config.setKey('settings', 'balanceMonitor', { ...bm, enabled: false }); return '余额监控已关闭（/balance on 重新开启）'; }
+    if (sub === 'refresh' || sub === 'status') {
+      const rp = resolveProviderProfile((ctx.config.get('settings') ?? {}) as Record<string, any>);
+      if (!rp) return '未配置档案（/profile add 或 /key set 后重试）';
+      const profile = { ...rp.profile, balanceUrl: bm.url || rp.profile.balanceUrl || '', balancePath: bm.jsonPath || rp.profile.balancePath || '' };
+      const r = await fetchBalanceCached(profile, (ctx.config.get('settings') ?? {}) as Record<string, any>, { force: sub === 'refresh', db: ctx.db });
+      if (r.ok) return `余额：${r.info.balance}${r.info.currency ? ` ${r.info.currency}` : ''}（${r.info.source}${r.cached ? '，缓存中' : ''}）`;
+      return `余额获取失败：${r.error}`;
+    }
+    return '用法：/balance set [url] [--path <jsonPath>] | on | off | status | refresh';
+  });
+
+  // ── 配置导出/导入（JSON；导出可选脱敏）──
+  bus.register('/config', async (args) => {
+    const sub = args[0] ?? '';
+    if (sub === 'export') {
+      const redact = args.includes('--redact');
+      const s: Record<string, any> = { ...((ctx.config.get('settings') ?? {}) as Record<string, any>) };
+      if (redact) {
+        delete s.apiKeyEnc;
+        if (Array.isArray(s.providers)) s.providers = s.providers.map((p: any) => ({ ...p, key: p.key ? '(redacted)' : '' }));
+        s.apiKeys = {};
+      }
+      return JSON.stringify({ settings: s }, null, 2);
+    }
+    if (sub === 'import') {
+      const file = String(args[1] ?? '').trim();
+      if (!file) return '用法：/config import <文件路径>（JSON：{ "settings": { ... } }）';
+      try {
+        const { readFileSync, existsSync } = await import('node:fs');
+        if (!existsSync(file)) return `文件不存在：${file}`;
+        const j = JSON.parse(readFileSync(file, 'utf8'));
+        const merged = { ...((ctx.config.get('settings') ?? {}) as Record<string, any>), ...(j.settings ?? {}) };
+        Object.entries(merged).forEach(([k, v]) => ctx.config.setKey('settings', k, v));
+        return '配置已导入（settings.json 热重载生效；若含 providers 请 /profile list 确认）';
+      } catch (e: any) { return `导入失败：${String(e?.message ?? e).slice(0, 120)}`; }
+    }
+    return '用法：/config export [--redact] | import <文件>';
+  });
+
+  // ── 彩蛋（趣味拉满：纯文本无副作用）──
+  bus.register('/warp', () => ['✦ 曲率引擎预热', '✦ ✦ 折叠空间', '✦ ✦ ✦ 穿越虫洞', '· ✦ · 已到达目标星系 ✦'].join('\n'));
+  bus.register('/fortune', () => {
+    const pool = ['今日宜：写代码，忌：手动格式化磁盘。', '黑洞说：你今天省下的 token，明天都会变成余额。', '星尘占卜：/help 里藏着一个你还没用过的命令。', '超新星预报：你的下一个想法会发光。'];
+    return '🔮 ' + (pool[Math.floor(Math.random() * pool.length)] ?? pool[0]);
   });
 
   // /context：上下文占用可视化（P2b 增强——工作窗口真实 token 分布 + 预算占用条）

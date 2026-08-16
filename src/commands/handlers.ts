@@ -270,6 +270,26 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // 密钥（per-provider 槽位：apiKeys.<provider> 归属存储；遗留 apiKeyEnc+keyProvider 兼容）
   bus.register('/key', async (args) => {
     const sub = args[0] ?? 'status';
+    const pi = args.indexOf('--profile');
+    const profileTarget = pi >= 0 ? String(args[pi + 1] ?? '').trim() : '';
+    // /key import <.env 文件>：批量导入环境变量（本次进程生效；持久化走 /key set 或 /profile set-key）
+    if (sub === 'import') {
+      const file = String(args[1] ?? '').trim();
+      if (!file) return '用法：/key import <.env 文件>（批量导入 KEY 类变量，本次进程生效）';
+      try {
+        const { readFileSync, existsSync: fe } = await import('node:fs');
+        if (!fe(file)) return `文件不存在：${file}`;
+        const lines = readFileSync(file, 'utf8').split(/\r?\n/);
+        let n = 0;
+        for (const line of lines) {
+          const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
+          if (!m || line.trim().startsWith('#') || !m[2].trim()) continue;
+          process.env[m[1]!] = m[2].replace(/^["']|["']$/g, '');
+          n++;
+        }
+        return `已导入 ${n} 个环境变量（本次进程生效；持久化请用 /key set 或 /profile set-key）`;
+      } catch (e: any) { return `导入失败：${String(e?.message ?? e).slice(0, 120)}`; }
+    }
     const providerOf = () => detectProvider(ctx.config.getKey('settings', 'baseURL'));
     // 写入：按当前模型 provider 归属入槽 + 遗留槽兼容（不误发给别的 provider 端点）
     const storeKey = (plain: string) => {
@@ -280,6 +300,13 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ctx.config.setKey('settings', 'apiKeys', apiKeys);
       ctx.config.setKey('settings', 'apiKeyEnc', enc);           // 遗留单槽（向后兼容旧版本读取）
       ctx.config.setKey('settings', 'keyProvider', provider);    // 归属标注（错配即 fail-closed）
+      // 档案密钥槽同步（接入层开放）：--profile <id> 指定档案时写入该档案 key 槽
+      if (profileTarget) {
+        const providers = (Array.isArray(ctx.config.getKey('settings', 'providers')) ? ctx.config.getKey('settings', 'providers') : []) as Array<Record<string, any>>;
+        if (providers.some((p) => p.id === profileTarget)) {
+          ctx.config.setKey('settings', 'providers', providers.map((p) => (p.id === profileTarget ? { ...p, key: enc } : p)));
+        }
+      }
       // 补默认模型/端点：有 key 但 model/baseURL 缺失时 agent 会降级规则脑
       // （提示「未配置」）——配置密钥即视为已配置，补齐默认并持久化
       if (!ctx.config.getKey('settings', 'model')) ctx.config.setKey('settings', 'model', resolveDefaultModel({}));
@@ -287,12 +314,12 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     };
     if (sub === 'set' && args[1]) {
       storeKey(args[1]);
-      return `密钥已配置（provider=${providerOf()}，AES-256-GCM 加密存储，绝不回显）`;
+      return `密钥已配置（provider=${providerOf()}，AES-256-GCM 加密存储，绝不回显）${profileTarget ? `；已同步档案 ${profileTarget} 密钥槽` : ''}`;
     }
     // 兼容规则脑提示里的用法：/key <密钥> 直接配置（非已知子命令视为密钥）
-    if (!['status', 'set', 'off'].includes(sub) && args.length >= 1) {
+    if (!['status', 'set', 'off', 'import'].includes(sub) && args.length >= 1) {
       storeKey(args[0]);
-      return `密钥已配置（provider=${providerOf()}，AES-256-GCM 加密存储，绝不回显）`;
+      return `密钥已配置（provider=${providerOf()}，AES-256-GCM 加密存储，绝不回显）${profileTarget ? `；已同步档案 ${profileTarget} 密钥槽` : ''}`;
     }
     if (sub === 'off') {
       const apiKeys = { ...((ctx.config.getKey('settings', 'apiKeys') as Record<string, string> | undefined) ?? {}) };
