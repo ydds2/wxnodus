@@ -51,18 +51,22 @@ dim('tests', '测试与质量门禁', 9.9, '全量 vitest + typecheck×2 + git d
 }
 
 // ── 2. 验收电池（快档=跳过并 UNVERIFIED；全档=真实双管线）──
-dim('battery', '验收电池（真实终端双管线）', 9.9, 'cmd-verify winpty/ConPTY 14/14 + full-scene winpty/ConPTY 28/28');
+dim('battery', '验收电池（真实终端双管线）', 9.9, 'cmd-verify winpty/ConPTY 14/14 + full-scene winpty/ConPTY 28/28 + 回合闭环电池（工具型回合必须收敛为非空最终答案）');
 if (FULL) {
   const cw = run('node', ['scripts/cmd-verify.mjs']);
   const cc = run('node', ['scripts/cmd-verify.mjs'], { env: { WXNODUS_ACCEPT_CONPTY: '1' } });
   const fw = run('node', ['scripts/full-scene-test.mjs']);
   const fc = run('node', ['scripts/full-scene-test.mjs'], { env: { WXNODUS_ACCEPT_CONPTY: '1' } });
+  // 回合闭环电池：本地 mock 逼轮次耗尽 → 强制总结兜底——真实 TUI 必须渲染非空最终答案
+  // （「35 工具调用后无输出」缺陷的确定性回归；客观契约，非主观评分）
+  const lc = run('node', ['scripts/loop-closure-test.mjs'], { timeout: 300000 });
   ev('battery', 'cmd-verify (winpty)', cw.exit, cw.lastLine);
   ev('battery', 'cmd-verify (ConPTY)', cc.exit, cc.lastLine);
   ev('battery', 'full-scene (winpty)', fw.exit, fw.lastLine);
   ev('battery', 'full-scene (ConPTY)', fc.exit, fc.lastLine);
-  const ok = cw.exit === 0 && cc.exit === 0 && fw.exit === 0 && fc.exit === 0;
-  scoreOf('battery', ok ? 9.9 : 0, ok ? '双管线全绿' : '存在失败管线（fail-closed 如实计）');
+  ev('battery', 'loop-closure (winpty)', lc.exit, lc.lastLine);
+  const ok = cw.exit === 0 && cc.exit === 0 && fw.exit === 0 && fc.exit === 0 && lc.exit === 0;
+  scoreOf('battery', ok ? 9.9 : 0, ok ? '双管线全绿 + 回合闭环收敛' : '存在失败管线（fail-closed 如实计）');
 } else {
   ev('battery', 'npm run eval:full（未运行）', 'skip', '快档不跑慢管线——全档证据见 eval:full');
   scoreOf('battery', null, 'UNVERIFIED in quick mode');
@@ -227,6 +231,7 @@ const md = [
   '| ✅ 已修 | 时钟改写形态随布局漂移——检测器三形态全收且 CUP 不锁列（\\b<digit>/CUP 任意列/winpty 整行）（§13.6） |',
   '| ✅ 已修 | 一次性通告永久占据动词槽（curator 首跑必现，W8-29 契约破坏）——缺省 8s TTL 自过期，sticky 显式常驻（+2 单测）（§13.6） |',
   '| ✅ 已修 | MODEL_CATALOG 12→13 计数断言漂移 + eval 证据行曾取 stderr 噪音——12→13、证据行改 stdout 末行（§13.6） |',
+  '| ✅ 已修 | 「35 工具调用后无输出」真根因——提前 return 不发 agent.message/agent.end（错误文本从未投递 UI）+ 轮次耗尽静默空文本 → finishEarly 统一闭环 + 无工具强制总结兜底 + 显式失败文案（绝不静默空输出）+ MAX_TURNS 16→32 + 回合闭环电池（mock 确定性回归，§13.7） |',
   '| ⏳ 人工门 | IME TSF 候选窗真机验证（见上） |',
   '',
 ].join('\n');

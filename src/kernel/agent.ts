@@ -1,9 +1,12 @@
 // src/kernel/agent.ts — L2-4 agent 循环（核心）
 // 设计（参考 ReAct 模式 + 事件驱动 harness + turn 控制器思想）：
-//   run(prompt) 循环（≤16 轮）：
+//   run(prompt) 循环（≤32 轮）：
 //     召回注入（黑洞引擎 FTS）→ 调模型（流式/工具）→ 文本流经事件总线
 //     → 工具调用：permissions 检查 → 执行（danger 结果 untrusted 包裹）→ 回填
 //     → 同工具连续失败 5 次终止 / 未知工具连续 3 轮终止 / 瞬时失败 800ms 退避重试
+//     轮次耗尽兜底（系统性闭环）：工具执行完仍无文本 → 无工具强制总结调用收敛答案；
+//     仍失败 → 显式失败文案。任何提前返回都发 agent.message + agent.end（UI 只在
+//     agent.end 发布最终消息——漏发 = 回合静默、界面无输出）。
 //   无 key → 规则脑兜底（诚实回答）
 //   spawnSubagent：独立上下文 + 只读工具集
 import type { Db } from '../store/db.js';
@@ -78,7 +81,7 @@ export interface AgentResult {
   status?: 'succeeded' | 'failed' | 'incomplete' | 'cancelled';
 }
 
-const MAX_TURNS = 16;
+const MAX_TURNS = 32;
 
 // ── A22：实时状态一句话——工具动词映射（动态短语，UI 状态行展示）──
 const TOOL_STAGE_VERBS: Record<string, string> = {
@@ -846,6 +849,15 @@ export function createAgent(opts: AgentOptions) {
     // sessionStart hook 永不触发（死分支）
     if (turns === 0) hooks?.sessionStart?.(sessionId);
 
+    // 系统性闭环保障：任何提前返回都必须发 agent.message（最终文本）+ agent.end——
+    // 网关只在 agent.end 时发布 message.complete，漏发 = 回合静默结束、UI 无输出
+    // （历史缺陷：错误路径 return 带文本但从未投递到 UI，「35 工具调用后无输出」真根因之一）
+    const finishEarly = (text: string): AgentResult => {
+      if (text) bus.emit('agent.message', { content: text });
+      bus.emit('agent.end', { ok: false, turns });
+      return { ok: false, text, turns, interrupted: st.interrupted };
+    };
+
     try {
     while (turns < (opts.maxTurns ?? MAX_TURNS)) {
       if (st.aborted) { st.interrupted = true; break; }
@@ -917,7 +929,7 @@ export function createAgent(opts: AgentOptions) {
         // 429 限流除外：mapHttpError 语义为稍后重试，保留退避重试。
         if (typeof e?.status === 'number' && e.status >= 400 && e.status < 500 && e.status !== 429) {
           bus.emit('agent.error', { message: String(e?.message ?? e) });
-          return { ok: false, text: `模型调用失败：${e?.message?.slice(0, 200)}`, turns, interrupted: st.interrupted };
+          return finishEarly(`模型调用失败：${e?.message?.slice(0, 200)}`);
         }
         // 瞬时失败：800ms 退避重试（最多 3 次）
         let tried = 0;
@@ -930,7 +942,7 @@ export function createAgent(opts: AgentOptions) {
         if (st.interrupted) break;
         if (tried >= 3) {
           bus.emit('agent.error', { message: String(lastErr?.message ?? lastErr) });
-          return { ok: false, text: `模型调用失败：${lastErr?.message?.slice(0, 200)}`, turns, interrupted: st.interrupted };
+          return finishEarly(`模型调用失败：${lastErr?.message?.slice(0, 200)}`);
         }
         continue;
       }
@@ -965,7 +977,7 @@ export function createAgent(opts: AgentOptions) {
             unknownRounds++;
             if (unknownRounds >= MAX_UNKNOWN_TOOL_ROUNDS) {
               bus.emit('agent.error', { message: `连续 ${MAX_UNKNOWN_TOOL_ROUNDS} 轮未知工具，终止` });
-              return { ok: false, text: '模型连续调用未知工具，已终止', turns, interrupted: st.interrupted };
+              return finishEarly('模型连续调用未知工具，已终止');
             }
             executed.push({ id: c.id, name: c.name, args: c.args, out: `工具 ${c.name} 不存在` });
             continue;
@@ -990,7 +1002,7 @@ export function createAgent(opts: AgentOptions) {
         consecutiveFail = anyFail ? consecutiveFail + 1 : 0;
         if (consecutiveFail >= MAX_CONSECUTIVE_FAIL) {
           bus.emit('agent.error', { message: `同工具连续失败 ${MAX_CONSECUTIVE_FAIL} 次，终止` });
-          return { ok: false, text: '同工具连续失败 5 次，已终止', turns, interrupted: st.interrupted };
+          return finishEarly('同工具连续失败 5 次，已终止');
         }
         // 深度：签名级循环检测（Cline loop-detection 对齐）——相同 (工具,参数签名)
         // 重复 ≥3 次即空转（即使每次未报失败）——比「失败计数」更早识别死循环省 token
@@ -1000,7 +1012,7 @@ export function createAgent(opts: AgentOptions) {
         const repeatCount = recentToolSigs.filter(s => s === sig).length;
         if (repeatCount >= 3) {
           bus.emit('agent.error', { message: `检测到工具调用循环（相同调用重复 ${repeatCount} 次），终止` });
-          return { ok: false, text: `工具调用循环检测（相同调用重复 ${repeatCount} 次）——任务无进展，已终止；请换一种方式或拆分子任务`, turns, interrupted: st.interrupted };
+          return finishEarly(`工具调用循环检测（相同调用重复 ${repeatCount} 次）——任务无进展，已终止；请换一种方式或拆分子任务`);
         }
         const first = executed[0]!;
         msgs.push({
@@ -1014,6 +1026,29 @@ export function createAgent(opts: AgentOptions) {
         }
       }
     }
+    // ── 轮次耗尽兜底（系统性闭环，绝不静默空输出）──
+    // 工具全执行完但回合无最终文本：① 未被中断 → 无工具强制总结调用（tools:[]），
+    // 让模型把已执行的工具结果收敛为答案；② 总结失败/被中断 → 显式失败文案。
+    let exhausted = false;
+    if (!finalText && !st.interrupted) {
+      try {
+        const r = await callWithAbort({
+          messages: [...msgs, { role: 'system', content: '以上工具已全部执行完毕。请直接给出最终结论（中文，简洁），不要再调用任何工具。' }],
+          tools: [],
+        });
+        if (r.type === 'text' && r.content.trim()) {
+          finalText = r.content;
+          bus.emit('agent.message', { content: finalText });
+          try { opts.mem.append(sessionId, 'assistant', finalText); } catch { /* 忽略 */ }
+        }
+      } catch { /* 总结调用失败 → 下方显式兜底文案 */ }
+    }
+    if (!finalText) {
+      exhausted = true;
+      finalText = `任务执行了 ${turns} 轮（轮次上限）但未产出最终结论——工具调用已全部执行，过程已保留。建议 /rewind 回退后拆分子任务重试，或 /compact 压缩上下文后继续。`;
+      bus.emit('agent.message', { content: finalText });
+      try { opts.mem.append(sessionId, 'assistant', finalText); } catch { /* 忽略 */ }
+    }
     // 自动标题（机制补强）：回合结束后若会话无标题，用首条用户消息前 20 字命名
     if (!opts2.subagent && finalText.length > 0) {
       try {
@@ -1023,8 +1058,9 @@ export function createAgent(opts: AgentOptions) {
     }
     // KF-023/024：ok 绝不从文本长度推导——完成声明（「完成了」/[GOAL_DONE]/done）且零验证副作用
     // → incomplete（诚实：普通问答/叙事文本不受影响；有验证副作用的完成声明正常成功）
+    // 轮次耗尽兜底文案（exhausted）≠ 成功：显式 ok=false
     const claimedUnverified = finalText.length > 0 && isCompletionClaim(finalText) && rs.verifiedEffects === 0;
-    ok = finalText.length > 0 && !claimedUnverified;
+    ok = finalText.length > 0 && !claimedUnverified && !exhausted;
     status = claimedUnverified ? 'incomplete' : undefined;
     // C8 修复：错误路径也发 agent.end（ok:false）——事件契约对齐参考（错误也完成回合）
     bus.emit('agent.end', { ok, turns });

@@ -384,3 +384,16 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **通告永久占据动词槽**（产品级缺陷，W8-29 契约破坏）：curator/定时任务等一次性通告缺省 sticky 且无清除方——动词槽被「自动审查完成」永久顶替、空闲时钟消失（首跑必现）。修复：`eventAdapter` 缺省 kind 改 `ttl`、`flowController.applyNotice` 缺省 8s 自过期（显式 `sticky` 仍可常驻）——动词槽自动归还就绪+空闲时钟（+2 单测：缺省 ttl 自过期 / sticky 常驻）。
 - **证据行取 stdout 末行**：eval-report lastLine 曾取 stderr（node-pty 控制台清单 agent AttachConsole 非致命噪音）——证据展示失真，改为 stdout 末行（判分本就走 exit code，不受影响）。
 - 修复后 eval:full（洁净间首跑，即新评估者首跑路径）：vitest 2202 绿 · cmd-verify 双管线 14/14 · full-scene 双管线 28/28 · 时钟检测器双管线 GREEN · 首帧 0.04s/就绪 2.1s——**9.90/10 全维 9.9**。
+
+### 13.7 回合闭环缺陷（「35 工具调用后无输出」真根因——贬低视角复盘）
+
+用户真实 cmd 环境复现：评估请求 35 个工具调用全部成功（Todo 35/35），但最终「没有输出结果」——逻辑不闭环。逐层追出两条系统性缺陷（非环境、非偶发）：
+
+- **提前 return 不发 agent.message/agent.end**：4xx/重试耗尽/未知工具/连续失败/循环检测五条早退路径 `return { ok:false, text }`——但网关只在 `agent.end` 时发布最终消息（message.complete），`agent.message` 才是文本投递通道。结果：所有错误文本从未到达 UI（C8 注释声称「错误路径也发 agent.end」，实现只覆盖尾部路径，早退全部漏发）。
+- **轮次耗尽静默空文本**：`while (turns < MAX_TURNS)` 退出后 `finalText=''` → 静默 `return { ok:false, text:'' }` → UI 无任何渲染。用户 35 次工具调用 = 批量 tool_calls 跨 ≤16 轮，恰好顶满轮次上限。
+- **修复**：
+  - `finishEarly` 统一闭环 helper——所有早退路径必发 `agent.message`（文本）+ `agent.end`（回合终结事件），错误文本真正可见
+  - 轮次耗尽兜底：未中断且无最终文本 → **无工具强制总结调用**（tools:[]，模型把已执行工具结果收敛为答案）；总结失败 → 显式失败文案（「轮次上限…建议 /rewind 拆分子任务」）——**绝不静默空输出**；`ok` 对兜底文案强制 false（不冒充成功）
+  - MAX_TURNS 16→32（批量调用下探索类任务有余量自然收敛）
+- **确定性回归（客观契约，非主观评分）**：`scripts/loop-closure-test.mjs`——本地 mock OpenAI SSE 服务前 32 轮只回 tool_call（真实 ls 调用、参数轮换避开循环检测），逼内核轮次耗尽 → 断言真实 TUI 渲染出第 33 次强制总结的最终答案且状态回归就绪。已接入 eval battery 维度（fail-closed：静默空输出 = 电池红）。
+- **验证**：+3 单测（耗尽收敛/总结失败显式文案/4xx 早退事件可见）kernel-agent 56/56；回合闭环电池 exit 0（mock 33 次调用，最终答案渲染 true）；真实 zhipu 端点 -p 复现用户同款 prompt → 完整最终答案。

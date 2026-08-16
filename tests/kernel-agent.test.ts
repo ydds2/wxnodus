@@ -293,6 +293,61 @@ describe('流式与思考模式', () => {
   });
 });
 
+// ── 回合闭环（「35 工具调用后无输出」真根因回归）───
+describe('回合闭环（绝不静默空输出）', () => {
+  it('轮次耗尽仍无文本 → 无工具强制总结收敛为非空答案', async () => {
+    const script: Array<ModelCall | ToolCallMsg> = [];
+    for (let i = 0; i < 4; i++) script.push({ type: 'tool_call', id: `c${i}`, name: 'ls', args: { path: `dir-${i}` } });
+    script.push({ type: 'text', content: '基于以上探索，评估结论如下…' }); // 强制总结调用返回
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-loop1',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      maxTurns: 4,
+      callModel: async (_req, streamCtx) => {
+        const next = script.shift()!;
+        if (next.type === 'text' && streamCtx?.onToken) streamCtx.onToken(next.content);
+        return next;
+      },
+    });
+    const r = await agent.run('评估');
+    expect(r.ok).toBe(true);
+    expect(r.text).toContain('评估结论');
+  });
+  it('轮次耗尽且强制总结失败 → 显式失败文案（非空、ok=false）', async () => {
+    let n = 0;
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-loop2',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      maxTurns: 4,
+      callModel: async () => {
+        n++;
+        if (n <= 4) return { type: 'tool_call', id: `c${n}`, name: 'ls', args: { path: `dir-${n}` } };
+        throw new Error('summary failed'); // 强制总结调用失败
+      },
+    });
+    const r = await agent.run('评估');
+    expect(r.ok).toBe(false);
+    expect(r.text.length).toBeGreaterThan(0); // 绝不静默空输出
+    expect(r.text).toContain('轮次上限');
+  });
+  it('提前返回（模型 4xx）也发 agent.message + agent.end（UI 可见）', async () => {
+    const msgs: string[] = [];
+    const ends: Array<Record<string, any>> = [];
+    bus.on('agent.message', e => msgs.push(String(e.payload.content ?? '')));
+    bus.on('agent.end', e => ends.push(e.payload as Record<string, any>));
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-loop3',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async () => { const err: any = new Error('HTTP 401 无效密钥'); err.status = 401; throw err; },
+    });
+    const r = await agent.run('你好');
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain('模型调用失败');
+    expect(msgs.join('')).toContain('模型调用失败'); // 错误文本经 agent.message 投递
+    expect(ends.length).toBeGreaterThan(0); // agent.end 必发（网关据此发布最终消息）
+  });
+});
+
 // ── loop-goal 模式（Kimi Ralph 同款）───
 describe('loop-goal 模式', () => {
   it('goal：目标驱动自主循环直到 [GOAL_DONE]（多轮调用 + 标记剥离）', async () => {
