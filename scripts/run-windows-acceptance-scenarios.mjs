@@ -25,8 +25,9 @@ const record = (id, psResult, extraAttachment = undefined) => {
   const raw = (psResult.stdout ?? '').trim();
   let status = 'blocked'; let detail = {};
   try { detail = JSON.parse(raw); status = detail.status ?? 'blocked'; } catch {}
-  const attachments = [`${id}.raw.json`];
-  writeFileSync(join(outDir, `${id}.raw.json`), raw || `{"note":"no output","stderr":${JSON.stringify(psResult.stderr?.slice(0, 500))}}`, 'utf8');
+  // 附件不得以 .json 结尾——loadScenarioResults 会把目录内全部 *.json 当场景结果二次加载
+  const attachments = [`${id}.raw.txt`];
+  writeFileSync(join(outDir, `${id}.raw.txt`), raw || `{"note":"no output","stderr":${JSON.stringify(psResult.stderr?.slice(0, 500))}}`, 'utf8');
   if (extraAttachment) { writeFileSync(join(outDir, extraAttachment.name), extraAttachment.content, 'utf8'); attachments.push(extraAttachment.name); }
   const result = { id, status, attachmentIds: attachments };
   if (psResult.error) result.error = String(psResult.error);
