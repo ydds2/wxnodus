@@ -160,3 +160,32 @@
 1. **实现产品 UIA 真实 COM 端口**（IUIAutomation interop：inspectBoundary/invoke/select + 边界 fail-closed）→ 接 WindowsUiaDriver → 写 fixture 驱动 → uia 场景转 passed → 聚合仅剩 E 门之外的门（evidence-index/gate-report/gate-h 属后续流水线步骤，非 E 门阻塞）。
 2. 本机 5 门 E 门聚合即达 `passed`（scope=win11-only + tier=single-display 已是合法用户决策档）。
 3. Gate I（Linux/macOS worker）与 IME 组合输入仍按计划 blocked/UNVERIFIED——与本轮无关，不降标准。
+
+## 9. Gate I windows-only 用户决策档（2026-08-16，W6-09）
+
+> 用户决策：**「我从始至终只做 Windows 本地 CLI」**。原 Gate I 合同只接受真实 Linux/macOS worker
+> receipt（六个 canonical 非 Windows cells 逐 cell build/test/clean-install/CapabilityReport），
+> 单机用户面前永远 blocked。本档照 Gate E `win11-only` / W6-08 `single-display` 同款模式收缩：
+> 零跨平台 receipt + 哈希绑定的平台范围证据文件背书，六 cells 声明性豁免——只缩范围、不降诚实。
+
+### 9.1 合同与证据链
+
+- `aggregateGateIReceipts(receiptDirs, { scope: 'windows-only', waiverEvidenceFile })`：
+  证据文件必须真实在场且 `waivedCells` 与 canonical 六 cell 闭包**逐字相等**（排序后 JSON 相等）；
+  缺失 → `GATE_I_WAIVER_EVIDENCE_MISSING`，非 canonical（少项/多项/scope 错误）→ `GATE_I_WAIVER_MISMATCH`，均 fail-closed。
+- 证据生产者 `scripts/evidence-platform-scope.mjs`（tsx 实现）→ `artifacts/release-evidence/<runId>/platform-scope/outcome.json`。
+- 实跑：本机 `run-gate-i --aggregate-receipts --scope windows-only --waiver-evidence ...` → **passed**（scope 记录 + 六 cells 豁免清单 + waiverReason 落盘）。
+- full 档（缺省）行为零变化；produce 路径（win32 → GATE_I_PLATFORM_UNAVAILABLE）不变。
+
+### 9.2 发行元数据对齐（声明即承诺）
+
+- `package.json` 显式 `"os": ["win32"]`——npm 层平台声明（此前未声明 = 隐式宣称全平台）。
+- README 增补平台声明段：只做 Windows 本地 CLI；Linux/macOS 未验证、不宣称支持；Windows 专属能力
+  （UIA/语音/桌面控制）在非 Windows 平台不承诺可用。
+
+### 9.3 验证
+
+- 测试 +4（canonical 通过 / 缺证据 / 篡改 cells / full 档不变）——w6-03 共 11/11。
+- 全量 vitest：296 files / 2155 passed / 0 failed / 10 skipped（typecheck 零错误）。
+- 注：全量并行高负载下一次运行出现 1 failed（buildEvidenceDecision 1s verifier 超时 + execFileNoThrow
+  时序用例）——隔离运行与空闲重跑全绿，判定为负载性抖动，非本轮改动引入。
