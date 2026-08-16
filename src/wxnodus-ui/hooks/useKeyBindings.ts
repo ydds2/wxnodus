@@ -586,7 +586,9 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         return cActions.clearIn()
       }
 
-      return actions.die()
+      // 空闲 + 空输入：无操作 + 一行提示（UX 修复：Ctrl+C 是复制/取消肌肉记忆——
+      // 此前直接 die() 误杀整个会话，pty 下还曾出现渲染永久停摆；退出走 Ctrl+D / /quit）
+      return actions.sys('按 Ctrl+D 或 /quit 退出；Esc 中断进行中的任务')
     }
 
     if (isAction(key, ch, 'd')) {

@@ -398,3 +398,14 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **确定性回归（客观契约，非主观评分）**：`scripts/loop-closure-test.mjs`——本地 mock OpenAI SSE 服务前 32 轮只回 tool_call（真实 ls 调用、参数轮换避开循环检测），逼内核轮次耗尽 → 断言真实 TUI 渲染出第 33 次强制总结的最终答案且状态回归就绪。已接入 eval battery 维度（fail-closed：静默空输出 = 电池红）。
 - **工具调用浪费止血（同轮贬低复盘）**：用户 35 次调用中 7× Ls、5× Web Search、4× Command Search 大量同参重复——新增**回合内读工具结果缓存**（ls/grep/find_files/fs_read/web_search/http_get/repo_map/memory_search/command_search/tool_search）：同参重复读调用合并返回缓存 + 「已缓存」标记（提示模型无需重跑）；任何写/执行类工具（bash/fs_write/fs_edit…）执行后整体清空——缓存绝不跨写失效（+2 单测：缓存命中标记达模型上下文 / bash 清空后真实重执行）。与循环检测（同参 ≥3 终止）协同：先合并止血，再终止空转。
 - **验证**：+3 单测（耗尽收敛/总结失败显式文案/4xx 早退事件可见）kernel-agent 56/56；回合闭环电池 exit 0（mock 33 次调用，最终答案渲染 true）；真实 zhipu 端点 -p 复现用户同款 prompt → 完整最终答案。
+
+### 13.8 全方位 UX 对比轮（贬低视角 + 联网竞品调研）
+
+用户要求：与同类型 CLI 全方位对比（代码/逻辑/功能），着重用户体验问题，循环修复。
+
+- **竞品调研**（联网 agent，2026-08 事实）：Claude Code v2.1.x / Codex v0.147 / aider / Gemini CLI（已停更）——交互语言已收敛（斜杠补全/提及/Shift+Tab 模式循环/Esc 语义）；回滚人人都有（Claude Esc-Esc 回检查点）；上下文可见性各家分层；**四家无一 Windows 原生**。
+- **产出**：`docs/ux-comparison.md`——竞品 UX 基准 + wxnodus 实测盘点（电池陷阱注释 = 真实缺陷记录）+ 逐维度矩阵 + 12 项缺陷清单（严重度排序）。
+- **修复**：
+  - **空闲 Ctrl+C 误杀会话**（缺陷 2）：`useKeyBindings.ts`——原直接 die()（pty 下曾渲染永久停摆），改为无操作 + 一行提示（Ctrl+D//quit 退出）——对齐 Claude Code 无害语义；busy 中断/有文本清行不变。
+  - **丢字竞态复测**（缺陷 3/4）：ASCII 与 CJK 在 5ms/字符（超人类速度）双管线均零丢字——parse-keypress 批次读取修复（§12.3）已根治；电池 200ms 慢速保留为 CI 确定性余量（陷阱注释更新口径）。
+- **遗留清单**（ux-comparison.md §4）：diff 语法高亮、#/@ 提及、Shift+Tab 模式循环、Ctrl+R 历史搜索、Esc-Esc 语义与 Claude/Gemini 相反（wxnodus 为中断确认）、/cost 累计——按序追债。
