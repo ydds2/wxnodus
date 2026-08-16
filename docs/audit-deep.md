@@ -108,3 +108,55 @@
 | git diff --check | ✓（仅既有 CRLF 提示） |
 
 **不可伪造阻断项（不变）**：Gate E 物理 receipt（Win11/Win10 双机）blocked；Gate I（Linux/macOS worker）blocked；IME 组合输入 UNVERIFIED；协议 verification/evidence 事件待真实接入。goal 状态由 runtime completion verifier 判定，不标记 complete。
+
+## 8. 本机 Gate E receipt 实产轮（2026-08-16，通用型单机档——用户决策）
+
+> 范围：按用户决策「通用类型 CLI（单屏、单麦克风、普通桌面），验收以本机真实环境为准，不搞多屏多麦克风矩阵」
+> 在本机（Win11 26200.9168，真实解锁交互桌面）执行 Gate E 全链路：探测 → 场景实跑 → 候选冻结 → receipt 三件套 → 聚合。
+> 结论：**本机 receipt 已真实产出**（tier=single-display，scope=win11-only）；聚合 fail-closed 停在
+> `WINDOWS_ACCEPTANCE_SCENARIO_FAILED`——唯一阻塞项是 uia 场景，根因是**产品 UIA 真实 COM 端口实现不存在**（仅策略壳 + 测试假端口），
+> 这是产品功能缺口，不是环境/硬件问题。
+
+### 8.1 本机物理前置（provisioned-runner.json，全部真实探测通过）
+
+| 前置 | 结果 |
+|---|---|
+| 标签/OS | self-hosted/windows/x64/interactive/win11-24h2；Win11 10.0.26200（W6-07 代际） |
+| 交互会话 | sessionId 1、OpenInputDesktop=Default、unlocked ✓ |
+| 麦克风 | 2 个激活物理端点（Realtek 麦克风 + 麦克风阵列）✓ |
+| SAPI | 3 语音（Huihui/Zira/David）+ playback ✓ |
+| fixture 锁 | lockSha256 + source/artifact 双哈希验证 ✓ |
+| 显示器 | 单屏 1920×1080 @1.25（真实逐显示器 DPI）✓ |
+
+### 8.2 实跑暴露并修复的 6 项真实缺陷（均已提交，本轮 commit 链 4ff3cd8b…9567e20d）
+
+1. **W8-30 PMv2 谎报**：provision/preflight 在非 PMv2 进程读 DPI 得到系统虚拟化值（本机 125% 显示器误报 1536×864@1.0）——声明 PMv2 后读回真实 1920×1080@1.25。坐标变换层（toPhysicalPoint）依赖这两个值，属高危缺陷。
+2. **computer-multimonitor 单屏档**：新增 `WXNODUS_WINDOWS_TIER=single-display` 分支（W6-08 同源豁免三项，仍真实验证 PMv2 + 有效 DPI）；顺带修复 full 档 PMv2 从未声明的隐藏问题。
+3. **preflight osFamily**：26200 被判 unknown（W6-07 只收了 26100）——同步扩代际。
+4. **voice.ps1 路径契约漂移**：旧版读 `<dataDir>/models`，与 install-stt 实际安装位置 `<dataDir>/voice/models` 不符——对齐产品 canonical 布局 + 模型完整性字节数校验（部分下载绝不通过）。
+5. **install-stt 下载崩溃**：pipeline 中间段用 Writable（应 Transform）——ERR_INVALID_ARG_TYPE 实测崩溃，此前从未真实执行过。
+6. **场景附件二次加载**：附件命名 `.raw.json` 会被 loadScenarioResults 当场景结果加载（receipt 场景数翻倍）——改 `.raw.txt`。
+
+### 8.3 场景实跑（7/7 真实执行，6 passed + 1 诚实 blocked）
+
+| 场景 | 结果 | 证据要点 |
+|---|---|---|
+| preflight | ✓ passed | 真实会话/桌面/OS/DPI/麦克风/SAPI |
+| computer-multimonitor | ✓ passed（single-display） | 单屏真实事实 + PMv2 声明 + 有效 DPI 1.25 |
+| browser | ✓ passed | 真实 playwright-core：SW 阻断 + 路由先装 + localhost 阻断 |
+| voice | ✓ passed | 真实 3s 录音（RIFF/WAVE/fmt/data 走查 95694B）→ whisper 转写 18 字符 → SAPI 回放 → 二次运行真实取消 |
+| build-restart-readback | ✓ passed | 真实进程树替换（taskkill /T）+ 端口 45231 释放 + 持久层读回 items:11 一致 |
+| emergency-stop | ✓ passed | 真实目标进程树终止并确认无残留 |
+| uia | ✗ blocked（诚实） | 产品 UIA 真实 COM 端口实现不存在（WindowsUiaDriver 仅有策略壳，测试用假端口） |
+
+### 8.4 receipt 与聚合（全部真实哈希链）
+
+- 候选：cand-9567e20d7f-202608160916（commit 9567e20d，tgz SHA-256 绑定）
+- receipt：`receipt-windows-11-24h2-production-real`（core→manifest→index 三件套，7 场景 + 附件哈希锁定，tier=single-display + canonical waived 三项 + 数学层 waiver evidence 哈希匹配）
+- 聚合（--scope win11-only）：**blocked，code=WINDOWS_ACCEPTANCE_SCENARIO_FAILED**（仅 uia；其余校验全过：receipt 哈希链/key/runner 前置/candidate 一致性/waiver 证据）
+
+### 8.5 下一步（精确清单）
+
+1. **实现产品 UIA 真实 COM 端口**（IUIAutomation interop：inspectBoundary/invoke/select + 边界 fail-closed）→ 接 WindowsUiaDriver → 写 fixture 驱动 → uia 场景转 passed → 聚合仅剩 E 门之外的门（evidence-index/gate-report/gate-h 属后续流水线步骤，非 E 门阻塞）。
+2. 本机 5 门 E 门聚合即达 `passed`（scope=win11-only + tier=single-display 已是合法用户决策档）。
+3. Gate I（Linux/macOS worker）与 IME 组合输入仍按计划 blocked/UNVERIFIED——与本轮无关，不降标准。
