@@ -21,6 +21,15 @@ const strip = s => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\][^\x0
 const last = () => strip(out).split('\n').slice(-40).join('\n');
 const typeKeys = async s => { for (const ch of s) { p.write(ch); await sleep(40); } };
 const submit = async s => { await typeKeys(s); await sleep(150); p.write('\r'); await sleep(900); };
+// W8-19：readiness-marker 轮询替代固定 sleep——渲染延迟抖动不再误报
+const waitFor = async (predicate, timeoutMs = 5000, stepMs = 250) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await sleep(stepMs);
+  }
+  return predicate();
+};
 
 async function main() {
   p = spawn(process.execPath, [BIN], {
@@ -35,7 +44,8 @@ async function main() {
   const f0 = strip(out);
   check('启动:WXNODUS 品牌 logo', f0.includes('WXNODUS') || f0.includes('WxNodus'));
   check('启动:品牌口号', f0.includes('本地概念编译器'));
-  check('启动:状态初始化', f0.includes('唤醒 WxNodus') || f0.includes('ready'));
+  // 状态文案随产品 copy 演进：中文就绪/英文 ready 均可（检查真实初始化完成）
+  check('启动:状态初始化', f0.includes('唤醒 WxNodus') || f0.includes('ready') || f0.includes('就绪'));
   check('启动:输入框提示符', f0.includes('❯'));
   check('启动:状态条(模型)', f0.includes('deepseek') || f0.includes('规则'));
   check('启动:状态条(目录)', f0.includes('WxNodusV3CLI'));
@@ -43,12 +53,16 @@ async function main() {
 
   // ── 2a. 模型/会话选择器（agent 空闲时，避免 busy guard 拦截） ──
   await submit('/model');
-  await sleep(1600);
+  const modelOpened = await waitFor(() => {
+    const f = last();
+    // 「DeepSeek」（首字母大写）只出现在选择器 provider 列表（状态栏是 lowercase deepseek）
+    return f.includes('model') || f.includes('Model') || f.includes('模型') || f.includes('Select provider') || f.includes('提供商') || f.includes('DeepSeek');
+  });
   const f3 = last();
-  check('模型选择器:打开', f3.includes('model') || f3.includes('Model') || f3.includes('模型') || f3.includes('Select provider'));
+  check('模型选择器:打开', modelOpened);
   check('模型选择器:provider 分组', f3.includes('DeepSeek') && (f3.includes('K2.7') || f3.includes('GLM') || f3.includes('kimi')));
   p.write('\x1b');
-  await sleep(1800); // overlay 关闭经 patchOverlayState → React 渲染 → diff 透传，约 1.5s
+  await waitFor(() => !last().includes('Select provider'), 5000);
   check('模型选择器:Esc 关闭', !last().includes('Select provider'));
 
   await submit('/sessions');
@@ -69,17 +83,21 @@ async function main() {
   // 中断 agent（无有效 key 时可能长时间挂起），保证后续命令不被 busy guard 拦截
   p.write('\x03');
   await sleep(800);
-  check('提交:状态回到 ready', strip(out).includes('ready'));
+  check('提交:状态回到 ready', strip(out).includes('ready') || strip(out).includes('就绪'));
 
   // ── 3. 命令建议（complete.slash RPC） ────
   p.write('/');
-  await sleep(800);
-  const f2 = last();
-  check('建议:/ 弹出建议', f2.includes('/help') || f2.includes('/model'));
+  const sugOpened = await waitFor(() => {
+    const f = last();
+    return f.includes('/help') || f.includes('/model');
+  });
+  check('建议:/ 弹出建议', sugOpened);
   await typeKeys('calc');
-  await sleep(500);
-  check('建议:过滤生效', last().includes('/calc'));
+  const filtered = await waitFor(() => last().includes('/calc'), 5000);
+  check('建议:过滤生效', filtered);
   p.write('\x1b');
+  await sleep(400);
+  p.write('\x15'); // Ctrl+U：清空输入草稿——Esc 只关弹层不清空输入（否则后续命令粘连成 /calc/uuid）
   await sleep(400);
 
   // ── 4. 命令执行（slash.exec → wxnodus commandBus） ──
@@ -89,24 +107,29 @@ async function main() {
   await submit('/calc 1+2');
   await sleep(800);
   check('命令:/calc 输出', strip(out).includes('= 3') || strip(out).includes('3'));
-  await submit('/uuid');
-  await sleep(800);
-  check('命令:/uuid 输出', /[0-9a-f]{8}-/.test(strip(out)));
+  // /uuid 经补全弹层：先 Esc+Ctrl+U 清场，再慢速输入 + readiness 轮询（补全面板 Enter 语义时序敏感）
+  p.write('\x1b'); await sleep(400);
+  p.write('\x15'); await sleep(400);
+  await typeKeys('/uuid'); await sleep(600);
+  p.write('\r');
+  const uuidOut = await waitFor(() => /[0-9a-f]{8}-/.test(strip(out)), 6000);
+  check('命令:/uuid 输出', uuidOut);
   await submit('/status');
   await sleep(800);
   check('命令:/status 输出', strip(out).includes('状态') || strip(out).includes('模型'));
   // 中断 agent（/status 无有效 key 时挂起 → 后续消息排队不显示），
-  // 保证测试消息直接进入 transcript
+  // 保证测试消息直接进入 transcript；等满 interrupt cooldown（1.5s）+ 余量
   p.write('\x03');
-  await sleep(800);
+  await sleep(2400);
 
   // ── 7. 滚动（ScrollBox 应用内滚动） ───────
-  for (let i = 0; i < 3; i++) { await submit('测试' + i); await sleep(400); }
+  for (let i = 0; i < 3; i++) { await submit('测试' + i); await sleep(600); }
   // 中断 agent（有真实 key 时 AI 回复流式输出会持续刷新屏幕，与渲染断言竞争——先停再查）
   p.write('\x03');
   await sleep(1000);
+  const historyAccumulated = await waitFor(() => strip(out).includes('测试2'), 6000);
   const f5 = last();
-  check('主屏幕:历史消息累积', strip(out).includes('测试2'));
+  check('主屏幕:历史消息累积', historyAccumulated);
   check('主屏幕:输入框固定底部', f5.includes('❯'));
   check('主屏幕:状态条在底部', f5.includes('deepseek') || f5.includes('Ctrl+C') || f5.includes('语音') || f5.includes('synthesizing') || f5.includes('ready') || f5.includes('running') || f5.includes('interrupted') || f5.includes('formulating'));
 

@@ -115,6 +115,10 @@ const TranscriptPane = memo(function TranscriptPane({
         rightLabel={modelBarLabel(ui.info?.model ?? '', ui.info?.profile_name ?? '')}
         t={ui.theme}
       />
+      {/* 滚动条几何 row：只包 ScrollBox 与其右侧滚动条——滚动条横向占 1 列、高度
+          跟随整行拉伸（无纵向反馈回路，±1 行取整翻转抖动不回归）；ScrollBox 独占
+          剩余全宽（BrandBar 不在本 row 内——否则 transcript 被挤成右缘窄条）。 */}
+      <Box flexDirection="row" flexGrow={1} flexShrink={1}>
       <ScrollBox
         flexDirection="column"
         flexGrow={1}
@@ -207,6 +211,7 @@ const TranscriptPane = memo(function TranscriptPane({
       <NoSelect flexShrink={0} marginLeft={1}>
         <TranscriptScrollbar scrollRef={transcript.scrollRef} t={ui.theme} />
       </NoSelect>
+      </Box>
 
       <StickyPromptTracker
         messages={transcript.historyItems}
@@ -485,20 +490,19 @@ export const AppLayout = memo(function AppLayout({
   return (
     <Shell {...shellProps}>
       <Box flexDirection="column" flexGrow={1}>
-        {/* 单栏内容结构：row 只包住 transcript 与其右侧滚动条（滚动条横向占 1 列、
-            高度跟随整行拉伸——避免滚动条高度=视口高度形成的纵向反馈回路，否则
-            ±1 行取整翻转会导致内容持续上下抖动）。这不是第二内容列。 */}
-        <Box flexDirection="row" flexGrow={1}>
-          {overlay.agents ? (
-            <PerfPane id="agents">
-              <AgentsOverlayPane />
-            </PerfPane>
-          ) : (
-            <PerfPane id="transcript">
-              <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
-            </PerfPane>
-          )}
-        </Box>
+        {/* 单栏内容结构：主列直接放 transcript/agents——无外层 row 包装。
+            （历史回归：row 包住整个 TranscriptPane 时 BrandBar 占满整行，
+            ScrollBox 被挤成右缘 2 列窄条——即用户曾看到的「双栏」与
+            full-scene 空 transcript 的同一根因。滚动条几何 row 在 TranscriptPane 内部。） */}
+        {overlay.agents ? (
+          <PerfPane id="agents">
+            <AgentsOverlayPane />
+          </PerfPane>
+        ) : (
+          <PerfPane id="transcript">
+            <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
+          </PerfPane>
+        )}
 
         {!overlay.agents && (
           <>

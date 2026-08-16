@@ -1,4 +1,5 @@
 import indentString from 'indent-string'
+import { appendFileSync } from 'node:fs'
 
 import { applyTextStyles } from './colorize.js'
 import type { DOMElement } from './dom.js'
@@ -725,6 +726,21 @@ function renderNodeToOutput(
         // rendered with its Y translated by -scrollTop; its children are
         // culled against the visible window.
         const padTop = yogaNode.getComputedPadding(LayoutEdge.Top)
+
+        // WXNODUS_DEBUG_VHIST=1：ScrollBox 渲染时诊断（winpty 不绘制根因定位）。
+        if (process.env.WXNODUS_DEBUG_VHIST) {
+          try {
+            appendFileSync(
+              process.env.WXNODUS_DEBUG_VHIST_LOG || '/tmp/vhist.log',
+              JSON.stringify({
+                s: 'scrollbox', x, y, height: yogaNode.getComputedHeight(),
+                clipY: { y1, y2 }, padTop,
+                children: node.childNodes.length,
+                childTop: (node.childNodes[0]?.yogaNode as { getComputedTop?: () => number } | undefined)?.getComputedTop?.()
+              }) + '\n'
+            )
+          } catch { /* 诊断日志失败不影响渲染 */ }
+        }
 
         const innerHeight = Math.max(
           0,

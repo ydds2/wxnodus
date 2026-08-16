@@ -68,11 +68,12 @@ describe('single-column layout contract', () => {
     expect(layout).not.toContain('paneLayout')
   })
 
-  it('keeps exactly one row wrapper: the transcript + scrollbar geometry row (not a second content column)', () => {
-    // 滚动条必须与 ScrollBox 同一 row（横向占 1 列、高度拉伸），否则滚动条在 column
-    // 里按视口高度占高，形成滞后反馈回路 → 内容 ±1 行持续抖动（cmd 窗口晃动回归）。
-    const rows = layout.match(/flexDirection="row" flexGrow=\{1\}/g)
-    expect(rows).toHaveLength(1)
+  it('has no row wrapper in the main layout (transcript stays full-width; scrollbar geometry lives inside TranscriptPane)', () => {
+    // 历史回归根因：row 包住整个 TranscriptPane 时 BrandBar 占满整行，
+    // ScrollBox 被挤成右缘 2 列窄条（「双栏」错觉 + 空 transcript 同一根因）。
+    // 主列必须纯 column；滚动条几何 row（flexGrow+flexShrink 双属性）在 TranscriptPane 内部。
+    const rows = layout.match(/flexDirection="row" flexGrow=\{1\}>/g)
+    expect(rows).toBeNull()
   })
 
   it('does not repeat the background summary as a status-rule segment or click affordance', () => {
