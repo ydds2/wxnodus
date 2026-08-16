@@ -111,7 +111,7 @@ describe('模型能力元数据', () => {
   it('filterModels 模糊过滤接通（子串匹配）', () => {
     expect(filterModels('glm').map(m => m.modelId)).toContain('glm-4v-flash');
     expect(filterModels('k3').map(m => m.modelId)).toEqual(['kimi-k3', 'kimi-k3-256k']);
-    expect(filterModels('').length).toBe(12);
+    expect(filterModels('').length).toBe(13);
   });
 });
 
@@ -175,9 +175,9 @@ describe('buildChatRequest 结构', () => {
     expect(body.messages[0].content).toBe('你好');
     expect(body.tools).toHaveLength(1);
   });
-  it('MODEL_CATALOG 十二模型（含离线二条）且能力标注完整', async () => {
+  it('MODEL_CATALOG 十三模型（含离线二条）且能力标注完整', async () => {
     const { MODEL_CATALOG } = await import('../src/kernel/providers.js');
-    expect(MODEL_CATALOG.length).toBe(12);
+    expect(MODEL_CATALOG.length).toBe(13);
     const providers = new Set(MODEL_CATALOG.map(m => m.provider));
     expect(providers.size).toBeGreaterThanOrEqual(3);
     for (const m of MODEL_CATALOG) {

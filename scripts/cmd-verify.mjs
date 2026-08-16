@@ -10,10 +10,15 @@
 // 4. 空闲态 Ctrl+C 使渲染停摆 → 全程不用 Ctrl+C。
 // 5. 退格在补全面板重开期间吞键/停摆 → 全程不用退格（会话隔离消除回删需求）。
 import { spawn } from 'node-pty'
+import { join } from 'node:path'
 
 // WXNODUS_ACCEPT_CONPTY=1 → ConPTY（真实 Windows 控制台 API/conhost 管线）；
 // 默认 false（winpty）保持历史绿行为。验收 receipt 以 ConPTY 运行留存为准。
 const useConpty = process.env.WXNODUS_ACCEPT_CONPTY === '1'
+
+// 洁净间数据目录（同 full-scene 头注 8）：命令落地检查与评估者本机密钥/模型解耦——
+// 无 key 规则脑确定性基线；WXNODUS_LANG 跳过首启语言 onboarding（否则新机首跑阻塞）。
+const CLEANROOM = { WXNODUS_DATA_DIR: join(process.cwd(), 'artifacts', 'battery-cleanroom'), WXNODUS_LANG: 'zh-CN' }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const checks = []
@@ -26,7 +31,7 @@ const record = (label, ok, extra = '') => {
 async function withSession(name, body) {
   const p = spawn(process.execPath, ['dist/cli/index.js'], {
     name: 'xterm-256color', cols: 110, rows: 34,
-    cwd: process.cwd(), env: { ...process.env, TERM: 'xterm-256color' },
+    cwd: process.cwd(), env: { ...process.env, TERM: 'xterm-256color', ...CLEANROOM },
     useConpty
   })
   let out = ''

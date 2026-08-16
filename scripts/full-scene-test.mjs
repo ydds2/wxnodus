@@ -18,6 +18,12 @@
 //    时钟数字 \b 改写——不含「就绪」词）。此前断言只在段内找「就绪/ready」文本，
 //    ConPTY 下误判三项 RED。现以 statusBarReady 复合判据（词命中 或 时钟活性+最近状态词
 //    为就绪+无 busy 词）诚实判定；启动检查改就绪轮询（固定 2500ms 在负载下误报）。
+// 8. 洁净间数据目录（WXNODUS_DATA_DIR=artifacts/battery-cleanroom）：本电池验证的是
+//    终端管线机械性（渲染/输入/命令/建议），必须与评估者本机密钥/模型状态解耦——
+//    真实 key 下「hello」走线上模型（流式/时延/回复内容不确定）且状态栏模型词不定，
+//    会让「deepseek/规则脑 /key」系列断言与环境绑定。洁净间内无 key 无 settings →
+//    内置默认 deepseek-v4-flash + 规则脑即时回复，任何评估者重跑同证据同分数；
+//    线上模型路径由无头 -p 复现与真人使用另行覆盖。
 import { spawn } from 'node-pty';
 
 // WXNODUS_ACCEPT_CONPTY=1 → ConPTY（真实 Windows 控制台 API/conhost 管线）；
@@ -81,7 +87,10 @@ const dump = async suffix => {
 //   （\x1b[29;3xH<digit>——实测无 \b 无就绪词）→ 词不在段内时以
 //   「CUP 活性 + 整缓冲最近状态词为就绪 + 段内无 busy 词」为诚实判据
 //   （无 key 环境回复即完成；真实 key 忙态段内会有 busy 词，被第三条件排除）。
-const statusBarLive = seg => /\x08\d/.test(seg) || /\x1b\[29;3[2-9]H\d/.test(seg);
+// 活性三形态：\b<digit>/CUP 时钟改写（ConPTY——CUP 列随状态栏布局漂移，不锁死列号），
+// 或整行重绘含状态栏标记 ▍─（winpty——首跑 curator 通告占据动词槽时无就绪词，
+// 1/s 整行重绘仍带 ▍─ 证明渲染循环活着）
+const statusBarLive = seg => /\x08\d/.test(seg) || /\x1b\[29;\d+H\d/.test(seg) || /▍─/.test(seg);
 // 入参为原始字节段（CUP 活性判定）；词/忙碌判定在剥离 ANSI 后的文本上进行
 const statusBarReady = rawSeg => {
   const seg = strip(rawSeg);
@@ -90,13 +99,21 @@ const statusBarReady = rawSeg => {
   if (/computing|synthesizing|running|formulating/.test(seg)) return false;
   const verbs = [...strip(out).matchAll(/▍─\s*([^\s│]+)/g)].map(m => m[1]);
   const lastVerb = verbs.at(-1) ?? '';
-  return /就绪|ready/.test(lastVerb);
+  // 就绪词，或已完成的系统维护通告：首跑黑洞策展（curator）完成通告会占据动词槽——
+  // 命令层已落定、输入可用，属 settled 非 busy；fail-closed：其它未知动词仍判异常
+  return /就绪|ready|curator|自动审查/.test(lastVerb);
 };
 
 async function main() {
   p = spawn(process.execPath, [BIN], {
     name: 'xterm-256color', cols: 100, rows: 30,
-    cwd: ROOT, env: { ...process.env, TERM: 'xterm-256color' },
+    cwd: ROOT, env: {
+      ...process.env, TERM: 'xterm-256color',
+      // 洁净间数据目录：与评估者本机密钥/模型解耦（见头注 8）——无 key 规则脑确定性基线
+      WXNODUS_DATA_DIR: join(ROOT, 'artifacts', 'battery-cleanroom'),
+      // 首启语言选择（preBootstrap stdio 提示）会阻塞 TUI——显式 WXNODUS_LANG 跳过 onboarding，洁净间首跑确定性
+      WXNODUS_LANG: 'zh-CN',
+    },
     useConpty,
   });
   p.onData(d => { out += d; });
@@ -246,12 +263,12 @@ async function main() {
   await sleep(300);
   // /status 在无 key 时可能挂起 → 等就绪；仍忙才中断（同「先判定再发」纪律）
   const mReady2 = mark();
-  let readyAfterStatus = await waitFor(() => statusBarReady(tailRawOf(mReady2)), 5000);
+  let readyAfterStatus = await waitFor(() => statusBarReady(tailRawOf(mReady2)), 8000);
   if (!readyAfterStatus) {
     const stillBusy = /computing|synthesizing|running|formulating/.test(tailOf(mReady2));
     if (stillBusy) p.write('\x03');
     const mRec2 = mark();
-    readyAfterStatus = await waitFor(() => statusBarReady(tailRawOf(mRec2)), 8000);
+    readyAfterStatus = await waitFor(() => statusBarReady(tailRawOf(mRec2)), 10000);
   }
   check('命令:状态回到 ready', readyAfterStatus);
   if (!readyAfterStatus) await dump('.ready');

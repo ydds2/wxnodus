@@ -373,3 +373,14 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
   - `MODEL_CATALOG` 补入 `GLM-4 Flash`（zhipu 系，`glm-4-flash`）——zhipu 密钥下有可用目录项可选（glm-4.5 实测 HTTP 429 余额不足，glm-4-flash HTTP 200）
   - 本地配置对齐：`model=glm-4-flash` + zhipu baseURL，错配提示链条解除
 - **验证**：无头复现 `-p "评估 wxnodus CLI 并列出与同类型 CLI 的差距…"`（工具搜索对比资料）→ exit 0 + 实质最终文本（特性/差距结构化输出，非空）；错配路径的 hint 已指向「/key set 重配 或 /model 切换 provider 系模型」双出口
+
+### 13.6 电池环境耦合 + 通告持久化缺陷（eval 掉 6.93 的根因链）
+
+对齐修复后复跑 eval:full 掉至 6.93（tests/battery/render 三维 0.0）——追出四条根因链，全部修复后 9.90 复归：
+
+- **目录契约断言漂移**：`MODEL_CATALOG` 补 GLM-4 Flash（12→13），`tests/kernel-providers.test.ts` 计数断言未同步——12→13（两处）。
+- **电池与评估者环境耦合**（主根因）：full-scene 断言硬编码「无 key/deepseek」基线——本机真实智谱密钥+glm-4-flash 后 TUI 走线上模型，7 项断言（状态条模型词/规则脑 /key 提示等）与环境绑定。修复：三个电池脚本统一**洁净间数据目录**（`WXNODUS_DATA_DIR=artifacts/battery-cleanroom` + `WXNODUS_LANG` 跳过首启语言 onboarding）——电池验证的是终端管线机械性，必须与密钥/模型解耦；线上模型路径由无头 -p 复现与真人使用覆盖。任何评估者重跑同证据同分数。
+- **时钟改写形态随布局漂移**：状态栏时钟改写列随模型名宽度漂移（glm-4-flash 下 CUP 列=18，检测器锁死 32-39）且形态三变（`\b<digit>`/`\x1b[29;<col>H<digit>`/winpty 整行）——两个脚本的正则扩展为不锁列号 + 三形态全收（fail-closed 保留：未知形态仍判异常）。
+- **通告永久占据动词槽**（产品级缺陷，W8-29 契约破坏）：curator/定时任务等一次性通告缺省 sticky 且无清除方——动词槽被「自动审查完成」永久顶替、空闲时钟消失（首跑必现）。修复：`eventAdapter` 缺省 kind 改 `ttl`、`flowController.applyNotice` 缺省 8s 自过期（显式 `sticky` 仍可常驻）——动词槽自动归还就绪+空闲时钟（+2 单测：缺省 ttl 自过期 / sticky 常驻）。
+- **证据行取 stdout 末行**：eval-report lastLine 曾取 stderr（node-pty 控制台清单 agent AttachConsole 非致命噪音）——证据展示失真，改为 stdout 末行（判分本就走 exit code，不受影响）。
+- 修复后 eval:full（洁净间首跑，即新评估者首跑路径）：vitest 2202 绿 · cmd-verify 双管线 14/14 · full-scene 双管线 28/28 · 时钟检测器双管线 GREEN · 首帧 0.04s/就绪 2.1s——**9.90/10 全维 9.9**。

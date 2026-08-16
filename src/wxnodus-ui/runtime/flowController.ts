@@ -28,6 +28,8 @@ import { getUiState, patchUiState } from './viewStore.js'
 const INTERRUPT_COOLDOWN_MS = 1500
 const ACTIVITY_LIMIT = 8
 const TRAIL_LIMIT = 8
+// 通告缺省 TTL：toast 语义——8s 足够读完一行，之后动词槽归还就绪 + 空闲时钟
+const DEFAULT_NOTICE_TTL_MS = 8000
 
 // Extracts the raw patch from a diff-only segment produced by
 // pushInlineDiffSegment. Used at message.complete to dedupe against final
@@ -209,13 +211,16 @@ export class TurnController {
 
   // Apply a notice to the visible UI state and (re)arm its TTL clock.
   // Latest-wins: clear any prior TTL timer FIRST so an older notice's
-  // expiry can't wipe this one. A 'ttl' notice with `ttl_ms` self-expires;
-  // 'sticky' (default) persists until an explicit clear.
+  // expiry can't wipe this one. Default 'ttl' (toast, 8s self-expiry):
+  // 一次性通告（curator 自动审查/定时任务/模型切换等）短暂占据动词槽后自动
+  // 归还就绪 + 空闲时钟（W8-29 自驱重绘契约）；需长期驻留的通告必须显式
+  // kind:'sticky'（此前缺省 sticky——通告永久顶替动词槽且无清除方）。
   private applyNotice(notice: Notice) {
     this.clearNoticeTimer()
     patchUiState({ notice })
 
-    if (notice.kind === 'ttl' && typeof notice.ttl_ms === 'number' && notice.ttl_ms > 0) {
+    if (notice.kind !== 'sticky') {
+      const ttl = typeof notice.ttl_ms === 'number' && notice.ttl_ms > 0 ? notice.ttl_ms : DEFAULT_NOTICE_TTL_MS
       const id = notice.id
 
       this.noticeTimer = setTimeout(() => {
@@ -227,7 +232,7 @@ export class TurnController {
         if (getUiState().notice?.id === id) {
           patchUiState({ notice: null })
         }
-      }, notice.ttl_ms)
+      }, ttl)
     }
   }
 

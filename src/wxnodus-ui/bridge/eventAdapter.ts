@@ -528,7 +528,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         turnController.showNotice({
           id: p.id,
           key: p.key,
-          kind: p.kind ?? 'sticky',
+          // 缺省 ttl（toast 语义，flowController 兜底 8s 自过期）——网关一次性通告
+          // （curator/模型切换/委派状态等）短暂顶替动词槽后归还就绪+空闲时钟；
+          // 需长期驻留的通告由发射方显式 kind:'sticky'
+          kind: p.kind ?? 'ttl',
           level: p.level ?? 'info',
           text: p.text,
           ttl_ms: p.ttl_ms ?? null

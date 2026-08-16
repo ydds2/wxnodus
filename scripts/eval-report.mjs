@@ -18,7 +18,10 @@ const now = () => new Date().toISOString();
 const run = (cmd, args, opts = {}) => {
   const r = spawnSync(cmd, args, { cwd: ROOT, encoding: 'utf8', timeout: opts.timeout ?? 600000, env: { ...process.env, ...(opts.env ?? {}) }, maxBuffer: 16 * 1024 * 1024 });
   const out = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim();
-  return { exit: r.status ?? 1, out, lastLine: out.split('\n').filter(l => l.trim()).pop() ?? '' };
+  // 证据行取 stdout 末行（stderr 含 node-pty 控制台清单 agent 的 AttachConsole 噪音——
+  // 非致命但会串到 concat 尾部污染 lastLine；真实报告行均在 stdout）
+  const stdoutLast = `${r.stdout ?? ''}`.split('\n').filter(l => l.trim()).pop() ?? '';
+  return { exit: r.status ?? 1, out, lastLine: stdoutLast };
 };
 // 直接以 node 启动工具（npx/npm 的 .cmd 垫片在受限 spawn 环境下不可靠——仓库 freeze-candidate 同款模式）
 const vitestCli = [join(ROOT, 'node_modules', 'vitest', 'vitest.mjs')];

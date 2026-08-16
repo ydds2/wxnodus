@@ -109,6 +109,27 @@ describe('runtime TurnController characterization', () => {
     expect(getUiState().notice).toBeNull()
   })
 
+  it('缺省 ttl：未显式 kind 的通告 8s 自过期（toast 语义，动词槽归还就绪）', () => {
+    controller.showNotice({ id: 'notice-default', text: '[curator] 自动审查完成' })
+
+    expect(getUiState().notice?.text).toBe('[curator] 自动审查完成')
+
+    vi.advanceTimersByTime(7999)
+    expect(getUiState().notice?.text).toBe('[curator] 自动审查完成')
+    vi.advanceTimersByTime(1)
+    expect(getUiState().notice).toBeNull()
+  })
+
+  it('显式 sticky 通告常驻（直到 clearNotice）', () => {
+    controller.showNotice({ id: 'notice-sticky', key: 'credits.warn90', kind: 'sticky', text: '额度告警' })
+
+    vi.advanceTimersByTime(60_000)
+    expect(getUiState().notice?.text).toBe('额度告警')
+
+    controller.clearNotice('credits.warn90')
+    expect(getUiState().notice).toBeNull()
+  })
+
   it('archives incomplete todos without presenting them as completed', () => {
     controller.startMessage()
     controller.recordTodos([{ id: 'todo-1', content: '仍待验证', status: 'in_progress' }])
