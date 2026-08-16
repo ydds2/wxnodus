@@ -447,6 +447,9 @@ export function StatusRule({
   showCost,
   turnStartedAt,
   voiceLabel,
+  permLabel,
+  permTone,
+  pet,
   onSessionCountClick,
   onBalanceClick,
   onUsageClick,
@@ -504,14 +507,30 @@ export function StatusRule({
       ? busyFaceWidth + stringWidth(status)
       : showNotice
         ? noticeReserve
-        : stringWidth(status)
+        : stringWidth(status) + (permLabel ? stringWidth(`[${permLabel}] `) : 0)
+
+  // 宠物 5 列 + 1 空格——计入必须保留预算，pinned 区不挤压
+  const PET_RESERVE = pet ? 6 : 0
 
   const essentialWidth =
+    PET_RESERVE +
     stringWidth('─ ') +
     slotWidth +
     stringWidth(' │ ') +
     stringWidth(modelText) +
     (ctxLabel ? stringWidth(' │ ') + stringWidth(ctxLabel) : 0)
+
+  // 模式徽章语义着色（Kimi 同款：风险越高越醒目）
+  const permColor =
+    permTone === 'error'
+      ? t.color.error
+      : permTone === 'warn'
+        ? t.color.warn
+        : permTone === 'accent'
+          ? t.color.accent
+          : permTone === 'good'
+            ? t.color.statusGood
+            : t.color.muted
 
   const { leftWidth, rightWidth, separatorWidth } = statusRuleWidths(cols, cwdLabel, essentialWidth)
 
@@ -593,6 +612,7 @@ export function StatusRule({
             renders as a separate shrinkable box below so a long notice
             ellipsizes instead of crushing model │ ctx (R3-M7). */}
         <Box flexDirection="row" flexShrink={0}>
+          {pet}
           <Text color={t.color.accent} bold>{'▍'}</Text>
           <Text color={t.color.border}>{'─ '}</Text>
           {/* A22：busy 时 FaceTicker + 动态 stage 文本并排——"正在做什么"实时可见（此前 busy 槽位只有动画，状态文本被遮蔽） */}
@@ -606,6 +626,10 @@ export function StatusRule({
             </Box>
           ) : showHint || showNotice ? null : (
             <Text color={statusColor} bold={status === 'running…'} wrap="truncate-end">
+              {permLabel ? (
+                <Text color={permColor} bold>{`[${permLabel}]`}</Text>
+              ) : null}
+              {permLabel ? ' ' : null}
               {STATUS_LABEL[status] ?? status}
             </Text>
           )}
@@ -973,6 +997,11 @@ interface StatusRuleProps {
   /** token 区间段标签（📊 前缀已含） */
   usageLabel?: string
   voiceLabel?: string
+  /** 权限模式徽章标签（[MANUAL] 键帽——空闲槽位渲染，语义 tone 着色） */
+  permLabel?: string
+  permTone?: 'accent' | 'error' | 'good' | 'muted' | 'warn'
+  /** 左缘情绪宠物节点（BlackHolePet——简约挂载点，5 列 + 1 空格保留） */
+  pet?: ReactNode
   onSessionCountClick?: () => void
   /** 余额段点击（强制刷新） */
   onBalanceClick?: () => void

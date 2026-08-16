@@ -6,6 +6,7 @@ import { useGateway } from '../bridge/gatewayProvider.js'
 import type { AppLayoutProps } from '../bridge/interfaces.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../runtime/promptStore.js'
 import { clearSelectedMessage, $uiState } from '../runtime/viewStore.js'
+import { useTurnSelector } from '../runtime/flowStore.js'
 import { bgActiveCount, useBgSelector } from '../runtime/backgroundStore.js'
 import { INLINE_MODE, SHOW_FPS, TERMUX_TUI_MODE } from '../config/env.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
@@ -22,6 +23,7 @@ import { usageSegmentLabel } from '../lib/balanceStatus.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { GoodVibesHeart, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
+import { BlackHolePet, WelcomeCard, modeBadgeSpec, type PetMood } from './blackHolePet.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { Banner, Panel, SessionPanel } from './branding.js'
 import { BrandBar } from './brandBar.js'
@@ -433,10 +435,15 @@ const StatusRulePane = memo(function StatusRulePane({
   status
 }: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'> & { at: 'bottom' | 'top' }) {
   const ui = useStore($uiState)
+  // 宠物情绪：busy 吸积盘 / 审批被拒或错误通知坍缩 / 其余呼吸
+  const outcome = useTurnSelector(state => state.outcome)
 
   if (ui.statusBar !== at) {
     return null
   }
+
+  const perm = modeBadgeSpec(ui.info?.perm ?? 'smart')
+  const petMood: PetMood = ui.busy ? 'busy' : outcome === 'denied' || ui.notice?.level === 'error' ? 'error' : 'idle'
 
   return (
     <Box marginTop={at === 'top' ? 1 : 0}>
@@ -461,6 +468,9 @@ const StatusRulePane = memo(function StatusRulePane({
         onVoiceClick={actions.toggleVoiceMode}
         onCwdClick={() => patchOverlayState({ dirPicker: true })}
         onModelClick={() => patchOverlayState({ modelPicker: true })}
+        permLabel={perm.label}
+        permTone={perm.tone}
+        pet={<BlackHolePet mood={petMood} t={ui.theme} />}
         selectionHint={ui.selectionHint}
         sessionStartedAt={status.sessionStartedAt}
         showCost={ui.showCost}
@@ -496,6 +506,9 @@ export const AppLayout = memo(function AppLayout({
   return (
     <Shell {...shellProps}>
       <Box flexDirection="column" flexGrow={1}>
+        {/* 启动欢迎卡片：吸积盘 6 帧（1.5s）后自消散——仅 full 动效档且
+            WXNODUS_NO_INTRO 未设时出现（简约：只占启动一瞬，之后永不再现） */}
+        <WelcomeCard mode={ui.info?.perm ?? 'smart'} t={ui.theme} />
         {/* 单栏内容结构：主列直接放 transcript/agents——无外层 row 包装。
             （历史回归：row 包住整个 TranscriptPane 时 BrandBar 占满整行，
             ScrollBox 被挤成右缘 2 列窄条——即用户曾看到的「双栏」与

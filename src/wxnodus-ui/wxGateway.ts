@@ -637,6 +637,12 @@ export class GatewayClient extends EventEmitter {
     const input = `/${name}${arg ? ` ${arg}` : ''}`
     const r = await this.kernel.commandBus.execute(input)
 
+    // 命令可能改设置（/perm 切模式、/usage range、/key set…）——发布 session.info
+    // 让状态栏徽章/模型段等 UI 实时反映（buildInfo 内部带缓存，非高频路径）。
+    try {
+      this.publish({ type: 'session.info', payload: this.buildInfo() })
+    } catch { /* 发布失败不影响命令结果 */ }
+
     if (r.dispatch) {
       return { type: 'skill', name: r.dispatch.name, message: r.dispatch.message }
     }
@@ -2241,6 +2247,7 @@ export class GatewayClient extends EventEmitter {
 
     return {
       model: s.model ?? '',
+      perm: String(s.mode ?? 'smart'),
       cwd: this.kernel.cwd,
       skills,
       tools,

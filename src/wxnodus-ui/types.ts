@@ -169,6 +169,8 @@ export interface SessionInfo {
   lazy?: boolean
   mcp_servers?: McpServerStatus[]
   model: string
+  /** 权限模式（smart/auto/manual/plan/yolo/goal）——状态栏模式徽章数据源 */
+  perm?: string
   profile_name?: string
   reasoning_effort?: string
   release_date?: string
