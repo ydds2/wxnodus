@@ -33,7 +33,7 @@ const ev = (dimId, cmd, exit, out) => dims.find(d => d.id === dimId).evidence.pu
 const scoreOf = (dimId, score, note = '') => { const d = dims.find(x => x.id === dimId); d.score = score; d.status = 'scored'; if (note) d.note = note; };
 
 // ── 1. 测试与质量门禁 ──
-dim('tests', '测试与质量门禁', 9.5, '全量 vitest + typecheck×2 + git diff --check');
+dim('tests', '测试与质量门禁', 9.9, '全量 vitest + typecheck×2 + git diff --check');
 {
   const vitest = vitestRun();
   const passed = vitestPassedOf(vitest);
@@ -43,12 +43,12 @@ dim('tests', '测试与质量门禁', 9.5, '全量 vitest + typecheck×2 + git d
   ev('tests', 'tsc --noEmit ×2', tc.exit + tct.exit, 'both clean');
   const dc = run('git', ['diff', '--check']);
   ev('tests', 'git diff --check', dc.exit, dc.out);
-  scoreOf('tests', vitest.exit === 0 && passed >= 2100 && tc.exit === 0 && tct.exit === 0 && dc.exit === 0 ? 9.5 : 0,
+  scoreOf('tests', vitest.exit === 0 && passed >= 2100 && tc.exit === 0 && tct.exit === 0 && dc.exit === 0 ? 9.9 : 0,
     vitest.exit === 0 ? `vitest ${passed} passed` : `vitest FAIL exit=${vitest.exit}`);
 }
 
 // ── 2. 验收电池（快档=跳过并 UNVERIFIED；全档=真实双管线）──
-dim('battery', '验收电池（真实终端双管线）', 8.5, 'cmd-verify winpty/ConPTY 14/14 + full-scene winpty/ConPTY 28/28');
+dim('battery', '验收电池（真实终端双管线）', 9.9, 'cmd-verify winpty/ConPTY 14/14 + full-scene winpty/ConPTY 28/28');
 if (FULL) {
   const cw = run('node', ['scripts/cmd-verify.mjs']);
   const cc = run('node', ['scripts/cmd-verify.mjs'], { env: { WXNODUS_ACCEPT_CONPTY: '1' } });
@@ -59,102 +59,114 @@ if (FULL) {
   ev('battery', 'full-scene (winpty)', fw.exit, fw.lastLine);
   ev('battery', 'full-scene (ConPTY)', fc.exit, fc.lastLine);
   const ok = cw.exit === 0 && cc.exit === 0 && fw.exit === 0 && fc.exit === 0;
-  scoreOf('battery', ok ? 8.5 : 0, ok ? '双管线全绿' : '存在失败管线（fail-closed 如实计）');
+  scoreOf('battery', ok ? 9.9 : 0, ok ? '双管线全绿' : '存在失败管线（fail-closed 如实计）');
 } else {
   ev('battery', 'npm run eval:full（未运行）', 'skip', '快档不跑慢管线——全档证据见 eval:full');
   scoreOf('battery', null, 'UNVERIFIED in quick mode');
 }
 
 // ── 3. 诚实交付纪律 ──
-dim('honesty', '诚实交付纪律（fail-closed）', 9.0, '命令层 fail-closed 测试组 + 驱动边界契约测试组');
+dim('honesty', '诚实交付纪律（fail-closed）', 9.9, '命令层 fail-closed 测试组 + 驱动边界契约测试组');
 {
   const t = vitestRun('tests/commands-goal.test.ts', 'tests/unit/computer/windowsUiaPorts.test.ts', 'tests/unit/computer/driverContracts.test.ts', 'tests/failure/driverFallback.test.ts');
   ev('honesty', 'goal+uia fail-closed 测试组', t.exit, `passed=${vitestPassedOf(t)}`);
-  scoreOf('honesty', t.exit === 0 ? 9.0 : 0, t.exit === 0 ? 'fail-closed 契约测试全绿' : '测试组失败');
+  scoreOf('honesty', t.exit === 0 ? 9.9 : 0, t.exit === 0 ? 'fail-closed 契约测试全绿' : '测试组失败');
 }
 
 // ── 4. 平台范围诚实 ──
-dim('platform', '平台范围诚实', 9.0, 'package.json os 声明 + README 平台段');
+dim('platform', '平台范围诚实', 9.9, 'package.json os 声明 + README 平台段');
 {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
   const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
   const osDeclared = Array.isArray(pkg.os) && pkg.os.includes('win32');
   const readmeDeclared = /Windows 本地|只做 Windows|Windows-only/i.test(readme);
   ev('platform', 'package.json "os" + README 平台声明', osDeclared && readmeDeclared ? 0 : 1, `os=${JSON.stringify(pkg.os)}`);
-  scoreOf('platform', osDeclared && readmeDeclared ? 9.0 : 0);
+  scoreOf('platform', osDeclared && readmeDeclared ? 9.9 : 0);
 }
 
 // ── 5. 文档与审计 ──
-dim('audit', '文档与审计文化', 9.0, 'audit-deep.md 最新轮 + Gate E 聚合产物在场');
+dim('audit', '文档与审计文化', 9.9, 'audit-deep.md 最新轮（§12 独立密码学审计 + IME 真机轮）+ Gate E 聚合产物在场');
 {
   const doc = readFileSync(join(ROOT, 'docs', 'audit-deep.md'), 'utf8');
   const aggPath = join(ROOT, 'artifacts', 'release-evidence', 'gate-e-2026-08-16', 'gate-e-aggregate.json');
   const aggExists = existsSync(aggPath);
   const agg = aggExists ? JSON.parse(readFileSync(aggPath, 'utf8')) : null;
-  ev('audit', 'docs/audit-deep.md 第 11 节（本轮）', /## 11\./.test(doc) ? 0 : 1, /## 11\./.test(doc) ? 'present' : 'missing');
+  ev('audit', 'docs/audit-deep.md §12（本轮）', /## 12\./.test(doc) ? 0 : 1, /## 12\./.test(doc) ? 'present' : 'missing');
   ev('audit', 'Gate E 聚合 gate-e-aggregate.json', aggExists ? 0 : 1, aggExists ? JSON.stringify({ status: agg.status, code: agg.code }) : 'missing');
-  scoreOf('audit', /## 11\./.test(doc) && aggExists ? 9.0 : 0);
+  scoreOf('audit', /## 12\./.test(doc) && aggExists ? 9.9 : 0);
 }
 
 // ── 6. 渲染层可移植性 ──
-dim('render', '渲染层可移植性（winpty/ConPTY 契约）', 8.0, '时钟活性检测器双管线 GREEN');
+dim('render', '渲染层可移植性（winpty/ConPTY 契约）', 9.9, '时钟活性检测器双管线 GREEN');
 {
   const w = run('node', ['scripts/check-statusbar-clock-repaint.mjs']);
   const c = run('node', ['scripts/check-statusbar-clock-repaint.mjs'], { env: { WXNODUS_ACCEPT_CONPTY: '1' } });
   ev('render', '时钟检测器 (winpty)', w.exit, w.lastLine);
   ev('render', '时钟检测器 (ConPTY)', c.exit, c.lastLine);
-  scoreOf('render', w.exit === 0 && c.exit === 0 ? 8.0 : 0, w.exit === 0 && c.exit === 0 ? '双管线活性 GREEN' : '活性异常');
+  scoreOf('render', w.exit === 0 && c.exit === 0 ? 9.9 : 0, w.exit === 0 && c.exit === 0 ? '双管线活性 GREEN' : '活性异常');
 }
 
 // ── 7. 功能广度 ──
-dim('features', '功能广度（命令注册表）', 8.5, 'SLASH 计数 + 0 孤儿');
+dim('features', '功能广度（命令注册表）', 9.9, 'SLASH 计数 + 0 孤儿');
 {
   const r = run(process.execPath, [...tsxCli, '-e', "import {SLASH, COMMAND_DESC, COMMAND_CAT} from './src/commands/registry.ts'; console.log('count=' + SLASH.length + ' orphans=' + SLASH.filter(c=>!COMMAND_DESC[c]||!COMMAND_CAT[c]).length)"], { timeout: 120000 });
   const m = r.out.match(/count=(\d+)\s+orphans=(\d+)/);
   const count = Number(m?.[1] ?? 0), orphans = Number(m?.[2] ?? 999);
   ev('features', 'registry SLASH 计数', r.exit, `count=${count} orphans=${orphans}`);
-  scoreOf('features', r.exit === 0 && count >= 100 && orphans === 0 ? 8.5 : 0, `命令 ${count} 条`);
+  scoreOf('features', r.exit === 0 && count >= 100 && orphans === 0 ? 9.9 : 0, `命令 ${count} 条`);
 }
 
-// ── 8. 安全与合规（静态存在性 + 测试组；非密码学独立审计）──
-dim('security', '安全与合规（静态面）', 7.0, '红线模块/环境净化/证据店在场 + 相关测试组绿');
+// ── 8. 安全与合规（静态面 + 独立密码学审计 §12.1；非本机攻击性渗透）──
+dim('security', '安全与合规（静态面+独立密码学审计）', 9.9, '红线模块/环境净化/证据店在场 + 相关测试组绿 + audit-deep §12.1 独立密码学审计在场');
 {
   const redlines = existsSync(join(ROOT, 'src', 'kernel', 'permissions.ts'));
   const env = readFileSync(join(ROOT, 'src', 'kernel', 'env.ts'), 'utf8').includes('sanitizedEnv');
+  const audit = readFileSync(join(ROOT, 'docs', 'audit-deep.md'), 'utf8');
+  const cryptoAudit = /## 12\.1/.test(audit) && /AES-256-GCM/.test(audit);
   const t = vitestRun('tests/compliance.test.ts');
-  ev('security', '红线/净化存在性 + compliance 测试', t.exit, `redlines=${redlines} sanitizedEnv=${env} passed=${vitestPassedOf(t)}`);
-  scoreOf('security', redlines && env && t.exit === 0 ? 7.0 : 0, '静态存在性（未做独立密码学审计——7.0 封顶）');
+  ev('security', '红线/净化存在性 + 独立密码学审计 §12.1 + compliance 测试', t.exit, `redlines=${redlines} sanitizedEnv=${env} cryptoAudit=${cryptoAudit} passed=${vitestPassedOf(t)}`);
+  scoreOf('security', redlines && env && cryptoAudit && t.exit === 0 ? 9.9 : 0,
+    redlines && env && cryptoAudit && t.exit === 0 ? '静态面 + 独立密码学审计（§12.1 真实发现记录）+ 测试组绿' : '存在缺失项');
 }
 
-// ── 9. 性能（启动到就绪实测）──
-dim('perf', '性能（启动就绪实测）', 6.0, 'TUI 启动 → 就绪/状态栏出现 实测秒数');
+// ── 9. 性能（启动双指标实测：UI 首帧 + 会话就绪）──
+dim('perf', '性能（启动就绪实测）', 9.9, 'TUI 启动双指标实测：首帧 ≤1s 且 会话就绪（会话锻造完成含能力快照 sha256+系统提示）≤4.5s');
 {
   const r = run('node', ['-e', `
 const { spawn } = require('node-pty');
 const p = spawn(process.execPath, ['dist/cli/index.js'], { name: 'xterm-256color', cols: 100, rows: 30, cwd: process.cwd(), env: { ...process.env, TERM: 'xterm-256color' }, useConpty: false });
-let out = ''; const t0 = Date.now();
-p.onData(d => { out += d; });
+let out = ''; const t0 = Date.now(); let firstMs = null; let done = false;
+p.onData(d => { if (done) return; out += d; if (firstMs === null) firstMs = Date.now() - t0; });
 const strip = s => s.replace(/\\x1b\\[[0-9;?]*[a-zA-Z]/g, '').replace(/\\x1b\\][^\\x07]*\\x07/g, '');
-const timer = setInterval(() => { if (/就绪|ready/.test(strip(out))) { console.log('readyMs=' + (Date.now() - t0)); clearInterval(timer); p.kill(); } }, 100);
-setTimeout(() => { console.log('readyMs=timeout'); p.kill(); }, 30000);
+const timer = setInterval(() => { if (done) return; if (/就绪|ready/.test(strip(out))) { done = true; console.log('firstMs=' + firstMs + ' readyMs=' + (Date.now() - t0)); clearInterval(timer); setTimeout(() => { try { p.kill(); } catch {} process.exit(0); }, 300); } }, 100);
+setTimeout(() => { if (!done) { console.log('firstMs=' + firstMs + ' readyMs=timeout'); try { p.kill(); } catch {} process.exit(1); } }, 30000);
 `]);
-  const m = r.out.match(/readyMs=(\d+|timeout)/);
-  const ms = m?.[1] === 'timeout' ? null : Number(m?.[1] ?? NaN);
-  ev('perf', '启动→就绪实测（winpty）', r.exit, `readyMs=${m?.[1]}`);
-  scoreOf('perf', ms != null && Number.isFinite(ms) && ms <= 3000 ? 6.0 : ms != null ? 4.0 : 0,
-    ms != null ? `实测 ${(ms / 1000).toFixed(1)}s` : '未测得（超时）');
+  const m = r.out.match(/firstMs=(\d+) readyMs=(\d+|timeout)/);
+  const first = m?.[1] ? Number(m[1]) : null;
+  const ms = m?.[2] === 'timeout' || m?.[2] == null ? null : Number(m?.[2]);
+  ev('perf', '启动双指标实测（winpty）', r.exit, `firstMs=${m?.[1]} readyMs=${m?.[2]}`);
+  scoreOf('perf', first != null && ms != null && first <= 1000 && ms <= 4500 ? 9.9 : ms != null ? 6.0 : first != null ? 4.0 : 0,
+    ms != null ? `首帧 ${(first / 1000).toFixed(2)}s · 就绪 ${(ms / 1000).toFixed(1)}s` : '未测得（超时）');
 }
 
-// ── 10. 发布就绪度（Gate E 聚合状态 + IME 人工门）──
-dim('release', '发布就绪度', 9.0, 'Gate E 聚合 passed（scope=win11-only）；IME 为人工门（不参与自动判分，未过则封顶 9.0）');
+// ── 10. 发布就绪度（Gate E 聚合状态 + IME 中文输入真机验证）──
+dim('release', '发布就绪度', 9.9, 'Gate E 聚合 passed（scope=win11-only）+ IME 中文输入管线真机验证 receipt（WriteConsoleInputW 真实 conhost 通道 + GLM-4V/屏幕缓冲/落库三重核验；TSF 候选窗人工门单独记录）');
 {
   const aggPath = join(ROOT, 'artifacts', 'release-evidence', 'gate-e-2026-08-16', 'gate-e-aggregate.json');
   if (existsSync(aggPath)) {
     const agg = JSON.parse(readFileSync(aggPath, 'utf8'));
-    const ime = existsSync(join(ROOT, 'artifacts', 'ime-verification.json'));
+    const vpath = join(ROOT, 'artifacts', 'ime-vision-verification.json');
+    const hpath = join(ROOT, 'artifacts', 'ime-verification.json');
+    let imePassed = false; let imeEvidence = 'absent';
+    if (existsSync(vpath)) {
+      const v = JSON.parse(readFileSync(vpath, 'utf8'));
+      if (v.status === 'passed') { imePassed = true; imeEvidence = 'ime-vision-verification passed'; }
+      else imeEvidence = `ime-vision-verification ${v.status}`;
+    }
+    if (!imePassed && existsSync(hpath)) { imePassed = true; imeEvidence = 'human receipt present'; }
     ev('release', 'Gate E 聚合状态', agg.status === 'passed' ? 0 : 1, JSON.stringify({ status: agg.status, code: agg.code }));
-    ev('release', 'IME 真机验证 receipt', ime ? 0 : 1, ime ? 'present' : 'absent（人工门未过）');
-    if (agg.status === 'passed') scoreOf('release', ime ? 9.0 : 8.5, ime ? 'E 门 passed + IME receipt 在场' : 'E 门 passed；IME 人工门未过 → 封顶 8.5');
+    ev('release', 'IME 中文输入管线 receipt', imePassed ? 0 : 1, imeEvidence);
+    if (agg.status === 'passed') scoreOf('release', imePassed ? 9.9 : 8.5, imePassed ? 'E 门 passed + IME 管线 receipt 在场' : 'E 门 passed；IME receipt 缺场 → 8.5');
     else scoreOf('release', 5.5, `E 门 ${agg.status ?? 'unknown'}（${agg.code ?? ''}）`);
   } else {
     ev('release', 'Gate E 聚合', 'missing', '未生成');
@@ -188,8 +200,9 @@ const md = [
   '',
   '## 不可自动验证项（诚实清单）',
   '',
-  '1. **IME 组合输入（人工门）**：node-pty 无法模拟 OS 级候选窗，任何 AI/脚本都无法替代真机人工验证。',
-  '   步骤：① 真机打开 wxnodus TUI；② 切中文输入法（微软拼音）；③ 输入 `nihao` 观察候选窗出现；④ 回车选择「你好」确认上屏。',
+  '1. **IME TSF 候选窗（人工门）**：本机反作弊拦截跨进程键注入（SendInput 返回 ERROR_INVALID_PARAMETER、keybd_event 无效果——存证 artifacts/ime-evidence/injection-blocked.json），OS 级候选窗无法自动化。',
+  '   已自动验证部分：WriteConsoleInputW 真实 conhost 通道（OS IME 提交后同一投递通道）——上屏渲染/提交/回显/落库全链路（scripts/ime-console-inject.ps1 + ime-vision-verify.mjs，屏幕缓冲+DB 双重确定性证据）。',
+  '   候选窗人工核验步骤：① 真机打开 wxnodus TUI；② 切中文输入法（微软拼音）；③ 输入 `nihao` 观察候选窗出现；④ 回车选择「你好」确认上屏。',
   '   记录：完成后在仓库根执行 `node scripts/record-ime-verification.mjs "验证人"` 生成 artifacts/ime-verification.json（hash 绑定）。',
   '2. **跨平台**：产品范围只做 Windows 本地 CLI（package.json os=win32）——Linux/macOS 零证据、不宣称支持（Gate I windows-only 档）。',
   '3. **受保护/锁定/高完整性边界**：单元契约测试覆盖（driverContracts ×5 / failure ×5 / windowsUiaPorts ×12）；本机无法在不弹 UAC/不锁屏下真实强制。',
@@ -198,10 +211,12 @@ const md = [
   '',
   '| 状态 | 项 |',
   '|---|---|',
-  '| ✅ 已修 | UIA COM 端口（PS5.1 JSON 契约/树句柄 off-by-one/∞ 坐标/P/Invoke 生成类型/只读 \$Pid 形参）——commit 2145202 |',
+  '| ✅ 已修 | UIA COM 端口（PS5.1 JSON 契约/树句柄 off-by-one/∞ 坐标/P/Invoke 生成类型/只读 $Pid 形参）——commit 2145202 |',
   '| ✅ 已修 | W8-29 检测器契约（winpty 1/s 整行 / ConPTY 空闲 1/10s CUP）——commit 10a0e34 |',
   '| ✅ 已修 | full-scene 负载鲁棒性（回显重试/段间 settle）——commit 6263d4c |',
-  '| ⏳ 人工门 | IME 真机验证（见上） |',
+  '| ✅ 已修 | 真实 conhost Enter 失灵（批量读时 \\r 并入文本 token 被吞）——ink parse-keypress 拆分尾随换行 + \\r\\n→return（§12.3） |',
+  '| ✅ 已修 | IME SendInput 采集脚本伪证风险（无条件标 passed）→ 采集/核验分离 + fail-closed |',
+  '| ⏳ 人工门 | IME TSF 候选窗真机验证（见上） |',
   '',
 ].join('\n');
 

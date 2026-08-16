@@ -278,7 +278,17 @@ export function parseMultipleKeypresses(
         const resynthesized = '\x1b' + token.value
         keys.push(parseKeypress(resynthesized))
       } else {
-        keys.push(parseKeypress(token.value))
+        // Windows 真实 conhost（raw 模式）投递 Enter 为 \r；libuv 批量读会把同一轮
+        // 到达的按键并入一个 chunk（快打/WriteConsoleInputW 连写）——此时 \r 会与文本
+        // 拼成同一 token 被 parseKeypress 当普通输入吞掉（Enter 失灵）。拆出尾随换行
+        // 单独发 return，与逐键投递行为一致。
+        const cr = /^(.*?)(\r\n|\r|\n)$/.exec(token.value)
+        if (cr && cr[1]) {
+          keys.push(parseKeypress(cr[1]))
+          keys.push(parseKeypress(cr[2]))
+        } else {
+          keys.push(parseKeypress(token.value))
+        }
       }
     }
   }
@@ -728,7 +738,7 @@ function parseKeypress(s: string = ''): ParsedKey {
     return createNavKey(s, 'mouse', false)
   }
 
-  if (s === '\r' || s === '\n') {
+  if (s === '\r' || s === '\n' || s === '\r\n') {
     key.raw = undefined
     key.name = 'return'
   } else if (s === '\t') {

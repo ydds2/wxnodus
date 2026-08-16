@@ -131,3 +131,46 @@ describe('flush-boundary SGR mouse reassembly', () => {
     expect(key).toMatchObject({ name: 'wheelup' })
   })
 })
+
+describe('trailing newline in text chunk (Windows conhost batched read)', () => {
+  it('splits x\r into input + return', () => {
+    const [keys] = parseMultipleKeypresses(INITIAL_STATE, 'x\r')
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).toMatchObject({ name: 'x' })
+    expect(keys[1]).toMatchObject({ name: 'return' })
+  })
+
+  it('splits x\r\n into input + return (cooked-mode CRLF)', () => {
+    const [keys] = parseMultipleKeypresses(INITIAL_STATE, 'x\r\n')
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).toMatchObject({ name: 'x' })
+    expect(keys[1]).toMatchObject({ name: 'return' })
+  })
+
+  it('splits CJK text + trailing \r (WriteConsoleInputW burst)', () => {
+    const [keys] = parseMultipleKeypresses(INITIAL_STATE, '你好\r')
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).toMatchObject({ name: '' })
+    expect(keys[0]?.kind === 'key' && keys[0].raw).toBe('你好')
+    expect(keys[1]).toMatchObject({ name: 'return' })
+  })
+
+  it('lone \r stays a single return', () => {
+    const [keys] = parseMultipleKeypresses(INITIAL_STATE, '\r')
+    expect(keys).toHaveLength(1)
+    expect(keys[0]).toMatchObject({ name: 'return' })
+  })
+
+  it('lone \n stays a single return', () => {
+    const [keys] = parseMultipleKeypresses(INITIAL_STATE, '\n')
+    expect(keys).toHaveLength(1)
+    expect(keys[0]).toMatchObject({ name: 'return' })
+  })
+
+  it('plain text without newline stays untouched', () => {
+    const [keys] = parseMultipleKeypresses(INITIAL_STATE, 'ab')
+    expect(keys).toHaveLength(1)
+    expect(keys[0]).toMatchObject({ name: '' })
+    expect(keys[0]?.kind === 'key' && keys[0].raw).toBe('ab')
+  })
+})

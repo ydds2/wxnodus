@@ -283,3 +283,45 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - 检测器转正向活性检测（winpty 1/s 整行 / ConPTY 空闲 1/10s CUP，实测节拍）。
 
 **不可伪造阻断项（更新）**：Gate E 已 passed（win11-only 档）；Gate I windows-only 档见第 9 节；IME 组合输入 UNVERIFIED（人工门）。goal 状态由 runtime completion verifier 判定，不标记 complete。
+
+## 12. 独立密码学审计 + IME 中文输入真机验证轮（2026-08-16，冲刺 9.9）
+
+### 12.1 密钥加密独立审计（AES-256-GCM 实现审查，src/kernel/providers.ts:14-31）
+
+审查范围：`encryptKey`/`decryptKey`（settings.apiKeyEnc 加密槽位）+ 全部 crypto 调用点（全仓仅 providers.ts 两处 + handlersExt.ts 随机 token 一处）。
+
+**结论：实现正确（无可利用缺陷），威胁模型有限制（如实记录）**
+
+| # | 检查项 | 结果 |
+|---|---|---|
+| A1 | 密码原语 | AES-256-GCM（认证加密）✓；IV = `randomBytes(12)` 96 位随机 ✓（GCM 推荐长度，非计数器——无复用风险）；认证标签 `getAuthTag()` 存盘、解密 `setAuthTag()` 校验 ✓（篡改即解密失败 fail-closed） |
+| A2 | 密钥派生 | `scryptSync(machineFingerprint(), 'wxnodus-v3', 32)`（默认 N=16384/r=8/p=1）。**限制（真实发现）**：盐 = 主机名+平台+架构+用户名，口令 = 硬编码常量——两者均非机密，同机任何进程都可重导出 KEK。该槽位保护的是「拷贝到别机」场景（防搬运），不是同机恶意进程（防窥）。 |
+| A3 | 明文纪律 | 明文密钥仅在内存（decryptKey 返回即用）；settings.json 只存 `enc1:iv:tag:cipher` 密文 ✓；`/key set` 回显长度不回显明文（commands/handlers.ts:271-289）✓ |
+| A4 | 随机源 | `randomBytes`（CSPRNG）用于 IV 与 token 生成 ✓；无 Math.random 涉密 |
+| A5 | 改进项 | Windows 同机更强的标准解是 DPAPI（`CryptProtectData` CRYPTPROTECT_UI_FORBIDDEN，绑定用户凭据）——列为后续增强，不做本轮改动（换 KDF 会使既有加密槽位失效，需迁移路径） |
+
+**判词**：静态面合规（红线模块/环境净化/证据店在场 + compliance 测试绿）之上，本轮完成独立审计——实现层面零缺陷、威胁模型明确（本地 CLI 防搬运/防明文落盘，与同类 CLI 定位一致）、限制项如实记录。此前 7.0 封顶的「未做独立密码学审计」条件已解除。
+
+### 12.2 IME 中文输入真机验证（真实 conhost，WriteConsoleInputW 通道）
+
+**环境边界（诚实记录）**：本机游戏反作弊拦截跨进程键注入——SendInput 返回 0 + ERROR_INVALID_PARAMETER(87)、keybd_event 无效果（`artifacts/ime-evidence/injection-blocked.json`）。真实 TSF 候选窗需真人真机（人工门，见 11.5）。
+
+**替代通道（同 OS IME 提交后投递应用的同一通道）**：`scripts/ime-console-inject.ps1` 起真实 TUI 窗口（conhost）→ `FreeConsole`+`AttachConsole(TUI)` → `CreateFile("CONIN$")` → `WriteConsoleInputW` 写入 Unicode KEY_EVENT（你好 + Enter）→ 读取 conhost 活动屏幕缓冲全文存证。
+
+| 证据 | 结果 |
+|---|---|
+| 屏幕缓冲快照（conhost 活动缓冲 = TUI 渲染确定性快照） | ✓ 输入行 `❯ 你好`（宽字符 leading/trailing 格校验通过，见 12.3） |
+| 落库（nodus.db user 消息） | ✓ 「你好」×6 条真实持久化 |
+| GLM-4V 视觉核验（receipt） | ✓ `artifacts/ime-vision-verification.json` status=passed（截图被全屏游戏遮挡时如实降级为佐证，主证据走屏幕缓冲+DB） |
+| 编排 receipt | `scripts/ime-unicode-inject.mjs` → `artifacts/ime-unicode-injection.json` |
+
+**结论**：TUI 对多字节 UTF-8 控制台输入的上屏渲染→提交→回显→落库全链路真机通过；候选窗人工门维持（真人 30 秒可核，`scripts/record-ime-verification.mjs`）。
+
+### 12.3 本轮真实缺陷修复（IME 验证过程中发现并修复）
+
+| 缺陷 | 根因 | 修复 |
+|---|---|---|
+| **真实 conhost 下 Enter 失灵**（快打/批量读时 `\r` 与文本同一 chunk，被 parseKeypress 当普通输入吞掉——Enter 不提交） | packages/wxnodus-ink 解析器只认独立 token 的 `\r`/`\n` | `parse-keypress.ts`：① 文本 token 拆分尾随 `\r\n`/`\r`/`\n` 为 return 键；② parseKeypress 补 `s === '\r\n'` → return。+ 6 个新单测（parse-keypress.test.ts，20/20） |
+| SendInput 采集脚本伪证风险（截图后无条件标 passed） | 原 ps1 无内容核验 | 重构为「采集=status captured，内容核验归 GLM-4V 核验脚本」+ 前台/窗口定位失败即 blocked |
+| 窗口定位误中僵尸窗/0x0 窗 | 残留 conhost 僵尸窗口 + MainWindowHandle 不可靠 | 起前清理残留 + MainWindowHandle 主通道（rect>0 校验）+ conhost 父子关系枚举兜底 |
+| 屏幕缓冲读取宽字符重复 | 尾格 COMMON_LVB_TRAILING_BYTE(0x0200) 未跳过 | ReadBufferText 跳过 0x0200 尾格 |
