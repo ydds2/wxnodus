@@ -16,6 +16,7 @@ import type { Memory } from './memory.js';
 import { resolveDataDir } from './paths.js';
 import { estimateMessagesTokens, compactMessages } from './memory.js';
 import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx, type ToolDef } from './tools.js';
+import { resolveModelForChat } from './profiles.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
 import { isCompletionClaim, GOAL_DONE_MARK } from './completionClaim.js';
 import type { HookRunner } from './hooks.js';
@@ -345,12 +346,12 @@ export function createAgent(opts: AgentOptions) {
 
     const key = keyRes.key;
 
-    const { MODEL_CATALOG } = await import('./providers.js');
-    const { resolveDefaultModel, resolveDefaultBaseURL } = await import('./defaults.js');
-    // 有 key 即视为已配置：model/baseURL 缺失或非法（遗留命令串）时用默认，
-    // 不降级规则脑——否则 /key 配置后仍提示「未配置」或 API 模型名非法
+    const { resolveDefaultBaseURL } = await import('./defaults.js');
+    // 有 key 即视为已配置：model/baseURL 缺失时用默认，不降级规则脑
     const baseURL = resolveDefaultBaseURL(s);
-    const model = MODEL_CATALOG.some(m => m.modelId === s.model) ? s.model! : resolveDefaultModel(s);
+    // 根因修复：模型名校验放开——任意非空模型名（含中转站自定义名）直接可用；
+    // 仅空/缺失时回退档案默认（resolveModelForChat 单一事实源）
+    const model = resolveModelForChat(s);
     // 架构 P2：LLM 流式调用服务化（llmStream.ts）——SSE 解析/降级链/用量提取
     // 已抽离；agent 循环只消费结构化结果
     const { callLlmStream } = await import('./llmStream.js');

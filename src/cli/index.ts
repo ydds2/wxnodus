@@ -165,6 +165,9 @@ if (pre.mode === 'error') {
   // mem/memoryRepository 已由组合根装配（同一实例供影子写与 /memory 命令 memoryServiceFor 共用）。
   const { createMemoryService } = await import('../application/memoryService.js');
   const settings = config.get('settings') as { apiKeyEnc?: string; model?: string; baseURL?: string; mode?: string; theme?: string; thinking?: boolean; workspace?: string };
+  // 档案迁移：旧 apiKeyEnc/baseURL/model → providers[0]（备份原 settings.json）
+  const { migrateLegacyProviderSettings } = await import('../kernel/profiles.js');
+  migrateLegacyProviderSettings(config);
   // W7-00：主工作区动态指定（用户动态确定的项目文件夹）——cli(--workspace) > env(WXNODUS_WORKSPACE) >
   // persisted(settings.workspace) > cwd 默认；显式非法 fail-closed 绝不静默降级。
   // 文件操作/下载落盘/同化索引统一以 workspaceRoot 为边界根。
@@ -188,8 +191,8 @@ if (pre.mode === 'error') {
   // （"deepseek-reasoner --provider deepseek"）写进 model 字段，
   // 会导致 API 请求模型名非法而失败。
   if (settings.apiKeyEnc) {
-    const { MODEL_CATALOG } = await import('../kernel/providers.js');
-    if (!settings.model || !MODEL_CATALOG.some(m => m.modelId === settings.model)) {
+    // 根因修复：只补空值，不再把 catalog 外模型名强制回退默认（档案/中转站自定义名可用）
+    if (!settings.model || !String(settings.model).trim()) {
       settings.model = resolveDefaultModel({});
       config.setKey('settings', 'model', settings.model);
     }

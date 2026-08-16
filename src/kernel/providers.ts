@@ -78,6 +78,15 @@ export function resolveApiKey(
   env: NodeJS.ProcessEnv = process.env
 ): ApiKeyResolution {
   const provider = detectProvider(settings.baseURL);
+  // 档案密钥槽优先（profiles 体系）：按 activeProvider 档案的 key 槽归属
+  const profile = ((settings as any)?.providers ?? []).find((p: any) => p?.id === (settings as any)?.activeProvider);
+  if (profile?.key) {
+    const dec = decryptKey(profile.key);
+    if (dec) return { key: dec, source: 'enc', provider };
+    return { key: null, source: 'enc', provider, error: 'decrypt-failed', hint: `档案 ${profile.id} 密钥槽解密失败（机器环境变化？）——/key set <密钥> 重新配置` };
+  }
+  const profileEnvKey = profile?.id ? env[`WXNODUS_${String(profile.id).toUpperCase()}_KEY`] : undefined;
+  if (profileEnvKey?.trim()) return { key: profileEnvKey.trim(), source: 'env', provider };
   const providerKey = KNOWN_PROVIDER_KEYS.has(provider) ? env[`WXNODUS_${provider.toUpperCase()}_KEY`] : undefined;
   const genericKey = env.WXNODUS_API_KEY;
   const fromEnv = (providerKey ?? genericKey)?.trim();
