@@ -409,3 +409,16 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
   - **空闲 Ctrl+C 误杀会话**（缺陷 2）：`useKeyBindings.ts`——原直接 die()（pty 下曾渲染永久停摆），改为无操作 + 一行提示（Ctrl+D//quit 退出）——对齐 Claude Code 无害语义；busy 中断/有文本清行不变。
   - **丢字竞态复测**（缺陷 3/4）：ASCII 与 CJK 在 5ms/字符（超人类速度）双管线均零丢字——parse-keypress 批次读取修复（§12.3）已根治；电池 200ms 慢速保留为 CI 确定性余量（陷阱注释更新口径）。
 - **遗留清单**（ux-comparison.md §4）：diff 语法高亮、#/@ 提及、Shift+Tab 模式循环、Ctrl+R 历史搜索、Esc-Esc 语义与 Claude/Gemini 相反（wxnodus 为中断确认）、/cost 累计——按序追债。
+
+### 13.9 真实 cmd 环境 UX 审计（用户「体验真的很差」的实证根因）
+
+用户反馈「使用体验真的很差」——电池全绿但真实 cmd.exe（conhost，cmd 档）体验差。停用自评，改为**真实环境取证**：`scripts/cmd-audit.ps1`（真实窗口 + WriteConsoleInputW 驱动 + 屏幕缓冲/截图四帧），截图经 GLM-4V 识别（ZCode 会话不嵌图——deepseek-v4-pro 拒收 image_url，识别走 wxnodus 自身 glm-4v-flash）。
+
+- **取证结果**：启动/品牌面板/状态栏/CJK 输入/回复渲染全部正常（屏幕缓冲 + GLM 双重确认）；**但真实提交「hello」时 glm-4-flash 选中了演示插件工具 `example_greet`（/plugin new 脚手架产物）→ 弹出审批面板阻塞会话**——这正是「体验差」的实证根因：示例工具暴露给模型 + 廉价模型优先选低成本闲聊工具 + 写类工具审批阻塞 = 用户第一句话就卡住。
+- **修复（演示工具对模型隐藏）**：
+  - `ToolDef.demo` 标记 + `plugins.ts` 从 plugin.json `demo:true` 透传 + `/plugin new` 脚手架工具标 demo
+  - `agent.ts` 过滤：demo 标记 或 遗留 `example_` 前缀 → 不进模型 toolList（不注入 schema、不可调用）；`WXNODUS_INCLUDE_DEMO_TOOLS=1` 逃生门（plugin-smoke 等演示脚本）
+  - 用户现有 `data/plugins/example/plugin.json` 的 example_greet/example_echo 补标 demo:true（数据目录实时修复）
+  - plugin-smoke 两处陈旧断言修复（命令输出文本/审批面板中文文案——先于本轮已坏）+ 显式 process.exit 防挂起
+- **+2 单测**（demo 标记与 example_ 前缀不进 toolList / 逃生门恢复）kernel-agent 60/60。
+- **复测（真实 cmd）**：hello → 直接文本回复「你好！我是 WxNodus…」+ 状态回归就绪 + GLM 确认无视觉缺陷——审批阻塞路径消除。

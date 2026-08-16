@@ -397,6 +397,57 @@ describe('读工具结果缓存', () => {
   });
 });
 
+// ── 演示工具隐藏（真实 cmd 实测：example_greet 被模型选中触发审批阻塞会话）───
+describe('演示工具对模型隐藏', () => {
+  const def = (name: string, demo?: boolean) => ({
+    schema: { type: 'function' as const, function: { name, description: 'x', parameters: { type: 'object' as const, properties: {} } } },
+    danger: true,
+    ...(demo !== undefined ? { demo } : {}),
+    run: async () => 'ok',
+  });
+
+  it('demo:true 标记与遗留 example_ 前缀工具不进模型 toolList', async () => {
+    const seen: unknown[][] = [];
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-demo-hide',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      extraTools: {
+        example_greet: def('example_greet'), // 遗留示例插件前缀（无 demo 标记）
+        demo_greet: def('demo_greet', true), // 显式 demo 标记
+        real_tool: def('real_tool'), // 真实插件工具
+      },
+      callModel: async (req) => { seen.push(req.tools ?? []); return { type: 'text', content: '回答：正常。' }; },
+    });
+    const r = await agent.run('任务');
+    expect(r.ok).toBe(true);
+    const names = (seen[0] ?? []).map((t: any) => t?.function?.name as string);
+    expect(names).toContain('real_tool');
+    expect(names).not.toContain('example_greet');
+    expect(names).not.toContain('demo_greet');
+  });
+
+  it('WXNODUS_INCLUDE_DEMO_TOOLS=1 逃生门恢复演示工具（演示脚本专用）', async () => {
+    const prev = process.env.WXNODUS_INCLUDE_DEMO_TOOLS;
+    process.env.WXNODUS_INCLUDE_DEMO_TOOLS = '1';
+    try {
+      const seen: unknown[][] = [];
+      const agent = createAgent({
+        db, bus, mem, sessionId: 't-demo-open',
+        config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+        extraTools: { demo_greet: def('demo_greet', true), example_greet: def('example_greet') },
+        callModel: async (req) => { seen.push(req.tools ?? []); return { type: 'text', content: '回答：正常。' }; },
+      });
+      await agent.run('任务');
+      const names = (seen[0] ?? []).map((t: any) => t?.function?.name as string);
+      expect(names).toContain('demo_greet');
+      expect(names).toContain('example_greet');
+    } finally {
+      if (prev === undefined) delete process.env.WXNODUS_INCLUDE_DEMO_TOOLS;
+      else process.env.WXNODUS_INCLUDE_DEMO_TOOLS = prev;
+    }
+  });
+});
+
 // ── loop-goal 模式（Kimi Ralph 同款）───
 describe('loop-goal 模式', () => {
   it('goal：目标驱动自主循环直到 [GOAL_DONE]（多轮调用 + 标记剥离）', async () => {

@@ -1896,7 +1896,9 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         name,
         version: '0.1.0',
         description: `${name} 插件`,
-        tools: [{ name: `${name}_greet`, description: '打招呼', parameters: { who: { type: 'string', description: '对象' } } }],
+        // demo:true——脚手架演示工具对模型隐藏（「hello」被廉价模型选中触发审批阻塞，
+        // 真实 cmd 实测缺陷）；真实插件工具不标 demo
+        tools: [{ name: `${name}_greet`, description: '打招呼', demo: true, parameters: { who: { type: 'string', description: '对象' } } }],
         commands: ['hello'],
       }, null, 2), 'utf8');
       writeFileSync(join(dest, 'index.js'), `// ${name} 插件实现（ESM 模块）——完整 API 见 docs/plugin-api.md

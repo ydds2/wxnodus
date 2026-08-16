@@ -23,6 +23,10 @@ export interface PluginToolDecl {
   /** 危险声明（开放兼容）：缺省 true（插件视为外部代码），声明 false 则
    *  只读语义（smart/manual/plan 下不再恒需确认） */
   danger?: boolean;
+  /** 演示标记（/plugin new 脚手架工具自带）：demo 工具对模型隐藏（模型不注入
+   *  schema、不可调用）——示例插件工具曾对「hello」这类闲聊被廉价模型选中，
+   *  触发审批面板阻塞会话（真实 cmd 实测）；人工仍可经插件命令使用 */
+  demo?: boolean;
 }
 
 export interface PluginManifest {
@@ -147,6 +151,8 @@ export async function loadPlugin(dir: string, cwd: string, dataDir: string, extr
           parameters: { type: 'object', properties: decl.parameters ?? {}, required: [] },
         },
       },
+      // 演示工具标记透传（agent 侧对模型隐藏，见 agent.ts DEMO_TOOL_RE/includeDemoTools）
+      demo: decl.demo === true,
       // 插件工具默认视为外部代码（输出 untrusted 包裹，提示注入防护）；
       // 开放兼容：manifest 声明 danger:false 的插件工具获得只读语义
       danger: decl.danger !== false,

@@ -73,6 +73,8 @@ export interface ToolDef {
     function: { name: string; description: string; parameters: { type: 'object'; properties: Record<string, any>; required?: string[] } };
   };
   danger: boolean;
+  /** 演示工具标记（插件脚手架）：对模型隐藏（不注入 schema、不可调用）——见 agent.ts 过滤 */
+  demo?: boolean;
   run(args: Record<string, any>, ctx: ToolCtx): Promise<string>;
 }
 

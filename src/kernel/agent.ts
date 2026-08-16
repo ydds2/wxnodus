@@ -15,7 +15,7 @@ import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
 import { resolveDataDir } from './paths.js';
 import { estimateMessagesTokens, compactMessages } from './memory.js';
-import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx } from './tools.js';
+import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx, type ToolDef } from './tools.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
 import { isCompletionClaim, GOAL_DONE_MARK } from './completionClaim.js';
 import type { HookRunner } from './hooks.js';
@@ -121,8 +121,16 @@ function makeAbortSignal(): { promise: Promise<void>; resolve: () => void; abort
 export function createAgent(opts: AgentOptions) {
   // P1b：tools 可变——插件热重载（updateTools 增量合并，不重启进程、不覆盖先前注册）
   let extraTools = { ...(opts.extraTools ?? {}) };
+  // 演示工具隐藏（真实 cmd 实测缺陷：/plugin new 脚手架 example_greet 对「hello」被
+  // 廉价模型选中 → 审批面板阻塞会话）。demo:true 标记 + 遗留 example_ 前缀启发式
+  // （旧 plugin.json 无标记）一律不进模型工具集；WXNODUS_INCLUDE_DEMO_TOOLS=1 逃生门
+  // （plugin-smoke 等演示脚本用）。工具仍在注册表/命令侧可用（人工经插件命令调用）。
+  const DEMO_TOOL_RE = /^example_/;
+  const includeDemoTools = process.env.WXNODUS_INCLUDE_DEMO_TOOLS === '1';
   let tools = Object.fromEntries(
-    Object.entries({ ...coreTools(), ...extraTools }).filter(([n]) => !(opts.excludeTools ?? []).includes(n)),
+    Object.entries({ ...coreTools(), ...extraTools })
+      .filter(([n]) => !(opts.excludeTools ?? []).includes(n))
+      .filter(([n, t]) => includeDemoTools || (!(t as ToolDef).demo && !DEMO_TOOL_RE.test(n))),
   );
   const bus = opts.bus;
   let sessionId = opts.sessionId; // 可变：setSessionId 热切换（多会话）
