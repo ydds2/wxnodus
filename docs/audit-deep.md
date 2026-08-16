@@ -77,20 +77,22 @@
 3. 空闲态 Ctrl+C 渲染停摆 → 全程不盲发 Ctrl+C：先等就绪（分段作用域），仅当确实仍忙才中断。
 4. 200ms/字符键入（cmd-verify 实测稳定值）；命令末尾空格关补全面板再 Enter。
 
-检查数 25 → 29（新增：会话选择器 Esc 关闭、/help pager 关闭、/status pager 关闭、命令:状态回到 ready）。
+检查数 25 → 29（新增：会话选择器 Esc 关闭、/help pager 关闭、/status pager 关闭、命令:状态回到 ready）。本轮再 29 → 28：「提交:状态回到 ready」并入「命令:状态回到 ready」——同一状态栏契约的重复断言（waitFor 保留为 warm-up）。
 
 ### 7.3 W8-28 修复：渲染器行分隔显式 CRLF
 
 `packages/wxnodus-ink/src/ink/log-update.ts` 的 `NEWLINE` patch 内容 `'\n'` → `'\r\n'`（含 `renderFullFrame` 的 `lines.join('\n')`）。
 裸 `\n` 依赖终端 ONLCR 隐式回车（winpty/xterm 行为）；ConPTY 下 LF 只下移不归列，多行推进路径光标列漂移。显式 CRLF 在所有终端等价，冗余 CR 为 no-op。测试全量 2151 绿 + 三电池双管线回归通过。
 
-### 7.4 W8-29 新发现缺陷（未修，已建检测器）
+### 7.4 W8-29 根因更正：时钟自驱重绘正常——三项 RED 是断言与渲染契约不符（本轮实测更正，commit 04e320f）
 
-**状态栏时钟（SessionDuration/IdleSince 每秒 tick）不产生自驱重绘**——空闲 10s 零时钟帧（双管线一致，检测器 `scripts/check-statusbar-clock-repaint.mjs` RED）；机制定位：时钟子树文本更新未进 damage（blit/dirty 路径），帧渲染（spinner 300 字形/125 同步帧）不覆盖该 cell。相邻活动（转录重绘等）恰好覆盖状态栏行时时钟才更新。
+**本小节原判定作废（渲染缺陷不存在）**。本轮以 full-scene 失败转储（原始字节）实测两种管线的真实契约：
 
-- 活动态差异：ConPTY 下相邻活动不覆盖状态栏行 → full-scene「提交:状态回到 ready」「命令:状态回到 ready」「主屏幕:状态条在底部」三项确定性 RED（26/29 ×3）；winpty 下覆盖 → 29/29 绿。
-- 处置：三项断言保持 fail-closed 不放松——它们是 W8-29 的活动态检测器。修复 W8-29 后 ConPTY 应转 29/29。
-- 检测器用法：`node scripts/check-statusbar-clock-repaint.mjs`（winpty/ConPTY 均 RED=缺陷在场；修复后转 GREEN）。
+- **winpty**：时钟 tick 整行重绘状态栏（含「就绪」词）→ 词命中判据成立。
+- **ConPTY**：时钟每秒自驱重绘真实存在，但形态是 **CUP 改写**（`ESC[29;3xH<digit>`，逐秒逐 digit），**无 `\b`、无就绪词**；状态栏其余词（模型/目录/动词）只在启动或布局变更时全量绘制，diff 渲染不重发不变 cell。此前断言只认「就绪/ready 词」与「`\b` 改写」两种形态 → ConPTY 下三项确定性 RED。
+- 三项 RED 根因：**断言与渲染契约不符（脚本侧缺陷）**；检测器 `scripts/check-statusbar-clock-repaint.mjs` 的「空闲零时钟帧」前提同样被转储否定（逐秒 CUP tick 在场）。
+
+- 处置（本轮修正，已提交）：三项断言保持 fail-closed 不放松，但判据改为契约正确形态——`statusBarReady` 增加**原始字节 CUP 活性**（`strip` 会吞 CUP 序列，活性必须在原字节段上判，新增 `tailRawOf`）；「主屏幕:状态条在底部」加短轮询消除两次 tick 之间竞态；启动检查改就绪轮询（状态栏比横幅晚绘，横幅即快照致「状态初始化/状态条(模型)」误报）。修正后 ConPTY full-scene 28/28。
 
 ### 7.5 本轮验证矩阵（全部真实运行）
 
@@ -98,13 +100,13 @@
 |---|---|
 | typecheck / typecheck:tests / check:test-discovery / build | ✓ |
 | 全量 vitest | ✓ 296 files / 2151 passed / 0 failed / 10 skipped |
-| full-scene（winpty，fail-closed） | ✓ 29/29 ×3（重写后） |
+| full-scene（winpty，fail-closed） | ✓ 28/28 ×2（本轮；断言契约修正后，见 7.4） |
 | cmd-verify（winpty） | ✓ 14/14 |
 | cmd-sweep（winpty） | ✓ 120/120 + 9/9 |
-| full-scene（ConPTY，fail-closed） | 26/29 ×3（W8-29 三项 RED，诚实记录） |
+| full-scene（ConPTY，fail-closed） | ✓ 28/28（本轮；断言契约修正后，见 7.4） |
 | cmd-verify（ConPTY） | ✓ 14/14 |
 | cmd-sweep（ConPTY） | ✓ 120/120 + 9/9 |
-| W8-29 时钟检测器 | RED（双管线）——缺陷在场，检测器生效 |
+| W8-29 时钟检测器 | 结论作废——实测时钟自驱重绘在场（winpty 整行 / ConPTY CUP 改写），RED 是检测器与断言契约不符，非渲染缺陷 |
 | git diff --check | ✓（仅既有 CRLF 提示） |
 
 **不可伪造阻断项（不变）**：Gate E 物理 receipt（Win11/Win10 双机）blocked；Gate I（Linux/macOS worker）blocked；IME 组合输入 UNVERIFIED；协议 verification/evidence 事件待真实接入。goal 状态由 runtime completion verifier 判定，不标记 complete。
@@ -189,3 +191,36 @@
 - 全量 vitest：296 files / 2155 passed / 0 failed / 10 skipped（typecheck 零错误）。
 - 注：全量并行高负载下一次运行出现 1 failed（buildEvidenceDecision 1s verifier 超时 + execFileNoThrow
   时序用例）——隔离运行与空闲重跑全绿，判定为负载性抖动，非本轮改动引入。
+
+## 10. /goal 诚实交付 + 双 Esc 取消轮（2026-08-16，commit 04e320f）
+
+> 范围：计划一轮（5 文件改动 + 3 组新测试）——/goal 命令 fail-closed 验证、双 Esc 取消通道、内核 goalLoop 对齐。
+> 结论：全部实现并验证；顺带完成 W8-29 根因更正（7.4）与 full-scene 断言契约修正。
+
+### 10.1 /goal fail-closed（A22 诚实交付，KF-023 语义对齐）
+
+- 完成声明统一 `isCompletionClaim`（含 `[GOAL_DONE]`）+ `✓ 已完成`/`✅` 兼容标记。
+- 无产物声称完成 → 输出「未验证」、不判完成、不空转剩余轮次；有产物 → `verifyProject` 真实验证（启动→探活→重启→读回），失败追加警告继续；验证异常不再假绿（修掉 `catch { verified = true }` fail-open）。
+- `r.interrupted` → `cancelled=true` 提前退出；无 key 死分支去掉恒假 `!r.ok` 前置（`r.text.includes('未配置模型密钥')` 直接 break）。
+- `ctx.agent.run(prompt, { goalLoop: false })`——命令层自循环显式关闭内核 goal 模式内层循环，防 8×10 嵌套（内核 `run` 透传 `opts.goalLoop`，默认 undefined = 现行为，零回归）。
+
+### 10.2 双 Esc 取消（用户需求「按两次 Esc 取消」）
+
+- 纯函数 `src/wxnodus-ui/lib/escCancel.ts`：busy 首按武装（arm）→ 1.5s 窗口内二按确认（confirm）→ 超时/非 busy 复位；窗口同源 `INTERRUPT_COOLDOWN_MS`。
+- 接线 `useKeyBindings.ts`：现有 Esc 分支链之后 busy 判定；confirm 走 Ctrl+C 同款 `interruptTurn` 链路；非 busy/overlay 场景零行为变化（会话选择器 Esc 关闭等保持绿）。
+- `agent.goal` 事件补 `cancelled`（内核收尾/命令层/网关状态行「✕ goal 已取消」/事件适配/`BgGoal.cancelled` 摘要行「已取消（N/M 轮）」全链路）。
+
+### 10.3 验证矩阵（全部真实运行）
+
+| 门/电池 | 结果 |
+|---|---|
+| 全量 vitest | ✓ 298 files / 2165 passed / 0 failed / 10 skipped |
+| typecheck / typecheck:tests | ✓ |
+| git diff --check | ✓ |
+| cmd-verify（winpty） | ✓ 14/14 |
+| cmd-verify（ConPTY） | ✓ 14/14 |
+| full-scene（winpty，fail-closed） | ✓ 28/28 ×2 |
+| full-scene（ConPTY，fail-closed） | ✓ 28/28（断言契约修正后） |
+| 新测试 | commands-goal 4 + escCancel 5 + ui-background cancelled 映射 1，全绿 |
+
+**不可伪造阻断项（不变）**：Gate E 唯一阻塞项仍是 uia 场景（产品 UIA 真实 COM 端口缺失，见第 8 节）；Gate I windows-only 档见第 9 节；IME 组合输入 UNVERIFIED。goal 状态由 runtime completion verifier 判定，不标记 complete。
