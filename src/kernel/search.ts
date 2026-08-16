@@ -230,3 +230,42 @@ function setSearchCache(key: string, results: SearchResult[], engine: string): v
   }
   searchCache.set(key, { ts: Date.now(), results, engine });
 }
+
+// ── 搜索+内容（对标现代 coding 工具的「搜索即读」：一次拿回结果 + 正文）─────────
+export interface SearchResultWithContent extends SearchResult {
+  /** 抓取的正文（extractMainText 干净度优先提取；抓取失败时缺省） */
+  content?: string;
+  contentError?: string;
+}
+
+/**
+ * searchWebWithContent：搜索后对前 fetchTop 条结果抓取正文（每条 6s 超时、失败降级保留摘要）。
+ * 用途：/search --content——AI 多轮「搜索今天新闻」不用再手动 /claw 逐条读。
+ */
+export async function searchWebWithContent(
+  query: string,
+  opts: { maxResults?: number; fetchTop?: number; proxy?: string; engine?: 'auto' | 'duckduckgo' | 'bing'; contentLen?: number } = {}
+): Promise<{ ok: true; results: SearchResultWithContent[]; engine: string } | { ok: false; error: string }> {
+  const base = await searchWeb(query, opts);
+  if (!base.ok) return base;
+
+  const fetchTop = Math.max(0, opts.fetchTop ?? 3);
+  const contentLen = opts.contentLen ?? 2000;
+  const results: SearchResultWithContent[] = await Promise.all(
+    base.results.map(async (r, i) => {
+      if (i >= fetchTop) return r;
+      try {
+        const { safeFetchText } = await import('./ssrf.js');
+        const { extractMainText } = await import('./html.js');
+        const f = await safeFetchText(r.url, { maxBytes: 1_000_000, proxy: opts.proxy, timeoutMs: 6000 });
+        if ('error' in f) return { ...r, contentError: f.error };
+        const text = extractMainText(f.text, contentLen);
+        return text ? { ...r, content: text } : { ...r, contentError: '无可提取正文（JS 渲染页？可用 /claw 浏览器兜底）' };
+      } catch (e: any) {
+        return { ...r, contentError: String(e?.message ?? e).slice(0, 120) };
+      }
+    })
+  );
+
+  return { ok: true, results, engine: base.engine };
+}

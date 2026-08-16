@@ -73,3 +73,48 @@ export function looksLikeHtml(s: string): boolean {
   const t = String(s ?? '');
   return /<!doctype html|<\s*html[\s>]/i.test(t) || /<\s*(div|p|article|h[1-6]|li|ul|span|a)\b[\s>][\s\S]*?<\s*\/\s*(div|p|article|h[1-6]|li|ul|span|a)\s*>/i.test(t);
 }
+
+/**
+ * 正文提取（readability 式启发，与 htmlToText 互补）：
+ *   ① 剥离噪音块（script/style/noscript/template/svg/iframe/注释/nav/footer/header/aside/form）
+ *   ② 块级标签换行（保留段落结构）
+ *   ③ 行评分（长度 + 中英文标点密度 + CJK 密度——正文比导航/页脚得分高），取高分块
+ *   ④ 按原文顺序输出高分块（排序只为选块），实体解码
+ * 用途：/search --content、/claw、http_get 的正文干净度优先路径（导航/页脚/广告噪声不入结果）。
+ */
+export function extractMainText(html: string, maxLen = 6000): string {
+  let h = String(html ?? '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<template[\s\S]*?<\/template>/gi, ' ')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(nav|footer|header|aside|form)[\s>][\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<\/(p|div|section|article|li|h[1-6]|tr|blockquote|ul|ol)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n');
+
+  const lines = h
+    .replace(/<[^>]+>/g, ' ')
+    .split('\n')
+    .map(l => decodeHtmlEntities(l.replace(/\s+/g, ' ').trim()))
+    .filter(l => l.length > 0);
+
+  const score = (l: string): number => {
+    const punct = (l.match(/[，。！？；：、,.!?;:（）()《》"“”'']/g) ?? []).length;
+    const cjk = (l.match(/[\u4e00-\u9fff]/g) ?? []).length;
+    return l.length + punct * 8 + Math.min(cjk, 60);
+  };
+
+  // 选块：按分数降序取（预算内），输出保持原文顺序
+  const budget = maxLen;
+  const picked = new Set<string>();
+  let used = 0;
+  for (const l of [...lines].sort((a, b) => score(b) - score(a))) {
+    if (used + l.length > budget) continue;
+    picked.add(l);
+    used += l.length + 1;
+  }
+  return lines.filter(l => picked.has(l)).join('\n').slice(0, maxLen);
+}

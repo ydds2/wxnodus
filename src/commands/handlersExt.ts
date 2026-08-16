@@ -2336,13 +2336,14 @@ export const commands = {
     return '用法：/security status ｜ sudo on|off ｜ secret on|off ｜ all off';
   });
 
-  // /claw：网页抓取（SSRF 防护：形态/IPv6/DNS 重绑定/重定向逐跳）——真实 fetch + 正文文本提取
+  // /claw：网页抓取（SSRF 防护：形态/IPv6/DNS 重绑定/重定向逐跳）——真实 fetch + 正文提取
+  // P0-4：正文干净度优先（extractMainText）+ JS 渲染兜底（静态抓取几乎无正文 → Playwright 无头渲染）
   bus.register('/claw', async (args) => {
     const url = args.join(' ').replace(/^["']|["']$/g, '').trim();
-    if (!url) return '用法：/claw <URL>（网页抓取，SSRF 防护拦截内网）';
+    if (!url) return '用法：/claw <URL>（网页抓取，SSRF 防护拦截内网；JS 页自动浏览器兜底）';
     try {
       const { safeFetchText } = await import('../kernel/ssrf.js');
-      const { htmlToText } = await import('../kernel/html.js');
+      const { htmlToText, extractMainText } = await import('../kernel/html.js');
       // A20：消费 settings.proxy（原死配置接入）+ 响应体上限 1MB + 默认 UA
       const proxy = (ctx.config.get('settings') as any)?.proxy as string | undefined;
       const r = await safeFetchText(url, { maxBytes: 1_000_000, proxy });
@@ -2354,9 +2355,18 @@ export const commands = {
       // 状态码归因：4xx/5xx 页面正文（如 404 Not Found）不当作有效内容
       if (r.status >= 400) return `抓取失败：HTTP ${r.status}（${url}）——页面不可用或反爬拦截`;
       const html = r.text;
-      // 提取正文文本（共享解码器：完整实体解码——根治 &#236; 类乱码）
-      const text = htmlToText(html);
-      const body = text || '（页面无可提取文本，可能是 JS 渲染）';
+      // 正文提取（readability 式启发优先——导航/页脚/广告噪声不入结果；空则全量剥标签兜底）
+      let text = extractMainText(html);
+      if (!text) text = htmlToText(html);
+      // JS 渲染兜底：静态抓取几乎无正文（<200 字符）→ 走真实浏览器渲染拿正文
+      if ((!text || text.length < 200) && /^https?:\/\//i.test(url)) {
+        try {
+          const { browserNavigate } = await import('../kernel/browser.js');
+          const br = await browserNavigate(url);
+          if (br.ok && br.text && br.text.trim().length > text.length) text = br.text.trim();
+        } catch { /* 兜底失败不阻断——保持静态抓取结果 */ }
+      }
+      const body = text || '（页面无可提取文本，可能是 JS 渲染或反爬）';
       return `HTTP ${r.status}｜${html.length} 字节${guard.captcha ? '\n⚠ 检测到验证码页面（站点反爬——内容可能不可用）' : ''}\n${body.slice(0, 4000)}`;
     } catch (e: any) {
       return `抓取失败：${e?.message?.slice(0, 300) ?? e}`;
@@ -2364,6 +2374,7 @@ export const commands = {
   });
 
   // A20：联网搜索（自研 DDG+Bing 双引擎解析，无 API key；SSRF 防护复用）
+  // P0-4：--content [N] 搜索即读——对前 N 条结果抓取正文（对标现代 coding 工具的搜索+内容一体）
   bus.register('/search', async (args) => {
     // --engine auto|duckduckgo|bing：指定搜索引擎（默认 auto 双引擎回退）
     const engIdx = args.indexOf('--engine');
@@ -2372,12 +2383,24 @@ export const commands = {
       const e = String(args[engIdx + 1] ?? 'auto').toLowerCase();
       if (e === 'duckduckgo' || e === 'bing') engine = e;
     }
-    const q = args.filter((a, i) => a !== '--engine' && args[i - 1] !== '--engine').join(' ').trim();
-    if (!q) return '用法：/search <查询词> [--engine auto|duckduckgo|bing]（DuckDuckGo/Bing 网页搜索，自研解析）';
+    // --content [N]：抓取前 N 条结果正文（默认 3；--content 0 关闭）
+    const cIdx = args.indexOf('--content');
+    let withContent = false;
+    let fetchTop = 3;
+    if (cIdx >= 0) {
+      withContent = true;
+      const n = parseInt(String(args[cIdx + 1] ?? ''), 10);
+      if (Number.isFinite(n) && n >= 0) fetchTop = n;
+    }
+    const skip = (i: number) => args[i] === '--engine' || args[i] === '--content' || args[i - 1] === '--engine' || args[i - 1] === '--content';
+    const q = args.filter((_, i) => !skip(i)).join(' ').trim();
+    if (!q) return '用法：/search <查询词> [--content [N]] [--engine auto|duckduckgo|bing]（双引擎搜索；--content 抓取前 N 条正文）';
     try {
-      const { searchWeb } = await import('../kernel/search.js');
+      const { searchWeb, searchWebWithContent } = await import('../kernel/search.js');
       const proxy = (ctx.config.get('settings') as any)?.proxy as string | undefined;
-      const r = await searchWeb(q, { proxy, engine });
+      const r = withContent
+        ? await searchWebWithContent(q, { proxy, engine, fetchTop })
+        : await searchWeb(q, { proxy, engine });
 
       if (!r.ok) {
         return `搜索失败：${r.error}`;
@@ -2387,10 +2410,14 @@ export const commands = {
         return '搜索无结果';
       }
 
-      return `引擎：${r.engine}\n` +
-        r.results
-          .map((x, i) => `${i + 1}. ${x.title}\n   ${x.url}${x.snippet ? `\n   ${x.snippet}` : ''}`)
-          .join('\n');
+      const lines: string[] = [`引擎：${r.engine}`];
+      for (const [i, x] of r.results.entries()) {
+        lines.push(`${i + 1}. ${x.title}\n   ${x.url}${x.snippet ? `\n   ${x.snippet}` : ''}`);
+        const xc = x as { content?: string; contentError?: string };
+        if (xc.content) lines.push(`   ── 正文 ──\n   ${xc.content.replace(/\n/g, '\n   ')}`);
+        else if (xc.contentError) lines.push(`   ⚠ 正文抓取失败：${xc.contentError}`);
+      }
+      return lines.join('\n');
     } catch (e: any) {
       return `搜索失败：${e?.message?.slice(0, 300) ?? e}`;
     }

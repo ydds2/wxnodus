@@ -357,7 +357,7 @@ export function coreTools(): Record<string, ToolDef> {
     async run({ url }, ctx) {
       // SSRF 三层防护（src/kernel/ssrf.ts）：主机名形态 + DNS 解析校验 + 重定向逐跳
       const { safeFetchText } = await import('./ssrf.js');
-      const { htmlToText, looksLikeHtml } = await import('./html.js');
+      const { htmlToText, extractMainText, looksLikeHtml } = await import('./html.js');
       const r = await safeFetchText(String(url));
       if ('error' in r) return r.error;
       // 审查接线（授权存证）：外部访问自动留痕——scope=host，/consent list 可查
@@ -368,9 +368,9 @@ export function coreTools(): Record<string, ToolDef> {
       if (guard.block) return guard.block;
       // 状态码归因：4xx/5xx 正文不当作有效内容（404 页误导）
       if (r.status >= 400) return `请求失败：HTTP ${r.status}（页面不可用或反爬拦截）`;
-      // HTML 页面 → 正文文本（完整实体解码），否则原始响应——AI 拿到干净可消费的文本
+      // HTML 页面 → 正文文本（readability 式启发优先——导航/页脚噪声不入结果；空则全量剥标签兜底）
       if (looksLikeHtml(r.text)) {
-        const body = htmlToText(r.text, 8000);
+        const body = extractMainText(r.text, 8000) || htmlToText(r.text, 8000);
         return `HTTP ${r.status}｜页面正文${guard.captcha ? '\n⚠ 检测到验证码页面（站点反爬——内容可能不可用）' : ''}\n${body || '（页面无可提取文本，可能是 JS 渲染）'}`;
       }
       return `HTTP ${r.status}\n${r.text.slice(0, 8000)}`;

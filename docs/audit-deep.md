@@ -353,3 +353,13 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **启动就绪真优化（去串行化）**：main() 装配链（taskRunner/term/plugins/handlers/sessionStart/download/ssrf 共 12 个动态 import）由串行 await 改为一次 Promise.all 分组——就绪实测 **3.0-4.3s → 1.7s**（×3 中位，eval perf 探针同口径复测 1.7s）
 - **规则脑域覆盖 47 → 60**：+13 域（宠物/租车/招聘/捐赠/票务/家教/维修/志愿者/讲座/外卖/预约/租借/家政），零新增模具成本；`RULE_PATTERNS` 导出契约锁定（≥60）+ 13 命中用例（tests/build-spec.test.ts 21/21）
 - **IME TSF 候选窗人工门闭环**：真人真机输入落库（nodus.db id=3809「你好？」，全角问号为微软拼音转换特征）——`artifacts/ime-verification.json` 人工 receipt 生成（sha256 绑定 + DB/守望/屏幕缓冲证据标注）；候选窗为真人现场见证、守望 250ms 轮询未截到弹窗帧（如实标注）
+
+### 13.4 联网搜索+内容能力轮（对标现代 coding 工具）
+
+用户反馈：/search 只能拿标题+摘要，无法下载/获取网页内容——与现代 coding 工具的「搜索即读」差距明显。
+
+- **extractMainText（readability 式正文提取，src/kernel/html.ts）**：噪音块剥离（script/style/nav/footer/header/aside/form/iframe）→ 块级换行 → 行评分（长度+标点密度+CJK）→ 预算内取高分块按原文序输出——导航/页脚/广告噪声不入结果（+4 单测，kernel-html 17/17）
+- **searchWebWithContent（src/kernel/search.ts）**：搜索后对前 N 条结果并发抓正文（6s 超时/条，失败降级保留摘要）——`/search <q> --content [N]` 搜索即读
+- **/claw JS 渲染兜底**：静态抓取 <200 字符 → Playwright 无头渲染拿正文（复用既有 browserNavigate）；正文提取同样走 extractMainText
+- **http_get 工具**同步升级：正文干净度优先（extractMainText → htmlToText 兜底）
+- 真实网络冒烟：`/search 今天新闻 --content 1` → bing 引擎 8 条真实新闻 + 正文抓取成功（cctv/tophub 正文实测可读；toutiao 等 SPA 页如实返回可提取部分）

@@ -1,7 +1,7 @@
 // tests/kernel-html.test.ts — 共享 HTML 实体解码 / 正文抽取（搜索与 /claw 共用）
 import { describe, expect, it } from 'vitest'
 
-import { decodeHtmlEntities, htmlToText, looksLikeHtml } from '../src/kernel/html.js'
+import { decodeHtmlEntities, extractMainText, htmlToText, looksLikeHtml } from '../src/kernel/html.js'
 
 describe('decodeHtmlEntities — 完整实体解码', () => {
   it('命名实体', () => {
@@ -68,3 +68,40 @@ describe('looksLikeHtml — 启发式判断', () => {
     expect(looksLikeHtml('plain text')).toBe(false)
   })
 })
+
+describe('extractMainText — readability 式正文提取（P0-4 搜索即读）', () => {
+
+  it('剥离 nav/footer/script 噪音，保留正文段落', () => {
+    const html = `
+      <html><head><script>var a=1;</script><style>.x{}</style></head><body>
+      <nav><a>首页</a><a>关于</a><a>登录</a></nav>
+      <article>
+        <h1>今天的重要新闻</h1>
+        <p>今天上午，某科技公司发布了一款新产品，引发市场广泛关注。</p>
+        <p>分析师认为，该产品有望改变行业格局，未来前景值得期待。</p>
+      </article>
+      <footer>版权所有 · 联系我们 · 隐私政策</footer>
+      </body></html>`;
+    const text = extractMainText(html);
+    expect(text).toContain('今天的重要新闻');
+    expect(text).toContain('某科技公司发布了一款新产品');
+    expect(text).not.toContain('首页');
+    expect(text).not.toContain('版权所有');
+    expect(text).not.toContain('var a');
+  });
+
+  it('实体解码（&#236; / &amp;）', () => {
+    const text = extractMainText('<p>&amp;#236; 号字体渲染测试</p>');
+    expect(text).toContain('ì');
+  });
+
+  it('空输入/纯噪音返回空', () => {
+    expect(extractMainText('')).toBe('');
+    expect(extractMainText('<script>x</script><style>y</style>')).toBe('');
+  });
+
+  it('maxLen 预算内输出', () => {
+    const long = '<p>' + '正文内容'.repeat(500) + '</p>';
+    expect(extractMainText(long, 100).length).toBeLessThanOrEqual(100);
+  });
+});
