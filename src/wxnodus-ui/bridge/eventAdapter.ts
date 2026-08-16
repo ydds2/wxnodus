@@ -793,6 +793,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         patchBgState({
           goal: {
             active: Boolean(p.active),
+            cancelled: Boolean(p.cancelled),
             done: Boolean(p.done),
             maxRounds: Number(p.maxRounds ?? 10),
             round: Number(p.round ?? 1),

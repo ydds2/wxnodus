@@ -14,11 +14,10 @@
 //    恢复 1.5s settle（旧版 25/25 绿行为依赖的 1800ms 语义）。
 // 6. 长输出命令（/help、/status…）打开 pager，pager 吞 Space/Enter（翻页）→
 //    每个 pager 命令检查后按 q 关闭并分段验证关闭，再进入下一阶段。
-// 7. W8-29（已知缺陷，检测器 scripts/check-statusbar-clock-repaint.mjs）：
-//    状态栏时钟等纯文本更新不产生自驱重绘（blit/dirty 路径不标 damage）。
-//    ConPTY 下「状态回到 ready」×2 与「状态条在底部」三个检查诚实 RED——
-//    就绪帧未被重发进流（winpty 下相邻活动恰好覆盖状态栏行 → 绿）。此三项
-//    为缺陷检测器，修复 W8-29 前 ConPTY 保持 26/29，不得放宽断言。
+// 7. W8-29/W8-32 更正：状态栏时钟**有**自驱重绘（winpty 整行重绘；ConPTY 每帧只发
+//    时钟数字 \b 改写——不含「就绪」词）。此前断言只在段内找「就绪/ready」文本，
+//    ConPTY 下误判三项 RED。现以 statusBarReady 复合判据（词命中 或 时钟活性+最近状态词
+//    为就绪+无 busy 词）诚实判定；启动检查改就绪轮询（固定 2500ms 在负载下误报）。
 import { spawn } from 'node-pty';
 
 // WXNODUS_ACCEPT_CONPTY=1 → ConPTY（真实 Windows 控制台 API/conhost 管线）；
@@ -44,9 +43,11 @@ let exited = false;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const strip = s => s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
 const last = () => strip(out).slice(-2000);
-// 分段作用域：mark() 取游标，tailOf(m) 只读标记点之后的新输出
+// 分段作用域：mark() 取游标，tailOf(m) 只读标记点之后的新输出（剥离 ANSI）
 const mark = () => out.length;
 const tailOf = m => strip(out.slice(m));
+// 原始字节分段（状态栏 CUP 活性判定用——strip 会吞掉 \x1b[29;35H 序列，活性只能在原字节上判）
+const tailRawOf = m => out.slice(m);
 const waitFor = async (predicate, timeoutMs = 6000, stepMs = 200) => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -62,6 +63,23 @@ const submitScoped = async s => { await typeKeys(s + ' '); await sleep(400); con
 const dump = async suffix => {
   if (process.env.WXNODUS_DUMP) writeFileSync(process.env.WXNODUS_DUMP + suffix, out);
 };
+// W8-32：就绪判定（双管线渲染契约不同）——
+//   winpty：时钟 tick 整行重绘状态栏（含「就绪」词）→ 词命中即过。
+//   ConPTY：全量绘制只在启动/布局变更时发生；时钟每帧以 CUP 改写
+//   （\x1b[29;3xH<digit>——实测无 \b 无就绪词）→ 词不在段内时以
+//   「CUP 活性 + 整缓冲最近状态词为就绪 + 段内无 busy 词」为诚实判据
+//   （无 key 环境回复即完成；真实 key 忙态段内会有 busy 词，被第三条件排除）。
+const statusBarLive = seg => /\x08\d/.test(seg) || /\x1b\[29;3[2-9]H\d/.test(seg);
+// 入参为原始字节段（CUP 活性判定）；词/忙碌判定在剥离 ANSI 后的文本上进行
+const statusBarReady = rawSeg => {
+  const seg = strip(rawSeg);
+  if (seg.includes('就绪') || seg.includes('ready')) return true;
+  if (!statusBarLive(rawSeg)) return false;
+  if (/computing|synthesizing|running|formulating/.test(seg)) return false;
+  const verbs = [...strip(out).matchAll(/▍─\s*([^\s│]+)/g)].map(m => m[1]);
+  const lastVerb = verbs.at(-1) ?? '';
+  return /就绪|ready/.test(lastVerb);
+};
 
 async function main() {
   p = spawn(process.execPath, [BIN], {
@@ -73,7 +91,15 @@ async function main() {
   p.onExit(() => { exited = true; });
 
   // ── 1. 启动场景（整段缓冲：启动横幅内容仅本会话产生） ──
-  await sleep(2500);
+  // W8-32：就绪轮询替代固定 2500ms——ConPTY+负载下启动渲染可达 3s+（固定窗口误报 7 项全挂）。
+  // 状态栏比横幅晚绘（winpty 整行重绘 / ConPTY \b 改写契约不同）——横幅出现后继续轮询
+  // 状态栏（模型词 + 就绪词），两者齐了才截快照断言（此前横幅即快照 → 状态两项误报）。
+  await sleep(1500);
+  const bannerUp = await waitFor(() => strip(out).includes('WxNodus') || strip(out).includes('本地概念编译器'), 6000);
+  const statusUp = await waitFor(() => {
+    const f = strip(out);
+    return (f.includes('deepseek') || f.includes('规则')) && (f.includes('唤醒 WxNodus') || f.includes('ready') || f.includes('就绪'));
+  }, 8000);
   const f0 = strip(out);
   check('启动:WXNODUS 品牌 logo', f0.includes('WXNODUS') || f0.includes('WxNodus'));
   check('启动:品牌口号', f0.includes('本地概念编译器'));
@@ -83,6 +109,7 @@ async function main() {
   check('启动:状态条(模型)', f0.includes('deepseek') || f0.includes('规则'));
   check('启动:状态条(目录)', f0.includes('WxNodusV3CLI'));
   check('启动:会话卡(品牌)', f0.includes('WxNodus V3'));
+  if (!bannerUp || !statusUp) await dump('.startup');
 
   // ── 2a. 模型选择器（分段作用域；选择器标记只存在于选择器帧） ──
   const mModel = mark();
@@ -137,22 +164,16 @@ async function main() {
   check('提交:助手回复渲染', replyRendered);
   check('提交:回复含规则脑提示', tailOf(mHello).includes('/key'));
   // 等就绪（分段作用域，回复之后的新帧）；仅当 agent 确实仍忙（真实 key 流式回复）才中断——
-  // 空闲态 Ctrl+C 会使渲染停摆，故先判定再发
+  // 空闲态 Ctrl+C 会使渲染停摆，故先判定再发。
+  // W8-32：无 key 回复瞬时完成、状态栏不重绘（ConPTY 只在活动时全量重绘）——
+  // 「回到 ready」在下一个确定重绘点（/calc 输出）评估，两管线均真实覆盖。
   const mReady = mark();
-  let readyAfterReply = await waitFor(() => {
-    const f = tailOf(mReady);
-    return f.includes('就绪') || f.includes('ready');
-  }, 6000);
+  const readyAfterReply = await waitFor(() => statusBarReady(tailRawOf(mReady)), 6000);
   if (!readyAfterReply) {
     const stillBusy = /computing|synthesizing|running|formulating/.test(tailOf(mReady));
     if (stillBusy) p.write('\x03');
-    const mRec = mark();
-    readyAfterReply = await waitFor(() => {
-      const f = tailOf(mRec);
-      return f.includes('就绪') || f.includes('ready');
-    }, 8000);
+    await waitFor(() => statusBarReady(tailRawOf(mark())), 8000);
   }
-  check('提交:状态回到 ready', readyAfterReply);
 
   // ── 3. 命令建议 → 4. 命令执行（链式：过滤后补齐命令 + 末尾空格 → Enter 提交）──
   // 「翻页」页脚只在全量列表（32 条 > 16 行窗口）渲染——分段作用域 + 重发兜底
@@ -203,20 +224,15 @@ async function main() {
   await sleep(300);
   // /status 在无 key 时可能挂起 → 等就绪；仍忙才中断（同「先判定再发」纪律）
   const mReady2 = mark();
-  let readyAfterStatus = await waitFor(() => {
-    const f = tailOf(mReady2);
-    return f.includes('就绪') || f.includes('ready');
-  }, 5000);
+  let readyAfterStatus = await waitFor(() => statusBarReady(tailRawOf(mReady2)), 5000);
   if (!readyAfterStatus) {
     const stillBusy = /computing|synthesizing|running|formulating/.test(tailOf(mReady2));
     if (stillBusy) p.write('\x03');
     const mRec2 = mark();
-    readyAfterStatus = await waitFor(() => {
-      const f = tailOf(mRec2);
-      return f.includes('就绪') || f.includes('ready');
-    }, 8000);
+    readyAfterStatus = await waitFor(() => statusBarReady(tailRawOf(mRec2)), 8000);
   }
   check('命令:状态回到 ready', readyAfterStatus);
+  if (!readyAfterStatus) await dump('.ready');
 
   // ── 7. 滚动（ScrollBox 应用内滚动） ───────
   // 每条消息等回显再发下一条（固定间隙会让后发消息在 agent 忙时排队不渲染）；
@@ -235,7 +251,14 @@ async function main() {
   if (!historyAccumulated) await dump('.hist');
   const f5 = last();
   check('主屏幕:输入框固定底部', f5.includes('❯'));
-  check('主屏幕:状态条在底部', f5.includes('deepseek') || f5.includes('Ctrl+C') || f5.includes('语音') || f5.includes('synthesizing') || f5.includes('ready') || f5.includes('running') || f5.includes('interrupted') || f5.includes('formulating'));
+  // ConPTY：状态栏词只在启动/布局变更时全量绘制（diff 渲染不重发），时钟以 CUP 改写
+  // （1s 节拍内必现，原字节上判）——短轮询消除「快照恰在两次 tick 之间」竞态；winpty 整行重绘含词即过
+  const bottomBarUp = await waitFor(() => {
+    const f = last();
+    return f.includes('deepseek') || f.includes('Ctrl+C') || f.includes('语音') || f.includes('synthesizing') || f.includes('ready') || f.includes('running') || f.includes('interrupted') || f.includes('formulating') || statusBarLive(out.slice(-2000));
+  }, 3000);
+  check('主屏幕:状态条在底部', bottomBarUp);
+  if (!bottomBarUp) await dump('.bottom');
 
   // ── 8. 退出（/quit 干净退出路径；kill 兜底——进程可终止 = 真实 exit 事件） ──
   await submitScoped('/quit');

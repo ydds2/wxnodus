@@ -75,7 +75,7 @@ const BgSummaryLine = memo(function BgSummaryLine() {
   const parts: string[] = []
   if (jobs) parts.push(`${jobs} 任务`)
   if (terms) parts.push(`${terms} 终端`)
-  if (bg.goal?.active) parts.push(`goal ${bg.goal.round}/${bg.goal.maxRounds} 轮`)
+  if (bg.goal?.active) parts.push(bg.goal.cancelled ? `goal 已取消（${bg.goal.round}/${bg.goal.maxRounds} 轮）` : `goal ${bg.goal.round}/${bg.goal.maxRounds} 轮`)
   if (bgActiveCount(bg) === 0 || !parts.length) return null
 
   return (

@@ -8,6 +8,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSy
 import { appendAudit, saveCheckpoint, restoreCheckpoint, replaceSessionMessages } from '../store/db.js';
 import { parseSinceArg } from '../kernel/memory.js';
 import { estimateTokens } from '../kernel/memory.js';
+import { isCompletionClaim } from '../kernel/completionClaim.js';
 import { runGate } from '../build/gate.js';
 import { writeEvidence } from '../build/evidence.js';
 import { forgeMcpServer, forgeSkillDir } from '../forge/forge.js';
@@ -3315,35 +3316,47 @@ export const commands = {
     if (!goal) return '用法：/goal <目标> [最大轮数]（循环执行直到完成或达上限）';
     if (!ctx.agent) return 'goal 不可用：当前环境未提供 agent';
     const rounds: string[] = [];
+    const notes: string[] = [];
+    const cap = Math.min(maxIter, 8);
     let done = false;
-    for (let i = 1; i <= Math.min(maxIter, 8); i++) {
+    let cancelled = false;
+    for (let i = 1; i <= cap; i++) {
       // A24：goal 进度实时上报（UI 后台面板「目标循环」区——与内核 goal 模式同事件）
-      try { ctx.bus?.emit('agent.goal', { round: i, maxRounds: Math.min(maxIter, 8), done: false, text: goal.slice(0, 80) }); } catch { /* 事件失败不阻断 */ }
+      try { ctx.bus?.emit('agent.goal', { round: i, maxRounds: cap, done: false, cancelled: false, text: goal.slice(0, 80) }); } catch { /* 事件失败不阻断 */ }
       const prompt = `目标：${goal}\n当前进度：${rounds.at(-1) ? '已完成以下工作——' + rounds.at(-1)!.slice(0, 600) : '尚未开始'}。\n请继续推进目标。若目标已全部完成，以「✓ 已完成」开头输出总结；否则输出本轮完成的事项与下一步。`;
-      const r = await ctx.agent.run(prompt);
+      // goalLoop:false——/goal 命令自身循环，显式关闭内核 goal 模式内层循环（防 8×10 嵌套）
+      const r = await ctx.agent.run(prompt, { goalLoop: false });
       rounds.push(r.text);
-      if (r.text.includes('✓ 已完成') || r.text.includes('✅')) {
-        // A22 诚实交付：声称完成 ≠ 完成——若本轮产生了构建产物（projects/ 有项目），
-        // 跑真实验证（启动→探活→重启→读回）；验证通过才判完成，不靠模型自夸
-        let verified = true;
+      // 中断（Ctrl+C/Esc×2）：如实 cancelled 结束，不空转剩余轮次
+      if (r.interrupted) { cancelled = true; break; }
+      // 完成声明统一判定：内核 isCompletionClaim（含 [GOAL_DONE]）+ 兼容标记（✓ 已完成/✅）
+      if (isCompletionClaim(r.text) || r.text.includes('✓ 已完成') || r.text.includes('✅')) {
+        // A22 诚实交付：声称完成 ≠ 完成——有构建产物（projects/ 有项目）才跑真实验证
+        // （启动→探活→重启→读回）；验证通过才判完成，无产物/验证失败均不判完成（KF-023 语义）
+        const projectsDir = join(ctx.dataDir, 'projects');
+        const proj = existsSync(projectsDir) ? readdirSync(projectsDir).filter(n => n.startsWith('p')).sort().at(-1) : null;
+        if (!proj) {
+          notes.push('⚠ 声称完成但无产物可验证（未验证）——不判完成，诚实 incomplete');
+          break;
+        }
         try {
-          const projectsDir = join(ctx.dataDir, 'projects');
-          const proj = existsSync(projectsDir) ? readdirSync(projectsDir).filter(n => n.startsWith('p')).sort().at(-1) : null;
-          if (proj) {
-            const { verifyProject } = await import('../build/verify.js');
-            const vr = await verifyProject(join(projectsDir, proj));
-            verified = vr.status === 'ok';
-            if (!verified) rounds.push(`⚠ 声称完成但验证未通过：${vr.detail.slice(0, 160)}`);
-          }
-        } catch { verified = true; }
-        if (verified) { done = true; break; }
+          const { verifyProject } = await import('../build/verify.js');
+          const vr = await verifyProject(join(projectsDir, proj));
+          if (vr.status === 'ok') { done = true; break; }
+          notes.push(`⚠ 声称完成但验证未通过：${vr.detail.slice(0, 160)}`);
+        } catch (e: any) {
+          // fail-closed：验证异常绝不视为通过（此前 catch { verified = true } 假绿）
+          notes.push(`⚠ 声称完成但验证异常（未验证）：${e?.message?.slice(0, 160) ?? e}`);
+        }
       }
-      if (!r.ok && r.text.includes('未配置模型密钥')) break; // 无 key：不空转
+      if (r.text.includes('未配置模型密钥')) break; // 无 key：不空转（去掉恒假 !r.ok 前置）
     }
-    try { ctx.bus?.emit('agent.goal', { round: done ? rounds.length : Math.min(maxIter, 8), maxRounds: Math.min(maxIter, 8), done, text: rounds.at(-1)?.slice(0, 80) ?? '' }); } catch { /* 忽略 */ }
-    return lines(` 目标执行 ${done ? '✓ 完成' : `（${rounds.length} 轮）`} `, [
+    try { ctx.bus?.emit('agent.goal', { round: done || cancelled ? rounds.length : cap, maxRounds: cap, done, cancelled, text: rounds.at(-1)?.slice(0, 80) ?? '' }); } catch { /* 忽略 */ }
+    return lines(` 目标执行 ${done ? '✓ 完成' : cancelled ? '已取消' : `（${rounds.length} 轮）`} `, [
       ` 目标：${goal.slice(0, 80)}`,
       ...rounds.map((r, i) => ['', ` ── 第 ${i + 1} 轮 ──`, ...String(r).split('\n').slice(0, 12).map(l => ` ${l.slice(0, 110)}`)]).flat(),
+      ...notes,
+      ...(rounds.length >= cap && !done && !cancelled ? [' ⚠ 已达轮次上限仍未验证完成（诚实 incomplete）'] : []),
     ]);
   });
 

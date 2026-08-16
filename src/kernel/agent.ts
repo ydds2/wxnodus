@@ -1056,8 +1056,9 @@ export function createAgent(opts: AgentOptions) {
   // 模型自主规划/执行/自判完成（输出 [GOAL_DONE] 结束），直到完成或轮次上限；
   // 每轮 loop 独立回合（历史经 working 窗口延续上下文）
   const MAX_GOAL_ROUNDS = 10;
-  async function runWithGoalLoop(prompt: string, images?: Array<{ dataUrl: string; mime: string }>): Promise<AgentResult> {
-    if (mode !== 'goal') return loop(sessionId, prompt, { images });
+  async function runWithGoalLoop(prompt: string, images?: Array<{ dataUrl: string; mime: string }>, goalLoop?: boolean): Promise<AgentResult> {
+    // goalLoop:false——命令层自循环（/goal）显式关闭内核 goal 模式，防内外层嵌套（默认行为不变）
+    if (mode !== 'goal' || goalLoop === false) return loop(sessionId, prompt, { images });
     // KF-023：verifiedEffects 跨 goal 轮次累计——[GOAL_DONE] 声明须有 ≥1 个真实验证副作用才可 ok
     const rs = { verifiedEffects: 0 };
     const goalPrompt = `${prompt}\n\n（goal 模式：自主规划并持续执行直到目标全部完成。全部完成时回复末尾输出 ${GOAL_DONE_MARK}，未完成则继续执行。每轮都可以调用工具。）`;
@@ -1072,7 +1073,7 @@ export function createAgent(opts: AgentOptions) {
       result = await loop(sessionId, `（goal 模式第 ${rounds} 轮）继续执行直到目标全部完成，完成后输出 ${GOAL_DONE_MARK}。以上文历史为当前进度。`, { runState: rs });
     }
     const done = result.text.includes(GOAL_DONE_MARK);
-    bus.emit('agent.goal', { round: rounds, maxRounds: MAX_GOAL_ROUNDS, done, text: result.text.slice(0, 80) });
+    bus.emit('agent.goal', { round: rounds, maxRounds: MAX_GOAL_ROUNDS, done, cancelled: result.interrupted, text: result.text.slice(0, 80) });
     if (done) {
       // 转义方括号（正则字符类）——[GOAL_DONE] 必须按字面匹配
       const esc = GOAL_DONE_MARK.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1091,9 +1092,9 @@ export function createAgent(opts: AgentOptions) {
   };
 
   return {
-    async run(prompt: string, opts?: { images?: Array<{ dataUrl: string; mime: string }> }): Promise<AgentResult> {
+    async run(prompt: string, opts?: { images?: Array<{ dataUrl: string; mime: string }>; goalLoop?: boolean }): Promise<AgentResult> {
       resetDegradeIfNeeded();
-      return runWithGoalLoop(prompt, opts?.images);
+      return runWithGoalLoop(prompt, opts?.images, opts?.goalLoop);
     },
     spawnSubagent: spawnSub,
     // C1：abort 只作用于当前回合（若在跑）；空闲时置位无副作用

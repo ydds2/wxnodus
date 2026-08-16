@@ -114,6 +114,23 @@ describe('agent.goal 事件映射（gateway）', () => {
     const bgGoal = events.filter(e => e.type === 'background.goal')
     expect(bgGoal[1]!.payload).toMatchObject({ done: true, round: 5, maxRounds: 10 })
   })
+
+  it('cancelled → 状态行 ✕ goal 已取消 + background.goal 载荷带 cancelled', async () => {
+    const bus = createEventBus(dir)
+    const gw = makeGateway({ bus })
+    const events: any[] = []
+    gw.on('event', e => events.push(e))
+    gw.start() // attachBus：内核事件 → GatewayEvent 映射
+    gw.drain() // 订阅开启：后续事件直发而非缓冲
+
+    bus.emit('agent.goal', { round: 2, maxRounds: 8, done: false, cancelled: true, text: '被中断' })
+
+    const status = events.find(e => e.type === 'status.update' && e.payload?.kind === 'goal')
+    expect(status!.payload.text).toContain('✕ goal 已取消')
+
+    const bgGoal = events.find(e => e.type === 'background.goal')
+    expect(bgGoal!.payload).toMatchObject({ done: false, cancelled: true, round: 2, maxRounds: 8 })
+  })
 })
 
 describe('kernel jobs 事件 → background.jobs 即时推送（A24 第四类修复）', () => {

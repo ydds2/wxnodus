@@ -590,7 +590,7 @@ export type GatewayEvent =
   | { payload: { request_id: string; fields: Array<{ name: string; label?: string; kind: string }>; prompt: string }; session_id?: string; type: 'credential.form' }
   | { payload: { task_id: string; text: string }; session_id?: string; type: 'background.complete' }
   | {
-      payload?: { active?: boolean; done?: boolean; maxRounds?: number; round?: number; text?: string }
+      payload?: { active?: boolean; cancelled?: boolean; done?: boolean; maxRounds?: number; round?: number; text?: string }
       session_id?: string
       type: 'background.goal'
     }

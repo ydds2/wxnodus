@@ -20,6 +20,7 @@ import { $isBlocked, $overlayState, patchOverlayState } from '../runtime/promptS
 import { turnController } from '../runtime/flowController.js'
 import { clearSelectedMessage, showSelectionHint } from '../runtime/viewStore.js'
 import { writeClipboardText } from '../lib/clipboard.js'
+import { escCancelNext } from '../lib/escCancel.js'
 import { patchTurnState } from '../runtime/flowStore.js'
 import { getUiState } from '../runtime/viewStore.js'
 
@@ -96,6 +97,9 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   const wheelAccelRef = useRef(initWheelAccelForHost())
 
   const precisionWheelRef = useRef(initPrecisionWheel())
+
+  // 双 Esc 取消武装时间（busy 时第一次 Esc 记录，窗口内第二次 Esc 确认中断）
+  const escCancelArmedAtRef = useRef<number | null>(null)
 
   useEffect(() => () => clearTimeout(scrollIdleTimer.current ?? undefined), [])
 
@@ -466,6 +470,33 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // A19：Esc 取消消息选中（优先级低于 ink 选区——最近动作先清）。
     if (key.escape && getUiState().selectedMessage) {
       return clearSelectedMessage()
+    }
+
+    // 双 Esc 取消（用户需求）：busy 时第一次 Esc 武装，1.5s 窗口内第二次 Esc 确认中断
+    // （与 Ctrl+C 同链路）；非 busy 或超时复位并落到下方常规 Esc 语义——非 busy/overlay
+    // 场景零行为变化（overlay.sessions 等分支在上方已 return）。
+    if (key.escape && live.busy && live.sid) {
+      const decision = escCancelNext(
+        { armedAt: escCancelArmedAtRef.current },
+        { now: Date.now(), busy: live.busy }
+      )
+      if (decision === 'arm') {
+        escCancelArmedAtRef.current = Date.now()
+        showSelectionHint('再按 Esc 确认取消（1.5s）')
+
+        return
+      }
+      if (decision === 'confirm') {
+        escCancelArmedAtRef.current = null
+
+        return turnController.interruptTurn({
+          appendMessage: actions.appendMessage,
+          gw: gateway.gw,
+          sid: live.sid,
+          sys: actions.sys
+        })
+      }
+      escCancelArmedAtRef.current = null
     }
 
     if (key.upArrow && !cState.inputBuf.length) {

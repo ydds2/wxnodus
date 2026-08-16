@@ -242,12 +242,15 @@ export class GatewayClient extends EventEmitter {
         const round = Number(p?.round ?? 1)
         const maxRounds = Number(p?.maxRounds ?? 10)
         const done = Boolean(p?.done)
+        const cancelled = Boolean(p?.cancelled)
         const text = String(p?.text ?? '').slice(0, 120)
         const label = done
           ? `✓ goal 完成（${round}/${maxRounds} 轮）`
-          : `↻ goal 第 ${round}/${maxRounds} 轮`
+          : cancelled
+            ? `✕ goal 已取消（${round}/${maxRounds} 轮）`
+            : `↻ goal 第 ${round}/${maxRounds} 轮`
         this.publish({ type: 'status.update', payload: { kind: 'goal', text: label } })
-        this.publish({ type: 'background.goal', payload: { active: !done, round, maxRounds, done, text } })
+        this.publish({ type: 'background.goal', payload: { active: !done, round, maxRounds, done, cancelled, text } })
       },
       'agent.error': (p) => {
         this.running = false

@@ -33,6 +33,7 @@ export interface BgCron {
 
 export interface BgGoal {
   active: boolean
+  cancelled?: boolean
   done: boolean
   maxRounds: number
   round: number
