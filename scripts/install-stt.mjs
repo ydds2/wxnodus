@@ -37,8 +37,10 @@ async function download(url, dest, expectedSize) {
   const ws = createWriteStream(dest)
   await pipeline(
     Readable.fromWeb(res.body),
-    new (await import('node:stream')).Writable({
-      write(chunk, _enc, cb) {
+    // W8-31：进度记录器必须是 Transform（pipeline 中间段 Writable 类型非法——
+    // 实测 ERR_INVALID_ARG_TYPE 导致安装整体崩溃；此前从未真实执行过）
+    new (await import('node:stream')).Transform({
+      transform(chunk, _enc, cb) {
         got += chunk.length
         const pct = Math.min(100, Math.round((got / total) * 100))
         process.stdout.write(`\r  ${pct}% (${(got / 1024 / 1024).toFixed(0)}MB)`)

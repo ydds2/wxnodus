@@ -31,10 +31,15 @@ if ($riff -ne 'RIFF' -or $wave -ne 'WAVE' -or $fmt -ne 'fmt ' -or -not $dataFoun
   $out.reason = 'WAV header invalid'; $out | ConvertTo-Json -Depth 8; exit 0
 }
 
-$whisper = Get-Command whisper-cli.exe -ErrorAction SilentlyContinue
-$model = Join-Path $env:WXNODUS_DATA_DIR 'models\ggml-base.bin'
-if (-not $whisper -or -not (Test-Path $model)) { $out.reason = 'whisper/model unavailable'; $out | ConvertTo-Json -Depth 8; exit 0 }
-$transcript = & whisper-cli.exe -m $model -f $wavPath -otxt -nt 2>$null
+# whisper 解析与产品 canonical 布局一致（ecosystemStatus.ts/kernel/voice.ts）：
+# <dataDir>/voice/bin/Release/whisper-cli.exe + <dataDir>/voice/models/ggml-*.bin（自动发现）
+# 旧版误读 <dataDir>/models（install-stt 实际装到 voice/ 下）——场景契约与安装器对齐
+$dataDir = if ($env:WXNODUS_DATA_DIR) { $env:WXNODUS_DATA_DIR } else { (Join-Path (Get-Location) 'data') }
+$whisper = Get-Item (Join-Path $dataDir 'voice\bin\Release\whisper-cli.exe') -ErrorAction SilentlyContinue
+if (-not $whisper) { $whisper = Get-Command whisper-cli.exe -ErrorAction SilentlyContinue }
+$model = Get-ChildItem (Join-Path $dataDir 'voice\models') -Filter 'ggml-*.bin' -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $whisper -or -not $model) { $out.reason = 'whisper/model unavailable'; $out | ConvertTo-Json -Depth 8; exit 0 }
+$transcript = & $whisper.FullName -m $model.FullName -f $wavPath -otxt -nt 2>$null
 $out.transcriptChars = ($transcript -join "`n").Length
 
 # SAPI 回放

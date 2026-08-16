@@ -34,11 +34,24 @@ public static class DesktopProbe {
 # OS / Node（真实）
 $os = Get-CimInstance Win32_OperatingSystem
 $out.osVersion = $os.Version
-$out.osFamily = if ($os.Version -like '10.0.261*') { 'win11' } elseif ($os.Version -like '10.0.190*') { 'win10' } else { 'unknown' }
+# W6-07：26200 与 26100 同代际入矩阵（此前 26200 被判 unknown）
+$out.osFamily = if ($os.Version -like '10.0.26[12]*') { 'win11' } elseif ($os.Version -like '10.0.190*') { 'win10' } else { 'unknown' }
 $out.nodeVersion = (node --version 2>$null) -replace '^v', ''
 
 # 显示器（真实 GetDpiForMonitor 缩放——失败记 null 并诚实 blocked，绝不硬编码 1.0）
+# W8-30：读取前声明 PMv2（与产品 per-monitor-v2 契约同源）——非 PMv2 进程下读到的
+# 是系统 DPI 虚拟化值（本机 125% 显示器误报 1.0 的实测根因），声明后才是真实值
 Add-Type -AssemblyName System.Windows.Forms
+try {
+  Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class DpiDeclarePreflight {
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+}
+'@
+  $null = [DpiDeclarePreflight]::SetProcessDpiAwarenessContext([IntPtr](-4))  # PER_MONITOR_AWARE_V2
+} catch { }
 $monitors = @()
 try {
   Add-Type @'

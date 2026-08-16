@@ -80,7 +80,20 @@ try {
 } catch { $out.fixtures = [ordered]@{ lockSha256 = ''; sourceHashesValid = $false; artifactHashesValid = $false } }
 
 # 显示器（真实 GetDpiForMonitor 缩放——失败记 null，绝不硬编码 1.0）
+# W8-30：读取前声明 PMv2（与产品 per-monitor-v2 契约同源）——非 PMv2 进程下
+# GetDpiForMonitor 返回系统 DPI（本机 125% 显示器被误报 1.0 的实测根因），
+# 声明后才是真实逐显示器有效 DPI。
 Add-Type -AssemblyName System.Windows.Forms
+try {
+  Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class DpiDeclareProvision {
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+}
+'@
+  $null = [DpiDeclareProvision]::SetProcessDpiAwarenessContext([IntPtr](-4))  # PER_MONITOR_AWARE_V2
+} catch { }
 $monitors = @()
 try {
   Add-Type @'
