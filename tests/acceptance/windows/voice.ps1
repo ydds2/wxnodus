@@ -37,7 +37,11 @@ if ($riff -ne 'RIFF' -or $wave -ne 'WAVE' -or $fmt -ne 'fmt ' -or -not $dataFoun
 $dataDir = if ($env:WXNODUS_DATA_DIR) { $env:WXNODUS_DATA_DIR } else { (Join-Path (Get-Location) 'data') }
 $whisper = Get-Item (Join-Path $dataDir 'voice\bin\Release\whisper-cli.exe') -ErrorAction SilentlyContinue
 if (-not $whisper) { $whisper = Get-Command whisper-cli.exe -ErrorAction SilentlyContinue }
-$model = Get-ChildItem (Join-Path $dataDir 'voice\models') -Filter 'ggml-*.bin' -ErrorAction SilentlyContinue | Select-Object -First 1
+# 模型完整性校验：字节数与官方发布一致才可用（部分下载/损坏文件绝不通过——
+# 与 install-stt EXPECTED_SIZES 同源，诚实 blocked）
+$KNOWN_SIZES = @{ 'ggml-tiny.bin' = 75517318; 'ggml-base.bin' = 141974130; 'ggml-small.bin' = 487601967 }
+$model = Get-ChildItem (Join-Path $dataDir 'voice\models') -Filter 'ggml-*.bin' -ErrorAction SilentlyContinue |
+  Where-Object { $KNOWN_SIZES[$_.Name] -and $_.Length -eq $KNOWN_SIZES[$_.Name] } | Select-Object -First 1
 if (-not $whisper -or -not $model) { $out.reason = 'whisper/model unavailable'; $out | ConvertTo-Json -Depth 8; exit 0 }
 $transcript = & $whisper.FullName -m $model.FullName -f $wavPath -otxt -nt 2>$null
 $out.transcriptChars = ($transcript -join "`n").Length
