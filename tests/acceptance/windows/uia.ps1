@@ -10,8 +10,13 @@ $echoDir = Join-Path ([System.IO.Path]::GetTempPath()) ('wxnodus-uia-echo-' + [g
 [void](New-Item -ItemType Directory -Force -Path $echoDir)
 $out = [ordered]@{ scenarioId = 'uia'; status = 'blocked' }
 $fixture = $null
+$notepad = $null
+# 启动前快照已有 notepad 进程——清理时只杀本次新起的（绝不误杀用户自开的 notepad）
+$preNotepad = @(Get-Process notepad -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
 try {
   $fixture = Start-Process powershell -ArgumentList '-STA','-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'uia-fixture.ps1'),'-Out',$echoDir -PassThru
+  # Start-Process notepad（名字形式）在本机报「无法完全运行此命令」——必须全路径
+  $notepad = Start-Process (Join-Path $env:WINDIR 'System32\notepad.exe') -PassThru
   Start-Sleep -Seconds 3
   $env:WXNODUS_UIA_ECHO_DIR = $echoDir
   & npx.cmd tsx (Join-Path $ROOT 'scripts\uia-scenario-driver.ts') 2>&1 | Out-Null
@@ -33,6 +38,11 @@ try {
   $out.reason = $msg
 } finally {
   if ($fixture) { try { Stop-Process -Id $fixture.Id -Force -ErrorAction SilentlyContinue } catch {} }
+  # 只清本次新起的 notepad（launcher 模式 -PassThru pid 与窗口宿主 pid 不同——按 PID 差集）
+  $postNotepad = @(Get-Process notepad -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+  foreach ($np2 in $postNotepad) {
+    if ($preNotepad -notcontains $np2) { try { Stop-Process -Id $np2 -Force -ErrorAction SilentlyContinue } catch {} }
+  }
   try { Remove-Item -Recurse -Force $echoDir -ErrorAction SilentlyContinue } catch {}
 }
 $out.boundaries = [ordered]@{

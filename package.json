@@ -91,7 +91,9 @@
     "evidence:voice-capture": "node scripts/evidence-voice-capture.mjs",
     "evidence:windows-acceptance": "node scripts/evidence-windows-acceptance.mjs",
     "evidence:windows-ecosystem": "node scripts/evidence-windows-ecosystem.mjs",
-    "evidence:multimonitor-math": "node scripts/evidence-multimonitor-math.mjs"
+    "evidence:multimonitor-math": "node scripts/evidence-multimonitor-math.mjs",
+    "eval": "node scripts/eval-report.mjs",
+    "eval:full": "node scripts/eval-report.mjs --full"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",

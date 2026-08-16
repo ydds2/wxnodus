@@ -58,6 +58,19 @@ function Find-ElementBy($root, $id, $name) {
   $found = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
   return $found
 }
+function Find-ElementFlexible($win, $name, $id) {
+  # ct:<ControlType> 形态：按控件类型定位（宿主控件无 Name/AutomationId 时——如 notepad 的 RichEdit）
+  if ($name -like 'ct:*') {
+    $ctn = $name.Substring(3)
+    $ctc = $null
+    if ($ctn -eq 'Edit') { $ctc = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit) }
+    elseif ($ctn -eq 'Document') { $ctc = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Document) }
+    elseif ($ctn -eq 'Text') { $ctc = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Text) }
+    else { return $null }
+    return $win.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $ctc)
+  }
+  return Find-ElementBy $win $id $name
+}
 function Get-ElementInfo($el) {
   $rect = $el.Current.BoundingRectangle
   $rx = if ([double]::IsInfinity($rect.X) -or [double]::IsNaN($rect.X)) { 0 } else { [int]$rect.X }
@@ -156,7 +169,7 @@ if ($script:args[3] -and $script:args[3] -ne '') {
   $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
 }
 if ($win -eq $null) { $win = $root }
-$el = Find-ElementBy $win $script:args[2] $script:args[1]
+$el = Find-ElementFlexible $win $script:args[1] $script:args[2]
 if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
   try {
     $val = $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
@@ -168,6 +181,33 @@ if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
 }
 `.trim(),
   // WindowsUiaDriver 端口语义：每个端口单一能力（不跨模式兜底——兜底决策在驱动层按边界裁决）
+  read: `
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$win = $null
+if ($script:args[2] -and $script:args[2] -ne '') {
+  $cond = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NativeWindowHandleProperty, [int]$script:args[2])
+  $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
+}
+if ($win -eq $null) { $win = $root }
+$el = Find-ElementFlexible $win $script:args[0] $script:args[1]
+if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
+  try {
+    $val = $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    "{\`"ok\`":true,\`"method\`":\`"read\`",\`"value\`":\`"$($val.Current.Value -replace '\`"','')\`"}"
+  } catch { '{"ok":false,"reason":"no value pattern"}' }
+}
+`.trim(),
+  findct: `
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$win = $null
+if ($script:args[1] -and $script:args[1] -ne '') {
+  $cond = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NativeWindowHandleProperty, [int]$script:args[1])
+  $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
+}
+if ($win -eq $null) { $win = $root }
+$el = Find-ElementFlexible $win ('ct:' + $script:args[0]) ''
+if ($el -eq $null) { '{"ok":false,"reason":"control type not found"}' } else { Get-ElementInfo $el | ConvertTo-Json -Compress -Depth 3 }
+`.trim(),
   invoke: `
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 $win = $null
@@ -307,4 +347,15 @@ export function uiaSelectOnly(query: string, handle?: string): UiaResult {
 export function uiaMouseOnly(query: string, handle?: string): UiaResult {
   const parts = String(query ?? '').split('|');
   return runPs('mouse', [parts[0] ?? '', parts[1] ?? '', handle ?? '']);
+}
+
+/** 读取 ValuePattern 当前值（真实读回——验收端到端证据） */
+export function uiaRead(query: string, handle?: string): UiaResult {
+  const parts = String(query ?? '').split('|');
+  return runPs('read', [parts[0] ?? '', parts[1] ?? '', handle ?? '']);
+}
+
+/** 按 ControlType 找窗口下第一个元素（如 notepad 的 Edit——无 Name/Id 的宿主控件） */
+export function uiaFindByCt(ct: string, handle?: string): UiaResult {
+  return runPs('findct', [String(ct ?? ''), handle ?? '']);
 }
