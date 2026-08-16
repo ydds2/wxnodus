@@ -60,6 +60,18 @@ const typeKeys = async s => { for (const ch of s) { p.write(ch); await sleep(200
 const submit = async s => { await typeKeys(s); await sleep(400); p.write('\r'); };
 // 命令输出断言：先打完（含末尾空格关面板），mark 再 Enter——面板旧帧不落入断言段
 const submitScoped = async s => { await typeKeys(s + ' '); await sleep(400); const m = mark(); p.write('\r'); return m; };
+// 回显重试（负载鲁棒）：先等回显；仍缺再等 3s（渲染滞后）；再缺重发一次——
+// 重复无害于累积断言（msg0/1/2 均在即过），杜绝「吞键→后续消息排队不渲染」级联
+const submitEcho = async s => {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const m = mark();
+    await submit(s);
+    if (await waitFor(() => tailOf(m).includes(s), 8000)) return true;
+    await sleep(3000);
+    if (tailOf(m).includes(s)) return true;
+  }
+  return false;
+};
 const dump = async suffix => {
   if (process.env.WXNODUS_DUMP) writeFileSync(process.env.WXNODUS_DUMP + suffix, out);
 };
@@ -176,6 +188,8 @@ async function main() {
   }
 
   // ── 3. 命令建议 → 4. 命令执行（链式：过滤后补齐命令 + 末尾空格 → Enter 提交）──
+  // 负载鲁棒：段间 settle——busy 未清时键入会被吞（吞键级联到后续阶段）
+  await waitFor(() => statusBarReady(tailRawOf(mark())), 4000);
   // 「翻页」页脚只在全量列表（32 条 > 16 行窗口）渲染——分段作用域 + 重发兜底
   let sugOpened = false;
   for (let attempt = 0; attempt < 3 && !sugOpened; attempt++) {
@@ -212,10 +226,18 @@ async function main() {
   check('命令:/uuid 输出', uuidOut);
   if (!uuidOut) await dump('.uuid');
   const mStatus = await submitScoped('/status');
-  check('命令:/status 输出', await waitFor(() => {
+  let statusOut = await waitFor(() => {
     const f = tailOf(mStatus);
     return f.includes('模型：') || f.includes('状态');
-  }, 6000));
+  }, 6000);
+  if (!statusOut) { // 负载鲁棒：渲染滞后补观察窗（不重发——重发在半吞输入态会错成拼接命令）
+    await sleep(3000);
+    statusOut = await waitFor(() => {
+      const f = tailOf(mStatus);
+      return f.includes('模型：') || f.includes('状态');
+    }, 5000);
+  }
+  check('命令:/status 输出', statusOut);
   // 陷阱 6：/status 同样打开 pager（多行输出）——q 关闭 + 分段验证，否则 msg 阶段损坏
   const mStatusClose = mark();
   p.write('q');
@@ -235,13 +257,13 @@ async function main() {
   if (!readyAfterStatus) await dump('.ready');
 
   // ── 7. 滚动（ScrollBox 应用内滚动） ───────
+  // 负载鲁棒：段间 settle（busy 未清时键入被吞）
+  await waitFor(() => statusBarReady(tailRawOf(mark())), 4000);
   // 每条消息等回显再发下一条（固定间隙会让后发消息在 agent 忙时排队不渲染）；
   // 累积断言分段作用域自 msg0 提交起，杜绝会话面板旧帧（历史会话标题）误判
   const mHist = mark();
   for (let i = 0; i < 3; i++) {
-    const mM = mark();
-    await submit('msg' + i);
-    await waitFor(() => tailOf(mM).includes('msg' + i), 8000);
+    await submitEcho('msg' + i);
   }
   const historyAccumulated = await waitFor(() => {
     const f = tailOf(mHist);
