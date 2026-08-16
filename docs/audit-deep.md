@@ -363,3 +363,13 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **/claw JS 渲染兜底**：静态抓取 <200 字符 → Playwright 无头渲染拿正文（复用既有 browserNavigate）；正文提取同样走 extractMainText
 - **http_get 工具**同步升级：正文干净度优先（extractMainText → htmlToText 兜底）
 - 真实网络冒烟：`/search 今天新闻 --content 1` → bing 引擎 8 条真实新闻 + 正文抓取成功（cctv/tophub 正文实测可读；toutiao 等 SPA 页如实返回可提取部分）
+
+### 13.5 「工具跑完无输出」缺陷修复（模型对齐）
+
+用户复现：评估请求完成 35 个工具调用全部成功，但最终回合「没有输出结果」。
+
+- **根因**：本地会话处于 provider 错配循环——智谱密钥（zhipu 槽位）配 deepseek 系模型 → `provider-mismatch` 提示互相循环，模型消费提示文本后未产出实质回复（会话历史 DB 消息 3835-3846 循环印证）
+- **修复**：
+  - `MODEL_CATALOG` 补入 `GLM-4 Flash`（zhipu 系，`glm-4-flash`）——zhipu 密钥下有可用目录项可选（glm-4.5 实测 HTTP 429 余额不足，glm-4-flash HTTP 200）
+  - 本地配置对齐：`model=glm-4-flash` + zhipu baseURL，错配提示链条解除
+- **验证**：无头复现 `-p "评估 wxnodus CLI 并列出与同类型 CLI 的差距…"`（工具搜索对比资料）→ exit 0 + 实质最终文本（特性/差距结构化输出，非空）；错配路径的 hint 已指向「/key set 重配 或 /model 切换 provider 系模型」双出口
