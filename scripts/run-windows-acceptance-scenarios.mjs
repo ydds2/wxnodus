@@ -7,7 +7,7 @@
 // 诚实语义：任一场景真实执行失败/前置缺失 → 该场景记录 blocked（绝不硬编码 passed）
 import { spawnSync, spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), '..'));
