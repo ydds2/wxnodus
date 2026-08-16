@@ -12,7 +12,7 @@ interface ActionBoundary {
   targetIntegrity: IntegrityLevel;
   protectedUi: boolean;
 }
-interface UiaPorts {
+export interface UiaPorts {
   inspectBoundary(runtimeId: string): Promise<ActionBoundary>;
   invoke(runtimeId: string): Promise<boolean>;
   select(runtimeId: string): Promise<boolean>;

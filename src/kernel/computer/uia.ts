@@ -29,13 +29,18 @@ function Get-ElementTree($el, $depth, $maxDepth, $maxItems) {
   $name = [string]$el.Current.Name
   $id = [string]$el.Current.AutomationId
   $rect = $el.Current.BoundingRectangle
+  # WPF 虚拟化元素 BoundingRectangle 为 ∞/NaN——坐标钳制为 0（不抛错、不谎报）
+  $rx = if ([double]::IsInfinity($rect.X) -or [double]::IsNaN($rect.X)) { 0 } else { [int]$rect.X }
+  $ry = if ([double]::IsInfinity($rect.Y) -or [double]::IsNaN($rect.Y)) { 0 } else { [int]$rect.Y }
+  $rw = if ([double]::IsInfinity($rect.Width) -or [double]::IsNaN($rect.Width)) { 0 } else { [int]$rect.Width }
+  $rh = if ([double]::IsInfinity($rect.Height) -or [double]::IsNaN($rect.Height)) { 0 } else { [int]$rect.Height }
   $interact = $ct -in @('Button','Edit','ListItem','MenuItem','Hyperlink','CheckBox','RadioButton','ComboBox','TabItem','TreeItem','DataItem')
   $hasName = $name.Length -gt 0
   $hasId = $id.Length -gt 0
   if ($interact -or $hasName -or $hasId) {
     $script:out += [pscustomobject]@{
       ct = $ct; name = $name; id = $id
-      x = [int]$rect.X; y = [int]$rect.Y; w = [int]$rect.Width; h = [int]$rect.Height
+      x = $rx; y = $ry; w = $rw; h = $rh
       enabled = $el.Current.IsEnabled; offscreen = $el.Current.IsOffscreen
     }
     $script:count++
@@ -55,10 +60,14 @@ function Find-ElementBy($root, $id, $name) {
 }
 function Get-ElementInfo($el) {
   $rect = $el.Current.BoundingRectangle
+  $rx = if ([double]::IsInfinity($rect.X) -or [double]::IsNaN($rect.X)) { 0 } else { [int]$rect.X }
+  $ry = if ([double]::IsInfinity($rect.Y) -or [double]::IsNaN($rect.Y)) { 0 } else { [int]$rect.Y }
+  $rw = if ([double]::IsInfinity($rect.Width) -or [double]::IsNaN($rect.Width)) { 0 } else { [int]$rect.Width }
+  $rh = if ([double]::IsInfinity($rect.Height) -or [double]::IsNaN($rect.Height)) { 0 } else { [int]$rect.Height }
   return [pscustomobject]@{
     ct = ($el.Current.ControlType.ProgrammaticName -replace 'ControlType.','')
     name = [string]$el.Current.Name; id = [string]$el.Current.AutomationId
-    x = [int]$rect.X; y = [int]$rect.Y; w = [int]$rect.Width; h = [int]$rect.Height
+    x = $rx; y = $ry; w = $rw; h = $rh
     enabled = $el.Current.IsEnabled; offscreen = $el.Current.IsOffscreen
   }
 }
@@ -78,20 +87,20 @@ foreach ($w in $wins) {
     }
   }
 }
-,@($list) | ConvertTo-Json -Compress -Depth 3
+@{ windows = $list } | ConvertTo-Json -Compress -Depth 3
 `.trim(),
   tree: `
 $maxDepth = 10
 $maxItems = 120
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 $win = $null
-if ($script:args[1] -and $script:args[1] -ne '') {
-  $cond = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NativeWindowHandleProperty, [int]$script:args[1])
+if ($script:args[0] -and $script:args[0] -ne '') {
+  $cond = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NativeWindowHandleProperty, [int]$script:args[0])
   $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
 }
 if ($win -eq $null) { $win = [System.Windows.Automation.AutomationElement]::FocusedElement }
 Get-ElementTree $win 0 $maxDepth $maxItems
-,@($script:out) | ConvertTo-Json -Compress -Depth 3
+@{ elements = $script:out } | ConvertTo-Json -Compress -Depth 3
 `.trim(),
   find: `
 $root = [System.Windows.Automation.AutomationElement]::RootElement
@@ -158,9 +167,66 @@ if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
   }
 }
 `.trim(),
+  // WindowsUiaDriver 端口语义：每个端口单一能力（不跨模式兜底——兜底决策在驱动层按边界裁决）
+  invoke: `
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$win = $null
+if ($script:args[2] -and $script:args[2] -ne '') {
+  $cond = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NativeWindowHandleProperty, [int]$script:args[2])
+  $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
+}
+if ($win -eq $null) { $win = $root }
+$el = Find-ElementBy $win $script:args[1] $script:args[0]
+if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
+  try {
+    $invoke = $el.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+    $invoke.Invoke()
+    '{"ok":true,"method":"invoke"}'
+  } catch { '{"ok":false,"reason":"no invoke pattern"}' }
+}
+`.trim(),
+  select: `
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$win = $null
+if ($script:args[2] -and $script:args[2] -ne '') {
+  $cond = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NativeWindowHandleProperty, [int]$script:args[2])
+  $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
+}
+if ($win -eq $null) { $win = $root }
+$el = Find-ElementBy $win $script:args[1] $script:args[0]
+if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
+  try {
+    $sel = $el.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+    $sel.Select()
+    '{"ok":true,"method":"select"}'
+  } catch { '{"ok":false,"reason":"no selection pattern"}' }
+}
+`.trim(),
+  mouse: `
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$win = $null
+if ($script:args[2] -and $script:args[2] -ne '') {
+  $cond = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NativeWindowHandleProperty, [int]$script:args[2])
+  $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
+}
+if ($win -eq $null) { $win = $root }
+$el = Find-ElementBy $win $script:args[1] $script:args[0]
+if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
+  $rect = $el.Current.BoundingRectangle
+  $script:centerX = [int]($rect.X + $rect.Width / 2)
+  $script:centerY = [int]($rect.Y + $rect.Height / 2)
+  $sig = '[DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, int dwExtraInfo);'
+  if (-not ('WxNodus.WxUiaMouse' -as [type])) { Add-Type -MemberDefinition $sig -Name WxUiaMouse -Namespace WxNodus }
+  $moved = [WxNodus.WxUiaMouse]::SetCursorPos($script:centerX, $script:centerY)
+  [WxNodus.WxUiaMouse]::mouse_event(0x0002, 0, 0, 0, 0)
+  [WxNodus.WxUiaMouse]::mouse_event(0x0004, 0, 0, 0, 0)
+  if (-not $moved) { '{"ok":false,"reason":"mouse fallback failed: SetCursorPos"}' }
+  else { "{\`"ok\`":true,\`"method\`":\`"mouse\`",\`"x\`":$script:centerX,\`"y\`":$script:centerY}" }
+}
+`.trim(),
 };
 
-function runPs(action: string, argList: string[]): UiaResult {
+export function runPs(action: string, argList: string[]): UiaResult {
   // 审查修复：PowerShell 5.1 -Command 模式附加参数不进 $args（被当独立命令执行）——
   // 参数改为内嵌脚本（单引号数组语法，单引号双写转义，中文安全），$script:args 读取
   const psArgs = argList.map(a => `'${String(a ?? '').replace(/'/g, "''")}'`).join(',');
@@ -174,7 +240,10 @@ function runPs(action: string, argList: string[]): UiaResult {
   const lastLine = raw.split('\n').filter(l => l.trim()).pop() ?? '';
   try {
     const j = JSON.parse(lastLine);
-    if (Array.isArray(j)) return { ok: true, elements: j };
+    // 确定性契约：windows/tree 动作显式对象字段（PS 5.1 ConvertTo-Json 对裸数组的序列化形状不定）
+    if (Array.isArray(j?.windows)) return { ok: true, windows: j.windows as unknown as UiaWindow[] };
+    if (Array.isArray(j?.elements)) return { ok: true, elements: j.elements as unknown as UiaElement[] };
+    if (Array.isArray(j)) return { ok: true, elements: j as unknown as UiaElement[] }; // 兼容旧形态
     if (j?.ok === false) return { ok: false, reason: j.reason ?? 'UIA 未找到元素' };
     return { ok: true, element: j };
   } catch {
@@ -186,7 +255,7 @@ function runPs(action: string, argList: string[]): UiaResult {
 export function uiaWindows(): UiaResult {
   const r = runPs('windows', []);
   if (!r.ok) return r;
-  const wins = (r.elements ?? []) as unknown as UiaWindow[];
+  const wins = (r.windows ?? []) as unknown as UiaWindow[];
   return { ok: true, windows: wins.filter(w => w.name && w.name !== 'Program Manager') };
 }
 
@@ -219,4 +288,23 @@ export function uiaType(text: string, query: string, handle?: string): UiaResult
   }
   const parts = String(query ?? '').split('|');
   return runPs('type', [t, parts[0] ?? '', parts[1] ?? '', handle ?? '']);
+}
+
+// ── WindowsUiaDriver 端口专用（单能力，无跨模式兜底——兜底决策在驱动层按边界裁决）──
+/** 仅 InvokePattern（失败不回落 Selection/坐标） */
+export function uiaInvokeOnly(query: string, handle?: string): UiaResult {
+  const parts = String(query ?? '').split('|');
+  return runPs('invoke', [parts[0] ?? '', parts[1] ?? '', handle ?? '']);
+}
+
+/** 仅 SelectionItemPattern（失败不回落） */
+export function uiaSelectOnly(query: string, handle?: string): UiaResult {
+  const parts = String(query ?? '').split('|');
+  return runPs('select', [parts[0] ?? '', parts[1] ?? '', handle ?? '']);
+}
+
+/** 仅坐标鼠标点击（SetCursorPos + mouse_event 真实按下/抬起——坐标兜底端口） */
+export function uiaMouseOnly(query: string, handle?: string): UiaResult {
+  const parts = String(query ?? '').split('|');
+  return runPs('mouse', [parts[0] ?? '', parts[1] ?? '', handle ?? '']);
 }

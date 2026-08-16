@@ -1098,7 +1098,21 @@ export function coreTools(): Record<string, ToolDef> {
       return `已输入 ${String(text ?? '').length} 字符（${(r.element as any)?.method ?? 'uia'}）`;
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, computer_observe: computerObserve, computer_uia_windows: uiaWindowsTool, computer_uia_tree: uiaTreeTool, computer_uia_find: uiaFindTool, computer_uia_click: uiaClickTool, computer_uia_type: uiaTypeTool, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
+  // 边界裁决动作（Gate E 真实端口）：每动作重证边界（交互/解锁/Default 桌面/完整性/受保护 UI），
+  // 通过后 Invoke→Selection→坐标兜底逐级尝试；边界不满足 fail-closed，绝不回落坐标
+  const uiaActTool: ToolDef = {
+    schema: { type: 'function', function: { name: 'computer_uia_act', description: '边界裁决的 UIA 动作：每动作重证会话边界（交互/解锁/Default 桌面/目标完整性/受保护 UI），InvokePattern→SelectionItem→坐标兜底逐级尝试；受保护/锁定/高完整性目标 fail-closed 绝不坐标回落。定位语法 <名称>|<AutomationId>|<窗口句柄>（后两者可省）。', parameters: { type: 'object', properties: { query: { type: 'string', description: '<名称>|<AutomationId>|<窗口句柄>' } }, required: ['query'] } } },
+    danger: true,
+    async run({ query }) {
+      const { createWindowsUiaPorts } = await import('../infrastructure/computer/windowsUiaPorts.js');
+      const { WindowsUiaDriver } = await import('../infrastructure/computer/windowsUiaDriver.js');
+      const driver = new WindowsUiaDriver(createWindowsUiaPorts());
+      const r = await driver.act({ runtimeId: String(query ?? ''), action: 'activate' }, {}, AbortSignal.timeout(30000));
+      if (!r.ok) return `被阻断：${r.error.code}（边界/模式不满足——不回落坐标）`;
+      return `已动作（receipt ${r.value.receiptId}）`;
+    },
+  };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, computer_observe: computerObserve, computer_uia_windows: uiaWindowsTool, computer_uia_tree: uiaTreeTool, computer_uia_find: uiaFindTool, computer_uia_click: uiaClickTool, computer_uia_type: uiaTypeTool, computer_uia_act: uiaActTool, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {
