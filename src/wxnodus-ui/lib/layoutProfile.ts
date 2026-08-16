@@ -16,6 +16,10 @@ export interface StatusSegments {
   voice: boolean;
   /** 费用段 */
   cost: boolean;
+  /** 余额段（💰，独立配置——未配置自动隐藏，不占预算） */
+  balance: boolean;
+  /** token 区间段（📊） */
+  usage: boolean;
 }
 
 export interface LayoutProfile {
@@ -43,6 +47,10 @@ export const statusSegmentsFor = (cols: number): StatusSegments => {
     compressions: w >= 80,
     voice: w >= 84,
     cost: w >= 96,
+    // 余额优先级高于费用：72+ 即出（用户痛点段——钱最要紧）；
+    // token 区间与费用同档（96+，信息密度高时才双展示）
+    balance: w >= 72,
+    usage: w >= 96,
   };
 };
 

@@ -126,8 +126,29 @@ export interface TranscriptRow {
   msg: Msg
 }
 
+// 状态栏余额段（💰）：balance.status RPC 结果 → 视图快照。
+// label 已预渲染（含 💰 前缀与货币符号），渲染层零计算；
+// stale 表示已配置但最近一次拉取失败——保留上次值并加 ⚠ 后缀提示。
+export interface BalanceUi {
+  label: string
+  configured: boolean
+  stale: boolean
+  updatedAt: number
+}
+
+// 状态栏 token 区间段（📊）：跨会话聚合（today/7d/30d）。
+export type UsageRangeKind = '7d' | '30d' | 'today'
+
+export interface UsageRangeUi {
+  range: UsageRangeKind
+  total: number
+  updatedAt: number
+}
+
 export interface UiState {
   bgTasks: Set<string>
+  /** 状态栏余额段视图（未配置余额 URL → null，段自动隐藏） */
+  balance: BalanceUi | null
   busy: boolean
   busyInputMode: BusyInputMode
   compact: boolean
@@ -152,6 +173,8 @@ export interface UiState {
   streaming: boolean
   theme: Theme
   usage: Usage
+  /** 状态栏 token 区间段视图（usage.range RPC 结果） */
+  usageRange: UsageRangeUi | null
   /** A7：系统电池（system.battery RPC 轮询；无电池/不可用 → null） */
   battery: BatteryInfo | null
   /**
@@ -396,6 +419,10 @@ export interface AppLayoutActions {
   toggleVoice: () => void
   /** A24：语音模式开关（鼠标点击——未开启时麦克风钮显示 🎤，点击开启/关闭） */
   toggleVoiceMode: () => void
+  /** 状态栏 💰 点击（强制刷新余额——绕过 60s 防抖） */
+  refreshBalance: () => void
+  /** 状态栏 📊 点击（轮换 token 区间 today → 7d → 30d） */
+  cycleUsageRange: () => void
 }
 
 export interface AppLayoutComposerProps {

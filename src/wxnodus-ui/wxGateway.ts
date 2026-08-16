@@ -401,6 +401,9 @@ export class GatewayClient extends EventEmitter {
       case 'commands.catalog': return this.commandsCatalog() as T
       case 'complete.slash': return this.completeSlash(params) as T
       case 'complete.path': return this.completePath(params) as T
+      case 'balance.status': return this.balanceStatus(params) as T
+      case 'usage.range': return this.usageRange(params) as T
+      case 'usage.range.set': return this.usageRangeSet(params) as T
       case 'model.options': return this.modelOptions(params) as T
       case 'model.save_key': return this.modelSaveKey(params) as T
       case 'model.disconnect': return this.modelDisconnect(params) as T
@@ -2035,6 +2038,44 @@ export class GatewayClient extends EventEmitter {
       items: entries.map((n) => ({ display: dir + n, text: dir + n })),
       replace_from: params.replaceFrom ?? 0,
     }
+  }
+
+  // ── 状态栏余额监控（💰）：60s 防抖 + 内核 5 分钟 TTL；失败诚实 ⚠ ──
+  private balanceCache: { value: unknown; ts: number } | null = null
+
+  private async balanceStatus(params: Record<string, unknown>): Promise<unknown> {
+    const bm = (this.kernel.settings as any)?.balanceMonitor ?? {};
+    if (bm.enabled === false) return { ok: true, configured: false, enabled: false };
+    if (!params.force && this.balanceCache && Date.now() - this.balanceCache.ts < 60_000) return this.balanceCache.value;
+    const { resolveProviderProfile } = await import('../kernel/profiles.js')
+    const { fetchBalanceCached } = await import('../kernel/balance.js')
+    const rp = resolveProviderProfile(this.kernel.settings as Record<string, any>)
+    if (!rp) return { ok: true, configured: false }
+    const profile = { ...rp.profile, balanceUrl: (bm.url as string) || rp.profile.balanceUrl || '', balancePath: (bm.jsonPath as string) || rp.profile.balancePath || '' }
+    if (!profile.balanceUrl) return { ok: true, configured: false, reason: 'no-balance-url' }
+    const r = await fetchBalanceCached(profile, this.kernel.settings as Record<string, any>, { force: params.force === true })
+    const value = r.ok
+      ? { ok: true, configured: true, balance: r.info.balance, currency: r.info.currency, source: r.info.source, cached: r.cached, updated_at: Date.now() }
+      : { ok: false, configured: true, error: r.error, updated_at: Date.now() }
+    this.balanceCache = { value, ts: Date.now() }
+    return value
+  }
+
+  // ── 状态栏分区间 token（📊）：跨会话聚合（today/7d/30d）──
+  private usageRange(_params: Record<string, unknown>): unknown {
+    const range = ((this.kernel.settings as any)?.usageRange as string) || 'today'
+    try {
+      const s = this.kernel.adapter.data.usage.usageRange(range)
+      return { range, ...s }
+    } catch { return { range, input: 0, output: 0, total: 0, calls: 0 } }
+  }
+
+  private usageRangeSet(params: Record<string, unknown>): unknown {
+    const range = ['today', '7d', '30d'].includes(String(params.range ?? '')) ? String(params.range) : 'today'
+    ;(this.kernel.settings as any).usageRange = range
+    this.kernel.config.setKey('settings', 'usageRange', range)
+    this.publish({ type: 'session.info', payload: this.buildInfo() })
+    return this.usageRange({})
   }
 
   private modelOptions(params: Record<string, unknown>): unknown {

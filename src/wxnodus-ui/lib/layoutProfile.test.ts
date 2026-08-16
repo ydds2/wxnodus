@@ -25,6 +25,9 @@ describe('layoutProfile 单栏几何（阶段 1）', () => {
     expect(s.compressions).toBe(cols >= 80);
     expect(s.voice).toBe(cols >= 84);
     expect(s.cost).toBe(cols >= 96);
+    // 余额（💰）与 bar 同档起步（72+——钱最要紧）；token 区间（📊）与 cost 同档（96+）
+    expect(s.balance).toBe(cols >= 72);
+    expect(s.usage).toBe(cols >= 96);
   });
 
   it('glyphSet 透传：full/bmp/ascii 三档不互相污染', () => {

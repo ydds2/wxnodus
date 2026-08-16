@@ -64,6 +64,8 @@ export interface TuiDataPort {
   usage: {
     get(sessionId: string): { calls: number; input: number; output: number } | undefined;
     compressions(sessionId: string): number;
+    /** 分区间跨会话 token 聚合（状态栏 📊 数据源） */
+    usageRange(range: string): { input: number; output: number; total: number; calls: number };
   };
 }
 
@@ -235,6 +237,15 @@ export function createTuiPresentationAdapter(kernel: TuiAdapterKernel): TuiPrese
             ).get(sessionId) as { c: number } | undefined;
             return c?.c ?? 0;
           } catch { return 0; }
+        },
+        usageRange(range) {
+          try {
+            const since = range === 'today' ? new Date().setHours(0, 0, 0, 0) : Date.now() - (range === '7d' ? 7 : 30) * 86_400_000;
+            const row = db.prepare(
+              `SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COUNT(*) c FROM usage_stats WHERE ts >= ?`,
+            ).get(since) as { i: number; o: number; c: number };
+            return { input: row.i, output: row.o, total: row.i + row.o, calls: row.c };
+          } catch { return { input: 0, output: 0, total: 0, calls: 0 }; }
         },
       },
     },

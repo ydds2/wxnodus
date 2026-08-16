@@ -9,6 +9,7 @@ import type { Role } from '../types.js'
 
 const buildUiState = (): UiState => ({
   bgTasks: new Set(),
+  balance: null,
   busy: false,
   busyInputMode: 'queue',
   compact: false,
@@ -34,7 +35,8 @@ const buildUiState = (): UiState => ({
   statusBar: 'top',
   streaming: true,
   theme: DEFAULT_THEME,
-  usage: ZERO
+  usage: ZERO,
+  usageRange: null
 })
 
 export const $uiState = atom<UiState>(buildUiState())

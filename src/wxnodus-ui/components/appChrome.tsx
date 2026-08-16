@@ -438,6 +438,9 @@ export function StatusRule({
   notice,
   selectionHint,
   usage,
+  balanceLabel,
+  balanceStale,
+  usageLabel,
   lastTurnEndedAt,
   liveSessionCount,
   sessionStartedAt,
@@ -445,6 +448,8 @@ export function StatusRule({
   turnStartedAt,
   voiceLabel,
   onSessionCountClick,
+  onBalanceClick,
+  onUsageClick,
   onVoiceClick,
   onCwdClick,
   onModelClick,
@@ -540,6 +545,10 @@ export function StatusRule({
       : ''
 
   const showBar = !!bar && fits(SEP + stringWidth(`[${bar}] ${pct != null ? `${pct}%` : ''}`))
+  // 💰/📊：余额与 token 区间两个段独立出现。预算顺序紧跟 bar——尾段中最高
+  // 优先级（钱最要紧），窄屏先砍 duration/cost 等低优先级段。
+  const showBalanceSeg = segs.balance && !!balanceLabel && fits(SEP + stringWidth(balanceLabel))
+  const showUsageSeg = segs.usage && !!usageLabel && fits(SEP + stringWidth(usageLabel))
   const showDuration = segs.duration && !!sessionStartedAt && fits(SEP + MAX_DURATION_WIDTH)
   // Idle clock — time since the last final agent response. Hidden while busy
   // (the FaceTicker's elapsed tail covers the live turn) and before the first
@@ -663,6 +672,51 @@ export function StatusRule({
               </Text>
             ) : null}
           </Text>
+        ) : null}
+        {showBalanceSeg ? (
+          // 💰 余额段可点（强制刷新——与 /balance refresh 同链路）；
+          // stale 时着色 warn + ⚠ 已含在 label 里（诚实：拉取失败明示）
+          onBalanceClick ? (
+            <Box
+              flexShrink={0}
+              onClick={(e: { stopImmediatePropagation?: () => void }) => {
+                e.stopImmediatePropagation?.()
+                onBalanceClick()
+              }}
+            >
+              <Text color={balanceStale ? t.color.warn : t.color.accent} wrap="truncate-end">
+                {' │ '}
+                {balanceLabel}
+              </Text>
+            </Box>
+          ) : (
+            <Text color={balanceStale ? t.color.warn : t.color.accent} wrap="truncate-end">
+              {' │ '}
+              {balanceLabel}
+            </Text>
+          )
+        ) : null}
+        {showUsageSeg ? (
+          // 📊 token 区间段可点（轮换 today → 7d → 30d——与 /usage range 同链路）
+          onUsageClick ? (
+            <Box
+              flexShrink={0}
+              onClick={(e: { stopImmediatePropagation?: () => void }) => {
+                e.stopImmediatePropagation?.()
+                onUsageClick()
+              }}
+            >
+              <Text color={t.color.muted} wrap="truncate-end">
+                {' │ '}
+                {usageLabel}
+              </Text>
+            </Box>
+          ) : (
+            <Text color={t.color.muted} wrap="truncate-end">
+              {' │ '}
+              {usageLabel}
+            </Text>
+          )
         ) : null}
         {showDuration ? (
           <Text color={t.color.muted} wrap="truncate-end">
@@ -891,6 +945,10 @@ export function TranscriptScrollbar({ scrollRef, t }: TranscriptScrollbarProps) 
 interface StatusRuleProps {
   /** A7：电池状态（无电池/不可用 → null，段自动隐藏） */
   battery?: BatteryInfo | null
+  /** 余额段标签（💰 前缀已含；未配置 → undefined，段隐藏） */
+  balanceLabel?: string
+  /** 余额最近一次拉取失败（⚠ 着色） */
+  balanceStale?: boolean
   lastTurnEndedAt?: null | number
   liveSessionCount: number
   busy: boolean
@@ -912,8 +970,14 @@ interface StatusRuleProps {
   t: Theme
   turnStartedAt?: null | number
   usage: Usage
+  /** token 区间段标签（📊 前缀已含） */
+  usageLabel?: string
   voiceLabel?: string
   onSessionCountClick?: () => void
+  /** 余额段点击（强制刷新） */
+  onBalanceClick?: () => void
+  /** token 区间段点击（轮换 today/7d/30d） */
+  onUsageClick?: () => void
   /** A24：语音段点击（鼠标切换语音模式——onSessionCountClick 同款模式） */
   onVoiceClick?: () => void
   /** A24：右侧 cwd/标题段点击（打开目录选择器——浏览/切换工作目录） */

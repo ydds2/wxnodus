@@ -45,6 +45,7 @@ import { useComposerState } from './useComposer.js'
 import { useConfigSync } from './useConfigWatcher.js'
 import { useBatteryPoll } from './useBatteryMonitor.js'
 import { useBackgroundPoll } from './useBackgroundPoll.js'
+import { cycleUsageRange, refreshBalance, useBalanceMonitor } from './useBalanceMonitor.js'
 import { useInputHandlers, applyVoiceRecordResponse } from './useKeyBindings.js'
 import { useLongRunToolCharms } from './useLongTaskHints.js'
 import { useSessionLifecycle } from './useConversationLifecycle.js'
@@ -564,6 +565,8 @@ export function useMainApp(gw: GatewayClient) {
   useBatteryPoll(gw)
   // A24：后台活动轮询（终端/任务/定时——后台面板与摘要行数据源；5s）
   useBackgroundPoll(gw)
+  // 状态栏 💰/📊（余额 5min 轮询 + token 区间回合结算刷新；两个段独立配置）
+  useBalanceMonitor(gw)
 
   useEffect(() => {
     if (!ui.sid) {
@@ -1151,6 +1154,28 @@ export function useMainApp(gw: GatewayClient) {
       .catch((e: Error) => sys(`voice error: ${e.message}`))
   }, [rpc, setVoiceEnabled, setVoiceRecordKey, setVoiceTts, sys, voiceEnabled])
 
+  // 状态栏 💰 点击：强制刷新余额（绕过 60s 防抖与内核 TTL），失败给 sys 反馈。
+  const onRefreshBalance = useCallback(() => {
+    refreshBalance(gw)
+      .then(raw => {
+        const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+
+        if (o && o.ok === false) {
+          sys('余额拉取失败——/balance status 看详情')
+        }
+      })
+      .catch(() => {
+        /* 静默——段内 ⚠ 已表达失败态 */
+      })
+  }, [gw, sys])
+
+  // 状态栏 📊 点击：轮换 token 区间（与 /usage range 同链路，服务端持久化）。
+  const onCycleUsageRange = useCallback(() => {
+    cycleUsageRange(gw).catch(() => {
+      /* 静默——下次 message.complete 会再拉 */
+    })
+  }, [gw])
+
   const appActions = useMemo(
     () => ({
       activateLiveSession: session.activateLiveSession,
@@ -1167,6 +1192,8 @@ export function useMainApp(gw: GatewayClient) {
       onModelSelect,
       toggleVoice,
       toggleVoiceMode,
+      refreshBalance: onRefreshBalance,
+      cycleUsageRange: onCycleUsageRange,
       // Resuming a cold session from the overlay CLOSES the current one, so it
       // must respect the busy guard just like the `/resume` slash path.
       // (Switching between live sessions and `+ new` keep the current session
@@ -1196,7 +1223,9 @@ export function useMainApp(gw: GatewayClient) {
       session.newLiveSession,
       session.resumeById,
       toggleVoice,
-      toggleVoiceMode
+      toggleVoiceMode,
+      onRefreshBalance,
+      onCycleUsageRange
     ]
   )
 

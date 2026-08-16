@@ -18,6 +18,7 @@ import {
 } from '../lib/inputMetrics.js'
 import { PerfPane } from '../lib/perfPane.js'
 import { composerPromptText } from '../lib/prompt.js'
+import { usageSegmentLabel } from '../lib/balanceStatus.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { GoodVibesHeart, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
@@ -441,6 +442,8 @@ const StatusRulePane = memo(function StatusRulePane({
     <Box marginTop={at === 'top' ? 1 : 0}>
       <StatusRule
         battery={ui.battery}
+        balanceLabel={ui.balance?.label}
+        balanceStale={ui.balance?.stale}
         busy={ui.busy}
         cols={composer.cols}
         cwdLabel={status.cwdLabel}
@@ -453,6 +456,8 @@ const StatusRulePane = memo(function StatusRulePane({
         modelReasoningEffort={ui.info?.reasoning_effort}
         notice={ui.notice}
         onSessionCountClick={() => patchOverlayState({ sessions: true })}
+        onBalanceClick={actions.refreshBalance}
+        onUsageClick={actions.cycleUsageRange}
         onVoiceClick={actions.toggleVoiceMode}
         onCwdClick={() => patchOverlayState({ dirPicker: true })}
         onModelClick={() => patchOverlayState({ modelPicker: true })}
@@ -464,6 +469,7 @@ const StatusRulePane = memo(function StatusRulePane({
         t={ui.theme}
         turnStartedAt={status.turnStartedAt}
         usage={ui.usage}
+        usageLabel={ui.usageRange ? usageSegmentLabel(ui.usageRange) : undefined}
         voiceLabel={status.voiceLabel}
       />
     </Box>
