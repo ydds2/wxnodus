@@ -1,4 +1,4 @@
-// src/commands/handlersExt.ts — 扩展命令处理器（补齐 registry 全量 67 条）
+// src/commands/handlersExt.ts — 扩展命令处理器（registry 实测 108 条——此计数与 SLASH 长度同步，勿回写旧值）
 // 设计：与 handlers.ts 分离，按类补齐——工具（确定性）/会话/记忆/构建/安全/
 //       系统/视觉/连接/协作。每个命令真实可用（查询现有数据或执行确定性操作），
 //       输出统一 lines() 面板或单行。红线：只读工具不写库；路径操作限制在 dataDir。
