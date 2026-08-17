@@ -90,6 +90,18 @@ export function parseBalanceSetArgs(args: string[]): { url: string; jsonPath: st
   return { url, jsonPath };
 }
 
+/** /fs ls 封顶诚实标注（纯函数可单测）：超 30 个追加总数标注行 */
+export function fsLsRows(items: string[]): string[] {
+  const shown = items.slice(0, 30);
+  return items.length > 30 ? [...shown, `…（共 ${items.length} 个，前 30 个——/fs tree 或分段查看）`] : shown;
+}
+
+/** /fs read 60 行封顶诚实标注（纯函数可单测）：超 60 行追加总数标注行 */
+export function fsReadRows(lines: string[]): string[] {
+  const shown = lines.slice(0, 60);
+  return lines.length > 60 ? [...shown, `…（共 ${lines.length} 行，前 60 行——bash tail/sed 续看）`] : shown;
+}
+
 // ── Webhook 引擎（事件 → HTTP POST 回调；本地化为准，默认全部核心事件）──
 const WEBHOOK_EVENTS = ['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'system.notice', 'ui.confirm', 'jobs.complete'];
 const webhookSubs = new Map<string, () => void>();
@@ -204,14 +216,20 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const p = join(ctx.cwd, target);
       if (op === 'ls') {
         if (!existsSync(p)) return `不存在：${p}`;
-        const items = readdirSync(p).slice(0, 30);
-        return lines(` ls ${target} `, items.map(i => ` ${statSync(join(p, i)).isDirectory() ? '📁' : '📄'} ${i}`));
+        const rows = fsLsRows(readdirSync(p));
+        const body = rows.slice(0, 30).map(i => ` ${statSync(join(p, i)).isDirectory() ? '📁' : '📄'} ${i}`);
+        const tail = rows.at(-1)?.startsWith('…（共') ? [` ${rows.at(-1)!}`] : [];
+        return lines(` ls ${target} `, [...body, ...tail]);
       }
       if (op === 'read' || op === 'cat') {
         if (!existsSync(p) || statSync(p).isDirectory()) return `不存在或为目录：${p}`;
         const size = statSync(p).size;
         if (size > 200_000) return `文件过大（${size} 字节），仅支持 ≤200KB`;
-        return lines(` read ${basename(p)} `, readFileSync(p, 'utf8').split('\n').slice(0, 60).map(l => ` ${l}`));
+        const allLines = readFileSync(p, 'utf8').split('\n');
+        const rows = fsReadRows(allLines);
+        const body = rows.slice(0, 60).map(l => ` ${l}`);
+        const tail = rows.at(-1)?.startsWith('…（共') ? [` ${rows.at(-1)!}`] : [];
+        return lines(` read ${basename(p)} `, [...body, ...tail]);
       }
       if (op === 'stat') {
         if (!existsSync(p)) return `不存在：${p}`;

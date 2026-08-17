@@ -376,3 +376,24 @@ describe('renderWaterfall 成本后缀', () => {
     expect(noCost).not.toContain('≈$');
   });
 });
+
+describe('/fs 面板封顶诚实标注（纯函数）', () => {
+  it('fsLsRows：超 30 个标注总数，未超原样', async () => {
+    const { fsLsRows } = await import('../src/commands/handlersExt.js');
+    const many = Array.from({ length: 35 }, (_, i) => `f${i}`);
+    const out = fsLsRows(many);
+    expect(out).toHaveLength(31); // 30 + 1 标注行
+    expect(out.at(-1)).toContain('共 35 个');
+    expect(out).not.toContain('f34');
+    expect(fsLsRows(['a', 'b'])).toEqual(['a', 'b']);
+  });
+  it('fsReadRows：超 60 行标注总数，未超原样', async () => {
+    const { fsReadRows } = await import('../src/commands/handlersExt.js');
+    const many = Array.from({ length: 70 }, (_, i) => `第${i}行`);
+    const out = fsReadRows(many);
+    expect(out).toHaveLength(61);
+    expect(out.at(-1)).toContain('共 70 行');
+    expect(out).not.toContain('第69行');
+    expect(fsReadRows(['a'])).toEqual(['a']);
+  });
+});
