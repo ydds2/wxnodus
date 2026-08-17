@@ -25,6 +25,7 @@ import { runCuratorReview, curatorConfigFrom, readCuratorState } from '../kernel
 import { usageSummary, usageRangeSince, type UsageRange } from '../kernel/usage.js';
 import { estimateCost } from '../kernel/cost.js';
 import { sessionCost, rangeCost, costText, type CostQueryResult } from '../kernel/costQuery.js';
+import { labelTruncate } from '../kernel/truncate.js';
 import { encryptKey } from '../kernel/providers.js';
 import { resolveProviderProfile } from '../kernel/profiles.js';
 import { fetchBalanceCached } from '../kernel/balance.js';
@@ -2608,7 +2609,8 @@ export const commands = {
         } catch { /* 兜底失败不阻断——保持静态抓取结果 */ }
       }
       const body = text || '（页面无可提取文本，可能是 JS 渲染或反爬）';
-      return `HTTP ${r.status}｜${html.length} 字节${guard.captcha ? '\n⚠ 检测到验证码页面（站点反爬——内容可能不可用）' : ''}\n${body.slice(0, 4000)}`;
+      // 诚实截断（labelTruncate 统一口径——模型知道正文有剩余）
+      return `HTTP ${r.status}｜${html.length} 字节${guard.captcha ? '\n⚠ 检测到验证码页面（站点反爬——内容可能不可用）' : ''}\n${labelTruncate(body, 4000, 'http_get <url> 或分段抓取续看')}`;
     } catch (e: any) {
       return `抓取失败：${e?.message?.slice(0, 300) ?? e}`;
     }

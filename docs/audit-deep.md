@@ -549,3 +549,8 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **修复 browser 交互元素 40 封顶静默**：原 `out.length >= 40 → break` 静默截断（且 total 不可知）。现全量遍历计数唯一元素（uniq），前 40 个展示 + 总数标注——模型知道还有未列出的可交互元素。
 - **uia_windows/uia_tree 内联封顶统一**：去内联 `more` 拼串，改用 capNote（文案等价，测试锁定）。
 - **验证**：+1 测试（capNote ×4 断言）；全量 2355 通过；tsc 零错误。
+
+### 13.25 /claw 抓取截断口径轮（2026-08-17 持续完善）
+
+- **/claw 4000 字静默截断修复**：正文原 `body.slice(0, 4000)` 无标注——模型误判「页面只提取到这些」（网页正文通常远超）。现 labelTruncate 统一口径 + 指引（http_get 或分段抓取续看）。上一轮 extractMainText 内置的省略/截断标注现不会再被外层 slice 拦腰切断。
+- **验证**：全量 2355 通过（labelTruncate 已有纯函数覆盖，此处一行接线）；tsc 零错误。
