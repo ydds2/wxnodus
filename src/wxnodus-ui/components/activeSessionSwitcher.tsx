@@ -871,6 +871,15 @@ export function ActiveSessionSwitcher({
               </Text>
             </Box>
 
+            {/* 会话成本（估算——全部模型有定价才显示；未知省略，诚实不显示低估合计） */}
+            {typeof s.cost_usd === 'number' ? (
+              <Box {...fixedSessionColumnStyle()} width={12}>
+                <Text color={rowTextColor ?? t.color.accent} wrap="truncate-end">
+                  ${s.cost_usd.toFixed(4)}
+                </Text>
+              </Box>
+            ) : null}
+
             <Box flexGrow={1} flexShrink={1} minWidth={0}>
               <Text bold={selected} color={rowTextColor ?? t.color.muted} wrap="truncate-end">
                 {title}

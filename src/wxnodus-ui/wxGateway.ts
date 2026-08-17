@@ -1324,6 +1324,7 @@ export class GatewayClient extends EventEmitter {
       started_at: Number(r.created_at ?? 0) / 1000,
       message_count: Number(r.message_count ?? 0),
       model: this.kernel.settings.model ?? '',
+      ...(typeof r.cost_usd === 'number' ? { cost_usd: r.cost_usd } : {}),
       status:
         String(r.id) === current && this.running
           ? ('working' as const)
@@ -1353,6 +1354,7 @@ export class GatewayClient extends EventEmitter {
       created_at: Number(r.created_at ?? 0) / 1000,
       updated_at: Number(r.updated_at ?? 0) / 1000,
       message_count: Number(r.message_count ?? 0),
+      ...(typeof r.cost_usd === 'number' ? { cost_usd: r.cost_usd } : {}),
     }))
     return { sessions }
   }

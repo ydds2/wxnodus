@@ -150,6 +150,8 @@ export interface SessionResumeResponse {
 export type LiveSessionStatus = 'idle' | 'starting' | 'waiting' | 'working'
 
 export interface SessionActiveItem {
+  /** 每会话成本估算（USD；全部模型有定价才给——未知省略） */
+  cost_usd?: number
   current?: boolean
   id: string
   last_active?: number

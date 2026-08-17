@@ -168,3 +168,25 @@ describe('W3 TUI presentation adapter behavior', () => {
     expect((db.prepare(`SELECT COUNT(*) AS c FROM sessions`).get() as { c: number }).c).toBe(before);
   });
 });
+
+describe('sessions.list 成本列', () => {
+  it('全定价给 cost_usd；混入未知模型省略（诚实）', () => {
+    const d2 = mkdtempSync(join(tmpdir(), 'w3-tui-adapter-'));
+    const db2 = openDB(d2);
+    const a2 = createTuiPresentationAdapter({ db: db2, agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, steer: () => false, setSessionId() {}, setMode() {}, setCwd() {}, updateTools() {}, setDelegationPaused() {}, getDelegationPaused: () => false, getMaxSpawnDepth: () => 3 } });
+    try {
+      const now = Date.now();
+      a2.data.sessions.create('s-c1');
+      a2.data.sessions.create('s-c2');
+      db2.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`).run('s-c1', 'deepseek-chat', 1_000_000, 1_000_000, now);
+      db2.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`).run('s-c2', 'mystery', 100, 100, now);
+      const rows = a2.data.sessions.list(10);
+      const c1 = rows.find(r => r.id === 's-c1')!;
+      const c2 = rows.find(r => r.id === 's-c2')!;
+      expect(c1.cost_usd).toBeCloseTo(0.7, 4);
+      expect(c2.cost_usd).toBeUndefined();
+    } finally {
+      closeDB(db2);
+    }
+  });
+});

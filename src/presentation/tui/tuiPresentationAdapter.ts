@@ -10,6 +10,8 @@ export interface TuiMessageRow {
 }
 export interface TuiSessionRow {
   id: string; title: string; created_at: number; updated_at: number; message_count: number;
+  /** 每会话成本估算（USD；全部模型有定价才给——未知省略，诚实不显示低估合计） */
+  cost_usd?: number;
 }
 export interface TuiCheckpointRow { id: number; data: string; ts: number }
 export interface TuiCronRow { id: number; schedule: string; action: string; enabled: number; last_run: number | null }
@@ -94,11 +96,28 @@ export function createTuiPresentationAdapter(kernel: TuiAdapterKernel): TuiPrese
       sessions: {
         list(limit) {
           try {
-            return db.prepare(
+            const rows = db.prepare(
               `SELECT s.id, s.title, s.created_at, s.updated_at,
                       (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
                FROM sessions s ORDER BY s.updated_at DESC LIMIT ?`,
             ).all(limit) as TuiSessionRow[];
+            // 每会话成本估算（N+1 有界：≤50 行才逐会话聚合；全部模型有定价才给——诚实）
+            if (rows.length <= 50) {
+              return rows.map(r => {
+                let cost_usd: number | undefined;
+                try {
+                  const m = db.prepare(
+                    `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`,
+                  ).all(r.id) as Array<{ model: string; input: number; output: number }>;
+                  if (m.length) {
+                    const s = costSummary(m, costOverrides);
+                    cost_usd = s.unknownCount === 0 ? Number(s.totalUsd.toFixed(4)) : undefined;
+                  }
+                } catch { /* 成本聚合失败省略该会话 */ }
+                return { ...r, cost_usd };
+              });
+            }
+            return rows;
           } catch { return []; }
         },
         create(id) {
