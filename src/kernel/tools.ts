@@ -89,6 +89,7 @@ export function minIntervalSince(lastTs: number, minMs: number, now: number = Da
   return Math.max(0, minMs - (now - lastTs));
 }
 let lastSearchTs = 0;
+let lastHttpGetTs = 0;
 
 export function coreTools(): Record<string, ToolDef> {
   // 安全审查修复：fs_read 工作区边界——realpath 校验目标必须在 cwd 内（拒绝 ../ 逃逸与
@@ -390,6 +391,10 @@ export function coreTools(): Record<string, ToolDef> {
     schema: { type: 'function', function: { name: 'http_get', description: 'GET 请求（SSRF 防护：内网/IPv6 私网/DNS 重绑定/重定向逐跳拦截）。HTML 页面自动提取正文文本；API/JSON 响应返回原始内容。', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
     danger: true, // 外联/写库/调度/敏感输入——需确认
     async run({ url }, ctx) {
+      // 最小间隔节流（800ms）：与 web_search 同款自保护——连发抓取不触发站点限流
+      const wait = minIntervalSince(lastHttpGetTs, 800);
+      if (wait > 0) await new Promise(res => setTimeout(res, wait));
+      lastHttpGetTs = Date.now();
       // SSRF 三层防护（src/kernel/ssrf.ts）：主机名形态 + DNS 解析校验 + 重定向逐跳
       const { safeFetchText } = await import('./ssrf.js');
       const { htmlToText, extractMainText, looksLikeHtml } = await import('./html.js');
