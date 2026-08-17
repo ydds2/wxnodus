@@ -467,3 +467,14 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **状态栏 💰 低余额红色警示**：balance.status 响应带 low 标记（低于阈值）→ 段着色优先级 低余额红 > stale 黄 > 正常青——一眼可见钱快没了。
 - **/capture --attach**：命令层与热键（Ctrl+Shift+P）共享 pending 契约（提取 kernel/imagePending.ts 单一事实源，防 UI/命令层契约漂移）；截图即附加提问，区域切片同样适用。+2 测试（含幽灵路径诚实 null）。
 - **验证**：全量 2322 通过；cmd-sweep 125/125（+/capture --attach）；full-scene 28/28 + cmd-verify 14/14 双电池复测（会话面板/状态栏改动真机无回归）；tsc 零错误。
+
+### 13.14 工具诚实截断三件套 + 余额观测面闭环轮（2026-08-17 持续完善）
+
+- **工具结果诚实截断三件套**（截断→收窄→续查的完整闭环，模型不再误判「内容到此为止」）：
+  - `fs_read`：offset/limit 按行分页 + 尾部行号标注（offset=N 续读）；超长文件显式标注共 N 字/剩余 M 字
+  - `grep`：head 参数（缺省 200 行），超限标注匹配总数 + 收窄指引
+  - `ls`：head 参数（缺省 200 条），大目录标注条目总数 + 分段指引
+  - web_search 已有 max_results（盘点确认，无需改）
+- **余额观测面闭环**：状态栏 💰 低余额红色警示（low 标记 → 着色优先级 低红 > stale 黄 > 正常青）；会话切换面板 $ 成本列（adapter N+1 有界 ≤50 行）；/sessions 非交互成本列；/goal 启动护栏明示（auto-stop/budget 状态，无护栏提示开启命令）；📊 区间轮换点击反馈；/capture --attach（命令层与热键共享 kernel/imagePending 契约）。
+- **说人话**：README 表 + NL 触发「成本多少→/cost」「余额还有多少→/balance status」（契约测试锁定）。
+- **验证**：全量 2326 通过；tsc 零错误。
