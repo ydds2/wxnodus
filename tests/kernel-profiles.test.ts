@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveProviderProfile, defaultModelForProfile, resolveModelForChat, type ProviderProfile } from '../src/kernel/profiles.js';
+import { resolveProviderProfile, defaultModelForProfile, resolveModelForChat, profileHealth, type ProviderProfile } from '../src/kernel/profiles.js';
 
 const enc = 'enc1:deadbeef:deadbeef:deadbeef'; // 占位（解密不在本测）
 
@@ -27,5 +27,43 @@ describe('profiles', () => {
   it('resolveModelForChat: 模型名为空回退档案默认', () => {
     const p: ProviderProfile = { id: 'relay1', name: '中转站', baseURL: 'https://r.example.com/v1', models: ['gpt-4o-mini'] };
     expect(resolveModelForChat({ model: '', activeProvider: 'relay1', providers: [p] })).toBe('gpt-4o-mini');
+  });
+});
+
+
+describe('profileHealth 档案一致性', () => {
+  it('健康档案零问题', () => {
+    const issues = profileHealth(
+      [{ id: 'a', name: 'A', baseURL: 'https://a.example.com/v1', models: ['m1'] }],
+      'a'
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it('activeProvider 指向不存在 → active-missing', () => {
+    const issues = profileHealth(
+      [{ id: 'a', name: 'A', baseURL: 'https://a.example.com/v1', models: [] }],
+      'ghost'
+    );
+    expect(issues.map(i => i.kind)).toEqual(['active-missing']);
+  });
+
+  it('重复 id / 缺 id / baseURL 非 http(s) 全部识别', () => {
+    const issues = profileHealth(
+      [
+        { id: 'a', name: 'A', baseURL: 'https://a.example.com/v1' },
+        { id: 'a', name: 'A2', baseURL: 'https://a2.example.com/v1' },
+        { id: '', name: '无id', baseURL: 'https://x.example.com' },
+        { id: 'b', name: 'B', baseURL: 'ftp://bad' },
+      ],
+      'a'
+    );
+    expect(issues.map(i => i.kind)).toEqual(['duplicate-id', 'duplicate-id', 'bad-base-url']);
+  });
+
+  it('空/未配置档案零问题（无 active 悬空误报）', () => {
+    expect(profileHealth([], '')).toEqual([]);
+    expect(profileHealth(undefined, 'x')).toEqual([]);
+    expect(profileHealth([], 'ghost')).toEqual([]);
   });
 });

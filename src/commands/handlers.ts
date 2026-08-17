@@ -10,6 +10,7 @@ import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias } from './registry.js';
 import { capabilityBadges, decryptKey, detectProvider, encryptKey, filterModels, maskKey, MODEL_CATALOG, resolveApiKey } from '../kernel/providers.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
+import { profileHealth } from '../kernel/profiles.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { makeSpec } from '../build/spec.js';
 import { makePlan, topoSort } from '../build/plan.js';
@@ -227,6 +228,17 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     // 当前模型目录可用性
     const model = ctx.getModel();
     checks.push(['当前模型', model ? model : '未选择']);
+    // 接入档案一致性（配置漂移防呆：active 指向/重复 id/baseURL 格式）
+    try {
+      const providers = ctx.config.getKey('settings', 'providers') as Array<Record<string, any>> | undefined;
+      const active = ctx.config.getKey('settings', 'activeProvider') as string | undefined;
+      const issues = profileHealth(providers, active);
+      if (Array.isArray(providers) && providers.length) {
+        checks.push(['接入档案', issues.length ? `异常：${issues[0]!.detail}` : `${providers.length} 个档案正常`]);
+      } else {
+        checks.push(['接入档案', '未配置（/profile add 接入任意 OpenAI 兼容端点）']);
+      }
+    } catch { /* 档案读取失败不阻断体检 */ }
     // 面板着色：键名 label 青、异常/未配置红、正常绿
     return lines(' 体检 ', checks.map(([k, v]) => ` ${c(k, '36')}：${/异常|未配置|无法/.test(v) ? c(v, '31') : /正常|可解密|可检索/.test(v) ? c(v, '32') : v}`));
   });

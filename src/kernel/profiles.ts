@@ -104,3 +104,30 @@ export function migrateLegacyProviderSettings(config: { get: (k: string) => any;
   if (!s.model || !String(s.model).trim()) config.setKey('settings', 'model', catalogModels[0] ?? '');
   return { migrated: true, backupFile };
 }
+
+// ── 档案健康检查（/doctor 数据源——配置漂移防呆：纯函数可单测）──
+export interface ProfileHealthIssue {
+  kind: 'active-missing' | 'bad-base-url' | 'duplicate-id';
+  id?: string;
+  detail: string;
+}
+
+export function profileHealth(providers: Array<Record<string, any>> | undefined | null, activeProvider: string | null | undefined): ProfileHealthIssue[] {
+  const list = Array.isArray(providers) ? providers : [];
+  const issues: ProfileHealthIssue[] = [];
+  const seen = new Set<string>();
+  for (const p of list) {
+    const id = typeof p?.id === 'string' ? p.id.trim() : '';
+    if (!id) {
+      issues.push({ kind: 'duplicate-id', detail: '档案缺少 id' });
+      continue;
+    }
+    if (seen.has(id)) issues.push({ kind: 'duplicate-id', id, detail: `档案 id 重复：${id}` });
+    seen.add(id);
+    if (!/^https?:\/\//i.test(String(p?.baseURL ?? ''))) issues.push({ kind: 'bad-base-url', id, detail: `档案 ${id} 的 baseURL 非 http(s)` });
+  }
+  if (activeProvider && list.length && !list.some(p => p?.id === activeProvider)) {
+    issues.push({ kind: 'active-missing', id: activeProvider, detail: `activeProvider 指向不存在的档案：${activeProvider}` });
+  }
+  return issues;
+}
