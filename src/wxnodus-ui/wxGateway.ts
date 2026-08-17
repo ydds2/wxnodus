@@ -1074,7 +1074,7 @@ export class GatewayClient extends EventEmitter {
         attached: true, count: 1, name: basename(file),
         width: dim?.width, height: dim?.height,
         token_estimate: dim ? estimateVisionTokens(dim.width, dim.height) : 0,
-        message: '图片已附加——发送消息时将随提问送入模型（需图像模型）',
+        message: '图片已附加——发送消息时将随提问送入模型（视觉模型直接看图；文本模型自动经 GLM 先识别）',
       }
       this.publish({ type: 'status.update', payload: { kind: 'done', text: 'ready' } })
       return meta
