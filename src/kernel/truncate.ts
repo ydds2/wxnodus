@@ -13,3 +13,9 @@ export function capNote(total: number, cap: number, hint?: string): string {
   const suffix = hint ? `——${hint}` : '';
   return `…[共 ${total} 个，已截断（前 ${cap} 个）${suffix}]`;
 }
+
+/** 面板摘要片段：超限补 …（显示级截断——完整数据在对应检索工具/详情入口） */
+export function snippet(text: string, n: number): string {
+  const t = String(text ?? '');
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+}

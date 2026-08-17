@@ -13,6 +13,7 @@ import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.j
 import { profileHealth } from '../kernel/profiles.js';
 import { priceForModel } from '../kernel/cost.js';
 import { sessionCost, costText } from '../kernel/costQuery.js';
+import { snippet } from '../kernel/truncate.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { makeSpec } from '../build/spec.js';
 import { makePlan, topoSort } from '../build/plan.js';
@@ -529,7 +530,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (!hits.length) return `未检索到与「${q}」相关的记忆`;
     return lines(` 记忆检索「${q}」(${hits.length} 条) `, hits.map(h => {
       const when = new Date(h.record.updatedAt).toLocaleString();
-      return ` [${h.record.id}] ${h.record.content.slice(0, 70)}（${when}）`;
+      return ` [${h.record.id}] ${snippet(h.record.content, 70)}（${when}）`;
     }));
   });
 
@@ -580,7 +581,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       if (!hits.length) return `未检索到与「${q}」相关的记忆`;
       return lines(` 记忆检索「${q}」(${hits.length} 条) `, hits.map(h => {
         const when = new Date(h.record.updatedAt).toLocaleString();
-        return ` [${h.record.id}] ${h.record.content.slice(0, 70)}（${when}）`;
+        return ` [${h.record.id}] ${snippet(h.record.content, 70)}（${when}）`;
       }));
     }
 
@@ -633,7 +634,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       if (!records.length) return lines(' 记忆（modern 显式记录） ', [' 无显式记忆记录（对话影子写见 /memory shadow）']);
       return lines(' 记忆（modern 显式记录，/memory pin|fade <id> 加权） ', records.map(m => {
         const flag = salienceFlag(m.salience);
-        return ` ${flag} [${m.id}] [${m.role}] ${String(m.content).slice(0, 60)}${flag === '★' ? `（×${m.salience.toFixed(2)}）` : ''}`;
+        return ` ${flag} [${m.id}] [${m.role}] ${snippet(String(m.content), 60)}${flag === '★' ? `（×${m.salience.toFixed(2)}）` : ''}`;
       }));
     }
 
@@ -645,7 +646,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ' modern：/memory list 查看显式记忆 · /memory shadow 观察双写',
       ...(salient.length
         ? [` 置顶记忆：${c(`${salient.length} 条`, '33')}（召回加权优先）`,
-           ...salient.slice(0, 8).map(s => `   ★ #${s.id} ×${s.salience} ${s.content.slice(0, 40)}`)]
+           ...salient.slice(0, 8).map(s => `   ★ #${s.id} ×${s.salience} ${snippet(s.content, 40)}`)]
         : [` 置顶记忆：无（/memory pin <id> 可把核心约束置顶，召回恒优先）`]),
     ]);
   });

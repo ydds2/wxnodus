@@ -108,3 +108,12 @@ describe('bash 输出诚实截断（8000–20000 原静默区间补标）', () =
     expect(out).not.toContain('已截断');
   }, 30000);
 });
+
+describe('snippet 面板摘要片段（显示级截断补 …）', () => {
+  it('超限补省略号；未超原样', async () => {
+    const { snippet } = await import('../src/kernel/truncate.js');
+    expect(snippet('一二三四五六', 4)).toBe('一二三四…');
+    expect(snippet('一二', 4)).toBe('一二');
+    expect(snippet('', 4)).toBe('');
+  });
+});

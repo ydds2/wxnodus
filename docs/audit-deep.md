@@ -585,3 +585,8 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 - **fs_edit 多处出现反馈 O(k×n) → O(n + k·log n)**：原 `positions.map(i => content.slice(0, i).split('\n').length)` 对每个出现位置都复制前缀再 split——大文件多处出现时明显卡顿。提取纯函数 `lineNumbersOf`（预建换行索引 + 二分定位行号）并接线。
 - **验证**：+1 测试（lineNumbersOf 边界：首行/末行/空输入）；全量 2360 通过；tsc 零错误。
+
+### 13.32 面板摘要片段省略号轮（2026-08-17 持续完善）
+
+- **snippet 显示级截断补 …**：/hole 与 /memory search（70 字）、/memory list（60 字）、置顶记忆（40 字）四处的摘要片段原静默截断——超限条目补 `…`（完整数据在对应检索工具/详情）。纯函数 `snippet`（truncate.ts 单一事实源）并接线。
+- **验证**：+1 测试（snippet 超限/未超/空 ×3 断言）；全量 2361 通过；tsc 零错误。
