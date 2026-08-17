@@ -1171,10 +1171,18 @@ export function useMainApp(gw: GatewayClient) {
 
   // 状态栏 📊 点击：轮换 token 区间（与 /usage range 同链路，服务端持久化）。
   const onCycleUsageRange = useCallback(() => {
-    cycleUsageRange(gw).catch(() => {
-      /* 静默——下次 message.complete 会再拉 */
-    })
-  }, [gw])
+    cycleUsageRange(gw)
+      .then(raw => {
+        const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+        if (o?.range) {
+          const label = o.range === 'today' ? '今日' : o.range === '7d' ? '近 7 天' : '近 30 天'
+          sys(`token 区间已切换：${label}`)
+        }
+      })
+      .catch(() => {
+        /* 静默——下次 message.complete 会再拉 */
+      })
+  }, [gw, sys])
 
   const appActions = useMemo(
     () => ({
