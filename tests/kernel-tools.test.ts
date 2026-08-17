@@ -186,3 +186,14 @@ describe('notify 通知工具', () => {
     }
   })
 })
+
+describe('fs_edit 多处出现行号换算（O(n+k·log n) 防大文件卡顿）', () => {
+  it('lineNumbersOf：索引 → 1-based 行号（含首行/末行边界）', async () => {
+    const { lineNumbersOf } = await import('../src/kernel/tools.js');
+    const content = 'a\nbb\nccc\ndddd';
+    // pos: a=0, \n=1, b=2,3, \n=4, c=5,6,7, \n=8, d=9..
+    expect(lineNumbersOf(content, [0, 2, 5, 9])).toEqual([1, 2, 3, 4]);
+    expect(lineNumbersOf(content, [content.length - 1])).toEqual([4]); // 末字符仍在末行
+    expect(lineNumbersOf('', [])).toEqual([]);
+  });
+});

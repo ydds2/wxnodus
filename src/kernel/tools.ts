@@ -18,6 +18,25 @@ function hasGrep(): boolean {
   return grepChecked;
 }
 
+/** fs_edit 多处出现反馈的行号换算（O(n + k·log n)；纯函数可单测）
+ * 原 `positions.map(i => content.slice(0, i).split('\n').length)` 为 O(k×n)——大文件多处出现时明显卡顿 */
+export function lineNumbersOf(content: string, indexes: number[]): number[] {
+  const starts: number[] = [0];
+  for (let j = 0; j < content.length; j++) {
+    if (content.charCodeAt(j) === 10) starts.push(j + 1);
+  }
+  const lineOf = (i: number): number => {
+    let lo = 0;
+    let hi = starts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid]! <= i) lo = mid; else hi = mid - 1;
+    }
+    return lo + 1; // 1-based
+  };
+  return indexes.map(lineOf);
+}
+
 // ── 授权存证（审查接线：ConsentLedger 此前零实例化）──
 // 外部访问（http_get/browser_navigate）成功时自动留痕：scope=目标 host、method=工具名、
 // grantor=system（系统代记）；显式授权走 /consent grant。/consent list 可查全簿。
@@ -189,7 +208,7 @@ export function coreTools(): Record<string, ToolDef> {
           return `未找到要替换的文本：${needle.slice(0, 60)}${ctxStart >= 0 ? `\n附近内容：…${content.slice(ctxStart, ctxStart + 80).replace(/\n/g, ' ')}…` : ''}`;
         }
         if (positions.length > 1) {
-          return `「${needle.slice(0, 40)}」出现 ${positions.length} 处（行 ${positions.map(i => content.slice(0, i).split('\n').length).join('、')}）——oldText 需更精确（包含更多上下文）或指定唯一片段`;
+          return `「${needle.slice(0, 40)}」出现 ${positions.length} 处（行 ${lineNumbersOf(content, positions).join('、')}）——oldText 需更精确（包含更多上下文）或指定唯一片段`;
         }
         // 影子快照（/undo fs）：编辑前备份原内容
         try {
