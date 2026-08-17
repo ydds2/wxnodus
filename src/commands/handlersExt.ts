@@ -930,7 +930,13 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       if (!rp) return '未配置档案（/profile add 或 /key set 后重试）';
       const profile = { ...rp.profile, balanceUrl: bm.url || rp.profile.balanceUrl || '', balancePath: bm.jsonPath || rp.profile.balancePath || '' };
       const r = await fetchBalanceCached(profile, (ctx.config.get('settings') ?? {}) as Record<string, any>, { force: sub === 'refresh', db: ctx.db });
-      if (r.ok) return `余额：${r.info.balance}${r.info.currency ? ` ${r.info.currency}` : ''}（${r.info.source}${r.cached ? '，缓存中' : ''}）`;
+      if (r.ok) {
+        const { numericBalance, LOW_BALANCE_THRESHOLD } = await import('../kernel/balance.js');
+        const threshold = Number((bm as any).lowThreshold ?? LOW_BALANCE_THRESHOLD);
+        const num = numericBalance(r.info);
+        const low = num !== null && num < threshold ? `\n⚠ 余额不足预警：当前 ${r.info.balance}（阈值 ${threshold}——低于阈值请及时充值）` : '';
+        return `余额：${r.info.balance}${r.info.currency ? ` ${r.info.currency}` : ''}（${r.info.source}${r.cached ? '，缓存中' : ''}）${low}`;
+      }
       return `余额获取失败：${r.error}`;
     }
     return '用法：/balance set [url] [--path <jsonPath>] | on | off | status | refresh';

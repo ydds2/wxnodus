@@ -2071,13 +2071,14 @@ export class GatewayClient extends EventEmitter {
 
   // ── 状态栏余额监控（💰）：60s 防抖 + 内核 5 分钟 TTL；失败诚实 ⚠ ──
   private balanceCache: { value: unknown; ts: number } | null = null
+  private lowBalanceNotified = false
 
   private async balanceStatus(params: Record<string, unknown>): Promise<unknown> {
     const bm = (this.kernel.settings as any)?.balanceMonitor ?? {};
     if (bm.enabled === false) return { ok: true, configured: false, enabled: false };
     if (!params.force && this.balanceCache && Date.now() - this.balanceCache.ts < 60_000) return this.balanceCache.value;
     const { resolveProviderProfile } = await import('../kernel/profiles.js')
-    const { fetchBalanceCached } = await import('../kernel/balance.js')
+    const { fetchBalanceCached, numericBalance, lowBalanceDecision, LOW_BALANCE_THRESHOLD } = await import('../kernel/balance.js')
     const rp = resolveProviderProfile(this.kernel.settings as Record<string, any>)
     if (!rp) return { ok: true, configured: false }
     const profile = { ...rp.profile, balanceUrl: (bm.url as string) || rp.profile.balanceUrl || '', balancePath: (bm.jsonPath as string) || rp.profile.balancePath || '' }
@@ -2086,6 +2087,15 @@ export class GatewayClient extends EventEmitter {
     const value = r.ok
       ? { ok: true, configured: true, balance: r.info.balance, currency: r.info.currency, source: r.info.source, cached: r.cached, updated_at: Date.now() }
       : { ok: false, configured: true, error: r.error, updated_at: Date.now() }
+    // 低余额预警（余额耗尽场景护栏）：低于阈值且未通知过 → sticky warn；回升重新武装
+    if (r.ok) {
+      const threshold = Number((bm as any).lowThreshold ?? LOW_BALANCE_THRESHOLD);
+      const d = lowBalanceDecision(numericBalance(r.info), threshold, this.lowBalanceNotified);
+      this.lowBalanceNotified = d.armed;
+      if (d.notify) {
+        this.publish({ type: 'notification.show', payload: { kind: 'sticky', level: 'warn', text: `余额不足预警：当前 ${r.info.balance}${r.info.currency ? ` ${r.info.currency}` : ''}（阈值 ${threshold}——/balance refresh 复核）` } });
+      }
+    }
     this.balanceCache = { value, ts: Date.now() }
     return value
   }

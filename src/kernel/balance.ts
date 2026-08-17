@@ -118,3 +118,23 @@ export async function fetchBalanceCached(profile: ProviderProfile, settings: Rec
   }
   return r.ok ? { ok: true, info: r.info, cached: false } : r;
 }
+
+// ── 低余额预警（余额耗尽场景的护栏：纯函数可单测）──
+/** 余额字符串 → 数值（宽容解析：¥110.00 / $12.34 / 1,234.5 / 123万? 不支持——仅数字形态） */
+export function numericBalance(info: { balance: string } | null | undefined): number | null {
+  const raw = String(info?.balance ?? '').replace(/[,，\s]/g, '');
+  const m = /-?\d+(\.\d+)?/.exec(raw);
+  if (!m) return null;
+  const n = Number(m[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 低余额通知状态机：低于阈值且未通知过 → notify；回升到阈值以上 → 重新武装（下次再低会再提醒） */
+export function lowBalanceDecision(value: number | null, threshold: number, lastNotified: boolean): { notify: boolean; armed: boolean } {
+  if (value === null) return { notify: false, armed: lastNotified };
+  if (value < threshold) return lastNotified ? { notify: false, armed: true } : { notify: true, armed: true };
+  return { notify: false, armed: false };
+}
+
+/** 低余额默认阈值（可经 balanceMonitor.lowThreshold 覆盖） */
+export const LOW_BALANCE_THRESHOLD = 5;
