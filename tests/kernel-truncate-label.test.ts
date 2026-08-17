@@ -28,6 +28,13 @@ describe('labelTruncate 单一事实源', () => {
     expect(out).toContain('已截断（共 50 字，剩余 40 字未读）]');
     expect(out).not.toContain('——');
   });
+  it('capNote 列表封顶标注：超限共 N 个/前 M 个 + 提示；未超限为空', async () => {
+    const { capNote } = await import('../src/kernel/truncate.js');
+    expect(capNote(35, 30, 'computer_uia_tree <handle> 直达')).toContain('共 35 个，已截断（前 30 个）');
+    expect(capNote(35, 30, 'computer_uia_tree <handle> 直达')).toContain('computer_uia_tree <handle> 直达');
+    expect(capNote(5, 30)).toBe('');
+    expect(capNote(30, 30)).toBe('');
+  });
 });
 
 describe('delegate 子代理输出诚实截断', () => {

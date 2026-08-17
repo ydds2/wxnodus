@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, realpat
 import { join, resolve, relative, sep } from 'node:path';
 import { sanitizedEnv } from './env.js';
 import { probeProcessAvailable } from './processProbe.js';
-import { labelTruncate } from './truncate.js';
+import { labelTruncate, capNote } from './truncate.js';
 
 /** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性）
  * W3-11：进程探测集中到 kernel/processProbe（入口层不直接执行进程） */
@@ -1105,8 +1105,8 @@ export function coreTools(): Record<string, ToolDef> {
       const all = r.windows ?? [];
       if (!all.length) return '未发现可见窗口';
       const wins = all.slice(0, 30);
-      const more = all.length > 30 ? `\n…[共 ${all.length} 个窗口，已截断（前 30 个）——computer_uia_tree <handle> 直达目标窗口]` : '';
-      return `可见窗口（${wins.length}${all.length > 30 ? `/共 ${all.length}` : ''}）：\n` + wins.map(w => `${w.focused ? '◉' : '○'} 「${w.name.slice(0, 40)}」${w.className ? ` <${w.className}>` : ''} pid=${w.pid} handle=${w.handle}`).join('\n') + more;
+      const cap = capNote(all.length, 30, 'computer_uia_tree <handle> 直达目标窗口');
+      return `可见窗口（${wins.length}${all.length > 30 ? `/共 ${all.length}` : ''}）：\n` + wins.map(w => `${w.focused ? '◉' : '○'} 「${w.name.slice(0, 40)}」${w.className ? ` <${w.className}>` : ''} pid=${w.pid} handle=${w.handle}`).join('\n') + (cap ? `\n${cap}` : '');
     },
   };
   const uiaTreeTool: ToolDef = {
@@ -1119,10 +1119,10 @@ export function coreTools(): Record<string, ToolDef> {
       const els = r.elements ?? [];
       if (!els.length) return '控件树为空（窗口无可交互元素）';
       const shown = els.slice(0, 60);
-      const more = els.length > 60 ? `\n…[共 ${els.length} 项，已截断（前 60 项）——用 computer_uia_find <名称>|<AutomationId> 定位具体元素]` : '';
+      const cap = capNote(els.length, 60, '用 computer_uia_find <名称>|<AutomationId> 定位具体元素');
       return `控件树（${els.length} 项——定位语法 <名称>|<AutomationId>）：\n` + shown.map(e =>
         `${e.name ? `「${e.name.slice(0, 30)}」` : ''}${e.id ? ` id=${e.id}` : ''} <${e.ct}> @(${e.x},${e.y} ${e.w}x${e.h})${e.enabled ? '' : ' ✗disabled'}`.trim()
-      ).join('\n') + more;
+      ).join('\n') + (cap ? `\n${cap}` : '');
     },
   };
   const uiaFindTool: ToolDef = {

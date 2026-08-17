@@ -542,3 +542,10 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **http_get/http_request**：8000 截断并入 labelTruncate 统一口径。
 - **htmlToText/extractMainText**：maxLen 截断显式标注（共 N 字/剩余 M 字）；extractMainText 另补「另有 K 行低分块未选取」标注 + 首行超预算仍纳入（labelTruncate 兜底，绝不静默空输出）。
 - **验证**：+4 测试（bash 9000/短 ×2、htmlToText 标注、extractMainText 标注）；全量 2354 通过；tsc 零错误。
+
+### 13.24 capNote 列表封顶标注轮（2026-08-17 持续完善）
+
+- **capNote 单一事实源**（truncate.ts）：枚举类工具列表封顶统一标注 `…[共 N 个，已截断（前 M 个）——指引]`——超限才追加，未超限空串。
+- **修复 browser 交互元素 40 封顶静默**：原 `out.length >= 40 → break` 静默截断（且 total 不可知）。现全量遍历计数唯一元素（uniq），前 40 个展示 + 总数标注——模型知道还有未列出的可交互元素。
+- **uia_windows/uia_tree 内联封顶统一**：去内联 `more` 拼串，改用 capNote（文案等价，测试锁定）。
+- **验证**：+1 测试（capNote ×4 断言）；全量 2355 通过；tsc 零错误。

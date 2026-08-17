@@ -3,7 +3,7 @@
 //       SSRF 域名白名单（navigate 前 checkUrlSafety 三层防护）+ 诚实归因（不可用明确提示）
 // 对齐：Gemini browser_agent / Cline browser —— AI 可主动打开网页、点击、输入、截图分析
 import { checkUrlSafety } from './ssrf.js';
-import { labelTruncate } from './truncate.js';
+import { labelTruncate, capNote } from './truncate.js';
 import { createRequire } from 'node:module';
 
 const requireCjs = createRequire(import.meta.url);
@@ -97,15 +97,17 @@ export function browserClose(sessionId = 'default'): Promise<string> {
   });
 }
 
-/** 可交互元素清单（深度：AI 精准选择器的依据——按钮/链接/输入框/下拉的稳定选择器建议） */
+/** 可交互元素清单（深度：AI 精准选择器的依据——按钮/链接/输入框/下拉的稳定选择器建议）
+ * 40 个封顶但总数诚实计数（超限显式标注——模型知道还有未列出的元素） */
 async function interactiveElements(page: any): Promise<string> {
   try {
     // 字符串函数在浏览器上下文执行（Node tsconfig 无 DOM lib，避免类型报错）
-    const els = await page.evaluate(`(() => {
-      const out = [];
+    const res = await page.evaluate(`(() => {
+      const all = document.querySelectorAll('a, button, input, select, textarea, [role="button"], [role="link"]');
       const seen = new Set();
-      for (const el of document.querySelectorAll('a, button, input, select, textarea, [role="button"], [role="link"]')) {
-        if (out.length >= 40) break;
+      const out = [];
+      let uniq = 0;
+      for (const el of all) {
         const tag = el.tagName.toLowerCase();
         const text = (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 60);
         const id = el.id ? '#' + el.id : '';
@@ -115,14 +117,16 @@ async function interactiveElements(page: any): Promise<string> {
         const href = el.href ? ' → ' + el.href.slice(0, 80) : '';
         const key = tag + id + name + ph + text;
         if (seen.has(key)) continue;
-        seen.add(key);
+        seen.add(key); uniq++;
+        if (out.length >= 40) continue; // 超出前 40 个仍计数（总数诚实）
         out.push('<' + tag + id + name + ph + type + '> ' + (text || '(无文本)') + href);
       }
-      return out;
+      return { out, total: uniq };
     })()`);
-    if (!Array.isArray(els) || !els.length) return '';
+    if (!res || !Array.isArray(res.out) || !res.out.length) return '';
+    const cap = capNote(Number(res.total) || 0, 40, 'browser_snapshot 或更精确选择器定位');
     return `可交互元素（选择器建议：<tag>#id / <tag>[name=…] / <tag>:has-text("文本")）：
-${els.join('\n')}`;
+${res.out.join('\n')}${cap ? `\n${cap}` : ''}`;
   } catch {
     return '';
   }
