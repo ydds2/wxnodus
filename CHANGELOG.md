@@ -20,6 +20,7 @@
 - **工具输出工程**：超 50KB/2000 行输出自动落盘 + 头尾预览 + 续读路径（bash 完整输出不丢尾）；早前工具输出掩码（上下文保护窗）；蒸馏开关（`/config set toolDistill true`，默认关）。
 - **LSP 集成**：`lsp_diagnostics` / `lsp_hover` / `lsp_definition` 三工具；`settings.lsp.servers` 可配任意语言服务器，内置 typescript-language-server 探测（缺失时诚实给安装指引）。
 - **硬编码清零**：压缩阈值/包裹面/轮次上限等全部改为模型真实窗口派生 + settings 可覆盖（`maxTurns` / `ctxOutputReserve` / `untrustedWrapLimit` / `toolOutput*` 等 12 个新配置键）。
+- **循环检测分级**：重复工具调用先注入「换策略提醒」再硬停（不再 3 次直停误杀合法轮询）；签名并入输出指纹；goal 模式相同结论空转自动终止——阈值全部 settings 可调（`loopRemindAt`/`loopHardStopAt`/`chantStopAt`/`maxConsecutiveFail`/`retryDelayMs`/`maxGoalRounds`/`maxSubagentDepth`/`toolCacheSize`/`fsReadLimit`/`bashOutputCap` 等）。
 
 ### Changed
 - **/build 单通道化**：AI 规格化成为唯一编译通道（规则脑删除后）；无 key 明确报错引导 `/model set-key`，绝不假装编译。

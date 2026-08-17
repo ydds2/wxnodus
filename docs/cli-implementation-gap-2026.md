@@ -33,7 +33,7 @@
 
 1. ✅ 已落地（补齐轮）：**工具输出回灌 offload**——超 50KB/2000 行落盘 `dataDir/truncations/` + 头尾预览 + 续读路径（`src/kernel/toolOutput.ts`）；bash 流式落盘保留完整输出（sink→promoteOffloadFile）；旧轮掩码（gemini 50k 保护窗/30k 触发，幂等）；蒸馏开关默认关（settings.toolDistill）。fs_read/读类豁免沿用 READ_TOOL_CACHE 名单。
 2. ✅ 已落地（补齐轮）：**压缩触发真实窗口**——模型目录 maxContext − 输出预留（默认 min(20k, 25%×窗口)，settings.ctxOutputReserve 可覆盖；`providers.ts maxContextFor` + `agent.ts`）。64k 硬编码清零。
-3. 循环检测分级（3 次注入提醒→5 次硬停）+ 输出哈希签名 + chanting 检测——未做（P1）。
+3. ✅ 已落地（深化轮）：**循环检测分级**——签名并入输出短哈希（crush 思想，`agent.ts shortHash`）；重复 ≥loopRemindAt(2) 注入换策略提醒（给合法轮询恢复机会）、≥loopHardStopAt(5) 硬停（原 3 次直停误杀）；goal 轮间相同结论 chanting 检测（≥chantRemindAt 提醒、≥chantStopAt 终止）；全部阈值 settings 化（loopRemindAt/loopHardStopAt/loopSigWindow/chant*）。
 4. 每步 checkpoint + 压缩后原 prompt 重入队续跑——未做（P1）。
 5. ✅ 已落地（补齐轮）：**MAX_TURNS 可配置**——settings.maxTurns（1..200 夹取，默认 32）；AGENTS.md findUp 未做。
 
@@ -99,7 +99,7 @@
 | P0-3 | apply_patch 多文件补丁 | codex/opencode | `apply_patch.lark:1-19` | ✅ 已落地（applyPatch.ts，13 用例） |
 | P0-4 | Windows OS 沙盒 | gemini | `GeminiSandbox.cs:247-306` | ✅ 已落地（winSandbox.ts；受限令牌 1314 实测证伪→Low IL） |
 | P1-1 | 并行调度（danger 读写门） | gemini/codex | `scheduler.ts:472-483`、`parallel.rs:153-157` | ✅ 已落地（只读批并行/含写批串行） |
-| P1-2 | 循环检测分级+输出哈希签名+内容重复检测 | gemini/crush | `loopDetectionService.ts`、`loop_detection.go:45-71` | ⏳ 未做 |
+| P1-2 | 循环检测分级+输出哈希签名+内容重复检测 | gemini/crush | `loopDetectionService.ts`、`loop_detection.go:45-71` | ✅ 已落地（提醒注入→硬停 + shortHash + chanting；阈值 settings 化） |
 | P1-3 | 每步 checkpoint+压缩后原 prompt 续跑 | kimi/crush | `kimisoul.py:1034`、`agent.go:1192-1207` | ⏳ 未做 |
 | P1-4 | approve_for_session 真实授权 | kimi/opencode | `approval.py:354-379` | ⏳ 未做 |
 | P2-1 | 快照增量化+血缘 | kimi/codex | `context.py:123-167` | ⏳ 未做 |

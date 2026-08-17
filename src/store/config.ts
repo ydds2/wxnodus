@@ -94,6 +94,10 @@ export const SETTINGS_KEYS = new Set([
   'sandbox', 'maxTurns', 'ctxOutputReserve',
   'toolOutputOffload', 'toolOutputOffloadBytes', 'toolOutputMask', 'toolOutputMaskProtect', 'toolOutputMaskTrigger',
   'toolDistill', 'toolDistillChars', 'untrustedWrapLimit', 'lsp',
+  // gap 深化（2026-08-18）：循环防护阈值 settings 化（默认与既有行为一致，全部夹取防误配）
+  'maxConsecutiveFail', 'maxUnknownToolRounds', 'retryDelayMs', 'maxGoalRounds', 'maxSubagentDepth',
+  'toolCacheSize', 'loopRemindAt', 'loopHardStopAt', 'loopSigWindow', 'chantRemindAt', 'chantStopAt',
+  'fsReadLimit', 'bashOutputCap',
   // 视觉开放通道（settings.vision* 与 visionLocal/visionOcr）
   'visionBaseURL', 'visionModel', 'visionKey', 'visionLocal', 'visionOcr',
   // 代理（/proxy 命令消费 settings.proxy）

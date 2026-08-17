@@ -180,3 +180,9 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 | 测试面 | tests/kernel-apply-patch / tool-output / win-sandbox / lsp-client / agent-gap-2026 | 全量 2447 通过 / 10 跳过 / 0 失败 |
 
 **诚实口径（复评红线）**：本轮所有「已落地」条目均有真实执行证据（含本机 OS 级实测），无一处纸面声明；受限令牌 1314 证伪、L0 改 Low IL 的取舍如实记录并体现在评分（⑥ 不给 10）；winget/scoop 仍为模板占位（无 remote 无发布 URL），⑧ 只给 5。
+
+### 9.1 深化轮补充（2026-08-18 三评）
+
+- **循环检测分级（gap P1-2）**：签名并入输出短哈希（`agent.ts shortHash`，FNV-1a 36 进制）；重复 ≥2 注入换策略提醒、≥5 硬停（原 3 次直停，误杀合法轮询缺陷修复）；goal 轮间相同结论 chanting 检测（提醒→终止）；4 个新用例（含 settings.loopHardStopAt=3 恢复旧行为回归锚）。
+- **硬编码二次清零（阈值 settings 化）**：连续失败/未知工具轮/重试间隔/goal 轮数/子代理深度/读缓存上限/签名窗口/循环阈值（EFF 块 10 项）+ fsReadLimit/bashOutputCap——共 13 个新设置键，全部夹取防误配、默认值=既有行为（行为零漂移回归测试）。
+- **评分口径**：本批为「纵深加固 + 可配置性」，④⑩ 维度分数不变（已并列同档；LLM 辅助循环检测——gemini 的置信度判空转——仍未做，是 ④ 与 gemini 的最后差距之一）。

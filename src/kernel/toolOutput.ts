@@ -26,6 +26,8 @@ function clampInt(v: unknown, def: number, min: number, max: number): number {
   return Math.min(Math.max(n, min), max);
 }
 
+export { clampInt };
+
 /** untrusted 包裹面阈值（settings.untrustedWrapLimit，1k..100k） */
 export function resolveWrapLimit(settings?: Record<string, any> | undefined): number {
   return clampInt(settings?.untrustedWrapLimit, UNTRUSTED_WRAP_LIMIT_DEFAULT, 1000, 100_000);

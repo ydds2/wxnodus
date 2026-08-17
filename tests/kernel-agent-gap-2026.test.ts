@@ -190,3 +190,63 @@ describe('硬编码修复（gap：生产级无魔法数字）', () => {
     expect(maxContextFor(undefined)).toBeUndefined();
   });
 });
+
+describe('循环检测分级（gap P1-2：提醒注入→硬停，输出短哈希签名）', () => {
+  const loopTool = () => ({
+    loop_read: { schema: { type: 'function', function: { name: 'loop_read', description: 'loop', parameters: { type: 'object', properties: {} } } }, danger: false, run: async () => 'same output every time' },
+  });
+
+  it('重复 2-4 次只注入换策略提醒（不再 3 次直停误杀合法轮询），正常完成', async () => {
+    const messages: string[] = [];
+    let call = 0;
+    const agent = createAgent(base({
+      extraTools: loopTool(),
+      callModel: async (req: { messages: Array<{ role: string; content: any }>; tools?: unknown[] }): Promise<ModelCall | ToolCallMsg> => {
+        call++;
+        req.messages.forEach(m => { if (typeof m.content === 'string') messages.push(m.content); });
+        if (call <= 4) return { type: 'tool_call', name: 'loop_read', args: {} } as ToolCallMsg;
+        return { type: 'text', content: '换策略后完成' } as ModelCall;
+      },
+    }));
+    const r = await agent.run('循环 4 次');
+    expect(r.ok).toBe(true); // 4 次重复未硬停（旧行为 3 次即停）
+    expect(r.text).toBe('换策略后完成');
+    expect(messages.some(m => m.includes('【循环提醒】'))).toBe(true); // 提醒已注入
+  });
+
+  it('重复达到 loopHardStopAt 才硬停——settings.loopHardStopAt=3 恢复旧行为', async () => {
+    const agent = createAgent(base({
+      extraTools: loopTool(),
+      config: { settings: { baseURL: 'https://mock', model: 'mock', loopHardStopAt: 3 } } as any,
+      callModel: async (): Promise<ModelCall | ToolCallMsg> => ({ type: 'tool_call', name: 'loop_read', args: {} } as ToolCallMsg),
+    }));
+    const r = await agent.run('死循环');
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain('工具调用循环检测');
+  });
+
+  it('shortHash：确定性 + 输出不同哈希不同（签名并入输出——同参不同输出不漏检）', async () => {
+    const { shortHash } = await import('../src/kernel/agent.js');
+    expect(shortHash('a')).toBe(shortHash('a'));
+    expect(shortHash('a')).toHaveLength(7);
+    expect(shortHash('a')).not.toBe(shortHash('b'));
+  });
+});
+
+describe('goal 模式 chanting 检测（gap P1-2：轮间相同结论空转终止）', () => {
+  it('连续相同结论 ≥chantStopAt → 判定空转终止（settings 可调）', async () => {
+    let calls = 0;
+    const agent = createAgent(base({
+      mode: 'goal' as any,
+      config: { settings: { baseURL: 'https://mock', model: 'mock', chantStopAt: 3, chantRemindAt: 2, maxGoalRounds: 10 } } as any,
+      callModel: async (): Promise<ModelCall | ToolCallMsg> => {
+        calls++;
+        return { type: 'text', content: '同样结论' } as ModelCall;
+      },
+    }));
+    const r = await agent.run('目标', { goalLoop: true });
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain('空转');
+    expect(calls).toBeLessThan(8); // 3+ 轮即终止（远小于 maxGoalRounds 10）
+  });
+});

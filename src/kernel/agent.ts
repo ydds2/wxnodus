@@ -111,9 +111,26 @@ export function briefToolContext(name: string, args: Record<string, any> | undef
     .find((v): v is string => typeof v === 'string' && v.trim().length > 0 && v.trim().length < 60);
   return brief ? `${verb} ${brief.trim()}` : verb;
 }
-const RETRY_DELAY_MS = 800;
-const MAX_CONSECUTIVE_FAIL = 5;
-const MAX_UNKNOWN_TOOL_ROUNDS = 3;
+// ── 循环防护默认值（gap 深化 2026-08-18：全部 settings 可覆盖，默认与既有行为一致）──
+const RETRY_DELAY_MS = 800;          // 瞬时失败退避间隔（settings.retryDelayMs）
+const MAX_CONSECUTIVE_FAIL = 5;      // 同工具连续失败终止阈值（settings.maxConsecutiveFail）
+const MAX_UNKNOWN_TOOL_ROUNDS = 3;   // 连续未知工具轮终止阈值（settings.maxUnknownToolRounds）
+const LOOP_REMIND_AT = 2;            // 重复签名 ≥N 注入策略提醒（gemini 分级：提醒→硬停）
+const LOOP_HARD_STOP_AT = 5;         // 重复签名 ≥N 硬停（原 3 次直停误杀合法轮询——见 gap P1-2）
+const LOOP_SIG_WINDOW = 8;           // 签名滑动窗口（settings.loopSigWindow）
+const CHANT_REMIND_AT = 3;           // goal 轮间相同结论 ≥N 注入换策略提醒
+const CHANT_STOP_AT = 5;             // goal 轮间相同结论 ≥N 终止（gemini 内容重复对齐）
+const TOOL_CACHE_SIZE = 32;          // 读工具结果缓存上限（settings.toolCacheSize）
+
+/** 数值设置解析（生产级：夹取防误配 + 非法值回退默认）——复用 toolOutput.clampInt 单一事实源 */
+import { clampInt as clampN } from './toolOutput.js';
+
+/** 输出短哈希（FNV-1a 36 进制 7 位——签名并入输出，防「同参数不同输出」空转漏检；crush SHA-256 思想） */
+export function shortHash(s: string): string {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36).padStart(7, '0');
+}
 
 
 
@@ -156,6 +173,20 @@ export function createAgent(opts: AgentOptions) {
   // （opencode agent.steps 对齐），夹取 1..200 防误配；opts.maxTurns 优先（调用方显式传）
   const settingsAny = opts.config?.settings as Record<string, any> | undefined;
   const MAX_TURNS_EFFECTIVE = Math.min(Math.max(Number(settingsAny?.maxTurns) || MAX_TURNS, 1), 200);
+  // gap 深化（2026-08-18）：循环防护阈值全部 settings 化（默认 = 模块级常量，行为不变）
+  const EFF = {
+    retryDelayMs: clampN(settingsAny?.retryDelayMs, RETRY_DELAY_MS, 50, 60_000),
+    maxConsecutiveFail: clampN(settingsAny?.maxConsecutiveFail, MAX_CONSECUTIVE_FAIL, 2, 50),
+    maxUnknownToolRounds: clampN(settingsAny?.maxUnknownToolRounds, MAX_UNKNOWN_TOOL_ROUNDS, 1, 20),
+    loopRemindAt: clampN(settingsAny?.loopRemindAt, LOOP_REMIND_AT, 2, 20),
+    loopHardStopAt: clampN(settingsAny?.loopHardStopAt, LOOP_HARD_STOP_AT, 3, 50),
+    loopSigWindow: clampN(settingsAny?.loopSigWindow, LOOP_SIG_WINDOW, 4, 32),
+    chantRemindAt: clampN(settingsAny?.chantRemindAt, CHANT_REMIND_AT, 2, 20),
+    chantStopAt: clampN(settingsAny?.chantStopAt, CHANT_STOP_AT, 3, 50),
+    toolCacheSize: clampN(settingsAny?.toolCacheSize, TOOL_CACHE_SIZE, 4, 256),
+    maxGoalRounds: clampN(settingsAny?.maxGoalRounds, 10, 1, 100),
+    maxSubagentDepth: clampN(settingsAny?.maxSubagentDepth, 3, 1, 8),
+  };
   // 余额耗尽自动停（余额监控护栏）：/balance auto-stop on 后，网关实测余额 ≤0
   // 写入 settings.balanceEmpty（运行时态，不落盘）→ 后续轮次硬停（显式失败闭环）
   const balanceAutoStop = ((opts.config?.settings as any)?.balanceMonitor as Record<string, any> | undefined)?.autoStop === true;
@@ -430,7 +461,7 @@ export function createAgent(opts: AgentOptions) {
   // 审查修复：extraTools（MCP/插件）此前不在名单内，MCP 默认 danger:false 却在 smart 下
   // 无确认执行任意副作用（与 delegate「只读工具集」描述不符）；现按 danger 标志动态剔除
   const SUBAGENT_EXCLUDE = ['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate', 'memory_write', 'http_get', 'ask_user'];
-  const MAX_SUBAGENT_DEPTH = 3;
+  const MAX_SUBAGENT_DEPTH = EFF.maxSubagentDepth; // settings.maxSubagentDepth（默认 3）
   // A24 第四类修复：委派暂停真实生效（delegation.pause → setDelegationPaused）——
   // 暂停后 delegate 工具/任务系统的新委派被拒绝（诚实返回原因，而非假装执行）
   let delegationPaused = false;
@@ -939,8 +970,10 @@ export function createAgent(opts: AgentOptions) {
     const toolList = opts2.subagent ? toolsToOpenAI(Object.fromEntries(Object.entries(toolSource).filter(([n]) => !['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate'].includes(n)))) : toolsToOpenAI(toolSource);
     let turns = 0;
     let consecutiveFail = 0;
-    // 深度：签名级循环检测缓冲（最近 8 轮工具调用签名）
+    // 深度：签名级循环检测缓冲（最近 EFF.loopSigWindow 轮工具调用签名——含输出短哈希）
     const recentToolSigs: string[] = [];
+    // 循环提醒已注入标记（gap P1-2：分级响应——提醒只注入一次防刷屏，硬停阈值后置）
+    let loopReminded = false;
     // 读工具结果缓存（回合内）：模型探索型任务常见同参重读/重搜（实测 35 次工具调用
     // 大量重复浪费）——重复读调用合并返回缓存省时省 token；任何写/执行类工具
     // （bash/fs_write/fs_edit…）执行后整体清空——缓存绝不跨写失效
@@ -1066,7 +1099,7 @@ export function createAgent(opts: AgentOptions) {
         let tried = 0;
         let lastErr = e;
         while (tried < 3) {
-          await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (tried + 1)));
+          await new Promise(r => setTimeout(r, EFF.retryDelayMs * (tried + 1)));
           try { res = await callWithAbort({ messages: msgs, tools: toolList }); break; }
           catch (e2: any) { if (st.aborted) { st.interrupted = true; break; } lastErr = e2; tried++; }
         }
@@ -1143,7 +1176,7 @@ export function createAgent(opts: AgentOptions) {
               } catch { /* 蒸馏失败保持原输出（诚实降级，不阻断） */ }
             }
             if (READ_TOOL_CACHE.has(c.name)) {
-              if (toolCache.size >= 32) {
+              if (toolCache.size >= EFF.toolCacheSize) {
                 const oldest = toolCache.keys().next().value;
                 if (oldest !== undefined) toolCache.delete(oldest);
               }
@@ -1177,24 +1210,30 @@ export function createAgent(opts: AgentOptions) {
         } else {
           for (const c of batch) executed.push(await runOneCall(c));
         }
-        if (unknownRounds >= MAX_UNKNOWN_TOOL_ROUNDS) {
-          bus.emit('agent.error', { message: `连续 ${MAX_UNKNOWN_TOOL_ROUNDS} 轮未知工具，终止` });
+        if (unknownRounds >= EFF.maxUnknownToolRounds) {
+          bus.emit('agent.error', { message: `连续 ${EFF.maxUnknownToolRounds} 轮未知工具，终止` });
           return finishEarly('模型连续调用未知工具，已终止');
         }
         consecutiveFail = anyFail ? consecutiveFail + 1 : 0;
-        if (consecutiveFail >= MAX_CONSECUTIVE_FAIL) {
-          bus.emit('agent.error', { message: `同工具连续失败 ${MAX_CONSECUTIVE_FAIL} 次，终止` });
-          return finishEarly('同工具连续失败 5 次，已终止');
+        if (consecutiveFail >= EFF.maxConsecutiveFail) {
+          bus.emit('agent.error', { message: `同工具连续失败 ${EFF.maxConsecutiveFail} 次，终止` });
+          return finishEarly(`同工具连续失败 ${EFF.maxConsecutiveFail} 次，已终止`);
         }
-        // 深度：签名级循环检测（Cline loop-detection 对齐）——相同 (工具,参数签名)
-        // 重复 ≥3 次即空转（即使每次未报失败）——比「失败计数」更早识别死循环省 token
-        const sig = executed.map(e => `${e.name}:${JSON.stringify(e.args ?? {}).slice(0, 120)}`).join('|');
+        // 深度：签名级循环检测（Cline loop-detection 对齐）——签名并入输出短哈希
+        // （crush 思想：同参数不同输出的空转也漏不掉）；分级响应（gemini P1-2 落地）：
+        // ≥loopRemindAt 注入换策略提醒（给合法轮询恢复机会）→ ≥loopHardStopAt 硬停
+        const sig = executed.map(e => `${e.name}:${JSON.stringify(e.args ?? {}).slice(0, 120)}:${shortHash(e.out)}`).join('|');
         recentToolSigs.push(sig);
-        if (recentToolSigs.length > 8) recentToolSigs.shift();
+        if (recentToolSigs.length > EFF.loopSigWindow) recentToolSigs.shift();
         const repeatCount = recentToolSigs.filter(s => s === sig).length;
-        if (repeatCount >= 3) {
+        if (repeatCount >= EFF.loopHardStopAt) {
           bus.emit('agent.error', { message: `检测到工具调用循环（相同调用重复 ${repeatCount} 次），终止` });
           return finishEarly(`工具调用循环检测（相同调用重复 ${repeatCount} 次）——任务无进展，已终止；请换一种方式或拆分子任务`);
+        }
+        if (repeatCount >= EFF.loopRemindAt && !loopReminded) {
+          loopReminded = true;
+          bus.emit('system.notice', { text: `检测到重复工具调用（${repeatCount} 次）——已注入换策略提醒；继续重复到 ${EFF.loopHardStopAt} 次将终止` });
+          msgs.push({ role: 'system', content: '【循环提醒】你正在重复相同的工具调用且没有进展。请立即改变策略：换一种方法、拆分子任务、或调用 clarify 向用户澄清。' });
         }
         const first = executed[0]!;
         msgs.push({
@@ -1286,7 +1325,7 @@ export function createAgent(opts: AgentOptions) {
   // loop-goal 模式（Kimi Ralph 同款）：目标驱动自主循环——
   // 模型自主规划/执行/自判完成（输出 [GOAL_DONE] 结束），直到完成或轮次上限；
   // 每轮 loop 独立回合（历史经 working 窗口延续上下文）
-  const MAX_GOAL_ROUNDS = 10;
+  const MAX_GOAL_ROUNDS = EFF.maxGoalRounds; // settings.maxGoalRounds（默认 10）
   async function runWithGoalLoop(prompt: string, images?: Array<{ dataUrl: string; mime: string }>, goalLoop?: boolean): Promise<AgentResult> {
     // goalLoop:false——命令层自循环（/goal）显式关闭内核 goal 模式，防内外层嵌套（默认行为不变）
     if (mode !== 'goal' || goalLoop === false) return loop(sessionId, prompt, { images });
@@ -1297,11 +1336,26 @@ export function createAgent(opts: AgentOptions) {
     bus.emit('agent.goal', { round: 1, maxRounds: MAX_GOAL_ROUNDS, done: false, text: prompt.slice(0, 80) });
     let result = await loop(sessionId, goalPrompt, { images, runState: rs });
     let rounds = 1;
+    // gap P1-2（2026-08-18）：轮间结论重复检测（gemini 内容重复对齐）——相同最终文本
+    // ≥chantRemindAt 注入换策略提醒、≥chantStopAt 终止（防 goal 模式空转烧 token）
+    let chantRounds = 0;
+    let prevText = '';
     while (rounds < MAX_GOAL_ROUNDS && !result.interrupted && !result.text.includes(GOAL_DONE_MARK)) {
       rounds++;
       bus.emit('agent.stage', { stage: `goal 循环第 ${rounds}/${MAX_GOAL_ROUNDS} 轮…` });
       bus.emit('agent.goal', { round: rounds, maxRounds: MAX_GOAL_ROUNDS, done: false, text: result.text.slice(0, 80) });
-      result = await loop(sessionId, `（goal 模式第 ${rounds} 轮）继续执行直到目标全部完成，完成后输出 ${GOAL_DONE_MARK}。以上文历史为当前进度。`, { runState: rs });
+      const t = result.text.trim();
+      chantRounds = t && t === prevText ? chantRounds + 1 : 0;
+      prevText = t;
+      if (chantRounds >= EFF.chantStopAt) {
+        bus.emit('agent.error', { message: `goal 循环连续 ${chantRounds} 轮结论相同——判定空转，终止` });
+        bus.emit('agent.goal', { round: rounds, maxRounds: MAX_GOAL_ROUNDS, done: false, cancelled: true, text: t.slice(0, 80) });
+        return { ...result, ok: false, text: `${t}\n（goal 循环连续 ${chantRounds} 轮输出相同结论——判定空转，已终止；请换一种方式或明确补充要求）` };
+      }
+      const chantNote = chantRounds >= EFF.chantRemindAt
+        ? `（检测到你连续 ${chantRounds} 轮给出相同结论——请换一种策略或给出新进展，不要重复相同内容。）`
+        : '';
+      result = await loop(sessionId, `（goal 模式第 ${rounds} 轮）继续执行直到目标全部完成，完成后输出 ${GOAL_DONE_MARK}。以上文历史为当前进度。${chantNote}`, { runState: rs });
     }
     const done = result.text.includes(GOAL_DONE_MARK);
     bus.emit('agent.goal', { round: rounds, maxRounds: MAX_GOAL_ROUNDS, done, cancelled: result.interrupted, text: result.text.slice(0, 80) });

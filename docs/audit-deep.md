@@ -731,3 +731,11 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
   5. 修复链：C# 编译期 4 错（Split char/string、OpenProcessToken 缺 out、CreateFile 句柄不可继承致输出全丢、CreateProcessAsUser 裸名 error 2→全路径）；**Add-Type -TypeDefinition 非 ASCII 损坏实测**（中文注释致解析错位——runner 内嵌 C# 纯 ASCII 红线 + 版本戳 v2）；受限令牌 1314 探测链三轮 diag 定位。
 - **过程回退/教训**：apply_patch parse 初版 `\S.+?` 单字符路径漏配 + sawBegin 校验误用 inPatch 终态 + **flushFile 漏 push doc.files**（三连修）；lspClient 块注释内 `"**/*.ts"` 的 `*/` 提前终结（本仓既知陷阱复发——已换无歧义写法）；测试口径修正（mask 数据量、offload 阈值夹取下限 10k、ctx==minus 退化容错使多数旧用例语义自愈、LSP mock 服务器 EPIPE 防护 + close 等待真实退出防 EBUSY）。
 - **验证**：新 5 套件 50 用例全绿（apply-patch 15/tool-output 10/win-sandbox 6/lsp-client 10/agent-gap 6 + truncate-label 契约修复）；全量 2447 通过 / 10 跳过 / 0 失败；tsc 零错误；评分复算 6.14→7.25（第 4/7 名，逐维理由入 cli-deep-analysis-score-2026.md §0.1，⑥ 安全 9 不升 10 的依据=沙盒仅 Windows 单平台）。
+
+### 13.49 深化轮（2026-08-18「继续深化」：循环检测分级 P1-2 + 硬编码二次清零）
+
+- **P1-2 循环检测分级（agent.ts）**：签名并入输出短哈希（shortHash FNV-1a 36 进制 7 位——crush「签名含工具输出」对齐，同参不同输出的空转漏检修复）；分级响应——重复 ≥loopRemindAt(2) 注入一次「【循环提醒】」system 消息（给合法轮询恢复机会，原 3 次直停误杀）、≥loopHardStopAt(5) 硬停；goal 模式轮间相同结论 chanting 检测（≥chantRemindAt 提醒语并入续轮 prompt、≥chantStopAt 终止并显式 ok=false + 空转文案）。
+- **硬编码二次清零（EFF 块 + 工具侧）**：连续失败 5/未知工具轮 3/重试间隔 800ms/子代理深度 3/goal 轮数 10/读缓存 32/签名窗口 8/循环阈值——全部 settings 化（clampInt 单一事实源从 toolOutput 导出，agent 复用）；fs_read 20000→settings.fsReadLimit、bash 内存封顶 20000→settings.bashOutputCap；白名单 +13 键。默认值=既有行为（零行为漂移；settings.loopHardStopAt=3 恢复旧行为的回归锚已入测）。
+- **既有测试更新**：goal「模型始终不宣告完成」用例原为恒同文本——正是 chanting 检测目标场景，改每轮不同文本（轮次上限路径）+ 新 chanting 用例（kernel-agent-gap-2026：提醒注入不直停/硬停阈值/短哈希确定性/空转终止 4 例）。
+- **教训**：python 批量替换误入 `${}` 模板字面量进单引号字符串（已即时修复——继续坚持「批量改动用 Edit 精确匹配优先」）。
+- **验证**：tsc 零错误；定向 10+65 绿；全量 2450 通过 / 10 跳过 / 0 失败；npm run ci 七步全绿（CI_EXIT=0）。

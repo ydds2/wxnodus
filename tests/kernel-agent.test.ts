@@ -496,7 +496,7 @@ describe('loop-goal 模式', () => {
     expect(r.text).toContain('全部任务已完成');
     expect(r.text).not.toContain('[GOAL_DONE]'); // 完成标记已剥离
   });
-  it('goal：模型始终不宣告完成时受轮次上限约束', async () => {
+  it('goal：模型不宣告完成（且每轮结论不同）时受轮次上限约束', async () => {
     let calls = 0;
     const agent = createAgent({
       db, bus, mem, sessionId: 't-goal-max',
@@ -504,7 +504,8 @@ describe('loop-goal 模式', () => {
       mode: 'goal',
       callModel: async () => {
         calls++;
-        return { type: 'text', content: '继续执行中' }; // 永不输出标记
+        // 每轮结论不同（chanting 检测不触发——相同结论空转终止见 kernel-agent-gap-2026 测试）
+        return { type: 'text', content: `继续执行中（第 ${calls} 步进展）` }; // 永不输出标记
       },
     });
     const r = await agent.run('任务');

@@ -8,7 +8,7 @@ import { join, resolve, relative, sep } from 'node:path';
 import { sanitizedEnv } from './env.js';
 import { probeProcessAvailable } from './processProbe.js';
 import { labelTruncate, capNote } from './truncate.js';
-import { UNTRUSTED_WRAP_LIMIT_DEFAULT } from './toolOutput.js';
+import { UNTRUSTED_WRAP_LIMIT_DEFAULT, clampInt } from './toolOutput.js';
 
 /** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性）
  * W3-11：进程探测集中到 kernel/processProbe（入口层不直接执行进程） */
@@ -157,10 +157,12 @@ export function coreTools(): Record<string, ToolDef> {
           const pageText = page.join('\n');
           return `${pageText}${end != null && end < lines.length ? `\n…[共 ${lines.length} 行，已读第 ${start}-${end - 1} 行——offset=${end} 续读]` : ''}`;
         }
-        // 诚实截断：超长文件只给头部 20000 字并显式标注——模型知道后面还有内容
+        // 诚实截断：超长文件只给头部 N 字并显式标注——模型知道后面还有内容
         // （避免「读完整文件」假象；续读用 offset 分页或 bash tail）
-        return full.length > 20000
-          ? `${full.slice(0, 20000)}\n…[文件过长已截断（共 ${full.length} 字，剩余 ${full.length - 20000} 字未读）——用 offset/limit 分页或 bash tail/sed 续看]`
+        // gap 深化（2026-08-18）：N 不再写死 20000——settings.fsReadLimit（2k..1M 夹取）
+        const fsLimit = clampInt(ctx.getSettings?.()?.fsReadLimit, 20000, 2000, 1_000_000);
+        return full.length > fsLimit
+          ? `${full.slice(0, fsLimit)}\n…[文件过长已截断（共 ${full.length} 字，剩余 ${full.length - fsLimit} 字未读）——用 offset/limit 分页或 bash tail/sed 续看]`
           : full;
       }
       catch (e: any) { return `读取失败：${e.message}`; }
@@ -291,12 +293,14 @@ export function coreTools(): Record<string, ToolDef> {
         let truncated = false;
         let fullPath: string | null = null; // 完整输出落盘路径（接管为 offload 用）
         let exitCode: number | null = null;
+        // gap 深化（2026-08-18）：内存封顶不再写死 20000——settings.bashOutputCap（2k..1M 夹取）
+        const outCap = clampInt(sSettings?.bashOutputCap, 20000, 2000, 1_000_000);
         if (sandbox.result) {
           // 沙盒路径：输出由助手落盘文件（受限子进程 stdout/stderr 重定向），
           // 头尾有界读取进内存；超限文件接管为正式 offload
           const { readHeadTail, promoteOffloadFile } = await import('./toolOutput.js');
           const { readFileSync: rf, appendFileSync, rmSync } = await import('node:fs');
-          const outHt = readHeadTail(sandbox.result.outPath, 20_000, 0);
+          const outHt = readHeadTail(sandbox.result.outPath, outCap, 0);
           const errHt = readHeadTail(sandbox.result.errPath, 2_000, 0);
           const outText = outHt?.head ?? '';
           const errText = errHt?.head ?? '';
@@ -346,9 +350,9 @@ export function coreTools(): Record<string, ToolDef> {
           const { writeSync, closeSync, rmSync } = await import('node:fs');
           const appendOut = (d: Buffer) => {
             if (sinkFd !== null) { try { writeSync(sinkFd, d); } catch { /* sink 失败不影响执行 */ } }
-            if (out.length >= 20000) { truncated = true; return; }
+            if (out.length >= outCap) { truncated = true; return; }
             out += d.toString();
-            if (out.length > 20000) { out = out.slice(0, 20000); truncated = true; }
+            if (out.length > outCap) { out = out.slice(0, outCap); truncated = true; }
           };
           child.stdout?.on('data', appendOut);
           child.stderr?.on('data', appendOut);
