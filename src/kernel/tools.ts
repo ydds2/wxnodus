@@ -83,6 +83,13 @@ export const wrapDanger = (s: string) =>
   // 转义为 <\/...>，防止提前闭合包裹边界（提示注入防护）
   `<untrusted_tool_result>\n${s.slice(0, 8000).replace(/<\/untrusted_tool_result>/g, '<\\/untrusted_tool_result>')}\n</untrusted_tool_result>`;
 
+// 工具调用最小间隔（纯函数可单测）：返回需等待的毫秒数（0 = 无需等待）——
+// 防模型连发搜索/抓取触发引擎 429 或封禁的自保护护栏
+export function minIntervalSince(lastTs: number, minMs: number, now: number = Date.now()): number {
+  return Math.max(0, minMs - (now - lastTs));
+}
+let lastSearchTs = 0;
+
 export function coreTools(): Record<string, ToolDef> {
   // 安全审查修复：fs_read 工作区边界——realpath 校验目标必须在 cwd 内（拒绝 ../ 逃逸与
   // 任意系统文件路径被静默读进模型上下文；fs_read 是 danger:false 无确认的）。
@@ -433,6 +440,10 @@ export function coreTools(): Record<string, ToolDef> {
       if (!q) return '搜索词为空';
       const max = Math.min(Math.max(Number(max_results) || 5, 1), 8);
       const eng = (engine === 'duckduckgo' || engine === 'bing') ? engine : 'auto';
+      // 最小间隔节流（1.5s）：防止模型连发搜索触发引擎 429/封禁——自保护护栏
+      const wait = minIntervalSince(lastSearchTs, 1500);
+      if (wait > 0) await new Promise(res => setTimeout(res, wait));
+      lastSearchTs = Date.now();
       const r = await searchWeb(q, { maxResults: max, engine: eng });
       if (!r.ok) return `搜索失败：${r.error}`;
       if (!r.results.length) return '搜索无结果（可换关键词重试）';

@@ -71,3 +71,12 @@ describe('ls head 截断', () => {
     expect(out).not.toContain('f9.txt');
   });
 });
+
+describe('minIntervalSince 工具间隔护栏', () => {
+  it('纯函数：间隔内返回等待值，间隔外 0', async () => {
+    const { minIntervalSince } = await import('../src/kernel/tools.js');
+    expect(minIntervalSince(1000, 1500, 2000)).toBe(500);
+    expect(minIntervalSince(1000, 1500, 2600)).toBe(0);
+    expect(minIntervalSince(0, 1500, 100)).toBe(1400);
+  });
+});

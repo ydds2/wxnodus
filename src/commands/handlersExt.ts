@@ -858,8 +858,11 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (!rows.length) return `暂无 API 用量记录（${scopeLabel}）——真实对话后才有成本数据`;
     const s = costSummary(rows, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
     const fmtUsd = (n: number | null) => (n === null ? '未收录定价' : n === 0 ? '$0（免费/离线）' : `$${n.toFixed(4)}`);
+    const totalIn = rows.reduce((a, r) => a + r.input, 0);
+    const totalOut = rows.reduce((a, r) => a + r.output, 0);
     const body = [
       ` 范围：${scopeLabel}`,
+      ` 用量：入 ${totalIn.toLocaleString()} / 出 ${totalOut.toLocaleString()} / 共 ${(totalIn + totalOut).toLocaleString()} token（${rows.length} 个模型）`,
       ...s.rows.map(r => ` ${r.model.slice(0, 22).padEnd(22)} 入 ${r.input.toLocaleString().padStart(8)} / 出 ${r.output.toLocaleString().padStart(8)} → ${fmtUsd(r.usd)}`),
       ` 合计（估算）：$${s.totalUsd.toFixed(4)}${s.unknownCount ? `（另有 ${s.unknownCount} 个模型未收录定价，仅计 token）` : ''}`,
       ` 注：参考公开价目估算，非实际账单；/usage 看 token 明细`,
