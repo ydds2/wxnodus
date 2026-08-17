@@ -449,3 +449,11 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **成本护栏配套**：costPrices 自定义价目（中转站/私有定价档，adapter 与 /cost 同源）；/usage --waterfall [today|7d|30d] 区间瀑布；usage_stats 会话/时间索引（聚合查询不再全表扫描）。
 - **说人话直达**：NL 触发「成本多少/花了多少钱 → /cost」「余额还有多少 → /balance status」；token 用量双向匹配（用了多少 token）。
 - **验证**：全量 2314 通过；cmd-sweep 124/124（+threshold/auto-stop 两形态）；full-scene 28/28 + cmd-verify 14/14 真机电池复测（TextInput 常驻挂载等 UI 改动在真实 pty 上无回归）；tsc 零错误。
+
+### 13.12 工具诚实性与观测补强轮（2026-08-17 持续完善）
+
+- **静默截断清剿**：fs_read（20000）/grep/http_get×2（8000）/wx_cmd（2000）超长输出此前静默切片——模型误以为「内容到此为止」，改统一显式标注（共 N 字/剩余 M 字 + 续看指引：bash tail / 收窄搜索 / /claw / 重定向分片）。+2 测试（fs_read 长短双路径）。
+- **视觉同屏去重**：describeImageStatus LRU(1) + 10s TTL（computer_observe 静止画面循环观测同图秒回，零重复视觉 API；prompt 不同/超时自然失效）；cached 标记透传 /computer observe 与 computer_observe 工具输出（诚实告知「10s 内相同画面未重新识别」）。+2 测试。
+- **截图即问**：Ctrl+Shift+P 一键全屏截图 → 附件落盘 + pending 登记（下次提问经能力门：视觉模型注入 parts / 文本模型 GLM 先识别）——/capture→/img→提问三步合一；无图形环境诚实失败。+1 测试（真实图形环境成功路径实测通过）。
+- **回合结算即时成本**：agent.end 的 message.complete 携带会话实时 usage（含 cost_usd）——状态栏 $ 不再等下次 session.info 才刷新。
+- **验证**：全量 2319 通过；tsc 零错误。

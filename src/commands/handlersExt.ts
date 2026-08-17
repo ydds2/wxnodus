@@ -1027,6 +1027,17 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       }
     }
     rows.push(` 黑洞全量：${rec.length} 条 · 吸附归档 ${ctx.mem.absorbCount('default')} 条（/hole 可检索）`);
+    // 本会话成本估算（与 /cost 同源——状态栏 $ 段同一数据）
+    try {
+      const sid = ctx.agent?.getSessionId?.() ?? 'default';
+      const costRows = ctx.db.prepare(
+        `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
+      ).all(sid) as Array<{ model: string; input: number; output: number }>;
+      if (costRows.length) {
+        const cs = costSummary(costRows, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
+        rows.push(` 成本：${cs.unknownCount === 0 ? `$${cs.totalUsd.toFixed(4)}（估算）` : `$${cs.totalUsd.toFixed(4)} 起（${cs.unknownCount} 个模型未收录定价）`} · /cost 看区间`);
+      }
+    } catch { /* 成本统计失败静默 */ }
     // 架构 P4：parts 消息模型——工具消息错误/截断分段统计（消息粒度可审计）
     try {
       const sid = ctx.agent?.getSessionId?.() ?? 'default';
