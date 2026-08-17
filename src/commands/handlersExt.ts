@@ -1096,6 +1096,18 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const rec = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default');
     if (!rec.length) return '暂无记忆';
     const last = rec.slice(-10);
+    // 本会话成本估算（与 /cost 同源——摘要时顺带知晓花费）
+    let costLine = '';
+    try {
+      const sid = ctx.agent?.getSessionId?.() ?? 'default';
+      const costRows = ctx.db.prepare(
+        `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
+      ).all(sid) as Array<{ model: string; input: number; output: number }>;
+      if (costRows.length) {
+        const cs = costSummary(costRows, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
+        costLine = cs.unknownCount === 0 ? `$${cs.totalUsd.toFixed(4)}（估算）` : `$${cs.totalUsd.toFixed(4)} 起（${cs.unknownCount} 个模型未收录定价）`;
+      }
+    } catch { /* 成本统计失败静默 */ }
     const transcript = last.filter((m: any) => m.role !== 'system').map((m: any) => `${m.role}: ${String(m.content ?? '').slice(0, 200)}`).join('\n');
     // LLM 提炼（有密钥时）
     try {
@@ -1127,6 +1139,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ` 最近 ${last.length} 条：${roles.join(' → ')}`,
       ` 最新：${String(last[last.length - 1]?.content ?? '').slice(0, 60)}`,
       ` 全量 ${rec.length} 条 · 吸附 ${ctx.mem.absorbCount('default')} 条`,
+      ...(costLine ? [` 成本：${costLine}（/cost 看区间）`] : []),
     ]);
   });
 
