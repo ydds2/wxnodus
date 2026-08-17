@@ -333,14 +333,19 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const ls: ToolDef = {
-    schema: { type: 'function', function: { name: 'ls', description: '列出目录内容', parameters: { type: 'object', properties: { path: { type: 'string' } } } } },
+    schema: { type: 'function', function: { name: 'ls', description: '列出目录内容（head 限制条目数——大目录分段查看）', parameters: { type: 'object', properties: { path: { type: 'string' }, head: { type: 'number', description: '最多返回条目数（缺省 200）' } }, required: [] } } },
     danger: false,
-    async run({ path = '.' }, ctx) {
+    async run({ path = '.', head }, ctx) {
       try {
-        return readdirSync(resolve(ctx.cwd, path)).map(f => {
+        const entries = readdirSync(resolve(ctx.cwd, path)).map(f => {
           const p = join(resolve(ctx.cwd, path), f);
           try { return statSync(p).isDirectory() ? `${f}/` : f; } catch { return f; }
-        }).join('\n');
+        });
+        const cap = Math.max(1, Math.floor(Number(head) || 200));
+        // 诚实截断：大目录显式标注（模型知道还有条目——加 head 或子目录分段查看）
+        return entries.length > cap
+          ? `${entries.slice(0, cap).join('\n')}\n…[共 ${entries.length} 个条目，已截断（前 ${cap} 个）——加 head 参数或按子目录分段查看]`
+          : entries.join('\n');
       } catch (e: any) { return `目录读取失败：${e.message}`; }
     },
   };

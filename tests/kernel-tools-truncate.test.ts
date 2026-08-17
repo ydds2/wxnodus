@@ -57,3 +57,17 @@ describe('fs_read 分页续读（offset/limit）', () => {
     expect(out).toBe('');
   });
 });
+
+describe('ls head 截断', () => {
+  it('超限条目截断并标注总数', async () => {
+    const { coreTools } = await import('../src/kernel/tools.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-ls-'));
+    dirs.push(d);
+    for (let i = 0; i < 10; i++) writeFileSync(join(d, `f${i}.txt`), 'x');
+    const ls = coreTools()['ls'];
+    const out = await ls!.run({ path: '.', head: 3 }, { cwd: d } as any);
+    expect(out).toContain('f0.txt');
+    expect(out).toContain('共 10 个条目');
+    expect(out).not.toContain('f9.txt');
+  });
+});
