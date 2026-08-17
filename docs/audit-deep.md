@@ -590,3 +590,8 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 - **snippet 显示级截断补 …**：/hole 与 /memory search（70 字）、/memory list（60 字）、置顶记忆（40 字）四处的摘要片段原静默截断——超限条目补 `…`（完整数据在对应检索工具/详情）。纯函数 `snippet`（truncate.ts 单一事实源）并接线。
 - **验证**：+1 测试（snippet 超限/未超/空 ×3 断言）；全量 2361 通过；tsc 零错误。
+
+### 13.33 召回注入截断标注轮（2026-08-17 持续完善）
+
+- **agent 召回注入 300 字静默截断修复**：`recallHybrid` 命中条目注入用户提示时原 `slice(0, 300)` 无标注——模型误以为记忆到此为止。现 labelTruncate 统一口径（无 hint——紧凑，模型可 memory_search 查全文）。
+- **验证**：全量 2360 通过 + tsc 零错误（一轮全量回归出现单测试 flake——已另起 6 次循环复测定位中，未见与本次改动相关性）。

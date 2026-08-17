@@ -16,6 +16,7 @@ import type { Memory } from './memory.js';
 import { resolveDataDir } from './paths.js';
 import { estimateMessagesTokens, compactMessages, contentToText } from './memory.js';
 import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx, type ToolDef } from './tools.js';
+import { labelTruncate } from './truncate.js';
 import { resolveModelForChat } from './profiles.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
 import { isCompletionClaim, GOAL_DONE_MARK } from './completionClaim.js';
@@ -870,9 +871,10 @@ export function createAgent(opts: AgentOptions) {
       }
     } catch { /* 历史加载失败不阻断 */ }
     // 召回注入（黑洞引擎：FTS 命中历史上下文；限定当前会话防串记忆）
+    // 每条 300 字截断显式标注（labelTruncate 统一口径——模型知道有剩余，可 memory_search 查全文）
     const recalled = await opts.mem.recallHybrid(prompt, { limit: 3, sessionId });
     const recallBlock = recalled.length
-      ? `\n[相关历史记忆（本会话）]\n${recalled.map(r => r.content.slice(0, 300)).join('\n---\n')}`
+      ? `\n[相关历史记忆（本会话）]\n${recalled.map(r => labelTruncate(String(r.content ?? ''), 300)).join('\n---\n')}`
       : '';
     msgs.push({ role: 'user', content: imgParts.length
       ? [{ type: 'text', text: prompt + recallBlock }, ...imgParts]
