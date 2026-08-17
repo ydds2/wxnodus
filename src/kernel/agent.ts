@@ -138,13 +138,16 @@ export function createAgent(opts: AgentOptions) {
   let mode = opts.mode ?? 'smart'; // 可变：/perm 切换经 setMode 热更新
 
   // 会话 token 预算（Gemini general.budget 对齐）：settings.budgetTokens>0 时，
-  // 会话累计用量超预算 → system.notice 告警一次（防刷屏）；0/缺省 = 不设限
+  // 会话累计用量超预算 → system.notice 告警一次（防刷屏）；0/缺省 = 不设限；
+  // settings.budgetStop=true → 超出后硬停（后续轮次 finishEarly 显式失败，绝不静默）
   const budgetTokens = Number((opts.config?.settings as any)?.budgetTokens) || 0;
+  const budgetStop = (opts.config?.settings as any)?.budgetStop === true;
 
   // 阶段 2（AI 自主触发）：会话首轮自动注入仓库地图 + 技能清单（仅一次）——
   // 模型先看项目结构再动手、自主 skill_load，减少人工 /map 与 /skill list
   let autoInjectDone = false;
   let budgetWarned = false;
+  let budgetExceeded = false;
   // 上下文水位预警标记（会话级一次——75% 阈值提示主动压缩）
   let ctxWarned = false;
   // 剧本录制器（/script record 挂载）：executeTool 每个调用回调（name/args）
@@ -249,7 +252,12 @@ export function createAgent(opts: AgentOptions) {
       const total = row?.t ?? 0;
       if (total > budgetTokens) {
         budgetWarned = true;
-        bus.emit('system.notice', { text: `会话 token 预算已达上限（${total}/${budgetTokens}）——建议 /compact 压缩或 /new 开启新会话控制成本` });
+        budgetExceeded = true;
+        bus.emit('system.notice', {
+          text: budgetStop
+            ? `会话 token 预算已达上限（${total}/${budgetTokens}）——已硬停（settings.budgetStop=true）；/compact 压缩或 /new 新会话后继续`
+            : `会话 token 预算已达上限（${total}/${budgetTokens}）——建议 /compact 压缩或 /new 开启新会话控制成本`,
+        });
       }
     } catch { /* 统计失败静默 */ }
   }
@@ -914,6 +922,13 @@ export function createAgent(opts: AgentOptions) {
     try {
     while (turns < (opts.maxTurns ?? MAX_TURNS)) {
       if (st.aborted) { st.interrupted = true; break; }
+      // 预算硬停（settings.budgetStop）：超预算后不再发起任何模型调用——显式失败闭环
+      // （finishEarly 保证 agent.message + agent.end 事件可见，绝不静默空输出）。
+      // 同步检查置于门控之前——本回合开始即生效（首个调用也不放过）
+      if (budgetStop && budgetTokens) checkBudget();
+      if (budgetExceeded && budgetStop) {
+        return finishEarly(`会话 token 预算已达上限（${budgetTokens}）——settings.budgetStop=true 已停止对话；/compact 压缩上下文或 /new 新会话后继续（/config set budgetStop false 取消硬停）`);
+      }
       turns++;
       // 会话 token 预算（Gemini general.budget 对齐）：每轮开始检查累计用量（不依赖当轮 usage）
       void checkBudget();

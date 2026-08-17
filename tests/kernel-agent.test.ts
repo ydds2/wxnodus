@@ -1189,3 +1189,66 @@ describe('A24 goal 模式进度事件（agent.goal）', () => {
     expect(goalEvents.at(-1)!.done).toBe(true);
   });
 });
+
+describe('预算硬停（settings.budgetStop）', () => {
+  it('超出预算后：不再发起模型调用 + finishEarly 显式失败', async () => {
+    const { createAgent } = await import('../src/kernel/agent.js');
+    const { createEventBus } = await import('../src/kernel/events.js');
+    const { openDB, closeDB } = await import('../src/store/db.js');
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { createMemory } = await import('../src/kernel/memory.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-budget-'));
+    const db = openDB(d);
+    // 预置超预算用量（600 > 500）
+    db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`).run('b1', 'deepseek-chat', 400, 200, Date.now());
+    let modelCalls = 0;
+    const events: string[] = [];
+    const bus = createEventBus(d);
+    bus.on('agent.message', () => events.push('message'));
+    bus.on('agent.end', () => events.push('end'));
+    const agent = createAgent({
+      db, bus, mem: createMemory(db), sessionId: 'b1',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', budgetTokens: 500, budgetStop: true } } as any,
+      callModel: async () => { modelCalls += 1; return { type: 'text', content: '收到' }; },
+    });
+    try {
+      const r = await agent.run('继续干活');
+      expect(r.ok).toBe(false);
+      expect(r.text).toContain('预算已达上限');
+      expect(modelCalls).toBe(0); // 绝不发起模型调用
+      expect(events).toEqual(['message', 'end']); // finishEarly 闭环事件可见
+    } finally {
+      closeDB(db);
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('未开 budgetStop：仅告警不硬停（模型仍响应）', async () => {
+    const { createAgent } = await import('../src/kernel/agent.js');
+    const { createEventBus } = await import('../src/kernel/events.js');
+    const { openDB, closeDB } = await import('../src/store/db.js');
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { createMemory } = await import('../src/kernel/memory.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-budget-'));
+    const db = openDB(d);
+    db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`).run('b2', 'deepseek-chat', 400, 200, Date.now());
+    let modelCalls = 0;
+    const agent = createAgent({
+      db, bus: createEventBus(d), mem: createMemory(db), sessionId: 'b2',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', budgetTokens: 500 } } as any,
+      callModel: async () => { modelCalls += 1; return { type: 'text', content: '收到' }; },
+    });
+    try {
+      const r = await agent.run('继续干活');
+      expect(r.ok).toBe(true);
+      expect(modelCalls).toBe(1);
+    } finally {
+      closeDB(db);
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});
