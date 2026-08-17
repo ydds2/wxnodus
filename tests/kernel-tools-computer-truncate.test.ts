@@ -38,7 +38,7 @@ describe('computer_uia_tree 控件树有界输出', () => {
   it('超 60 项 → 前 60 + 总数标注 + find 指引（防上下文爆破）', async () => {
     vi.mocked(uiaTree).mockReturnValue({
       ok: true,
-      elements: Array.from({ length: 70 }, (_, i) => ({ name: `e${i}`, id: '', ct: 'Button', x: 0, y: 0, w: 10, h: 10, enabled: true })),
+      elements: Array.from({ length: 70 }, (_, i) => ({ name: `e${i}`, id: '', ct: 'Button', x: 0, y: 0, w: 10, h: 10, enabled: true, offscreen: false })),
     });
     const { coreTools } = await import('../src/kernel/tools.js');
     const out = await coreTools().computer_uia_tree!.run({}, {} as any);
@@ -51,7 +51,7 @@ describe('computer_uia_tree 控件树有界输出', () => {
   it('60 项以内 → 全量无标注', async () => {
     vi.mocked(uiaTree).mockReturnValue({
       ok: true,
-      elements: Array.from({ length: 3 }, (_, i) => ({ name: `e${i}`, id: '', ct: 'Text', x: 0, y: 0, w: 5, h: 5, enabled: true })),
+      elements: Array.from({ length: 3 }, (_, i) => ({ name: `e${i}`, id: '', ct: 'Text', x: 0, y: 0, w: 5, h: 5, enabled: true, offscreen: false })),
     });
     const { coreTools } = await import('../src/kernel/tools.js');
     const out = await coreTools().computer_uia_tree!.run({}, {} as any);

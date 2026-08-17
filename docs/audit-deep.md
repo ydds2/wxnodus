@@ -638,5 +638,5 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 ### 13.39 本地门禁聚合 + vim 死代码清理轮（2026-08-18 /goal 自主完善）
 
-- **`npm run ci` 一键门禁**：仓库无 git remote（GitHub Actions 无意义）——诚实等价物为本地全量门禁聚合脚本：typecheck → typecheck:tests → test:all → test:known-failures → check:test-discovery → check:requirement-coverage → build。落地前逐项实测：known-failures 31 绿、发现检查无缺失根、需求覆盖 20/13 全绿——聚合脚本自始全绿而非「先红后修」。README 快速开始补一行。
+- **`npm run ci` 一键门禁**：仓库无 git remote（GitHub Actions 无意义）——诚实等价物为本地全量门禁聚合脚本：typecheck → typecheck:tests → test:all → test:known-failures → check:test-discovery → check:requirement-coverage → build。首次全链路实跑暴露 typecheck:tests 项目（tsconfig.tests.json，主 tsc 不覆盖）**3 处既有测试类型错误**（kernel-tools-computer-truncate UiaElement 缺 offscreen、ui-phase0-contract PromptZone props 缺 onHistoryAccept/onHistoryCancel、kernel-llmStream 未窄化失败变体 r.error）——本轮回合一并修复，typecheck:tests 归零后七步全绿复跑确认（此前「自始全绿」口径作废，如实记录）。README 快速开始补一行。
 - **vim 死代码清理**（深评 UI S0 之二选一执行「从宣传移除」分支）：`src/wxnodus-ui/lib/vimKeys.ts` 41 行薄层全仓库零调用（仅 gaps 测试锁定）、无 hotkeys/helpHint/README 任何宣称——删除文件 + gaps.test.ts vim 段（差距 #1 以「无宣称不保留」关闭）；真 vim 模式如需复活应按 codex keymap 层重新设计（薄层连操作符/文本对象都没有，无保留价值）。

@@ -28,7 +28,9 @@ const promptProps = {
   onSecretSubmit: () => {},
   onSudoSubmit: () => {},
   onFormSubmit: () => {},
-  onFormCancel: () => {}
+  onFormCancel: () => {},
+  onHistoryAccept: () => {},
+  onHistoryCancel: () => {}
 }
 
 const withGateway = (children: React.ReactNode) => (

@@ -150,7 +150,7 @@ describe('429 同模型退避重试（一次）', () => {
     try {
       const r = await callLlmStream({ baseURL: 'https://mock', model: 'relay-custom-model', key: 'k', messages: [{ role: 'user', content: 'hi' }], timeoutMs: 5000 } as any);
       expect(r.ok).toBe(false);
-      expect(String(r.error)).toContain('429');
+      if (!r.ok) expect(String(r.error)).toContain('429');
       expect(calls).toBe(2);
     } finally {
       (globalThis as any).fetch = orig;
