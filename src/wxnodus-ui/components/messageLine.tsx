@@ -10,6 +10,7 @@ import { sectionMode } from '../domain/details.js'
 import { userDisplay } from '../domain/messages.js'
 import { ROLE } from '../domain/roles.js'
 import { writeClipboardText } from '../lib/clipboard.js'
+import { DIFF_HILITE_MAX, diffLines, stripDiffFence, type DiffLineKind } from '../lib/diffHighlight.js'
 import { transcriptBodyWidth, transcriptGutterWidth } from '../lib/inputMetrics.js'
 import {
   boundedLiveRenderText,
@@ -337,6 +338,43 @@ export const MessageLine = memo(function MessageLine({
 
     if (msg.role !== 'user' && hasAnsi(msg.text)) {
       return <Ansi>{sanitizeAnsiForRender(msg.text)}</Ansi>
+    }
+
+    // ── diff 语法高亮（#7 UX 债：Aider/Claude Code 同款 +/-/@@ 着色）──
+    // kind:'diff' 段（pushInlineDiffSegment 产出的 ```diff 块）逐行分类着色：
+    // add 绿 / del 红 / hunk 青 / meta 灰 / context 正文色。超长 diff 只高亮
+    // 前 DIFF_HILITE_MAX 行，余行合并单块（内容完整保留，仅着色降级——防节点爆炸）。
+    if (msg.kind === 'diff') {
+      const bodyText = stripDiffFence(msg.text)
+
+      if (bodyText) {
+        const lines = diffLines(bodyText)
+        const hilite = lines.slice(0, DIFF_HILITE_MAX)
+        const rest = lines.slice(DIFF_HILITE_MAX)
+        const lineColor = (kind: DiffLineKind) =>
+          kind === 'add'
+            ? t.color.statusGood
+            : kind === 'del'
+              ? t.color.error
+              : kind === 'hunk'
+                ? t.color.accent
+                : kind === 'meta'
+                  ? t.color.muted
+                  : body
+
+        return (
+          <Box flexDirection="column">
+            {hilite.map((l, i) => (
+              <Text key={i} color={lineColor(l.kind)}>
+                {l.text}
+              </Text>
+            ))}
+            {rest.length ? (
+              <Text color={t.color.muted}>{rest.map(l => l.text).join('\n')}</Text>
+            ) : null}
+          </Box>
+        )
+      }
     }
 
     if (msg.role === 'assistant') {
