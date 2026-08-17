@@ -507,3 +507,13 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **computer_uia_windows**：原静默截前 30 个窗口（总数不明）。现标注 `共 N 个窗口，已截断（前 30 个）` + 直达目标窗口指引。
 - **computer_uia_tree**：原**无上限**全量输出——密集窗口（资源管理器/设置页）数百元素直接上下文爆破。现有界 60 项 + 总数标注 + `computer_uia_find <名称>|<AutomationId>` 定位指引。
 - **验证**：+4 测试（uia_windows 超限/不超限 ×2、uia_tree 超限/不超限 ×2，vi.mock uia 桥）；全量 2343 通过；tsc 零错误。
+
+### 13.19 用量缺失诚实统计轮（2026-08-17 持续完善）
+
+- **根因**：端点未返回 usage 的调用此前完全不落 usage_stats——调用计数漏记、成本静默低估（无任何提示）。
+- **修复（诚实口径：调用数真、token 数不虚高、成本不误标）**：
+  - agent 每次模型调用都记账：无 usage 时记 0 token 行（预算检查仍只在有 usage 时触发）。
+  - `usageSummary.unmeasured` 新口径：0 token 行单独计数——/usage 与 /usage range 显示「N 次端点未上报用量（不计入 token）」。
+  - `sessionCost`/`rangeCost` SQL 排除 0 token 行——未上报用量的模型绝不出现「$0（免费/离线）」误标。
+  - `renderWaterfall` 0 token 行 NaN 防护（原 `0/0` 产生 NaN bar）+ 显式「（端点未上报用量）」行——绝不伪装成 ≈$0。
+- **验证**：+4 测试（usageSummary unmeasured、sessionCost 排除 0 行、rangeCost 全 0→null、waterfall 0 token 行）；全量 2347 通过；tsc 零错误。

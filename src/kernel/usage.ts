@@ -11,12 +11,14 @@ export function usageRangeSince(range: UsageRange, now: Date = new Date()): numb
   return now.getTime() - days * 86_400_000;
 }
 
-export interface UsageSummary { input: number; output: number; total: number; calls: number }
+export interface UsageSummary { input: number; output: number; total: number; calls: number; unmeasured: number }
 
 export function usageSummary(db: Db, range: UsageRange): UsageSummary {
   const since = usageRangeSince(range);
   const row = db.prepare(
-    `SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COUNT(*) c FROM usage_stats WHERE ts >= ?`
-  ).get(since) as { i: number; o: number; c: number };
-  return { input: row.i, output: row.o, total: row.i + row.o, calls: row.c };
+    `SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COUNT(*) c,
+            COALESCE(SUM(CASE WHEN input_tokens=0 AND output_tokens=0 THEN 1 ELSE 0 END),0) u
+     FROM usage_stats WHERE ts >= ?`
+  ).get(since) as { i: number; o: number; c: number; u: number };
+  return { input: row.i, output: row.o, total: row.i + row.o, calls: row.c, unmeasured: row.u };
 }

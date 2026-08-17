@@ -53,6 +53,10 @@ export function renderWaterfall(
   const scale = (n: number) => Math.max(1, Math.round((n / max) * width));
   const out = rows.map(r => {
     const total = r.input_tokens + r.output_tokens;
+    // 0 token 行 = 端点未上报用量：无条形（NaN 防护）+ 显式标注——绝不伪装成 ≈$0 免费
+    if (total === 0) {
+      return ` ${new Date(r.ts).toLocaleTimeString('zh-CN', { hour12: false })} ${r.model.slice(0, 14).padEnd(14)} ${' '.repeat(2)}（端点未上报用量）`;
+    }
     const inLen = Math.max(1, Math.round((r.input_tokens / total) * scale(total)));
     const outLen = Math.max(1, scale(total) - inLen + 1);
     const bar = '░'.repeat(inLen) + '█'.repeat(outLen);
@@ -802,7 +806,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       // 区间成本估算（与 /cost 同源——顺带知晓区间花费）
       const q = rangeCost(ctx.db, usageRangeSince(range as UsageRange), (ctx.config.get('settings') as Record<string, any>)?.costPrices);
       const costNote = q ? ` · ≈${costText(q)}` : '';
-      return `token 区间已切换：${range}——累计 ${s.total.toLocaleString()} token（入 ${s.input.toLocaleString()} / 出 ${s.output.toLocaleString()} / ${s.calls} 次调用，跨全部会话）${costNote}`;
+      const unmeasuredNote = s.unmeasured > 0 ? `，其中 ${s.unmeasured} 次端点未上报用量（不计入 token）` : '';
+      return `token 区间已切换：${range}——累计 ${s.total.toLocaleString()} token（入 ${s.input.toLocaleString()} / 出 ${s.output.toLocaleString()} / ${s.calls} 次调用，跨全部会话）${unmeasuredNote}${costNote}`;
     }
     // B2 修复：定位当前活跃会话（不再硬编码 'default'）+ 真实 token 统计（usage_stats）
     const sid = ctx.agent?.getSessionId?.() ?? 'default';
@@ -833,8 +838,10 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const rows = ctx.db.prepare(`SELECT role, content FROM messages WHERE session_id=?`).all(sid) as any[];
     const est = rows.reduce((a, r) => a + estimateTokens(r.content), 0);
     const realTotal = real.it + real.ot;
+    // 端点未上报用量的调用（0 token 行）单独计数——诚实告知 token 可能被低估
+    const unmeasured = ctx.db.prepare(`SELECT COUNT(*) c FROM usage_stats WHERE session_id=? AND input_tokens=0 AND output_tokens=0`).get(sid) as { c: number };
     const tokenLine = real.c > 0
-      ? ` 实际 Token：${c(realTotal.toLocaleString(), '36')}（输入 ${real.it.toLocaleString()} / 输出 ${real.ot.toLocaleString()}，${real.models} 个模型）`
+      ? ` 实际 Token：${c(realTotal.toLocaleString(), '36')}（输入 ${real.it.toLocaleString()} / 输出 ${real.ot.toLocaleString()}，${real.models} 个模型${unmeasured.c > 0 ? `；${unmeasured.c} 次调用未上报用量` : ''}）`
       : ` Token：约 ${est.toLocaleString()}（本地估算，尚无 API 用量记录）`;
     return lines(' 用量 ', [
       ` 会话：${sid.slice(0, 12)}…`,

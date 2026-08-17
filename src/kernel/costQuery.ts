@@ -25,21 +25,21 @@ const summarize = (rows: Array<{ model: string; input: number; output: number }>
   return { usd: s.totalUsd, unknown: s.unknownCount, tokens, models: rows.length, rows: s.rows };
 };
 
-/** 会话成本（session_id） */
+/** 会话成本（session_id；0 token 行=端点未上报用量——不计入明细，防误标「免费/离线」） */
 export function sessionCost(db: Db, sessionId: string, overrides?: CostOverrides): CostQueryResult | null {
   try {
     const rows = db.prepare(
-      `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
+      `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? AND (input_tokens>0 OR output_tokens>0) GROUP BY model`
     ).all(sessionId) as Array<{ model: string; input: number; output: number }>;
     return summarize(rows, overrides);
   } catch { return null; }
 }
 
-/** 区间成本（ts >= since，跨会话） */
+/** 区间成本（ts >= since，跨会话；0 token 行同样排除） */
 export function rangeCost(db: Db, since: number, overrides?: CostOverrides): CostQueryResult | null {
   try {
     const rows = db.prepare(
-      `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE ts >= ? GROUP BY model`
+      `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE ts >= ? AND (input_tokens>0 OR output_tokens>0) GROUP BY model`
     ).all(since) as Array<{ model: string; input: number; output: number }>;
     return summarize(rows, overrides);
   } catch { return null; }

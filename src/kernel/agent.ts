@@ -381,11 +381,12 @@ export function createAgent(opts: AgentOptions) {
       throw err;
     }
     // B2 真实用量统计：异步写库（失败静默，不阻断对话）——model 用实际调用模型（降级后）
+    // 端点未上报 usage 时记 0 token 行（调用计数仍诚实；/usage unmeasured 单独口径，成本绝不虚高）
+    try {
+      opts.db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`)
+        .run(sessionId, r.model, r.usage?.promptTokens ?? 0, r.usage?.completionTokens ?? 0, Date.now());
+    } catch { /* 统计失败不影响对话 */ }
     if (r.usage && (r.usage.promptTokens || r.usage.completionTokens)) {
-      try {
-        opts.db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`)
-          .run(sessionId, r.model, r.usage.promptTokens, r.usage.completionTokens, Date.now());
-      } catch { /* 统计失败不影响对话 */ }
       // 会话 token 预算（Gemini general.budget 对齐）：settings.budgetTokens>0 时，
       // 会话累计用量（usage_stats 实时 SUM）超预算 → 通知一次（防刷屏），
       // 上下文自动压缩仍按窗口阈值独立触发——预算只做成本告警

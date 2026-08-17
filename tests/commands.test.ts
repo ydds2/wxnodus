@@ -191,6 +191,13 @@ describe('token 瀑布（renderWaterfall）', () => {
     expect(renderWaterfall([rows[0]!], 30)).toContain('1');
     expect(renderWaterfall([], 30)).toContain('0 轮');
   });
+  it('0 token 行（端点未上报用量）→ 不标 ≈$0 不 NaN 崩，显式「未上报用量」', () => {
+    const zero = { model: 'mystery-model', input_tokens: 0, output_tokens: 0, ts: 1700000002000 };
+    const out = renderWaterfall([zero, rows[0]!], 30);
+    expect(out).toContain('未上报用量');
+    expect(out).not.toContain('mystery-model ≈$0');
+    expect(out).toContain('kimi-k2');
+  });
   it('新命令已注册：/versions /snapshot', () => {
     expect(SLASH).toContain('/versions');
     expect(SLASH).toContain('/snapshot');

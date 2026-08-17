@@ -1,6 +1,11 @@
-// tests/kernel-cost.test.ts — /cost 成本估算（纯函数）
+// tests/kernel-cost.test.ts — /cost 成本估算（纯函数 + costQuery 数据库助手）
 import { describe, it, expect } from 'vitest';
 import { estimateCost, costSummary, priceForModel } from '../src/kernel/cost.js';
+import { sessionCost, rangeCost, costText } from '../src/kernel/costQuery.js';
+import { openDB } from '../src/store/db.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 describe('estimateCost 成本估算', () => {
   it('按参考价目计算（USD）', () => {
@@ -64,5 +69,34 @@ describe('costPrices 自定义价目覆盖', () => {
     );
     expect(s.unknownCount).toBe(0);
     expect(s.totalUsd).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('costQuery 未上报用量排除（端点无 usage 的 0 token 行不参与成本明细）', () => {
+  it('sessionCost：0 token 行不计入模型明细（不误标免费/离线），已上报行正常计费', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wxn-cq-'));
+    try {
+      const db = openDB(dir);
+      const ins = db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`);
+      ins.run('s1', 'deepseek-chat', 1000, 500, Date.now());
+      ins.run('s1', 'mystery-model', 0, 0, Date.now()); // 未上报用量——不得出现在明细
+      const q = sessionCost(db, 's1');
+      expect(q).not.toBeNull();
+      expect(q!.models).toBe(1);
+      expect(q!.rows.map(r => r.model)).toEqual(['deepseek-chat']);
+      expect(costText(q)).not.toContain('起');
+      db.close();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('rangeCost：同一 SQL 口径；全 0 token → null（无数据，不报 $0）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wxn-cq2-'));
+    try {
+      const db = openDB(dir);
+      db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`)
+        .run('s1', 'mystery-model', 0, 0, Date.now());
+      expect(rangeCost(db, 0)).toBeNull();
+      expect(costText(null)).toBe('');
+      db.close();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
