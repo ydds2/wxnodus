@@ -448,6 +448,34 @@ describe('演示工具对模型隐藏', () => {
   });
 });
 
+// ── 工具空输出归一（'' → 显式无输出——模型不再误判「结果丢失/幻觉」）───
+describe('工具空输出归一', () => {
+  it('空字符串工具结果回填为「（工具无输出…）」', async () => {
+    let toolMsg = '';
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-empty-out',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      extraTools: {
+        silent_tool: {
+          schema: { type: 'function' as const, function: { name: 'silent_tool', description: 'x', parameters: { type: 'object' as const, properties: {} } } },
+          danger: false,
+          run: async () => '',
+        },
+      },
+      callModel: async (req: any) => {
+        if (req.messages.some((m: any) => m.role === 'assistant')) {
+          toolMsg = String(req.messages.find((m: any) => m.role === 'tool')?.content ?? '');
+          return { type: 'text', content: '完成' };
+        }
+        return { type: 'tool_call', name: 'silent_tool', args: {} };
+      },
+    });
+    const r = await agent.run('静默工具任务');
+    expect(r.ok).toBe(true);
+    expect(toolMsg).toContain('工具无输出');
+  });
+});
+
 // ── loop-goal 模式（Kimi Ralph 同款）───
 describe('loop-goal 模式', () => {
   it('goal：目标驱动自主循环直到 [GOAL_DONE]（多轮调用 + 标记剥离）', async () => {

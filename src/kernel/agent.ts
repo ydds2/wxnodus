@@ -1068,6 +1068,8 @@ export function createAgent(opts: AgentOptions) {
             fromCache = true;
           } else {
             out = await executeTool(c.name, c.args);
+            // 空输出归一（诚实）：'' 工具结果会让模型误判「结果丢失/幻觉」——显式「（无输出）」语义明确
+            if (!out) out = '（工具无输出——操作可能已成功或无需返回内容）';
             if (READ_TOOL_CACHE.has(c.name)) {
               if (toolCache.size >= 32) {
                 const oldest = toolCache.keys().next().value;
