@@ -13,6 +13,9 @@ import { getUiState, patchUiState } from '../runtime/viewStore.js'
 //   聚合实时可见，无需等轮询）。
 // 失败诚实：拉取失败保留上次值并标 ⚠，首拉失败显示「拉取失败」占位。
 const BALANCE_POLL_MS = 5 * 60_000
+// 拉取失败退避：失败后 1 分钟重试（端点恢复快速可见），连续成功恢复 5 分钟常态轮询——
+// 端点长期故障时不空打 API
+const BALANCE_FAIL_RETRY_MS = 60_000
 
 const RANGES: readonly UsageRangeKind[] = ['today', '7d', '30d']
 
@@ -84,14 +87,17 @@ export function useBalanceMonitor(gw: GatewayClient | null) {
 
     let cancelled = false
     let timer: NodeJS.Timeout | null = null
+    let fails = 0
 
     const fetchBalance = async (force = false) => {
       try {
         const raw = await gw.request<unknown>('balance.status', { force })
         if (!cancelled) {
+          fails = 0
           patchUiState(state => ({ ...state, balance: toBalanceUi(raw, state.balance) }))
         }
       } catch {
+        fails += 1
         if (!cancelled) {
           patchUiState(state =>
             state.balance ? { ...state, balance: { ...state.balance, stale: true, updatedAt: Date.now() } } : state
@@ -124,9 +130,10 @@ export function useBalanceMonitor(gw: GatewayClient | null) {
         return
       }
 
+      // 失败退避：连续失败 → 1 分钟重试；成功 → 5 分钟常态轮询
       timer = setTimeout(() => {
         void fetchBalance().finally(loop)
-      }, BALANCE_POLL_MS)
+      }, fails > 0 ? BALANCE_FAIL_RETRY_MS : BALANCE_POLL_MS)
     }
 
     gw.on('event', onEvent)
