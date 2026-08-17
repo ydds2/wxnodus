@@ -489,12 +489,15 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       )
       if (decision === 'arm') {
         escCancelArmedAtRef.current = Date.now()
-        showSelectionHint('再按 Esc 确认取消（1.5s）')
+        // 迁移预期对齐（#10）：明示「中断」语义 + 回滚出口（Claude 用户找回滚 → /undo）
+        showSelectionHint('再按 Esc 确认中断（1.5s）· 中断后 /undo 可回滚')
 
         return
       }
       if (decision === 'confirm') {
         escCancelArmedAtRef.current = null
+        // 中断后立即指路回滚（Claude Code Esc-Esc 回滚肌肉记忆的等价出口）
+        showSelectionHint('已中断 · /undo 回滚本次修改 · 输入继续对话')
 
         return turnController.interruptTurn({
           appendMessage: actions.appendMessage,
