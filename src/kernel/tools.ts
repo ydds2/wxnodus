@@ -965,11 +965,9 @@ export function coreTools(): Record<string, ToolDef> {
       if (!command) return '参数错误：command 不能为空';
       if (!ctx.runCommand) return '命令通道未装配（当前环境不支持执行指令）——请用户手动输入';
       const out = await ctx.runCommand(command);
-      // 诚实截断：超长命令输出显式标注（模型知道后面还有——分片执行或定向输出续看）
+      // 诚实截断：超长命令输出显式标注（labelTruncate 统一口径——共 N 字/剩余 M 字）
       return out
-        ? out.length > 2000
-          ? `${out.slice(0, 2000)}\n…[命令输出过长已截断（前 2000 字）——分段执行或重定向到文件续看]`
-          : out
+        ? labelTruncate(out, 2000, '分段执行或重定向到文件续看')
         : `命令已执行（无输出）：${command.slice(0, 80)}`;
     },
   };

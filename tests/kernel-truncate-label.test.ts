@@ -59,3 +59,19 @@ describe('browser 快照正文诚实截断', () => {
     expect(cleanBodyText('短正文', 2500, 'x')).toBe('短正文');
   });
 });
+
+describe('wx_cmd 命令输出诚实截断（labelTruncate 统一口径）', () => {
+  it('超长命令输出标注共 N 字/剩余 M 字', async () => {
+    const { coreTools } = await import('../src/kernel/tools.js');
+    const long = '出'.repeat(3000);
+    const out = await coreTools().wx_cmd!.run({ command: '/hole 全部' }, { runCommand: async () => long } as any);
+    expect(out).toContain('已截断');
+    expect(out).toContain('共 3000 字');
+    expect(out).toContain('剩余 1000 字');
+  });
+  it('短输出原样返回（无标注）', async () => {
+    const { coreTools } = await import('../src/kernel/tools.js');
+    const out = await coreTools().wx_cmd!.run({ command: '/status' }, { runCommand: async () => '短输出' } as any);
+    expect(out).toBe('短输出');
+  });
+});

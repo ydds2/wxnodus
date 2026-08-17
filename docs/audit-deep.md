@@ -529,3 +529,9 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **扫尾三处残留内联 SQL**：`/sessions`（非 TTY 成本列）、`/status`（成本行）、tuiPresentationAdapter `sessions.list`（会话面板 $ 列）——全部改为 `sessionCost` + `costText`（与 /cost 同一 SQL 事实源，且自动获得 §13.19 的 0 token 行排除口径）。
 - **costQuery 参数收窄为结构化最小端口** `CostDb`（`{ prepare(): { all() } }`）：presentation 窄端口可直接调用，真实 Db 自然满足——与 usage.ts 的 `UsageDb` 同模式（tsc 严格过，无 `as any` 逃逸）。
 - **验证**：全量 2350 通过（行为等价重构，输出格式不变）；tsc 零错误。
+
+### 13.22 labelTruncate 口径收官轮（2026-08-17 持续完善）
+
+- **wx_cmd 命令输出截断并入统一口径**：原标注只有「前 2000 字」（无总数/剩余数）——模型仍不知后面还有多少。现 labelTruncate 统一「已截断（共 N 字，剩余 M 字未读）——分段执行或重定向到文件续看」。
+- **验证**：+2 测试（wx_cmd 超长/短输出 ×2）；全量 2352 通过；tsc 零错误。
+- **备注（诚实记录）**：本轮全量回归 4 次中 1 次出现单测试 flake（未复现于随后 3 次连续全绿运行——疑似真实 npm 子进程门测试的时序抖动，与本次改动无关；未获稳定复现，暂记录待观察）。
