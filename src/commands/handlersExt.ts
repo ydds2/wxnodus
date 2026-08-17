@@ -3275,13 +3275,24 @@ export const commands = {
       writeFileSync(outFile, `# Arena 对战：${cur} vs ${second}\n\n## 任务\n${task}\n\n## ${cur}（${a.turns} 轮）\n${a.text}\n\n## ${second}（${b.turns} 轮）\n${b.text}\n`, 'utf8');
     } catch { /* 落盘失败不阻断 */ }
     const summary = (x: { text: string }) => x.text.split('\n').filter(Boolean).slice(0, 6).map(l => l.slice(0, 90)).join('\n');
+    // 对战成本（各自独立会话 usage_stats——同源 /cost 估算；未收录定价诚实省略）
+    const costOf = (sid: string): string => {
+      try {
+        const rows = ctx.db.prepare(
+          `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
+        ).all(sid) as Array<{ model: string; input: number; output: number }>;
+        if (!rows.length) return '';
+        const cs = costSummary(rows, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
+        return cs.unknownCount === 0 ? ` · ≈$${cs.totalUsd.toFixed(4)}` : '';
+      } catch { return ''; }
+    };
     return lines(` Arena 对战「${task.slice(0, 24)}」 `, [
       ` 完整输出：${outFile}`,
       '',
-      `── 选手 A：${a.modelId}（${a.turns} 轮）${a.ok ? '' : '⚠ 未完成'}──`,
+      `── 选手 A：${a.modelId}（${a.turns} 轮）${a.ok ? '' : '⚠ 未完成'}${costOf(`arena-a-${ts}`)}──`,
       summary(a),
       '',
-      `── 选手 B：${b.modelId}（${b.turns} 轮）${b.ok ? '' : '⚠ 未完成'}──`,
+      `── 选手 B：${b.modelId}（${b.turns} 轮）${b.ok ? '' : '⚠ 未完成'}${costOf(`arena-b-${ts}`)}──`,
       summary(b),
       '',
       ` 建议：比较两份输出选优（也可 /arena --model <其它模型> 再战）`,
