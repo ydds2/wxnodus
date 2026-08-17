@@ -114,7 +114,7 @@ describe('历史回显端到端（working 上下文可见）', () => {
     expect(seen.some(t => t.includes('图上有一个饼状图'))).toBe(true);
   });
 
-  it('无 key 带图对话：正常回复且不产生摘要（红线降级）', async () => {
+  it('文本模型带图：不注入 image_url parts（400 防御）且无 key 不产生摘要（红线降级）', async () => {
     const { createAgent } = await import('../src/kernel/agent.js');
     const { createEventBus } = await import('../src/kernel/events.js');
     const bus = createEventBus(dir);
@@ -128,8 +128,27 @@ describe('历史回显端到端（working 上下文可见）', () => {
     });
     const r = await agent.run('描述这张图', { images: IMG });
     expect(r.ok).toBe(true);
-    expect(r.text).toBe('多模态');
+    // 新契约：'mock'（目录外未知模型）按文本模型处理——image_url parts 绝不注入，
+    // 无视觉 key 识别失败后诚实丢弃（不触发 Windows OCR 兜底），纯文本回复照常
+    expect(r.text).toBe('文本');
     await new Promise(res => setTimeout(res, 50)); // 等待异步摘要（应无 key 跳过）
     expect(lastUserContent('s3')).toBe('描述这张图');
+  });
+
+  it('视觉模型带图：parts 直入消息（inject 路径）', async () => {
+    const { createAgent } = await import('../src/kernel/agent.js');
+    const { createEventBus } = await import('../src/kernel/events.js');
+    const bus = createEventBus(dir);
+    const agent = createAgent({
+      db, bus, mem, sessionId: 's4',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'glm-4v-flash' } } as any,
+      callModel: async (req: any) => {
+        const last = req.messages[req.messages.length - 1];
+        return { type: 'text', content: Array.isArray(last.content) ? '多模态' : '文本' };
+      },
+    });
+    const r = await agent.run('描述这张图', { images: IMG });
+    expect(r.ok).toBe(true);
+    expect(r.text).toBe('多模态');
   });
 });

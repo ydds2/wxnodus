@@ -9,7 +9,7 @@
 //   错误归因：describeImageStatus 区分 无 key / 本地不可用 / 网络失败（不再一律 null）
 import { decryptKey } from './providers.js';
 
-interface VisionSettings { baseURL?: string; model?: string; key?: string; local?: boolean }
+interface VisionSettings { baseURL?: string; model?: string; key?: string; local?: boolean; ocr?: boolean }
 
 const pickSettings = (s: any): VisionSettings => {
   const settings = (s ?? {}) as Record<string, any>;
@@ -18,6 +18,9 @@ const pickSettings = (s: any): VisionSettings => {
     model: settings.visionModel ?? process.env.WXNODUS_VISION_MODEL,
     key: settings.visionKey ?? process.env.WXNODUS_VISION_KEY,
     local: settings.visionLocal === true || process.env.WXNODUS_VISION_LOCAL === '1',
+    // ocr=false：跳过 Windows OCR 兜底（agent 自动降级路径用——聊天回合内不 spawn PowerShell，
+    // 显式 /vision 保持默认 true 的 OCR 兜底）
+    ocr: settings.visionOcr !== false,
   };
 };
 
@@ -134,10 +137,12 @@ export async function describeImageStatus(target: string, apiKeyEnc: string | nu
   const key = vs.key ?? visionKey(apiKeyEnc, (settings as Record<string, any> | undefined)?.apiKeys);
   if (!key) {
     // W8-09 Windows 生态互依：无视觉密钥 → 系统原生 OCR 兜底（离线、零模型下载——提取画面文字；
-    // 语义诚实：返回 OCR 文本而非视觉描述）
-    const ocrText = await windowsOcrFallback(target);
-    if (ocrText) return { ok: true, text: ocrText };
-    return { ok: false, reason: '未配置视觉密钥——/key set <密钥> 或 settings.visionKey；或用 settings.visionLocal=true 本地离线视觉（本机 Windows OCR 亦无文字结果）' };
+    // 语义诚实：返回 OCR 文本而非视觉描述）。自动降级路径（visionOcr=false）跳过 OCR。
+    if (vs.ocr !== false) {
+      const ocrText = await windowsOcrFallback(target);
+      if (ocrText) return { ok: true, text: ocrText };
+    }
+    return { ok: false, reason: '未配置视觉密钥——/key set <密钥> 或 settings.visionKey；或用 settings.visionLocal=true 本地离线视觉' };
   }
   return remoteVision(target, key, prompt, vs);
 }

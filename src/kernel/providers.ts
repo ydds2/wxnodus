@@ -147,11 +147,24 @@ export const MODEL_CATALOG: ModelEntry[] = [
 ];
 
 // 能力徽标（/model 列表与 UI 显示）
-// 模型是否支持图像输入（imageIn 能力）——网关在注入图片前校验，文本模型优雅降级
+// 模型是否支持图像输入（imageIn 能力）——网关在注入图片前校验，文本模型优雅降级。
+// 目录内按 capabilities.imageIn 判定；档案/自定义模型名（/profile 任意模型）按名称
+// 启发式识别主流视觉家族（gpt-4o / qwen-vl / gemini / claude / *vision* 等）；
+// 未知名称默认 false（安全方向：宁可不注入图片走视觉通道识别，也不把 image_url
+// 发给纯文本模型触发 400 unknown variant `image_url`——ZCode deepseek-v4-pro 同款事故）。
+const VISION_NAME_RE = /vision|glm-4v|qwen[0-9.\-]*vl|vl(\d|\b)|gpt-4o|gpt-4\.1|gpt-5|gemini|claude|o4-mini|sonnet|haiku|llava|moondream|internvl|pixtral|idefics|cogvlm|minicpm-v/i;
 export function hasImageIn(modelId: string | undefined | null): boolean {
   if (!modelId) return false;
   const m = MODEL_CATALOG.find(x => x.modelId === modelId);
-  return m?.capabilities?.imageIn === true;
+  if (m) return m.capabilities?.imageIn === true;
+  return VISION_NAME_RE.test(modelId);
+}
+
+/** 图片注入策略（纯函数可单测）：无图 → none（零视觉调用）；视觉模型 → inject；文本模型 → describe。 */
+export type ImageStrategy = { kind: 'describe' } | { kind: 'inject' } | { kind: 'none' };
+export function imageStrategy(modelId: string | undefined | null, imageCount: number): ImageStrategy {
+  if (!imageCount || imageCount < 1) return { kind: 'none' };
+  return hasImageIn(modelId) ? { kind: 'inject' } : { kind: 'describe' };
 }
 
 export function capabilityBadges(c: ModelCapabilities | undefined): string {

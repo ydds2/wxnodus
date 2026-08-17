@@ -81,3 +81,17 @@ Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器（React 19 
 - 修改代码前先阅读相关文件，保持现有风格
 - 改动后运行测试命令验证
 - 生成/修改文件遵循仓库既有结构
+
+---
+
+## ZCode 会话工作流注记（手工维护——`/init --overwrite` 重新生成会覆盖本段，重生成后请保留）
+
+> 事故：2026-08-17 ZCode 切 deepseek-v4-pro 后回合 400——
+> `messages[678]: unknown variant image_url, expected text`（纯文本模型收到多模态内容块）。
+
+**规则（ZCode 会话内必须遵守）**：
+1. ZCode 切换到 `deepseek-v4-pro`（或任何纯文本模型）后，回合开始先自查上下文是否存在待识别图片；
+2. **有图** → 先用 GLM 多模态把图片识别为文本，再继续任务；
+3. **无图** → 不自动调用视觉模型（零冗余调用）。
+
+代码侧防御已落地（`src/kernel/providers.ts` imageStrategy + `src/kernel/agent.ts` 能力门/历史清洗，测试 `tests/kernel-image-guard.test.ts`），详见 `docs/zcode-deepseek-vision-workflow.md`。

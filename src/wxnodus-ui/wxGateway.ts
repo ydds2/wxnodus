@@ -11,7 +11,7 @@ import { join, resolve, basename, isAbsolute } from 'node:path'
 import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
 import { seedTurnTodos, syncToolTodo } from './lib/turnTodos.js'
-import { MODEL_CATALOG, encryptKey, hasImageIn } from '../kernel/providers.js'
+import { MODEL_CATALOG, encryptKey } from '../kernel/providers.js'
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js'
 import { loadSkinFile } from '../kernel/skin.js'
 import { checkVoice } from '../kernel/voice.js'
@@ -742,19 +742,15 @@ export class GatewayClient extends EventEmitter {
       throw new WxError(WX_ERR.BUSY, 'session busy: waiting for model response')
     }
 
-    // P3 图片附加链路：会话有待注入图片且当前模型支持图像输入 → 多模态 parts 随本次提问进入模型；
-    // 模型不支持图像（如 deepseek 文本模型）→ 优雅降级：丢弃待注入并提示切换 GLM-4V Flash
+    // P3 图片附加链路：会话有待注入图片 → 全部透传 agent.run——能力门收敛在 agent 环内
+    // （视觉模型直接注入 parts；文本模型经视觉通道先识别为文本注入，无 key 诚实丢弃，
+    // 见 agent.ts「多模态注入」防御纵深——绝不把 image_url 发给纯文本模型触发 400）。
     const sid = String(params.session_id ?? this.currentSessionId)
     const pending = readPending(this.kernel.dataDir, sid)
     let images: Array<{ dataUrl: string; mime: string }> | undefined
     if (pending) {
-      const model = String(this.kernel.settings.model ?? '')
-      if (hasImageIn(model)) {
-        const b64 = readFileSync(pending.file).toString('base64')
-        images = [{ dataUrl: `data:${pending.mime};base64,${b64}`, mime: pending.mime }]
-      } else {
-        this.publish({ type: 'notification.show', payload: { kind: 'ttl', level: 'warn', text: `当前模型不支持图像输入，已忽略附加图片——请 /model 切换至 GLM-4V Flash 后重试` } })
-      }
+      const b64 = readFileSync(pending.file).toString('base64')
+      images = [{ dataUrl: `data:${pending.mime};base64,${b64}`, mime: pending.mime }]
       clearPending(this.kernel.dataDir, sid)
     }
     // 后台执行 agent（事件流驱动 UI），不阻塞 RPC

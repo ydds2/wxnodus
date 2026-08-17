@@ -162,18 +162,18 @@ describe('image.attach 附加链路', () => {
     expect(existsSync(join(dir, 'attachments', 's1', 'pending.json'))).toBe(false);
   });
 
-  it('文本模型：优雅降级（不注入 + system.notice 提示）', async () => {
+  it('文本模型：图片透传 agent（策略收敛在 agent 环——视觉通道识别，不注入 image_url）', async () => {
     gw = makeGateway({ model: 'deepseek-v4-flash' });
     (gw as any).subscribed = true // 激活事件直发（否则 publish 缓冲）
     const img = join(dir, 'attach2.png');
     writePng(img, 100, 100);
     await req('image.attach', { session_id: 's1', path: img });
-    const notices: string[] = [];
-    (gw as any).on('event', (e: any) => { if (e?.type === 'notification.show') notices.push(String(e?.payload?.text ?? '')); });
     await req('prompt.submit', { session_id: 's1', text: '看图说话' });
     await new Promise(r => setTimeout(r, 20));
-    expect(runCalls[0]?.opts).toBeUndefined(); // 无 images 参数
-    expect(notices.some(t => t.includes('GLM-4V Flash'))).toBe(true);
+    // 新契约（image_url 400 防御纵深）：网关不再按模型能力截留图片——
+    // 能力门在 agent 环内执行（视觉模型注入 parts / 文本模型视觉通道先识别 / 无 key 诚实丢弃）
+    expect(runCalls[0]?.opts?.images).toBeDefined();
+    expect(runCalls[0]!.opts!.images![0]!.mime).toBe('image/png');
   });
 
   it('clipboard.paste 响应形态稳定（有图/无图均返回合法结构）', async () => {

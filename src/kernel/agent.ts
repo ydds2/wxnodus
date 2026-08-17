@@ -14,7 +14,7 @@ import { appendAudit } from '../store/db.js';
 import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
 import { resolveDataDir } from './paths.js';
-import { estimateMessagesTokens, compactMessages } from './memory.js';
+import { estimateMessagesTokens, compactMessages, contentToText } from './memory.js';
 import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx, type ToolDef } from './tools.js';
 import { resolveModelForChat } from './profiles.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
@@ -729,8 +729,45 @@ export function createAgent(opts: AgentOptions) {
       appendSessionEvent(opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, { type: 'user', content: prompt.slice(0, 500), ts: Date.now() });
     } catch { /* 静默 */ }
     // 多模态注入（P3 图片附加链路）：用户消息构建为 OpenAI parts 数组（text + image_url）——
-    // 仅本次 API 调用的内存消息；DB append 仍存纯文本（消息库文本化）
-    const imgParts = (opts2.images ?? []).map(img => ({ type: 'image_url', image_url: { url: img.dataUrl } }));
+    // 仅本次 API 调用的内存消息；DB append 仍存纯文本（消息库文本化）。
+    // 规避（ZCode deepseek-v4-pro「unknown variant image_url」同款 400 的防御纵深）：
+    // 能力门在 agent 环内执行——视觉模型直接注入 parts；文本模型先用视觉通道识别为文本
+    // （GLM 默认/自定义 vision 端点/本地 VLM/Windows OCR），有图才调用识别、无图零视觉调用；
+    // 识别失败/无 key 诚实丢弃（绝不把 image_url 发给纯文本模型），失败落审计。
+    const modelName = (opts.config?.settings as any)?.model ?? '';
+    const { hasImageIn, imageStrategy } = await import('./providers.js');
+    let imgParts: Array<Record<string, any>> = [];
+    let imageDesc = '';
+    if (opts2.images?.length) {
+      const strategy = imageStrategy(modelName, opts2.images.length);
+      if (strategy.kind === 'inject') {
+        imgParts = opts2.images.map(img => ({ type: 'image_url', image_url: { url: img.dataUrl } }));
+      } else {
+        try {
+          const { describeImage } = await import('./vision.js');
+          const settings = opts.config?.settings;
+          const first = opts2.images[0]!;
+          const desc = await describeImage(
+            first.dataUrl,
+            (settings as any)?.apiKeyEnc ?? null,
+            '用不超过 150 字的中文描述这张图片的内容（画面主体、文字、布局）。只输出描述。',
+            // 自动降级路径跳过 Windows OCR（聊天回合内不 spawn PowerShell——显式 /vision 仍保留 OCR 兜底）
+            { ...(settings as any), visionOcr: false },
+          );
+          if (desc?.trim()) {
+            imageDesc = desc.trim();
+            if (opts2.images.length > 1) imageDesc += `（另附 ${opts2.images.length - 1} 张图片未逐张识别）`;
+          }
+        } catch { /* 识别异常按无图处理 */ }
+        if (imageDesc) {
+          bus.emit('system.notice', { text: `当前模型不支持图像输入——已用视觉通道识别图片内容注入` });
+          try { appendAudit(opts.db, 'agent.image.described', { model: modelName, count: opts2.images.length }); } catch { /* 审计表未就绪静默 */ }
+        } else {
+          bus.emit('system.notice', { text: `当前模型不支持图像输入且视觉识别失败——已忽略附加图片（不发送 image_url 防 400）` });
+          try { appendAudit(opts.db, 'agent.image.dropped', { model: modelName, count: opts2.images.length }); } catch { /* 审计表未就绪静默 */ }
+        }
+      }
+    }
     // C1：每回合独立状态快照——旧回合收尾读自己的 st，不受新回合影响
     const st = { aborted: false, interrupted: false, signal: makeAbortSignal() };
     turn = st;
@@ -757,8 +794,6 @@ export function createAgent(opts: AgentOptions) {
     // 结构化系统提示（智能度基础）：角色/工作准则/模式语义/输出规范/环境
     // P0-2：自定义 agent（.wxnodus/agents/*.md）经 systemPromptOverride 整体替换
     const { buildSystemPrompt } = await import('./systemPrompt.js');
-    const modelName = (opts.config?.settings as any)?.model ?? '';
-    const { hasImageIn } = await import('./providers.js');
     msgs.push({ role: 'system', content: opts.systemPromptOverride ?? buildSystemPrompt({
       mode, cwd: process.cwd(), model: modelName, hasImageIn: hasImageIn(modelName), sessionId,
       // 开放兼容：/lang 设置生效（输出语言）+ dataDir 支持外部 prompts/system.md 覆盖
@@ -810,7 +845,9 @@ export function createAgent(opts: AgentOptions) {
         // 此前只放行 user/assistant，/compact 或自动压缩写入 DB 的摘要下一轮被过滤，
         // 压缩过的中间细节彻底丢失（压缩白做，长会话跨轮智能度衰减）
         if (h.role === 'user' || h.role === 'assistant' || (h.role === 'system' && String(h.content ?? '').includes('压缩摘要'))) {
-          msgs.push({ role: h.role, content: h.content });
+          // 规避（image_url 400 防御纵深）：历史 content 若为多模态 parts 数组一律文本化
+          // （image_url → [图片] 占位，dataUrl 绝不进入 API 消息——纯文本模型会 400）。
+          msgs.push({ role: h.role, content: typeof h.content === 'string' ? h.content : contentToText(h.content) });
         }
       }
       // C11 修复（auto-continue）：上回合被打断（历史以 tool 或 user 结尾）→ 注入继续注记，
@@ -827,8 +864,10 @@ export function createAgent(opts: AgentOptions) {
       : '';
     msgs.push({ role: 'user', content: imgParts.length
       ? [{ type: 'text', text: prompt + recallBlock }, ...imgParts]
-      : prompt + recallBlock });
-    try { opts.mem.append(sessionId, 'user', prompt); } catch { /* 记忆写入失败不阻断对话 */ }
+      : prompt + recallBlock + (imageDesc ? `\n[附加图片（视觉通道识别）] ${imageDesc}` : '') });
+    // 文本模型图片识别结果同步入历史（视觉模型的异步摘要走下方 attachImageSummary——
+    // 两条路径都保证后续轮次可回忆「看过什么图」）
+    try { opts.mem.append(sessionId, 'user', imageDesc ? `${prompt}\n[附加图片（视觉通道识别）] ${imageDesc}` : prompt); } catch { /* 记忆写入失败不阻断对话 */ }
     // 多模态历史回显（P3）：图片摘要异步入历史——后续轮次可回忆"看过什么图"；
     // append 同步先行（摘要 UPDATE 定位最后一条 user 消息不会错位）；无 key 不调用（红线）
     if (imgParts.length) {
