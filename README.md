@@ -36,6 +36,7 @@ cat 文件.txt | wxnodus -p "总结内容"   # stdin 管道（-p 为指令、std
 | `--wire` / `--stream-json` 事件流（JSONL + stdin 双向帧 + 退出码协议） | `docs/wire-protocol.md`（含 `examples/wire-events.mjs`、`examples/wire-approval-responder.mjs` 可运行示例） |
 | ACP stdio 服务器（`wxnodus -p "/acp server"`，Zed/JetBrains 接入） | `docs/acp-zed-jetbrains.md` |
 | stdin 管道（`cat 文件 | wxnodus -p "指令"`） | `--help` 用法表 |
+| 更新检查（`/update`：渠道探测/版本/仓库状态/更新命令） | `CHANGELOG.md` |
 
 ## 模型接入（接口开放）
 

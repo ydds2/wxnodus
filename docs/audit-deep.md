@@ -659,3 +659,12 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **契约测试**：`tests/cli-wire-alias.test.ts` 2 例（真实进程）——stdout 全程 JSONL 零非 JSON 行、agent.start 起 agent.result 终、退出码 0；`--wire` 与 `--stream-json` 事件类型集合同构。
 - **README**：新增「协议与集成」小节（3 入口 × 文档链接）。
 - **向导双注册隐患（本轮回合一并修复）**：新 flag 需在 args.ts（主解析）与 preBootstrapOnboarding.ts（向导白名单，先于主解析执行）两处注册——`--stream-json` 首跑被向导 CONFIG_UNKNOWN_FLAG 拒绝（exit 2、零输出），契约测试立即捕获；两处均已注册并在白名单处留「新 flag 双注册」注释防再犯。
+
+### 13.42 CHANGELOG + 分发闭环 S0 轮（2026-08-18 /goal 自主完善——深评「无 CHANGELOG/无更新机制/无卸载路径」部分关闭）
+
+- **CHANGELOG.md（3.1.0）**：Keep-a-Changelog 格式——Added/Changed/Fixed/Removed 四节完整记录本会话全部用户可见变更（/model 开放兼容、stdin 管道、--stream-json+wire 协议、ACP 文档、npm run ci、/update、版本单一事实源；/build 单通道化、README 瘦身；image_url 终极闸门、/key 13 处清零、typecheck:tests 归零、向导双注册；规则脑/vim 死代码删除）+ 3.0.0 基线节。
+- **`/update` 更新检查**：`src/commands/updateCheck.ts` 纯函数组——detectInstallChannel（npm-global vs git/npm link 路径判定）/findRepoRoot（package.json name 上探）/probeGit（真实 git 探测，失败降级 isRepo=false 绝不抛）/channelGuidance（五渠道人话命令）/buildUpdateReport；handlers.ts 注册 `/update`（报告 + git 渠道 remote+干净树时 `--yes` 执行 pull+build，审计 update.git-pull）；registry SLASH/icon/desc 注册；commandLevels 白名单制默认 confirm 自动覆盖（未列命令保守确认，无需显式条目）。
+- **诚实性实测**：本机 `MSYS_NO_PATHCONV=1 node dist/cli/index.js -p "/update"` → 正确报告 git 渠道/HEAD 25d4566/脏树/未配置 origin 且给确切指引；`--yes` 在无 remote 时明确拒绝（「仅 git 渠道 + 已配置 remote + 工作树干净时可执行」）。Git Bash 下 `/update` 被 MSYS 改写——args.ts 既有防护提示正确触发（诚实降级路径实测）。
+- **winget/scoop manifest 生成器**：`packaging/{winget,scoop}` 模板 + `scripts/generate-package-manifests.mjs`（npm run gen:manifests）——renderWingetManifest/renderScoopManifest/zipSha256 纯函数；**诚实门禁**：--zip/--url 缺失时输出 `__RELEASE_URL_REQUIRED__`/`__SHA256_REQUIRED__` 占位并警告「不可提交发布」，绝不生成假装可发布的 manifest（本仓库无 git remote，发布 URL 尚不存在——生成器为发布日零改动就绪）。
+- **测试**：update-check 9 例（渠道/根定位/指引五渠道/报告降级/probeGit 不抛）+ package-manifest-gen 6 例（占位门禁/JSON 合法性/sha256 64hex）——15/15 绿。
+- **边界声明**：winget/scoop manifest 未提交 winget-pkgs/scoop bucket（无发布 URL）；卸载命令（opencode uninstall 模式）留待有真实安装面后补。

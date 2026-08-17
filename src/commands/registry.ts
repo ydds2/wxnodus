@@ -6,7 +6,7 @@ export const SLASH: string[] = [
   // 对话
   '/help', '/clear', '/undo', '/usage', '/cost', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint', '/versions', '/snapshot', '/script', '/self-evolve',
   // 模型
-  '/model', '/profile', '/status', '/doctor', '/version', '/thinking', '/hooks',
+  '/model', '/profile', '/status', '/doctor', '/version', '/update', '/thinking', '/hooks',
   // 记忆（黑洞引擎）
   '/memory', '/hole', '/compact', '/digest', '/curator',
   // 构建（需求编译）
@@ -31,7 +31,7 @@ export const COMMAND_CAT: Record<string, string> = {
   // 分类符号全部 BMP 宽字符（无 emoji 代理对）——旧终端字体/winpty 下不产生 � 乱码；
   // 每类唯一符号（/help 分组按符号聚合——此前模型/系统共用 ⚙、对话/协作共用 ◈ 导致组错乱合并）
   '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/cost': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈', '/versions': '◈', '/snapshot': '◈', '/script': '◈', '/self-evolve': '◈',
-  '/model': '⚙', '/profile': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
+  '/model': '⚙', '/profile': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/update': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆', '/assimilate': '◆',
   '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨', '/offline': '⬇',
@@ -74,6 +74,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/status': '系统状态',
   '/doctor': '健康体检',
   '/version': '版本信息',
+  '/update': '更新检查（渠道探测 + 版本/仓库状态 + 更新命令；git 渠道 /update --yes 拉取重建）',
   '/hooks': '生命周期 Hooks（settings.hooks 本地命令）',
   '/memory': '记忆概览（三层）',
   '/hole': '黑洞引擎检索（自然语言直达）',

@@ -305,6 +305,30 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/version', () => `WxNodus ${WXNODUS_VERSION}`);
 
+  // 更新检查（分发闭环 S0）：诚实报告安装渠道/版本/仓库状态与确切更新命令；
+  // git 渠道在有 remote 且工作树干净时 --yes 执行 pull+build，其余渠道只给命令绝不代执行。
+  bus.register('/update', async (args) => {
+    const { buildUpdateReport, channelLabel } = await import('./updateCheck.js');
+    const report = buildUpdateReport({ modulePath: import.meta.url, cwd: ctx.cwd ?? process.cwd() });
+    const base = lines(' 更新检查 ', [
+      ` 版本：${report.version}`,
+      ` 安装渠道：${channelLabel(report.channel)}`,
+      ...(report.git?.isRepo ? [` 仓库：HEAD ${report.git.head} @ ${report.git.date}（${report.git.clean ? '干净' : '有未提交改动'}）${report.git.remote ? '' : '——未配置 origin'}`] : []),
+      ` 更新方式：${report.guidance}`,
+    ]);
+    if (!report.canAutoUpdate) return base + (args.includes('--yes') ? '\n --yes 不可用：仅 git 渠道 + 已配置 remote + 工作树干净时可执行（当前不满足，已拒绝）。' : '');
+    if (!args.includes('--yes')) return base + '\n 可用 /update --yes 自动执行（git pull && npm install && npm run build，需确认）。';
+    try {
+      const { execSync } = await import('node:child_process');
+      const repo = (await import('./updateCheck.js')).findRepoRoot(import.meta.url) ?? ctx.cwd;
+      const out = execSync('git pull && npm install && npm run build', { cwd: repo, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      try { appendAudit(ctx.db, 'update.git-pull', { repo, version: report.version }); } catch { /* 审计表未就绪静默 */ }
+      return base + `\n 已执行 git pull && npm install && npm run build\n${String(out).slice(-600)}`;
+    } catch (e: any) {
+      return base + `\n 更新执行失败：${String(e?.message ?? e).slice(0, 300)}（工作树未动——git pull 失败不会改本地）`;
+    }
+  });
+
   // 模式（Claude Code 五模式体系：smart 更改前确认 / auto 自动编辑 / goal loop-goal /
   // manual 全量确认 / plan 计划模式 / yolo 完全访问）
   bus.register('/perm', (args) => {

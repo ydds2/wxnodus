@@ -19,7 +19,7 @@ export const COMMAND_LEVEL_ICON: Record<CommandLevel, string> = {
 export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   // ── safe：查询/只读，AI 直接执行 ──
   '/help': 'safe', '/usage': 'safe', '/sessions': 'safe', '/context': 'safe', '/status': 'safe',
-  '/doctor': 'safe', '/version': 'safe', '/memory': 'safe', '/hole': 'safe', '/evidence': 'safe',
+  '/doctor': 'safe', '/version': 'safe', '/update': 'confirm', '/memory': 'safe', '/hole': 'safe', '/evidence': 'safe',
   '/compliance': 'safe', '/audit': 'safe', '/logs': 'safe', '/bench': 'safe', '/map': 'safe',
   '/calc': 'safe', '/hash': 'safe', '/base64': 'safe', '/uuid': 'safe', '/rand': 'safe', '/json': 'safe',
   '/sql': 'safe', '/units': 'safe', '/csv': 'safe', '/claw': 'safe', '/vision': 'safe', '/img': 'safe',

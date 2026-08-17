@@ -1,0 +1,19 @@
+# winget manifest 模板（由 scripts/generate-package-manifests.mjs 渲染为正式 manifest）
+# 字段说明：__VERSION__ / __INSTALLER_URL__ / __INSTALLER_SHA256__ / __DESCRIPTION__ 为生成器占位符。
+# 发布前提：INSTALLER_URL 指向公开可下载的安装器 zip（npm run demo:installer 产物），
+#           INSTALLER_SHA256 为生成器从 zip 计算的 SHA-256；二者齐备后才可提交 winget-pkgs。
+PackageIdentifier: yyds2.wxnodus
+PackageVersion: __VERSION__
+Publisher: yyds2
+PackageName: WxNodus
+PackageLocale: zh-CN
+Moniker: wxnodus
+ShortDescription: __DESCRIPTION__
+InstallerType: portable
+Commands:
+  - wxnodus
+  - wxn
+InstallerUrl: __INSTALLER_URL__
+InstallerSha256: __INSTALLER_SHA256__
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
