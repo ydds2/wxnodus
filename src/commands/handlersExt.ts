@@ -23,7 +23,8 @@ import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissio
 import { unknownSettingsKeys, knownSettingsKeys } from '../store/config.js';
 import { runCuratorReview, curatorConfigFrom, readCuratorState } from '../kernel/curator.js';
 import { usageSummary, usageRangeSince, type UsageRange } from '../kernel/usage.js';
-import { costSummary, estimateCost } from '../kernel/cost.js';
+import { estimateCost } from '../kernel/cost.js';
+import { sessionCost, rangeCost, costText, type CostQueryResult } from '../kernel/costQuery.js';
 import { encryptKey } from '../kernel/providers.js';
 import { resolveProviderProfile } from '../kernel/profiles.js';
 import { fetchBalanceCached } from '../kernel/balance.js';
@@ -799,17 +800,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ctx.config.setKey('settings', 'usageRange', range);
       const s = usageSummary(ctx.db, range as UsageRange);
       // 区间成本估算（与 /cost 同源——顺带知晓区间花费）
-      let costNote = '';
-      try {
-        const since = usageRangeSince(range as UsageRange);
-        const costRows = ctx.db.prepare(
-          `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE ts >= ? GROUP BY model`
-        ).all(since) as Array<{ model: string; input: number; output: number }>;
-        if (costRows.length) {
-          const cs = costSummary(costRows, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
-          costNote = cs.unknownCount === 0 ? ` · ≈$${cs.totalUsd.toFixed(4)}` : ` · ≈$${cs.totalUsd.toFixed(4)} 起（${cs.unknownCount} 个模型未收录定价）`;
-        }
-      } catch { /* 成本统计失败静默 */ }
+      const q = rangeCost(ctx.db, usageRangeSince(range as UsageRange), (ctx.config.get('settings') as Record<string, any>)?.costPrices);
+      const costNote = q ? ` · ≈${costText(q)}` : '';
       return `token 区间已切换：${range}——累计 ${s.total.toLocaleString()} token（入 ${s.input.toLocaleString()} / 出 ${s.output.toLocaleString()} / ${s.calls} 次调用，跨全部会话）${costNote}`;
     }
     // B2 修复：定位当前活跃会话（不再硬编码 'default'）+ 真实 token 统计（usage_stats）
@@ -856,33 +848,26 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // /cost：会话/区间成本估算（#11 债尾项——会话级 $ 成本；诚实口径：参考价目 + 未收录模型只报 token）
   bus.register('/cost', (args) => {
     const range = args[0];
+    const overrides = (ctx.config.get('settings') as Record<string, any>)?.costPrices;
     let scopeLabel = '';
-    let rows: Array<{ model: string; input: number; output: number }>;
+    let q: CostQueryResult | null = null;
     if (range === 'today' || range === '7d' || range === '30d') {
-      const since = usageRangeSince(range as UsageRange);
-      rows = ctx.db.prepare(
-        `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE ts >= ? GROUP BY model`
-      ).all(since) as typeof rows;
+      q = rangeCost(ctx.db, usageRangeSince(range as UsageRange), overrides);
       scopeLabel = range === 'today' ? '今日' : range === '7d' ? '近 7 天' : '近 30 天';
     } else if (range === 'session' || !range) {
       const sid = ctx.agent?.getSessionId?.() ?? 'default';
-      rows = ctx.db.prepare(
-        `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
-      ).all(sid) as typeof rows;
+      q = sessionCost(ctx.db, sid, overrides);
       scopeLabel = `会话 ${sid.slice(0, 12)}…`;
     } else {
       return '用法：/cost [session|today|7d|30d]（默认当前会话；估算按公开参考价目，非实际账单）';
     }
-    if (!rows.length) return `暂无 API 用量记录（${scopeLabel}）——真实对话后才有成本数据`;
-    const s = costSummary(rows, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
+    if (!q) return `暂无 API 用量记录（${scopeLabel}）——真实对话后才有成本数据`;
     const fmtUsd = (n: number | null) => (n === null ? '未收录定价' : n === 0 ? '$0（免费/离线）' : `$${n.toFixed(4)}`);
-    const totalIn = rows.reduce((a, r) => a + r.input, 0);
-    const totalOut = rows.reduce((a, r) => a + r.output, 0);
     const body = [
       ` 范围：${scopeLabel}`,
-      ` 用量：入 ${totalIn.toLocaleString()} / 出 ${totalOut.toLocaleString()} / 共 ${(totalIn + totalOut).toLocaleString()} token（${rows.length} 个模型）`,
-      ...s.rows.map(r => ` ${r.model.slice(0, 22).padEnd(22)} 入 ${r.input.toLocaleString().padStart(8)} / 出 ${r.output.toLocaleString().padStart(8)} → ${fmtUsd(r.usd)}`),
-      ` 合计（估算）：$${s.totalUsd.toFixed(4)}${s.unknownCount ? `（另有 ${s.unknownCount} 个模型未收录定价，仅计 token）` : ''}`,
+      ` 用量：入 ${q.tokens.input.toLocaleString()} / 出 ${q.tokens.output.toLocaleString()} / 共 ${q.tokens.total.toLocaleString()} token（${q.models} 个模型）`,
+      ...q.rows.map(r => ` ${r.model.slice(0, 22).padEnd(22)} 入 ${r.input.toLocaleString().padStart(8)} / 出 ${r.output.toLocaleString().padStart(8)} → ${fmtUsd(r.usd)}`),
+      ` 合计（估算）：$${q.usd.toFixed(4)}${q.unknown ? `（另有 ${q.unknown} 个模型未收录定价，仅计 token）` : ''}`,
       ` 注：参考公开价目估算，非实际账单；/usage 看 token 明细`,
     ];
     return lines(' 成本估算 ', body);
@@ -1049,16 +1034,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     }
     rows.push(` 黑洞全量：${rec.length} 条 · 吸附归档 ${ctx.mem.absorbCount('default')} 条（/hole 可检索）`);
     // 本会话成本估算（与 /cost 同源——状态栏 $ 段同一数据）
-    try {
-      const sid = ctx.agent?.getSessionId?.() ?? 'default';
-      const costRows = ctx.db.prepare(
-        `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
-      ).all(sid) as Array<{ model: string; input: number; output: number }>;
-      if (costRows.length) {
-        const cs = costSummary(costRows, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
-        rows.push(` 成本：${cs.unknownCount === 0 ? `$${cs.totalUsd.toFixed(4)}（估算）` : `$${cs.totalUsd.toFixed(4)} 起（${cs.unknownCount} 个模型未收录定价）`} · /cost 看区间`);
-      }
-    } catch { /* 成本统计失败静默 */ }
+    const cq = sessionCost(ctx.db, ctx.agent?.getSessionId?.() ?? 'default', (ctx.config.get('settings') as Record<string, any>)?.costPrices);
+    if (cq) rows.push(` 成本：${costText(cq)}（估算） · /cost 看区间`);
     // 架构 P4：parts 消息模型——工具消息错误/截断分段统计（消息粒度可审计）
     try {
       const sid = ctx.agent?.getSessionId?.() ?? 'default';
@@ -1117,18 +1094,10 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const rec = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default');
     if (!rec.length) return '暂无记忆';
     const last = rec.slice(-10);
-    // 本会话成本估算（与 /cost 同源——摘要时顺带知晓花费）
+    // 本会话成本估算（costQuery 共享助手——与 /cost 同一 SQL 事实源）
     let costLine = '';
-    try {
-      const sid = ctx.agent?.getSessionId?.() ?? 'default';
-      const costRows = ctx.db.prepare(
-        `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
-      ).all(sid) as Array<{ model: string; input: number; output: number }>;
-      if (costRows.length) {
-        const cs = costSummary(costRows, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
-        costLine = cs.unknownCount === 0 ? `$${cs.totalUsd.toFixed(4)}（估算）` : `$${cs.totalUsd.toFixed(4)} 起（${cs.unknownCount} 个模型未收录定价）`;
-      }
-    } catch { /* 成本统计失败静默 */ }
+    const cq = sessionCost(ctx.db, ctx.agent?.getSessionId?.() ?? 'default', (ctx.config.get('settings') as Record<string, any>)?.costPrices);
+    if (cq) costLine = `${costText(cq)}（估算）`;
     const transcript = last.filter((m: any) => m.role !== 'system').map((m: any) => `${m.role}: ${String(m.content ?? '').slice(0, 200)}`).join('\n');
     // LLM 提炼（有密钥时）
     try {
@@ -3275,16 +3244,10 @@ export const commands = {
       writeFileSync(outFile, `# Arena 对战：${cur} vs ${second}\n\n## 任务\n${task}\n\n## ${cur}（${a.turns} 轮）\n${a.text}\n\n## ${second}（${b.turns} 轮）\n${b.text}\n`, 'utf8');
     } catch { /* 落盘失败不阻断 */ }
     const summary = (x: { text: string }) => x.text.split('\n').filter(Boolean).slice(0, 6).map(l => l.slice(0, 90)).join('\n');
-    // 对战成本（各自独立会话 usage_stats——同源 /cost 估算；未收录定价诚实省略）
+    // 对战成本（各自独立会话——costQuery 同源 /cost 估算；未收录定价诚实省略）
     const costOf = (sid: string): string => {
-      try {
-        const rows = ctx.db.prepare(
-          `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
-        ).all(sid) as Array<{ model: string; input: number; output: number }>;
-        if (!rows.length) return '';
-        const cs = costSummary(rows, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
-        return cs.unknownCount === 0 ? ` · ≈$${cs.totalUsd.toFixed(4)}` : '';
-      } catch { return ''; }
+      const q = sessionCost(ctx.db, sid, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
+      return q && q.unknown === 0 ? ` · ≈$${q.usd.toFixed(4)}` : '';
     };
     return lines(` Arena 对战「${task.slice(0, 24)}」 `, [
       ` 完整输出：${outFile}`,

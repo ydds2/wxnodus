@@ -485,3 +485,9 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **反限流节流**：web_search 1.5s / http_get 800ms 最小间隔（minIntervalSince 纯函数）——模型连发搜索/抓取不触发引擎 429/封禁。
 - **成本敏感选型**：模型选择器与 /model 目录列表显示参考价目（USD/1M，免费/未收录三态诚实）；/cost 面板补 token 用量汇总行；/digest 摘要带本会话成本。
 - **验证**：全量 2330 通过；full-scene 28/28（选择器改动真机无回归）；tsc 零错误。
+
+### 13.16 costQuery 单一事实源收官轮（2026-08-17 持续完善）
+
+- **成本 SQL 去重三处**：/context、/digest、/arena 原来各内联一份 `usage_stats GROUP BY model` SQL + costSummary 拼装，语义漂移风险（且 /context 一处 import 缺失 costText 已属编译隐患）。全部改为共享助手 `sessionCost`/`rangeCost`/`costText`——与 /cost、状态栏、/sessions 同一 SQL 事实源；costText 统一「$x.xxxx / $x.xxxx 起（N 个模型未收录定价）」口径，绝不显示被低估的数字。arena 保持原诚实口径（有未收录定价模型时整体省略 $）。
+- **修复 import 缺口**：handlersExt.ts 补 `costText` 导入（此前 /usage range 已用而未导，tsc 悬空风险）；移除 costSummary 残留导入。
+- **验证**：全量 2331 通过；tsc 零错误。
