@@ -32,3 +32,28 @@ describe('fs_read 诚实截断', () => {
     expect(out).toBe('短内容');
   });
 });
+
+describe('fs_read 分页续读（offset/limit）', () => {
+  it('按行切片 + 尾部行号标注（可 offset 续读）', async () => {
+    const { coreTools } = await import('../src/kernel/tools.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-fsr-'));
+    dirs.push(d);
+    const lines = Array.from({ length: 10 }, (_, i) => `第${i}行`);
+    writeFileSync(join(d, 'page.txt'), lines.join('\n'));
+    const read = coreTools()['fs_read'];
+    const out = await read!.run({ path: 'page.txt', offset: 3, limit: 3 }, { cwd: d } as any);
+    expect(out).toContain('第3行');
+    expect(out).toContain('第5行');
+    expect(out).not.toContain('第2行');
+    expect(out).toContain('offset=6 续读');
+  });
+  it('offset 超界 → 空内容不抛错；limit 负数按全文', async () => {
+    const { coreTools } = await import('../src/kernel/tools.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-fsr-'));
+    dirs.push(d);
+    writeFileSync(join(d, 't.txt'), 'a\nb\nc');
+    const read = coreTools()['fs_read'];
+    const out = await read!.run({ path: 't.txt', offset: 99 }, { cwd: d } as any);
+    expect(out).toBe('');
+  });
+});

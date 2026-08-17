@@ -108,18 +108,28 @@ export function coreTools(): Record<string, ToolDef> {
   };
 
   const fsRead: ToolDef = {
-    schema: { type: 'function', function: { name: 'fs_read', description: '读取文件内容', parameters: { type: 'object', properties: { path: { type: 'string', description: '文件路径（工作区内）' } }, required: ['path'] } } },
+    schema: { type: 'function', function: { name: 'fs_read', description: '读取文件内容（可按行分页：offset 起始行 / limit 行数——超长文件用分页续读，勿一次性读全部）', parameters: { type: 'object', properties: { path: { type: 'string', description: '文件路径（工作区内）' }, offset: { type: 'number', description: '起始行（从 0 开始，缺省 0）' }, limit: { type: 'number', description: '读取行数（缺省读全文，最多 20000 字）' } }, required: ['path'] } } },
     danger: false,
-    async run({ path }, ctx) {
+    async run({ path, offset, limit }, ctx) {
       try {
         const p = resolve(ctx.cwd, path);
         const guard = withinWorkspace(ctx.cwd, p);
         if (guard) return guard;
         const full = readFileSync(p, 'utf8');
+        // 分页模式（offset/limit 任一提供）：按行切片——截断文件可精确续读
+        const wantPage = offset != null || limit != null;
+        if (wantPage) {
+          const lines = full.split('\n');
+          const start = Math.max(0, Math.floor(Number(offset) || 0));
+          const end = limit != null && Number(limit) > 0 ? start + Math.floor(Number(limit)) : undefined;
+          const page = lines.slice(start, end);
+          const pageText = page.join('\n');
+          return `${pageText}${end != null && end < lines.length ? `\n…[共 ${lines.length} 行，已读第 ${start}-${end - 1} 行——offset=${end} 续读]` : ''}`;
+        }
         // 诚实截断：超长文件只给头部 20000 字并显式标注——模型知道后面还有内容
-        // （避免「读完整文件」假象；续读用 fs_read 行号切片或 bash tail）
+        // （避免「读完整文件」假象；续读用 offset 分页或 bash tail）
         return full.length > 20000
-          ? `${full.slice(0, 20000)}\n…[文件过长已截断（共 ${full.length} 字，剩余 ${full.length - 20000} 字未读）——用 bash tail/sed 或分段读取续看]`
+          ? `${full.slice(0, 20000)}\n…[文件过长已截断（共 ${full.length} 字，剩余 ${full.length - 20000} 字未读）——用 offset/limit 分页或 bash tail/sed 续看]`
           : full;
       }
       catch (e: any) { return `读取失败：${e.message}`; }
