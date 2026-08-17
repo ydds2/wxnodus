@@ -8,6 +8,7 @@
 //   任何 OpenAI 兼容端点都可换（ollama 本地 qwen2.5-vl / OpenRouter / 自建网关…）
 //   错误归因：describeImageStatus 区分 无 key / 本地不可用 / 网络失败（不再一律 null）
 import { decryptKey } from './providers.js';
+import { createHash } from 'node:crypto';
 
 interface VisionSettings { baseURL?: string; model?: string; key?: string; local?: boolean; ocr?: boolean }
 
@@ -72,7 +73,15 @@ const extractText = (content: unknown): string | null => {
   return null;
 };
 
-export interface VisionResult { ok: boolean; text?: string; reason?: string }
+export interface VisionResult { ok: boolean; text?: string; reason?: string; cached?: boolean }
+
+// ── 同屏去重缓存（LRU(1)）：computer_observe 循环观测静止画面时同图秒回，
+// 不重复打视觉 API；key = target+prompt 哈希，TTL 10s（画面变化后自然失效）──
+const VISION_DEDUP_MS = 10_000;
+let lastVision: { hash: string; ts: number; result: VisionResult } | null = null;
+
+const visionHash = (target: string, prompt: string | undefined): string =>
+  createHash('sha256').update(`${target}\u0000${prompt ?? ''}`).digest('hex');
 
 /** 远程视觉（OpenAI 兼容端点——settings/环境变量/默认智谱） */
 async function remoteVision(target: string, key: string, prompt: string | undefined, settings: VisionSettings): Promise<VisionResult> {
@@ -114,8 +123,17 @@ async function remoteVision(target: string, key: string, prompt: string | undefi
   }
 }
 
-/** 视觉理解（开放通道）——返回状态可归因；settings 为可选第 4 参（/config set 可配） */
+/** 视觉理解（开放通道）——返回状态可归因；settings 为可选第 4 参（/config set 可配）；同图 10s 内去重（cached=true） */
 export async function describeImageStatus(target: string, apiKeyEnc: string | null, prompt?: string, settings?: any): Promise<VisionResult> {
+  // 同屏去重：静止画面循环观测（computer_observe）同 target+prompt 直接回缓存
+  const hash = visionHash(target, prompt);
+  if (lastVision && lastVision.hash === hash && Date.now() - lastVision.ts < VISION_DEDUP_MS) {
+    return { ...lastVision.result, cached: true };
+  }
+  const store = (result: VisionResult): VisionResult => {
+    lastVision = { hash, ts: Date.now(), result };
+    return result;
+  };
   const vs = pickSettings(settings);
   // 本地 VLM 优先（显式开启）——完全离线
   if (vs.local) {
@@ -126,11 +144,11 @@ export async function describeImageStatus(target: string, apiKeyEnc: string | nu
         : readFileSync(target);
       if (png) {
         const text = await localVision(new Uint8Array(png), prompt ?? '');
-        if (text) return { ok: true, text };
-        return { ok: false, reason: localFailed ? '本地视觉模型加载失败（下载中断或内存不足）——检查网络后重试，或关闭 visionLocal' : '本地视觉未返回结果' };
+        if (text) return store({ ok: true, text });
+        return store({ ok: false, reason: localFailed ? '本地视觉模型加载失败（下载中断或内存不足）——检查网络后重试，或关闭 visionLocal' : '本地视觉未返回结果' });
       }
     } catch (e: any) {
-      return { ok: false, reason: `本地视觉不可用：${String(e?.message ?? e).slice(0, 120)}` };
+      return store({ ok: false, reason: `本地视觉不可用：${String(e?.message ?? e).slice(0, 120)}` });
     }
   }
   // 远程：settings key > env > 加密配置（per-provider 槽 zhipu 优先，遗留单槽兜底）
@@ -140,11 +158,11 @@ export async function describeImageStatus(target: string, apiKeyEnc: string | nu
     // 语义诚实：返回 OCR 文本而非视觉描述）。自动降级路径（visionOcr=false）跳过 OCR。
     if (vs.ocr !== false) {
       const ocrText = await windowsOcrFallback(target);
-      if (ocrText) return { ok: true, text: ocrText };
+      if (ocrText) return store({ ok: true, text: ocrText });
     }
-    return { ok: false, reason: '未配置视觉密钥——/key set <密钥> 或 settings.visionKey；或用 settings.visionLocal=true 本地离线视觉' };
+    return store({ ok: false, reason: '未配置视觉密钥——/key set <密钥> 或 settings.visionKey；或用 settings.visionLocal=true 本地离线视觉' });
   }
-  return remoteVision(target, key, prompt, vs);
+  return store(await remoteVision(target, key, prompt, vs));
 }
 
 /** Windows 系统 OCR 兜底（file 路径直读；data: 写临时文件；http 不做下载——诚实跳过） */
