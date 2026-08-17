@@ -396,4 +396,14 @@ describe('/fs 面板封顶诚实标注（纯函数）', () => {
     expect(out).not.toContain('第69行');
     expect(fsReadRows(['a'])).toEqual(['a']);
   });
+  it('sqlTableRows：超 20 行标注总数（行数影响结论——绝不静默截前 20 行），未超无标注', async () => {
+    const { sqlTableRows } = await import('../src/commands/handlersExt.js');
+    const many = Array.from({ length: 25 }, (_, i) => ({ id: i }));
+    const out = sqlTableRows(many, ['id']);
+    expect(out).toHaveLength(21); // 20 + 1 标注行
+    expect(out.at(-1)).toContain('共 25 行');
+    expect(out.at(-1)).toContain('LIMIT 收窄');
+    expect(out).not.toContain(' 24 ');
+    expect(sqlTableRows([{ id: 1 }], ['id'])).toHaveLength(1);
+  });
 });

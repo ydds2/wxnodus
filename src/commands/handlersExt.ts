@@ -102,6 +102,12 @@ export function fsReadRows(lines: string[]): string[] {
   return lines.length > 60 ? [...shown, `…（共 ${lines.length} 行，前 60 行——bash tail/sed 续看）`] : shown;
 }
 
+/** /sql 面板行（纯函数可单测）：前 cap 行 + 超限总数标注（行数影响数据结论——绝不静默截前 20 行） */
+export function sqlTableRows(rows: Array<Record<string, unknown>>, cols: string[], cap = 20): string[] {
+  const body = rows.slice(0, cap).map(r => ` ${cols.map(col => String(r[col] ?? '').slice(0, 40)).join(' | ')}`);
+  return rows.length > cap ? [...body, ` …（共 ${rows.length} 行，前 ${cap} 行——WHERE/LIMIT 收窄续查）`] : body;
+}
+
 // ── Webhook 引擎（事件 → HTTP POST 回调；本地化为准，默认全部核心事件）──
 const WEBHOOK_EVENTS = ['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'system.notice', 'ui.confirm', 'jobs.complete'];
 const webhookSubs = new Map<string, () => void>();
@@ -204,7 +210,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const rows = ctx.db.prepare(q).all() as any[];
       if (!rows.length) return '（0 行）';
       const cols = Object.keys(rows[0] ?? {});
-      return lines(' SQL ', [` ${cols.join(' | ')}`, ...rows.slice(0, 20).map(r => ` ${cols.map(c => String(r[c] ?? '').slice(0, 40)).join(' | ')}`)]);
+      return lines(' SQL ', [` ${cols.join(' | ')}`, ...sqlTableRows(rows, cols)]);
     } catch (e: any) { return `SQL 错误：${e?.message?.slice(0, 120)}`; }
   });
 
