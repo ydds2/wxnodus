@@ -11,7 +11,7 @@ import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias } from '.
 import { capabilityBadges, decryptKey, detectProvider, encryptKey, filterModels, maskKey, MODEL_CATALOG, resolveApiKey } from '../kernel/providers.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { profileHealth } from '../kernel/profiles.js';
-import { costSummary } from '../kernel/cost.js';
+import { costSummary, priceForModel } from '../kernel/cost.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { makeSpec } from '../build/spec.js';
 import { makePlan, topoSort } from '../build/plan.js';
@@ -428,7 +428,13 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         const filtered = filterModels(q);
         const list = filtered.length ? filtered : MODEL_CATALOG;
         const profileRows = providers.flatMap(p => (p.models ?? []).map((mid: string) => ` ${mid}（档案 ${p.id} · ${p.name}）`));
-        return lines(' 模型目录 ', [`未找到「${q}」${filtered.length || profileRows.length ? '，相近模型：' : '，可用模型：'}`, ...list.map(m => ` ${m.name}（${m.provider}）${capabilityBadges(m.capabilities)}`), ...profileRows.slice(0, 8)]);
+        // 参考价目后缀（USD/1M；未收录定价不显示——诚实）
+        const priceSuffix = (modelId: string) => {
+          const pr = priceForModel(modelId);
+          if (!pr) return '';
+          return pr.in === 0 && pr.out === 0 ? '（免费）' : `（≈$${pr.in}/$${pr.out} M）`;
+        };
+        return lines(' 模型目录 ', [`未找到「${q}」${filtered.length || profileRows.length ? '，相近模型：' : '，可用模型：'}`, ...list.map(m => ` ${m.name}（${m.provider}）${capabilityBadges(m.capabilities)}${priceSuffix(m.modelId)}`), ...profileRows.slice(0, 8)]);
       }
       ctx.setModel(hit.modelId, hit.baseURL);
       return `已切换模型：${hit.name}（${hit.provider}）${capabilityBadges(hit.capabilities)}`;
