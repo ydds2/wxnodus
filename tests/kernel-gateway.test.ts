@@ -811,3 +811,21 @@ describe('complete.slash 接入层补全（档案模型/档案 id）', () => {
     expect(r.replace_from).toBe(1);
   });
 });
+
+describe('capture.attach 截图即问', () => {
+  it('成功路径（有图形环境）→ 附件落盘 + pending 登记；无环境 → 诚实失败', async () => {
+    const g = makeGateway({ model: 'glm-4v-flash' });
+    const r = await gre(g, 'capture.attach', { session_id: 's1' });
+    if (r.ok) {
+      // 真实图形环境：截图落盘 + pending 登记（下次提问随能力门管线注入）
+      expect(r.attached).toBe(true);
+      expect(typeof r.file).toBe('string');
+      expect(existsSync(r.file)).toBe(true);
+      expect(existsSync(join(dir, 'attachments', 's1', 'pending.json'))).toBe(true);
+    } else {
+      // CI/无图形环境：captureScreen 返回 null → 诚实失败，不伪造 attached
+      expect(typeof r.error).toBe('string');
+      expect(existsSync(join(dir, 'attachments', 's1', 'pending.json'))).toBe(false);
+    }
+  });
+});

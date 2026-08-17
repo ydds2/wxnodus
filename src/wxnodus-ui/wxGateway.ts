@@ -436,6 +436,9 @@ export class GatewayClient extends EventEmitter {
       case 'voice.toggle': return this.voiceToggle(params) as T
       case 'voice.record': return this.voiceRecord(params) as T
       case 'image.attach': return this.imageAttach(params) as T
+      // 截图即问：Ctrl+Shift+P 一键截图并登记为待注入图片（下次提问随 prompt 进入
+      // 能力门管线——视觉模型 inject / 文本模型 GLM 先识别）
+      case 'capture.attach': return this.captureAttach(params) as T
       // A24：后台活动（/term 终端 /jobs 任务 /cron 定时——后台面板轮询数据源）
       case 'background.status': return this.backgroundStatus() as T
       // A24：目录选择器（dir.list 浏览 / cwd.set 切换工作目录）
@@ -1077,6 +1080,25 @@ export class GatewayClient extends EventEmitter {
       return meta
     } catch (e: any) {
       return { attached: false, message: `图片附加失败：${String(e?.message ?? e).slice(0, 120)}` }
+    }
+  }
+
+  // 截图即问（Ctrl+Shift+P）：全屏截图 → 附件落盘 → pending 登记——下次提问经
+  // 能力门管线（视觉模型注入 parts / 文本模型 GLM 先识别）；无图形环境诚实失败
+  private async captureAttach(params: Record<string, unknown>): Promise<unknown> {
+    const sid = String(params.session_id ?? this.currentSessionId)
+    try {
+      const { captureScreen } = await import('../kernel/computer/index.js')
+      const shot = await captureScreen({})
+      if (!shot) return { ok: false, error: '截图不可用：原生截图模块缺失或无图形环境（CI/远程会话）' }
+      const dir = attachmentsDir(this.kernel.dataDir, sid)
+      mkdirSync(dir, { recursive: true })
+      const saved = join(dir, `capture-${Date.now().toString(36)}.png`)
+      writeFileSync(saved, shot.png)
+      writePending(this.kernel.dataDir, sid, saved, 'image/png')
+      return { ok: true, attached: true, file: saved, width: shot.width, height: shot.height, message: '截图已附加——发送消息时将随提问送入模型' }
+    } catch (e: any) {
+      return { ok: false, error: `截图附加失败：${String(e?.message ?? e).slice(0, 120)}` }
     }
   }
 

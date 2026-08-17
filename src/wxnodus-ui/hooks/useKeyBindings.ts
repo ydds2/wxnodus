@@ -378,6 +378,22 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         return patchOverlayState({ histSearch: true })
       }
 
+      // Ctrl+Shift+P：截图即问——一键全屏截图登记为待注入图片（下次提问经能力门：
+      // 视觉模型直接看图 / 文本模型 GLM 先识别为文本）
+      if (key.ctrl && key.shift && ch.toLowerCase() === 'p') {
+        if (!live.sid) {
+          return void actions.sys('截图即问需要活跃会话')
+        }
+
+        return void gateway.rpc<{ error?: string; ok?: boolean; file?: string }>('capture.attach', { session_id: live.sid }).then(r => {
+          if (r?.ok) {
+            actions.sys(`截图已附加（${r.file ? r.file.split(/[\\/]/).pop() : ''}）——直接提问，模型会看图（文本模型自动走 GLM 识别）`)
+          } else if (r?.error) {
+            actions.sys(`截图附加失败：${r.error}`)
+          }
+        })
+      }
+
       // When a prompt overlay is up and the user pressed a scroll key, fall
       // through to the global scroll handlers below instead of returning.
       // Otherwise nothing above this comment matched, and there's nothing
