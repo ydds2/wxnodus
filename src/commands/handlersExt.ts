@@ -926,7 +926,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ctx.config.setKey('settings', 'baseURL', parsed.baseURL);
       ctx.config.setKey('settings', 'model', parsed.models[0] ?? '');
       try { appendAudit(ctx.db, 'profile.add', { id, baseURL: parsed.baseURL }); } catch { /* 静默 */ }
-      return `档案已创建并激活：${id}（${parsed.baseURL}）\n下一步：/key set <密钥>（写入当前档案）→ /model <模型名>`;
+      return `档案已创建并激活：${id}（${parsed.baseURL}）\n下一步：/model set-key <密钥>（写入当前档案）→ /model <模型名>`;
     }
     if (sub === 'use') {
       const id = String(args[1] ?? '').trim();
@@ -988,7 +988,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     }
     if (sub === 'refresh' || sub === 'status') {
       const rp = resolveProviderProfile((ctx.config.get('settings') ?? {}) as Record<string, any>);
-      if (!rp) return '未配置档案（/profile add 或 /key set 后重试）';
+      if (!rp) return '未配置档案（/profile add 或 /model set-key 后重试）';
       const profile = { ...rp.profile, balanceUrl: bm.url || rp.profile.balanceUrl || '', balancePath: bm.jsonPath || rp.profile.balancePath || '' };
       const r = await fetchBalanceCached(profile, (ctx.config.get('settings') ?? {}) as Record<string, any>, { force: sub === 'refresh', db: ctx.db });
       if (r.ok) {
@@ -1317,8 +1317,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (!name) return '用法：/learn <技能名> [描述]——用最近对话总结生成 SKILL.md';
     const { resolveApiKey } = await import('../kernel/providers.js');
     const keyRes = resolveApiKey(ctx.config.get('settings') as any);
-    if (!keyRes.key) return '当前未配置模型密钥——/key set <密钥> 后 /learn 才能用 AI 总结生成技能（不产生假内容）';
-    if (keyRes.error === 'decrypt-failed') return '密钥无法解密（机器环境变化或数据损坏？）——请用 /key set <密钥> 重新配置。';
+    if (!keyRes.key) return '当前未配置模型密钥——/model set-key <密钥> 后 /learn 才能用 AI 总结生成技能（不产生假内容）';
+    if (keyRes.error === 'decrypt-failed') return '密钥无法解密（机器环境变化或数据损坏？）——请用 /model set-key <密钥> 重新配置。';
     const key = keyRes.key;
     const recent = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default').slice(-8);
     if (!recent.length) return '暂无对话记忆可学习——先对话几轮再 /learn';
@@ -1449,8 +1449,8 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const { resolveApiKey } = await import('../kernel/providers.js');
     const requireKey = () => {
       const keyRes = resolveApiKey(ctx.config.get('settings') as any);
-      if (!keyRes.key) return { error: '消化需要模型密钥——/key set <密钥> 后可用（无 key 不产生假内容）' };
-      if (keyRes.error === 'decrypt-failed') return { error: '密钥无法解密（机器环境变化或数据损坏？）——请 /key set <密钥> 重新配置' };
+      if (!keyRes.key) return { error: '消化需要模型密钥——/model set-key <密钥> 后可用（无 key 不产生假内容）' };
+      if (keyRes.error === 'decrypt-failed') return { error: '密钥无法解密（机器环境变化或数据损坏？）——请 /model set-key <密钥> 重新配置' };
       return { key: keyRes.key };
     };
 
@@ -1528,9 +1528,9 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const keyRes = resolveApiKey(ctx.config.get('settings') as any);
     if (!keyRes.key) {
       // 无 key：生成待补全模板但明确标注未审查（不假装已审查）
-      const doc = `# FDR — ${name}\n\n> ⚠ 未配置模型密钥——本模板未经过 AI 审查（/key set 后 /fdr 重跑生成真实审查）\n\n## 需求\n\n## 设计\n\n## 实现\n\n## 验证\n`;
+      const doc = `# FDR — ${name}\n\n> ⚠ 未配置模型密钥——本模板未经过 AI 审查（/model set-key 后 /fdr 重跑生成真实审查）\n\n## 需求\n\n## 设计\n\n## 实现\n\n## 验证\n`;
       writeFileSync(out, doc, 'utf8');
-      return `FDR 模板已生成 → ${out}（未配置密钥，未审查——/key set 后重跑）`;
+      return `FDR 模板已生成 → ${out}（未配置密钥，未审查——/model set-key 后重跑）`;
     }
     // 有 key：模型真实审查最近对话（需求/设计/实现/验证四段）
     const recent = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default').slice(-12);
@@ -1753,7 +1753,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/encrypt', () => {
     const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
-    return enc ? `凭证：AES-256-GCM 加密存储（${enc.slice(0, 12)}…，机器指纹绑定）` : '凭证：未配置（/key set <key>）';
+    return enc ? `凭证：AES-256-GCM 加密存储（${enc.slice(0, 12)}…，机器指纹绑定）` : '凭证：未配置（/model set-key <密钥>）';
   });
 
   // ── 系统类 ──────────────────────────────────

@@ -199,7 +199,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const cq = sessionCost(ctx.db, sid, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
     if (cq) costLine = `${costText(cq)}（估算，本会话）`;
     return lines(' 状态 ', [
-      ` 模型：${c(u.model || '未配置（/key set <密钥> 配置）', u.model ? '35' : '33')}`,
+      ` 模型：${c(u.model || '未配置（/model set-key <密钥> 配置）', u.model ? '35' : '33')}`,
       ` 模式：${c(u.mode, '36')}`,
       ` 目录：${c(u.cwd, '36')}`,
       ` 命令：${c(`${SLASH.length} 个`, '36')}`,
@@ -242,9 +242,9 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     } else if (keyRes.error === 'provider-mismatch') {
       checks.push(['模型密钥', `provider 不符：${keyRes.hint}`]);
     } else if (keyRes.source === 'enc') {
-      checks.push(['模型密钥', '已配置但无法解密（需 /key set 重配）']);
+      checks.push(['模型密钥', '已配置但无法解密（需 /model set-key 重配）']);
     } else {
-      checks.push(['模型密钥', '未配置（/key set <密钥> 配置）']);
+      checks.push(['模型密钥', '未配置（/model set-key <密钥> 配置）']);
     }
     // 当前模型目录可用性
     const model = ctx.getModel();

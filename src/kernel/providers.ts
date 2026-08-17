@@ -199,9 +199,12 @@ export function buildChatRequest(opts: {
   tools?: unknown[]; temperature?: number;
 }) {
   const base = opts.baseURL.replace(/\/+$/, '');
+  // image_url 终极闸门（纵深防御第四层）：上游已有能力门注入/历史 contentToText/描述通道
+  // 三层防御，本闸门兜底任何漏网路径（未来 MCP 图像内容、工具结果 parts、DB 残留）——
+  // 纯文本模型最终序列化前一律文本化，dataUrl 绝不进入请求体（deepseek-v4-pro 400 同款事故）。
   const body: Record<string, any> = {
     model: opts.model,
-    messages: opts.messages,
+    messages: opts.messages.map(m => ({ ...m, content: textifyForModel(m.content, opts.model) })),
     stream: opts.stream,
     temperature: opts.temperature ?? 0.7,
   };
@@ -213,11 +216,24 @@ export function buildChatRequest(opts: {
   };
 }
 
+// ── image_url 终极闸门（纯函数可单测）───────────────────────
+// 视觉模型（hasImageIn）原样放行；其余模型把 parts 数组中的 image_url 段替换为
+// [图片] 文本段（保留数组合法性——OpenAI 文本模型拒绝 image_url variant）。
+export function textifyForModel(content: unknown, modelId: string | null | undefined): unknown {
+  if (!Array.isArray(content)) return content;
+  if (hasImageIn(modelId)) return content;
+  return content.map((p: any) => {
+    if (p?.type === 'image_url') return { type: 'text', text: '[图片]' };
+    if (p?.type === 'text') return p;
+    return { type: 'text', text: '[附件]' };
+  });
+}
+
 // ── HTTP 错误中文映射 ──────────────────────────────────────
 export function mapHttpError(status: number): string {
   switch (status) {
     case 400: return '请求格式错误（400）——参数不合法';
-    case 401: return '密钥无效或未配置（401）——检查 /key';
+    case 401: return '密钥无效或未配置（401）——检查 /model set-key';
     case 402: return '账户余额不足（402）——需充值';
     case 403: return '无权限访问该模型（403）';
     case 404: return '接口或模型不存在（404）——检查 baseURL 与 model';

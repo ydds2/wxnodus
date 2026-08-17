@@ -4,6 +4,7 @@
 //  ① 图片策略矩阵（无图零视觉调用 / 视觉模型注入 / 文本模型走识别）
 //  ② hasImageIn 名称启发式（档案自定义视觉模型识别；未知默认文本——安全方向）
 //  ③ 历史 parts 文本化（contentToText 绝不让 dataUrl 进 API 消息）
+//  ④ 装配终极闸门（buildChatRequest 序列化前 textifyForModel——兜底任何漏网路径）
 import { describe, it, expect } from 'vitest';
 import { hasImageIn, imageStrategy } from '../src/kernel/providers.js';
 import { contentToText } from '../src/kernel/memory.js';
@@ -72,5 +73,40 @@ describe('历史 parts 文本化（contentToText）', () => {
     expect(contentToText('纯文本')).toBe('纯文本');
     expect(contentToText(null)).toBe('');
     expect(contentToText(undefined)).toBe('');
+  });
+});
+
+describe('装配终极闸门（buildChatRequest 序列化前 textifyForModel）', () => {
+  it('纯文本模型：任何路径塞入的 image_url parts 一律文本化（dataUrl 绝不进入请求体）', async () => {
+    const { buildChatRequest } = await import('../src/kernel/providers.js');
+    const messages = [
+      { role: 'user', content: '看看这张图' },
+      { role: 'tool', tool_call_id: 't1', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }] },
+      { role: 'user', content: [{ type: 'text', text: '看图' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,BBBB' } }] },
+    ];
+    const req = buildChatRequest({ baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-v4-pro', key: 'sk-x', messages: messages as any, stream: true });
+    expect(req.body).not.toContain('image_url');
+    expect(req.body).not.toContain('base64');
+    expect(req.body).not.toContain('data:image');
+    const body = JSON.parse(req.body as string);
+    expect(body.messages[1].content).toEqual([{ type: 'text', text: '[图片]' }]);
+    expect(body.messages[2].content[0]).toEqual({ type: 'text', text: '看图' });
+    expect(body.messages[2].content[1]).toEqual({ type: 'text', text: '[图片]' });
+  });
+
+  it('视觉模型：parts 原样放行（不误伤 inject 路径）', async () => {
+    const { buildChatRequest } = await import('../src/kernel/providers.js');
+    const parts = [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }];
+    const req = buildChatRequest({ baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4v-flash', key: 'sk-x', messages: [{ role: 'user', content: parts }] as any, stream: true });
+    const body = JSON.parse(req.body as string);
+    expect(body.messages[0].content).toEqual(parts);
+  });
+
+  it('textifyForModel 纯函数：字符串/null 原样；未知段 → [附件]', async () => {
+    const { textifyForModel } = await import('../src/kernel/providers.js');
+    expect(textifyForModel('纯文本', 'deepseek-v4-pro')).toBe('纯文本');
+    expect(textifyForModel(null, 'deepseek-v4-pro')).toBe(null);
+    expect(textifyForModel([{ type: 'input_text', text: 'x' }], 'deepseek-v4-pro')).toEqual([{ type: 'text', text: '[附件]' }]);
+    expect(textifyForModel([{ type: 'image_url', image_url: { url: 'x' } }], 'glm-4v-flash')).toEqual([{ type: 'image_url', image_url: { url: 'x' } }]);
   });
 });

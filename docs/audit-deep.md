@@ -627,3 +627,11 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **测试面**：删 ruleBrain 4 用例、RULE_PATTERNS 域覆盖契约、makeSpec/makePlan 用例、kf-022「未传 plan 兜底」用例（源码级断言改为 plan 必传）；instantiate 调用点全部显式传固定 plan；kf-018 改字面 Spec；kernel-tools 回退用例改 fail-closed 断言；kf-004/kf-029 夹具 `'unconfigured'`。
 - **口径失效记录**：competitive-analysis.md 的「免 key 可用：规则脑兜底」对外对比口径随本删除失效（离线模型路径仍在，该口径应按「本地离线模型」重述）。
 - **保留不动**：离线四模态模型、语音、本地嵌入/向量、黑洞记忆、/offline、/voice、Windows OCR、云端视觉、/build 的脚手架执行/验证/证据/质量门全链路。
+
+### 13.38 image_url 终极闸门 + /key 残留清零轮（2026-08-18 用户报 ZCode deepseek-v4-pro hydrate 400）
+
+- **背景**：用户报告 ZCode（deepseek-v4-pro 纯文本模型）会话 hydrate 时报 `messages[678]: unknown variant image_url`（TraceID: hydrate-trace）。本会话自查：上下文 100% 文本、零待识别图片——按规则不触发 GLM 调用（零冗余）。
+- **wxnodus 侧纵深审计**：上游三层防御已就位（agent.ts 能力门注入 :744-782 / 历史 contentToText :861-864 / 描述通道），且截图类工具返回文件路径不产 image 内容、MCP 客户端不映射图像块——但工具结果消息（agent.ts:1124 `msgs.push({role:'tool', content:e.out})`）与任何未来路径（MCP 图像、DB 残留）在最终装配处**无兜底闸门**。
+- **修复（第四层防御）**：providers.ts 新增 `textifyForModel(content, modelId)` 纯函数——视觉模型（hasImageIn）原样放行；其余模型把 parts 数组中的 `image_url` 段替换为 `[图片]` 文本段（未知段 → `[附件]`，保持数组合法性）；`buildChatRequest`（llmStream 与 llmOnce 的唯一装配点）序列化前对全部消息执行。dataUrl 从此物理上不可能进入纯文本模型请求体。
+- **契约测试**：kernel-image-guard.test.ts 新增「装配终极闸门」3 例——纯文本模型 tool/user parts 全文本化且请求体不含 image_url/base64/data:image；视觉模型 parts 原样放行；纯函数边界（字符串/null 原样、未知段 [附件]）。
+- **/key 残留清零**（§13.35 迁移漏网收尾）：providers.ts 401 映射、handlers.ts 状态/doctor 3 处、handlersExt.ts 8 处（/profile 下一步、/learn、/assimilate、/fdr、/encrypt）共 12 处 `/key set` → `/model set-key`；marketServer.ts `/keys` 端点为 forge 公钥服务，与模型密钥无关，保留。
