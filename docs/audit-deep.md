@@ -705,3 +705,9 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
   - handlersExt **3718 → 2180 行**；renderWaterfall/parse* 保持 re-export 兼容；registerExtHandlers 依次调用四个 ext 模块。
 - **过程自伤修复**：脚本 4 处 bug（块模板用错变量致动态 import 未升档、headBlock off-by-one 致导入重复、ctx 类型未恒纳入致 TS7006、调用点漏插入致 register 导入未用）——全部由 tsc 即时捕获，逐一定点修复。
 - **验证**：tsc 零错误；命令契约定向 98 绿（commands/profile-balance/w1-04/intent）；全量回归见下。
+
+### 13.47 测试布局收口决策轮（2026-08-18 /goal 自主完善——序 4 按成本/收益重新界定）
+
+- **决策**：深评 P1「测试布局收口（123 根目录文件归位）」经实测评估后**以约定文档化替代机械搬移**——批量移动会连锁破坏 package.json 数十条 `test:w*-xx` 路径锚点脚本 + 123 处 import 深度 + vitest 发现顺序，纯外观收益、高回归风险（成本远超收益，违背预算约束）。
+- **交付**：`tests/README.md` 布局约定（分区表 + 4 条规则：命名前缀、路径锚点同步义务、fixture 不入库、npm run ci 唯一权威）——捕获深评「发现性/维护性」本意。
+- **本轮回退/止损汇总（如实）**：拆分 2/3 自动修剪失败（§13.44 回退）→ 用法过滤新方案成功（§13.46）；fixture 卫生为既有状态补证（§13.46）；测试批量移动明确延后（本条）。
