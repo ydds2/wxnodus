@@ -331,8 +331,29 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   // 模式（Claude Code 五模式体系：smart 更改前确认 / auto 自动编辑 / goal loop-goal /
   // manual 全量确认 / plan 计划模式 / yolo 完全访问）
-  bus.register('/perm', (args) => {
+  bus.register('/perm', async (args) => {
     const mode = args[0];
+    // P1-4 会话授权子命令（approve_for_session，gap 2026-08-18）：
+    //   session-list ｜ session-allow <tool> <key> ｜ session-deny <tool> <key> ｜ session-revoke [tool] [key]
+    if (mode === 'session-list' || mode === 'session-allow' || mode === 'session-deny' || mode === 'session-revoke') {
+      const { listSessionGrants, grantSession, revokeSessionGrant } = await import('../kernel/sessionGrants.js');
+      const sid = ctx.agent?.getSessionId?.() ?? 'default';
+      if (mode === 'session-list') {
+        const rows = listSessionGrants(ctx.db, sid);
+        if (!rows.length) return `会话 ${sid} 暂无授权记录（settings.approveForSession=true 后批准一次即自动记录；/perm session-allow 手动添加）`;
+        return lines(' 会话授权 ', rows.map(r => ` ${r.kind === 'deny' ? '✗deny' : '✓allow'} ${r.tool} ${r.key.slice(0, 60)}（${new Date(r.createdAt).toLocaleTimeString('zh-CN', { hour12: false })}）`));
+      }
+      const tool = args[1];
+      const key = args.slice(2).join(' ');
+      if (!tool) return '用法：/perm session-allow|session-deny <tool> <key>（bash 填完整命令；fs_write/fs_edit 填 path）';
+      if (mode === 'session-revoke') {
+        const n = revokeSessionGrant(ctx.db, sid, key ? tool : undefined, key || undefined);
+        return `已撤销 ${n} 条会话授权（${key ? `${tool} ${key.slice(0, 40)}` : tool ?? '全部'}）`;
+      }
+      const grantArgs = tool === 'bash' ? { command: key } : (tool === 'fs_write' || tool === 'fs_edit') ? { path: key } : { key };
+      grantSession(ctx.db, sid, tool, grantArgs, mode === 'session-allow' ? 'allow' : 'deny');
+      return `会话授权已记录：${mode === 'session-allow' ? '✓allow' : '✗deny'} ${tool} ${key.slice(0, 60)}（本会话内生效，/perm session-revoke 撤销）`;
+    }
     if (mode && ['smart', 'auto', 'manual', 'plan', 'yolo', 'goal'].includes(mode)) {
       const from = ctx.getMode();
       ctx.setMode(mode);

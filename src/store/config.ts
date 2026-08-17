@@ -98,6 +98,8 @@ export const SETTINGS_KEYS = new Set([
   'maxConsecutiveFail', 'maxUnknownToolRounds', 'retryDelayMs', 'maxGoalRounds', 'maxSubagentDepth',
   'toolCacheSize', 'loopRemindAt', 'loopHardStopAt', 'loopSigWindow', 'chantRemindAt', 'chantStopAt',
   'fsReadLimit', 'bashOutputCap',
+  // P1-4 会话授权（approve_for_session）
+  'approveForSession',
   // 视觉开放通道（settings.vision* 与 visionLocal/visionOcr）
   'visionBaseURL', 'visionModel', 'visionKey', 'visionLocal', 'visionOcr',
   // 代理（/proxy 命令消费 settings.proxy）

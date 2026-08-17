@@ -21,6 +21,8 @@
 - **LSP 集成**：`lsp_diagnostics` / `lsp_hover` / `lsp_definition` 三工具；`settings.lsp.servers` 可配任意语言服务器，内置 typescript-language-server 探测（缺失时诚实给安装指引）。
 - **硬编码清零**：压缩阈值/包裹面/轮次上限等全部改为模型真实窗口派生 + settings 可覆盖（`maxTurns` / `ctxOutputReserve` / `untrustedWrapLimit` / `toolOutput*` 等 12 个新配置键）。
 - **循环检测分级**：重复工具调用先注入「换策略提醒」再硬停（不再 3 次直停误杀合法轮询）；签名并入输出指纹；goal 模式相同结论空转自动终止——阈值全部 settings 可调（`loopRemindAt`/`loopHardStopAt`/`chantStopAt`/`maxConsecutiveFail`/`retryDelayMs`/`maxGoalRounds`/`maxSubagentDepth`/`toolCacheSize`/`fsReadLimit`/`bashOutputCap` 等）。
+- **会话血缘与结构化会话列表**（桌面端数据面）：`/fork` 记录 `forked_from_id` 血缘 + `/fork lineage` 祖先链；`/sessions --json` 结构化列表（首问摘要/消息数/分支数/血缘），与 serve 网关共用单一数据出口。
+- **approve_for_session 会话授权**：`settings.approveForSession=true` 后批准一次，本会话内同键自动放行（持久化，跨重启生效）；`/perm session-allow|deny|revoke|list` 管理；deny 级联直拒、红线永远优先。
 
 ### Changed
 - **/build 单通道化**：AI 规格化成为唯一编译通道（规则脑删除后）；无 key 明确报错引导 `/model set-key`，绝不假装编译。

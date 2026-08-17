@@ -101,8 +101,8 @@
 | P1-1 | 并行调度（danger 读写门） | gemini/codex | `scheduler.ts:472-483`、`parallel.rs:153-157` | ✅ 已落地（只读批并行/含写批串行） |
 | P1-2 | 循环检测分级+输出哈希签名+内容重复检测 | gemini/crush | `loopDetectionService.ts`、`loop_detection.go:45-71` | ✅ 已落地（提醒注入→硬停 + shortHash + chanting；阈值 settings 化） |
 | P1-3 | 每步 checkpoint+压缩后原 prompt 续跑 | kimi/crush | `kimisoul.py:1034`、`agent.go:1192-1207` | ⏳ 未做 |
-| P1-4 | approve_for_session 真实授权 | kimi/opencode | `approval.py:354-379` | ⏳ 未做 |
-| P2-1 | 快照增量化+血缘 | kimi/codex | `context.py:123-167` | ⏳ 未做 |
+| P1-4 | approve_for_session 真实授权 | kimi/opencode | `approval.py:354-379` | ✅ 已落地（session_grants 持久化：批准一次会话内同键放行、deny 直拒；`/perm session-*`；settings.approveForSession 开关） |
+| P2-1 | 快照增量化+血缘 | kimi/codex | `context.py:123-167` | ◐ 血缘✅（forked_from_id v9 迁移 + /fork lineage + 结构化会话列表）；快照增量化⏳ |
 | P2-2 | 成本五维+Decimal | opencode | `session.ts:338-407` | ⏳ 未做 |
 | P2-3 | execpolicy 首词规则+网络域+批准持久化 | codex | `policy.rs:402-411`、`amend.rs:65-125` | ⏳ 未做 |
 | P2-4 | 输出蒸馏/掩码（开关默认关） | gemini | `toolDistillationService.ts:52-81` | ✅ 已落地（掩码默认开+蒸馏开关默认关） |

@@ -197,6 +197,9 @@ export async function createCliComposition(deps: CliCompositionDeps): Promise<Op
         onFormRequest: bridges.onFormRequest,
         // 简化人工操作（阶段 C）：smart 模式工作区内文件编辑自动放行（默认开启，/perm 说明）
         lowRiskAutoApprove: settings.lowRiskAutoApprove !== false,
+        // P1-4 会话授权（approve_for_session）：settings.approveForSession=true 开启——
+        // 批准一次本会话同键自动放行（session_grants 持久化）
+        approveForSession: settings.approveForSession === true,
         dataDir,
         toolLazyLoad: settings.toolLazyLoad === true,
         // D 批次：AI 审批预审（settings.autoReview=true 开启）——用主模型单轮判断 allow/deny/ask。

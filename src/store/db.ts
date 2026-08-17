@@ -18,7 +18,7 @@ const requireCjs = createRequire(import.meta.url);
 
 export type Db = InstanceType<typeof Database>;
 
-const SCHEMA_VERSION = 8; // v7/v8: usage_stats 前缀缓存命中/未命中列（audit §13.43）
+const SCHEMA_VERSION = 9; // v7/v8: usage_stats 前缀缓存列（audit §13.43）；v9: sessions.forked_from_id 血缘（audit §13.50）
 
 export { bigramZh };
 // 审计追加已迁至 kernel/audit.ts（分层泄漏修复 audit §13.45）——store 仅再导出（infra→kernel 合法方向）
@@ -64,6 +64,18 @@ export function openDB(dataDir: string): Db {
       parts TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
+    -- P1-4 会话级真实授权（approve_for_session，gap 2026-08-18）：用户批准一次 → 本会话内
+    -- 同键自动放行（持久化，跨重启生效；与 permissions.json 规则叠加，deny 级联）
+    CREATE TABLE IF NOT EXISTS session_grants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      tool TEXT NOT NULL,
+      grant_key TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'allow' CHECK (kind IN ('allow','deny')),
+      created_at INTEGER NOT NULL,
+      UNIQUE(session_id, tool, grant_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_grants ON session_grants(session_id, tool);
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL

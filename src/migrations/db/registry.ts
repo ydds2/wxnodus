@@ -124,6 +124,15 @@ export function dbMigrations(): DbMigration[] {
       ddl: 'ALTER TABLE usage_stats ADD COLUMN cache_miss_tokens INTEGER NOT NULL DEFAULT 0',
       nullable: false,
     }),
+    makeColumnMigration({
+      id: 'db-v9-add-session-lineage',
+      fromVersion: 8,
+      toVersion: 9,
+      table: 'sessions',
+      column: 'forked_from_id',
+      ddl: 'ALTER TABLE sessions ADD COLUMN forked_from_id TEXT',
+      nullable: true,
+    }),
   ];
 }
 

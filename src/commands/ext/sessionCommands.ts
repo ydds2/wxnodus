@@ -12,6 +12,7 @@ import { listScripts, loadScript, saveScript, deleteScript, isValidScriptName, s
 import { usageSummary, usageRangeSince, type UsageRange } from '../../kernel/usage.js';
 import { estimateCost } from '../../kernel/cost.js';
 import { sessionCost, rangeCost, costText, type CostQueryResult } from '../../kernel/costQuery.js';
+import { listSessionsStructured, forkSession, sessionLineage } from '../../kernel/sessionLineage.js';
 import { c, type HandlerCtx } from '../handlers.js';
 import { type CommandBus } from '../../app/CommandBus.js';
 
@@ -74,6 +75,21 @@ export function registerSessionCommands(bus: CommandBus, ctx: HandlerCtx): void 
     // 真正切换：agent 会话 + 状态提示（CLI 单会话 'default' 主用；UI 走 session.resume RPC）
     try { ctx.agent?.setSessionId(target); } catch { /* 无 agent 时仅提示 */ }
     return `已切换到会话 ${target}（${cnt} 条消息）${cnt ? '——历史已加载，可直接继续对话' : ''}`;
+  });
+
+  // /sessions [--json]：结构化会话列表（gap P2-1 部分落地——first_user_message 摘要 +
+  // 血缘 + 分支数，gemini sessionUtils 对齐）；--json 输出结构化 JSON（桌面端/脚本消费，
+  // 与 serve 网关共用 listSessionsStructured 单一出口）
+  bus.register('/sessions', (args) => {
+    const list = listSessionsStructured(ctx.db, 100);
+    if (args.includes('--json')) return JSON.stringify(list, null, 2);
+    if (!list.length) return '暂无会话';
+    return lines(' 会话 ', list.map(s => {
+      const head = s.firstUser ? `「${s.firstUser}」` : '(空会话)';
+      const lineage = s.forkedFromId ? ` ⟵fork ${s.forkedFromId}` : '';
+      const forks = s.forkCount > 0 ? ` ⑂${s.forkCount}` : '';
+      return ` ${s.id}  ${s.title || '(无标题)'}${lineage}${forks}  [${s.msgCount} 条] ${head}`;
+    }));
   });
 
   // /new：新建空会话并切换
@@ -420,21 +436,21 @@ export function registerSessionCommands(bus: CommandBus, ctx: HandlerCtx): void 
     return { allOk: r.ok && assertions.every(a => a.ok), assertions };
   }
 
-  // /fork：复制当前会话（含全部消息）为分支会话
+  // /fork：复制当前会话（含全部消息）为分支会话（记血缘 forked_from_id——codex 对齐）；
+  //   /fork lineage [id] 打印祖先链
   bus.register('/fork', (args) => {
+    if (args[0] === 'lineage') {
+      const sid = args[1] ?? ctx.agent?.getSessionId?.() ?? 'default';
+      const chain = sessionLineage(ctx.db, sid);
+      return chain.length
+        ? lines(' 血缘 ', chain.map((id, i) => ` ${i === chain.length - 1 ? '●' : '○'} ${id}${i === 0 ? '（根）' : ''}`))
+        : `会话不存在：${sid}`;
+    }
     const target = args[0] ?? ctx.agent?.getSessionId?.() ?? 'default';
     const newId = `s${Date.now()}f`;
-    const n = (ctx.db.prepare(`SELECT COUNT(*) AS c FROM sessions WHERE id=?`).get(target) as { c: number }).c;
-    if (!n) return `会话不存在：${target}`;
-    const src = ctx.db.prepare(`SELECT title FROM sessions WHERE id=?`).get(target) as { title: string } | undefined;
-    const now = Date.now();
-    ctx.db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`)
-      .run(newId, `${src?.title || target} (fork)`, now, now);
-    ctx.db.prepare(`
-      INSERT INTO messages (session_id, role, content, tool_call_id, archived, ts)
-      SELECT ?, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=?
-    `).run(newId, target);
-    return `已分支会话 ${target} → ${newId}（${(ctx.db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(newId) as { c: number }).c} 条消息）`;
+    const r = forkSession(ctx.db, target, newId);
+    if (!r.ok) return r.error ?? 'fork 失败';
+    return `已分支会话 ${target} → ${newId}（${r.msgCount} 条消息，血缘已记录——/fork lineage ${newId} 查看）`;
   });
 
   // /checkpoint：会话快照（机制补强——激活既有 checkpoints 表）

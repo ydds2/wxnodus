@@ -20,6 +20,7 @@ import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx, type ToolDef } from
 import { labelTruncate } from './truncate.js';
 import { resolveModelForChat } from './profiles.js';
 import { maxContextFor } from './providers.js';
+import { checkSessionGrant, grantSession } from './sessionGrants.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
 import { isCompletionClaim, GOAL_DONE_MARK } from './completionClaim.js';
 import type { HookRunner } from './hooks.js';
@@ -59,6 +60,9 @@ export interface AgentOptions {
   onFormRequest?: (fields: Array<{ name: string; label?: string; kind: 'text' | 'password' | 'key' }>, prompt?: string) => Promise<Record<string, string> | null>;
   /** 简化人工操作（阶段 C）：smart 模式下工作区内文件编辑自动放行（默认开启） */
   lowRiskAutoApprove?: boolean;
+  /** P1-4 会话授权（approve_for_session，kimi 对齐）：开启后用户批准一次 → 本会话内
+   *  同键自动放行（session_grants 表持久化，跨重启生效）；deny 级联拒绝同键。 */
+  approveForSession?: boolean;
   /** 数据目录（P0-2 审批规则文件 data/permissions.json 读取位置） */
   dataDir?: string;
   /** AI 审批预审（/perm auto-review 开启）：LLM 预审代替人工弹窗，allow/deny/ask */
@@ -174,6 +178,8 @@ export function createAgent(opts: AgentOptions) {
   const settingsAny = opts.config?.settings as Record<string, any> | undefined;
   const MAX_TURNS_EFFECTIVE = Math.min(Math.max(Number(settingsAny?.maxTurns) || MAX_TURNS, 1), 200);
   // gap 深化（2026-08-18）：循环防护阈值全部 settings 化（默认 = 模块级常量，行为不变）
+  // P1-4 approve_for_session：settings.approveForSession=true 时启用会话级真实授权
+  const approveForSession = opts.approveForSession === true;
   const EFF = {
     retryDelayMs: clampN(settingsAny?.retryDelayMs, RETRY_DELAY_MS, 50, 60_000),
     maxConsecutiveFail: clampN(settingsAny?.maxConsecutiveFail, MAX_CONSECUTIVE_FAIL, 2, 50),
@@ -647,13 +653,32 @@ export function createAgent(opts: AgentOptions) {
         args: JSON.stringify(args ?? {}).slice(0, 200),
       });
       if (verdict === 'reject') return `工具被拒绝：权限红线（${name}）`;
+      // P1-4 approve_for_session（kimi 对齐，gap 2026-08-18）：会话级真实授权（持久化 DB）——
+      // deny 直拒（低于红线/规则 deny、高于模式判定）；allow 跳过确认链（cmdForceManual 的
+      // wx_cmd danger 不受影响，仍强制人工）；授权表未就绪 → fail-closed 走确认链。
+      let sessionGrantAllowed = false;
+      if (approveForSession) {
+        try {
+          const sg = checkSessionGrant(opts.db, sessionId, name, args);
+          if (sg === 'deny') {
+            auditTool('tool.session-deny', { tool: name, args: JSON.stringify(args ?? {}).slice(0, 200) });
+            return `工具被会话授权规则拒绝（${name}——/perm session-revoke 可撤销）`;
+          }
+          if (sg === 'allow' && !cmdForceManual) {
+            sessionGrantAllowed = true;
+            bus.emit('system.notice', { text: `会话授权放行：${name}（approve_for_session——/perm session-revoke 撤销）` });
+          }
+        } catch { /* 授权表未就绪 → 确认链（fail-closed） */ }
+      }
       // 简化人工操作（阶段 C）：smart 模式 + 低危文件编辑（工作区内）→ 自动放行，
       // 不再逐次弹审批（acceptEdits 语义）；工作区外/危险操作/plan 模式不受影响
       const lowRiskFile = opts.lowRiskAutoApprove !== false && mode === 'smart'
         && (name === 'fs_write' || name === 'fs_edit')
         && typeof (args as any)?.path === 'string'
         && isPathWithinCwd(String((args as any).path));
-      if (ruleHit?.decision === 'allow') {
+      if (sessionGrantAllowed) {
+        // 已放行：跳过确认链（批准记录在下方 onApproval 回调处持久化）
+      } else if (ruleHit?.decision === 'allow') {
         bus.emit('system.notice', { text: `规则放行：${name}（/perm rule list 查看）` });
       } else if (opts.autoReview?.enabled() && !cmdForceManual && (verdict === 'confirm' || verdict === 'plan')) {
         // AI 审批预审（D 批次）：LLM 预审代替人工弹窗——allow 放行（留痕）/ deny 拒绝 / ask 弹窗
@@ -666,15 +691,18 @@ export function createAgent(opts: AgentOptions) {
         } else {
           const ok = await onApproval(name, args);
           if (!ok) return `用户拒绝执行 ${name}`;
+          if (approveForSession) { try { grantSession(opts.db, sessionId, name, args, 'allow'); } catch { /* 忽略 */ } }
         }
       } else if (ruleHit?.decision === 'ask' && (verdict === 'approve' || verdict === 'confirm')) {
         const ok = await onApproval(name, args);
         if (!ok) return `用户拒绝执行 ${name}`;
+        if (approveForSession) { try { grantSession(opts.db, sessionId, name, args, 'allow'); } catch { /* 忽略 */ } }
       } else if (verdict === 'confirm' && lowRiskFile) {
         bus.emit('system.notice', { text: `低危操作自动放行：${name}（工作区内文件编辑，${'/perm'} 可关闭）` });
       } else if (verdict === 'confirm' || verdict === 'plan') {
         const ok = await onApproval(name, args);
         if (!ok) return `用户拒绝执行 ${name}`;
+        if (approveForSession) { try { grantSession(opts.db, sessionId, name, args, 'allow'); } catch { /* 忽略 */ } }
       }
       // PreToolUse hook：输出 DENY 即真实拦截（权限门之后、执行之前）
       // 审查修复：Partial hooks 下 preToolUse 可能未配置——undefined 视为放行（allowed===false 才拦）

@@ -186,3 +186,9 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 - **循环检测分级（gap P1-2）**：签名并入输出短哈希（`agent.ts shortHash`，FNV-1a 36 进制）；重复 ≥2 注入换策略提醒、≥5 硬停（原 3 次直停，误杀合法轮询缺陷修复）；goal 轮间相同结论 chanting 检测（提醒→终止）；4 个新用例（含 settings.loopHardStopAt=3 恢复旧行为回归锚）。
 - **硬编码二次清零（阈值 settings 化）**：连续失败/未知工具轮/重试间隔/goal 轮数/子代理深度/读缓存上限/签名窗口/循环阈值（EFF 块 10 项）+ fsReadLimit/bashOutputCap——共 13 个新设置键，全部夹取防误配、默认值=既有行为（行为零漂移回归测试）。
 - **评分口径**：本批为「纵深加固 + 可配置性」，④⑩ 维度分数不变（已并列同档；LLM 辅助循环检测——gemini 的置信度判空转——仍未做，是 ④ 与 gemini 的最后差距之一）。
+
+### 9.2 生态/桌面端准备轮（2026-08-18 四评）
+
+- **会话血缘 + 结构化会话列表（gap P2-1 部分）**：sessions 表 `forked_from_id`（SCHEMA v9 迁移）；`/fork` 记血缘 + `/fork lineage [id]` 祖先链；`/sessions [--json]` 结构化列表（首问摘要/消息数/分支数/血缘——gemini sessionUtils 对齐），JSON 出口与 serve 网关共用 `listSessionsStructured` 单一事实源——桌面端历史树/会话浏览器的数据面就绪。
+- **approve_for_session 真实授权（gap P1-4）**：session_grants 表持久化（批准一次 → 本会话同键自动放行，跨重启生效）；优先级红线 > 规则 deny > 会话 deny > 会话 allow > 模式判定；`/perm session-allow|deny|revoke|list`；settings.approveForSession 开关（默认关，opt-in）。授权粒度诚实原则：bash 精确命令串、fs 精确 path（刻意不做首词前缀——批准 `git` 前缀会连带放行 `git push --force`；execpolicy 式前缀规则留 P2-3）。
+- **评分口径**：本批服务「生态 + 桌面端」，④ 授权层/⑦ 会话面质量提升但未越档（④ 仍与三家并列 9；桌面端未上线前 ⑦ 不加分）——分数保持 725 不变，如实记录。

@@ -739,3 +739,12 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **既有测试更新**：goal「模型始终不宣告完成」用例原为恒同文本——正是 chanting 检测目标场景，改每轮不同文本（轮次上限路径）+ 新 chanting 用例（kernel-agent-gap-2026：提醒注入不直停/硬停阈值/短哈希确定性/空转终止 4 例）。
 - **教训**：python 批量替换误入 `${}` 模板字面量进单引号字符串（已即时修复——继续坚持「批量改动用 Edit 精确匹配优先」）。
 - **验证**：tsc 零错误；定向 10+65 绿；全量 2450 通过 / 10 跳过 / 0 失败；npm run ci 七步全绿（CI_EXIT=0）。
+
+### 13.50 生态/桌面端准备轮（2026-08-18：会话血缘 + approve_for_session 真实授权）
+
+- **范围**：用户需求「基于 6 家源码参考继续补充生态、提高上限（后续制作桌面端）」——选 P1-4（授权 UX）+ P2-1 血缘半件（会话数据结构化，桌面端历史树/会话浏览器的数据面）。
+- **会话血缘（sessionLineage.ts）**：sessions 表加 `forked_from_id`（SCHEMA v9，registry `db-v9-add-session-lineage`；kf-030 与 db-migrations 测试 8→9 同步）；`forkSession` 记血缘复制消息、`sessionLineage` 祖先链（环形防护 seen 集）、`listSessionsStructured`（首问摘要清洗空白截断 80 字/消息数/分支数/血缘——gemini sessionUtils 思想）；/fork 走 kernel 函数 + `/fork lineage`；/sessions 增 `--json` 结构化出口（与桌面网关共用单一事实源）。
+- **approve_for_session（sessionGrants.ts + agent 接线）**：session_grants 表（UNIQUE(session_id,tool,grant_key) upsert）；grantKey 诚实粒度——bash 精确命令、fs 精确 path、其余规范化 JSON（刻意不前缀化，理由入注释：批准 git 前缀连带放行 push --force）；优先级红线 > 规则 deny > 会话 deny > 会话 allow > 模式判定（agent 内插入点已注释）；cmdForceManual（wx_cmd danger）不受 allow 影响；授权表异常 fail-closed 走确认链；批准即自动记录（settings.approveForSession=true，默认关 opt-in）；`/perm session-allow|deny|revoke|list` 四子命令（handlers.ts /perm 扩展）；白名单 +approveForSession。
+- **测试**：新套件 7 用例（血缘链/首问摘要/授权 upsert deny 优先撤销/agent 批准一次→同键免弹窗真实执行/deny 直拒不弹窗/红线不可被授权绕过）；kf-030、db-migrations 双版本断言 8→9。
+- **教训**：① agent 测试共享 sessionId 导致 DB 行跨用例串扰——断言改「最新 N 行」而非全量；② 收尾文本 'done' 触发 isCompletionClaim 零副作用判 incomplete（KF-023/024 契约）——测试收尾用中性文本。
+- **验证**：tsc 零错误；定向全绿；全量 2458 通过 / 10 跳过 / 0 失败；npm run ci 七步全绿（CI_EXIT=0）。
