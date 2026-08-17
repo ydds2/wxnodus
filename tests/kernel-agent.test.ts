@@ -1252,3 +1252,63 @@ describe('预算硬停（settings.budgetStop）', () => {
     }
   });
 });
+
+describe('余额耗尽自动停（/balance auto-stop）', () => {
+  it('autoStop 开启且网关标记 balanceEmpty → 硬停（零模型调用 + 显式失败闭环）', async () => {
+    const { createAgent } = await import('../src/kernel/agent.js');
+    const { createEventBus } = await import('../src/kernel/events.js');
+    const { openDB, closeDB } = await import('../src/store/db.js');
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { createMemory } = await import('../src/kernel/memory.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-bal-'));
+    const db = openDB(d);
+    let modelCalls = 0;
+    const events: string[] = [];
+    const bus = createEventBus(d);
+    bus.on('agent.message', () => events.push('message'));
+    bus.on('agent.end', () => events.push('end'));
+    const agent = createAgent({
+      db, bus, mem: createMemory(db), sessionId: 'b3',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', balanceMonitor: { autoStop: true }, balanceEmpty: true } } as any,
+      callModel: async () => { modelCalls += 1; return { type: 'text', content: '收到' }; },
+    });
+    try {
+      const r = await agent.run('继续干活');
+      expect(r.ok).toBe(false);
+      expect(r.text).toContain('余额已耗尽');
+      expect(modelCalls).toBe(0);
+      expect(events).toEqual(['message', 'end']);
+    } finally {
+      closeDB(db);
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('autoStop 未开启 → 不硬停（正常调用）', async () => {
+    const { createAgent } = await import('../src/kernel/agent.js');
+    const { createEventBus } = await import('../src/kernel/events.js');
+    const { openDB, closeDB } = await import('../src/store/db.js');
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { createMemory } = await import('../src/kernel/memory.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-bal-'));
+    const db = openDB(d);
+    let modelCalls = 0;
+    const agent = createAgent({
+      db, bus: createEventBus(d), mem: createMemory(db), sessionId: 'b4',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', balanceMonitor: {}, balanceEmpty: true } } as any,
+      callModel: async () => { modelCalls += 1; return { type: 'text', content: '收到' }; },
+    });
+    try {
+      const r = await agent.run('继续干活');
+      expect(r.ok).toBe(true);
+      expect(modelCalls).toBe(1);
+    } finally {
+      closeDB(db);
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});

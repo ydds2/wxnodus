@@ -2098,7 +2098,7 @@ export class GatewayClient extends EventEmitter {
     if (bm.enabled === false) return { ok: true, configured: false, enabled: false };
     if (!params.force && this.balanceCache && Date.now() - this.balanceCache.ts < 60_000) return this.balanceCache.value;
     const { resolveProviderProfile } = await import('../kernel/profiles.js')
-    const { fetchBalanceCached, numericBalance, lowBalanceDecision, LOW_BALANCE_THRESHOLD } = await import('../kernel/balance.js')
+    const { fetchBalanceCached } = await import('../kernel/balance.js')
     const rp = resolveProviderProfile(this.kernel.settings as Record<string, any>)
     if (!rp) return { ok: true, configured: false }
     const profile = { ...rp.profile, balanceUrl: (bm.url as string) || rp.profile.balanceUrl || '', balancePath: (bm.jsonPath as string) || rp.profile.balancePath || '' }
@@ -2107,13 +2107,20 @@ export class GatewayClient extends EventEmitter {
     const value = r.ok
       ? { ok: true, configured: true, balance: r.info.balance, currency: r.info.currency, source: r.info.source, cached: r.cached, updated_at: Date.now() }
       : { ok: false, configured: true, error: r.error, updated_at: Date.now() }
-    // 低余额预警（余额耗尽场景护栏）：低于阈值且未通知过 → sticky warn；回升重新武装
+    // 低余额预警（余额耗尽场景护栏）：低于阈值且未通知过 → sticky warn；回升重新武装；
+    // 余额 ≤0 写入运行时态 balanceEmpty（agent 环 autoStop 硬停门控数据源——不落盘）
     if (r.ok) {
+      const { numericBalance: toNum, lowBalanceDecision, balanceStopDecision, LOW_BALANCE_THRESHOLD } = await import('../kernel/balance.js');
+      const num = toNum(r.info);
+      (this.kernel.settings as any).balanceEmpty = num !== null && num <= 0;
       const threshold = Number((bm as any).lowThreshold ?? LOW_BALANCE_THRESHOLD);
-      const d = lowBalanceDecision(numericBalance(r.info), threshold, this.lowBalanceNotified);
+      const d = lowBalanceDecision(num, threshold, this.lowBalanceNotified);
       this.lowBalanceNotified = d.armed;
       if (d.notify) {
         this.publish({ type: 'notification.show', payload: { kind: 'sticky', level: 'warn', text: `余额不足预警：当前 ${r.info.balance}${r.info.currency ? ` ${r.info.currency}` : ''}（阈值 ${threshold}——/balance refresh 复核）` } });
+      }
+      if (balanceStopDecision(num, (bm as any).autoStop === true)) {
+        this.publish({ type: 'notification.show', payload: { kind: 'sticky', level: 'error', text: '余额已耗尽——auto-stop 已生效：后续对话将停止（充值后自动恢复，或 /balance auto-stop off）' } });
       }
     }
     this.balanceCache = { value, ts: Date.now() }

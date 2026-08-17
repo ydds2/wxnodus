@@ -138,3 +138,8 @@ export function lowBalanceDecision(value: number | null, threshold: number, last
 
 /** 低余额默认阈值（可经 balanceMonitor.lowThreshold 覆盖） */
 export const LOW_BALANCE_THRESHOLD = 5;
+
+/** 余额耗尽自动停判定：仅当用户显式开启 autoStop 且余额 ≤ 0 时停（纯函数可单测） */
+export function balanceStopDecision(value: number | null, autoStop: boolean): boolean {
+  return autoStop === true && value !== null && value <= 0;
+}

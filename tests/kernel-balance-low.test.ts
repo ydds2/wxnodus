@@ -1,6 +1,6 @@
 // tests/kernel-balance-low.test.ts — 低余额预警（余额耗尽场景护栏）
 import { describe, it, expect } from 'vitest';
-import { numericBalance, lowBalanceDecision, LOW_BALANCE_THRESHOLD } from '../src/kernel/balance.js';
+import { numericBalance, lowBalanceDecision, balanceStopDecision, LOW_BALANCE_THRESHOLD } from '../src/kernel/balance.js';
 
 describe('numericBalance 宽容解析', () => {
   it('常见形态：纯数字/货币前缀/千分位/空白', () => {
@@ -34,5 +34,15 @@ describe('lowBalanceDecision 状态机', () => {
   it('数值不可解析 → 保持原武装态，不误报', () => {
     expect(lowBalanceDecision(null, 5, false)).toEqual({ notify: false, armed: false });
     expect(lowBalanceDecision(null, 5, true)).toEqual({ notify: false, armed: true });
+  });
+});
+
+describe('balanceStopDecision 余额耗尽自动停', () => {
+  it('开启 autoStop 且余额 ≤0 → 停；未开启/有余额/不可解析 → 不停', () => {
+    expect(balanceStopDecision(0, true)).toBe(true);
+    expect(balanceStopDecision(-1, true)).toBe(true);
+    expect(balanceStopDecision(0.01, true)).toBe(false);
+    expect(balanceStopDecision(0, false)).toBe(false);
+    expect(balanceStopDecision(null, true)).toBe(false);
   });
 });

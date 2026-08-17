@@ -940,6 +940,13 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ctx.config.setKey('settings', 'balanceMonitor', { ...bm, lowThreshold: n });
       return `低余额预警阈值已设置：${n}（余额低于此值时状态栏预警 + /balance status 行内提示）`;
     }
+    if (sub === 'auto-stop') {
+      const on = args[1] !== 'off' && args[1] !== '0';
+      ctx.config.setKey('settings', 'balanceMonitor', { ...bm, autoStop: on });
+      return on
+        ? '余额耗尽自动停已开启（余额监控实测 0 时后续对话硬停——充值后自动恢复；/balance auto-stop off 关闭）'
+        : '余额耗尽自动停已关闭';
+    }
     if (sub === 'refresh' || sub === 'status') {
       const rp = resolveProviderProfile((ctx.config.get('settings') ?? {}) as Record<string, any>);
       if (!rp) return '未配置档案（/profile add 或 /key set 后重试）';
@@ -954,7 +961,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       }
       return `余额获取失败：${r.error}`;
     }
-    return '用法：/balance set [url] [--path <jsonPath>] | on | off | threshold <数值> | status | refresh';
+    return '用法：/balance set [url] [--path <jsonPath>] | on | off | threshold <数值> | auto-stop [on|off] | status | refresh';
   });
 
   // ── 配置导出/导入（JSON；导出可选脱敏）──

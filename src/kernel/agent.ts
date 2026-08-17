@@ -142,6 +142,9 @@ export function createAgent(opts: AgentOptions) {
   // settings.budgetStop=true → 超出后硬停（后续轮次 finishEarly 显式失败，绝不静默）
   const budgetTokens = Number((opts.config?.settings as any)?.budgetTokens) || 0;
   const budgetStop = (opts.config?.settings as any)?.budgetStop === true;
+  // 余额耗尽自动停（余额监控护栏）：/balance auto-stop on 后，网关实测余额 ≤0
+  // 写入 settings.balanceEmpty（运行时态，不落盘）→ 后续轮次硬停（显式失败闭环）
+  const balanceAutoStop = ((opts.config?.settings as any)?.balanceMonitor as Record<string, any> | undefined)?.autoStop === true;
 
   // 阶段 2（AI 自主触发）：会话首轮自动注入仓库地图 + 技能清单（仅一次）——
   // 模型先看项目结构再动手、自主 skill_load，减少人工 /map 与 /skill list
@@ -928,6 +931,10 @@ export function createAgent(opts: AgentOptions) {
       if (budgetStop && budgetTokens) checkBudget();
       if (budgetExceeded && budgetStop) {
         return finishEarly(`会话 token 预算已达上限（${budgetTokens}）——settings.budgetStop=true 已停止对话；/compact 压缩上下文或 /new 新会话后继续（/config set budgetStop false 取消硬停）`);
+      }
+      // 余额耗尽自动停（余额监控实测 0）——同样走 finishEarly 显式失败闭环
+      if (balanceAutoStop && (opts.config?.settings as any)?.balanceEmpty === true) {
+        return finishEarly('余额已耗尽（余额监控实测 0）——/balance auto-stop on 已生效停止对话；充值后自动恢复，或 /balance auto-stop off 关闭');
       }
       turns++;
       // 会话 token 预算（Gemini general.budget 对齐）：每轮开始检查累计用量（不依赖当轮 usage）
