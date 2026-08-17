@@ -50,8 +50,8 @@ describe('htmlToText — HTML 正文抽取', () => {
     expect(htmlToText('<p>a</p>  \n <p>b</p>')).toBe('a b')
   })
 
-  it('maxLen 截断', () => {
-    expect(htmlToText('一二三四五六', 4)).toBe('一二三四')
+  it('maxLen 截断——显式标注（共 N 字/剩余 M 字，绝不静默）', () => {
+    expect(htmlToText('一二三四五六', 4)).toBe('一二三四…[已截断（共 6 字，剩余 2 字未读）——内容过长——收窄范围或分段抓取续看]');
   })
 
   it('空/非 HTML 输入', () => {
@@ -100,8 +100,12 @@ describe('extractMainText — readability 式正文提取（P0-4 搜索即读）
     expect(extractMainText('<script>x</script><style>y</style>')).toBe('');
   });
 
-  it('maxLen 预算内输出', () => {
+  it('maxLen 预算内输出（截断/省略显式标注）', () => {
     const long = '<p>' + '正文内容'.repeat(500) + '</p>';
-    expect(extractMainText(long, 100).length).toBeLessThanOrEqual(100);
+    expect(extractMainText(long, 100)).toContain('已截断');
+    const multi = Array.from({ length: 10 }, (_, i) => `<p>第${i}段${'内容'.repeat(30)}</p>`).join('');
+    const out = extractMainText(multi, 100);
+    expect(out).toContain('未选取'); // 低分块省略显式标注
+    expect(out).not.toContain('第9段');
   });
 });

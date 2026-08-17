@@ -1,6 +1,12 @@
 // tests/kernel-truncate-label.test.ts — 截断四件套补全：delegate / browser 快照 / labelTruncate 单一事实源
 // 口径：任何面向模型的截断都必须显式标注「共 N 字 / 剩余 M 字」——绝不静默截断（模型误判「内容到此为止」）
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const dirs: string[] = [];
+afterEach(() => { for (const d of dirs.splice(0)) { try { rmSync(d, { recursive: true, force: true }); } catch { /* 静默 */ } } });
 
 describe('labelTruncate 单一事实源', () => {
   it('短文本原样返回（无标注）', async () => {
@@ -74,4 +80,24 @@ describe('wx_cmd 命令输出诚实截断（labelTruncate 统一口径）', () =
     const out = await coreTools().wx_cmd!.run({ command: '/status' }, { runCommand: async () => '短输出' } as any);
     expect(out).toBe('短输出');
   });
+});
+
+describe('bash 输出诚实截断（8000–20000 原静默区间补标）', () => {
+  it('9000 字输出 → 显式标注（修复 8000–20000 静默截断缺陷）', async () => {
+    const { coreTools } = await import('../src/kernel/tools.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-bash-'));
+    dirs.push(d);
+    const out = await coreTools().bash!.run({ command: `node -e "process.stdout.write('x'.repeat(9000))"` }, { cwd: d } as any);
+    expect(out).toContain('已截断');
+    expect(out).toContain('共 9000 字');
+    expect(out).toContain('剩余 1000 字');
+  }, 30000);
+  it('短输出无标注', async () => {
+    const { coreTools } = await import('../src/kernel/tools.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-bash2-'));
+    dirs.push(d);
+    const out = await coreTools().bash!.run({ command: `node -e "process.stdout.write('ok')"` }, { cwd: d } as any);
+    expect(out).toContain('ok');
+    expect(out).not.toContain('已截断');
+  }, 30000);
 });

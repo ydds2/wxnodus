@@ -1,6 +1,7 @@
 // src/kernel/html.ts — 共享 HTML 文本工具（搜索 /claw 抓取 /http_get 工具共用）
 // 根治「&amp;#236; 乱码」：完整 HTML 实体解码（命名实体 + 十进制/十六进制数字引用 + 递归），
 // 覆盖 Bing/DDG 双重编码与任意 Unicode 码点（&#236; → ì、&#x4e2d; → 中）。
+import { labelTruncate } from './truncate.js';
 
 // 常用命名实体表（HTML4 高频 + 中文页面常见）
 const NAMED_ENTITIES: Record<string, string> = {
@@ -65,7 +66,8 @@ export function htmlToText(html: string, maxLen?: number): string {
     .replace(/\s+/g, ' ')
     .trim();
   const decoded = decodeHtmlEntities(text);
-  return maxLen ? decoded.slice(0, maxLen) : decoded;
+  // 诚实截断标注（labelTruncate 统一口径）——模型知道正文有剩余
+  return maxLen ? labelTruncate(decoded, maxLen, '内容过长——收窄范围或分段抓取续看') : decoded;
 }
 
 /** 启发式判断文本是否为 HTML（http_get 工具据此决定是否正文抽取） */
@@ -112,9 +114,16 @@ export function extractMainText(html: string, maxLen = 6000): string {
   const picked = new Set<string>();
   let used = 0;
   for (const l of [...lines].sort((a, b) => score(b) - score(a))) {
-    if (used + l.length > budget) continue;
+    if (used + l.length > budget) {
+      if (used > 0) continue; // 已有内容时跳过超预算行
+      picked.add(l); used += l.length + 1; break; // 首行即超预算：仍纳入（labelTruncate 截断兜底，绝不静默空输出）
+    }
     picked.add(l);
     used += l.length + 1;
   }
-  return lines.filter(l => picked.has(l)).join('\n').slice(0, maxLen);
+  const joined = lines.filter(l => picked.has(l)).join('\n');
+  const dropped = lines.length - picked.size;
+  const head = labelTruncate(joined, maxLen, '收窄范围或提高 maxLen 续看');
+  // 低分块省略显式标注（模型知道正文还有未被选取的行）
+  return dropped > 0 ? `${head}…[另有 ${dropped} 行低分块未选取（maxLen 预算）]` : head;
 }

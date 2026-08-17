@@ -276,7 +276,14 @@ export function coreTools(): Record<string, ToolDef> {
           });
         });
         // 截断诚实标注：模型知道输出不完整（避免基于残缺输出下结论）
-        return wrapDanger(`${out.slice(0, 8000) || '（无输出）'}${truncated ? '\n…[输出过长已截断，请用更精确的命令分段获取]' : ''}`);
+        // 8000–20000 字区间此前静默截断——统一 labelTruncate 口径（共 N 字/剩余 M 字）
+        // 注：wrapDanger 自身 8000 硬截（防注入包裹面），标注附在包裹之外（自有文本，无注入风险）
+        const body = out || '（无输出）';
+        const cut = truncated || body.length > 8000;
+        const wrapped = wrapDanger(cut ? body.slice(0, 8000) : body);
+        return cut
+          ? `${wrapped}\n…[输出已截断（共 ${body.length} 字，剩余 ${body.length - 8000} 字未读）——用更精确的命令分段获取（重定向到文件/sed/tail）]`
+          : wrapped;
       } catch (e: any) {
         ctx.hookFailure?.('bash', String(e?.message ?? e).slice(0, 500));
         return wrapDanger(`命令失败：${e.message?.slice(0, 500)}`);
@@ -414,9 +421,7 @@ export function coreTools(): Record<string, ToolDef> {
         const body = extractMainText(r.text, 8000) || htmlToText(r.text, 8000);
         return `HTTP ${r.status}｜页面正文${guard.captcha ? '\n⚠ 检测到验证码页面（站点反爬——内容可能不可用）' : ''}\n${body || '（页面无可提取文本，可能是 JS 渲染）'}`;
       }
-      return r.text.length > 8000
-        ? `HTTP ${r.status}\n${r.text.slice(0, 8000)}\n…[响应过长已截断（前 8000 字）——/claw <url> 或分段抓取续看]`
-        : `HTTP ${r.status}\n${r.text}`;
+      return `HTTP ${r.status}\n${labelTruncate(r.text, 8000, '/claw <url> 或分段抓取续看')}`;
     },
   };
   // web_search：AI 主动联网搜索（DDG/Bing 双引擎自动回退）——「查」的主动工具。
@@ -489,9 +494,7 @@ export function coreTools(): Record<string, ToolDef> {
         maxBytes: 1_000_000,
       });
       if ('error' in r) return r.error;
-      return r.text.length > 8000
-        ? `HTTP ${r.status}\n${r.text.slice(0, 8000)}\n…[响应过长已截断（前 8000 字）——/claw <url> 或分段抓取续看]`
-        : `HTTP ${r.status}\n${r.text}`;
+      return `HTTP ${r.status}\n${labelTruncate(r.text, 8000, '/claw <url> 或分段抓取续看')}`;
     },
   };
   // memory_search：黑洞引擎主动检索（建议清单 P0-1 落地）——模型需要回忆历史时调用。
