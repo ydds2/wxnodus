@@ -134,6 +134,8 @@ export interface TranscriptRow {
 export interface BalanceUi {
   label: string
   configured: boolean
+  /** 低于预警阈值（状态栏 💰 段变红——一眼可见钱快没了） */
+  low?: boolean
   stale: boolean
   updatedAt: number
 }

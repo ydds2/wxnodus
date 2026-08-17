@@ -440,6 +440,7 @@ export function StatusRule({
   usage,
   balanceLabel,
   balanceStale,
+  balanceLow,
   usageLabel,
   lastTurnEndedAt,
   liveSessionCount,
@@ -699,7 +700,7 @@ export function StatusRule({
         ) : null}
         {showBalanceSeg ? (
           // 💰 余额段可点（强制刷新——与 /balance refresh 同链路）；
-          // stale 时着色 warn + ⚠ 已含在 label 里（诚实：拉取失败明示）
+          // 优先级：低余额 error 红 > stale warn ⚠ > 正常 accent
           onBalanceClick ? (
             <Box
               flexShrink={0}
@@ -708,13 +709,13 @@ export function StatusRule({
                 onBalanceClick()
               }}
             >
-              <Text color={balanceStale ? t.color.warn : t.color.accent} wrap="truncate-end">
+              <Text color={balanceLow ? t.color.error : balanceStale ? t.color.warn : t.color.accent} wrap="truncate-end">
                 {' │ '}
                 {balanceLabel}
               </Text>
             </Box>
           ) : (
-            <Text color={balanceStale ? t.color.warn : t.color.accent} wrap="truncate-end">
+            <Text color={balanceLow ? t.color.error : balanceStale ? t.color.warn : t.color.accent} wrap="truncate-end">
               {' │ '}
               {balanceLabel}
             </Text>
@@ -973,6 +974,8 @@ interface StatusRuleProps {
   balanceLabel?: string
   /** 余额最近一次拉取失败（⚠ 着色） */
   balanceStale?: boolean
+  /** 余额低于预警阈值（红——一眼可见钱快没了） */
+  balanceLow?: boolean
   lastTurnEndedAt?: null | number
   liveSessionCount: number
   busy: boolean

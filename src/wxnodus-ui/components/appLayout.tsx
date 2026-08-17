@@ -454,6 +454,7 @@ const StatusRulePane = memo(function StatusRulePane({
         battery={ui.battery}
         balanceLabel={ui.balance?.label}
         balanceStale={ui.balance?.stale}
+        balanceLow={ui.balance?.low}
         busy={ui.busy}
         cols={composer.cols}
         cwdLabel={status.cwdLabel}

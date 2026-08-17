@@ -38,6 +38,7 @@ function toBalanceUi(raw: unknown, prev: BalanceUi | null): BalanceUi | null {
       currency: typeof o.currency === 'string' ? o.currency : undefined
     }),
     configured: true,
+    ...(o.low === true ? { low: true } : {}),
     stale: false,
     updatedAt: Date.now()
   }

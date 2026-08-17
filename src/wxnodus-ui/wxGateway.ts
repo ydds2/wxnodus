@@ -2120,12 +2120,15 @@ export class GatewayClient extends EventEmitter {
       ? { ok: true, configured: true, balance: r.info.balance, currency: r.info.currency, source: r.info.source, cached: r.cached, updated_at: Date.now() }
       : { ok: false, configured: true, error: r.error, updated_at: Date.now() }
     // 低余额预警（余额耗尽场景护栏）：低于阈值且未通知过 → sticky warn；回升重新武装；
-    // 余额 ≤0 写入运行时态 balanceEmpty（agent 环 autoStop 硬停门控数据源——不落盘）
+    // 余额 ≤0 写入运行时态 balanceEmpty（agent 环 autoStop 硬停门控数据源——不落盘）；
+    // low 标记随响应下发——状态栏 💰 段变红（一眼可见钱快没了）
     if (r.ok) {
       const { numericBalance: toNum, lowBalanceDecision, balanceStopDecision, LOW_BALANCE_THRESHOLD } = await import('../kernel/balance.js');
       const num = toNum(r.info);
       (this.kernel.settings as any).balanceEmpty = num !== null && num <= 0;
       const threshold = Number((bm as any).lowThreshold ?? LOW_BALANCE_THRESHOLD);
+      const low = num !== null && num < threshold;
+      if (low) (value as Record<string, unknown>).low = true;
       const d = lowBalanceDecision(num, threshold, this.lowBalanceNotified);
       this.lowBalanceNotified = d.armed;
       if (d.notify) {
