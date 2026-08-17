@@ -753,8 +753,31 @@ export class GatewayClient extends EventEmitter {
       images = [{ dataUrl: `data:${pending.mime};base64,${b64}`, mime: pending.mime }]
       clearPending(this.kernel.dataDir, sid)
     }
+    // @提及展开（Claude Code @mention 同款）：@path 存在的文件读入并追加内容块——
+    // 不存在的原文保留 + 通知；二进制跳过；散文中 @人名（无路径字符）零触发。
+    let finalText = text
+    try {
+      const { expandMentions } = await import('../kernel/mentions.js')
+      const r = expandMentions(text, {
+        cwd: this.kernel.cwd,
+        readFile: p => {
+          try { return readFileSync(p) } catch { return null }
+        },
+      })
+      finalText = r.text
+      if (r.mentions.length) {
+        this.publish({ type: 'notification.show', payload: { kind: 'ttl', level: 'info', text: `已展开 ${r.mentions.length} 个文件提及${r.mentions.some(m => m.truncated) ? '（超长已截断）' : ''}` } })
+      }
+      if (r.missing.length) {
+        this.publish({ type: 'notification.show', payload: { kind: 'ttl', level: 'warn', text: `提及文件不存在（原文保留）：${r.missing.slice(0, 5).join('、')}` } })
+      }
+      if (r.skipped.length) {
+        this.publish({ type: 'notification.show', payload: { kind: 'ttl', level: 'warn', text: `提及文件为二进制已跳过：${r.skipped.slice(0, 5).join('、')}` } })
+      }
+    } catch { /* 展开失败按原文提交 */ }
+
     // 后台执行 agent（事件流驱动 UI），不阻塞 RPC
-    void this.kernel.adapter.agent.run(text, images ? { images } : undefined).catch((e) => {
+    void this.kernel.adapter.agent.run(finalText, images ? { images } : undefined).catch((e) => {
       process.stderr.write(`[wxGateway] agent.run failed: ${e?.message ?? e}\n`)
       this.running = false
       this.publish({ type: 'error', payload: { message: String(e?.message ?? 'agent run failed') } })
@@ -2023,9 +2046,13 @@ export class GatewayClient extends EventEmitter {
 
   private completePath(params: Record<string, unknown>): unknown {
     const word = String(params.word ?? '')
-    const dir = word.includes('/') || word.includes('\\') ? word.slice(0, Math.max(word.lastIndexOf('/'), word.lastIndexOf('\\')) + 1) : ''
+    // @提及补全（Claude Code @mention 同款）：剥掉前导 @ 在 cwd 查文件，
+    // 显示/回填保留 @ 前缀（接受补全后 token 仍为 @path，提交时展开内容）
+    const isMention = word.startsWith('@')
+    const raw = isMention ? word.slice(1) : word
+    const dir = raw.includes('/') || raw.includes('\\') ? raw.slice(0, Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\')) + 1) : ''
     const base = dir ? join(this.kernel.cwd, dir) : this.kernel.cwd
-    const prefix = word.slice(dir.length).toLowerCase()
+    const prefix = raw.slice(dir.length).toLowerCase()
     let entries: string[] = []
 
     try {
@@ -2037,7 +2064,7 @@ export class GatewayClient extends EventEmitter {
     }
 
     return {
-      items: entries.map((n) => ({ display: dir + n, text: dir + n })),
+      items: entries.map((n) => ({ display: (isMention ? '@' : '') + dir + n, text: (isMention ? '@' : '') + dir + n })),
       replace_from: params.replaceFrom ?? 0,
     }
   }

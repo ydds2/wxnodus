@@ -3,7 +3,7 @@
 // 装配：data/config/db/mem/bus/agent → wxGateway（进程内桥接）→ @wxnodus/ink render App
 
 import { join } from 'node:path';
-import { mkdirSync, appendFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, readFileSync } from 'node:fs';
 import { parseCronExpr, parseIntervalExpr, cronMatches } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { resolveDataDir } from '../kernel/paths.js';
@@ -565,7 +565,19 @@ if (pre.mode === 'error') {
       console.log(routed.value);
     } else {
       try {
-        const result = await agent.run(text);
+        // @提及展开（与 TUI 同链路）：存在的 @path 读入内容块；不存在的原文保留
+        let finalText = text;
+        try {
+          const { expandMentions } = await import('../kernel/mentions.js');
+          const r = expandMentions(finalText, {
+            cwd: process.cwd(),
+            readFile: p => { try { return readFileSync(p); } catch { return null; } },
+          });
+          finalText = r.text;
+          for (const m of r.missing) process.stderr.write(`wxnodus: 提及文件不存在（原文保留）：${m}\n`);
+          for (const m of r.skipped) process.stderr.write(`wxnodus: 提及文件为二进制已跳过：${m}\n`);
+        } catch { /* 展开失败按原文提交 */ }
+        const result = await agent.run(finalText);
         if (opts.json) {
           // Gemini --output-format json 的 stats 对齐：usage 为会话累计 token
           let usage: number | null = null;
