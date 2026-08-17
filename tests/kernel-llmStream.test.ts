@@ -88,7 +88,9 @@ describe('callLlmStream — SSE 解析', () => {
 
   it('降级链：429 → 同 provider 备选重试（onDegrade 回调）', async () => {
     const degrade: Array<{ from: string; to: string }> = []
+    // 新契约：429 先同模型退避重试一次——连续 429 后降级链才触发（瞬时限流不再误降级）
     vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429 } as any)
       .mockResolvedValueOnce({ ok: false, status: 429 } as any)
       .mockResolvedValueOnce({
         ok: true, status: 200,
@@ -109,3 +111,49 @@ describe('callLlmStream — SSE 解析', () => {
     expect(degrade.length).toBe(1)
   })
 })
+
+describe('429 同模型退避重试（一次）', () => {
+  it('首次 429 → 退避后重试成功（同模型不降级）', async () => {
+    const { callLlmStream } = await import('../src/kernel/llmStream.js');
+    let calls = 0;
+    const fakeFetch = async (): Promise<any> => {
+      calls += 1;
+      if (calls === 1) {
+        return { ok: false, status: 429, headers: { get: () => '0' }, body: null };
+      }
+      // 第二次：真实 SSE 内容流（含 data chunk + [DONE]）
+      const enc = new TextEncoder();
+      const body = new ReadableStream({ start(c) { c.enqueue(enc.encode('data: {"choices":[{"delta":{"content":"重试成功"}}]}\n\ndata: [DONE]\n\n')); c.close(); } });
+      return { ok: true, status: 200, headers: { get: () => null }, body };
+    };
+    const orig = globalThis.fetch;
+    (globalThis as any).fetch = fakeFetch;
+    try {
+      const r = await callLlmStream({ baseURL: 'https://mock', model: 'deepseek-chat', key: 'k', messages: [{ role: 'user', content: 'hi' }], timeoutMs: 5000 } as any);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect((r as any).content).toContain('重试成功');
+      expect(calls).toBe(2); // 一次 429 + 一次重试成功
+    } finally {
+      (globalThis as any).fetch = orig;
+    }
+  });
+
+  it('连续 429 → 只重试一次后如实报限流（不无限重试）', async () => {
+    const { callLlmStream } = await import('../src/kernel/llmStream.js');
+    let calls = 0;
+    const fakeFetch = async (): Promise<any> => {
+      calls += 1;
+      return { ok: false, status: 429, headers: { get: () => '0' }, body: null };
+    };
+    const orig = globalThis.fetch;
+    (globalThis as any).fetch = fakeFetch;
+    try {
+      const r = await callLlmStream({ baseURL: 'https://mock', model: 'relay-custom-model', key: 'k', messages: [{ role: 'user', content: 'hi' }], timeoutMs: 5000 } as any);
+      expect(r.ok).toBe(false);
+      expect(String(r.error)).toContain('429');
+      expect(calls).toBe(2);
+    } finally {
+      (globalThis as any).fetch = orig;
+    }
+  });
+});

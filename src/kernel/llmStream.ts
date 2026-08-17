@@ -10,6 +10,9 @@ const REASONING_FIELDS = ['reasoning_content', 'thinking_content', 'reasoning'] 
 /** 进程内降级状态：同 provider 备选重试一次后记录（/model 切换或会话切换可复位） */
 let degradedModel: string | null = null;
 
+/** 429 退避重试状态：每次调用只重试一次（防重试风暴） */
+let retried429 = false;
+
 /** 复位降级状态（/model 手动切换、会话切换时调用） */
 export function resetDegradedModel(): void {
   degradedModel = null;
@@ -46,6 +49,7 @@ export type LlmStreamResult =
 
 /** 流式单轮调用（直连 fetch；失败返回错误对象不抛出——调用方决定语义） */
 export async function callLlmStream(opts: LlmStreamOpts): Promise<LlmStreamResult> {
+  retried429 = false; // 每次调用只允许一次 429 退避重试（防重试风暴）
   // 离线 token 包：model 前缀 offline: → 本地 LLM 通道（transformers.js，断网可用；
   // 无工具调用——agent 离线模式为纯文本对话，工具类任务由规则脑/确定性工具兜底）
   if (opts.model.startsWith('offline:')) {
@@ -75,6 +79,16 @@ export async function callLlmStream(opts: LlmStreamOpts): Promise<LlmStreamResul
   });
   let resp = await fetch(httpReq.url, { method: 'POST', headers: httpReq.headers, body: httpReq.body, signal: fetchSignal });
   let usedModel = opts.model;
+
+  // 429 同模型退避重试（一次）：瞬时限流常见——尊重 Retry-After（上限 10s），
+  // 失败再走降级链（档案/自定义端点无备选模型时也能扛住瞬时 429）
+  if (!resp.ok && resp.status === 429 && !retried429) {
+    retried429 = true;
+    const ra = Number(resp.headers?.get?.('retry-after'));
+    const delay = Math.min(Number.isFinite(ra) && ra > 0 ? ra * 1000 : 2000, 10_000);
+    await new Promise(res => setTimeout(res, delay));
+    resp = await fetch(httpReq.url, { method: 'POST', headers: httpReq.headers, body: httpReq.body, signal: fetchSignal }).catch(() => resp);
+  }
 
   // 模型降级链：429/5xx 且未降级 → 同 provider 备选模型重试（单 key 语义，/model 可复位）
   if (!resp.ok && (resp.status === 429 || resp.status >= 500) && !degradedModel) {
