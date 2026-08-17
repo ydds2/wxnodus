@@ -2019,6 +2019,26 @@ export class GatewayClient extends EventEmitter {
     const text = String(params.text ?? '')
     const q = text.startsWith('/') ? text.slice(1).toLowerCase() : text.toLowerCase()
 
+    // 接入层开放闭环：/model <前缀> → 目录 + 档案模型联合补全（选择器外的手打路径同享）
+    const modelMatch = /^model\s+(.*)$/.exec(q)
+    if (modelMatch) {
+      const prefix = modelMatch[1]!.toLowerCase()
+      const providers = (Array.isArray((this.kernel.settings as any).providers) ? (this.kernel.settings as any).providers : []) as Array<Record<string, any>>
+      const catalogIds = MODEL_CATALOG.map(m => m.modelId).filter(id => id.toLowerCase().startsWith(prefix))
+      const profileIds = providers.flatMap(p => (Array.isArray(p.models) ? p.models : [])).filter((id: string) => String(id).toLowerCase().startsWith(prefix))
+      const items = [...new Set([...catalogIds, ...profileIds])].slice(0, 12)
+      return { items: items.map(id => ({ display: id, meta: '模型', text: id })), replace_from: 7 }
+    }
+
+    // /profile use <前缀> → 档案 id 补全
+    const profileMatch = /^profile\s+use\s+(.*)$/.exec(q)
+    if (profileMatch) {
+      const prefix = profileMatch[1]!.toLowerCase()
+      const providers = (Array.isArray((this.kernel.settings as any).providers) ? (this.kernel.settings as any).providers : []) as Array<Record<string, any>>
+      const items = providers.map(p => String(p.id)).filter(id => id.toLowerCase().startsWith(prefix)).slice(0, 12)
+      return { items: items.map(id => ({ display: id, meta: '档案', text: id })), replace_from: 13 }
+    }
+
     // A8：行内 /skill:<前缀> → 技能名补全（skillsOnly；参考 inlineSlashTrigger 同款）
     const skillMatch = /^skill:(.*)$/.exec(q)
 

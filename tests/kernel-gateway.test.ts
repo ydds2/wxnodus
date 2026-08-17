@@ -782,3 +782,32 @@ describe('子代理富事件分流（A25）', () => {
     expect(events.some(e => e.type === 'tool.start')).toBe(true)
   })
 })
+
+describe('complete.slash 接入层补全（档案模型/档案 id）', () => {
+  it('/model <前缀> → 目录 + 档案模型联合补全（replace_from=7）', async () => {
+    const g = makeGateway({ model: 'glm-4v-flash' });
+    (g as any).kernel.settings.providers = [{ id: 'relay1', name: '中转站', baseURL: 'https://r.example.com/v1', models: ['custom-a', 'custom-b'] }];
+    const r = await gre(g, 'complete.slash', { text: '/model cus' });
+    expect(r.items.map((i: any) => i.text)).toContain('custom-a');
+    expect(r.items.map((i: any) => i.text)).toContain('custom-b');
+    expect(r.replace_from).toBe(7);
+    // 目录命中照常（deep 前缀）
+    const r2 = await gre(g, 'complete.slash', { text: '/model deep' });
+    expect(r2.items.map((i: any) => i.text)).toContain('deepseek-v4-pro');
+  });
+
+  it('/profile use <前缀> → 档案 id 补全（replace_from=13）', async () => {
+    const g = makeGateway({ model: 'glm-4v-flash' });
+    (g as any).kernel.settings.providers = [{ id: 'relay1', name: '中转站', baseURL: 'https://r.example.com/v1', models: [] }, { id: 'relay2', name: '另一个', baseURL: 'https://r2.example.com/v1', models: [] }];
+    const r = await gre(g, 'complete.slash', { text: '/profile use rel' });
+    expect(r.items.map((i: any) => i.text)).toEqual(['relay1', 'relay2']);
+    expect(r.replace_from).toBe(13);
+  });
+
+  it('普通斜杠补全不受影响（/hel → /help）', async () => {
+    const g = makeGateway({ model: 'glm-4v-flash' });
+    const r = await gre(g, 'complete.slash', { text: '/hel' });
+    expect(r.items.map((i: any) => i.text)).toContain('/help');
+    expect(r.replace_from).toBe(1);
+  });
+});
