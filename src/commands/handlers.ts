@@ -141,10 +141,21 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ctx.openSessions();
       return '';
     }
-    // 非交互模式：文本列表（按最近更新排序）
+    // 非交互模式：文本列表（按最近更新排序）——含每会话成本估算（全部模型有定价才显示）
+    const costOverrides = (ctx.config.get('settings') as Record<string, any>)?.costPrices;
+    const sessionCost = (id: string): string => {
+      try {
+        const m = ctx.db.prepare(
+          `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
+        ).all(id) as Array<{ model: string; input: number; output: number }>;
+        if (!m.length) return '';
+        const s = costSummary(m, costOverrides);
+        return s.unknownCount === 0 ? `  $${s.totalUsd.toFixed(4)}` : '';
+      } catch { return ''; }
+    };
     return lines(' 会话 ', filtered.map(r => {
       const t = new Date(r.updated_at).toLocaleString('zh-CN', { hour12: false });
-      return ` ${c(r.id, '35')}  ${r.title || '(无标题)'}（${r.msgs} 条）${t}`;
+      return ` ${c(r.id, '35')}  ${r.title || '(无标题)'}（${r.msgs} 条）${sessionCost(r.id)} ${t}`;
     }));
   });
 
