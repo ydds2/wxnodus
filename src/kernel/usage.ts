@@ -1,5 +1,6 @@
 // src/kernel/usage.ts — token 消耗区间聚合（跨会话；状态栏 📊 数据源）
-import type { Db } from '../store/db.js';
+/** 结构化最小端口（presentation 窄端口亦可调用——真实 Db 自然满足） */
+export type UsageDb = { prepare(sql: string): { get(...a: unknown[]): unknown } };
 
 export type UsageRange = 'today' | '7d' | '30d';
 export const USAGE_RANGES: UsageRange[] = ['today', '7d', '30d'];
@@ -13,7 +14,7 @@ export function usageRangeSince(range: UsageRange, now: Date = new Date()): numb
 
 export interface UsageSummary { input: number; output: number; total: number; calls: number; unmeasured: number }
 
-export function usageSummary(db: Db, range: UsageRange): UsageSummary {
+export function usageSummary(db: UsageDb, range: UsageRange): UsageSummary {
   const since = usageRangeSince(range);
   const row = db.prepare(
     `SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COUNT(*) c,

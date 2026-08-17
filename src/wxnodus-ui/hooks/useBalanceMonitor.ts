@@ -56,6 +56,7 @@ function toUsageRangeUi(raw: unknown): UsageRangeUi | null {
   return {
     range: RANGES.includes(o.range as UsageRangeKind) ? (o.range as UsageRangeKind) : 'today',
     total: typeof o.total === 'number' ? Math.max(0, Math.round(o.total)) : 0,
+    unmeasured: typeof o.unmeasured === 'number' ? Math.max(0, Math.round(o.unmeasured)) : 0,
     updatedAt: Date.now()
   }
 }

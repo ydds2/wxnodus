@@ -517,3 +517,9 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
   - `sessionCost`/`rangeCost` SQL 排除 0 token 行——未上报用量的模型绝不出现「$0（免费/离线）」误标。
   - `renderWaterfall` 0 token 行 NaN 防护（原 `0/0` 产生 NaN bar）+ 显式「（端点未上报用量）」行——绝不伪装成 ≈$0。
 - **验证**：+4 测试（usageSummary unmeasured、sessionCost 排除 0 行、rangeCost 全 0→null、waterfall 0 token 行）；全量 2347 通过；tsc 零错误。
+
+### 13.20 usage 数据源收敛 + 状态栏未上报标记轮（2026-08-17 持续完善）
+
+- **单一事实源收敛**：tuiPresentationAdapter.usageRange 原来内联一段自己的 SQL + 区间算法（与 kernel/usage 漂移风险）。改为直接调用 `usageSummary`（/usage 同 SQL 口径）——`usage.ts` 参数改为结构化最小端口 `UsageDb`（窄端口可调用，真实 Db 自然满足，tsc 严格过）。
+- **状态栏 ⚠N 标记**：unmeasured 全链路透传（adapter → gateway RPC → UsageRangeUi → toUsageRangeUi → usageSegmentLabel）——📊 段在「N 次端点未上报用量」时显示 `⚠N`（token 数被低估不静默；/usage 看明细）。gateway 异常回退形状补齐 unmeasured:0。
+- **验证**：+3 测试（adapter unmeasured 透传/非法区间回退 ×2、usageSegmentLabel ⚠N ×1）；全量 2350 通过；tsc 零错误。

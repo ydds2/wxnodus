@@ -13,10 +13,12 @@ export function balanceSegmentLabel(v: BalanceView | null): string {
   return `💰 ${c}${v.balance}`;
 }
 
-export interface UsageView { total: number; range: 'today' | '7d' | '30d' }
+export interface UsageView { total: number; range: 'today' | '7d' | '30d'; unmeasured?: number }
 export function usageSegmentLabel(v: UsageView): string {
   const label = v.range === 'today' ? '今日' : v.range === '7d' ? '7天' : '30天';
-  return `📊 ${fmtCompact(v.total)} ${label}`;
+  // 端点未上报用量 → ⚠N（token 数被低估——/usage 看明细），绝不静默显示被低估数字
+  const miss = v.unmeasured && v.unmeasured > 0 ? ` ⚠${v.unmeasured}` : '';
+  return `📊 ${fmtCompact(v.total)} ${label}${miss}`;
 }
 
 export const RANGE_CYCLE = ['today', '7d', '30d'] as const;

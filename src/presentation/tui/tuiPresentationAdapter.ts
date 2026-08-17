@@ -4,6 +4,7 @@
 // 语义与迁移前逐点对齐（失败降级行为原样保留：list→[]、get→undefined 等——不改变既有 UX 契约）。
 import { saveCheckpoint, replaceSessionMessages } from '../../store/db.js';
 import { costSummary } from '../../kernel/cost.js';
+import { usageSummary } from '../../kernel/usage.js';
 
 export interface TuiMessageRow {
   id: number; role: string; content: string; tool_call_id: string | null; archived: number; ts: number;
@@ -67,8 +68,8 @@ export interface TuiDataPort {
   usage: {
     get(sessionId: string): { calls: number; input: number; output: number; cost_usd?: number } | undefined;
     compressions(sessionId: string): number;
-    /** 分区间跨会话 token 聚合（状态栏 📊 数据源） */
-    usageRange(range: string): { input: number; output: number; total: number; calls: number };
+    /** 分区间跨会话 token 聚合（状态栏 📊 数据源；unmeasured=端点未上报用量的调用数） */
+    usageRange(range: string): { input: number; output: number; total: number; calls: number; unmeasured: number };
   };
 }
 
@@ -274,12 +275,10 @@ export function createTuiPresentationAdapter(kernel: TuiAdapterKernel): TuiPrese
         },
         usageRange(range) {
           try {
-            const since = range === 'today' ? new Date().setHours(0, 0, 0, 0) : Date.now() - (range === '7d' ? 7 : 30) * 86_400_000;
-            const row = db.prepare(
-              `SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COUNT(*) c FROM usage_stats WHERE ts >= ?`,
-            ).get(since) as { i: number; o: number; c: number };
-            return { input: row.i, output: row.o, total: row.i + row.o, calls: row.c };
-          } catch { return { input: 0, output: 0, total: 0, calls: 0 }; }
+            // 单一事实源：kernel/usage usageSummary（与 /usage 同 SQL 口径；unmeasured 透传状态栏）
+            const s = usageSummary(db, (range === 'today' || range === '7d' || range === '30d') ? range : 'today');
+            return { input: s.input, output: s.output, total: s.total, calls: s.calls, unmeasured: s.unmeasured };
+          } catch { return { input: 0, output: 0, total: 0, calls: 0, unmeasured: 0 }; }
         },
       },
     },

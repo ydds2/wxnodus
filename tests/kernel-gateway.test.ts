@@ -844,3 +844,20 @@ describe('model.options 参考价目', () => {
     expect(prof.prices['custom-a']).toBeUndefined();
   });
 });
+
+describe('adapter usageRange 单一事实源（unmeasured 透传）', () => {
+  it('0 token 行 → unmeasured 计数透传（状态栏 ⚠N 数据源）', () => {
+    const ins = db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`);
+    ins.run('s1', 'm1', 100, 50, Date.now());
+    ins.run('s1', 'm1', 0, 0, Date.now()); // 端点未上报用量
+    const adapter = createTuiPresentationAdapter({ db, agent: { getSessionId: () => 's1' } as never });
+    const s = adapter.data.usage.usageRange('today');
+    expect(s).toEqual({ input: 100, output: 50, total: 150, calls: 2, unmeasured: 1 });
+  });
+  it('非法区间回退 today（与 /usage 同口径）', () => {
+    const adapter = createTuiPresentationAdapter({ db, agent: { getSessionId: () => 's1' } as never });
+    const s = adapter.data.usage.usageRange('bogus');
+    expect(s.calls).toBe(0);
+    expect(s.unmeasured).toBe(0);
+  });
+});

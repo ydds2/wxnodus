@@ -146,6 +146,8 @@ export type UsageRangeKind = '7d' | '30d' | 'today'
 export interface UsageRangeUi {
   range: UsageRangeKind
   total: number
+  /** 端点未上报用量的调用数（>0 时 token 数被低估——状态栏 ⚠N 标记） */
+  unmeasured: number
   updatedAt: number
 }
 

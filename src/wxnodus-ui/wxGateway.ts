@@ -2149,7 +2149,7 @@ export class GatewayClient extends EventEmitter {
     try {
       const s = this.kernel.adapter.data.usage.usageRange(range)
       return { range, ...s }
-    } catch { return { range, input: 0, output: 0, total: 0, calls: 0 } }
+    } catch { return { range, input: 0, output: 0, total: 0, calls: 0, unmeasured: 0 } }
   }
 
   private usageRangeSet(params: Record<string, unknown>): unknown {
