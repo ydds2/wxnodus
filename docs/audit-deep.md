@@ -523,3 +523,9 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **单一事实源收敛**：tuiPresentationAdapter.usageRange 原来内联一段自己的 SQL + 区间算法（与 kernel/usage 漂移风险）。改为直接调用 `usageSummary`（/usage 同 SQL 口径）——`usage.ts` 参数改为结构化最小端口 `UsageDb`（窄端口可调用，真实 Db 自然满足，tsc 严格过）。
 - **状态栏 ⚠N 标记**：unmeasured 全链路透传（adapter → gateway RPC → UsageRangeUi → toUsageRangeUi → usageSegmentLabel）——📊 段在「N 次端点未上报用量」时显示 `⚠N`（token 数被低估不静默；/usage 看明细）。gateway 异常回退形状补齐 unmeasured:0。
 - **验证**：+3 测试（adapter unmeasured 透传/非法区间回退 ×2、usageSegmentLabel ⚠N ×1）；全量 2350 通过；tsc 零错误。
+
+### 13.21 costQuery 单一事实源扫尾轮（2026-08-17 持续完善）
+
+- **扫尾三处残留内联 SQL**：`/sessions`（非 TTY 成本列）、`/status`（成本行）、tuiPresentationAdapter `sessions.list`（会话面板 $ 列）——全部改为 `sessionCost` + `costText`（与 /cost 同一 SQL 事实源，且自动获得 §13.19 的 0 token 行排除口径）。
+- **costQuery 参数收窄为结构化最小端口** `CostDb`（`{ prepare(): { all() } }`）：presentation 窄端口可直接调用，真实 Db 自然满足——与 usage.ts 的 `UsageDb` 同模式（tsc 严格过，无 `as any` 逃逸）。
+- **验证**：全量 2350 通过（行为等价重构，输出格式不变）；tsc 零错误。

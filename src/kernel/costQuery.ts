@@ -1,8 +1,10 @@
 // src/kernel/costQuery.ts — 成本查询共享助手（/cost /status /context /digest /sessions /arena /usage 同源）
 // 单一 SQL 事实源：会话/区间按模型聚合 → costSummary（全部模型有定价才给合计，
 // 未知计数独立返回——调用方自行决定「起」口径，绝不显示被低估的数字）。
-import type { Db } from '../store/db.js';
 import { costSummary } from './cost.js';
+
+/** 结构化最小端口（presentation 窄端口亦可调用——真实 Db 自然满足） */
+export type CostDb = { prepare(sql: string): { all(...a: unknown[]): unknown[] } };
 
 export interface CostQueryResult {
   /** 已定价模型合计（USD）；全部模型有定价时才可信 */
@@ -26,7 +28,7 @@ const summarize = (rows: Array<{ model: string; input: number; output: number }>
 };
 
 /** 会话成本（session_id；0 token 行=端点未上报用量——不计入明细，防误标「免费/离线」） */
-export function sessionCost(db: Db, sessionId: string, overrides?: CostOverrides): CostQueryResult | null {
+export function sessionCost(db: CostDb, sessionId: string, overrides?: CostOverrides): CostQueryResult | null {
   try {
     const rows = db.prepare(
       `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? AND (input_tokens>0 OR output_tokens>0) GROUP BY model`
@@ -36,7 +38,7 @@ export function sessionCost(db: Db, sessionId: string, overrides?: CostOverrides
 }
 
 /** 区间成本（ts >= since，跨会话；0 token 行同样排除） */
-export function rangeCost(db: Db, since: number, overrides?: CostOverrides): CostQueryResult | null {
+export function rangeCost(db: CostDb, since: number, overrides?: CostOverrides): CostQueryResult | null {
   try {
     const rows = db.prepare(
       `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE ts >= ? AND (input_tokens>0 OR output_tokens>0) GROUP BY model`

@@ -5,6 +5,7 @@
 import { saveCheckpoint, replaceSessionMessages } from '../../store/db.js';
 import { costSummary } from '../../kernel/cost.js';
 import { usageSummary } from '../../kernel/usage.js';
+import { sessionCost } from '../../kernel/costQuery.js';
 
 export interface TuiMessageRow {
   id: number; role: string; content: string; tool_call_id: string | null; archived: number; ts: number;
@@ -107,13 +108,9 @@ export function createTuiPresentationAdapter(kernel: TuiAdapterKernel): TuiPrese
               return rows.map(r => {
                 let cost_usd: number | undefined;
                 try {
-                  const m = db.prepare(
-                    `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`,
-                  ).all(r.id) as Array<{ model: string; input: number; output: number }>;
-                  if (m.length) {
-                    const s = costSummary(m, costOverrides);
-                    cost_usd = s.unknownCount === 0 ? Number(s.totalUsd.toFixed(4)) : undefined;
-                  }
+                  // 单一事实源：costQuery.sessionCost（与 /cost 同 SQL 口径，排除 0 token 行）
+                  const q = sessionCost(db, r.id, costOverrides);
+                  cost_usd = q && q.unknown === 0 ? Number(q.usd.toFixed(4)) : undefined;
                 } catch { /* 成本聚合失败省略该会话 */ }
                 return { ...r, cost_usd };
               });

@@ -11,7 +11,8 @@ import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias } from '.
 import { capabilityBadges, decryptKey, detectProvider, encryptKey, filterModels, maskKey, MODEL_CATALOG, resolveApiKey } from '../kernel/providers.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { profileHealth } from '../kernel/profiles.js';
-import { costSummary, priceForModel } from '../kernel/cost.js';
+import { priceForModel } from '../kernel/cost.js';
+import { sessionCost, costText } from '../kernel/costQuery.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { makeSpec } from '../build/spec.js';
 import { makePlan, topoSort } from '../build/plan.js';
@@ -143,19 +144,13 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     }
     // 非交互模式：文本列表（按最近更新排序）——含每会话成本估算（全部模型有定价才显示）
     const costOverrides = (ctx.config.get('settings') as Record<string, any>)?.costPrices;
-    const sessionCost = (id: string): string => {
-      try {
-        const m = ctx.db.prepare(
-          `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
-        ).all(id) as Array<{ model: string; input: number; output: number }>;
-        if (!m.length) return '';
-        const s = costSummary(m, costOverrides);
-        return s.unknownCount === 0 ? `  $${s.totalUsd.toFixed(4)}` : '';
-      } catch { return ''; }
+    const costOf = (id: string): string => {
+      const q = sessionCost(ctx.db, id, costOverrides);
+      return q && q.unknown === 0 ? `  $${q.usd.toFixed(4)}` : '';
     };
     return lines(' 会话 ', filtered.map(r => {
       const t = new Date(r.updated_at).toLocaleString('zh-CN', { hour12: false });
-      return ` ${c(r.id, '35')}  ${r.title || '(无标题)'}（${r.msgs} 条）${sessionCost(r.id)} ${t}`;
+      return ` ${c(r.id, '35')}  ${r.title || '(无标题)'}（${r.msgs} 条）${costOf(r.id)} ${t}`;
     }));
   });
 
@@ -199,17 +194,8 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const bm = (s.balanceMonitor ?? {}) as Record<string, any>;
     const sid = ctx.agent?.getSessionId?.() ?? 'default';
     let costLine = '暂无 API 用量（真实对话后 /cost 估算）';
-    try {
-      const rows = ctx.db.prepare(
-        `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
-      ).all(sid) as Array<{ model: string; input: number; output: number }>;
-      if (rows.length) {
-        const cs = costSummary(rows);
-        costLine = cs.unknownCount === 0
-          ? `$${cs.totalUsd.toFixed(4)}（估算，本会话）`
-          : `$${cs.totalUsd.toFixed(4)} 起（${cs.unknownCount} 个模型未收录定价，本会话）`;
-      }
-    } catch { /* 成本统计失败静默 */ }
+    const cq = sessionCost(ctx.db, sid, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
+    if (cq) costLine = `${costText(cq)}（估算，本会话）`;
     return lines(' 状态 ', [
       ` 模型：${c(u.model || '未配置（/key set <密钥> 配置）', u.model ? '35' : '33')}`,
       ` 模式：${c(u.mode, '36')}`,
