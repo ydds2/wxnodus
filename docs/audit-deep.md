@@ -565,3 +565,8 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 - **/fs ls /fs read 封顶标注**：原 ls 静默截前 30 个、read 静默截前 60 行（模型经 wx_cmd 调用时误判「到此为止」）。提取纯函数 `fsLsRows`/`fsReadRows`（超限追加总数标注行 + 续看指引：/fs tree 分段、bash tail/sed），handler 接线。
 - **验证**：+2 测试（fsLsRows/fsReadRows 超限与未超限 ×4 断言）；全量 2357 通过；tsc 零错误。
+
+### 13.28 UX 缺陷清单口径同步轮（2026-08-17 持续完善）
+
+- **docs/ux-comparison.md 陈旧口径修正**：缺陷 #11 原标「部分覆盖（会话级 $ 成本仍缺）」、结论段还留「会话级 /cost 待补」——与 §13.14/§13.16–§13.21 已交付的会话级 /cost + 会话面板 $ 列 + 未上报用量标注冲突（文档与实机不一致即说谎）。现表行与结论段同步为「✅ 已修」，剩余边界仅 #12 首启语言。
+- **验证**：docs-only（无代码路径变更，全量测试不受影响）。
