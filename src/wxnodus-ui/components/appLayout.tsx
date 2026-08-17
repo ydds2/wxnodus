@@ -534,6 +534,11 @@ export const AppLayout = memo(function AppLayout({
                 onSudoSubmit={actions.answerSudo}
                 onFormSubmit={actions.answerForm}
                 onFormCancel={actions.cancelForm}
+                onHistoryAccept={text => {
+                  patchOverlayState({ histSearch: false })
+                  composer.updateInput(text)
+                }}
+                onHistoryCancel={() => patchOverlayState({ histSearch: false })}
               />
             </PerfPane>
 

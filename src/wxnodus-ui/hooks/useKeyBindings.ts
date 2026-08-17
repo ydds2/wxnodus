@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
 import { TYPING_IDLE_MS } from '../config/timing.js'
 import type {
   ApprovalRespondResponse,
-  ConfigSetResponse,
+  CommandDispatchResponse,
   SecretRespondResponse,
   SudoRespondResponse,
   VoiceRecordResponse
@@ -13,6 +13,7 @@ import type {
 import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platform.js'
 import { computePrecisionWheelStep, initPrecisionWheel } from '../lib/precisionWheel.js'
 import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
+import { nextPermMode } from '../lib/permCycle.js'
 
 import { getInputSelection } from '../runtime/selectionStore.js'
 import type { InputHandlerContext, InputHandlerResult } from '../bridge/interfaces.js'
@@ -371,6 +372,12 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         patchOverlayState({ sessions: false })
       }
 
+      // Ctrl+R：历史反向搜索（bash readline 同款）——overlay 阻断 composer 输入，
+      // 搜索组件自身 useInput 消费字符/Ctrl+R/Enter/Esc；此处只负责打开
+      if (isCtrl(key, ch, 'r') && !overlay.histSearch && !cState.historyIdx) {
+        return patchOverlayState({ histSearch: true })
+      }
+
       // When a prompt overlay is up and the user pressed a scroll key, fall
       // through to the global scroll handlers below instead of returning.
       // Otherwise nothing above this comment matched, and there's nothing
@@ -615,25 +622,19 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       })
     }
 
-    // shift-tab flips yolo without spending a turn (claude-code parity)
+    // shift-tab 循环权限模式（claude-code parity 增强：#9 债——此前只翻转 yolo 布尔，
+    // 现按 smart→auto→manual→plan→yolo→goal→smart 全序循环，状态栏徽章即时刷新）
     if (key.shift && key.tab && !cState.completions.length) {
       if (!live.sid) {
-        return void actions.sys('yolo needs an active session')
+        return void actions.sys('模式循环需要活跃会话')
       }
 
-      // gateway.rpc swallows errors with its own sys() message and resolves to null,
-      // so we only speak when it came back with a real shape. null = rpc already spoke.
-      return void gateway.rpc<ConfigSetResponse>('config.set', { key: 'yolo', session_id: live.sid }).then(r => {
-        if (r?.value === '1') {
-          return actions.sys('yolo on')
-        }
-
-        if (r?.value === '0') {
-          return actions.sys('yolo off')
-        }
-
-        if (r) {
-          actions.sys('failed to toggle yolo')
+      const next = nextPermMode(getUiState().info?.perm)
+      // command.dispatch 走 /perm 命令（校验 + 审计 mode.changed），响应后
+      // gateway 发布 session.info → 状态栏徽章即时刷新（T7 接线）
+      return void gateway.rpc<CommandDispatchResponse>('command.dispatch', { name: 'perm', arg: next }).then(r => {
+        if (r?.type === 'exec' && r.output) {
+          return actions.sys(String(r.output))
         }
       })
     }

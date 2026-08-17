@@ -106,6 +106,8 @@ export interface OverlayState {
   form: null | FormReq
   /** A24：目录选择器（点击状态栏 cwd 打开——浏览/切换工作目录） */
   dirPicker: boolean
+  /** Ctrl+R 历史反向搜索（bash readline 同款；查询/匹配态在组件内） */
+  histSearch: boolean
 }
 
 export interface FormReq {
@@ -501,6 +503,9 @@ export interface AppOverlaysProps {
   /** 动态内容表提交/取消（敏感输入——值仅内存回传） */
   onFormSubmit: (values: Record<string, string>) => void
   onFormCancel: () => void
+  /** Ctrl+R 历史搜索：Enter 接受匹配（替换输入框） / Esc 取消 */
+  onHistoryAccept: (text: string) => void
+  onHistoryCancel: () => void
   pagerPageSize: number
 }
 

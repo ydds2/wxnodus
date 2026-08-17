@@ -12,6 +12,7 @@ import { ActiveSessionSwitcher } from './activeSessionSwitcher.js'
 import { CommandPalette } from './commandPalette.js'
 import { DirPicker } from './dirPicker.js'
 import { FloatBox } from './appChrome.js'
+import { HistorySearch } from './historySearch.js'
 import { MaskedPrompt } from './maskedPrompt.js'
 import { ModelPicker } from './modelPicker.js'
 import { OverlayHint } from './overlayControls.js'
@@ -30,8 +31,10 @@ export function PromptZone({
   onSecretSubmit,
   onSudoSubmit,
   onFormSubmit,
-  onFormCancel
-}: Pick<AppOverlaysProps, 'cols' | 'onApprovalChoice' | 'onClarifyAnswer' | 'onSecretSubmit' | 'onSudoSubmit' | 'onFormSubmit' | 'onFormCancel'>) {
+  onFormCancel,
+  onHistoryAccept,
+  onHistoryCancel
+}: Pick<AppOverlaysProps, 'cols' | 'onApprovalChoice' | 'onClarifyAnswer' | 'onSecretSubmit' | 'onSudoSubmit' | 'onFormSubmit' | 'onFormCancel' | 'onHistoryAccept' | 'onHistoryCancel'>) {
   const overlay = useStore($overlayState)
   const theme = useStore($uiTheme)
   const { gw } = useGateway()
@@ -55,6 +58,14 @@ export function PromptZone({
     return (
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
         <ApprovalPrompt cols={cols} onChoice={onApprovalChoice} req={overlay.approval} t={theme} />
+      </Box>
+    )
+  }
+
+  if (overlay.histSearch) {
+    return (
+      <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
+        <HistorySearch onAccept={onHistoryAccept} onCancel={onHistoryCancel} t={theme} />
       </Box>
     )
   }
