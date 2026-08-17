@@ -82,6 +82,28 @@ describe('memory_search 黑洞检索', () => {
       expect(out2).toContain('未检索到');
     } finally { closeDB(db); try { rmSync(d, { recursive: true, force: true }); } catch {} }
   });
+
+  it('超长记忆条目截断标注（共 N 字——模型知道有剩余）', async () => {
+    const { coreTools } = await import('../src/kernel/tools.js');
+    const { openDB, closeDB } = await import('../src/store/db.js');
+    const { openMemoryRepository } = await import('../src/infrastructure/sqlite/memoryRepository.js');
+    const { createMemoryService } = await import('../src/application/memoryService.js');
+    const d = mkdtempSync(join(tmpdir(), 'wx-ms2-'));
+    const db = openDB(d);
+    try {
+      const svc = createMemoryService(openMemoryRepository(db, { now: () => Date.now(), idFactory: p => `${p}-${Date.now()}` }), { sessionId: 's1' });
+      const tag = `超长条目${Date.now()}`;
+      svc.append({
+        role: 'assistant', content: `${tag}：${'细节'.repeat(200)}`, salience: 0.5,
+        retention: { class: 'session', retainUntil: null },
+        provenance: { sourceType: 'conversation', sourceId: 's1', sourceUri: undefined, capturedAt: new Date().toISOString(), actorId: 's1', correlationId: 't', policySnapshotId: 't', sourceTrust: 1 },
+      });
+      const t = coreTools().memory_search!;
+      const out = await t.run({ query: tag }, { db, sessionId: 's1' } as any);
+      expect(out).toContain('已截断');
+      expect(out).toContain('共 ' + (`${tag}：${'细节'.repeat(200)}`).length + ' 字');
+    } finally { closeDB(db); try { rmSync(d, { recursive: true, force: true }); } catch {} }
+  });
 });
 
 // ── P0-2 巩固：memory_write 写入黑洞（不再写孤儿 md 文件）──

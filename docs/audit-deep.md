@@ -491,3 +491,12 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **成本 SQL 去重三处**：/context、/digest、/arena 原来各内联一份 `usage_stats GROUP BY model` SQL + costSummary 拼装，语义漂移风险（且 /context 一处 import 缺失 costText 已属编译隐患）。全部改为共享助手 `sessionCost`/`rangeCost`/`costText`——与 /cost、状态栏、/sessions 同一 SQL 事实源；costText 统一「$x.xxxx / $x.xxxx 起（N 个模型未收录定价）」口径，绝不显示被低估的数字。arena 保持原诚实口径（有未收录定价模型时整体省略 $）。
 - **修复 import 缺口**：handlersExt.ts 补 `costText` 导入（此前 /usage range 已用而未导，tsc 悬空风险）；移除 costSummary 残留导入。
 - **验证**：全量 2331 通过；tsc 零错误。
+
+### 13.17 截断四件套补全轮（2026-08-17 持续完善）
+
+- **labelTruncate 单一事实源**（新 kernel/truncate.ts）：统一标注口径 `…[已截断（共 N 字，剩余 M 字未读）——续查提示]`——任何面向模型的截断都显式告知有剩余，绝不静默（§13.14 三件套同源口径收口）。
+- **补全三处静默截断**（审计扫出）：
+  - `delegate` 子代理输出：原 `slice(0, 4000)` 静默——模型会误判「子代理只说了这些」而漏掉关键结论。现标注 + 指引（goal 要求精简/拆分子任务）。
+  - `browser_snapshot`/`browser_click` 正文快照：原 `slice(0, 2500)` 静默；click 原对外层整体 `slice(0,1500)` 连标题/URL/交互元素清单一起切。现 `cleanBodyText` 只截正文并标注，click 用 1200 限正文、标题/URL/交互清单完整保留（比旧行为信息量更大且诚实）。
+  - `memory_search` 命中条目：原每条 `slice(0, 300)` 静默。现逐条标注共 N 字。
+- **验证**：+8 测试（labelTruncate 纯函数 ×3、delegate 长短 ×2、browser cleanBodyText ×2、memory_search 超长条目 ×1）；全量 2339 通过；tsc 零错误。

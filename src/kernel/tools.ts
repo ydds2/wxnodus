@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, realpat
 import { join, resolve, relative, sep } from 'node:path';
 import { sanitizedEnv } from './env.js';
 import { probeProcessAvailable } from './processProbe.js';
+import { labelTruncate } from './truncate.js';
 
 /** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性）
  * W3-11：进程探测集中到 kernel/processProbe（入口层不直接执行进程） */
@@ -522,7 +523,7 @@ export function coreTools(): Record<string, ToolDef> {
         const result = svc.search({ text: q, limit: Math.min(Math.max(Number(args?.limit) || 5, 1), 20) });
         if (!result.ok) return `记忆检索失败：${result.error.code}`;
         if (!result.value.length) return `未检索到与「${q.slice(0, 40)}」相关的历史记忆`;
-        return `历史记忆命中 ${result.value.length} 条：\n${result.value.map(h => `- [${h.record.id}] ${h.record.content.slice(0, 300)}`).join('\n')}`;
+        return `历史记忆命中 ${result.value.length} 条：\n${result.value.map(h => `- [${h.record.id}] ${labelTruncate(String(h.record.content ?? ''), 300)}`).join('\n')}`;
       } catch (e: any) {
         return `记忆检索失败：${String(e?.message ?? e).slice(0, 120)}`;
       }
@@ -786,7 +787,7 @@ export function coreTools(): Record<string, ToolDef> {
       try {
         const r = await ctx.spawnSubagent(String(goal ?? '').trim() || '（空任务）');
         const head = r.ok ? '子代理完成' : '子代理未完成';
-        return `${head}（${r.turns} 轮）：\n${r.output.slice(0, 4000)}`;
+        return `${head}（${r.turns} 轮）：\n${labelTruncate(String(r.output ?? ''), 4000, '子代理输出过长——goal 里要求结论精简，或拆分子任务')}`;
       } catch (e: any) {
         return `子代理执行异常：${e?.message?.slice(0, 300) ?? e}`;
       }

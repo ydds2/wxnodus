@@ -3,6 +3,7 @@
 //       SSRF 域名白名单（navigate 前 checkUrlSafety 三层防护）+ 诚实归因（不可用明确提示）
 // 对齐：Gemini browser_agent / Cline browser —— AI 可主动打开网页、点击、输入、截图分析
 import { checkUrlSafety } from './ssrf.js';
+import { labelTruncate } from './truncate.js';
 import { createRequire } from 'node:module';
 
 const requireCjs = createRequire(import.meta.url);
@@ -127,13 +128,19 @@ ${els.join('\n')}`;
   }
 }
 
+/** 正文清洗 + 诚实截断标注（模型知道快照有剩余——绝不静默截断） */
+export function cleanBodyText(body: string, limit: number, hint?: string): string {
+  const raw = String(body ?? '').replace(/\s+\n/g, '\n').replace(/[ \t]{2,}/g, ' ');
+  return labelTruncate(raw, limit, hint);
+}
+
 /** 可访问性树 → 紧凑文本快照（AI 理解页面结构；深度：含可交互元素清单） */
-async function snapshotText(page: any): Promise<string> {
+async function snapshotText(page: any, bodyLimit = 2500): Promise<string> {
   try {
     const title = await page.title();
     const url = page.url();
     const body = await page.locator('body').innerText({ timeout: 8000 }).catch(() => '');
-    const clean = String(body ?? '').replace(/\s+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').slice(0, 2500);
+    const clean = cleanBodyText(body, bodyLimit, '页面正文有剩余——browser_snapshot 或收窄交互目标续看');
     const els = await interactiveElements(page);
     return `标题：${title}\n地址：${url}\n正文：\n${clean}${els ? `\n\n${els}` : ''}`;
   } catch (e: any) {
@@ -190,7 +197,7 @@ export function browserClick(selector: string, sessionId = 'default'): Promise<B
     try {
       await page.locator(String(selector ?? '')).first().click({ timeout: 10000 });
       const url = page.url();
-      return { ok: true, text: `已点击「${selector}」→ ${url}\n${(await snapshotText(page)).slice(0, 1500)}` };
+      return { ok: true, text: `已点击「${selector}」→ ${url}\n${await snapshotText(page, 1200)}` };
     } catch (e: any) {
       return { ok: false, text: `点击失败（选择器「${selector}」未命中？）：${String(e?.message ?? e).slice(0, 200)}` };
     }
