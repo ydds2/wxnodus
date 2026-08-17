@@ -36,7 +36,7 @@ const groups = {
   '钩子': ['/hooks'],
   '安全': ['/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt'],
   '系统': ['/backup', '/export', '/theme dark', '/theme light', '/lang en', '/lang zh', '/config', '/config set lang en', '/logs', '/bench'],
-  '视觉': ['/vision', '/img', '/video', '/render', '/capture'],
+  '视觉': ['/vision', '/img', '/video', '/render', '/capture', '/capture --attach'],
   '网络': ['/claw', '/mcp', '/gateway', '/proxy', '/webhook', '/a2a', '/acp'],
   '协作': ['/swarm', '/duo', '/cron', '/cron list', '/jobs', '/task', '/delegate', '/goal 测试目标'],
   '工具': ['/calc 2+3*4', '/hash abc', '/base64 abc', '/uuid', '/rand', '/json {"a":1}', '/timer', '/units 1km to m', '/csv a,b\\nc,d', '/fs ls', '/sql select 1'],

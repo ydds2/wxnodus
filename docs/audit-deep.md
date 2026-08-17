@@ -457,3 +457,13 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **截图即问**：Ctrl+Shift+P 一键全屏截图 → 附件落盘 + pending 登记（下次提问经能力门：视觉模型注入 parts / 文本模型 GLM 先识别）——/capture→/img→提问三步合一；无图形环境诚实失败。+1 测试（真实图形环境成功路径实测通过）。
 - **回合结算即时成本**：agent.end 的 message.complete 携带会话实时 usage（含 cost_usd）——状态栏 $ 不再等下次 session.info 才刷新。
 - **验证**：全量 2319 通过；tsc 零错误。
+
+### 13.13 余额目标观测面收官轮（2026-08-17 持续完善）
+
+「持续完善直至余额耗尽」的观测面全部落地——钱的状态在命令面/面板/状态栏三处同源可见：
+
+- **/sessions 非交互列表成本列**：每会话成本估算（全部模型有定价才显示；costPrices 覆盖同源）。
+- **会话切换面板成本列**：adapter sessions.list 每会话聚合（N+1 有界 ≤50 行防查询爆炸）→ active_list/session.list 透传 → ActiveSessionSwitcher $ 列（accent 色，未知省略）。
+- **状态栏 💰 低余额红色警示**：balance.status 响应带 low 标记（低于阈值）→ 段着色优先级 低余额红 > stale 黄 > 正常青——一眼可见钱快没了。
+- **/capture --attach**：命令层与热键（Ctrl+Shift+P）共享 pending 契约（提取 kernel/imagePending.ts 单一事实源，防 UI/命令层契约漂移）；截图即附加提问，区域切片同样适用。+2 测试（含幽灵路径诚实 null）。
+- **验证**：全量 2322 通过；cmd-sweep 125/125（+/capture --attach）；full-scene 28/28 + cmd-verify 14/14 双电池复测（会话面板/状态栏改动真机无回归）；tsc 零错误。
