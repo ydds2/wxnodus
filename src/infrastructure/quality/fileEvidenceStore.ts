@@ -7,6 +7,7 @@ import type { FileHandle } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { DeepReadonly, EvidenceAttachment, EvidenceAttachmentRef, EvidenceRecord, EvidenceRef, VerifiedEvidenceReceipt } from '../../domain/quality/evidence.js';
+import { EVIDENCE_STORE_BRAND } from '../../domain/quality/evidenceStorePort.js';
 import { gatewayError } from '../../protocol/errors.js';
 import { err, ok, type OperationResult } from '../../protocol/results.js';
 
@@ -319,6 +320,9 @@ async function listRegularFiles(root: string, prefix = ''): Promise<string[]> {
 export class FileEvidenceStore {
   readonly #receipts = new WeakSet<object>();
   readonly #brand = true;
+  // domain 品牌端口（audit §13.45）：闭包捕获本实例私有 WeakSet——gate 经此验证归属，
+  // 子类覆写公共 owns 无法影响（p0-completion-authority 契约），伪造对象拿不到闭包。
+  readonly [EVIDENCE_STORE_BRAND] = { owns: (receipt: unknown): boolean => typeof receipt === 'object' && receipt !== null && this.#receipts.has(receipt) };
   readonly #runQueues = new Map<string, Promise<void>>();
   readonly #root: string;
   constructor(root: string, private readonly clock: () => string = () => new Date().toISOString()) {

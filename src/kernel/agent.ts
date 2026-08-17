@@ -9,8 +9,9 @@
 //     agent.end 发布最终消息——漏发 = 回合静默、界面无输出）。
 //   无 key → 明确引导 /model set-key（不假装回答）
 //   spawnSubagent：独立上下文 + 只读工具集
-import type { Db } from '../store/db.js';
-import { appendAudit } from '../store/db.js';
+import type Database from 'better-sqlite3';
+type Db = InstanceType<typeof Database>;
+import { appendAudit } from './audit.js';
 import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
 import { resolveDataDir } from './paths.js';
@@ -1182,7 +1183,7 @@ export function createAgent(opts: AgentOptions) {
     // 保留最近 10 个（saveCheckpoint 内部循环清理）；/rewind 可回滚任意自动快照
     if (!opts2.subagent) {
       try {
-        const { saveCheckpoint } = await import('../store/db.js');
+        const { saveCheckpoint } = await import('./checkpoint.js');
         const msgsSnap = opts.db.prepare(`SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=? ORDER BY id`).all(sessionId);
         saveCheckpoint(opts.db, sessionId, { kind: 'auto', messages: msgsSnap, ts: Date.now() });
       } catch { /* 快照失败不阻断（临时目录等） */ }

@@ -683,3 +683,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **余额护栏 `scripts/balance-guard.mjs`**：读 settings（apiKeys.deepseek 槽 → 内存解密，明文绝不回显）→ GET deepseek /user/balance → 打印余额 + 退出码协议（0≥min / 1<min 打断 / 2 无密钥或失败）。实测基线：**本机 wxnodus 仅配置 zhipu/GLM 密钥，DeepSeek 密钥缺失** → DEEPSEEK_KEY_MISSING（exit 2）——自动监控待用户 `/model set-key` 后生效。
 - **`docs/t0-budget-plan-2026.md`**：300 元预算→T0 计划——成本模型假设 + 已完成 10 轮清单 + 剩余 7 项按性价比排序（含轮数估算与止损判定 <¥20 收敛）+ 监控协议 + T0 达标判据（npm run ci 全绿 + 评分 ≥8.0）。
 - **handlersExt 拆分 2/3 块尝试与回退**：锚点切片成功（块 2/3 = 583+894 行 → ext/sessionCommands.ts、ext/profileMemoryBuildCommands.ts），但导入自动修剪脚本陷入「同行列漂移→误删在用导入→护栏死锁」循环（根因：tsc 在文件存在其它错误时对在用导入误报 unused）——按预算止损回退（保留第 1 块成果，handlersExt 3718 行），拆分重做方式已写入预算计划序 5（静态导入清单手写）。
+
+### 13.45 分层泄漏修复轮（2026-08-18 /goal 自主完善——深评 P1「分层泄漏 4+ 处」关闭）
+
+- **方向规则**：kernel/domain 不得 import store（infra→kernel 合法，kernel→store 跨层违规）。
+- **appendAudit**：迁 `src/kernel/audit.ts`（AuditDb 结构端口 + auditHash + SQL 由 kernel 拥有）；store/db.ts 仅 re-export（全仓 import 面零改动）。
+- **saveCheckpoint**：迁 `src/kernel/checkpoint.ts`（DbPort 端口）；agent.ts:1185 动态 import 改 `./checkpoint.js`。
+- **searchMessages**：迁 `src/kernel/memory.ts`（kernel 拥有检索语义）；store re-export；handlers 导入面不变。
+- **Db 类型**：agent/memory/imageHistory 的 `import type { Db } from '../store/db.js'` → 本地 `InstanceType<typeof Database>`（better-sqlite3 库类型，类型保真零跨层）；新增 `src/kernel/dbPort.ts`（run 返回类型化）。
+- **completionGate**：domain 不再直 import infrastructure 的 FileEvidenceStore——新增 `src/domain/quality/evidenceStorePort.ts`（`EVIDENCE_STORE_BRAND` unique Symbol 品牌 + isGenuineEvidenceStore + owns 端口）；FileEvidenceStore 实现该 Symbol 字段（防伪强度不降）；gate 的 isGenuine/owns 全部走端口。
+- **复扫**：src/kernel 与 src/domain 中 `from '../store` 零残留（grep 空）。
+- **搬移事故如实记录**：node -e 转义链把 `/\s+/` 吃成 `/s+/`（FTS 词切分失效 → 中文召回空）——定向测试立即捕获，单字符修复（教训：跨 bash 的代码注入不用于正则字面量；本次为事后发现，正文经文件对照确认其余转义完好）。
+- **验证**：tsc 零错误；定向 115/115（含 completionGate 闭包证据/权威冲突/安全控制面/记忆召回）；全量回归见下。

@@ -6,8 +6,9 @@
 //   压缩 compactKeepHeadTail（确定性保头尾）/ compactSmart（LLM 总结中部，失败降级）
 //   参考：MemGPT 分层记忆、Claude Code autocompact、Gemini GEMINI.md JIT
 import { randomUUID } from 'node:crypto';
-import type { Db } from '../store/db.js';
-import { searchMessages } from '../store/db.js';
+import type Database from 'better-sqlite3';
+type Db = InstanceType<typeof Database>;
+
 import { openMemoryRepository } from '../infrastructure/sqlite/memoryRepository.js';
 import { bigramZh } from '../infrastructure/sqlite/bigramZh.js';
 import type { MemoryRecord, MemoryRepository } from '../domain/memory/memoryRepository.js';
@@ -338,4 +339,31 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
     },
     repository,
   };
+}
+
+// ── FTS 全文检索（自 store/db.ts 迁入——kernel 拥有检索语义，store 层 re-export，audit §13.45）──
+export function searchMessages(db: Db, query: string, opts: { limit?: number; sessionId?: string; since?: number } = {}): Array<{ id: number; session_id: string; role: string; content: string; ts: number; salience: number }> {
+  const limit = opts.limit ?? 10;
+  try {
+    const terms = bigramZh(query).split(/\s+/).filter(Boolean);
+    if (!terms.length) return [];
+    const match = terms.map(t => `"${t.replace(/"/g, '""')}"`).join(' OR ');
+    const where = [
+      opts.sessionId ? `AND m.session_id = @sid` : '',
+      opts.since ? `AND m.ts >= @since` : '',
+    ].join(' ');
+    return db.prepare(`
+      SELECT m.id, m.session_id, m.role, m.content, m.ts, m.salience
+      FROM messages m JOIN messages_fts f ON f.rowid = m.id
+      WHERE messages_fts MATCH @match ${where}
+      ORDER BY rank LIMIT @limit
+    `).all({ match, sid: opts.sessionId, since: opts.since, limit }) as any[];
+  } catch {
+    // FTS 不可用降级：LIKE 模糊
+    return db.prepare(`
+      SELECT id, session_id, role, content, ts, salience FROM messages
+      WHERE content LIKE @q ${opts.sessionId ? `AND session_id = @sid` : ''} ${opts.since ? `AND ts >= @since` : ''}
+      ORDER BY id DESC LIMIT @limit
+    `).all({ q: `%${query}%`, sid: opts.sessionId, since: opts.since, limit }) as any[];
+  }
 }

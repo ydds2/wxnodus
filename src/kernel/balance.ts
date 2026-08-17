@@ -6,7 +6,7 @@
 import { getByPath } from './jsonPath.js';
 import { safeFetchText } from './ssrf.js';
 import { resolveApiKey, mapHttpError } from './providers.js';
-import { appendAudit } from '../store/db.js';
+import { appendAudit } from './audit.js';
 import type { ProviderProfile } from './profiles.js';
 
 export interface BalanceInfo { balance: string; currency?: string; source: string }

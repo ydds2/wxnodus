@@ -6,7 +6,6 @@
 //  - checkpoints 会话快照（差距补齐 #6：限 10 份）
 import { join } from 'node:path';
 import { mkdirSync, renameSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
 import { migrateMemory } from '../infrastructure/sqlite/memoryMigrations.js';
@@ -22,11 +21,10 @@ export type Db = InstanceType<typeof Database>;
 const SCHEMA_VERSION = 8; // v7/v8: usage_stats 前缀缓存命中/未命中列（audit §13.43）
 
 export { bigramZh };
-
-// 审计哈希：SHA-256 链（prev_hash + event + payload + ts）
-export function auditHash(prev: string, event: string, payload: string, ts: number): string {
-  return createHash('sha256').update(`${prev}|${event}|${payload}|${ts}`).digest('hex');
-}
+// 审计追加已迁至 kernel/audit.ts（分层泄漏修复 audit §13.45）——store 仅再导出（infra→kernel 合法方向）
+export { appendAudit, auditHash, type AuditDb } from '../kernel/audit.js';
+export { saveCheckpoint } from '../kernel/checkpoint.js';
+export { searchMessages } from '../kernel/memory.js';
 
 export function openDB(dataDir: string): Db {
   mkdirSync(dataDir, { recursive: true });
@@ -206,31 +204,7 @@ export function closeDB(db: Db): void {
 
 // ── 产品 API ──────────────────────────────────────────────
 
-// 审计追加（合规红线）：自动计算 SHA-256 链哈希，prev_hash 取末条
-export function appendAudit(db: Db, event: string, payload: unknown): number {
-  const last = db.prepare(`SELECT hash FROM audit ORDER BY id DESC LIMIT 1`).get() as { hash: string } | undefined;
-  const prev = last?.hash ?? 'GENESIS';
-  const ts = Date.now();
-  const p = JSON.stringify(payload ?? {});
-  const hash = auditHash(prev, event, p, ts);
-  const r = db.prepare(`INSERT INTO audit (prev_hash, event, payload, hash, ts) VALUES (?,?,?,?,?)`)
-    .run(prev, event, p, hash, ts);
-  return Number(r.lastInsertRowid);
-}
-
 // 会话 checkpoint：保存快照（每会话限 10 份，超限删最旧）
-export function saveCheckpoint(db: Db, sessionId: string, data: unknown): number {
-  const last = db.prepare(`SELECT id FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 1`).get(sessionId) as { id: number } | undefined;
-  const r = db.prepare(`INSERT INTO checkpoints (session_id, data, ts, prev_id) VALUES (?,?,?,?)`)
-    .run(sessionId, JSON.stringify(data), Date.now(), last?.id ?? null);
-  const MAX = 10;
-  db.prepare(`
-    DELETE FROM checkpoints WHERE session_id=? AND id NOT IN (
-      SELECT id FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT ?
-    )
-  `).run(sessionId, sessionId, MAX);
-  return Number(r.lastInsertRowid);
-}
 
 export function restoreCheckpoint<T = unknown>(db: Db, sessionId: string): T | null {
   const row = db.prepare(`SELECT data FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 1`).get(sessionId) as { data: string } | undefined;
@@ -302,33 +276,6 @@ export function forkSession(db: Db, srcId: string, newId: string, titleSuffix = 
   return Number((db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE session_id=?`).get(newId) as { c: number }).c);
 }
 
-// 全文搜索（FTS5）：查询词经 bigram 转换后 OR 展开，命中返回消息行
-// A21：since 参数（ts >= since 的时间过滤——/memory search|list --since）
-export function searchMessages(db: Db, query: string, opts: { limit?: number; sessionId?: string; since?: number } = {}): Array<{ id: number; session_id: string; role: string; content: string; ts: number; salience: number }> {
-  const limit = opts.limit ?? 10;
-  try {
-    const terms = bigramZh(query).split(/\s+/).filter(Boolean);
-    if (!terms.length) return [];
-    const match = terms.map(t => `"${t.replace(/"/g, '""')}"`).join(' OR ');
-    const where = [
-      opts.sessionId ? `AND m.session_id = @sid` : '',
-      opts.since ? `AND m.ts >= @since` : '',
-    ].join(' ');
-    return db.prepare(`
-      SELECT m.id, m.session_id, m.role, m.content, m.ts, m.salience
-      FROM messages m JOIN messages_fts f ON f.rowid = m.id
-      WHERE messages_fts MATCH @match ${where}
-      ORDER BY rank LIMIT @limit
-    `).all({ match, sid: opts.sessionId, since: opts.since, limit }) as any[];
-  } catch {
-    // FTS 不可用降级：LIKE 模糊
-    return db.prepare(`
-      SELECT id, session_id, role, content, ts, salience FROM messages
-      WHERE content LIKE @q ${opts.sessionId ? `AND session_id = @sid` : ''} ${opts.since ? `AND ts >= @since` : ''}
-      ORDER BY id DESC LIMIT @limit
-    `).all({ q: `%${query}%`, sid: opts.sessionId, since: opts.since, limit }) as any[];
-  }
-}
 
 /** A21：物理删除消息（FTS 外部内容表随行删除自动同步；向量索引手动清）。 */
 export function deleteMessage(db: Db, id: number): boolean {

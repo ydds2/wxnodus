@@ -5,7 +5,8 @@
 // W1-06：摘要同时写入 Black Hole Memory repository（provenance 'image'，session 作用域），
 // 走事务索引——失败静默降级（不阻断对话，消息仍保留 messages 表路径）。
 // 红线：无 key 不调用 AI（不假装）；失败静默降级（不阻断对话）。
-import type { Db } from '../store/db.js';
+import type Database from 'better-sqlite3';
+type Db = InstanceType<typeof Database>;
 
 export interface ImagePart {
   dataUrl: string;

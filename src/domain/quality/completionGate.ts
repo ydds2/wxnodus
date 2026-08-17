@@ -3,7 +3,7 @@
 // W1-09 布局（无 closure 字段、无 attachments）由 W1 store 写入时校验闭合，视为隐含 closed，收据信任仍只来自 WeakSet owns()。
 import type { ArtifactBinding, EvidenceRef, VerifiedEvidenceReceipt, VerificationStatus } from './evidence.js';
 import { normalizeReviewerAttestation, ReviewerAttestationVerifier, type ReviewBinding, type VerifiedReviewerAttestationReceipt } from './review.js';
-import { FileEvidenceStore } from '../../infrastructure/quality/fileEvidenceStore.js';
+import { isGenuineEvidenceStore, evidenceStoreOwns, type EvidenceStorePort } from './evidenceStorePort.js';
 import type { RunFinalStatus } from '../../protocol/runs.js';
 import { gatewayError } from '../../protocol/errors.js';
 import { err, ok, type OperationResult } from '../../protocol/results.js';
@@ -257,11 +257,11 @@ function evidenceRecord(value: unknown): NormalizedRecord {
 
 export class CompletionGate {
   readonly #brand = true;
-  readonly #evidenceStore: FileEvidenceStore;
+  readonly #evidenceStore: EvidenceStorePort;
   readonly #reviewerVerifier: ReviewerAttestationVerifier;
 
-  constructor(evidenceStore: FileEvidenceStore, reviewerVerifier: ReviewerAttestationVerifier) {
-    if (!FileEvidenceStore.isGenuine(evidenceStore) || !ReviewerAttestationVerifier.isGenuine(reviewerVerifier)) throw new TypeError('COMPLETION_GATE_AUTHORITY_INVALID');
+  constructor(evidenceStore: EvidenceStorePort, reviewerVerifier: ReviewerAttestationVerifier) {
+    if (!isGenuineEvidenceStore(evidenceStore) || !ReviewerAttestationVerifier.isGenuine(reviewerVerifier)) throw new TypeError('COMPLETION_GATE_AUTHORITY_INVALID');
     this.#evidenceStore = evidenceStore;
     this.#reviewerVerifier = reviewerVerifier;
   }
@@ -277,7 +277,7 @@ export class CompletionGate {
       const evidenceReceipts = denseArray(runtimeInput.evidence);
       const reviewReceipt = runtimeInput.review;
       if (evidenceReceipts.length === 0 ||
-          !evidenceReceipts.every(receipt => FileEvidenceStore.prototype.owns.call(this.#evidenceStore, receipt)) ||
+          !evidenceReceipts.every(receipt => evidenceStoreOwns(this.#evidenceStore, receipt)) ||
           !ReviewerAttestationVerifier.prototype.owns.call(this.#reviewerVerifier, reviewReceipt))
         return err(gatewayError('GATE_UNTRUSTED_INPUT', 'Gate accepts verifier-owned receipts only', 'gate.untrustedInput'));
 

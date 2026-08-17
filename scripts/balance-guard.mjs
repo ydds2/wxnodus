@@ -19,6 +19,10 @@ let settings = {};
 try { settings = JSON.parse(readFileSync(settingsPath, 'utf8')); } catch { /* 无配置 */ }
 
 function deepseekKey() {
+  // 1) 环境变量（用户机器自配，零落盘回显）
+  const envCands = [process.env.WXNODUS_DEEPSEEK_KEY, process.env.DEEPSEEK_API_KEY, process.env.WXNODUS_API_KEY];
+  for (const e of envCands) if (e && e.trim()) return e.trim();
+  // 2) wxnodus settings（apiKeys 槽 / keyProvider / providers 中 deepseek 端点档案）
   const apiKeys = settings.apiKeys ?? {};
   const candidates = [
     apiKeys['deepseek'],
