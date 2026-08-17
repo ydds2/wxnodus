@@ -44,7 +44,10 @@ export const NL_TRIGGERS: NlTrigger[] = [
   { re: /导出.*(?:会话|历史|对话)|导出数据/i, cmd: '/export' },
   { re: /恢复(?:上次|之前)?会话|继续上次|resume/i, cmd: '/resume' },
   { re: /压缩(?:上下文|记忆)|清理上下文/i, cmd: '/compact' },
-  { re: /用量|token.*(?:用了|花费)|花了多少/i, cmd: '/usage' },
+  // 成本/余额直达（说人话）：在「花了多少→/usage」之前——「花了多少钱」应路由成本而非用量
+  { re: /成本|计费|费用|花了多少(?:钱|额度)?|烧了多少/i, cmd: '/cost' },
+  { re: /余额(?:多少|还剩|还有)|还剩多少(?:钱|额度)|查(?:询)?余额/i, cmd: '/balance status' },
+  { re: /用量|token.*(?:用了|花费)|(?:用了|花了).*token/i, cmd: '/usage' },
   { re: /审计|合规审查|留痕/i, cmd: '/audit' },
   { re: /安全通道|注入通道|sudo.*开启|secret.*开启/i, cmd: '/security' },
   { re: /做(?:一个)?计划|制定方案|规划(?:一下|方案)/i, cmd: '/plan' },

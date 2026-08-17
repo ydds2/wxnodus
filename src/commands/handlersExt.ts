@@ -925,6 +925,12 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     }
     if (sub === 'on') { ctx.config.setKey('settings', 'balanceMonitor', { ...bm, enabled: true }); return '余额监控已开启（状态栏 💰，5 分钟刷新，点击可强制刷新）'; }
     if (sub === 'off') { ctx.config.setKey('settings', 'balanceMonitor', { ...bm, enabled: false }); return '余额监控已关闭（/balance on 重新开启）'; }
+    if (sub === 'threshold') {
+      const n = Number(args[1]);
+      if (!Number.isFinite(n) || n < 0) return '用法：/balance threshold <数值>（低余额预警阈值；默认 5——低于即状态栏 sticky 预警）';
+      ctx.config.setKey('settings', 'balanceMonitor', { ...bm, lowThreshold: n });
+      return `低余额预警阈值已设置：${n}（余额低于此值时状态栏预警 + /balance status 行内提示）`;
+    }
     if (sub === 'refresh' || sub === 'status') {
       const rp = resolveProviderProfile((ctx.config.get('settings') ?? {}) as Record<string, any>);
       if (!rp) return '未配置档案（/profile add 或 /key set 后重试）';
@@ -939,7 +945,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       }
       return `余额获取失败：${r.error}`;
     }
-    return '用法：/balance set [url] [--path <jsonPath>] | on | off | status | refresh';
+    return '用法：/balance set [url] [--path <jsonPath>] | on | off | threshold <数值> | status | refresh';
   });
 
   // ── 配置导出/导入（JSON；导出可选脱敏）──

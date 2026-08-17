@@ -63,3 +63,18 @@ describe('NL 路由边界（防误劫持）', () => {
     expect(r.cmd).toBe('/help');
   });
 });
+
+describe('成本/余额自然语言直达（说人话）', () => {
+  it('成本短语 → /cost（「花了多少钱」优先于 /usage）', () => {
+    expect(routeNaturalLanguage('成本多少')).toBe('/cost');
+    expect(routeNaturalLanguage('花了多少钱')).toBe('/cost');
+    expect(routeNaturalLanguage('计费明细')).toBe('/cost');
+  });
+  it('余额短语 → /balance status', () => {
+    expect(routeNaturalLanguage('余额还有多少')).toBe('/balance status');
+    expect(routeNaturalLanguage('查询余额')).toBe('/balance status');
+  });
+  it('token 用量短语仍走 /usage（不被成本劫持）', () => {
+    expect(routeNaturalLanguage('用了多少 token')).toBe('/usage');
+  });
+});

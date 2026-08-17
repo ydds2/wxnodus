@@ -61,6 +61,7 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 - `/balance set <余额URL> [--json-path 路径]` 粘贴余额查询网址 → 状态栏 **💰 实时余额**（5 分钟轮询 + 点击强制刷新，厂商适配器自动识别 + 通用启发式兜底，拉取失败诚实 ⚠）；`/balance on|off` 独立开关
 - `/usage range today|7d|30d` 分区间 token 消耗（跨会话聚合）→ 状态栏 **📊**（点击轮换区间）；余额与 token 两段独立配置
 - `/cost [session|today|7d|30d]` 成本估算（按模型聚合，公开参考价目诚实标注，未收录定价只报 token）→ 状态栏 **$** 成本段（`/config set show_cost true` 开启；全部模型有定价才显示合计——绝不显示被低估的数字）
+- /balance threshold <数值> 低余额预警阈值（默认 5——低于即状态栏 sticky 预警）；自然语言直达：「成本多少」「花了多少钱」→ /cost、「余额还有多少」→ /balance status
 - 彩蛋：`/warp` 星际跳跃 · `/fortune` 幸运签
 
 ## 键位与交互（对齐主流 CLI）
