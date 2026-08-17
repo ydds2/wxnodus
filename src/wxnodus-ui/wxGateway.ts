@@ -13,9 +13,10 @@ import { WXNODUS_VERSION } from '../kernel/version.js'
 import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
 import { seedTurnTodos, syncToolTodo } from './lib/turnTodos.js'
-import { MODEL_CATALOG, encryptKey } from '../kernel/providers.js'
+import { MODEL_CATALOG } from '../kernel/providers.js'
 import { priceForModel } from '../kernel/cost.js'
-import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js'
+import { resolveDefaultModel } from '../kernel/defaults.js'
+import { addCustomModel, applyModelKey, type ModelRegistryPort } from '../kernel/modelRegistry.js'
 import { loadSkinFile } from '../kernel/skin.js'
 import { checkVoice } from '../kernel/voice.js'
 import { vadConfigFromSettings } from '../kernel/vad.js'
@@ -57,6 +58,8 @@ export interface WxGatewayKernel {
   systemPrompt?: () => string | undefined
   /** A24 第三类修复：落后上游提交数（进程启动时 git rev-list 真实计算；无 git/无 upstream → null）——buildInfo 填充 update_behind */
   updateBehind?: number | null
+  /** 审计回调（组合根注入 appendAudit——gateway 不直接访问 db；model.add/save_key 落审计） */
+  audit?: (event: string, payload: Record<string, unknown>) => void
 }
 
 // ── P3 图片附加链路：附件目录 + 待注入图片（pending.json）持久化 ──
@@ -397,6 +400,7 @@ export class GatewayClient extends EventEmitter {
       case 'model.options': return this.modelOptions(params) as T
       case 'model.save_key': return this.modelSaveKey(params) as T
       case 'model.disconnect': return this.modelDisconnect(params) as T
+      case 'model.add': return this.modelAdd(params) as T
       case 'system.battery': return this.systemBattery() as T
       case 'delegation.status': return this.delegationStatus() as T
       case 'spawn_tree.save': return this.spawnTreeSave(params) as T
@@ -630,7 +634,7 @@ export class GatewayClient extends EventEmitter {
     const input = `/${name}${arg ? ` ${arg}` : ''}`
     const r = await this.kernel.commandBus.execute(input)
 
-    // 命令可能改设置（/perm 切模式、/usage range、/key set…）——发布 session.info
+    // 命令可能改设置（/perm 切模式、/usage range、/model add|set-key…）——发布 session.info
     // 让状态栏徽章/模型段等 UI 实时反映（buildInfo 内部带缓存，非高频路径）。
     try {
       this.publish({ type: 'session.info', payload: this.buildInfo() })
@@ -2204,6 +2208,8 @@ export class GatewayClient extends EventEmitter {
       providers: [...byProvider.values()].map((p) => ({
         ...p,
         models: [...new Set<string>(p.models)],
+        // 初始定位：选择器打开即落在当前模型所在提供商（此前 RPC 从不设置 → 恒落第 0 项）
+        is_current: [...new Set<string>(p.models)].includes(this.kernel.settings.model ?? ''),
         // 参考价目（USD/1M；未收录定价不显示——诚实不编）——成本敏感选型的显示数据
         prices: Object.fromEntries(
           [...new Set<string>(p.models)]
@@ -2219,14 +2225,15 @@ export class GatewayClient extends EventEmitter {
     // 兼容双契约：picker 传 { slug, api_key }，旧调用传 { key, base_url }
     const key = String(params.api_key ?? params.key ?? '')
     const baseURL = String(params.base_url ?? params.baseURL ?? '')
+    const slug = String(params.slug ?? '')
 
     if (key) {
-      this.kernel.settings.apiKeyEnc = encryptKey(key)
-      this.kernel.config.setKey('settings', 'apiKeyEnc', this.kernel.settings.apiKeyEnc)
-      // 补默认模型/端点：有 key 但 model/baseURL 缺失时 agent 会降级规则脑
-      // （提示「未配置」）——与 /key set 行为一致
-      if (!this.kernel.config.getKey('settings', 'model')) this.kernel.config.setKey('settings', 'model', resolveDefaultModel({}))
-      if (!this.kernel.config.getKey('settings', 'baseURL')) this.kernel.config.setKey('settings', 'baseURL', resolveDefaultBaseURL({}))
+      // 单一写入路径（modelRegistry.applyModelKey）：档案 → 档案 key 槽；目录厂商 → apiKeys 归属槽
+      const msg = slug.startsWith('profile:')
+        ? applyModelKey(this.kernel.config as ModelRegistryPort, key, { profileId: slug.slice('profile:'.length) })
+        : applyModelKey(this.kernel.config as ModelRegistryPort, key, slug ? { provider: slug } : {});
+      if (msg.includes('档案不存在')) return { provider: null, error: msg };
+      this.kernel.audit?.('model.set-key', { slug, source: 'picker' });
     }
     if (baseURL) {
       this.kernel.settings.baseURL = baseURL
@@ -2234,7 +2241,6 @@ export class GatewayClient extends EventEmitter {
     }
 
     // picker 期待 { provider }（含 authenticated）——返回保存后的 provider
-    const slug = String(params.slug ?? '')
     const byProvider = new Map<string, any>()
 
     for (const m of MODEL_CATALOG) {
@@ -2251,17 +2257,78 @@ export class GatewayClient extends EventEmitter {
       byProvider.get(m.provider)!.models.push(m.modelId)
     }
 
+    // 档案 slug：重建档案分组（authenticated 按档案 key 槽——保存后立即反映）
+    if (slug.startsWith('profile:')) {
+      const id = slug.slice('profile:'.length)
+      const providers = (Array.isArray((this.kernel.settings as any).providers) ? (this.kernel.settings as any).providers : []) as Array<Record<string, any>>
+      const p = providers.find(x => x.id === id)
+      if (p) {
+        return {
+          provider: {
+            slug,
+            name: p.name ?? id,
+            models: Array.isArray(p.models) ? [...new Set(p.models as string[])] : [],
+            authenticated: Boolean(p.key),
+            auth_type: 'api_key',
+            key_env: `WXNODUS_${String(id).toUpperCase()}_KEY`,
+          },
+        }
+      }
+    }
+
     return {
       provider: byProvider.get(slug) ?? { slug, authenticated: Boolean(key), models: [] },
     }
   }
 
-  private modelDisconnect(_params: Record<string, unknown>): unknown {
-    // 断开连接：清除密钥（模型选择器 ^d + 确认）
+  private modelDisconnect(params: Record<string, unknown>): unknown {
+    const slug = String(params.slug ?? '')
+    // 档案密钥：只清档案 key 槽（不动全局/其它厂商）
+    if (slug.startsWith('profile:')) {
+      const id = slug.slice('profile:'.length)
+      const providers = (Array.isArray((this.kernel.settings as any).providers) ? (this.kernel.settings as any).providers : []) as Array<Record<string, any>>
+      this.kernel.config.setKey('settings', 'providers', providers.map(p => (p.id === id ? { ...p, key: undefined } : p)))
+      this.kernel.audit?.('model.disconnect', { slug, source: 'picker' })
+      return { disconnected: true }
+    }
+    // 全局/目录厂商：清遗留单槽 + 归属槽
     this.kernel.settings.apiKeyEnc = ''
     this.kernel.config.setKey('settings', 'apiKeyEnc', '')
-
+    if (slug) {
+      const apiKeys = { ...((this.kernel.config.getKey('settings', 'apiKeys') as Record<string, string> | undefined) ?? {}) }
+      delete apiKeys[slug]
+      this.kernel.config.setKey('settings', 'apiKeys', apiKeys)
+    }
+    this.kernel.audit?.('model.disconnect', { slug: slug || 'global', source: 'picker' })
     return { disconnected: true }
+  }
+
+  /** 选择器「＋ 添加自定义接口」提交——model.add RPC（与 /model add 同一写入路径） */
+  private modelAdd(params: Record<string, unknown>): unknown {
+    const name = String(params.name ?? '').trim()
+    const baseURL = String(params.base_url ?? params.baseURL ?? '').trim()
+    const models = (Array.isArray(params.models)
+      ? params.models.map(String).map(s => s.trim()).filter(Boolean)
+      : String(params.models ?? '').split(',').map(s => s.trim()).filter(Boolean))
+    const key = params.api_key ? String(params.api_key) : undefined
+    if (!name || !/^https?:\/\//i.test(baseURL) || !models.length) {
+      return { ok: false, error: '参数不完整：需要 name（非空）、base_url（http(s)://）、models（非空）' }
+    }
+    try {
+      const r = addCustomModel(
+        this.kernel.config as ModelRegistryPort,
+        { modelIds: [...new Set(models)], baseURL, name, ...(key ? { key } : {}) },
+        (event, payload) => this.kernel.audit?.(event, payload),
+      )
+      return {
+        ok: true,
+        id: r.id,
+        message: r.message,
+        provider: { slug: `profile:${r.id}`, name, models: [...new Set(models)], authenticated: Boolean(key) },
+      }
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e).slice(0, 200) }
+    }
   }
 
   // ── 审批桥：agent 工具确认 → approval.request 事件 → approval.respond RPC ──

@@ -603,3 +603,11 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **测试**：+2（version 单一事实源一致性 + 已升级断言）；w2 进程级 smoke 改读 package.json（bump 自动同步，不再硬编码）。
 - **flake 根治**：本会话 2 次出现的 `kernel-taskRunner 双线独立日志` flake 定位为**测试竞态**（并行双线只等 children[0] 落定就读 children[1] 日志——读空文件）——测试改为等双线均 success；另附产品级修复（taskRunner finish 改挂 writer 'finish'/'error' 事件：日志刷盘后才置终态，/jobs 面板读日志绝不见残缺）。
 - **验证**：全量 2363 通过；tsc 零错误。
+
+### 13.35 /model 开放兼容 + /key 并入 /model 轮（2026-08-17 用户请求）
+
+- **开放兼容（任意 OpenAI 端点）**：`/model add <模型ID[,ID2]> --base <URL> [--name 名称] [--key 密钥]` 创建档案并激活（id 净化+去重，密钥 AES-256-GCM 落盘）；模型选择器 provider 列表新增「＋ 添加自定义接口（^a）」四字段顺序表单（名称 → 地址 → 模型ID → 密钥可空，就地校验 http(s)/非空）——提交走新 `model.add` RPC（与命令同一写入路径 modelRegistry.addCustomModel），成功后刷新列表 + 一次性 ✓ 提示。`parseModelAddArgs`/`sanitizeProfileId` 纯函数单测。
+- **/key 彻底移除、并入 /model**：`/model set-key <密钥> [--provider <档案id>]`（档案槽/目录厂商槽/遗留单槽三分支——modelRegistry.applyModelKey 单一写入路径）+ `/model key` 状态；registry/分级/secretDetect/agent 引导文案/中文别名（/密钥 → /model set-key，子命令别名拆解路由）全链迁移；`/profile` 补进 SLASH（此前对 /help 不可见）。分级：`/model set-key` redline（含裸传密钥变体）、`/model add` confirm。
+- **Gateway 修复与扩展**：model.options 补 `is_current`（选择器打开即落当前模型所在提供商——此前恒第 0 项）；save_key/disconnect 档案分支（写/清档案 key 槽，不再误写全局单槽）；新增 model.add RPC；审计经组合根注入回调（gateway 不直连 db）。
+- **TUI 路由**：`/model add|set-key|key` 走 command.dispatch；^k 直达当前 provider 密钥段（已认证可改钥）。
+- **验证**：+15 测试（modelRegistry 8、gateway is_current/save_key/disconnect/model.add 5、分级/秘密检测/别名路由/命令面 迁移更新）；全量 2384 通过；tsc 零错误；npm run build 通过（dist 实测 3.1.0）。

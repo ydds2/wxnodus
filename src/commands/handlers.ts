@@ -8,8 +8,9 @@ import { salienceFlag, salienceFromMultiplier } from './memorySalience.js';
 import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias } from './registry.js';
-import { capabilityBadges, decryptKey, detectProvider, encryptKey, filterModels, maskKey, MODEL_CATALOG, resolveApiKey } from '../kernel/providers.js';
+import { capabilityBadges, decryptKey, filterModels, maskKey, MODEL_CATALOG, resolveApiKey } from '../kernel/providers.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
+import { parseModelAddArgs, addCustomModel, applyModelKey } from '../kernel/modelRegistry.js';
 import { profileHealth } from '../kernel/profiles.js';
 import { priceForModel } from '../kernel/cost.js';
 import { sessionCost, costText } from '../kernel/costQuery.js';
@@ -301,82 +302,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // 密钥（per-provider 槽位：apiKeys.<provider> 归属存储；遗留 apiKeyEnc+keyProvider 兼容）
-  bus.register('/key', async (args) => {
-    const sub = args[0] ?? 'status';
-    const pi = args.indexOf('--profile');
-    const profileTarget = pi >= 0 ? String(args[pi + 1] ?? '').trim() : '';
-    // /key import <.env 文件>：批量导入环境变量（本次进程生效；持久化走 /key set 或 /profile set-key）
-    if (sub === 'import') {
-      const file = String(args[1] ?? '').trim();
-      if (!file) return '用法：/key import <.env 文件>（批量导入 KEY 类变量，本次进程生效）';
-      try {
-        const { readFileSync, existsSync: fe } = await import('node:fs');
-        if (!fe(file)) return `文件不存在：${file}`;
-        const lines = readFileSync(file, 'utf8').split(/\r?\n/);
-        let n = 0;
-        for (const line of lines) {
-          const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
-          if (!m || line.trim().startsWith('#') || !m[2].trim()) continue;
-          process.env[m[1]!] = m[2].replace(/^["']|["']$/g, '');
-          n++;
-        }
-        return `已导入 ${n} 个环境变量（本次进程生效；持久化请用 /key set 或 /profile set-key）`;
-      } catch (e: any) { return `导入失败：${String(e?.message ?? e).slice(0, 120)}`; }
-    }
-    const providerOf = () => detectProvider(ctx.config.getKey('settings', 'baseURL'));
-    // 写入：按当前模型 provider 归属入槽 + 遗留槽兼容（不误发给别的 provider 端点）
-    const storeKey = (plain: string) => {
-      const enc = encryptKey(plain);
-      const provider = providerOf();
-      const apiKeys = { ...((ctx.config.getKey('settings', 'apiKeys') as Record<string, string> | undefined) ?? {}) };
-      apiKeys[provider] = enc;
-      ctx.config.setKey('settings', 'apiKeys', apiKeys);
-      ctx.config.setKey('settings', 'apiKeyEnc', enc);           // 遗留单槽（向后兼容旧版本读取）
-      ctx.config.setKey('settings', 'keyProvider', provider);    // 归属标注（错配即 fail-closed）
-      // 档案密钥槽同步（接入层开放）：--profile <id> 指定档案时写入该档案 key 槽
-      if (profileTarget) {
-        const providers = (Array.isArray(ctx.config.getKey('settings', 'providers')) ? ctx.config.getKey('settings', 'providers') : []) as Array<Record<string, any>>;
-        if (providers.some((p) => p.id === profileTarget)) {
-          ctx.config.setKey('settings', 'providers', providers.map((p) => (p.id === profileTarget ? { ...p, key: enc } : p)));
-        }
-      }
-      // 补默认模型/端点：有 key 但 model/baseURL 缺失时 agent 会降级规则脑
-      // （提示「未配置」）——配置密钥即视为已配置，补齐默认并持久化
-      if (!ctx.config.getKey('settings', 'model')) ctx.config.setKey('settings', 'model', resolveDefaultModel({}));
-      if (!ctx.config.getKey('settings', 'baseURL')) ctx.config.setKey('settings', 'baseURL', resolveDefaultBaseURL({}));
-    };
-    if (sub === 'set' && args[1]) {
-      storeKey(args[1]);
-      return `密钥已配置（provider=${providerOf()}，AES-256-GCM 加密存储，绝不回显）${profileTarget ? `；已同步档案 ${profileTarget} 密钥槽` : ''}`;
-    }
-    // 兼容规则脑提示里的用法：/key <密钥> 直接配置（非已知子命令视为密钥）
-    if (!['status', 'set', 'off', 'import'].includes(sub) && args.length >= 1) {
-      storeKey(args[0]);
-      return `密钥已配置（provider=${providerOf()}，AES-256-GCM 加密存储，绝不回显）${profileTarget ? `；已同步档案 ${profileTarget} 密钥槽` : ''}`;
-    }
-    if (sub === 'off') {
-      const apiKeys = { ...((ctx.config.getKey('settings', 'apiKeys') as Record<string, string> | undefined) ?? {}) };
-      delete apiKeys[providerOf()];
-      ctx.config.setKey('settings', 'apiKeys', apiKeys);
-      ctx.config.setKey('settings', 'apiKeyEnc', '');
-      ctx.config.setKey('settings', 'keyProvider', '');
-      return '密钥已清除（对话将提示配置，直到重新 /key set）';
-    }
-    const settings = ctx.config.get('settings') as Record<string, any>;
-    const keyRes = resolveApiKey(settings);
-    if (!keyRes.key) {
-      if (keyRes.error === 'provider-mismatch') return `密钥状态：${c('provider 不符', '33')}——${keyRes.hint}`;
-      return `密钥状态：${c('未配置', '33')}——/key set <密钥> 配置后获得完整能力`;
-    }
-    // 验证可解密 + 展示归属（per-provider 槽位多 key 时列出全部 provider）
-    const dec = keyRes.key;
-    const apiKeys = (settings.apiKeys as Record<string, string> | undefined) ?? {};
-    const decrypted = Object.entries(apiKeys).map(([p, e]) => `${p}:${decryptKey(e) ? c('✓', '32') : c('✗', '31')}`).join(' ');
-    const extra = Object.keys(apiKeys).length > 1 ? `（各 provider：${decrypted}）` : '';
-    return keyRes.source === 'enc'
-      ? `密钥状态：${c('已配置', '32')}（${maskKey(dec)} · provider=${keyRes.provider}）${extra}`
-      : `密钥状态：${c('已配置（环境变量）', '32')}（${maskKey(dec)} · provider=${keyRes.provider}）`;
-  });
+  // 已并入 /model：密钥配置 → /model set-key，密钥状态 → /model key（原 /key 命令移除）
 
   bus.register('/version', () => `WxNodus ${WXNODUS_VERSION} · 概念进·证据出`);
 
@@ -394,8 +320,50 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return '当前模式：' + ctx.getMode() + '（可选：smart 更改前确认 / auto 自动编辑 / goal loop-goal / manual 全量确认 / plan 计划模式 / yolo 完全访问）';
   });
 
-  // 模型选择（无参 → 打开交互选择器；有参 → 模糊过滤+目录查找直接切换）
+  // 模型与密钥统一入口（/key 已并入）：
+  //   /model            → 打开选择器（含「＋ 添加自定义接口」表单与密钥段）
+  //   /model <模型ID>   → 切换（目录/档案命中直切）
+  //   /model add <模型ID[,ID2]> --base <URL> [--name 名称] [--key 密钥] → 添加任意 OpenAI 兼容接口
+  //   /model set-key <密钥> [--provider <档案id>] → 密钥配置
+  //   /model key        → 密钥状态
   bus.register('/model', (args) => {
+    const sub = args[0] ?? '';
+    // /model set-key <密钥> [--provider <档案id>]：密钥配置（原 /key set 迁入——单一写入路径 modelRegistry.applyModelKey）
+    if (sub === 'set-key') {
+      const pi = args.indexOf('--provider');
+      const providerTarget = pi >= 0 ? String(args[pi + 1] ?? '').trim() : '';
+      const secret = args.slice(1, pi >= 0 ? pi : args.length).join(' ').trim();
+      if (!secret) return '用法：/model set-key <密钥> [--provider <档案id>]（AES-256-GCM 加密存储，绝不回显；不带密钥可在选择器内配置）';
+      return applyModelKey(ctx.config, secret, providerTarget ? { profileId: providerTarget } : {});
+    }
+    // /model key：密钥状态（原 /key status 迁入）
+    if (sub === 'key') {
+      const settings = ctx.config.get('settings') as Record<string, any>;
+      const keyRes = resolveApiKey(settings);
+      if (!keyRes.key) {
+        if (keyRes.error === 'provider-mismatch') return `密钥状态：${c('provider 不符', '33')}——${keyRes.hint}`;
+        return `密钥状态：${c('未配置', '33')}——/model set-key <密钥> 配置后获得完整能力`;
+      }
+      // 验证可解密 + 展示归属（per-provider 槽位多 key 时列出全部 provider）
+      const dec = keyRes.key;
+      const apiKeys = (settings.apiKeys as Record<string, string> | undefined) ?? {};
+      const decrypted = Object.entries(apiKeys).map(([p, e]) => `${p}:${decryptKey(e) ? c('✓', '32') : c('✗', '31')}`).join(' ');
+      const extra = Object.keys(apiKeys).length > 1 ? `（各 provider：${decrypted}）` : '';
+      return keyRes.source === 'enc'
+        ? `密钥状态：${c('已配置', '32')}（${maskKey(dec)} · provider=${keyRes.provider}）${extra}`
+        : `密钥状态：${c('已配置（环境变量）', '32')}（${maskKey(dec)} · provider=${keyRes.provider}）`;
+    }
+    // /model add：添加任意 OpenAI 兼容接口（选择器表单同一写入路径 modelRegistry.addCustomModel）
+    if (sub === 'add') {
+      const parsed = parseModelAddArgs(args.slice(1));
+      if (!parsed) return '用法：/model add <模型ID[,模型ID2]> --base <接口地址> [--name <名称>] [--key <密钥>]（任意 OpenAI 兼容端点）';
+      try {
+        const r = addCustomModel(ctx.config, parsed, (event, payload) => {
+          try { appendAudit(ctx.db, event, payload); } catch { /* 审计表未就绪静默 */ }
+        });
+        return r.message;
+      } catch (e: any) { return `添加失败：${String(e?.message ?? e).slice(0, 120)}`; }
+    }
     const q = args.join(' ');
     if (q) {
       // UI 模型选择器传入的是命令串（"modelId --provider slug [--global|--session]"），

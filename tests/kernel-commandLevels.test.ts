@@ -16,8 +16,8 @@ describe('分级表白名单完整性', () => {
       expect(COMMAND_LEVEL_LABEL[lv as CommandLevel]).toBeTruthy();
     }
   });
-  it('子命令键存在（/key set、/perm rule、/security sudo on 等精确键）', () => {
-    for (const key of ['/key set', '/perm rule', '/security sudo on', '/script run', '/yolo']) {
+  it('子命令键存在（/model set-key、/perm rule、/security sudo on 等精确键）', () => {
+    for (const key of ['/model set-key', '/model add', '/perm rule', '/security sudo on', '/script run', '/yolo']) {
       expect(COMMAND_LEVELS[key], `缺少子命令分级: ${key}`).toBeTruthy();
     }
   });
@@ -43,8 +43,9 @@ describe('classifyCommand 分级命中', () => {
   });
   it('redline：权限/密钥/安全/退出', () => {
     expect(classifyCommand('/yolo on')).toBe('redline');
-    expect(classifyCommand('/key set sk-xxx')).toBe('redline');
-    expect(classifyCommand('/key abc123')).toBe('redline'); // 直接传密钥
+    expect(classifyCommand('/model set-key sk-xxx')).toBe('redline');
+    expect(classifyCommand('/model sk-abc123')).toBe('redline'); // 直接传密钥（不带子命令）
+    expect(classifyCommand('/密钥 sk-abc123')).toBe('redline');   // 中文别名 → /model set-key
     expect(classifyCommand('/self-evolve')).toBe('redline');
     expect(classifyCommand('/perm auto')).toBe('redline');
     expect(classifyCommand('/perm rule add fs_write allow')).toBe('redline');
@@ -55,9 +56,10 @@ describe('classifyCommand 分级命中', () => {
 });
 
 describe('classifyCommand 边界', () => {
-  it('子命令最长前缀优先（/key 是 confirm，/key set 是 redline）', () => {
-    expect(classifyCommand('/key')).toBe('confirm');
-    expect(classifyCommand('/key set sk-xxx')).toBe('redline');
+  it('子命令最长前缀优先（/model 是 confirm，/model set-key 是 redline）', () => {
+    expect(classifyCommand('/model')).toBe('confirm');
+    expect(classifyCommand('/model set-key sk-xxx')).toBe('redline');
+    expect(classifyCommand('/model add foo --base https://x')).toBe('confirm');
     expect(classifyCommand('/security status')).toBe('safe');
     expect(classifyCommand('/security sudo off')).toBe('confirm');
   });

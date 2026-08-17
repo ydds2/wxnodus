@@ -4,12 +4,24 @@ import { describe, expect, it } from 'vitest'
 import { detectSecretInTranscript } from '../src/kernel/secretDetect.js'
 
 describe('detectSecretInTranscript — 语音转写敏感检测', () => {
-  it('/key set sk-xxx 命中 keyCommand 并提取密钥', () => {
-    const r = detectSecretInTranscript('/key set sk-abc123DEF456ghi789')
+  it('/model set-key sk-xxx 命中 keyCommand 并提取密钥（/key 已并入 /model）', () => {
+    const r = detectSecretInTranscript('/model set-key sk-abc123DEF456ghi789')
     expect(r?.kind).toBe('keyCommand')
     expect(r?.secret).toBe('sk-abc123DEF456ghi789')
     expect(r?.redacted).not.toContain('sk-abc123DEF456ghi789')
     expect(r?.redacted).toContain('••••')
+  })
+
+  it('/model set-key 单独出现（无密钥）→ keyCommand 引导', () => {
+    const r = detectSecretInTranscript('/model set-key')
+    expect(r?.kind).toBe('keyCommand')
+    expect(r?.secret).toBe('')
+  })
+
+  it('旧转写 /key set sk-xxx 仍命中（兼容老习惯/历史转写）', () => {
+    const r = detectSecretInTranscript('/key set sk-abc123DEF456ghi789')
+    expect(r?.kind).toBe('keyCommand')
+    expect(r?.secret).toBe('sk-abc123DEF456ghi789')
   })
 
   it('裸 /key <密钥> 变体同样命中', () => {

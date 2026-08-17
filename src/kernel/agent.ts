@@ -340,7 +340,7 @@ export function createAgent(opts: AgentOptions) {
       }
       return {
         type: 'text',
-        content: '离线模型未下载——请用 /offline pack download 预下载后断网可用（或 /key set 配置云端密钥）。',
+        content: '离线模型未下载——请用 /offline pack download 预下载后断网可用（或 /model set-key 配置云端密钥）。',
       };
     }
 
@@ -351,7 +351,7 @@ export function createAgent(opts: AgentOptions) {
       return {
         type: 'text',
         content: q.trim()
-          ? '当前未配置模型密钥，所有回答需要 AI 模型提供。请用 /key set <密钥> 配置后重试（配置类命令不受影响）。'
+          ? '当前未配置模型密钥，所有回答需要 AI 模型提供。请用 /model set-key <密钥> 配置后重试（配置类命令不受影响）。'
           : '（空输入）',
       };
     }

@@ -9,6 +9,7 @@ import { createMemory } from '../src/kernel/memory.js';
 import { createEventBus } from '../src/kernel/events.js';
 import { createCommandBus } from '../src/app/CommandBus.js'
 import { createTuiPresentationAdapter } from '../src/presentation/tui/tuiPresentationAdapter.js';
+import { encryptKey, decryptKey } from '../src/kernel/providers.js';
 
 let dir: string;
 let db: ReturnType<typeof openDB>;
@@ -38,14 +39,21 @@ function makeGateway(settings: Record<string, any> = {}) {
     getSessionId: () => 's1',
     steer: () => true,
   };
+  // 与生产同构：config 与 kernel.settings 共享同一稳定引用（createConfig 写穿透语义）
+  const settingsObj: Record<string, any> = { model: 'glm-4v-flash', ...settings };
+  const config = {
+    get: (p: string) => (p === 'settings' ? settingsObj : {}),
+    getKey: (p: string, k: string) => (p === 'settings' ? settingsObj[k] : undefined),
+    setKey: (p: string, k: string, v: unknown) => { if (p === 'settings') settingsObj[k] = v; },
+  };
   const kernel = {
     dataDir: dir,
     cwd: process.cwd(),
     db,
     mem,
-    config: { get: () => ({}), getKey: () => undefined },
+    config,
     bus,
-    settings: { model: 'glm-4v-flash', ...settings },
+    settings: settingsObj,
     commandBus: createCommandBus(),
     // W3 TUI facade：db/agent 原始句柄经 presentation adapter 进入 GatewayClient
     adapter: createTuiPresentationAdapter({ db, agent: agent as never }),
@@ -842,6 +850,70 @@ describe('model.options 参考价目', () => {
     expect(zhipu.prices['glm-4-flash']).toEqual({ in: 0, out: 0 });
     const prof = r.providers.find((p: any) => p.slug === 'profile:relay1')!;
     expect(prof.prices['custom-a']).toBeUndefined();
+  });
+});
+
+describe('model.options is_current 初始定位（选择器落在当前模型所在提供商）', () => {
+  it('当前模型所在提供商 is_current=true，其余 false', async () => {
+    const g = makeGateway({ model: 'glm-4v-flash' });
+    const r = await gre(g, 'model.options', {});
+    const cur = r.providers.filter((p: any) => p.is_current === true);
+    expect(cur).toHaveLength(1);
+    expect(cur[0]!.slug).toBe('zhipu'); // glm-4v-flash 属 zhipu 组
+  });
+  it('档案模型为当前模型 → profile 组 is_current=true（catalog 组全 false）', async () => {
+    const g = makeGateway({ model: 'custom-a' });
+    (g as any).kernel.settings.providers = [{ id: 'relay1', name: '中转站', baseURL: 'https://r.example.com/v1', models: ['custom-a'] }];
+    const r = await gre(g, 'model.options', {});
+    const cur = r.providers.filter((p: any) => p.is_current === true);
+    expect(cur).toHaveLength(1);
+    expect(cur[0]!.slug).toBe('profile:relay1');
+  });
+});
+
+describe('model.save_key / model.disconnect / model.add（/key 并入 /model 的 RPC 面）', () => {
+  it('save_key 档案 slug → 写档案 key 槽并激活（不动全局单槽）', async () => {
+    const g = makeGateway({ model: 'custom-a' });
+    (g as any).kernel.settings.providers = [{ id: 'relay1', name: '中转站', baseURL: 'https://r.example.com/v1', models: ['custom-a'] }];
+    const r = await gre(g, 'model.save_key', { slug: 'profile:relay1', api_key: 'sk-r1' });
+    expect(r.provider.slug).toBe('profile:relay1');
+    expect(r.provider.authenticated).toBe(true);
+    const providers = (g as any).kernel.settings.providers as Array<Record<string, any>>;
+    expect(decryptKey(String(providers[0]!.key))).toBe('sk-r1');
+    expect((g as any).kernel.settings.activeProvider).toBe('relay1');
+    expect((g as any).kernel.settings.baseURL).toBe('https://r.example.com/v1');
+  });
+  it('save_key 目录厂商 slug → 密钥入该厂商 apiKeys 槽', async () => {
+    const g = makeGateway({});
+    await gre(g, 'model.save_key', { slug: 'zhipu', api_key: 'sk-z' });
+    const apiKeys = (g as any).kernel.settings.apiKeys as Record<string, string>;
+    expect(decryptKey(String(apiKeys['zhipu']))).toBe('sk-z');
+    expect((g as any).kernel.settings.keyProvider).toBe('zhipu');
+  });
+  it('disconnect 档案 slug → 只清档案 key 槽；全局单槽不受影响', async () => {
+    const g = makeGateway({ apiKeyEnc: encryptKey('global-key') });
+    (g as any).kernel.settings.providers = [{ id: 'relay1', name: '中转站', baseURL: 'https://r.example.com/v1', models: ['custom-a'], key: encryptKey('sk-r1') }];
+    const r = await gre(g, 'model.disconnect', { slug: 'profile:relay1' });
+    expect(r.disconnected).toBe(true);
+    const providers = (g as any).kernel.settings.providers as Array<Record<string, any>>;
+    expect(providers[0]!.key).toBeUndefined();
+    expect((g as any).kernel.settings.apiKeyEnc).toBeTruthy(); // 全局密钥保留
+  });
+  it('model.add → 创建档案 + 激活 + 返回 provider；缺参诚实报错', async () => {
+    const g = makeGateway({});
+    const r = await gre(g, 'model.add', { name: '我的中转', base_url: 'https://relay.example.com/v1', models: ['gpt-4o-mini', 'o3-mini'], api_key: 'sk-add' });
+    expect(r.ok).toBe(true);
+    expect(r.id).toBe('custom'); // 「我的中转」全非法字符 → sanitize 回退 custom
+    expect(r.provider.slug).toBe('profile:custom');
+    expect(r.provider.authenticated).toBe(true);
+    const providers = (g as any).kernel.settings.providers as Array<Record<string, any>>;
+    expect(providers).toHaveLength(1);
+    expect(decryptKey(String(providers[0]!.key))).toBe('sk-add');
+    expect((g as any).kernel.settings.activeProvider).toBe('custom');
+    expect((g as any).kernel.settings.model).toBe('gpt-4o-mini');
+    const bad = await gre(g, 'model.add', { name: 'x', models: ['m'] });
+    expect(bad.ok).toBe(false);
+    expect(bad.error).toContain('base_url');
   });
 });
 

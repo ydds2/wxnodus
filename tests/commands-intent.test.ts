@@ -58,6 +58,13 @@ describe('NL 路由边界（防误劫持）', () => {
     expect(r.kind).toBe('command');
     expect(r.cmd).toBe('/perm');
   });
+  // /密钥 → /model set-key（/key 已并入 /model；子命令别名拆解为顶层命令 + 前缀参数）
+  it('中文别名 /密钥 → /model set-key（密钥操作并入 /model）', async () => {
+    const r = await routeInput('/密钥');
+    expect(r.kind).toBe('command');
+    expect(r.cmd).toBe('/model');
+    expect((r as { value?: string }).value).toBe('set-key');
+  });
   it('/help 精确命中（无补全漂移）', async () => {
     const r = await routeInput('/help');
     expect(r.cmd).toBe('/help');
@@ -76,5 +83,14 @@ describe('成本/余额自然语言直达（说人话）', () => {
   });
   it('token 用量短语仍走 /usage（不被成本劫持）', () => {
     expect(routeNaturalLanguage('用了多少 token')).toBe('/usage');
+  });
+});
+
+describe('模型切换/添加自然语言直达（说人话）', () => {
+  it('换模型/加接口短语 → /model（选择器含添加表单）', () => {
+    expect(routeNaturalLanguage('换个模型')).toBe('/model');
+    expect(routeNaturalLanguage('切换模型')).toBe('/model');
+    expect(routeNaturalLanguage('加个自定义接口')).toBe('/model');
+    expect(routeNaturalLanguage('添加一个模型')).toBe('/model');
   });
 });

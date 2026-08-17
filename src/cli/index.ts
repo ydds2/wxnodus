@@ -7,6 +7,7 @@ import { mkdirSync, appendFileSync, readFileSync } from 'node:fs';
 import { parseCronExpr, parseIntervalExpr, cronMatches } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { resolveDataDir } from '../kernel/paths.js';
+import { appendAudit } from '../store/db.js';
 // W3-01：完成终态 → 退出码共享映射（failure 不藏在 exit 0 后面）
 import { processExitForCompletion } from '../protocol/completionTransport.js';
 // W3-02：wire 入口前端——事件流经纯投影管线，终态走共享 completionTransport（headless，无 React）
@@ -706,6 +707,10 @@ if (pre.mode === 'error') {
       },
     }),
     dataDir, cwd, settings, reloadMcp, updateBehind,
+    // 审计回调（组合根注入——gateway 不直接访问 db；model.add/save_key 落审计）
+    audit: (event, payload) => {
+      try { appendAudit(db, event, payload); } catch { /* 审计表未就绪静默 */ }
+    },
     // A24 第三类修复：MCP 服务器真实状态（连接/工具数/传输方式）——buildInfo 填充 mcp_servers
     mcpStatus: () => getMcpClients().map(c => ({
       connected: c.connected,

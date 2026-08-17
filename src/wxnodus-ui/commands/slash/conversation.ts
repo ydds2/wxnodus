@@ -72,6 +72,17 @@ export const sessionCommands: SlashCommand[] = [
         return patchOverlayState({ modelPicker: true })
       }
 
+      // /model add|set-key|key：密钥/接口管理子命令——走内核命令面（command.dispatch）
+      // （与选择器内表单/RPC 同一写入路径；/key 已并入 /model）
+      const firstToken = arg.trim().split(/\s+/)[0] ?? ''
+      if (firstToken === 'add' || firstToken === 'set-key' || firstToken === 'key') {
+        return ctx.gateway.rpc('command.dispatch', { name: 'model', arg: arg.trim(), session_id: ctx.sid }).then(
+          ctx.guarded<{ output?: string; ok?: boolean }>(r => {
+            if (r && typeof r.output === 'string') ctx.transcript.sys(r.output)
+          })
+        )
+      }
+
       const switchModel = (confirmExpensiveModel = false) => ctx.gateway
         .rpc<ConfigSetResponse>('config.set', { confirm_expensive_model: confirmExpensiveModel, key: 'model', session_id: ctx.sid, value: modelValueForConfigSet(arg) })
         .then(

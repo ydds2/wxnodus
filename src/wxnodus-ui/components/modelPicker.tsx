@@ -16,7 +16,15 @@ const VISIBLE = 12
 const MIN_WIDTH = 40
 const MAX_WIDTH = 90
 
-type Stage = 'provider' | 'key' | 'model' | 'disconnect'
+type Stage = 'provider' | 'key' | 'model' | 'disconnect' | 'add'
+
+/** 添加自定义接口表单：四字段顺序（名称 → 地址 → 模型ID → 密钥可空） */
+const ADD_FIELDS = [
+  { label: '名称（显示名）', hint: '如：我的中转站', required: true },
+  { label: '接口地址（OpenAI 兼容）', hint: '如：https://relay.example.com/v1', required: true },
+  { label: '模型ID（逗号分隔）', hint: '如：gpt-4o-mini,o3-mini', required: true },
+  { label: 'API 密钥（可选，Enter 跳过）', hint: 'sk-…（可留空，稍后 ^k 配置）', required: false },
+] as const
 
 export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect, sessionId, t }: ModelPickerProps) {
   const [providers, setProviders] = useState<ModelOptionProvider[]>([])
@@ -30,6 +38,14 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   const [keyInput, setKeyInput] = useState('')
   const [keySaving, setKeySaving] = useState(false)
   const [keyError, setKeyError] = useState('')
+  // 添加自定义接口表单状态（四字段顺序推进；提交经 model.add RPC——与 /model add 同一写入路径）
+  const [addField, setAddField] = useState(0)
+  const [addInput, setAddInput] = useState('')
+  const [addValues, setAddValues] = useState({ name: '', baseURL: '', models: '', key: '' })
+  const [addSaving, setAddSaving] = useState(false)
+  const [addError, setAddError] = useState('')
+  // 添加成功后的一次性提示（provider 阶段展示，下次打开清空）
+  const [notice, setNotice] = useState('')
   // Type-to-filter query, scoped per stage (cleared on stage change).
   const [filter, setFilter] = useState('')
   // A13 修复：过滤前选中位置（清过滤后恢复，参考 providerIndexAfterClearingFilter 同款）
@@ -136,12 +152,15 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
       return
     }
 
-    if (stage === 'model' || stage === 'key' || stage === 'disconnect') {
+    if (stage === 'model' || stage === 'key' || stage === 'disconnect' || stage === 'add') {
       setStage('provider')
       setModelIdx(0)
       setKeyInput('')
       setKeyError('')
       setKeySaving(false)
+      setAddInput('')
+      setAddError('')
+      setAddSaving(false)
       setFilter('')
 
       return
@@ -228,9 +247,85 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
       })
   }
 
+  /** 添加表单：Enter 推进字段（校验就地报错）；最后一字段 Enter → model.add 提交 */
+  const addAdvance = () => {
+    const field = ADD_FIELDS[addField]!
+    const value = addInput.trim()
+    const next = { ...addValues }
+    if (addField === 0) next.name = value
+    else if (addField === 1) next.baseURL = value
+    else if (addField === 2) next.models = value
+    else next.key = addInput.trim()
+
+    if (field.required && !value) {
+      setAddError(`「${field.label}」不能为空`)
+      return
+    }
+    if (addField === 1 && !/^https?:\/\//i.test(value)) {
+      setAddError('接口地址需以 http(s):// 开头')
+      return
+    }
+
+    setAddError('')
+    setAddValues(next)
+
+    if (addField < ADD_FIELDS.length - 1) {
+      setAddField(f => f + 1)
+      setAddInput('')
+      return
+    }
+
+    // 最后字段提交（密钥可为空）
+    const modelIds = next.models.split(',').map(s => s.trim()).filter(Boolean)
+    if (!modelIds.length) {
+      setAddError('「模型ID」不能为空')
+      return
+    }
+    setAddSaving(true)
+    gw.request<{ ok?: boolean; id?: string; message?: string; provider?: ModelOptionProvider; error?: string }>('model.add', {
+      name: next.name,
+      base_url: next.baseURL,
+      models: modelIds,
+      ...(next.key ? { api_key: next.key } : {}),
+      ...(sessionId ? { session_id: sessionId } : {}),
+    })
+      .then(raw => {
+        const r = asRpcResult<{ ok?: boolean; id?: string; message?: string; provider?: ModelOptionProvider; error?: string }>(raw)
+        if (!r?.ok || !r.provider) {
+          setAddError(r?.error || '添加失败（参数不完整）')
+          setAddSaving(false)
+          return
+        }
+        // 刷新列表 → 新档案分组可见；提示一次性成功消息
+        setNotice(`已添加 ${r.provider.name}（${(r.provider.models ?? []).join('、')}）并切换为 ${r.provider.models?.[0] ?? ''}`)
+        setAddSaving(false)
+        setAddField(0)
+        setAddInput('')
+        setAddValues({ name: '', baseURL: '', models: '', key: '' })
+        setStage('provider')
+        setFilter('')
+        setProviderIdx(prev => prev)
+        // 重新拉取 model.options（新档案立即出现在列表）
+        gw.request<ModelOptionsResponse>('model.options', sessionId ? { session_id: sessionId } : {})
+          .then(raw2 => {
+            const r2 = asRpcResult<ModelOptionsResponse>(raw2)
+            if (r2) {
+              setProviders(r2.providers ?? [])
+              setCurrentModel(String(r2.model ?? ''))
+              const cur = Math.max(0, (r2.providers ?? []).findIndex(p => p.is_current))
+              setProviderIdx(cur)
+            }
+          })
+          .catch(() => { /* 刷新失败保留旧列表 */ })
+      })
+      .catch((e: unknown) => {
+        setAddError(rpcErrorMessage(e))
+        setAddSaving(false)
+      })
+  }
+
   // A24：断开确认（键盘 y/Enter 与鼠标按钮共用）——真实 RPC model.disconnect
-  const confirmDisconnect = () => {
-    if (!provider) {
+  const confirmDisconnect = () => {    if (!provider) {
       setStage('provider')
 
       return
@@ -269,6 +364,38 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   }
 
   useInput((ch, key) => {
+    // Add-custom-interface form stage handles its own input
+    if (stage === 'add') {
+      if (addSaving) {
+        return
+      }
+
+      if (key.return) {
+        addAdvance()
+
+        return
+      }
+
+      if (key.backspace || key.delete) {
+        setAddInput(v => v.slice(0, -1))
+
+        return
+      }
+
+      // ctrl+u clears input
+      if (ch === '\u0015') {
+        setAddInput('')
+
+        return
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        setAddInput(v => v + ch)
+      }
+
+      return
+    }
+
     // Key entry stage handles its own input
     if (stage === 'key') {
       if (keySaving) {
@@ -391,6 +518,28 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
       return
     }
 
+    // 添加自定义接口（Ctrl+A）：provider 阶段直达 add 表单（开放兼容——任意 OpenAI 端点）
+    if (key.ctrl && ch === 'a' && stage === 'provider') {
+      setStage('add')
+      setAddField(0)
+      setAddInput('')
+      setAddError('')
+      setFilter('')
+      setNotice('')
+
+      return
+    }
+
+    // 密钥（Ctrl+K）：provider 阶段直达当前提供商的 key 段（已认证也可改钥——/key 已并入 /model）
+    if (key.ctrl && ch === 'k' && stage === 'provider' && provider?.auth_type === 'api_key') {
+      setStage('key')
+      setKeyInput('')
+      setKeyError('')
+      setFilter('')
+
+      return
+    }
+
     // Any other printable single character extends the filter.
     if (ch && !key.ctrl && !key.meta && ch.length === 1 && ch >= ' ') {
       // A13：过滤首字符时记录当前选中（清过滤后恢复）
@@ -419,7 +568,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   if (!providers.length) {
     return (
       <Box flexDirection="column">
-        <Text color={t.color.muted}>无可用提供商（/key 配置模型密钥）</Text>
+        <Text color={t.color.muted}>无可用提供商（/model set-key 配置密钥，或 /model add 添加自定义接口）</Text>
         <OverlayHint t={t}>Esc/q 取消</OverlayHint>
       </Box>
     )
@@ -489,6 +638,74 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
         </Box>
 
         <OverlayHint t={t}>Enter 保存 · Ctrl+U 清空 · Esc 返回 · 鼠标点击按钮</OverlayHint>
+      </Box>
+    )
+  }
+
+  // ── Add custom interface stage（＋ 添加自定义接口——四字段顺序表单）───
+  if (stage === 'add') {
+    const field = ADD_FIELDS[addField]!
+    const masked = addField === 3 && addInput ? '•'.repeat(Math.min(addInput.length, 40)) : addInput
+
+    return (
+      <Box flexDirection="column" width={width}>
+        <Text bold color={t.color.accent} wrap="truncate-end">
+          {icon('satellite')} 添加自定义接口（任意 OpenAI 兼容）
+        </Text>
+
+        <Text color={t.color.muted} wrap="truncate-end">
+          第 {addField + 1}/{ADD_FIELDS.length} 步 · {field.label} · Enter 继续
+        </Text>
+
+        <Text color={t.color.muted} wrap="truncate-end">
+          {field.hint}
+        </Text>
+
+        <Text color={t.color.muted} wrap="truncate-end">
+          {' '}
+        </Text>
+
+        <Text color={t.color.accent} wrap="truncate-end">
+          {'  '}
+          {masked || '（空）'}
+          {addSaving ? '' : '▎'}
+        </Text>
+
+        <Text color={t.color.muted} wrap="truncate-end">
+          {' '}
+        </Text>
+
+        {addError ? (
+          <Text color={t.color.label} wrap="truncate-end">
+            错误：{addError}
+          </Text>
+        ) : addSaving ? (
+          <Text color={t.color.muted} wrap="truncate-end">
+            添加中…
+          </Text>
+        ) : (
+          <Text color={t.color.muted} wrap="truncate-end">
+            {' '}
+          </Text>
+        )}
+
+        <Box flexDirection="row">
+          <Box onClick={addAdvance}>
+            <Text bold color={addInput.trim() || !field.required ? t.color.accent : t.color.muted}>
+              {icon('submit')} {addField < ADD_FIELDS.length - 1 ? '下一步' : '提交'}
+            </Text>
+          </Box>
+          <Text>{'   '}</Text>
+          <Box onClick={() => setAddInput('')}>
+            <Text color={t.color.muted}>Ctrl+U 清空</Text>
+          </Box>
+          <Text>{'   '}</Text>
+          <Box onClick={() => setStage('provider')}>
+            <Text color={t.color.muted}>Esc 返回</Text>
+          </Box>
+        </Box>
+
+        <OverlayHint t={t}>Enter 下一步/提交 · Ctrl+U 清空 · Esc 返回 · 鼠标点击按钮</OverlayHint>
       </Box>
     )
   }
@@ -620,6 +837,30 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
           {offset + VISIBLE < rows.length ? ` ↓ ${rows.length - offset - VISIBLE} 更多` : ' '}
         </Text>
 
+        {notice ? (
+          <Text color={t.color.ok} wrap="truncate-end">
+            ✓ {notice}
+          </Text>
+        ) : (
+          <Text color={t.color.muted} wrap="truncate-end">
+            {' '}
+          </Text>
+        )}
+
+        {/* 开放兼容入口：＋ 添加自定义接口（任意 OpenAI 端点）——Enter 语义经 ^a 直达，点击同义 */}
+        <Box onClick={() => {
+          setStage('add')
+          setAddField(0)
+          setAddInput('')
+          setAddError('')
+          setFilter('')
+          setNotice('')
+        }}>
+          <Text color={t.color.accent} wrap="truncate-end">
+            {'＋ 添加自定义接口（任意 OpenAI 兼容）· ^a'}
+          </Text>
+        </Box>
+
         {/* A24：持久化切换可点（^g 同语义） */}
         <Box onClick={() => allowPersistGlobal && setPersistGlobal(v => !v)}>
           <Text color={t.color.muted} wrap="truncate-end">
@@ -627,7 +868,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
             {allowPersistGlobal ? ' · ^g 切换（点击切换）' : '（仅会话）'}
           </Text>
         </Box>
-        <OverlayHint t={t}>↑/↓ 选择 · Enter 选用 · 鼠标点击直达 · ^d 断开 · Esc 清空/返回 · q 关闭</OverlayHint>
+        <OverlayHint t={t}>↑/↓ 选择 · Enter 选用 · 鼠标点击直达 · ^k 密钥 · ^a 添加接口 · ^d 断开 · Esc 清空/返回 · q 关闭</OverlayHint>
       </Box>
     )
   }

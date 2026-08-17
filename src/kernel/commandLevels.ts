@@ -37,7 +37,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   // ── confirm：常规副作用，走现有模式确认链 ──
   '/clear': 'confirm', '/undo': 'confirm', '/resume': 'confirm', '/new': 'confirm', '/title': 'confirm',
   '/fork': 'confirm', '/checkpoint': 'confirm', '/snapshot': 'confirm', '/model': 'confirm',
-  '/thinking': 'confirm', '/hooks': 'confirm', '/key': 'confirm',
+  '/model add': 'confirm', '/thinking': 'confirm', '/hooks': 'confirm',
   '/compact': 'confirm', '/digest': 'confirm', '/curator': 'confirm',
   '/build': 'confirm', '/forge': 'confirm', '/skill': 'confirm', '/skill new': 'confirm',
   '/skill install': 'confirm', '/learn': 'confirm', '/assimilate': 'confirm', '/gate': 'confirm', '/fdr': 'confirm',
@@ -49,7 +49,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/mcp': 'confirm', '/plugin': 'confirm', '/proxy': 'confirm', '/webhook': 'confirm',
   '/profile': 'confirm', '/profile add': 'confirm', '/profile use': 'confirm', '/profile set-key': 'confirm', '/profile rm': 'confirm',
   '/balance': 'confirm', '/balance set': 'confirm', '/balance refresh': 'confirm', '/balance on': 'confirm', '/balance off': 'confirm', '/balance threshold': 'confirm', '/balance auto-stop': 'confirm',
-  '/key import': 'confirm', '/config import': 'confirm',
+  '/config import': 'confirm',
   '/a2a': 'confirm', '/acp': 'confirm', '/download': 'confirm', '/swarm': 'confirm', '/duo': 'confirm',
   '/cron': 'confirm', '/cron add': 'confirm', '/cron del': 'confirm', '/timer': 'confirm',
   '/delegate': 'confirm', '/goal': 'confirm', '/btw': 'confirm',
@@ -80,7 +80,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/perm smart': 'redline', '/perm auto': 'redline', '/perm manual': 'redline', '/perm plan': 'redline',
   '/perm yolo': 'redline', '/perm goal': 'redline', '/perm rule': 'redline',
   '/sandbox L0': 'redline', '/sandbox L1': 'redline', '/sandbox L2': 'redline', '/sandbox L3': 'redline',
-  '/key set': 'redline', '/key off': 'redline', '/self-evolve': 'redline',
+  '/model set-key': 'redline', '/self-evolve': 'redline',
   '/security sudo on': 'redline', '/security secret on': 'redline', '/security all': 'redline',
   '/plan on': 'redline', '/plan off': 'redline',
 };
@@ -90,7 +90,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
 // 漏网为 confirm——redline 语义「AI 通道一律拒绝」被降级为「用户确认后可执行」）
 export const ALIASES: Record<string, string> = {
   '/帮助': '/help', '/退出': '/quit', '/清空': '/clear', '/会话': '/sessions', '/恢复': '/resume',
-  '/体检': '/doctor', '/状态': '/status', '/模型': '/model', '/密钥': '/key', '/版本': '/version',
+  '/体检': '/doctor', '/状态': '/status', '/模型': '/model', '/密钥': '/model set-key', '/版本': '/version',
   '/记忆': '/memory', '/黑洞': '/hole', '/压缩': '/compact', '/构建': '/build', '/部署': '/deploy',
   '/锻造': '/forge', '/技能': '/skill', '/权限': '/perm', '/沙盒': '/sandbox', '/合规': '/compliance',
   '/授权': '/consent', '/备份': '/backup', '/导出': '/export', '/主题': '/theme', '/语言': '/lang',
@@ -112,10 +112,12 @@ export function classifyCommand(input: string): CommandLevel {
   const tokens = cmd.split(/\s+/);
   for (let n = tokens.length; n >= 1; n--) {
     // 审查修复：候选前缀先归一中文别名——/权限 yolo 命中 /perm yolo 的 redline 而非落 confirm
+    // （/密钥 → /model set-key 别名映射经 resolveAlias 后带空格子命令前缀也可命中）
     const lv = COMMAND_LEVELS[resolveAlias(tokens.slice(0, n).join(' '))];
     if (lv) {
-      // 密钥直接注入变体（/key <密钥> 不写子命令）→ 与 /key set 同级红线（模型不可代改密钥）
-      if (lv === 'confirm' && resolveAlias(tokens[0]!) === '/key' && tokens.length > 1 && !/^(set|off)$/i.test(tokens[1]!)) {
+      // 密钥直接注入变体（/model <密钥> 不写子命令——老习惯 /key <密钥> 同款）→ 红线（模型不可代改密钥）
+      const first = resolveAlias(tokens[0]!).split(/\s+/)[0]!;
+      if (lv === 'confirm' && (first === '/model' || first === '/key') && tokens.length > 1 && !/^(set-key|add|key)$/i.test(tokens[1]!)) {
         return 'redline';
       }
       return lv;

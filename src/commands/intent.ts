@@ -50,6 +50,8 @@ export const NL_TRIGGERS: NlTrigger[] = [
   { re: /用量|token.*(?:用了|花费)|(?:用了|花了).*token/i, cmd: '/usage' },
   { re: /审计|合规审查|留痕/i, cmd: '/audit' },
   { re: /安全通道|注入通道|sudo.*开启|secret.*开启/i, cmd: '/security' },
+  // 模型切换/添加（/model 统一入口——选择器含「＋ 添加自定义接口」表单）
+  { re: /(?:换个|换一个|切换|改成|换一下).*(?:模型)|模型.*(?:切换|换成)|加(?:个|一个).*(?:模型|接口|端点)|添加.*(?:模型|接口)/i, cmd: '/model' },
   { re: /做(?:一个)?计划|制定方案|规划(?:一下|方案)/i, cmd: '/plan' },
   { re: /派(?:子)?任务|委派|子代理.*(?:做|处理)/i, cmd: '/delegate' },
   // 黑洞同化：指定目录吸收技能 / 素材消化产出技能
@@ -86,6 +88,12 @@ export async function routeInput(text: string): Promise<{ kind: 'command' | 'too
     const headNorm = head.toLowerCase();
     let cmd = resolveAlias(headNorm);
     let argTail = rest.join(' ');
+    // 别名指向子命令（/密钥 → /model set-key）：拆为顶层命令 + 前缀参数（路由/分级两处一致）
+    const cmdParts = cmd.split(/\s+/);
+    if (cmdParts.length > 1 && SLASH.includes(cmdParts[0]!)) {
+      argTail = cmdParts.slice(1).join(' ') + (argTail ? ' ' + argTail : '');
+      cmd = cmdParts[0]!;
+    }
     if (!SLASH.includes(cmd) && head.includes(':')) {
       const [c, ...a] = head.split(':');
       const canon = resolveAlias(c.toLowerCase());

@@ -50,7 +50,7 @@ describe('无 key 配置引导（全部输出必须经 AI 模型）', () => {
     });
     const r = await agent.run('你好');
     expect(r.ok).toBe(true);
-    expect(r.text).toContain('/key set');
+    expect(r.text).toContain('/model set-key');
     expect(r.text).not.toContain('规则脑');
   });
 
@@ -1137,15 +1137,15 @@ describe('wx_cmd AI 自主调用通道（分级裁决）', () => {
     expect(approvals()).toBe(0);       // 不弹窗
   });
 
-  it('redline 级：/key set 与直接传密钥均拒绝', async () => {
+  it('redline 级：/model set-key 与直接传密钥均拒绝（/key 已并入 /model）', async () => {
     const env1 = makeCmdAgent([
-      { type: 'tool_call', name: 'wx_cmd', args: { command: '/key set sk-xxx' } },
+      { type: 'tool_call', name: 'wx_cmd', args: { command: '/model set-key sk-xxx' } },
       { type: 'text', content: 'ok1' },
     ]);
     await env1.agent.run('设置密钥');
     expect(env1.executed).toEqual([]);
     const env2 = makeCmdAgent([
-      { type: 'tool_call', name: 'wx_cmd', args: { command: '/key sk-abc' } },
+      { type: 'tool_call', name: 'wx_cmd', args: { command: '/model sk-abc' } },
       { type: 'text', content: 'ok2' },
     ]);
     await env2.agent.run('设置密钥');

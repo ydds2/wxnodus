@@ -1,7 +1,7 @@
 // src/kernel/secretDetect.ts — 语音转写敏感检测（密钥安全通道红线）
 // 语音说"设置密钥 sk-xxx"若走普通提交，明文会进会话历史并发给模型提供商——红线。
 // 本模块在 voice.transcript 注入 composer 前拦截：命中敏感模式 → 走专用通道
-// （本地 /key set 加密存储），转写文本不进历史/模型/显示。
+// （本地 /model set-key 加密存储），转写文本不进历史/模型/显示。
 // 纯函数——直接单测（合成转写文本）。
 
 export type SecretMatchKind = 'apiKey' | 'keyCommand' | 'password'
@@ -20,9 +20,9 @@ export interface SecretMatch {
 const SK_KEY_RE = /\b(sk-[A-Za-z0-9_\-]{8,})\b/
 // password/密码 赋值（中英文冒号均可；中文前无词边界——用分隔符前导替代 \b）
 const PASSWORD_RE = /(?:^|[\s，。！？、；;])(?:password|密码)\s*[:=：]\s*([^\s，。！？,.;；]+)/i
-// /key 命令变体（可能带密钥）
-const KEY_CMD_WITH = /^\/key\s+(?:set\s+)?(\S+.*)$/i
-const KEY_CMD_BARE = /^\/key\s*$/i
+// /key 已并入 /model——两种命令变体都视为密钥命令（保留 /key 正则兼容旧转写习惯）
+const KEY_CMD_WITH = /^\/(?:key(?:\s+set)?\s+|model\s+set-key\s+)(\S+.*)$/i
+const KEY_CMD_BARE = /^\/(?:key|model\s+set-key)\s*$/i
 // 中文"设置/配置密钥"（无密钥内容——引导用户说出密钥）
 const SET_KEY_CN = /(?:设置|配置|录入|输入)\s*(?:api\s*)?(?:密钥|key)|(?:密钥|key)\s*(?:设置|配置)/i
 
