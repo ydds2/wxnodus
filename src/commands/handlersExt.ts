@@ -3573,6 +3573,13 @@ export const commands = {
     const goal = args.join(' ');
     if (!goal) return '用法：/goal <目标> [最大轮数]（循环执行直到完成或达上限）';
     if (!ctx.agent) return 'goal 不可用：当前环境未提供 agent';
+    // 护栏明示（余额耗尽场景防线）：goal 循环是烧钱大户——启动时报告护栏状态
+    const s = (ctx.config.get('settings') ?? {}) as Record<string, any>;
+    const bm = (s.balanceMonitor ?? {}) as Record<string, any>;
+    const budget = Number(s.budgetTokens) || 0;
+    const hardStop = s.budgetStop === true;
+    const autoStop = bm.autoStop === true;
+    const guardNote = `（护栏：余额 auto-stop ${autoStop ? '开 ✓' : '关'}｜token 预算 ${budget ? `${budget}${hardStop ? ' 硬停 ✓' : ''}` : '未设'}${autoStop || (budget && hardStop) ? '' : '——/balance auto-stop on 或 /config set budgetTokens N budgetStop true 防超支'}）`;
     const rounds: string[] = [];
     const notes: string[] = [];
     const cap = Math.min(maxIter, 8);
@@ -3612,6 +3619,7 @@ export const commands = {
     try { ctx.bus?.emit('agent.goal', { round: done || cancelled ? rounds.length : cap, maxRounds: cap, done, cancelled, text: rounds.at(-1)?.slice(0, 80) ?? '' }); } catch { /* 忽略 */ }
     return lines(` 目标执行 ${done ? '✓ 完成' : cancelled ? '已取消' : `（${rounds.length} 轮）`} `, [
       ` 目标：${goal.slice(0, 80)}`,
+      guardNote,
       ...rounds.map((r, i) => ['', ` ── 第 ${i + 1} 轮 ──`, ...String(r).split('\n').slice(0, 12).map(l => ` ${l.slice(0, 110)}`)]).flat(),
       ...notes,
       ...(rounds.length >= cap && !done && !cancelled ? [' ⚠ 已达轮次上限仍未验证完成（诚实 incomplete）'] : []),

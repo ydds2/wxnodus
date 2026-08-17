@@ -98,3 +98,43 @@ describe('/goal 目标循环（fail-closed 诚实交付）', () => {
     closeDB(db);
   });
 });
+
+describe('goal 护栏明示', () => {
+  it('无护栏配置 → 提示开 auto-stop/budget；全开 → ✓ 不提示', async () => {
+    const { registerExtHandlers } = await import('../src/commands/handlersExt.js');
+    const { createCommandBus } = await import('../src/app/CommandBus.js');
+    const { openDB, closeDB } = await import('../src/store/db.js');
+    const { createEventBus } = await import('../src/kernel/events.js');
+    const { createMemory } = await import('../src/kernel/memory.js');
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const d = mkdtempSync(join(tmpdir(), 'wx-goal-'));
+    const db = openDB(d);
+    // 最小护栏配置：无 balanceMonitor.autoStop、无 budgetTokens
+    const makeBus = (settings: Record<string, any>) => {
+      const ctx = {
+        dataDir: d, cwd: process.cwd(), db, mem: createMemory(db), bus: createEventBus(d),
+        config: { get: () => ({ ...settings }), getKey: (_s: string, k: string) => settings[k], setKey: () => {} },
+        agent: {
+          getSessionId: () => 'g1',
+          run: async () => ({ ok: true, text: '✓ 已完成 目标达成', turns: 1, interrupted: false }),
+        },
+      } as any;
+      const bus = createCommandBus();
+      registerExtHandlers(bus, ctx);
+      return bus;
+    };
+    try {
+      const r1 = await makeBus({}).execute('/goal 测试目标 1');
+      expect(String(r1.output)).toContain('/balance auto-stop on');
+      const r2 = await makeBus({ balanceMonitor: { autoStop: true }, budgetTokens: 80000, budgetStop: true }).execute('/goal 测试目标 1');
+      expect(String(r2.output)).toContain('auto-stop 开 ✓');
+      expect(String(r2.output)).toContain('硬停 ✓');
+      expect(String(r2.output)).not.toContain('防超支');
+    } finally {
+      closeDB(db);
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});
