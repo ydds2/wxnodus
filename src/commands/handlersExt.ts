@@ -22,7 +22,8 @@ import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.j
 import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissions.js';
 import { unknownSettingsKeys, knownSettingsKeys } from '../store/config.js';
 import { runCuratorReview, curatorConfigFrom, readCuratorState } from '../kernel/curator.js';
-import { usageSummary, type UsageRange } from '../kernel/usage.js';
+import { usageSummary, usageRangeSince, type UsageRange } from '../kernel/usage.js';
+import { costSummary } from '../kernel/cost.js';
 import { encryptKey } from '../kernel/providers.js';
 import { resolveProviderProfile } from '../kernel/profiles.js';
 import { fetchBalanceCached } from '../kernel/balance.js';
@@ -820,9 +821,41 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       ` 会话：${sid.slice(0, 12)}…`,
       ` 消息：${c(`${rows.length} 条`, '36')}`,
       tokenLine,
-      ` 成本：本地运行，无 API 计费`,
+      ` 成本：/cost 估算（参考公开价目）`,
       ` 瀑布：/usage --waterfall（最近 12 轮 input/output 条形图）`,
     ]);
+  });
+
+  // /cost：会话/区间成本估算（#11 债尾项——会话级 $ 成本；诚实口径：参考价目 + 未收录模型只报 token）
+  bus.register('/cost', (args) => {
+    const range = args[0];
+    let scopeLabel = '';
+    let rows: Array<{ model: string; input: number; output: number }>;
+    if (range === 'today' || range === '7d' || range === '30d') {
+      const since = usageRangeSince(range as UsageRange);
+      rows = ctx.db.prepare(
+        `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE ts >= ? GROUP BY model`
+      ).all(since) as typeof rows;
+      scopeLabel = range === 'today' ? '今日' : range === '7d' ? '近 7 天' : '近 30 天';
+    } else if (range === 'session' || !range) {
+      const sid = ctx.agent?.getSessionId?.() ?? 'default';
+      rows = ctx.db.prepare(
+        `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
+      ).all(sid) as typeof rows;
+      scopeLabel = `会话 ${sid.slice(0, 12)}…`;
+    } else {
+      return '用法：/cost [session|today|7d|30d]（默认当前会话；估算按公开参考价目，非实际账单）';
+    }
+    if (!rows.length) return `暂无 API 用量记录（${scopeLabel}）——真实对话后才有成本数据`;
+    const s = costSummary(rows);
+    const fmtUsd = (n: number | null) => (n === null ? '未收录定价' : n === 0 ? '$0（免费/离线）' : `$${n.toFixed(4)}`);
+    const body = [
+      ` 范围：${scopeLabel}`,
+      ...s.rows.map(r => ` ${r.model.slice(0, 22).padEnd(22)} 入 ${r.input.toLocaleString().padStart(8)} / 出 ${r.output.toLocaleString().padStart(8)} → ${fmtUsd(r.usd)}`),
+      ` 合计（估算）：$${s.totalUsd.toFixed(4)}${s.unknownCount ? `（另有 ${s.unknownCount} 个模型未收录定价，仅计 token）` : ''}`,
+      ` 注：参考公开价目估算，非实际账单；/usage 看 token 明细`,
+    ];
+    return lines(' 成本估算 ', body);
   });
 
   // ── 档案体系（接入层开放：多厂商/中转站档案管理）──

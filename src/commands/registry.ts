@@ -4,7 +4,7 @@ import { classifyCommand, COMMAND_LEVEL_ICON, COMMAND_LEVEL_LABEL } from '../ker
 
 export const SLASH: string[] = [
   // 对话
-  '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint', '/versions', '/snapshot', '/script', '/self-evolve',
+  '/help', '/clear', '/undo', '/usage', '/cost', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint', '/versions', '/snapshot', '/script', '/self-evolve',
   // 模型
   '/key', '/model', '/status', '/doctor', '/version', '/thinking', '/hooks',
   // 记忆（黑洞引擎）
@@ -30,7 +30,7 @@ export const SLASH: string[] = [
 export const COMMAND_CAT: Record<string, string> = {
   // 分类符号全部 BMP 宽字符（无 emoji 代理对）——旧终端字体/winpty 下不产生 � 乱码；
   // 每类唯一符号（/help 分组按符号聚合——此前模型/系统共用 ⚙、对话/协作共用 ◈ 导致组错乱合并）
-  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈', '/versions': '◈', '/snapshot': '◈', '/script': '◈', '/self-evolve': '◈',
+  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/cost': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈', '/versions': '◈', '/snapshot': '◈', '/script': '◈', '/self-evolve': '◈',
   '/key': '⚙', '/model': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆', '/assimilate': '◆',
@@ -52,6 +52,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/self-evolve': '自举模式（AI 分析自身源码→补丁→自测→报告，不自动提交；--report 只审查不改码）',
   '/snapshot': '目录级快照（建档/整体回滚，/snapshot restore）',
   '/usage': '用量统计（token/成本；--waterfall 瀑布）',
+  '/cost': '成本估算（会话/今日/7天/30天；公开参考价目，未收录模型只报 token）',
   '/quit': '退出',
   '/new': '新建空会话并切换',
   '/title': '重命名当前会话',
