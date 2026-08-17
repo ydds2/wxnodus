@@ -346,7 +346,10 @@ export function coreTools(): Record<string, ToolDef> {
       }
       try {
         const out = execFileSync('grep', ['-rn', String(pattern), resolve(ctx.cwd, path)], { encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
-        return out.slice(0, 8000) || '（无匹配）';
+        // 诚实截断：超长结果显式标注（模型知道后面还有匹配——收窄 pattern 或限定 path 续查）
+        return out.length > 8000
+          ? `${out.slice(0, 8000)}\n…[匹配结果过长已截断（前 8000 字）——收窄搜索词或限定目录续查]`
+          : out || '（无匹配）';
       } catch (e: any) {
         // 退出码 1 = 无匹配（grep 语义）；其余（如 2=文件错误）如实报错
         const code = (e as NodeJS.ErrnoException & { status?: number })?.status;
@@ -380,7 +383,9 @@ export function coreTools(): Record<string, ToolDef> {
         const body = extractMainText(r.text, 8000) || htmlToText(r.text, 8000);
         return `HTTP ${r.status}｜页面正文${guard.captcha ? '\n⚠ 检测到验证码页面（站点反爬——内容可能不可用）' : ''}\n${body || '（页面无可提取文本，可能是 JS 渲染）'}`;
       }
-      return `HTTP ${r.status}\n${r.text.slice(0, 8000)}`;
+      return r.text.length > 8000
+        ? `HTTP ${r.status}\n${r.text.slice(0, 8000)}\n…[响应过长已截断（前 8000 字）——/claw <url> 或分段抓取续看]`
+        : `HTTP ${r.status}\n${r.text}`;
     },
   };
   // web_search：AI 主动联网搜索（DDG/Bing 双引擎自动回退）——「查」的主动工具。
@@ -449,7 +454,9 @@ export function coreTools(): Record<string, ToolDef> {
         maxBytes: 1_000_000,
       });
       if ('error' in r) return r.error;
-      return `HTTP ${r.status}\n${r.text.slice(0, 8000)}`;
+      return r.text.length > 8000
+        ? `HTTP ${r.status}\n${r.text.slice(0, 8000)}\n…[响应过长已截断（前 8000 字）——/claw <url> 或分段抓取续看]`
+        : `HTTP ${r.status}\n${r.text}`;
     },
   };
   // memory_search：黑洞引擎主动检索（建议清单 P0-1 落地）——模型需要回忆历史时调用。
@@ -923,7 +930,12 @@ export function coreTools(): Record<string, ToolDef> {
       if (!command) return '参数错误：command 不能为空';
       if (!ctx.runCommand) return '命令通道未装配（当前环境不支持执行指令）——请用户手动输入';
       const out = await ctx.runCommand(command);
-      return out ? out.slice(0, 2000) : `命令已执行（无输出）：${command.slice(0, 80)}`;
+      // 诚实截断：超长命令输出显式标注（模型知道后面还有——分片执行或定向输出续看）
+      return out
+        ? out.length > 2000
+          ? `${out.slice(0, 2000)}\n…[命令输出过长已截断（前 2000 字）——分段执行或重定向到文件续看]`
+          : out
+        : `命令已执行（无输出）：${command.slice(0, 80)}`;
     },
   };
   // command_search：A22 命令目录检索（AI 主动调用入口——解决 96 条命令描述
