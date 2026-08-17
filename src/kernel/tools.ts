@@ -345,9 +345,9 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const grep: ToolDef = {
-    schema: { type: 'function', function: { name: 'grep', description: '在文件中搜索文本', parameters: { type: 'object', properties: { pattern: { type: 'string' }, path: { type: 'string' } }, required: ['pattern'] } } },
+    schema: { type: 'function', function: { name: 'grep', description: '在文件中搜索文本（head 限制结果行数——命中过多时收窄或加 head）', parameters: { type: 'object', properties: { pattern: { type: 'string' }, path: { type: 'string' }, head: { type: 'number', description: '最多返回行数（缺省 200）' } }, required: ['pattern'] } } },
     danger: false,
-    async run({ pattern, path = '.' }, ctx) {
+    async run({ pattern, path = '.', head }, ctx) {
       // 修复 F14：execFileSync 参数数组（不经 shell），消除命令注入
       // A25：Windows 无 grep 时诚实报错——此前 ENOENT 被 catch 成「（无匹配）」，
       // 模型拿到假阴性结论（工具假装可用）
@@ -356,10 +356,13 @@ export function coreTools(): Record<string, ToolDef> {
       }
       try {
         const out = execFileSync('grep', ['-rn', String(pattern), resolve(ctx.cwd, path)], { encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
-        // 诚实截断：超长结果显式标注（模型知道后面还有匹配——收窄 pattern 或限定 path 续查）
-        return out.length > 8000
-          ? `${out.slice(0, 8000)}\n…[匹配结果过长已截断（前 8000 字）——收窄搜索词或限定目录续查]`
-          : out || '（无匹配）';
+        const lines = out.split('\n').filter(l => l.trim());
+        const cap = Math.max(1, Math.floor(Number(head) || 200));
+        // 诚实截断：超行数结果显式标注（模型知道后面还有匹配——收窄 pattern/限定 path/加 head 续查）
+        if (lines.length > cap) {
+          return `${lines.slice(0, cap).join('\n')}\n…[匹配 ${lines.length} 行，已截断（前 ${cap} 行）——收窄搜索词或限定目录续查]`;
+        }
+        return out.trim() || '（无匹配）';
       } catch (e: any) {
         // 退出码 1 = 无匹配（grep 语义）；其余（如 2=文件错误）如实报错
         const code = (e as NodeJS.ErrnoException & { status?: number })?.status;
