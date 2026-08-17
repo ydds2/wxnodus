@@ -5,8 +5,9 @@
 // 参考：gateway 客户端接口契约（业界通用） + wxnodus kernel/events 事件流
 import { EventEmitter } from 'node:events'
 import { execFile, execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, unlinkSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, statSync } from 'node:fs'
 import { join, resolve, basename, isAbsolute } from 'node:path'
+import { attachmentsDir, clearPending, readPending, writePending } from '../kernel/imagePending.js'
 
 import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
@@ -57,27 +58,7 @@ export interface WxGatewayKernel {
 }
 
 // ── P3 图片附加链路：附件目录 + 待注入图片（pending.json）持久化 ──
-function attachmentsDir(dataDir: string, sessionId: string): string {
-  return join(dataDir, 'attachments', sessionId.replace(/[^\w.-]/g, '_'))
-}
-function pendingPath(dataDir: string, sessionId: string): string {
-  return join(attachmentsDir(dataDir, sessionId), 'pending.json')
-}
-function writePending(dataDir: string, sessionId: string, file: string, mime: string): void {
-  const dir = attachmentsDir(dataDir, sessionId)
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(pendingPath(dataDir, sessionId), JSON.stringify({ file, mime, ts: Date.now() }), 'utf8')
-}
-function readPending(dataDir: string, sessionId: string): { file: string; mime: string } | null {
-  try {
-    const raw = readFileSync(pendingPath(dataDir, sessionId), 'utf8')
-    const p = JSON.parse(raw) as { file: string; mime: string }
-    return p?.file && existsSync(p.file) ? p : null
-  } catch { return null }
-}
-function clearPending(dataDir: string, sessionId: string): void {
-  try { unlinkSync(pendingPath(dataDir, sessionId)) } catch { /* 无待注入 */ }
-}
+// 共享事实源：kernel/imagePending.ts（命令层 /capture --attach 与 UI 层共用同一契约）
 
 interface PendingApproval {
   resolve: (choice: string) => void
