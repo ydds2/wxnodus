@@ -695,3 +695,13 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **复扫**：src/kernel 与 src/domain 中 `from '../store` 零残留（grep 空）。
 - **搬移事故如实记录**：node -e 转义链把 `/\s+/` 吃成 `/s+/`（FTS 词切分失效 → 中文召回空）——定向测试立即捕获，单字符修复（教训：跨 bash 的代码注入不用于正则字面量；本次为事后发现，正文经文件对照确认其余转义完好）。
 - **验证**：tsc 零错误；定向 115/115（含 completionGate 闭包证据/权威冲突/安全控制面/记忆召回）；全量回归见下。
+
+### 13.46 handlersExt 拆分第 2/3 块重做 + 序 3 核验轮（2026-08-18 /goal 自主完善）
+
+- **序 3 核验（fixture node_modules 出 git）**：实测该卫生问题**早已解决**——`.gitignore` 已含 `tests/fixtures/windows/uia/electron/node_modules/`、`git ls-files` 该路径追踪 0 文件（deep-dive 的 2550 计数系工作树文件而非入库文件）；`build-fixtures.ps1` electron 构建 = `npm ci && npm run build`（package-lock 锁定）+ `fixtures.lock.json` artifactSha256 + `verify:windows-fixtures -VerifyLock` 哈希核验——「脚本化下载 + 哈希锁定」全链路已在位，本项判定为已满足（补证，不重做）。
+- **序 5 拆分第 2/3 块重做（新方案成功）**：上轮失败根因是 tsc 迭代修剪的死循环（同行列漂移 + 误报）。本轮改用 `scripts/split-commands.mjs` **按块内标识符实际用法确定性生成导入清单**（word-boundary 过滤 + 动态 import 路径升档 + ctx 类型恒纳入 + handlersExt 自身导入按剩余文本重算）——一次生成即 tsc 零错误，无修剪循环。
+  - `src/commands/ext/sessionCommands.ts`：/resume /new /title /offline /undo /versions /snapshot /script /fork /checkpoint /reload-skills /map /init /usage /cost + scriptRecording 状态 + renderWaterfall。
+  - `src/commands/ext/profileMemoryBuildCommands.ts`：/profile /balance /config /warp /fortune /context /compact /digest /curator /deploy /forge /skill /learn /assimilate /gate /fdr /evidence /sandbox /compliance /consent /audit /encrypt /lang /logs /bench + parseProfileAddArgs/parseBalanceSetArgs。
+  - handlersExt **3718 → 2180 行**；renderWaterfall/parse* 保持 re-export 兼容；registerExtHandlers 依次调用四个 ext 模块。
+- **过程自伤修复**：脚本 4 处 bug（块模板用错变量致动态 import 未升档、headBlock off-by-one 致导入重复、ctx 类型未恒纳入致 TS7006、调用点漏插入致 register 导入未用）——全部由 tsc 即时捕获，逐一定点修复。
+- **验证**：tsc 零错误；命令契约定向 98 绿（commands/profile-balance/w1-04/intent）；全量回归见下。
