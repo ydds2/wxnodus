@@ -97,3 +97,23 @@ describe('接入层/余额/视觉键白名单', () => {
     })).toEqual([]);
   });
 });
+
+describe('usage_stats 索引（/cost /usage 查询底座）', () => {
+  it('openDB 建立 session_id 与 ts 索引（防全表扫描回归）', async () => {
+    const { openDB, closeDB } = await import('../src/store/db.js');
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const d = mkdtempSync(join(tmpdir(), 'wx-idx-'));
+    const db = openDB(d);
+    try {
+      const idx = db.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='usage_stats'`).all() as Array<{ name: string }>;
+      const names = idx.map(i => i.name);
+      expect(names).toContain('idx_usage_session');
+      expect(names).toContain('idx_usage_ts');
+    } finally {
+      closeDB(db);
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});

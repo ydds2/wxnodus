@@ -113,6 +113,9 @@ export function openDB(dataDir: string): Db {
       output_tokens INTEGER NOT NULL DEFAULT 0,
       ts INTEGER NOT NULL
     );
+    -- /cost /usage /status 的会话与区间聚合查询索引（长期高频路径——此前全表扫描）
+    CREATE INDEX IF NOT EXISTS idx_usage_session ON usage_stats(session_id);
+    CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage_stats(ts);
     CREATE TABLE IF NOT EXISTS flow_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       skill TEXT NOT NULL,
