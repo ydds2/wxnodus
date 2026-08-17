@@ -798,7 +798,19 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       }
       ctx.config.setKey('settings', 'usageRange', range);
       const s = usageSummary(ctx.db, range as UsageRange);
-      return `token 区间已切换：${range}——累计 ${s.total.toLocaleString()} token（入 ${s.input.toLocaleString()} / 出 ${s.output.toLocaleString()} / ${s.calls} 次调用，跨全部会话）`;
+      // 区间成本估算（与 /cost 同源——顺带知晓区间花费）
+      let costNote = '';
+      try {
+        const since = usageRangeSince(range as UsageRange);
+        const costRows = ctx.db.prepare(
+          `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE ts >= ? GROUP BY model`
+        ).all(since) as Array<{ model: string; input: number; output: number }>;
+        if (costRows.length) {
+          const cs = costSummary(costRows, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
+          costNote = cs.unknownCount === 0 ? ` · ≈$${cs.totalUsd.toFixed(4)}` : ` · ≈$${cs.totalUsd.toFixed(4)} 起（${cs.unknownCount} 个模型未收录定价）`;
+        }
+      } catch { /* 成本统计失败静默 */ }
+      return `token 区间已切换：${range}——累计 ${s.total.toLocaleString()} token（入 ${s.input.toLocaleString()} / 出 ${s.output.toLocaleString()} / ${s.calls} 次调用，跨全部会话）${costNote}`;
     }
     // B2 修复：定位当前活跃会话（不再硬编码 'default'）+ 真实 token 统计（usage_stats）
     const sid = ctx.agent?.getSessionId?.() ?? 'default';
