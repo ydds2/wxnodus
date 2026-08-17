@@ -7,7 +7,7 @@
 //     轮次耗尽兜底（系统性闭环）：工具执行完仍无文本 → 无工具强制总结调用收敛答案；
 //     仍失败 → 显式失败文案。任何提前返回都发 agent.message + agent.end（UI 只在
 //     agent.end 发布最终消息——漏发 = 回合静默、界面无输出）。
-//   无 key → 规则脑兜底（诚实回答）
+//   无 key → 明确引导 /model set-key（不假装回答）
 //   spawnSubagent：独立上下文 + 只读工具集
 import type { Db } from '../store/db.js';
 import { appendAudit } from '../store/db.js';
@@ -345,7 +345,7 @@ export function createAgent(opts: AgentOptions) {
     }
 
     if (!keyRes.key) {
-      // 无 key：所有对话输出必须经 AI 模型——不做规则脑假装回答，
+      // 无 key：所有对话输出必须经 AI 模型——不做假装回答，
       // 明确引导配置（配置类命令 /key 等仍本地可用）
       const q = (() => { const c = req.messages[req.messages.length - 1]?.content ?? ''; return typeof c === 'string' ? c : ''; })();
       return {
@@ -359,7 +359,7 @@ export function createAgent(opts: AgentOptions) {
     const key = keyRes.key;
 
     const { resolveDefaultBaseURL } = await import('./defaults.js');
-    // 有 key 即视为已配置：model/baseURL 缺失时用默认，不降级规则脑
+    // 有 key 即视为已配置：model/baseURL 缺失时用默认
     const baseURL = resolveDefaultBaseURL(s);
     // 根因修复：模型名校验放开——任意非空模型名（含中转站自定义名）直接可用；
     // 仅空/缺失时回退档案默认（resolveModelForChat 单一事实源）

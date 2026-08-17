@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { unknownSettingsKeys } from '../../../src/store/config.js';
 import { buildSystemPrompt } from '../../../src/kernel/systemPrompt.js';
 
-const base = { mode: 'smart' as const, cwd: 'C:/work', model: 'rule-brain', hasImageIn: false };
+const base = { mode: 'smart' as const, cwd: 'C:/work', model: 'unconfigured', hasImageIn: false };
 
 describe('KF-004 resolved: personality 键白名单化 + 真实消费', () => {
   it('personality 是已知设置键（不再误报未知键）', () => {

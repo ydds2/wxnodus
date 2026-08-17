@@ -1,6 +1,6 @@
 # WxNodus V3
 
-Windows 本地 AI agent CLI：数据不出机，无 key 也有离线能力（规则脑 + 确定性工具 + 本地记忆）。
+Windows 本地 AI agent CLI：数据不出机，无 key 也有离线能力（本地离线模型 + 确定性工具 + 本地记忆）。
 
 ## 快速开始
 
@@ -18,7 +18,7 @@ wxnodus -p "你好" --wire         # 总线事件流 JSONL
 | 命令 | 作用 |
 |---|---|
 | `/model` | 模型与密钥统一入口（选择器｜`/model add <模型ID> --base <URL>` 添加任意 OpenAI 兼容接口｜`/model set-key <密钥>` 配置密钥｜`/model key` 状态） |
-| `/build` | 自然语言需求 → 可运行项目（规则脑/LLM 规格化 + 启动级验证 + 证据） |
+| `/build` | 自然语言需求 → 可运行项目（AI 规格化 + 启动级验证 + 证据） |
 | `/hole` `/memory` | 黑洞引擎记忆检索（FTS5 中文 + 向量，会话隔离） |
 | `/calc` `/hash` `/sql` … | 确定性工具（毫秒级，不走模型） |
 | `/cost` `/usage` `/balance` | 成本估算 / token 用量 / 余额监控（状态栏 💰📊$） |

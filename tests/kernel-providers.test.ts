@@ -1,7 +1,7 @@
-// tests/kernel-providers.test.ts — L2-1 模型提供商：密钥加密/规则脑/路由/流式请求/错误映射
+// tests/kernel-providers.test.ts — L2-1 模型提供商：密钥加密/路由/流式请求/错误映射
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { encryptKey, decryptKey } from '../src/kernel/providers.js';
-import { ruleBrain, mapHttpError, buildChatRequest } from '../src/kernel/providers.js';
+import { mapHttpError, buildChatRequest } from '../src/kernel/providers.js';
 import { MODEL_CATALOG, capabilityBadges, filterModels, REASONING_FIELDS, detectProvider, resolveApiKey } from '../src/kernel/providers.js';
 
 afterEach(() => { vi.restoreAllMocks(); });
@@ -24,25 +24,6 @@ describe('密钥加密（凭证安全红线）', () => {
   });
 });
 
-describe('规则脑（无 key 兜底：诚实回答不假装智能）', () => {
-  it('打招呼有回复', () => {
-    const r = ruleBrain('你好');
-    expect(r.length).toBeGreaterThan(0);
-    expect(r).toContain('WxNodus');
-  });
-  it('简单计算可确定性回答', () => {
-    const r = ruleBrain('2+3*4 等于多少');
-    expect(r).toContain('14');
-  });
-  it('未知问题诚实说明能力边界', () => {
-    const r = ruleBrain('给我写一个操作系统');
-    expect(r).toContain('未配置');
-  });
-  it('规则脑不假装有工具', () => {
-    const r = ruleBrain('执行 ls');
-    expect(r.toLowerCase()).not.toContain('已执行');
-  });
-});
 describe('请求构造（OpenAI 兼容）', () => {
   it('buildChatRequest 生成正确 body', () => {
     const req = buildChatRequest({

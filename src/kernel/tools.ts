@@ -748,24 +748,32 @@ export function coreTools(): Record<string, ToolDef> {
       try {
         const parsed = typeof spec === 'string' ? JSON.parse(spec) : spec;
         if (!parsed?.title || !parsed?.summary) return 'spec 不完整（需要 title/summary）';
-        const { makeSpec, validateSpec, diagnoseSpec, SCAFFOLDS } = await import('../build/spec.js');
-        const { makePlan } = await import('../build/plan.js');
+        const { validateSpec, diagnoseSpec, SCAFFOLDS } = await import('../build/spec.js');
         const { instantiate } = await import('../build/scaffold.js');
         const { createHash } = await import('node:crypto');
-        // 修复：优先采用 AI 传入的结构化 spec（title/scaffold/acceptance 不再被丢弃）；
-        // 非法模具/空验收回退规则脑（按 summary 兜底），不静默降级
-        const ruleFallback = makeSpec(parsed.summary, { key: null });
+        // 规则脑已移除（2026-08-18）：AI 传入的 spec 必须显式完整——
+        // 非法模具/空验收 fail-closed 报错，绝不回退确定性兜底
+        const scaffoldRaw = String(parsed.scaffold ?? '');
+        if (!(SCAFFOLDS as readonly string[]).includes(scaffoldRaw)) {
+          return `scaffold_build 拒绝：scaffold 非法（必须 ∈ ${SCAFFOLDS.join('/')}）——AI 必须显式给出合法模具`;
+        }
+        if (!Array.isArray(parsed.acceptance) || parsed.acceptance.length === 0) {
+          return 'scaffold_build 拒绝：acceptance 缺失——AI 必须显式给出验收条目';
+        }
         const s = {
-          title: String(parsed.title ?? '').slice(0, 30).trim() || ruleFallback.title,
+          title: String(parsed.title ?? '').slice(0, 30).trim(),
           summary: String(parsed.summary ?? '').slice(0, 500).trim(),
-          scaffold: (SCAFFOLDS as readonly string[]).includes(String(parsed.scaffold ?? '')) ? String(parsed.scaffold) : ruleFallback.scaffold,
-          acceptance: Array.isArray(parsed.acceptance) && parsed.acceptance.length
-            ? parsed.acceptance.slice(0, 3).map((a: unknown) => String(a).slice(0, 120))
-            : ruleFallback.acceptance,
+          scaffold: scaffoldRaw,
+          acceptance: parsed.acceptance.slice(0, 3).map((a: unknown) => String(a).slice(0, 120)),
         };
         const diags = diagnoseSpec(s);
         const errors = diags.filter(d => d.level === 'error');
-        const plan = makePlan(parsed.summary, { key: null });
+        // 计划构造：规则脑分解已移除——固定单模块计划
+        const plan = {
+          modules: [{ name: 'app', deps: [], desc: '单模块应用' }],
+          order: ['app'],
+          milestones: ['M1 应用构建', 'M2 验证与交付'],
+        };
         // A21：dry-run——只编译不落盘（诊断 + 计划预览，零副作用）
         if (dry_run === true) {
           const diagLines = diags.length

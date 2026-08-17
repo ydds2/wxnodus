@@ -1,9 +1,9 @@
-// tests/wave3/w3-spec-acceptance.test.ts — spec → 结构化验收契约（规则脑确定性锚点；未知模具 fail-closed）
+// tests/wave3/w3-spec-acceptance.test.ts — spec → 结构化验收契约（模具确定性锚点；未知模具 fail-closed）
 import { describe, expect, it } from 'vitest';
 import { specToAcceptance } from '../../src/build/specAcceptance.js';
 
 describe('spec acceptance adapter', () => {
-  it('maps rule-brain scaffolds to verifiable criteria', () => {
+  it('maps scaffolds to verifiable criteria', () => {
     const result = specToAcceptance({ scaffold: 'todo', title: '待办系统', acceptance: ['待办增删查'] });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');

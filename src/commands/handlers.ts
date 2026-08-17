@@ -17,8 +17,7 @@ import { sessionCost, costText } from '../kernel/costQuery.js';
 import { snippet } from '../kernel/truncate.js';
 import { WXNODUS_VERSION } from '../kernel/version.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
-import { makeSpec } from '../build/spec.js';
-import { makePlan, topoSort } from '../build/plan.js';
+import { topoSort } from '../build/plan.js';
 import { instantiate } from '../build/scaffold.js';
 import { writeEvidence, fingerprint } from '../build/evidence.js';
 import { runGate } from '../build/gate.js';
@@ -634,26 +633,29 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const strict = args.includes('--strict');
     const input = args.filter(a => a !== '--dry-run' && a !== '--strict').join(' ');
     if (!input) return '用法：/build <需求> [--dry-run]（自然语言「做个待办系统」亦可直达）';
-    // P0-1：规格化双通道——规则脑优先（快/零 token）；未命中且有密钥 → LLM 开放域
+    // 单通道：AI 规格化是唯一编译通道（规则脑已移除）——无 key 立即报错，绝不假装编译
     const settings = ctx.config.get('settings') as { apiKeyEnc?: string | null; baseURL?: string; model?: string };
     const { resolveApiKey, MODEL_CATALOG } = await import('../kernel/providers.js');
     const keyRes = resolveApiKey(settings);
-    let spec = makeSpec(input, { key: keyRes.key ? 'x' : null });
-    let specSource: 'ai' | 'rule' = 'rule';
-    if (spec.scaffold === 'unknown' && keyRes.key) {
-      // 规则脑未命中且有密钥——LLM 规格化；失败降级规则脑（unknown）并如实提示
-      const { aiMakeSpec } = await import('../build/llmSpec.js');
-      const model = settings.model && MODEL_CATALOG.some(m => m.modelId === settings.model)
-        ? settings.model
-        : resolveDefaultModel(settings);
-      const ai = await aiMakeSpec(input, { baseURL: resolveDefaultBaseURL(settings), model, key: keyRes.key });
-      if (ai) { spec = ai; specSource = 'ai'; }
+    if (!keyRes.key) {
+      return '需求无法编译——AI 规格化是唯一编译通道，需要模型密钥。请先 /model set-key <密钥> 配置后重试；或说「/help build」';
     }
-    if (spec.scaffold === 'unknown') {
-      return `需求无法编译（${input.slice(0, 30)}…）——规则脑未命中${keyRes.key ? '且 AI 规格化失败（检查模型配置或重试）' : '；/key set <密钥> 后可 AI 规格化任意需求'}；或说「/help build」`;
+    const { aiMakeSpec } = await import('../build/llmSpec.js');
+    const model = settings.model && MODEL_CATALOG.some(m => m.modelId === settings.model)
+      ? settings.model
+      : resolveDefaultModel(settings);
+    const spec = await aiMakeSpec(input, { baseURL: resolveDefaultBaseURL(settings), model, key: keyRes.key });
+    if (!spec) {
+      return `需求无法编译（${input.slice(0, 30)}…）——AI 规格化失败（检查模型配置或重试）`;
     }
+    // 计划构造：规则脑分解已移除——固定单模块计划（AI 规格化输出驱动模具）
+    const plan = {
+      modules: [{ name: 'app', deps: [], desc: '单模块应用' }],
+      order: ['app'],
+      milestones: ['M1 应用构建', 'M2 验证与交付'],
+    };
     // W3 Build facade：modern 路由走 BuildService.compileAndRun（staging→scaffold→staticEntry→verifier→evidence→reviewer→owned receipt）。
-    // spec→结构化验收（规则脑确定性锚点；未知模具 fail-closed）；快照真实来源（env/capability/hooks 确定性哈希）；
+    // spec→结构化验收（模具锚点；未知模具 fail-closed）；快照真实来源（env/capability/hooks 确定性哈希）；
     // reviewer 密钥 AES 持久化（明文绝不落盘）。
     if (buildRoute.value.route === 'modern') {
       const { createHash } = await import('node:crypto');
@@ -662,7 +664,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const { specToAcceptance } = await import('../build/specAcceptance.js');
       const criteria = specToAcceptance(spec);
       if (!criteria.ok) {
-        throw new Error(`[${criteria.error.code}] ${criteria.error.message}（规则脑模具 ${spec.scaffold} 无结构化验收——现代编译拒绝）`);
+        throw new Error(`[${criteria.error.code}] ${criteria.error.message}（模具 ${spec.scaffold} 无结构化验收——现代编译拒绝）`);
       }
       const projName = `p${Date.now().toString(36)}`;
       const projDir = join(ctx.dataDir, 'projects', projName);
@@ -686,8 +688,8 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         dataDir: ctx.dataDir,
         runId,
         sessionId: ctx.agent?.getSessionId?.() ?? 'default',
-        // 原始规则脑 spec 驱动脚手架（criteria 仅验收断言）；legacy instantiate/verify 作为节点真实执行
-        instantiate: (_criteria, stagingDir) => instantiate(spec, stagingDir) as never,
+        // AI 规格化 spec 驱动脚手架（criteria 仅验收断言）；legacy instantiate/verify 作为节点真实执行
+        instantiate: (_criteria, stagingDir) => instantiate(spec, stagingDir, plan) as never,
         verifyProject: async (dir) => {
           const { verifyProject: legacyVerify } = await import('../build/verify.js');
           return legacyVerify(dir);
@@ -728,19 +730,18 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         throw new Error(`[BUILD_DECISION_${decision.status.toUpperCase()}] ${decision.reasons.join('；') || '未通过完成判定'}`);
       }
       return lines(` 构建完成「${spec.title}」 `, [
-        ` 模具：${spec.scaffold}（${specSource === 'ai' ? 'AI 规格化' : '规则模板'}）· 现代路由（BuildService 权威闭环）`,
+        ` 模具：${spec.scaffold}（AI 规格化）· 现代路由（BuildService 权威闭环）`,
         ` 位置：${projDir}`,
         ` 判定：${decision.status}（owned receipt）· 验收 ${decision.criteria.map(c => c.status).join('/')}`,
         ` 启动：cd ${projDir} && node server/index.js`,
       ]);
     }
-    const plan = makePlan(input, { key: null });
     const { diagnoseSpec } = await import('../build/spec.js');
     const diags = diagnoseSpec(spec);
     if (dryRun) {
       return lines(` 规格诊断「${spec.title}」 `, [
         ...diags.map(d => ` ${d.level === 'error' ? '✗' : d.level === 'warning' ? '!' : '·'} [${d.code}] ${d.message}`),
-        ` 模具：${spec.scaffold}（${specSource === 'ai' ? 'AI 规格化' : '规则模板'}）`,
+        ` 模具：${spec.scaffold}（AI 规格化）`,
         ` 计划：${topoSort(plan.modules).join(' → ')}（dry-run 未落盘）`,
         ` 验收：${spec.acceptance.map(a => '✓ ' + a).join('\n       ')}`,
       ]);
@@ -794,7 +795,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
             ? ` 构建未通过质量门「${spec.title}」 `  // 严格模式：验证过了但门禁未过
             : ` 构建完成（验证跳过）「${spec.title}」 `;
     return lines(head, [
-      ` 模具：${spec.scaffold}（${specSource === 'ai' ? 'AI 规格化' : '规则模板'}）· 模块：${order.join(' → ')}`,
+      ` 模具：${spec.scaffold}（AI 规格化）· 模块：${order.join(' → ')}`,
       ` 验收：${spec.acceptance.map(a => '✓ ' + a).join('\n       ')}`,
       ` 位置：${projDir}`,
       ` 验证：${vr.status === 'ok' ? '✅ 启动→探活→重启→读回' : `⚠ ${vr.detail}`}`,

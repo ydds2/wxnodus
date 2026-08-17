@@ -1,7 +1,7 @@
 // src/build/specAcceptance.ts — W3 Build 契约：spec → 结构化验收标准（BuildService 的唯一入口适配）
-// 规则脑模具的产物结构是确定性的（scaffold 生成 server/index.js + healthcheck.js）——
+// 模具的产物结构是确定性的（scaffold 生成 server/index.js + healthcheck.js）——
 // 逐条映射为可验证 criteria（file.exists verifier + 启动验证节点真实执行）；
-// 非规则脑/未知模具 → BUILD_ACCEPTANCE_UNSPECIFIED fail-closed（无结构化验收不可现代编译，
+// 未知模具 → BUILD_ACCEPTANCE_UNSPECIFIED fail-closed（无结构化验收不可现代编译，
 // 绝不把自然语言 acceptance 伪装成可验证断言）。
 import type { AcceptanceCriterion } from '../domain/build/acceptance.js';
 import type { OperationResult } from '../protocol/results.js';
@@ -11,7 +11,7 @@ const fail = <T = never>(code: string, details?: Record<string, unknown>): Opera
   error: { code, message: code, messageKey: code, retryable: false, details },
 });
 
-/** 规则脑模具 → 确定性产物锚点（scaffold 契约：每个模具都生成 server 入口 + healthcheck） */
+/** 模具 → 确定性产物锚点（scaffold 契约：每个模具都生成 server 入口 + healthcheck） */
 const SCAFFOLD_ANCHORS: Record<string, string[]> = {
   ledger: ['server/index.js', 'healthcheck.js'],
   todo: ['server/index.js', 'healthcheck.js'],

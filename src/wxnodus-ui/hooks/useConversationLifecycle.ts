@@ -155,10 +155,10 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
     async (msg?: string, title?: string, keepCurrent = false) => {
       const setup = await rpc<SetupStatusResponse>('setup.status', {})
 
-      // A25：未配置时提示继续（规则脑兜底可用——不阻塞，哲学不变）；
+      // A25：未配置时提示继续（不阻塞，哲学不变）；
       // 此前 gateway 硬编码 true 掩盖真实状态，这里按真实值走提示路径
       if (setup?.provider_configured === false) {
-        sys('未配置模型密钥——规则脑模式可用（/key set <key> 配置完整能力）')
+        sys('未配置模型密钥——请用 /model set-key <密钥> 配置（配置类命令不受影响）')
       }
 
       if (!keepCurrent) {
@@ -295,9 +295,9 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       patchUiState({ status: 'resuming…' })
 
       rpc<SetupStatusResponse>('setup.status', {}).then(setup => {
-        // A25：未配置时提示继续（规则脑兜底可用——与 startNewSession 同策略）
+        // A25：未配置时提示继续（与 startNewSession 同策略）
         if (setup?.provider_configured === false) {
-          sys('未配置模型密钥——规则脑模式可用（/key set <key> 配置完整能力）')
+          sys('未配置模型密钥——请用 /model set-key <密钥> 配置（配置类命令不受影响）')
         }
 
         const previousSid = getUiState().sid

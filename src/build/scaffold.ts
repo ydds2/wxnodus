@@ -9,7 +9,7 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Spec } from './spec.js';
-import { makePlan, topoSort, type BuildPlan } from './plan.js';
+import { topoSort, type BuildPlan } from './plan.js';
 
 export interface InstantiateResult { ok: boolean; reason?: string }
 
@@ -769,14 +769,14 @@ export function checkLeftover(projectDir: string): boolean {
   return true;
 }
 
-export function instantiate(spec: Spec, projectDir: string, plan?: BuildPlan): InstantiateResult {
+export function instantiate(spec: Spec, projectDir: string, plan: BuildPlan): InstantiateResult {
   try {
     for (const sub of ['server', 'public', 'public/src']) mkdirSync(join(projectDir, sub), { recursive: true });
     const mold = spec.scaffold === 'todo' || spec.scaffold === 'ledger' || spec.scaffold === 'note' || spec.scaffold === 'anim' ? spec.scaffold : 'generic';
     const title = spec.title || '项目';
     // KF-022：scaffold 由 BuildPlan（模块拓扑）驱动——文件按拓扑序落位，绝不绕过计划只消费 Spec；
-    // 未显式传入时以规则脑分解兜底（makePlan——单一计划事实源）
-    const effective = plan ?? makePlan(`${spec.title ?? ''} ${spec.summary ?? ''}`.trim() || spec.scaffold, { key: null });
+    // plan 必传（规则脑兜底已移除，调用方固定构造单模块计划）
+    const effective = plan;
     const order = topoSort(effective.modules);
     const moduleWriters: Record<string, () => void> = {
       db: () => { writeFileSync(join(projectDir, 'server', 'store.js'), STORE_JS, 'utf8'); },

@@ -1,6 +1,6 @@
 // src/kernel/providers.ts — L2-1 模型提供商层
 // 设计：OpenAI 兼容 chat API（流式 SSE）+ AES-256-GCM 密钥加密（凭证安全红线，明文绝不落盘/回显）
-//      + 规则脑兜底（无 key 诚实回答）+ 关键词路由降级链 + HTTP 错误中文映射
+//      + 关键词路由降级链 + HTTP 错误中文映射
 // 参考：OpenAI API 规范、Claude Code 的 credential 安全实践、Gemini CLI 多 provider 模式
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import { hostname, platform, arch, userInfo } from 'node:os';
@@ -183,28 +183,6 @@ export function filterModels(q: string, catalog: ModelEntry[] = MODEL_CATALOG): 
   return catalog.filter(m =>
     m.name.toLowerCase().includes(s) || m.provider.toLowerCase().includes(s) || m.modelId.toLowerCase().includes(s),
   );
-}
-
-// ── 规则脑（无 key 兜底：确定性诚实回答，绝不假装智能）─────────
-// 能力边界：打招呼 / 简单计算 / 说明状态；其余诚实告知未配置
-export function ruleBrain(input: string): string {
-  const s = input.trim();
-  if (!s) return '（空输入）';
-  if (/^(你好|hi|hello|在吗|嗨)/i.test(s)) {
-    return '你好！我是 WxNodus（本地 AI agent）。当前未配置模型密钥——输入「/model set-key <你的密钥>」配置后即可获得完整能力；未配置时我只能做确定性的简单回答。';
-  }
-  // 简单四则运算（从中文句中提取表达式，仅数字与 +-*() 空格，防注入）
-  const exprMatch = s.match(/[\d\s+\-*/().]{2,}/);
-  if (exprMatch && /[+\-*/]/.test(exprMatch[0])) {
-    const expr = exprMatch[0].trim();
-    if (/^[\d\s+\-*/().]+$/.test(expr)) {
-      try {
-        const v = Function(`"use strict"; return (${expr});`)();
-        if (typeof v === 'number' && Number.isFinite(v)) return `= ${v}`;
-      } catch { /* 落入下方兜底 */ }
-    }
-  }
-  return '未配置模型密钥，超出规则脑能力。配置方式：/key <密钥> 或 /key set <密钥>。';
 }
 
 // ── 请求构造（OpenAI 兼容 /chat/completions）────────────────

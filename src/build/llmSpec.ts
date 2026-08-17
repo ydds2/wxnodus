@@ -1,7 +1,6 @@
-// src/build/llmSpec.ts — /build LLM 开放域规格化（P0-1）
-// 链路：规则脑未命中（scaffold=unknown）且有密钥时，单轮非流式调用模型
-//       生成 Spec IR（title/summary/scaffold/acceptance）→ validateSpec 校验 →
-//       失败返回 null（调用方降级规则脑并明示，绝不产生假规格）。
+// src/build/llmSpec.ts — /build LLM 规格化（唯一通道——规则脑已移除，2026-08-18）
+// 链路：有密钥时单轮非流式调用模型生成 Spec IR（title/summary/scaffold/acceptance）
+//       → validateSpec 校验 → 失败返回 null（调用方直接如实报错，绝不产生假规格）。
 // LLM 调用走共享 callModelOnce（src/kernel/llmOnce.ts——与 /compact 同款，融合重复实现）。
 // 直连 fetch（与 agent 同模式）——模型 baseURL 是用户配置，可能是本地端点（ollama 等），
 // 不走 SSRF 防护（防护面向外部抓取，这里跟随 agent 的直连语义）。
@@ -18,7 +17,7 @@ const SYSTEM_PROMPT = `你是 WxNodus 的规格分析器。把用户需求编译
 
 /**
  * LLM 规格化：单轮非流式生成 Spec IR（共享 callModelOnce——融合 /compact 同款调用）；
- * 任何失败（网络/解析/校验不通过）返回 null——调用方必须降级规则脑并如实提示，不得伪造规格。
+ * 任何失败（网络/解析/校验不通过）返回 null——调用方必须如实报错，不得伪造规格。
  */
 export async function aiMakeSpec(
   input: string,

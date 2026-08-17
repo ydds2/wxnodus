@@ -137,13 +137,13 @@ describe('memory_write 黑洞记忆闭环', () => {
 
 // ── 巩固：scaffold_build 采用 AI 传入结构化 spec（不丢弃）──
 describe('scaffold_build 规格优先级', () => {
-  it('AI 传入的 scaffold/acceptance 生效；非法模具回退规则脑', async () => {
+  it('AI 传入的 scaffold/acceptance 生效；非法模具 fail-closed（规则脑已移除）', async () => {
     const d = mkdtempSync(join(tmpdir(), 'wx-sb-'));
     const db = openDB(d);
     try {
       const tools = coreTools();
       const t = tools.scaffold_build!;
-      // AI 传入完整 spec → dry-run 输出应含自定义验收（此前被丢弃、显示规则脑默认验收）
+      // AI 传入完整 spec → dry-run 输出应含自定义验收（此前被丢弃）
       const out = await t.run({
         spec: JSON.stringify({ title: '待办系统', summary: '做一个待办系统', scaffold: 'todo', acceptance: ['自定义验收A', '自定义验收B', '自定义验收C'] }),
         dry_run: true,
@@ -151,12 +151,13 @@ describe('scaffold_build 规格优先级', () => {
       expect(out).toContain('自定义验收A');
       expect(out).toContain('模块：');
 
-      // 非法模具（calculator 不在白名单）→ 回退规则脑不崩溃
+      // 非法模具（calculator 不在白名单）→ fail-closed 明确拒绝，绝不回退
       const out2 = await t.run({
         spec: JSON.stringify({ title: '计算器', summary: '做一个计算器', scaffold: 'calculator', acceptance: ['a', 'b', 'c'] }),
         dry_run: true,
       }, { db, dataDir: d } as any);
-      expect(out2).toContain('generic');
+      expect(out2).toContain('scaffold_build 拒绝');
+      expect(out2).toContain('scaffold 非法');
     } finally {
       closeDB(db);
       try { rmSync(d, { recursive: true, force: true }); } catch {}

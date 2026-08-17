@@ -617,3 +617,13 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **去掉「概念编译器/概念进·证据出」夸大字样**（11 处）：`--help`/i18n cli.usage 头部 → 「Windows 本地 AI agent CLI」；/version 去标语；终端标题去「概念编译器」；TUI 品牌 welcome → 「Windows 本地 AI agent CLI」；品牌 TAG 与宠物欢迎帧去 slogan；i18n system.role/p7 与 llmSpec 提示词去「概念编译器/编译学派」措辞（方法论保留）；forge 生成标注、scaffold_build/wx_cmd 工具描述、registry /build 描述同步；providers 兜底欢迎语顺带修复残留 `/key` 指引 → `/model set-key`。
 - **README 大幅瘦身**：~157 行 → ~75 行（去平台声明/三个限定词/离线分层/编译学派/能力地图五段副线/技术栈长篇/验收证据/目录结构——仅留快速开始、常用命令、模型接入、NL 契约表、键位、终端三档、License）；保留诚实背书行「记忆容量 ≠ 模型上下文窗口 64k」（w8-04 契约测试同步锚点更新）。AGENTS.md README 摘要同步瘦身（ZCode 工作流注记保留）。
 - **验证**：w4 进程契约（--help 中文头）、w8-04 背书锚点更新；全量 2384 通过；tsc 零错误；npm run build 通过。
+
+### 13.37 规则脑删除轮（2026-08-18 用户请求：仅删除规则脑，离线能力全部保留）
+
+- **删除对话规则脑 `ruleBrain()`**（providers.ts，打招呼/四则运算/状态三能力的无 key 确定性兜底——此前已被 agent.ts 无 key 引导路径架空，实为死代码）；`cli/index.ts` 会话工件 model 占位 `'rule-brain'` → `'unconfigured'`（sessionStart 非空 schema 契约保持）。
+- **删除编译规则脑**（/build 确定性规格引擎）：spec.ts 关键词表 RULES（60+ 域）+ RULE_PATTERNS + makeSpec；plan.ts makePlan 规则分解（topoSort/类型保留）；scaffold.ts `plan ?? makePlan` 兜底删除（plan 参数改为必传）。
+- **/build 单通道化**：无 key → 立即报错「AI 规格化是唯一编译通道，需要模型密钥」；有 key → aiMakeSpec 唯一入口；AI 失败 → 明确报错不假装编译；计划由调用方固定构造（单模块 app）；scaffold_build 工具同语义（非法模具/空验收 fail-closed 报错，不再回退规则脑）。
+- **文案面**：README/AGENTS 标语「无 key 也有离线能力（规则脑 + …）」→「（本地离线模型 + …）」；/build 描述、useConversationLifecycle 无 key 提示、wxGateway/llmStream/handlersExt 注释共 8 处同步；knownFailures KF-022 resolvedBy 更新。
+- **测试面**：删 ruleBrain 4 用例、RULE_PATTERNS 域覆盖契约、makeSpec/makePlan 用例、kf-022「未传 plan 兜底」用例（源码级断言改为 plan 必传）；instantiate 调用点全部显式传固定 plan；kf-018 改字面 Spec；kernel-tools 回退用例改 fail-closed 断言；kf-004/kf-029 夹具 `'unconfigured'`。
+- **口径失效记录**：competitive-analysis.md 的「免 key 可用：规则脑兜底」对外对比口径随本删除失效（离线模型路径仍在，该口径应按「本地离线模型」重述）。
+- **保留不动**：离线四模态模型、语音、本地嵌入/向量、黑洞记忆、/offline、/voice、Windows OCR、云端视觉、/build 的脚手架执行/验证/证据/质量门全链路。

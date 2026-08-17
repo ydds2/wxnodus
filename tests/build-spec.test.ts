@@ -3,38 +3,26 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeSpec, validateSpec, diagnoseSpec, type Spec } from '../src/build/spec.js';
-import { makePlan, topoSort } from '../src/build/plan.js';
+import { validateSpec, diagnoseSpec, type Spec } from '../src/build/spec.js';
+import { topoSort } from '../src/build/plan.js';
 import { instantiate, checkLeftover } from '../src/build/scaffold.js';
 import { writeEvidence, fingerprint } from '../src/build/evidence.js';
 import { verifyProject, type VerifyResult } from '../src/build/verify.js';
 import { runGate, type GateCtx } from '../src/build/gate.js';
+
+// 规则脑分解已移除（2026-08-18）：instantiate 的 plan 参数必传——固定单模块计划
+const FIXED_PLAN = { modules: [{ name: 'app', deps: [], desc: '单模块应用' }], order: ['app'], milestones: ['M1 应用构建', 'M2 验证与交付'] };
 
 let dir: string;
 beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'wxn-build-')); });
 afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
 
 describe('规格契约（spec）', () => {
-  it('规则脑命中：待办系统 → todo 模具 + 3 条验收 + 禁主观词', () => {
-    const s = makeSpec('帮我做一个待办系统', { key: null });
-    expect(s.scaffold).toBe('todo');
-    expect(s.title.length).toBeGreaterThan(0);
-    expect(s.acceptance.length).toBe(3);
-    for (const a of s.acceptance) {
-      expect(a).not.toMatch(/良好|合理|美观|优雅/); // 禁主观词
-    }
-  });
-
   it('validateSpec 拒绝无验收/主观词规格', () => {
     const bad: Spec = { title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['界面要美观', '好用'] };
     expect(validateSpec(bad).ok).toBe(false);
     const good: Spec = { title: '记账本', summary: '本地记账', scaffold: 'ledger', acceptance: ['能增删记录', '能统计合计', '数据持久化'] };
     expect(validateSpec(good).ok).toBe(true);
-  });
-
-  it('未知关键词诚实拒答（unknown）', () => {
-    const s = makeSpec('帮我发射火箭到火星', { key: null });
-    expect(s.scaffold).toBe('unknown');
   });
 });
 
@@ -56,17 +44,12 @@ describe('计划分解（plan）', () => {
     ];
     expect(() => topoSort(mods)).toThrow(/循环/);
   });
-  it('makePlan 生成里程碑', () => {
-    const plan = makePlan('记账系统', { key: null });
-    expect(plan.milestones.length).toBeGreaterThanOrEqual(2);
-    expect(plan.modules.length).toBeGreaterThan(0);
-  });
 });
 
 describe('脚手架（scaffold）', () => {
   it('instantiate 生成可运行项目骨架（server+public+evidence 占位）', () => {
     const p = join(dir, 'proj1');
-    const r = instantiate({ title: '测试项目', summary: 'x', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p);
+    const r = instantiate({ title: '测试项目', summary: 'x', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p, FIXED_PLAN);
     expect(r.ok).toBe(true);
     expect(existsSync(join(p, 'server'))).toBe(true);
     expect(existsSync(join(p, 'public'))).toBe(true);
@@ -75,7 +58,7 @@ describe('脚手架（scaffold）', () => {
   });
   it('残留槽位检测：LEFTOVER 拒交付', () => {
     const p = join(dir, 'proj2');
-    instantiate({ title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p);
+    instantiate({ title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p, FIXED_PLAN);
     // 篡改一个文件注入 LEFTOVER 标记
     const f = join(p, 'server', 'index.js');
     expect(existsSync(f)).toBe(true);
@@ -86,7 +69,7 @@ describe('脚手架（scaffold）', () => {
 
   it('A22 成熟栈：REST 分层（router/store）+ React 19 + esbuild + 冒烟测试齐全', () => {
     const p = join(dir, 'proj-mature');
-    const r = instantiate({ title: '成熟栈', summary: 'x', scaffold: 'todo', acceptance: ['a', 'b', 'c'] }, p);
+    const r = instantiate({ title: '成熟栈', summary: 'x', scaffold: 'todo', acceptance: ['a', 'b', 'c'] }, p, FIXED_PLAN);
     expect(r.ok).toBe(true);
     // 服务端分层：入口/路由/存储/测试 四文件
     expect(existsSync(join(p, 'server', 'index.js'))).toBe(true);
@@ -110,7 +93,7 @@ describe('脚手架（scaffold）', () => {
     const routes = { todo: '/api/items', ledger: '/api/stats', note: '/api/search', anim: '/api/frames', generic: '/api/items' };
     for (const [mold, route] of Object.entries(routes)) {
       const mp = join(p, mold);
-      const r = instantiate({ title: mold, summary: 'x', scaffold: mold, acceptance: ['a', 'b', 'c'] }, mp);
+      const r = instantiate({ title: mold, summary: 'x', scaffold: mold, acceptance: ['a', 'b', 'c'] }, mp, FIXED_PLAN);
       expect(r.ok).toBe(true);
       const server = readFileSync(join(mp, 'server', 'index.js'), 'utf8');
       expect(server).toContain(route);
@@ -129,7 +112,7 @@ describe('脚手架（scaffold）', () => {
 describe('证据链（evidence）', () => {
   it('writeEvidence 落盘三行证据 + 指纹', () => {
     const p = join(dir, 'proj3');
-    instantiate({ title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p);
+    instantiate({ title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p, FIXED_PLAN);
     const fp = fingerprint(p);
     expect(fp.length).toBe(64); // 完整 SHA-256（KF-020：绝不截断）
     const r = writeEvidence(p, { status: 'ok', checks: ['health-ok'], port: 4321 });
@@ -143,7 +126,7 @@ describe('证据链（evidence）', () => {
 describe('验证引擎（verify）', () => {
   it('健康检查通过/失败路径', async () => {
     const p = join(dir, 'proj4');
-    instantiate({ title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p);
+    instantiate({ title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p, FIXED_PLAN);
     const ok: VerifyResult = await verifyProject(p, { timeoutMs: 3000 });
     expect(['ok', 'skipped']).toContain(ok.status); // 无真实服务时 skipped 也接受
   });
@@ -152,7 +135,7 @@ describe('验证引擎（verify）', () => {
 describe('质量门（gate）', () => {
   it('四门：自测/健康/证据/合规', async () => {
     const p = join(dir, 'proj5');
-    instantiate({ title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p);
+    instantiate({ title: 'x', summary: 'y', scaffold: 'ledger', acceptance: ['a', 'b', 'c'] }, p, FIXED_PLAN);
     const ctx: GateCtx = { projectDir: p, dataDir: dir };
     const g = await runGate(ctx);
     expect(g.gates.length).toBe(5); // 四门 + 测试门（P2 第五门）
@@ -204,7 +187,7 @@ describe('runGate 测试门', () => {
 
 describe('A21 diagnoseSpec 分级诊断', () => {
   it('合法规格：info 模具命中 + 无 error', () => {
-    const good = makeSpec('帮我做一个待办系统', { key: null });
+    const good: Spec = { title: '待办系统', summary: '帮我做一个待办系统', scaffold: 'todo', acceptance: ['能新增任务', '能标记完成', '数据持久化'] };
     const diags = diagnoseSpec(good);
     expect(diags.filter(d => d.level === 'error')).toHaveLength(0);
     expect(diags.some(d => d.level === 'info' && d.code === 'spec.scaffold.hit')).toBe(true);
@@ -227,35 +210,5 @@ describe('A21 diagnoseSpec 分级诊断', () => {
   it('空验收 → error', () => {
     const s: Spec = { title: 'x', summary: 'y', scaffold: 'ledger', acceptance: [] };
     expect(validateSpec(s).ok).toBe(false);
-  });
-});
-
-// ── P0-2：规则脑域覆盖扩充（47 → 60+；导出契约锁定）──
-describe('规则脑域覆盖（P0-2 扩充）', () => {
-  it('RULE_PATTERNS 数量契约（≥60 域覆盖）', async () => {
-    const { RULE_PATTERNS } = await import('../src/build/spec.js');
-    expect(RULE_PATTERNS.length).toBeGreaterThanOrEqual(60);
-  });
-
-  it('新增域逐一命中（宠物/租车/招聘/捐赠/票务/家教/维修/志愿者/讲座/外卖/预约/租借/家政）', () => {
-    const cases: Array<[string, string]> = [
-      ['帮我做一个宠物领养平台', 'generic'],
-      ['做一个租车系统', 'generic'],
-      ['招聘管理系统', 'generic'],
-      ['公益捐赠平台', 'generic'],
-      ['演出票务系统', 'generic'],
-      ['家教预约平台', 'generic'],
-      ['家电维修报修系统', 'generic'],
-      ['志愿者活动管理', 'generic'],
-      ['讲座活动报名系统', 'generic'],
-      ['外卖点单系统', 'generic'],
-      ['门诊挂号预约系统', 'generic'],
-      ['物品租借平台', 'generic'],
-      ['家政服务预约', 'generic'],
-    ];
-    for (const [input, scaffold] of cases) {
-      const s = makeSpec(input, { key: null });
-      expect(s.scaffold).toBe(scaffold);
-    }
   });
 });

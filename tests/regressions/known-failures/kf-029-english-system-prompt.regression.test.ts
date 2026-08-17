@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { buildSystemPrompt } from '../../../src/kernel/systemPrompt.js';
 
-const base = { mode: 'smart' as const, cwd: 'C:/work', model: 'rule-brain', hasImageIn: false };
+const base = { mode: 'smart' as const, cwd: 'C:/work', model: 'unconfigured', hasImageIn: false };
 
 describe('KF-029 resolved: English prompt 无中文控制文本', () => {
   it('systemPrompt.ts 源文件零 CJK（控制文本全部在 i18n catalog）', () => {

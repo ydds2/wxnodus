@@ -1594,7 +1594,7 @@ export class GatewayClient extends EventEmitter {
   private setupStatus(): unknown {
     const s = this.kernel.settings
     // A25：诚实返回真实配置状态（此前硬编码 true——UI 的「setup required」门禁
-    // 永不触发是设计意图，但返回值造假）。无 key 时规则脑兜底仍可用（哲学不变），
+    // 永不触发是设计意图，但返回值造假）。无 key 时本地离线模型仍可用，
     // 由 UI 端改为提示继续而非阻塞。
     const configured = Boolean(s.apiKeyEnc)
 
@@ -2167,7 +2167,7 @@ export class GatewayClient extends EventEmitter {
 
   private modelOptions(params: Record<string, unknown>): unknown {
     const byProvider = new Map<string, any>()
-    // 有密钥即视为已认证（规则脑模式始终可用，无门禁）
+    // 有密钥即视为已认证（无门禁）
     const authenticated = Boolean(this.kernel.settings.apiKeyEnc)
 
     for (const m of MODEL_CATALOG) {

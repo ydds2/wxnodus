@@ -1,4 +1,4 @@
-// tests/kernel-agent.test.ts — L2-4 agent 循环：流式/工具执行/权限/重试/中断/子代理/规则脑
+// tests/kernel-agent.test.ts — L2-4 agent 循环：流式/工具执行/权限/重试/中断/子代理
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -42,7 +42,7 @@ function makeAgent(script: Array<ModelCall | ToolCallMsg>) {
 }
 
 describe('无 key 配置引导（全部输出必须经 AI 模型）', () => {
-  it('无密钥时提示配置，不做规则脑假装回答', async () => {
+  it('无密钥时提示配置 /model set-key（不假装回答）', async () => {
     const agent = createAgent({
       db, bus, mem, sessionId: 't2',
       config: { settings: {} } as any,
@@ -51,7 +51,7 @@ describe('无 key 配置引导（全部输出必须经 AI 模型）', () => {
     const r = await agent.run('你好');
     expect(r.ok).toBe(true);
     expect(r.text).toContain('/model set-key');
-    expect(r.text).not.toContain('规则脑');
+    expect(r.text).not.toContain('规则脑'); // 旧规则脑假装回答不得回归
   });
 
   it('enc 存在但解密失败（机器指纹变化）→ 明确提示重新配置而非「未配置」', async () => {

@@ -38,7 +38,7 @@
 
 # WxNodus V3
 
-Windows 本地 AI agent CLI：数据不出机，无 key 也有离线能力（规则脑 + 确定性工具 + 本地记忆）。
+Windows 本地 AI agent CLI：数据不出机，无 key 也有离线能力（本地离线模型 + 确定性工具 + 本地记忆）。
 
 ## 快速开始
 

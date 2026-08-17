@@ -187,8 +187,8 @@ if (pre.mode === 'error') {
   }
   const workspaceRoot = resolvedWorkspace.value.value;
   const workspaceSource = resolvedWorkspace.value.source;
-  // 默认模型/端点兜底：/key 只保存密钥时，若 config 无 model/baseURL，
-  // agent 的 defaultCallModel 会因 `!s.model || !s.baseURL` 降级规则脑
+  // 默认模型/端点兜底：/model set-key 只保存密钥时，若 config 无 model/baseURL，
+  // agent 的 defaultCallModel 会因 `!s.model || !s.baseURL` 走「未配置密钥」引导
   // （提示「未配置」）——有 key 即视为已配置，补齐默认值并持久化。
   // 同时校验 model 必须是合法 modelId：遗留数据可能把 UI 命令串
   // （"deepseek-reasoner --provider deepseek"）写进 model 字段，
@@ -308,7 +308,7 @@ if (pre.mode === 'error') {
   const sessionStartService = createSessionStartService({
     generator: new SessionStartGenerator({
       locale: () => (locale === 'zh-CN' ? 'zh-CN' : 'en'),
-      model: () => model || settings.model || 'rule-brain', // 无 key 时规则脑兜底——工件 model 字段不得为空（validate 拒绝）
+      model: () => model || settings.model || 'unconfigured', // 无 key 时占位——工件 model 字段不得为空（validate 拒绝）
       dataDir: () => dataDir,
       hooks: () => {
         const cfg = hooksFromConfig(settings);

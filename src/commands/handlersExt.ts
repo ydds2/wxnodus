@@ -399,7 +399,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         ` 其他离线组件：记忆 embedding（本地）/ 视觉 moondream2（visionLocal）/ 语音 whisper——见各自命令`,
         ``,
         ` 边界（诚实）：离线模型无工具调用（对话为纯文本）、1.5B 质量有限（对话/规格化/摘要够用）、`,
-        ` CPU ~15-30 tok/s。工具类任务离线由规则脑（48 模板）/确定性工具兜底。`,
+        ` CPU ~15-30 tok/s。工具类任务离线由确定性工具兜底。`,
       ]);
     }
     if (sub === 'pack' && args[1] === 'download') {

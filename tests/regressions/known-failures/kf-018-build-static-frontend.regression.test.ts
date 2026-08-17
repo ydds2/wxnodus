@@ -4,8 +4,10 @@ import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { makeSpec } from '../../../src/build/spec.js';
 import { instantiate } from '../../../src/build/scaffold.js';
+
+// 规则脑分解已移除（2026-08-18）：instantiate 的 plan 参数必传——固定单模块计划
+const FIXED_PLAN = { modules: [{ name: 'app', deps: [], desc: '单模块应用' }], order: ['app'], milestones: ['M1 应用构建', 'M2 验证与交付'] };
 
 const tempDirs: string[] = [];
 afterAll(() => { for (const d of tempDirs) { try { rmSync(d, { recursive: true, force: true }); } catch { /* 清理失败静默 */ } } });
@@ -14,16 +16,16 @@ const tmp = () => { const d = mkdtempSync(join(tmpdir(), 'wxn-kf-018-')); tempDi
 describe('KF-018 resolved: 静态前端产物交付', () => {
   it('根 index.html 存在（零依赖兜底页，未构建前端也可静态部署）', () => {
     const dir = tmp();
-    const spec = makeSpec('帮我做一个待办系统', { key: null });
-    const r = instantiate(spec, dir);
+    const spec = { title: '待办系统', summary: '帮我做一个待办系统', scaffold: 'todo', acceptance: ['能新增任务', '能标记完成', '数据持久化'] };
+    const r = instantiate(spec, dir, FIXED_PLAN);
     expect(r.ok).toBe(true);
     expect(existsSync(join(dir, 'index.html'))).toBe(true);
   });
 
   it('生成的服务真实静态回退服务根页面（/ 返回 200 + HTML）', async () => {
     const dir = tmp();
-    const spec = makeSpec('帮我做一个待办系统', { key: null });
-    expect(instantiate(spec, dir).ok).toBe(true);
+    const spec = { title: '待办系统', summary: '帮我做一个待办系统', scaffold: 'todo', acceptance: ['能新增任务', '能标记完成', '数据持久化'] };
+    expect(instantiate(spec, dir, FIXED_PLAN).ok).toBe(true);
     const { spawn } = await import('node:child_process');
     const child = spawn(process.execPath, [join(dir, 'server', 'index.js')], { cwd: dir, env: { ...process.env, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
     try {

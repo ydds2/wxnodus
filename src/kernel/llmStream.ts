@@ -51,7 +51,7 @@ export type LlmStreamResult =
 export async function callLlmStream(opts: LlmStreamOpts): Promise<LlmStreamResult> {
   retried429 = false; // 每次调用只允许一次 429 退避重试（防重试风暴）
   // 离线 token 包：model 前缀 offline: → 本地 LLM 通道（transformers.js，断网可用；
-  // 无工具调用——agent 离线模式为纯文本对话，工具类任务由规则脑/确定性工具兜底）
+  // 无工具调用——agent 离线模式为纯文本对话，工具类任务由确定性工具兜底）
   if (opts.model.startsWith('offline:')) {
     const { callOfflineLlm } = await import('./offlineModel.js');
     const r = await callOfflineLlm(opts.model, {
