@@ -14,6 +14,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { httpStatusForCompletion } from '../protocol/completionTransport.js';
 import type { RunFinalStatus } from '../protocol/runs.js';
 import { evaluateCsrf } from '../presentation/http/csrfPolicy.js';
+import { WXNODUS_VERSION } from '../kernel/version.js';
 
 export interface ServeKernel {
   dataDir: string;
@@ -128,7 +129,7 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
 
       // 最小存活探针：无认证、零泄漏
       if (req.method === 'GET' && url.pathname === '/health/live') {
-        json(res, req, 200, { ok: true, service: 'wxnodus-serve', version: '3.0.0' }, allowlist);
+        json(res, req, 200, { ok: true, service: 'wxnodus-serve', version: WXNODUS_VERSION }, allowlist);
         return;
       }
 
@@ -148,7 +149,7 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
         let cmdCount = 0;
         try { cmdCount = (k.db.prepare('SELECT COUNT(*) c FROM messages').get() as { c: number }).c; } catch { /* 内存模式 */ }
         json(res, req, 200, {
-          ok: true, service: 'wxnodus-serve', version: '3.0.0',
+          ok: true, service: 'wxnodus-serve', version: WXNODUS_VERSION,
           model: (k.config.get('settings') as any)?.model ?? '',
           dataDir: k.dataDir, cwd: k.cwd,
           messages: cmdCount,

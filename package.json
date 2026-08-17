@@ -1,6 +1,6 @@
 {
   "name": "wxnodus",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "type": "module",
   "description": "WxNodus V3 — 本地概念编译器 CLI：说一句话交付可运行系统（Node22 + ink7 + React19 + SQLite）",
   "bin": {

@@ -5,7 +5,7 @@
 //   · 未知 flag：宽松忽略（现状契约），进程干净退出
 // dist 未构建时诚实 skip（环境不足不假通过）。
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -14,6 +14,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 const execFileAsync = promisify(execFile);
 const CLI = resolve(__dirname, '../../dist/cli/index.js');
 const hasDist = existsSync(CLI);
+// 版本单一事实源：断言与 package.json 一致（bump 时自动同步，不再每处硬编码）
+const pkgVersion = (JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
 const runCli = (args: string[], opts: { cwd?: string } = {}) =>
   execFileAsync(process.execPath, [CLI, ...args], {
@@ -35,7 +37,7 @@ describeWithDist('dist/cli process smoke', () => {
   it('--version exits 0 with the pinned version', async () => {
     const r = await runCli(['--version']);
     expect(r).not.toBeInstanceOf(Error);
-    expect((r as { stdout: string }).stdout).toContain('wxnodus 3.0.0');
+    expect((r as { stdout: string }).stdout).toContain(`wxnodus ${pkgVersion}`);
   });
 
   it('--help exits 0 with usage text', async () => {

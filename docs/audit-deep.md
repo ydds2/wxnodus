@@ -595,3 +595,11 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 - **agent 召回注入 300 字静默截断修复**：`recallHybrid` 命中条目注入用户提示时原 `slice(0, 300)` 无标注——模型误以为记忆到此为止。现 labelTruncate 统一口径（无 hint——紧凑，模型可 memory_search 查全文）。
 - **验证**：全量 2360 通过 + tsc 零错误（一轮全量回归出现单测试 flake——已另起 6 次循环复测定位中，未见与本次改动相关性）。
+
+### 13.34 版本单一事实源 + 3.1.0 发布轮（2026-08-17 用户请求）
+
+- **根因**：版本号散落 8+ 处硬编码 `'3.0.0'`（banner//version/serve/MCP/ACP/wxGateway/打包）——package.json 单独改不动 cmd 里显示的版本。
+- **修复**：`kernel/version.ts` 运行时读 package.json 单一事实源（src/dist 同深度，失败回退 '0.0.0'）；8 处接线；package.json → **3.1.0**；`npm run build` 刷新 dist（`node dist/cli/index.js --version` → `wxnodus 3.1.0` 实测）。
+- **测试**：+2（version 单一事实源一致性 + 已升级断言）；w2 进程级 smoke 改读 package.json（bump 自动同步，不再硬编码）。
+- **flake 根治**：本会话 2 次出现的 `kernel-taskRunner 双线独立日志` flake 定位为**测试竞态**（并行双线只等 children[0] 落定就读 children[1] 日志——读空文件）——测试改为等双线均 success；另附产品级修复（taskRunner finish 改挂 writer 'finish'/'error' 事件：日志刷盘后才置终态，/jobs 面板读日志绝不见残缺）。
+- **验证**：全量 2363 通过；tsc 零错误。

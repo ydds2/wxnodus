@@ -8,6 +8,7 @@ import { execFile, execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, statSync } from 'node:fs'
 import { join, resolve, basename, isAbsolute } from 'node:path'
 import { attachmentsDir, clearPending, readPending, writePending } from '../kernel/imagePending.js'
+import { WXNODUS_VERSION } from '../kernel/version.js'
 
 import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
@@ -2355,7 +2356,7 @@ export class GatewayClient extends EventEmitter {
       mcp_servers,
       system_prompt: this.kernel.systemPrompt?.(),
       update_behind: this.kernel.updateBehind ?? null,
-      version: '3.0.0',
+      version: WXNODUS_VERSION,
     }
   }
 

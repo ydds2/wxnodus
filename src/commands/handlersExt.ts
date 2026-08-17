@@ -26,6 +26,7 @@ import { usageSummary, usageRangeSince, type UsageRange } from '../kernel/usage.
 import { estimateCost } from '../kernel/cost.js';
 import { sessionCost, rangeCost, costText, type CostQueryResult } from '../kernel/costQuery.js';
 import { labelTruncate } from '../kernel/truncate.js';
+import { WXNODUS_VERSION } from '../kernel/version.js';
 import { encryptKey } from '../kernel/providers.js';
 import { resolveProviderProfile } from '../kernel/profiles.js';
 import { fetchBalanceCached } from '../kernel/balance.js';
@@ -2783,7 +2784,7 @@ export const commands = {
                 const r = await ctx.agent.run(String(params?.text ?? ''));
                 res.writeHead(200); res.end(JSON.stringify({ ok: r.ok, text: r.text, turns: r.turns }));
               } else if (method === 'health') {
-                res.writeHead(200); res.end(JSON.stringify({ ok: true, version: '3.0.0' }));
+                res.writeHead(200); res.end(JSON.stringify({ ok: true, version: WXNODUS_VERSION }));
               } else {
                 res.writeHead(400); res.end(JSON.stringify({ error: `unknown method: ${method}` }));
               }

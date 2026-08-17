@@ -10,6 +10,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ToolDef } from './tools.js';
 import { sanitizedEnv } from './env.js';
+import { WXNODUS_VERSION } from './version.js';
 
 export interface McpServerConfig {
   name: string;
@@ -194,7 +195,7 @@ export function connectMcp(cfg: McpServerConfig): Promise<McpClient> {
     send('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'wxnodus', version: '3.0.0' },
+      clientInfo: { name: 'wxnodus', version: WXNODUS_VERSION },
     })
       .then(() => proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} }) + '\n'))
       .then(() => send('tools/list', {}))
@@ -344,7 +345,7 @@ export async function connectMcpHttp(cfg: McpServerConfig & { url: string }): Pr
   await rpc('initialize', {
     protocolVersion: '2025-06-18',
     capabilities: {},
-    clientInfo: { name: 'wxnodus', version: '3.0.0' },
+    clientInfo: { name: 'wxnodus', version: WXNODUS_VERSION },
   });
   await rpc('notifications/initialized', {});
   const list = await rpc('tools/list', {});

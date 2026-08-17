@@ -14,6 +14,7 @@ import { profileHealth } from '../kernel/profiles.js';
 import { priceForModel } from '../kernel/cost.js';
 import { sessionCost, costText } from '../kernel/costQuery.js';
 import { snippet } from '../kernel/truncate.js';
+import { WXNODUS_VERSION } from '../kernel/version.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { makeSpec } from '../build/spec.js';
 import { makePlan, topoSort } from '../build/plan.js';
@@ -377,7 +378,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       : `密钥状态：${c('已配置（环境变量）', '32')}（${maskKey(dec)} · provider=${keyRes.provider}）`;
   });
 
-  bus.register('/version', () => 'WxNodus 3.0.0 · 概念进·证据出');
+  bus.register('/version', () => `WxNodus ${WXNODUS_VERSION} · 概念进·证据出`);
 
   // 模式（Claude Code 五模式体系：smart 更改前确认 / auto 自动编辑 / goal loop-goal /
   // manual 全量确认 / plan 计划模式 / yolo 完全访问）

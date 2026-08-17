@@ -104,7 +104,9 @@ describe('并行双线子任务（三任务并行）', () => {
       { goal: `node -e "console.log('主线输出')"`, kind: 'shell' },
       [{ goal: `node -e "console.log('支线输出')"`, kind: 'shell' }]
     );
+    // 并行双线：须等两条支线都落定再读日志（此前只等 children[0]——支线 B 尚未写完即读，读空文件 flake）
     expect(await waitFor(() => tr.get(children[0]!)?.status === 'success')).toBe(true);
+    expect(await waitFor(() => tr.get(children[1]!)?.status === 'success')).toBe(true);
     const logA = tr.get(children[0]!)!.log_file;
     const logB = tr.get(children[1]!)!.log_file;
     expect(logA).not.toBe(logB);

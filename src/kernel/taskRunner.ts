@@ -217,12 +217,22 @@ export function createTaskRunner(opts: TaskRunnerOptions): TaskRunner {
       if (row(t.id)?.status === 'cancelled') return;
       code = await attempt();
     }
+    // 审查修复（flake 根因）：writer.end() 返回 ≠ 数据已刷盘——此前 finish() 立即置 success，
+    // 观察者（/jobs 面板、测试）此刻读日志可能读到残缺/空文件。现挂 finish/error 事件收口：
+    // 日志刷盘后才置终态（settle 幂等防双事件重复 finish）
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      // 审查修复：kill 后收口幂等——cancelled 状态不被后续 finish 覆盖
+      if (row(t.id)?.status === 'cancelled') return;
+      if (code === 124) finish(t.id, 'failed', 124, buffer, '执行超时（已 kill）');
+      else if (code === 0) finish(t.id, 'success', 0, buffer, '');
+      else finish(t.id, 'failed', code, buffer, `退出码 ${code}`);
+    };
+    writer.on('finish', settle);
+    writer.on('error', settle); // 日志写失败不阻塞状态收口
     writer.end();
-    // 审查修复：kill 后收口幂等——cancelled 状态不被后续 finish 覆盖
-    if (row(t.id)?.status === 'cancelled') return;
-    if (code === 124) finish(t.id, 'failed', 124, buffer, '执行超时（已 kill）');
-    else if (code === 0) finish(t.id, 'success', 0, buffer, '');
-    else finish(t.id, 'failed', code, buffer, `退出码 ${code}`);
   }
 
   // ── agent 线：独立子代理会话（不污染主对话）──

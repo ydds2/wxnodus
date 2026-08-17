@@ -3,6 +3,7 @@
 //       initialize → session/new → prompt（agent.run 执行）→ assistant 消息响应
 //       本地化为准：不依赖外部服务，当前 agent 实例应答
 import { createInterface } from 'node:readline';
+import { WXNODUS_VERSION } from './version.js';
 
 export interface AcpOptions {
   run: (text: string, sessionId?: string) => Promise<{ ok: boolean; text: string }>;
@@ -36,7 +37,7 @@ export function runAcpServer(opts: AcpOptions): Promise<number> {
           respond(id, {
             protocolVersion: 1,
             capabilities: { config: true, prompt: true, resolution: { supportsEdit: false } },
-            clientInfo: { name: 'wxnodus', version: '3.0.0' },
+            clientInfo: { name: 'wxnodus', version: WXNODUS_VERSION },
           });
           break;
         case 'session/new':

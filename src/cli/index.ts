@@ -14,8 +14,10 @@ import { createWireFrontend } from '../bootstrap/createWireFrontend.js';
 // A24 第三类修复：buildInfo system_prompt 数据源（kernel 实时构建；ESM 静态引用缓存）
 import { buildSystemPrompt as buildSystemPromptRef } from '../kernel/systemPrompt.js';
 import { hasImageIn as hasImageInRef } from '../kernel/providers.js';
+import { WXNODUS_VERSION } from '../kernel/version.js';
 
-const VERSION = '3.0.0';
+// 版本单一事实源：package.json（kernel/version.ts 运行时读取——改版本只动 package.json）
+const VERSION = WXNODUS_VERSION;
 // 调试：捕获未处理异常/拒绝 → dataDir/logs/error-<日期>.log（统一日志目录，不污染工作目录）
 // dataDir 在 main 内定义——日志初始化延迟到装配时调用（见 _initErrorLog）
 let _initErrorLog: (dir: string) => void = () => {};

@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 import type { OperationResult } from '../protocol/results.js';
 import { configError } from '../domain/config/configSchema.js';
 import { runBuildChain } from './buildChain.js';
+import { WXNODUS_VERSION } from '../kernel/version.js';
 
 export interface GateHAttachment { path: string; sha256: string }
 export interface GateHStepResult {
@@ -176,7 +177,7 @@ const defaultInstallerLifecycle = async (context: GateHStepContext): Promise<Gat
     const zipOut = join(context.evidenceDir, 'installer');
     // 每次全新目录：复用 unpacked 会残留旧 zip 文件（类型产物等），污染本 run 安装树并掩盖真实布局
     rmSync(zipOut, { recursive: true, force: true });
-    const packedZip = spawnSync(process.execPath, [tsx, installerScript, '--candidate', context.candidateFile, '--name', 'WxNodusGateH', '--version', '3.0.0', '--out', zipOut], {
+    const packedZip = spawnSync(process.execPath, [tsx, installerScript, '--candidate', context.candidateFile, '--name', 'WxNodusGateH', '--version', WXNODUS_VERSION, '--out', zipOut], {
       cwd: context.repoRoot, encoding: 'utf8', timeout: 600_000, maxBuffer: 64 * 1024 * 1024,
     });
     record('package', `${packedZip.stdout}\n${packedZip.stderr}`);
@@ -184,7 +185,7 @@ const defaultInstallerLifecycle = async (context: GateHStepContext): Promise<Gat
       return { id: 'installer-lifecycle', status: 'blocked', reason: 'installer package failed', attachments: [writeAttachment(context.evidenceDir, 'installer-lifecycle.log', logs.join('\n'))] };
     }
     const { readZip } = await import('../application/release/zipArchive.js');
-    const zipPath = join(zipOut, 'WxNodusGateH-3.0.0.zip');
+    const zipPath = join(zipOut, `WxNodusGateH-${WXNODUS_VERSION}.zip`);
     const zip = readZip(readFileSync(zipPath));
     if (!zip.ok) return { id: 'installer-lifecycle', status: 'blocked', reason: 'zip readback failed', attachments: [] };
     const unpackDir = join(context.evidenceDir, 'installer', 'unpacked');
