@@ -9,7 +9,7 @@
 import { SCAFFOLDS, validateSpec } from './spec.js';
 import type { Spec } from './spec.js';
 
-const SYSTEM_PROMPT = `你是概念编译器 WxNodus 的规格分析器。把用户需求编译为规格 JSON，严格只输出以下格式（不要任何其他文本、解释或 markdown 代码围栏）：
+const SYSTEM_PROMPT = `你是 WxNodus 的规格分析器。把用户需求编译为规格 JSON，严格只输出以下格式（不要任何其他文本、解释或 markdown 代码围栏）：
 {"title":"简短标题（≤30 字）","summary":"需求摘要","scaffold":"ledger|todo|note|anim|generic","acceptance":["验收1","验收2","验收3"]}
 要求：
 - acceptance 恰 3 条，可机器验证，不得含主观词（良好/美观/好用/顺畅/优雅/合理）

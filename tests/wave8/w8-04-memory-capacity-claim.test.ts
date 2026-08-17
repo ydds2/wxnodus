@@ -11,9 +11,9 @@ import { describe, expect, it } from 'vitest';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 describe('W8-04 黑洞引擎容量表述（诚实背书）', () => {
-  it('README 副线 1：明确「记忆容量 ≠ 模型上下文窗口」并声明 64k 窗口约束', () => {
+  it('README：明确「记忆容量 ≠ 模型上下文窗口」并声明 64k 窗口约束', () => {
     const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
-    const line = readme.split('\n').find(l => l.startsWith('**副线 1：黑洞引擎**'));
+    const line = readme.split('\n').find(l => l.startsWith('> 黑洞引擎记忆容量'));
     expect(line).toBeTruthy();
     expect(line).toContain('记忆容量 ≠ 模型上下文窗口');
     expect(line).toContain('64k');

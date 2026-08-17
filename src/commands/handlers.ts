@@ -304,7 +304,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // 密钥（per-provider 槽位：apiKeys.<provider> 归属存储；遗留 apiKeyEnc+keyProvider 兼容）
   // 已并入 /model：密钥配置 → /model set-key，密钥状态 → /model key（原 /key 命令移除）
 
-  bus.register('/version', () => `WxNodus ${WXNODUS_VERSION} · 概念进·证据出`);
+  bus.register('/version', () => `WxNodus ${WXNODUS_VERSION}`);
 
   // 模式（Claude Code 五模式体系：smart 更改前确认 / auto 自动编辑 / goal loop-goal /
   // manual 全量确认 / plan 计划模式 / yolo 完全访问）
@@ -620,7 +620,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     ]);
   });
 
-  // 概念编译（超复杂项目能力）
+  // 需求编译（超复杂项目能力）
   bus.register('/build', async (args) => {
     // W3 Build 第 1 步：组合路由决策——modern/required 在 BuildService 生产接线完成前
     // fail-closed（BUILD_MODERN_UNAVAILABLE），绝不静默退回 legacy 假成功

@@ -732,7 +732,7 @@ export function coreTools(): Record<string, ToolDef> {
       type: 'function',
       function: {
         name: 'scaffold_build',
-        description: '构建可运行项目（概念编译器：规格 → 计划 → 脚手架落地到 data/projects/）。dry_run=true 时只编译不落盘（预览计划与诊断）。',
+        description: '构建可运行项目（需求编译：规格 → 计划 → 脚手架落地到 data/projects/）。dry_run=true 时只编译不落盘（预览计划与诊断）。',
         parameters: {
           type: 'object',
           properties: {
@@ -971,7 +971,7 @@ export function coreTools(): Record<string, ToolDef> {
       type: 'function',
       function: {
         name: 'wx_cmd',
-        description: '执行 WxNodus 内置命令（斜杠指令）——如 /memory（记忆概览）、/hole <关键词>（黑洞引擎检索）、/build <需求>（概念编译）、/plan on（计划模式）、/skill list、/cron list 等。参数 command 为完整指令串（含斜杠）。不确定用哪个命令时先调 command_search 检索目录（返回名称/描述/安全等级）。注意：涉及权限/密钥/安全/退出的指令会被拒绝，需用户手动执行。',
+        description: '执行 WxNodus 内置命令（斜杠指令）——如 /memory（记忆概览）、/hole <关键词>（黑洞引擎检索）、/build <需求>（需求编译）、/plan on（计划模式）、/skill list、/cron list 等。参数 command 为完整指令串（含斜杠）。不确定用哪个命令时先调 command_search 检索目录（返回名称/描述/安全等级）。注意：涉及权限/密钥/安全/退出的指令会被拒绝，需用户手动执行。',
         parameters: {
           type: 'object',
           properties: {

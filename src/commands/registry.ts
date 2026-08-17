@@ -9,7 +9,7 @@ export const SLASH: string[] = [
   '/model', '/profile', '/status', '/doctor', '/version', '/thinking', '/hooks',
   // 记忆（黑洞引擎）
   '/memory', '/hole', '/compact', '/digest', '/curator',
-  // 构建（概念编译器）
+  // 构建（需求编译）
   '/build', '/deploy', '/forge', '/skill', '/learn', '/gate', '/fdr', '/evidence', '/plan', '/flow', '/import', '/assimilate',
   // 安全（合规红线）
   '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt', '/yolo', '/afk', '/security', '/offline',
@@ -80,7 +80,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/compact': '压缩上下文（有密钥时 LLM 真实总结）',
   '/digest': '摘要最近对话并展示（不写记忆——整理视图）',
   '/curator': '黑洞策展（即时审查 + 后台自动审查 on/off/interval）',
-  '/build': '概念编译：自然语言需求直达可运行系统',
+  '/build': '自然语言需求 → 可运行项目（规则脑/LLM 规格化 + 启动级验证 + 证据）',
   '/deploy': '本地部署：验证→启动服务→探活端口',
   '/assimilate': '黑洞同化（目录 100% 同化技能 / 文件·URL·对话 AI 消化产出融入）',
   '/forge': '组件锻造（MCP Server/Skill 打包）',

@@ -36,11 +36,11 @@ export function permBadgeLabel(mode: string): string {
   return `[${modeBadgeSpec(mode).label}]`
 }
 
-/** 欢迎卡片帧内容（纯函数）：吸积盘 + slogan + 模式徽章——每帧确定性。 */
+/** 欢迎卡片帧内容（纯函数）：吸积盘 + 模式徽章——每帧确定性。 */
 export function welcomeLines(i: number, mode: string): string[] {
   const ring = accretionRing(i)
   return [
-    `${ring[0]}  wxnodus — 概念进 · 证据出`,
+    `${ring[0]}  wxnodus`,
     `${(ring[1] ?? '').padEnd(7)}  ${permBadgeLabel(mode)} · /help 查看命令`
   ]
 }

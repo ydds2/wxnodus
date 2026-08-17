@@ -100,7 +100,7 @@ export function parseArgs(argv: string[]): CliOptions {
   return out;
 }
 
-export const USAGE = `WxNodus V3 — 本地概念编译器 CLI
+export const USAGE = `WxNodus V3 — Windows 本地 AI agent CLI
 
 用法：
   wxnodus                    交互 TUI

@@ -50,8 +50,8 @@ export function ArtLines({ lines }: { lines: [string, string][] }) {
 // Terminals can't scale glyphs, so "responsive" means picking a layout that
 // fits the available columns. Thresholds are picked so each tier reads
 // comfortably without forcing wrap or truncation drift on box-drawing edges.
-const TAG_FULL = '⚡ WxNodus — 本地概念编译器 ⚡'
-const TAG_MID = '本地概念编译器'
+const TAG_FULL = '⚡ WxNodus ⚡'
+const TAG_MID = 'WxNodus'
 const TAG_TINY = 'WxNodus'
 const HIDE_BELOW = 34
 const COMPACT_FROM = 58

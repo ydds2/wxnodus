@@ -191,7 +191,7 @@ export function ruleBrain(input: string): string {
   const s = input.trim();
   if (!s) return '（空输入）';
   if (/^(你好|hi|hello|在吗|嗨)/i.test(s)) {
-    return '你好！我是 WxNodus（本地概念编译器）。当前未配置模型密钥——输入「/key <你的密钥>」配置后即可获得完整能力；未配置时我只能做确定性的简单回答。';
+    return '你好！我是 WxNodus（本地 AI agent）。当前未配置模型密钥——输入「/model set-key <你的密钥>」配置后即可获得完整能力；未配置时我只能做确定性的简单回答。';
   }
   // 简单四则运算（从中文句中提取表达式，仅数字与 +-*() 空格，防注入）
   const exprMatch = s.match(/[\d\s+\-*/().]{2,}/);

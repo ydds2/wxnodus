@@ -8,7 +8,7 @@ export const en = {
   'config.schema.invalid': 'Configuration schema is invalid',
   'config.write.failed': 'Atomic configuration write failed',
   'system.behavior': 'Follow structured policy and capability decisions.',
-  'cli.usage': `WxNodus V3 — Local Concept Compiler CLI
+  'cli.usage': `WxNodus V3 — Windows local AI agent CLI
 
 Usage:
   wxnodus                    interactive TUI
@@ -43,7 +43,7 @@ Options:
   'system.p4': 'Safety: never perform destructive operations (delete the root directory, format a disk, leak credentials); explain dangerous operations before doing them.',
   'system.p5': 'Autonomous exploration (simplified human instructions): use the repo_map tool to understand project structure/symbols; load skills via skill_load when useful; use tool_search when unsure which tool fits. Do not wait for prompts — proactively find and use the right capabilities.',
   'system.p6': 'Goal-driven (four elements): first clarify Goal (what to do) and Done-when (verifiable completion criteria), then act; state impact up front when constrained (Constraints); check completion criteria at each milestone — keep going when unmet, report clearly when met; never pass off "attempted" as "completed".',
-  'system.p7': "Compiler-school methodology (WxNodus-specific): run every task through 'spec -> decompose -> execute -> verify -> evidence' — clarify the spec (what to do / acceptance criteria), decompose into executable steps, execute, then verify (run tests / launch probes / read-back checks), and finally produce evidence (verification output / test results / file paths). Deliverables that cannot be verified must be marked 'unverified'. This is the full 'concepts in, evidence out' loop; any completion claim must carry verification evidence.",
+  'system.p7': "Methodology: run every task through 'spec -> decompose -> execute -> verify -> evidence' — clarify the spec (what to do / acceptance criteria), decompose into executable steps, execute, then verify (run tests / launch probes / read-back checks), and finally produce evidence (verification output / test results / file paths). Deliverables that cannot be verified must be marked 'unverified'; any completion claim must carry verification evidence.",
   'system.modeHeading': 'Current mode: {mode}',
   'system.mode.smart': 'Confirm-before-change mode: read-only operations run directly; writes, network access, and dangerous operations require user consent first; file edits inside the workspace are auto-approved (treated as low risk).',
   'system.mode.auto': 'Auto-edit mode: file edits are accepted automatically; shell commands are handled by danger level, and dangerous commands still require confirmation.',

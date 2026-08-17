@@ -654,7 +654,7 @@ if (pre.mode === 'error') {
   }
   setTuiTerminalTier(consoleEnv);
 
-  try { process.stdout.write('\x1b]0;WxNodus — 概念编译器\x07'); } catch {}
+  try { process.stdout.write('\x1b]0;WxNodus\x07'); } catch {}
 
   // 简化人工操作（阶段 C）：启动自动恢复上次未完成会话（settings.autoResume=false 关闭）
   if ((settings as any).autoResume !== false) {

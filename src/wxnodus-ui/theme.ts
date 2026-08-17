@@ -237,13 +237,13 @@ function normalizeAnsiForeground(color: string): string {
 }
 
 // ── Defaults ─────────────────────────────────────────────────────────
-// WxNodus 品牌（差异化）：黑洞引擎（事件视界辉光）+ 概念编译器
+// WxNodus 品牌：黑洞引擎（事件视界辉光）
 // 配色概念：深空背景 × 电光青主色（吸积盘辉光）× 紫罗兰点缀（事件视界）
 const BRAND: ThemeBrand = {
   name: 'WxNodus V3',
   icon: '◉',
   prompt: '❯',
-  welcome: '自然语言描述需求，交付可运行系统',
+  welcome: 'Windows 本地 AI agent CLI',
   goodbye: '再见！◉',
   tool: '┊',
   helpHeader: '◉ 命令 · 自然语言直达'

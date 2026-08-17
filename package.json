@@ -2,7 +2,7 @@
   "name": "wxnodus",
   "version": "3.1.0",
   "type": "module",
-  "description": "WxNodus V3 — 本地概念编译器 CLI：说一句话交付可运行系统（Node22 + ink7 + React19 + SQLite）",
+  "description": "WxNodus V3 — Windows 本地 AI agent CLI（Node22 + TypeScript）",
   "bin": {
     "wxnodus": "dist/cli/index.js",
     "wxn": "dist/cli/index.js"

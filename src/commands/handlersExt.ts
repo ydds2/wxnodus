@@ -1200,7 +1200,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/deploy', async (args) => {
     const dir = join(ctx.dataDir, 'projects');
     const projects = existsSync(dir) ? readdirSync(dir) : [];
-    if (!projects.length) return '暂无编译项目（说「做个待办系统」触发概念编译）';
+    if (!projects.length) return '暂无编译项目（说「做个待办系统」触发 /build）';
     const target = args[0];
     if (!target) {
       return lines(' 项目（/deploy <名称> 部署） ', projects.map(p => ` ${p}`));

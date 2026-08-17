@@ -64,7 +64,7 @@ describeWithDist('DX-05 first-run process contract', () => {
     expect(r).not.toBeInstanceOf(Error);
     const out = (r as { stdout: string }).stdout;
     expect(out).toContain('用法');
-    expect(out).toContain('本地概念编译器');
+    expect(out).toContain('本地 AI agent');
   });
 
   it('--lang en --version prints only the version line', async () => {

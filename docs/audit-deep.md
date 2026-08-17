@@ -611,3 +611,9 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **Gateway 修复与扩展**：model.options 补 `is_current`（选择器打开即落当前模型所在提供商——此前恒第 0 项）；save_key/disconnect 档案分支（写/清档案 key 槽，不再误写全局单槽）；新增 model.add RPC；审计经组合根注入回调（gateway 不直连 db）。
 - **TUI 路由**：`/model add|set-key|key` 走 command.dispatch；^k 直达当前 provider 密钥段（已认证可改钥）。
 - **验证**：+15 测试（modelRegistry 8、gateway is_current/save_key/disconnect/model.add 5、分级/秘密检测/别名路由/命令面 迁移更新）；全量 2384 通过；tsc 零错误；npm run build 通过（dist 实测 3.1.0）。
+
+### 13.36 介绍大幅瘦身轮（2026-08-17 用户请求：删除夸大字样，文档后续自建）
+
+- **去掉「概念编译器/概念进·证据出」夸大字样**（11 处）：`--help`/i18n cli.usage 头部 → 「Windows 本地 AI agent CLI」；/version 去标语；终端标题去「概念编译器」；TUI 品牌 welcome → 「Windows 本地 AI agent CLI」；品牌 TAG 与宠物欢迎帧去 slogan；i18n system.role/p7 与 llmSpec 提示词去「概念编译器/编译学派」措辞（方法论保留）；forge 生成标注、scaffold_build/wx_cmd 工具描述、registry /build 描述同步；providers 兜底欢迎语顺带修复残留 `/key` 指引 → `/model set-key`。
+- **README 大幅瘦身**：~157 行 → ~75 行（去平台声明/三个限定词/离线分层/编译学派/能力地图五段副线/技术栈长篇/验收证据/目录结构——仅留快速开始、常用命令、模型接入、NL 契约表、键位、终端三档、License）；保留诚实背书行「记忆容量 ≠ 模型上下文窗口 64k」（w8-04 契约测试同步锚点更新）。AGENTS.md README 摘要同步瘦身（ZCode 工作流注记保留）。
+- **验证**：w4 进程契约（--help 中文头）、w8-04 背书锚点更新；全量 2384 通过；tsc 零错误；npm run build 通过。

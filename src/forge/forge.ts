@@ -20,7 +20,7 @@ export function forgeMcpServer(outDir: string, name: string, tools: ToolSignatur
   mkdirSync(dir, { recursive: true });
   const toolList = tools.map(t => `  ${JSON.stringify({ name: t.name, description: t.description, inputSchema: t.inputSchema })}`).join(',\n');
   const server = `// ${name} — WxNodus forge 锻造的 MCP Server（stdio JSON-RPC，零依赖）
-// AI 生成标注：本文件由 WxNodus 概念编译器自动生成（深度合成办法 第二十条）
+// AI 生成标注：本文件由 WxNodus 自动生成（深度合成办法 第二十条）
 const readline = require('node:readline');
 const tools = [
 ${toolList},
