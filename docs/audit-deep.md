@@ -422,3 +422,19 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
   - plugin-smoke 两处陈旧断言修复（命令输出文本/审批面板中文文案——先于本轮已坏）+ 显式 process.exit 防挂起
 - **+2 单测**（demo 标记与 example_ 前缀不进 toolList / 逃生门恢复）kernel-agent 60/60。
 - **复测（真实 cmd）**：hello → 直接文本回复「你好！我是 WxNodus…」+ 状态回归就绪 + GLM 确认无视觉缺陷——审批阻塞路径消除。
+
+### 13.10 接入层开放收官轮（余额耗尽前持续完善 2026-08-17）
+
+用户目标：持续完善直至余额耗尽——本轮按「ZCode 真实事故 + ux-comparison 债单 + 接入层 UI 闭环」三条线推进，每轮全量回归（2293 通过 / tsc 零错误）+ 逐项提交。
+
+- **image_url 400 防御纵深（ZCode deepseek-v4-pro 真实事故根除）**：
+  - 事故：messages[678] unknown variant `image_url`——纯文本模型收到多模态内容块 400（TraceID 0577747b 留证）。
+  - `providers.ts`：`imageStrategy` 三态纯函数（无图→none 零视觉调用 / 视觉模型→inject / 文本模型→describe 视觉通道先识别）；`hasImageIn` 名称启发式（档案自定义视觉模型 gpt-4o/qwen-vl/gemini/claude/llava/moondream…识别，未知默认文本——安全方向）。
+  - `agent.ts`：图片注入能力门收敛到 agent 环（视觉模型注入 parts；文本模型 describeImage 识别为文本注入 prompt；无 key 诚实丢弃 + system.notice + 审计 agent.image.described/dropped）；历史装载 contentToText 清洗（dataUrl 绝不进 API 消息）；识别文本同步入历史（与视觉模型异步摘要两条路径对等）。
+  - `vision.ts`：自动降级路径 `visionOcr:false`（聊天回合内不 spawn PowerShell OCR；显式 /vision 保留 OCR 兜底）。
+  - `wxGateway`：图片门移除（策略收敛 agent 环，全部 caller 一致防御）。
+  - +12 测试（策略矩阵/启发式/历史文本化/网关透传契约/agent inject-describe 端到端）。
+- **ux-comparison 12 项债单清仓**：#3/#5 复测口径修正（2026-08 证据 5ms/字符双管线零丢字）；#4 TextInput 常驻挂载根除 overlay 恢复窗口（卸载重挂监听注册窗口是陷阱 5 真根因）；#6 代码复核（Enter 恒提交原文即建议行为）；#7 diff 语法高亮（diffHighlight 行分类 + messageLine 着色，超长降级不丢内容）；#8 @文件提及（kernel/mentions 展开 + complete.path @补全 + CLI 同链路）；#9 Shift+Tab 六模式循环 + Ctrl+R 反向历史搜索 overlay；#10 Esc-Esc 中断指路 /undo 回滚（Claude 肌肉记忆等价出口）；#11 /cost 会话/区间成本估算 + 状态栏 $ 成本段真实化。
+- **接入层 UI 闭环**：`/model` 直达档案模型（命中切 activeProvider+baseURL）+ modelOptions 档案 provider 分组（选择器可见可选）；`/doctor` profileHealth 档案一致性检查（悬空 active/重复 id/非法 baseURL）；`/status` 一览档案/余额监控/本会话成本。
+- **SETTINGS_KEYS 白名单补齐（自伤误报根除）**：providers/activeProvider/usageRange/balanceMonitor/show_cost/autoGitCommit/vision*/proxy 等系统写入键此前不在白名单——`/config` 面板把系统自己的键报为「未知键（不生效）」；补入 + 回归测试锁死。
+- **验证**：全量 2293 通过（+28 测试）；cmd-sweep 122/122（/cost 两形态入列）；tsc 零错误。
