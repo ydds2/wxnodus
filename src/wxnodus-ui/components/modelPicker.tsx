@@ -672,6 +672,9 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
         }
 
         const prefix = modelIdx === idx ? '▸ ' : row === currentModel ? '* ' : '  '
+        // 参考价目（USD/1M in/out；未收录定价不显示——诚实）
+        const pr = provider?.prices?.[row]
+        const priceSuffix = pr ? (pr.in === 0 && pr.out === 0 ? ' · 免费' : ` · ≈$${pr.in}/$${pr.out} M`) : ''
 
         return (
           // A22 鼠标化：点击模型行 = 立即选用（Enter 同语义）
@@ -684,6 +687,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
             >
               {prefix}
               {idx + 1}. {row}
+              <Text color={t.color.muted}>{priceSuffix}</Text>
             </Text>
           </Box>
         )

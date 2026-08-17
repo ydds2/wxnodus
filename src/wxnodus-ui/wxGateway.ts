@@ -13,6 +13,7 @@ import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
 import { seedTurnTodos, syncToolTodo } from './lib/turnTodos.js'
 import { MODEL_CATALOG, encryptKey } from '../kernel/providers.js'
+import { priceForModel } from '../kernel/cost.js'
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js'
 import { loadSkinFile } from '../kernel/skin.js'
 import { checkVoice } from '../kernel/voice.js'
@@ -2202,6 +2203,12 @@ export class GatewayClient extends EventEmitter {
       providers: [...byProvider.values()].map((p) => ({
         ...p,
         models: [...new Set<string>(p.models)],
+        // 参考价目（USD/1M；未收录定价不显示——诚实不编）——成本敏感选型的显示数据
+        prices: Object.fromEntries(
+          [...new Set<string>(p.models)]
+            .map(id => { const pr = priceForModel(id); return pr ? [id, pr] : null })
+            .filter((x): x is [string, { in: number; out: number }] => x !== null)
+        ),
       })),
       session_id: params.session_id ?? null,
     }

@@ -829,3 +829,18 @@ describe('capture.attach 截图即问', () => {
     }
   });
 });
+
+describe('model.options 参考价目', () => {
+  it('catalog provider 带 prices（免费/收费/未收录三态），档案模型未收录不显示', async () => {
+    const g = makeGateway({ model: 'glm-4v-flash' });
+    (g as any).kernel.settings.providers = [{ id: 'relay1', name: '中转站', baseURL: 'https://r.example.com/v1', models: ['custom-a'] }];
+    const r = await gre(g, 'model.options', {});
+    const ds = r.providers.find((p: any) => p.slug === 'deepseek')!;
+    expect(ds.prices['deepseek-chat']).toEqual({ in: 0.28, out: 0.42 });
+    expect(ds.prices['deepseek-v4-pro']).toBeUndefined(); // 未收录定价诚实不显示
+    const zhipu = r.providers.find((p: any) => p.slug === 'zhipu')!;
+    expect(zhipu.prices['glm-4-flash']).toEqual({ in: 0, out: 0 });
+    const prof = r.providers.find((p: any) => p.slug === 'profile:relay1')!;
+    expect(prof.prices['custom-a']).toBeUndefined();
+  });
+});

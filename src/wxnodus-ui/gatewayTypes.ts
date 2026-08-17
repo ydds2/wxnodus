@@ -369,6 +369,8 @@ export interface ModelOptionProvider {
   key_env?: string
   models?: string[]
   name: string
+  /** 参考价目（USD/1M token；未收录定价的模型不在表内——诚实不显示） */
+  prices?: Record<string, { in: number; out: number }>
   slug: string
   total_models?: number
   warning?: string
