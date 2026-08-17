@@ -4,6 +4,8 @@ export interface CliOptions {
   prompt: string | null;
   json: boolean;
   wire: boolean;
+  /** --stream-json：--wire 事件流的别名（gemini/kimi 命名对齐）——解析后并入 wire */
+  streamJson: boolean;
   help: boolean;
   version: boolean;
   cwd: string | null;
@@ -36,6 +38,7 @@ export const CLI_FLAG_SPEC: ReadonlyArray<{
   { long: '--prompt', short: '-p', key: 'prompt', takeValue: true, type: 'string' },
   { long: '--json', key: 'json', type: 'bool' },
   { long: '--wire', key: 'wire', type: 'bool' },
+  { long: '--stream-json', key: 'streamJson', type: 'bool' },
   { long: '--help', short: '-h', key: 'help', type: 'bool' },
   { long: '--version', short: '-v', key: 'version', type: 'bool' },
   { long: '--cwd', short: '-C', key: 'cwd', takeValue: true, type: 'string' },
@@ -52,7 +55,7 @@ export const CLI_FLAG_SPEC: ReadonlyArray<{
 const SPEC = CLI_FLAG_SPEC;
 
 export function parseArgs(argv: string[]): CliOptions {
-  const out: CliOptions = { prompt: null, json: false, wire: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, port: null, ephemeral: false, mcpServer: false, outputSchema: null, workspace: null, positional: [] };
+  const out: CliOptions = { prompt: null, json: false, wire: false, streamJson: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, port: null, ephemeral: false, mcpServer: false, outputSchema: null, workspace: null, positional: [] };
   let i = 0;
   const findSpec = (tok: string): { spec: (typeof SPEC)[number]; inline?: string } | null => {
     for (const spec of SPEC) {
@@ -87,6 +90,9 @@ export function parseArgs(argv: string[]): CliOptions {
     const n = Number(out.port);
     out.port = Number.isFinite(n) && n > 0 ? n : null;
   }
+  // --stream-json 是 --wire 事件流的命名别名（gemini/kimi 命名对齐）——
+  // 解析后并入 wire，下游（wire 分支/stdin 护栏）零改动、单一事实源。
+  if (out.streamJson) out.wire = true;
   // P1-6：Git Bash MSYS 路径转换检测——`-p "/help"` 被改写为 `C:/Program Files/Git/help`，
   // 命令文本被破坏路由到 AI 层；给出明确修正指引（Windows Git Bash 特有）
   if (out.prompt && /(?:program files[\\/]git[\\/]|programfiles[\\/]git[\\/])/i.test(out.prompt)) {
@@ -118,6 +124,7 @@ export const USAGE = `WxNodus V3 — Windows 本地 AI agent CLI
   -p, --prompt <text>  非交互单次执行
       --json           -p 模式下输出 JSON
       --wire           -p 模式下输出 JSONL 事件流
+      --stream-json    --wire 别名（gemini/kimi 命名对齐）
       --strict-mcp-config 仅信任项目 .mcp.json 声明
       --mcp-server     incoming MCP stdio 服务器模式（需 WXNODUS_MCP_REQUEST_STATE_KEY）
       --serve          启动本地 AI 网关（--port 指定端口，默认 4789）

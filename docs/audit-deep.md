@@ -648,3 +648,14 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **契约测试**（tests/cli-stdin-pipe.test.ts 5 例）：纯函数 3 例（无 -p 提问/有 -p 组合/51k 超限标注）；真实进程 2 例（piped stdin → 一次性执行，session-streams/default.jsonl 用户事件留证；-p+stdin → 组合提问含 `<stdin>`）——dist 未构建诚实 skip。
 - **文案**：--help 用法表 + README 快速开始各补一行 `cat 文件 | wxnodus -p "指令"`。
 - **实测**：`printf '…' | node dist/cli/index.js --json` 退出 0 且一次性执行（JSON 响应正常）；管道证据落 session-streams（此前误判为 sessions/ 目录，测试已按真实路径修正）。
+
+### 13.41 wire/stream-json 协议面 + ACP 接入文档轮（2026-08-18 /goal 自主完善——深评「无 schema 文档/示例」「ACP 无配置文档」关闭）
+
+- **`--stream-json` 别名**：args.ts 新增 flag（gemini/kimi 命名对齐），解析后并入 `out.wire`（单一事实源，wire 分支/stdin 护栏零改动）；--help 补行。
+- **`docs/wire-protocol.md`**：机器可读 schema 文档——8 类事件行（agent.start/token/message/tool/error/end/system.notice + agent.result 终态恒末行）+ 4 种 stdin 请求帧（approval/clarify/sudo/secret.respond）+ WIRE_GATEWAY_NOT_READY 规则 + 退出码共享表（0/1/2/3/4/130）+ 已知边界诚实声明（载荷非版本化 JSON Schema、wire 下 stdin 为帧通道非管道素材）。
+- **可运行示例**：`examples/wire-events.mjs`（最小消费者：逐行解析/事件统计/终态退出码透传）+ `examples/wire-approval-responder.mjs`（双向帧通道演示：危险工具检测 → approval.respond 帧 → wire.response 消费）——仅 Node 内置依赖，dist 或 npm link 双入口。
+- **`docs/acp-zed-jetbrains.md`**：零代码接入指南——启动命令唯一事实（`wxnodus -p "/acp server"`）+ 协议面方法表（initialize/session new/load/load_history/prompt，逐条对应 acp.ts switch）+ Zed/JetBrains 配置样例（明确标注「以 IDE 官方文档为准」，不编造字段）+ 不依赖 IDE 的 printf 自测命令 + 维护锚点。Zed 官方 ACP 文档页 404，样例字段据此诚实降级标注。
+- **顺带**：acp.ts:62 无 key 文案 `/key set` → `/model set-key`（§13.38 清零漏网第 13 处，本轮复扫确认 src 零残留）。
+- **契约测试**：`tests/cli-wire-alias.test.ts` 2 例（真实进程）——stdout 全程 JSONL 零非 JSON 行、agent.start 起 agent.result 终、退出码 0；`--wire` 与 `--stream-json` 事件类型集合同构。
+- **README**：新增「协议与集成」小节（3 入口 × 文档链接）。
+- **向导双注册隐患（本轮回合一并修复）**：新 flag 需在 args.ts（主解析）与 preBootstrapOnboarding.ts（向导白名单，先于主解析执行）两处注册——`--stream-json` 首跑被向导 CONFIG_UNKNOWN_FLAG 拒绝（exit 2、零输出），契约测试立即捕获；两处均已注册并在白名单处留「新 flag 双注册」注释防再犯。

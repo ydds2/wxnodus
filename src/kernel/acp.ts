@@ -59,7 +59,7 @@ export function runAcpServer(opts: AcpOptions): Promise<number> {
           s.history.push({ role: 'user', content });
           sessions.set(sid, s);
           void opts.run(content, sid).then((r) => {
-            s.history.push({ role: 'assistant', content: r.text || (r.ok ? '' : '模型未配置——/key set <密钥> 配置后使用') });
+            s.history.push({ role: 'assistant', content: r.text || (r.ok ? '' : '模型未配置——/model set-key <密钥> 配置后使用') });
             respond(id, { message: { role: 'assistant', content: s.history[s.history.length - 1]!.content } });
           }).catch((e: any) => respondError(id, -32603, String(e?.message ?? e)));
           break;

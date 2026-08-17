@@ -29,6 +29,14 @@ cat 文件.txt | wxnodus -p "总结内容"   # stdin 管道（-p 为指令、std
 
 > 黑洞引擎记忆容量 ≠ 模型上下文窗口：每轮送入模型的上下文受 64k token 上限约束，超压自动压缩。
 
+## 协议与集成
+
+| 入口 | 文档 |
+|---|---|
+| `--wire` / `--stream-json` 事件流（JSONL + stdin 双向帧 + 退出码协议） | `docs/wire-protocol.md`（含 `examples/wire-events.mjs`、`examples/wire-approval-responder.mjs` 可运行示例） |
+| ACP stdio 服务器（`wxnodus -p "/acp server"`，Zed/JetBrains 接入） | `docs/acp-zed-jetbrains.md` |
+| stdin 管道（`cat 文件 | wxnodus -p "指令"`） | `--help` 用法表 |
+
 ## 模型接入（接口开放）
 
 任意 **OpenAI 兼容端点**（厂商直连 / 中转站）皆可接入：

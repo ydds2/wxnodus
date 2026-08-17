@@ -24,8 +24,10 @@ export interface PreBootstrapDecision {
   args?: PreBootstrapArgs;
 }
 
+// 注意：新 CLI flag 必须在两处注册——args.ts CLI_FLAG_SPEC（主解析器）与本表（pre-bootstrap
+// 向导白名单，先于主解析执行）。遗漏会导致新 flag 被向导以 CONFIG_UNKNOWN_FLAG 拒绝（exit 2）。
 const VALUE_FLAGS = new Set(['--lang', '--data-dir', '--prompt', '-p', '--cwd', '-C', '--session', '-s', '--port', '--output-schema', '--workspace']);
-const BOOL_FLAGS = new Set(['--help', '-h', '--version', '-v', '--json', '--wire', '--serve', '--strict-mcp-config', '--ephemeral', '--mcp-server']);
+const BOOL_FLAGS = new Set(['--help', '-h', '--version', '-v', '--json', '--wire', '--stream-json', '--serve', '--strict-mcp-config', '--ephemeral', '--mcp-server']);
 
 export function parsePreBootstrapArgs(argv: string[]): OperationResult<PreBootstrapArgs> {
   const out: PreBootstrapArgs = { help: false, version: false, nonInteractive: false };
@@ -35,7 +37,7 @@ export function parsePreBootstrapArgs(argv: string[]): OperationResult<PreBootst
     if (BOOL_FLAGS.has(flag)) {
       if (flag === '--help' || flag === '-h') out.help = true;
       if (flag === '--version' || flag === '-v') out.version = true;
-      if (['--json', '--wire', '--serve', '--mcp-server'].includes(flag)) out.nonInteractive = true;
+      if (['--json', '--wire', '--stream-json', '--serve', '--mcp-server'].includes(flag)) out.nonInteractive = true;
       continue;
     }
     if (VALUE_FLAGS.has(flag)) {
