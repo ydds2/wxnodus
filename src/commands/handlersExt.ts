@@ -44,7 +44,8 @@ let scriptRecording: { name: string; description: string; buffer: ScriptStep[]; 
 // 一眼看出「哪轮烧 token、输入输出比」。宽度固定（后端无终端宽度，面板自洽即可）。
 export function renderWaterfall(
   rows: Array<{ model: string; input_tokens: number; output_tokens: number; ts: number }>,
-  width = 40
+  width = 40,
+  title?: string,
 ): string {
   const max = Math.max(...rows.map(r => r.input_tokens + r.output_tokens), 1);
   const scale = (n: number) => Math.max(1, Math.round((n / max) * width));
@@ -56,7 +57,7 @@ export function renderWaterfall(
     const t = new Date(r.ts).toLocaleTimeString('zh-CN', { hour12: false });
     return ` ${t} ${r.model.slice(0, 14).padEnd(14)} ${bar} ${total.toLocaleString()} tok（入 ${r.input_tokens.toLocaleString()} / 出 ${r.output_tokens.toLocaleString()}）`;
   });
-  return lines(' Token 瀑布（最近 ' + rows.length + ' 轮 · ░输入 █输出） ', out);
+  return lines(title ?? ` Token 瀑布（最近 ${rows.length} 轮 · ░输入 █输出） `, out);
 }
 
 /** /profile add 参数解析（纯函数可单测） */
@@ -802,13 +803,21 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       `SELECT COUNT(*) AS c, COALESCE(SUM(input_tokens),0) AS it, COALESCE(SUM(output_tokens),0) AS ot, COUNT(DISTINCT model) AS models FROM usage_stats WHERE session_id=?`
     ).get(sid) as { c: number; it: number; ot: number; models: number };
 
-    // --waterfall：每次 API 调用（轮）的 token 瀑布——input ░ / output █ 横向条形
+    // --waterfall [today|7d|30d]：每次 API 调用（轮）的 token 瀑布——input ░ / output █ 横向条形
+    // （默认本会话最近 12 轮；带区间参数 → 跨会话该区间最近 12 轮）
     if (args[0] === '--waterfall') {
-      const rows = ctx.db.prepare(
-        `SELECT model, input_tokens, output_tokens, ts FROM usage_stats WHERE session_id=? ORDER BY id DESC LIMIT 12`
-      ).all(sid) as Array<{ model: string; input_tokens: number; output_tokens: number; ts: number }>;
+      const range = args[1];
+      const scoped = range === 'today' || range === '7d' || range === '30d';
+      const rows = scoped
+        ? ctx.db.prepare(
+            `SELECT model, input_tokens, output_tokens, ts FROM usage_stats WHERE ts >= ? ORDER BY id DESC LIMIT 12`
+          ).all(usageRangeSince(range as UsageRange)) as Array<{ model: string; input_tokens: number; output_tokens: number; ts: number }>
+        : ctx.db.prepare(
+            `SELECT model, input_tokens, output_tokens, ts FROM usage_stats WHERE session_id=? ORDER BY id DESC LIMIT 12`
+          ).all(sid) as Array<{ model: string; input_tokens: number; output_tokens: number; ts: number }>;
       if (!rows.length) return '暂无 API 用量记录（--waterfall 需真实调用后查看；当前会话消息 token 可看 /context）';
-      return renderWaterfall(rows.reverse(), 40);
+      const scopeLabel = scoped ? (range === 'today' ? '今日' : range === '7d' ? '近 7 天' : '近 30 天') : '本会话';
+      return renderWaterfall(rows.reverse(), 40, ` Token 瀑布（${scopeLabel}最近 ${rows.length} 轮 · ░输入 █输出） `);
     }
 
     const rows = ctx.db.prepare(`SELECT role, content FROM messages WHERE session_id=?`).all(sid) as any[];
@@ -847,7 +856,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       return '用法：/cost [session|today|7d|30d]（默认当前会话；估算按公开参考价目，非实际账单）';
     }
     if (!rows.length) return `暂无 API 用量记录（${scopeLabel}）——真实对话后才有成本数据`;
-    const s = costSummary(rows);
+    const s = costSummary(rows, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
     const fmtUsd = (n: number | null) => (n === null ? '未收录定价' : n === 0 ? '$0（免费/离线）' : `$${n.toFixed(4)}`);
     const body = [
       ` 范围：${scopeLabel}`,

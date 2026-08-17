@@ -20,21 +20,25 @@ export const MODEL_PRICES: Record<string, { in: number; out: number } | 'free'> 
   'kimi-k2.7-highspeed': { in: 0.6, out: 2.5 },
 };
 
-export const priceForModel = (model: string): { in: number; out: number } | null => {
+export const priceForModel = (model: string, overrides?: Record<string, { in: number; out: number } | 'free'> | null): { in: number; out: number } | null => {
+  // 自定义价目优先（settings.costPrices——中转站/私有定价档；用户显式配置才生效）
+  const custom = overrides?.[model];
+  if (custom === 'free') return { in: 0, out: 0 };
+  if (custom) return custom;
   const p = MODEL_PRICES[model];
   if (p === 'free') return { in: 0, out: 0 };
   return p ?? null;
 };
 
-/** 单模型成本估算：定价未知 → null（诚实不编） */
-export function estimateCost(model: string, inputTokens: number, outputTokens: number): number | null {
-  const p = priceForModel(model);
+/** 单模型成本估算：定价未知 → null（诚实不编）；settings.costPrices 自定义价目优先 */
+export function estimateCost(model: string, inputTokens: number, outputTokens: number, overrides?: Record<string, { in: number; out: number } | 'free'> | null): number | null {
+  const p = priceForModel(model, overrides);
   if (!p) return null;
   return (inputTokens / 1_000_000) * p.in + (outputTokens / 1_000_000) * p.out;
 }
 
-/** 聚合行（按模型分组）→ 成本行 + 总计 */
-export function costSummary(rows: Array<{ model: string; input: number; output: number }>): { rows: CostRow[]; totalUsd: number; unknownCount: number } {
+/** 聚合行（按模型分组）→ 成本行 + 总计（costPrices 自定义价目优先） */
+export function costSummary(rows: Array<{ model: string; input: number; output: number }>, overrides?: Record<string, { in: number; out: number } | 'free'> | null): { rows: CostRow[]; totalUsd: number; unknownCount: number } {
   const byModel = new Map<string, { input: number; output: number }>();
   for (const r of rows) {
     const cur = byModel.get(r.model) ?? { input: 0, output: 0 };
@@ -46,7 +50,7 @@ export function costSummary(rows: Array<{ model: string; input: number; output: 
   let unknownCount = 0;
   const out: CostRow[] = [];
   for (const [model, v] of byModel) {
-    const usd = estimateCost(model, v.input, v.output);
+    const usd = estimateCost(model, v.input, v.output, overrides);
     if (usd === null) unknownCount += 1;
     else totalUsd += usd;
     out.push({ model, input: v.input, output: v.output, usd });

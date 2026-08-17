@@ -78,6 +78,8 @@ export interface TuiPresentationAdapter {
 export interface TuiAdapterKernel {
   db: { prepare(sql: string): { get(...a: unknown[]): unknown; all(...a: unknown[]): unknown[]; run(...a: unknown[]): { changes: number } } };
   agent: TuiAgentPort;
+  /** 成本估算价目覆盖（settings.costPrices——自定义中转定价）；可选（缺省按公开参考价目） */
+  settings?: Record<string, any>;
   /** W3 Session：会话启动工件服务（组合根注入 sessionStartService.ensure——真实 session 生命周期） */
   ensureSession?(sessionId: string): Promise<{ ok: true } | { ok: false; code: string }>;
 }
@@ -85,6 +87,7 @@ export interface TuiAdapterKernel {
 /** 组合根工厂：CLI 持原始句柄，此处包裹为 presentation 窄端口（原始句柄不再进入 UI 层） */
 export function createTuiPresentationAdapter(kernel: TuiAdapterKernel): TuiPresentationAdapter {
   const { db, agent } = kernel;
+  const costOverrides = kernel.settings?.costPrices as Record<string, { in: number; out: number } | 'free'> | undefined;
   return {
     agent,
     data: {
@@ -237,7 +240,7 @@ export function createTuiPresentationAdapter(kernel: TuiAdapterKernel): TuiPrese
                 `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output
                  FROM usage_stats WHERE session_id=? GROUP BY model`,
               ).all(sessionId) as Array<{ model: string; input: number; output: number }>;
-              const s = costSummary(modelRows);
+              const s = costSummary(modelRows, costOverrides);
               return s.unknownCount === 0 ? { ...row, cost_usd: Number(s.totalUsd.toFixed(6)) } : row;
             } catch { return row; }
           } catch { return undefined; }

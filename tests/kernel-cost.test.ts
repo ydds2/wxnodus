@@ -48,3 +48,21 @@ describe('costSummary 聚合', () => {
     expect(s.unknownCount).toBe(0);
   });
 });
+
+describe('costPrices 自定义价目覆盖', () => {
+  it('覆盖优先于公开价目；free 归零；未知仍 null', () => {
+    expect(estimateCost('deepseek-chat', 1_000_000, 1_000_000, { 'deepseek-chat': { in: 0.1, out: 0.2 } })).toBeCloseTo(0.3, 6);
+    expect(estimateCost('glm-4.5', 1_000_000, 1_000_000, { 'glm-4.5': 'free' })).toBe(0);
+    expect(estimateCost('mystery', 1, 1, {})).toBeNull();
+    // 无覆盖时走默认价目
+    expect(estimateCost('deepseek-chat', 1_000_000, 1_000_000)).toBeCloseTo(0.7, 6);
+  });
+  it('costSummary 覆盖影响总计与 unknown 判定', () => {
+    const s = costSummary(
+      [{ model: 'mystery', input: 1_000_000, output: 0 }],
+      { mystery: { in: 0.5, out: 0.5 } }
+    );
+    expect(s.unknownCount).toBe(0);
+    expect(s.totalUsd).toBeCloseTo(0.5, 6);
+  });
+});

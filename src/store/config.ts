@@ -88,7 +88,7 @@ export const SETTINGS_KEYS = new Set([
   'workspace',
   // 接入层开放（档案体系/余额监控/token 区间/成本段）：系统自己写入的键必须入白名单——
   // 否则 /config 面板把系统写入的键误报为「未知键（不生效）」（自伤误报）
-  'providers', 'activeProvider', 'usageRange', 'balanceMonitor', 'show_cost', 'autoGitCommit',
+  'providers', 'activeProvider', 'usageRange', 'balanceMonitor', 'show_cost', 'autoGitCommit', 'costPrices',
   // 视觉开放通道（settings.vision* 与 visionLocal/visionOcr）
   'visionBaseURL', 'visionModel', 'visionKey', 'visionLocal', 'visionOcr',
   // 代理（/proxy 命令消费 settings.proxy）
