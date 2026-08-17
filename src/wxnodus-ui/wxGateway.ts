@@ -2255,7 +2255,8 @@ export class GatewayClient extends EventEmitter {
       try {
         compressions = this.kernel.adapter.data.usage.compressions(this.currentSessionId)
       } catch { /* 压缩计数失败按零 */ }
-      if (row) usage = { calls: row.calls ?? 0, input: row.input ?? 0, output: row.output ?? 0, total: (row.input ?? 0) + (row.output ?? 0), compressions }
+      // 状态栏 $ 成本段（#11 尾项）：usage.get 已按模型聚合估算（全部模型有定价才给 cost_usd）
+      if (row) usage = { calls: row.calls ?? 0, input: row.input ?? 0, output: row.output ?? 0, total: (row.input ?? 0) + (row.output ?? 0), compressions, ...(typeof row.cost_usd === 'number' ? { cost_usd: row.cost_usd } : {}) }
     } catch { /* 用量统计失败按零 */ }
     // A24 第三类修复：MCP 服务器真实状态（kernel mcpStatus——连接/工具数/传输方式）
     let mcp_servers: SessionInfo['mcp_servers']

@@ -3,6 +3,7 @@
 // 驱动 agent；原始 db/agent 句柄的持有权留在组合根（CLI），由本工厂在组合根处一次性包裹。
 // 语义与迁移前逐点对齐（失败降级行为原样保留：list→[]、get→undefined 等——不改变既有 UX 契约）。
 import { saveCheckpoint, replaceSessionMessages } from '../../store/db.js';
+import { costSummary } from '../../kernel/cost.js';
 
 export interface TuiMessageRow {
   id: number; role: string; content: string; tool_call_id: string | null; archived: number; ts: number;
@@ -62,7 +63,7 @@ export interface TuiDataPort {
   };
   cron: { list(): TuiCronRow[] };
   usage: {
-    get(sessionId: string): { calls: number; input: number; output: number } | undefined;
+    get(sessionId: string): { calls: number; input: number; output: number; cost_usd?: number } | undefined;
     compressions(sessionId: string): number;
     /** 分区间跨会话 token 聚合（状态栏 📊 数据源） */
     usageRange(range: string): { input: number; output: number; total: number; calls: number };
@@ -227,7 +228,18 @@ export function createTuiPresentationAdapter(kernel: TuiAdapterKernel): TuiPrese
               `SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output
                FROM usage_stats WHERE session_id=?`,
             ).get(sessionId) as { calls: number; input: number; output: number } | undefined;
-            return row;
+            if (!row) return undefined;
+            // 状态栏 $ 成本段数据源（#11 尾项）：按模型聚合估算——全部模型有定价才给
+            // cost_usd（部分未知则省略——诚实：绝不显示被低估的合计）；空会话（calls=0）不给（无噪音 $0）
+            if (!row.calls) return row;
+            try {
+              const modelRows = db.prepare(
+                `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output
+                 FROM usage_stats WHERE session_id=? GROUP BY model`,
+              ).all(sessionId) as Array<{ model: string; input: number; output: number }>;
+              const s = costSummary(modelRows);
+              return s.unknownCount === 0 ? { ...row, cost_usd: Number(s.totalUsd.toFixed(6)) } : row;
+            } catch { return row; }
           } catch { return undefined; }
         },
         compressions(sessionId) {

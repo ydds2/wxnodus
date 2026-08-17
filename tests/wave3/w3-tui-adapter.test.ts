@@ -111,6 +111,19 @@ describe('W3 TUI presentation adapter behavior', () => {
     expect(adapter.data.cron.list()).toEqual([]);
   });
 
+  it('usage: cost_usd 按模型聚合估算（全定价才给；未知模型省略；空会话不给）', () => {
+    const now = Date.now();
+    // 全定价模型 → 合计估算（deepseek-chat 1M/1M = 0.70 + glm-4-flash 免费）
+    db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`).run('s2', 'deepseek-chat', 1_000_000, 1_000_000, now);
+    db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`).run('s2', 'glm-4-flash', 100, 100, now);
+    expect(adapter.data.usage.get('s2')!.cost_usd).toBeCloseTo(0.7, 6);
+    // 混入未知定价模型 → 省略 cost_usd（诚实：不显示被低估的合计）
+    db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`).run('s2', 'mystery-model', 10, 10, now);
+    expect(adapter.data.usage.get('s2')!.cost_usd).toBeUndefined();
+    // 空会话（无调用）→ 不给 cost_usd（无噪音 $0）
+    expect(adapter.data.usage.get('nope')!.cost_usd).toBeUndefined();
+  });
+
   it('agent port passes through to the injected agent', async () => {
     adapter.agent.setSessionId('s9');
     expect(agent.setSessionId).toHaveBeenCalledWith('s9');
