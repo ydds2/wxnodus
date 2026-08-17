@@ -129,9 +129,9 @@
 | 2 | 空闲 Ctrl+C 误杀整个会话/pty 渲染停摆 | 电池陷阱 + 代码审计 | ✅ 已修（无操作 + 提示） |
 | 2b | **演示插件工具对模型可见**：/plugin new 脚手架 example_greet 被廉价模型在「hello」时选中 → 审批面板阻塞会话（真实 cmd 实测 13.9） | 真实 cmd 取证 | ✅ 已修（demo 标记/example_ 前缀过滤 + 逃生门） |
 | 3 | 补全 RPC 往返窗口内击键被吞（快打丢字） | cmd-verify 陷阱（200ms/字符规避） | ⏳ 未修（需专门复现定位竞态） |
-| 4 | Esc 关闭 overlay 后 1.5s 输入恢复窗口失效 | full-scene 陷阱 5 | ⏳ 未修 |
+| 4 | Esc 关闭 overlay 后 1.5s 输入恢复窗口失效 | full-scene 陷阱 5 | ✅ 已修（TextInput 常驻挂载：阻断期 display:none + focus=false 注销监听，关闭即恢复——根除卸载重挂的监听注册窗口） |
 | 5 | CJK 高速键入丢字竞态（pty 直输） | full-scene 陷阱 4 | ⏳ 未修（IME 真机通道已验证无损） |
-| 6 | 补全面板 Enter 误提交模糊匹配项 | full-scene 陷阱 2 | ⏳ 未修（可改为「未手动选择则提交原文」） |
+| 6 | 补全面板 Enter 误提交模糊匹配项 | full-scene 陷阱 2 | ✅ 已满足（代码复核：Enter 恒提交原文 textInput.tsx:1042-1052；补全仅 Tab/鼠标接受——「未手动选择则提交原文」即现状） |
 | 7 | 无 diff 语法高亮 | 代码审计 | ✅ 已修（diff 段逐行着色：add 绿/del 红/hunk 青/meta 灰；超长降级合并） |
 | 8 | 无 #/@ 文件提及语法 | 竞品标配对照 | ✅ 已修（@path 提及：Tab 补全 + 提交时展开文件内容；缺失/二进制诚实通知；散文 @词零触发） |
 | 9 | 无 Shift+Tab 模式循环 / Ctrl+R 历史搜索 | 竞品对照 | ✅ 已修（Shift+Tab 六模式循环+徽章即时刷新；Ctrl+R bash 同款反向历史搜索 overlay，环绕匹配） |

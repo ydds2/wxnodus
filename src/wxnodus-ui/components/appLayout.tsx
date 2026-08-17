@@ -334,29 +334,32 @@ const ComposerPane = memo(function ComposerPane({
 
         {composer.input === '?' && !composer.inputBuf.length && <HelpHint onCommand={text => composer.submit(text)} t={ui.theme} />}
 
-        {!isBlocked && (
-          <>
-            {composer.inputBuf.map((line, i) => (
-              <Box key={i}>
-                <Box width={promptWidth}>
-                  {i === 0 ? (
-                    <PromptPrefix color={ui.theme.color.muted} promptText={promptText} width={promptWidth} />
-                  ) : (
-                    <Text color={ui.theme.color.muted}>{promptBlank}</Text>
-                  )}
-                </Box>
-
-                <Text color={ui.theme.color.text}>{line || ' '}</Text>
+        {/* #4 债（full-scene 陷阱 5）：overlay 打开时不再卸载 TextInput——卸载重挂会
+            丢 input 监听注册窗口，Esc 关闭后首批击键被吞。现常驻挂载，
+            阻断期间 display:none + focus=false（监听注销、按键归 overlay 自身
+            useInput），关闭即 focus=true 恢复——无重挂、无恢复窗口。 */}
+        <Box flexDirection="column" display={isBlocked ? 'none' : undefined}>
+          {composer.inputBuf.map((line, i) => (
+            <Box key={i}>
+              <Box width={promptWidth}>
+                {i === 0 ? (
+                  <PromptPrefix color={ui.theme.color.muted} promptText={promptText} width={promptWidth} />
+                ) : (
+                  <Text color={ui.theme.color.muted}>{promptBlank}</Text>
+                )}
               </Box>
-            ))}
 
-            <Box
-              onMouseDown={captureInputDrag}
-              onMouseDrag={dragFromPromptRow}
-              onMouseUp={endInputDrag}
-              position="relative"
-              width={Math.max(1, composer.cols - 2)}
-            >
+              <Text color={ui.theme.color.text}>{line || ' '}</Text>
+            </Box>
+          ))}
+
+          <Box
+            onMouseDown={captureInputDrag}
+            onMouseDrag={dragFromPromptRow}
+            onMouseUp={endInputDrag}
+            position="relative"
+            width={Math.max(1, composer.cols - 2)}
+          >
               <Box width={promptWidth}>
                 {sh ? (
                   <PromptPrefix color={ui.theme.color.shellDollar} promptText={promptText} width={promptWidth} />
@@ -371,6 +374,7 @@ const ComposerPane = memo(function ComposerPane({
                 {/* Reserve the transcript scrollbar gutter too so typing never rewraps when the scrollbar column repaints. */}
                 <TextInput
                   columns={inputColumns}
+                  focus={!isBlocked}
                   mouseApiRef={inputMouseRef}
                   onChange={composer.updateInput}
                   onPaste={composer.handleTextPaste}
@@ -398,8 +402,7 @@ const ComposerPane = memo(function ComposerPane({
         )}
       </Box>
             </Box>
-          </>
-        )}
+        </Box>
       </Box>
 
       {!composer.empty && !ui.sid && (
