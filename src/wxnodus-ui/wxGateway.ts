@@ -295,7 +295,14 @@ export class GatewayClient extends EventEmitter {
         if (this.turnTodos.length && this.turnTodos.every(t => t.id.startsWith('tpl-'))) {
           this.turnTodos = []
         }
-        this.publish({ type: 'message.complete', payload: { text: this.finalText, todos: this.turnTodos } })
+        // 状态栏 $ 成本段即时刷新（此前要等下次 session.info——回合结束后成本数字陈旧）：
+        // 会话 usage 实时重查（含 cost_usd——全部模型有定价才给），回合结算后 UI 立即可见
+        let liveUsage: { calls: number; input: number; output: number; total: number; cost_usd?: number } | undefined
+        try {
+          const row = this.kernel.adapter.data.usage.get(this.currentSessionId)
+          if (row) liveUsage = { calls: row.calls ?? 0, input: row.input ?? 0, output: row.output ?? 0, total: (row.input ?? 0) + (row.output ?? 0), ...(typeof row.cost_usd === 'number' ? { cost_usd: row.cost_usd } : {}) }
+        } catch { /* 用量读取失败不阻断回合收尾 */ }
+        this.publish({ type: 'message.complete', payload: { text: this.finalText, todos: this.turnTodos, ...(liveUsage ? { usage: liveUsage } : {}) } })
         this.finalText = ''
         this.turnTodos = []
         // A22 连续对话：语音模式开 + 非唤醒态 → 回答结束后自动 re-arm VAD
