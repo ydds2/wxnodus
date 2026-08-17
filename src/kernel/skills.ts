@@ -4,6 +4,7 @@
 //       全部本地文件操作，不依赖外部技能市场；frontmatter 仅标量键，手写解析零依赖
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { labelTruncate } from './truncate.js';
 
 export interface SkillMeta {
   name: string;
@@ -196,10 +197,10 @@ export function parseFlow(skillBody: string, flowField: string | undefined): Flo
   return names.map(name => ({ name, instruction: (sections.get(name) ?? '（节点无说明，按名称执行）').trim() }));
 }
 
-// ── 技能工具：注入 SKILL.md 正文给模型（≤8000 字符）──
+// ── 技能工具：注入 SKILL.md 正文给模型（≤8000 字符，超限显式标注）──
 export function skillContentForModel(dataDir: string, cwd: string, name: string): string {
   const s = loadSkill(dataDir, cwd, name);
   if (!s) return '';
   const head = `[技能 ${s.meta.name}] ${s.meta.description}\n`;
-  return (head + s.body).slice(0, 8000);
+  return labelTruncate(head + s.body, 8000, '技能过长——按需 fs_read 完整 SKILL.md');
 }

@@ -554,3 +554,9 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 - **/claw 4000 字静默截断修复**：正文原 `body.slice(0, 4000)` 无标注——模型误判「页面只提取到这些」（网页正文通常远超）。现 labelTruncate 统一口径 + 指引（http_get 或分段抓取续看）。上一轮 extractMainText 内置的省略/截断标注现不会再被外层 slice 拦腰切断。
 - **验证**：全量 2355 通过（labelTruncate 已有纯函数覆盖，此处一行接线）；tsc 零错误。
+
+### 13.26 skill_load 技能注入截断标注轮（2026-08-17 持续完善）
+
+- **skillContentForModel 8000 字静默截断修复**：SKILL.md 超长时原 `slice(0, 8000)` 无标注——模型误以为技能步骤到此为止（可能漏掉关键后置步骤）。现 labelTruncate 统一口径 + 指引（fs_read 完整 SKILL.md）。
+- **扫描结论（video 帧采样无缺陷）**：video 工具 `frames.slice(0, 2)` 为采样设计（取前 2 帧视觉探测），非截断；无标注需求。
+- **验证**：skills 测试更新为标注断言（+1 断言强化）；全量 2355 通过；tsc 零错误。

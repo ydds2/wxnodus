@@ -98,11 +98,13 @@ describe('加载/安装/创建', () => {
     const dir2 = writeSkill(dataDir, 'ai-skill', '描述', '工作流', { aiGenerated: true });
     expect(readFileSync(join(dir2, 'SKILL.md'), 'utf8')).toContain('ai_generated: true');
   });
-  it('skillContentForModel 带标题头且截断', () => {
+  it('skillContentForModel 带标题头且截断显式标注（模型知道技能有剩余）', () => {
     writeSkill(dataDir, 'big', '大技能', 'x'.repeat(9000));
     const content = skillContentForModel(dataDir, cwd, 'big');
     expect(content.startsWith('[技能 big]')).toBe(true);
-    expect(content.length).toBeLessThanOrEqual(8000);
+    expect(content).toContain('已截断');
+    expect(content).toContain('共');
+    expect(content).toContain('剩余');
     expect(skillContentForModel(dataDir, cwd, 'missing')).toBe('');
   });
 });
