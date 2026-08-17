@@ -11,6 +11,7 @@ wxnodus             # 交互 TUI
 wxnodus -p "帮我做一个待办系统"   # 非交互单次执行
 wxnodus -p "你好" --json         # agent 结果 JSON
 wxnodus -p "你好" --wire         # 总线事件流 JSONL
+cat 文件.txt | wxnodus -p "总结内容"   # stdin 管道（-p 为指令、stdin 为素材）
 ```
 
 全量门禁（typecheck + 全量测试 + known-failures + 发现/覆盖检查 + 构建）：`npm run ci`

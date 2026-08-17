@@ -384,6 +384,16 @@ if (pre.mode === 'error') {
   registerCoreHandlers(commandBus, makeHandlerCtx());
   registerExtHandlers(commandBus, makeHandlerCtx());
 
+  // stdin 管道模式（crush/gemini 对齐：cat 文件 | wxnodus——场景矩阵「stdin 管道 ✗」关闭）：
+  // 非 --wire/--serve/--mcp-server 且 stdin 非 TTY 时探测管道输入——有数据则作为一次性输入
+  // （-p 存在时 -p 为指令、stdin 为素材；-p 缺失时 stdin 即提问）。--wire 的 stdin 是 RPC
+  // 帧通道、--serve 不消费 stdin、--mcp-server 的 stdin 是 MCP stdio 传输——三者绝不混用。
+  if (!opts.wire && !opts.serve && !opts.mcpServer && !process.stdin.isTTY) {
+    const { readStdinAll, composePipePrompt } = await import('./stdinPipe.js');
+    const piped = await readStdinAll();
+    if (piped.trim()) opts.prompt = composePipePrompt(opts.prompt, piped);
+  }
+
   // 黑洞策展后台自动审查（机制补强）：启动 5s 后检查间隔，超期则后台执行一轮
   setTimeout(() => {
     import('../kernel/curator.js').then(({ maybeRunCurator }) => {

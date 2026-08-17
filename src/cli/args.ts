@@ -107,6 +107,7 @@ export const USAGE = `WxNodus V3 — Windows 本地 AI agent CLI
   wxnodus -p "<需求>"        非交互单次执行
   wxnodus -p "<需求>" --json  agent 结果 JSON
   wxnodus -p "<需求>" --wire  总线事件流 JSONL
+  cat 文件 | wxnodus -p "指令"  stdin 管道（stdin 为素材，-p 为指令；无 -p 时 stdin 即提问）
   wxnodus -C <目录>          指定工作目录
   wxnodus -s <会话ID>        指定会话
   wxnodus -p "需求" --strict-mcp-config  仅信任项目声明 MCP

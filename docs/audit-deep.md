@@ -640,3 +640,11 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 - **`npm run ci` 一键门禁**：仓库无 git remote（GitHub Actions 无意义）——诚实等价物为本地全量门禁聚合脚本：typecheck → typecheck:tests → test:all → test:known-failures → check:test-discovery → check:requirement-coverage → build。首次全链路实跑暴露 typecheck:tests 项目（tsconfig.tests.json，主 tsc 不覆盖）**3 处既有测试类型错误**（kernel-tools-computer-truncate UiaElement 缺 offscreen、ui-phase0-contract PromptZone props 缺 onHistoryAccept/onHistoryCancel、kernel-llmStream 未窄化失败变体 r.error）——本轮回合一并修复，typecheck:tests 归零后七步全绿复跑确认（此前「自始全绿」口径作废，如实记录）。README 快速开始补一行。
 - **vim 死代码清理**（深评 UI S0 之二选一执行「从宣传移除」分支）：`src/wxnodus-ui/lib/vimKeys.ts` 41 行薄层全仓库零调用（仅 gaps 测试锁定）、无 hotkeys/helpHint/README 任何宣称——删除文件 + gaps.test.ts vim 段（差距 #1 以「无宣称不保留」关闭）；真 vim 模式如需复活应按 codex keymap 层重新设计（薄层连操作符/文本对象都没有，无保留价值）。
+
+### 13.40 stdin 管道模式轮（2026-08-18 /goal 自主完善——场景矩阵「stdin 管道 ✗」关闭）
+
+- **实现**：新增 `src/cli/stdinPipe.ts`——`readStdinAll()`（首字节 300ms 宽限期：无数据即放弃，execFile 等保持 stdin 打开的调用方零阻塞；有数据读到 EOF，1MB 封顶）+ `composePipePrompt()`（纯函数：无 -p 时 stdin 即提问；有 -p 时指令 + `<stdin>` 素材块；50k 字超限走 labelTruncate 诚实标注）。
+- **接入**（cli/index.ts）：命令注册后、预热前——仅 `!wire && !serve && !mcpServer && !isTTY` 时探测；--wire 的 stdin 是 RPC 帧通道、--serve 不消费 stdin、--mcp-server 的 stdin 是 MCP stdio 传输，三者绝不混用（护栏显式化）。
+- **契约测试**（tests/cli-stdin-pipe.test.ts 5 例）：纯函数 3 例（无 -p 提问/有 -p 组合/51k 超限标注）；真实进程 2 例（piped stdin → 一次性执行，session-streams/default.jsonl 用户事件留证；-p+stdin → 组合提问含 `<stdin>`）——dist 未构建诚实 skip。
+- **文案**：--help 用法表 + README 快速开始各补一行 `cat 文件 | wxnodus -p "指令"`。
+- **实测**：`printf '…' | node dist/cli/index.js --json` 退出 0 且一次性执行（JSON 响应正常）；管道证据落 session-streams（此前误判为 sessions/ 目录，测试已按真实路径修正）。
