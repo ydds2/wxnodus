@@ -87,3 +87,13 @@ describe('配置校验', () => {
     expect(unknownSettingsKeys({ autoResume: true, bogusKey: 1 })).toEqual(['bogusKey']);
   });
 });
+
+describe('接入层/余额/视觉键白名单', () => {
+  it('系统写入的键不误报为未知键（自伤误报回归）', () => {
+    expect(unknownSettingsKeys({
+      providers: [], activeProvider: 'a', usageRange: 'today', balanceMonitor: { enabled: true },
+      show_cost: true, autoGitCommit: false, visionBaseURL: '', visionModel: '', visionKey: '',
+      visionLocal: false, visionOcr: true, proxy: 'http://127.0.0.1:7890',
+    })).toEqual([]);
+  });
+});

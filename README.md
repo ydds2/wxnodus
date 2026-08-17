@@ -55,11 +55,23 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 
 任意 **OpenAI 兼容端点**（厂商直连 / 第三方中转站）皆可接入——档案化多密钥管理：
 
-- `/profile add <id> <baseURL> [--models a,b,c]` 新建接入档案 → `/profile use <id>` 一键切换；密钥 AES-256-GCM 加密落盘（`/profile set-key`），模型名任意自定义（不再强制目录回退）
+- `/profile add <id> <baseURL> [--models a,b,c]` 新建接入档案 → `/profile use <id>` 一键切换；密钥 AES-256-GCM 加密落盘（`/profile set-key`），模型名任意自定义（不再强制目录回退）；`/doctor` 体检档案一致性（悬空 active/重复 id/非法 baseURL）
+- 档案模型全 UI 可达：`/model <档案模型名>` 直达（自动切 activeProvider + baseURL），模型选择器内档案作为独立分组可选
 - `/key import <路径/.env>` 批量导入密钥；`/key --profile <id>` 指定档案；`/config export|import` 配置整体导入导出
 - `/balance set <余额URL> [--json-path 路径]` 粘贴余额查询网址 → 状态栏 **💰 实时余额**（5 分钟轮询 + 点击强制刷新，厂商适配器自动识别 + 通用启发式兜底，拉取失败诚实 ⚠）；`/balance on|off` 独立开关
 - `/usage range today|7d|30d` 分区间 token 消耗（跨会话聚合）→ 状态栏 **📊**（点击轮换区间）；余额与 token 两段独立配置
+- `/cost [session|today|7d|30d]` 成本估算（按模型聚合，公开参考价目诚实标注，未收录定价只报 token）→ 状态栏 **$** 成本段（`/config set show_cost true` 开启；全部模型有定价才显示合计——绝不显示被低估的数字）
 - 彩蛋：`/warp` 星际跳跃 · `/fortune` 幸运签
+
+## 键位与交互（对齐主流 CLI）
+
+| 键位/语法 | 行为 |
+|---|---|
+| `Tab` / `Shift+Tab` | 补全接受 / **权限模式循环**（smart→auto→manual→plan→yolo→goal，状态栏徽章即时刷新） |
+| `Ctrl+R` | **历史反向搜索**（bash 同款：实时过滤、再按 Ctrl+R 取更旧匹配、Enter 接受、Esc 取消） |
+| `@路径` | **文件提及**（Claude Code 同款）：Tab 补全 + 提交时展开文件内容；缺失/二进制诚实通知，散文 @词零触发 |
+| diff 回显 | 文件编辑 **+/-/@@ 语法高亮**（add 绿 / del 红 / hunk 青），超长 diff 降级合并不丢内容 |
+| 忙碌时 `Esc Esc` | 确认中断（1.5s 窗口）→ 中断后指路 `/undo` 回滚 |
 
 ## 自然语言免记命令
 
