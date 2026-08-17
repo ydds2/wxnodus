@@ -115,7 +115,12 @@ export function coreTools(): Record<string, ToolDef> {
         const p = resolve(ctx.cwd, path);
         const guard = withinWorkspace(ctx.cwd, p);
         if (guard) return guard;
-        return readFileSync(p, 'utf8').slice(0, 20000);
+        const full = readFileSync(p, 'utf8');
+        // 诚实截断：超长文件只给头部 20000 字并显式标注——模型知道后面还有内容
+        // （避免「读完整文件」假象；续读用 fs_read 行号切片或 bash tail）
+        return full.length > 20000
+          ? `${full.slice(0, 20000)}\n…[文件过长已截断（共 ${full.length} 字，剩余 ${full.length - 20000} 字未读）——用 bash tail/sed 或分段读取续看]`
+          : full;
       }
       catch (e: any) { return `读取失败：${e.message}`; }
     },

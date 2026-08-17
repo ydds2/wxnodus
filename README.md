@@ -70,6 +70,7 @@ wxnodus -p "你好" --wire         # 非交互：总线事件流 JSONL（协议�
 |---|---|
 | `Tab` / `Shift+Tab` | 补全接受 / **权限模式循环**（smart→auto→manual→plan→yolo→goal，状态栏徽章即时刷新） |
 | `Ctrl+R` | **历史反向搜索**（bash 同款：实时过滤、再按 Ctrl+R 取更旧匹配、Enter 接受、Esc 取消） |
+| `Ctrl+Shift+P` | **截图即问**：全屏截图自动附加——直接提问，视觉模型看图 / 文本模型 GLM 先识别 |
 | `@路径` | **文件提及**（Claude Code 同款）：Tab 补全 + 提交时展开文件内容；缺失/二进制诚实通知，散文 @词零触发 |
 | diff 回显 | 文件编辑 **+/-/@@ 语法高亮**（add 绿 / del 红 / hunk 青），超长 diff 降级合并不丢内容 |
 | 忙碌时 `Esc Esc` | 确认中断（1.5s 窗口）→ 中断后指路 `/undo` 回滚 |
