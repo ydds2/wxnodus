@@ -1088,7 +1088,7 @@ export function coreTools(): Record<string, ToolDef> {
         const enc = (settings as any)?.apiKeyEnc as string | undefined ?? null;
         const vr = await describeImageStatus(file, enc, '描述当前屏幕内容：界面/窗口/按钮与输入框的名称与大致位置（用中文），以及屏幕上的可见文字。', settings);
         const text = vr.ok ? (vr.text ?? '') : `（视觉不可用：${vr.reason}——已截图 ${file}，可用 /img 复查或 computer_uia_tree 读元素结构）`;
-        return `截图已保存：${file}（${r.shot.width}x${r.shot.height}）${vr.cached ? '\n（同屏缓存：10s 内相同画面未重新识别）' : ''}\n${text.slice(0, 1500)}`;
+        return `截图已保存：${file}（${r.shot.width}x${r.shot.height}）${vr.cached ? '\n（同屏缓存：10s 内相同画面未重新识别）' : ''}\n${labelTruncate(text, 1500, '视觉描述过长——computer_uia_tree 读精确元素结构')}`;
       } catch (e: any) { return `观察失败：${String(e?.message ?? e).slice(0, 120)}`; }
     },
   };
@@ -1101,9 +1101,11 @@ export function coreTools(): Record<string, ToolDef> {
       const { uiaWindows } = await import('./computer/uia.js');
       const r = uiaWindows();
       if (!r.ok) return r.reason ?? 'UIA 不可用';
-      const wins = (r.windows ?? []).slice(0, 30);
-      if (!wins.length) return '未发现可见窗口';
-      return `可见窗口（${wins.length}）：\n` + wins.map(w => `${w.focused ? '◉' : '○'} 「${w.name.slice(0, 40)}」${w.className ? ` <${w.className}>` : ''} pid=${w.pid} handle=${w.handle}`).join('\n');
+      const all = r.windows ?? [];
+      if (!all.length) return '未发现可见窗口';
+      const wins = all.slice(0, 30);
+      const more = all.length > 30 ? `\n…[共 ${all.length} 个窗口，已截断（前 30 个）——computer_uia_tree <handle> 直达目标窗口]` : '';
+      return `可见窗口（${wins.length}${all.length > 30 ? `/共 ${all.length}` : ''}）：\n` + wins.map(w => `${w.focused ? '◉' : '○'} 「${w.name.slice(0, 40)}」${w.className ? ` <${w.className}>` : ''} pid=${w.pid} handle=${w.handle}`).join('\n') + more;
     },
   };
   const uiaTreeTool: ToolDef = {
@@ -1115,9 +1117,11 @@ export function coreTools(): Record<string, ToolDef> {
       if (!r.ok) return r.reason ?? 'UIA 不可用';
       const els = r.elements ?? [];
       if (!els.length) return '控件树为空（窗口无可交互元素）';
-      return `控件树（${els.length} 项——定位语法 <名称>|<AutomationId>）：\n` + els.map(e =>
+      const shown = els.slice(0, 60);
+      const more = els.length > 60 ? `\n…[共 ${els.length} 项，已截断（前 60 项）——用 computer_uia_find <名称>|<AutomationId> 定位具体元素]` : '';
+      return `控件树（${els.length} 项——定位语法 <名称>|<AutomationId>）：\n` + shown.map(e =>
         `${e.name ? `「${e.name.slice(0, 30)}」` : ''}${e.id ? ` id=${e.id}` : ''} <${e.ct}> @(${e.x},${e.y} ${e.w}x${e.h})${e.enabled ? '' : ' ✗disabled'}`.trim()
-      ).join('\n');
+      ).join('\n') + more;
     },
   };
   const uiaFindTool: ToolDef = {

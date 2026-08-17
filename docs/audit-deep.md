@@ -500,3 +500,10 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
   - `browser_snapshot`/`browser_click` 正文快照：原 `slice(0, 2500)` 静默；click 原对外层整体 `slice(0,1500)` 连标题/URL/交互元素清单一起切。现 `cleanBodyText` 只截正文并标注，click 用 1200 限正文、标题/URL/交互清单完整保留（比旧行为信息量更大且诚实）。
   - `memory_search` 命中条目：原每条 `slice(0, 300)` 静默。现逐条标注共 N 字。
 - **验证**：+8 测试（labelTruncate 纯函数 ×3、delegate 长短 ×2、browser cleanBodyText ×2、memory_search 超长条目 ×1）；全量 2339 通过；tsc 零错误。
+
+### 13.18 Computer Use 输出诚实性轮（2026-08-17 持续完善）
+
+- **computer_observe**：视觉描述原 `slice(0, 1500)` 静默——模型以为屏幕描述到此为止。现 labelTruncate 标注 + 指引（computer_uia_tree 读精确元素结构）。
+- **computer_uia_windows**：原静默截前 30 个窗口（总数不明）。现标注 `共 N 个窗口，已截断（前 30 个）` + 直达目标窗口指引。
+- **computer_uia_tree**：原**无上限**全量输出——密集窗口（资源管理器/设置页）数百元素直接上下文爆破。现有界 60 项 + 总数标注 + `computer_uia_find <名称>|<AutomationId>` 定位指引。
+- **验证**：+4 测试（uia_windows 超限/不超限 ×2、uia_tree 超限/不超限 ×2，vi.mock uia 桥）；全量 2343 通过；tsc 零错误。
