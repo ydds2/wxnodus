@@ -711,3 +711,23 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **决策**：深评 P1「测试布局收口（123 根目录文件归位）」经实测评估后**以约定文档化替代机械搬移**——批量移动会连锁破坏 package.json 数十条 `test:w*-xx` 路径锚点脚本 + 123 处 import 深度 + vitest 发现顺序，纯外观收益、高回归风险（成本远超收益，违背预算约束）。
 - **交付**：`tests/README.md` 布局约定（分区表 + 4 条规则：命名前缀、路径锚点同步义务、fixture 不入库、npm run ci 唯一权威）——捕获深评「发现性/维护性」本意。
 - **本轮回退/止损汇总（如实）**：拆分 2/3 自动修剪失败（§13.44 回退）→ 用法过滤新方案成功（§13.46）；fixture 卫生为既有状态补证（§13.46）；测试批量移动明确延后（本条）。
+
+### 13.48 补齐轮（2026-08-18 /goal：cli-comparison 差距清单逐条落地——OS 沙盒/apply_patch/并行调度/输出蒸馏掩码/LSP/硬编码清零）
+
+- **范围**：docs/cli-comparison-2026.md §4 P0 四件 + P2 LSP + cli-implementation-gap-2026.md 硬编码清单；docs/t0-budget-plan-2026.md 已按要求删除（目标明确条目）。
+- **新增模块**：
+  - `src/kernel/toolOutput.ts`——offload（50KB/2000 行落盘 truncations/ + 头尾预览 + 续读路径）、旧轮掩码（50k 保护窗/30k 触发，幂等）、promoteOffloadFile/readHeadTail（有界读，绝不整文件入内存）；全部阈值 settings 可覆盖 + 夹取防误配（resolveWrapLimit/OffloadThreshold/MaskWindow/DistillThreshold）。
+  - `src/kernel/applyPatch.ts`——codex 语法子集（Add/Update/Delete/Move + @@），三级匹配容错（精确→行尾空白→重缩进）+ 全量校验后落盘（失败绝不写一半，逐块报错 + did_you_mean）+ undoShadows 快照 + CRLF 保留 + 工作区守卫 + 生产护栏（500KB/50 文件/200 块/500 行）。
+  - `src/kernel/winSandbox.ts`——OS 沙盒（详见下「实测校准」）。
+  - `src/kernel/lspClient.ts`——stdio JSON-RPC（Content-Length 帧）LSP 客户端：initialize/didOpen/3.17 pull 诊断（-32601 回退 publishDiagnostics 宽限期）/hover/definition；settings.lsp.servers 可配任意服务器 + 内置 typescript-language-server 探测；会话 LRU 缓存（上限 4）；请求全带超时；ENOENT 诚实报错带安装指引。
+- **agent.ts 集成**：并行工具调度（纯只读批次 Promise.all、含写批次整批串行、manual 恒串行、槽位保序——gemini scheduler 语义；并发计数实测 2/1）；蒸馏开关（settings.toolDistill，默认关，子代理不蒸馏防递归计费）；掩码（回填后按保护窗处理）；压缩阈值 64k 写死 → maxContextFor − 输出预留（settings.ctxOutputReserve 可覆盖）；MAX_TURNS 32 写死 → settings.maxTurns（1..200 夹取）；executeTool 侧 offload + wrapLimit 统一装配（已自包裹输出透传防双重标注）。
+- **tools.ts**：wrapDanger limit 参数化（settings.untrustedWrapLimit）；bash 流式落盘（sink 保留完整输出→promoteOffloadFile 接管）+ 沙盒接入（trySandboxLaunch，探测失败诚实提示后普通执行）+ 8000–20000 静默区间补标（回归修复）；apply_patch/lsp_diagnostics/lsp_hover/lsp_definition 注册（内置 44→48 工具，agent 测试计数同步）。
+- **命令/配置**：/sandbox 升级双层语义（策略层 L0-L3 模式映射 + 执行层 os L0-L3|off|status|probe 真实 OS 沙盒，settings.sandbox.profile 持久化）；store/config.ts 白名单 +12 键（sandbox/maxTurns/ctxOutputReserve/toolOutputOffload*（3）/toolOutputMask*（2）/toolDistill*（2）/untrustedWrapLimit/lsp）。
+- **OS 沙盒实测校准（本机标准用户，重要口径）**：
+  1. `CreateRestrictedToken(DISABLE_MAX_PRIVILEGE)+CreateProcessAsUser` → **1314 ERROR_PRIVILEGE_NOT_HELD 实测证伪**（标准用户无 SeTcbPrivilege，受限令牌不可用于进程创建；flags=0 同样失败——与 codex 方案在非提权环境的差异）。
+  2. `SetTokenInformation(Low IL S-1-16-4096)+CreateProcessAsUser` → **实测可用**；Low IL 子进程写 Medium-IL 文件「拒绝访问」= L0 只读语义实证。
+  3. Job Object（KILL_ON_JOB_CLOSE + DIE_ON_UNHANDLED_EXCEPTION）+ JobObjectNetRateControlInformation（1B/s=断网级 / 10KB/s）经普通 CreateProcess 施加——实测可用。
+  4. 最终 profile：L0=Low IL 只读+断网｜L1=Job+断网｜L2=Job+限速 10KB/s｜L3=Job 遏制；探测失败诚实降级 + 提示（绝不假装沙盒）；默认 off（兼容性优先 opt-in）。
+  5. 修复链：C# 编译期 4 错（Split char/string、OpenProcessToken 缺 out、CreateFile 句柄不可继承致输出全丢、CreateProcessAsUser 裸名 error 2→全路径）；**Add-Type -TypeDefinition 非 ASCII 损坏实测**（中文注释致解析错位——runner 内嵌 C# 纯 ASCII 红线 + 版本戳 v2）；受限令牌 1314 探测链三轮 diag 定位。
+- **过程回退/教训**：apply_patch parse 初版 `\S.+?` 单字符路径漏配 + sawBegin 校验误用 inPatch 终态 + **flushFile 漏 push doc.files**（三连修）；lspClient 块注释内 `"**/*.ts"` 的 `*/` 提前终结（本仓既知陷阱复发——已换无歧义写法）；测试口径修正（mask 数据量、offload 阈值夹取下限 10k、ctx==minus 退化容错使多数旧用例语义自愈、LSP mock 服务器 EPIPE 防护 + close 等待真实退出防 EBUSY）。
+- **验证**：新 5 套件 50 用例全绿（apply-patch 15/tool-output 10/win-sandbox 6/lsp-client 10/agent-gap 6 + truncate-label 契约修复）；全量 2447 通过 / 10 跳过 / 0 失败；tsc 零错误；评分复算 6.14→7.25（第 4/7 名，逐维理由入 cli-deep-analysis-score-2026.md §0.1，⑥ 安全 9 不升 10 的依据=沙盒仅 Windows 单平台）。

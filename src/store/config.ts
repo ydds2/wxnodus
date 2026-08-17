@@ -89,6 +89,11 @@ export const SETTINGS_KEYS = new Set([
   // 接入层开放（档案体系/余额监控/token 区间/成本段）：系统自己写入的键必须入白名单——
   // 否则 /config 面板把系统写入的键误报为「未知键（不生效）」（自伤误报）
   'providers', 'activeProvider', 'usageRange', 'balanceMonitor', 'show_cost', 'autoGitCommit', 'costPrices',
+  // gap 落地（2026-08-18）：OS 沙盒 / 轮次上限 / 工具输出工程（offload+掩码+蒸馏）/
+  // 上下文输出预留 / LSP 服务器配置——阈值全部 settings 可覆盖（无写死魔法数字）
+  'sandbox', 'maxTurns', 'ctxOutputReserve',
+  'toolOutputOffload', 'toolOutputOffloadBytes', 'toolOutputMask', 'toolOutputMaskProtect', 'toolOutputMaskTrigger',
+  'toolDistill', 'toolDistillChars', 'untrustedWrapLimit', 'lsp',
   // 视觉开放通道（settings.vision* 与 visionLocal/visionOcr）
   'visionBaseURL', 'visionModel', 'visionKey', 'visionLocal', 'visionOcr',
   // 代理（/proxy 命令消费 settings.proxy）

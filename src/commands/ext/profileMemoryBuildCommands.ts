@@ -759,26 +759,58 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
   });
 
   // ── 安全类 ──────────────────────────────────
-  // /sandbox [L0-L3]：分层沙盒——映射真实权限模式并切换（非说明文字）
-  //   L0 只读（plan）｜L1 默认（smart）｜L2 自动编辑（auto）｜L3 全放（yolo）
-  bus.register('/sandbox', (args) => {
+  // /sandbox 双层语义（gap P0-4 落地，2026-08-18）：
+  //   策略层 L0-L3 → 权限模式映射（plan/smart/auto/yolo——审批语义，非 OS 隔离）
+  //   执行层 os L0-L3 → 真实 OS 内核沙盒（受限令牌 + Job Object + 断网限速，
+  //   settings.sandbox.profile 持久化；bash 执行时接入——探测失败诚实降级不假装）
+  bus.register('/sandbox', async (args) => {
     const LAYERS: Record<string, string> = { L0: 'plan', L1: 'smart', L2: 'auto', L3: 'yolo' };
     const current = Object.entries(LAYERS).find(([, m]) => m === ctx.getMode())?.[0] ?? '?';
+    const osProfile = ((ctx.config.getKey('settings', 'sandbox') as Record<string, any> | undefined | null) ?? {})?.profile ?? 'off';
+    if (args[0] === 'os') {
+      const sub = (args[1] ?? '').toUpperCase();
+      if (['L0', 'L1', 'L2', 'L3', 'OFF'].includes(sub)) {
+        ctx.config.setKey('settings', 'sandbox', { profile: sub === 'OFF' ? 'off' : sub });
+        if (sub === 'OFF') return 'OS 沙盒已关闭（settings.sandbox.profile=off）——bash 按普通方式执行（策略层审批链不变）';
+        const { sandboxSpec } = await import('../../kernel/winSandbox.js');
+        const spec = sandboxSpec(sub as 'L0' | 'L1' | 'L2' | 'L3');
+        const caps = [spec.lowIl ? 'Low IL 只读' : '', 'Job 遏制', spec.netLimitBps === 1 ? '断网' : spec.netLimitBps ? '限速 10KB/s' : '无网络限制'].filter(Boolean);
+        return `OS 沙盒已开启：${sub}（${caps.join(' + ')}）——bash 命令此后经沙盒执行（持久化，/sandbox os status 验证能力）`;
+      }
+      const { probeWinSandbox } = await import('../../kernel/winSandbox.js');
+      const probe = await probeWinSandbox(ctx.dataDir, sub === 'PROBE');
+      const desc: Record<string, string> = {
+        L0: '只读 + 断网（Low IL + Job + 1B/s 限速——标准用户可用，实测校准）',
+        L1: '可写 + 断网（Job 遏制 + 1B/s 限速）',
+        L2: '可写 + 限速 10KB/s（Job 遏制）',
+        L3: '仅 Job 遏制（KILL_ON_CLOSE 防孤儿）',
+        off: '关闭（bash 普通方式执行）',
+      };
+      return lines(' OS 沙盒 ', [
+        ` 当前 profile：${String(osProfile ?? 'off').toUpperCase()}（${desc[String(osProfile).toLowerCase()] ?? desc['off']}）`,
+        ` 能力探测：${probe.ok ? `✅ ${probe.detail}` : `❌ ${probe.detail}`}`,
+        '',
+        ' 用法：/sandbox os L0|L1|L2|L3|off（开启/关闭，settings 持久化）',
+        '      /sandbox os status（读缓存探测）  /sandbox os probe（强制重探）',
+        ' 诚实口径：探测失败时 bash 自动按普通方式执行并提示——绝不假装沙盒',
+      ]);
+    }
     const want = (args[0] ?? '').toUpperCase();
     if (want in LAYERS) {
       ctx.setMode(LAYERS[want]!);
       const desc: Record<string, string> = { plan: '只读探索 + 计划审批', smart: '只读放行，危险工具确认', auto: '自动编辑（文件写入免确认）', yolo: '除硬红线全部放行' };
-      return `沙盒已切换：L${want.slice(1)} → ${LAYERS[want]} 模式（${desc[LAYERS[want]!]}）`;
+      return `权限层已切换：L${want.slice(1)} → ${LAYERS[want]} 模式（${desc[LAYERS[want]!]}）——注：这是策略层；执行层 OS 沙盒用 /sandbox os L0-L3`;
     }
-    return lines(' 沙盒（L0-L3） ', [
-      ` 当前层：L${current.slice(1)}（${ctx.getMode()}）`,
-      ` L0 → plan  只读探索 + 计划审批（写操作需确认）`,
-      ` L1 → smart 更改前确认：只读放行，危险工具确认（默认）`,
-      ` L2 → auto  自动编辑：文件写入免确认，命令按分级`,
-      ` L3 → yolo  完全访问：除硬红线全部放行`,
+    return lines(' 沙盒（双层） ', [
+      ` 策略层（权限模式）：当前 L${current.slice(1)}（${ctx.getMode()}）`,
+      `   L0 → plan  只读探索 + 计划审批（写操作需确认）`,
+      `   L1 → smart 更改前确认：只读放行，危险工具确认（默认）`,
+      `   L2 → auto  自动编辑：文件写入免确认，命令按分级`,
+      `   L3 → yolo  完全访问：除硬红线全部放行`,
+      ` 执行层（OS 内核沙盒）：${String(osProfile ?? 'off').toUpperCase()}（/sandbox os 查看/切换）`,
       '',
       ` 硬红线（任何模式不可绕过）：${HARD_REDLINES.map(r => r.desc).join(' · ')}`,
-      ` 用法：/sandbox L0|L1|L2|L3`,
+      ` 用法：/sandbox L0|L1|L2|L3（策略层）   /sandbox os L0|L1|L2|L3|off|status|probe（执行层）`,
     ]);
   });
 

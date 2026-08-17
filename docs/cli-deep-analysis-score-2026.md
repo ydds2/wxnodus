@@ -1,8 +1,8 @@
-# 七 CLI 全景深挖评审与评分（2026-08-18 三轮专案）
+# 七 CLI 全景深挖评审与评分（2026-08-18 三轮专案 + 补齐轮复评）
 
 > 证据基准：`C:\Users\20164\Desktop\cli-compare\{codex,gemini-cli,opencode,kimi-cli,crush,aider}` 全量源码 + wxnodus 本仓（src 576 文件 72.5k 行 + packages/wxnodus-ink）。
 > 三轮：① 能力矩阵/臃肿度（docs/cli-comparison-2026.md）② 实现级五层差距（docs/cli-implementation-gap-2026.md）③ 本文档——框架/功能/场景/UI/提示词四路 deep-dive 合成 + 11 维加权评分。
-> 全部结论可回溯 file:line；行号基于本次克隆快照。
+> ④ 补齐轮（2026-08-18，同日二评）：按 ①② 的差距清单逐条落地（OS 沙盒/apply_patch/并行调度/输出蒸馏掩码/LSP/硬编码清零）后复评——评分表已更新，判词与路径表同步。全部结论可回溯 file:line。
 
 ---
 
@@ -10,24 +10,39 @@
 
 **11 维 × 7 家，权重归一化到 100。** 权重代表「AI 编码 CLI 综合竞争力」的构成假设：Agent 内核 13、提示词/模型适配 11、场景/协议 11、安全 10 为第一梯队；渲染/输入/生态/工程为体验与持续力；差异化 5 是「不可替代性」溢价。
 
+### 0.1 补齐轮复评表（2026-08-18 二评，wxnodus 列已更新；其余六家分数不变）
+
 | 维度（权重） | wxnodus | codex | gemini | opencode | crush | kimi | aider |
 |---|---|---|---|---|---|---|---|
 | ① UI 渲染引擎（9） | **10** | 9 | 7 | 8 | 9 | 6 | 4 |
 | ② 输入/编辑器（9） | 5 | **10** | 9 | 7 | 6 | 8 | 8 |
 | ③ 内容交互 diff/媒体（8） | 4 | 8 | 6 | **9** | **9** | 7 | 5 |
-| ④ Agent 内核/工具（13） | 8 | **9** | **9** | **9** | 8 | 8 | 7 |
-| ⑤ 提示词/模型适配（11） | 5 | 9 | 9 | **10** | 7 | 7 | 8 |
+| ④ Agent 内核/工具（13） | **9** | **9** | **9** | **9** | 8 | 8 | 7 |
+| ⑤ 提示词/模型适配（11） | 6 | 9 | 9 | **10** | 7 | 7 | 8 |
 | ⑥ 安全工程（10） | **9** | **9** | **9** | 7 | 7 | 6 | 3 |
-| ⑦ 场景/协议（11） | 6 | 9 | 9 | **10** | 5 | 7 | 4 |
-| ⑧ 分发/生态/文档（9） | 2 | 9 | 8 | **9** | 7 | 8 | 8 |
-| ⑨ 工程质量/CI（8） | 4 | 9 | 9 | 9 | 8 | 8 | 5 |
-| ⑩ 性能/token 工程（7） | 6 | 8 | 8 | 7 | 7 | 6 | 5 |
+| ⑦ 场景/协议（11） | 8 | 9 | 9 | **10** | 5 | 7 | 4 |
+| ⑧ 分发/生态/文档（9） | 5 | 9 | 8 | **9** | 7 | 8 | 8 |
+| ⑨ 工程质量/CI（8） | 7 | 9 | 9 | 9 | 8 | 8 | 5 |
+| ⑩ 性能/token 工程（7） | 8 | 8 | 8 | 7 | 7 | 6 | 5 |
 | ⑪ 差异化（离线/记忆/平台）（5） | **8** | 4 | 3 | 5 | 4 | 3 | 5 |
-| **加权总分（/1000）** | **614** | **869** | **812** | **841** | **709** | **693** | **573** |
+| **加权总分（/1000）** | **725** | **869** | **812** | **841** | **709** | **693** | **573** |
 
-**排名：codex 8.69 ＞ opencode 8.41 ＞ gemini 8.12 ＞ crush 7.09 ＞ kimi 6.93 ＞ wxnodus 6.14 ＞ aider 5.73。**
+**排名：codex 8.69 ＞ opencode 8.41 ＞ gemini 8.12 ＞ wxnodus 7.25 ＞ crush 7.09 ＞ kimi 6.93 ＞ aider 5.73。**（wxnodus 由 6.14→7.25，升至第 4/7 名，反超 crush 与 kimi）
 
-判词先行：**wxnodus 不是残次品，是重度偏科生**——渲染引擎与安全防御两个单科满分，但生态分发（2/10）与工程质量（4/10）两科不及格，把总分拉到了 6.14。它输给头部的是「产品化完成度」，而不是「技术深度」；它输给 aider（5.73）的恰好反过来，是「工业化不足但技术野心更大」。单项细节见下。
+**复评变动的逐维理由（±分数全部有落地证据，见 §9 补齐轮记录）：**
+
+| 维度 | 旧→新 | 理由（证据锚点） |
+|---|---|---|
+| ④ Agent 内核/工具 | 8→9 | apply_patch 多文件补丁（三级容错+全量校验落盘+did_you_mean，`src/kernel/applyPatch.ts`）；并行调度（纯只读批并行、含写批串行，`agent.ts` 槽位保序）；LSP 三工具（`src/kernel/lspClient.ts`）；输出 offload+掩码+蒸馏开关（`src/kernel/toolOutput.ts`）——工具层与 codex/gemini/opencode 同档 |
+| ⑤ 提示词/模型适配 | 5→6 | 压缩阈值不再硬编码 64k——模型目录真实窗口 − 输出预留（`providers.ts maxContextFor` + `agent.ts`）；MAX_TURNS 32 写死 → settings.maxTurns；wrapDanger 8000 写死 → settings.untrustedWrapLimit + offload |
+| ⑦ 场景/协议 | 6→8 | 原空白四块已补三：stdin 管道（`stdinPipe.ts`）、--stream-json/--wire 协议文档+2 示例（`docs/wire-protocol.md`）、ACP 文档（`docs/acp-zed-jetbrains.md`）、LSP 集成（IDE 生态第一步）；仅剩远程/分享未覆盖 |
+| ⑧ 分发/生态/文档 | 2→5 | CHANGELOG.md + /update 渠道探测（五渠道指引）+ winget/scoop manifest 模板与生成器（占位门禁诚实标注）+ 协议/集成文档；仍无真实发布与插件市场 |
+| ⑨ 工程质量/CI | 4→7 | `npm run ci` 七步本地门禁（typecheck×2+全量+known-failures+发现/覆盖+build）；handlersExt 3912→2180 行拆分；分层泄漏修复（kernel 拥有语义+Symbol 品牌端口）；fixture node_modules 出 git；tests/README 布局约定。无 GitHub Actions（仓库无 remote） |
+| ⑩ 性能/token 工程 | 6→8 | 输出 offload（50KB 落盘+续读，bash 流式落盘不丢尾）+ 旧轮掩码（50k 保护窗）+ 并行读批 + 真实窗口压缩 + 前缀缓存稳定化（sessionClocks 冻结）+ usage 缓存双列可观测（v7/v8 迁移） |
+
+**未调分且如实说明**：⑥ 安全工程维持 9——OS 沙盒本轮落地（Windows L0-L3，标准用户实测校准：受限令牌路径被 1314 证伪、改 Low IL 实现只读）但仅 Windows 单平台，codex/gemini 是三平台沙盒；三平台化后才可冲 10。②③ 未动（vim/keymap、diff 交互 UI 仍在 P1 清单）。
+
+判词先行（补齐轮更新）：**wxnodus 不再是偏科生，而是「单机堡垒已开门」**——渲染引擎单科满分不变；补齐轮把「执行层四件硬差距」（OS 沙盒/apply_patch/并行调度/输出蒸馏）+ LSP + 硬编码清零全部落地，工具层与三大平台巨舰同档（④ 并列满分档）；分发（5）与输入交互（5/4）仍是拉分项，工程 7 分仍差在「无远程 CI、无市场」。它输给头部的仍然是「产品化完成度」（IDE 插件/远程/市场），而不是「技术深度」。
 
 ---
 
@@ -138,4 +153,30 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 | 5 | vim 接线或摘除 + keymap 配置 + @文件选择器 + diff 折叠 | 3-5 天 | ② 5→7 ③ 4→6 |
 | 6 | 巨文件拆分 + 分层泄漏修复 + 测试布局收口 | 2-3 天 | ⑨ 7→8 |
 
-全部做完 ≈ 2 周，总分约 7.5-7.8；冲 8.5+ 需补 IDE 插件/A2A 完整版/子代理分型（月级）。**用户若选择启动，默认从序 1（零风险工程化）开始。**
+**状态（补齐轮后）**：序 1/2/3/6 已完成（⑨→7、⑧→5、⑦→8）；序 4 完成一半（前缀缓存稳定+真实窗口压缩，deepseek 分族提示与小模型任务档未做→⑤ 只到 6）；序 5 未动（②③ 不变）。另完成 P0 四件执行层硬差距 + LSP + 硬编码清零（④ 8→9、⑩ 6→8）。
+
+**下一档路径（7.25 → 8+）**：
+1. ⑤ 冲 7：deepseek/glm 分族提示词 + 小模型任务档（crush large/small 对齐）——+11
+2. ②③ 冲 6/7：vim 摘除或接线 + keymap 配置 + diff apply/折叠——+24~40
+3. ⑧ 冲 6：真实发布（winget/scoop 上架）+ getting-started/troubleshooting 文档——+9
+4. ⑥ 冲 10：沙盒 macOS/Linux 化（seatbelt/bwrap+Landlock）+ execpolicy 首词规则——+10
+5. 命令面瘦身 109→~45（聚合同能力入口）——不直接加分，但「臃肿度」问题即评分原始诉求之一。
+
+全部做完 ≈ 2 周，总分约 7.9-8.1；冲 8.5+ 需补 IDE 插件/A2A 完整版/子代理分型（月级）。
+
+---
+
+## 9. 补齐轮落地记录（2026-08-18 二评，逐条可回溯）
+
+| 落地项 | 实现位置 | 实测证据 |
+|---|---|---|
+| OS 内核沙盒（L0-L3） | `src/kernel/winSandbox.ts`（PS 内联 C# 助手：SetTokenInformation Low IL + Job Object + NetRateControl）+ `/sandbox os` 命令 | 本机标准用户实测：四层 profile 全部真实执行（L3/L2/L1/L0 均 PROFILE_OK，stdout 捕获）；L0 Low IL 写 Medium-IL 文件「拒绝访问」（只读语义实证）；探测诚实契约测试 60s 超时护栏 |
+| 沙盒机制校准（诚实记录） | 同上（文件头注释） | CreateRestrictedToken+CreateProcessAsUser → 1314 实测证伪（标准用户无 SeTcbPrivilege）；改 Low IL 路径通过——评分按 Windows 单平台给 9 不给 10 的依据 |
+| apply_patch | `src/kernel/applyPatch.ts` + tools.ts 注册 | 13 用例：四动作解析/三级容错/全量校验不写一半/多处匹配报错/did_you_mean/undoShadows 快照/CRLF 保留/退化 ctx==minus 折叠 |
+| 并行工具调度 | `agent.ts` 批次循环（runOneCall 槽位保序） | 并发计数实证：纯只读批 maxRunning=2、含写批 maxRunning=1（gemini 同款语义） |
+| 输出 offload+掩码+蒸馏 | `src/kernel/toolOutput.ts` + bash 流式落盘 | 10 用例：50KB 阈值落盘/续读路径/promote 接管/保护窗 50k 掩码/幂等/阈值 settings 覆盖+夹取；bash 流式 sink 保留完整输出 |
+| LSP 集成 | `src/kernel/lspClient.ts` + 3 工具 | mock 服务器 Content-Length 同构测试：pull 诊断/publish 兜底/hover/definition/ENOENT 诚实报错/会话缓存 LRU |
+| 硬编码清零 | `agent.ts`（ctxLimit 真实窗口−预留、MAX_TURNS_EFFECTIVE）、`tools.ts`（wrapDanger 限参）、`providers.ts`（maxContextFor）、`store/config.ts`（12 个新设置键白名单） | settings.maxTurns=2 实测 turns=2；maxContextFor 目录派生单测；全部阈值 settings 可覆盖且夹取防误配 |
+| 测试面 | tests/kernel-apply-patch / tool-output / win-sandbox / lsp-client / agent-gap-2026 | 全量 2447 通过 / 10 跳过 / 0 失败 |
+
+**诚实口径（复评红线）**：本轮所有「已落地」条目均有真实执行证据（含本机 OS 级实测），无一处纸面声明；受限令牌 1314 证伪、L0 改 Low IL 的取舍如实记录并体现在评分（⑥ 不给 10）；winget/scoop 仍为模板占位（无 remote 无发布 URL），⑧ 只给 5。

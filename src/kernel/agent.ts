@@ -19,6 +19,7 @@ import { estimateMessagesTokens, compactMessages, contentToText } from './memory
 import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx, type ToolDef } from './tools.js';
 import { labelTruncate } from './truncate.js';
 import { resolveModelForChat } from './profiles.js';
+import { maxContextFor } from './providers.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
 import { isCompletionClaim, GOAL_DONE_MARK } from './completionClaim.js';
 import type { HookRunner } from './hooks.js';
@@ -85,16 +86,20 @@ export interface AgentResult {
 }
 
 const MAX_TURNS = 32;
+// gap 硬编码修复（2026-08-18）：未知模型的保守上下文回退（不是压缩阈值本身——
+// 真实阈值由模型目录 maxContext 派生，见 loop 内 ctxLimit 计算）
+const FALLBACK_CTX_TOKENS = 64_000;
 
 // ── A22：实时状态一句话——工具动词映射（动态短语，UI 状态行展示）──
 const TOOL_STAGE_VERBS: Record<string, string> = {
-  fs_read: '读取文件', fs_write: '写入文件', fs_edit: '编辑文件', ls: '列出目录',
+  fs_read: '读取文件', fs_write: '写入文件', fs_edit: '编辑文件', apply_patch: '应用补丁', ls: '列出目录',
   grep: '搜索文本', find_files: '查找文件', bash: '执行命令', http_get: '抓取网页',
   http_request: '发送请求', memory_write: '写入记忆', memory_search: '检索记忆',
   scaffold_build: '构建项目', delegate: '派发子代理', ask_user: '询问用户',
   clarify: '请求澄清', todo: '更新任务清单', skill_load: '加载技能', repo_map: '扫描仓库',
   cron_create: '创建定时任务', credential_form: '录入凭据', wx_cmd: '执行指令',
   tool_search: '检索工具', command_search: '检索命令',
+  lsp_diagnostics: 'LSP 诊断', lsp_hover: 'LSP 悬停', lsp_definition: 'LSP 定义',
 };
 
 /** 工具实时状态短语：动词 + 关键参数摘要（path/url/pattern/command/query 等），动态变化。
@@ -147,6 +152,10 @@ export function createAgent(opts: AgentOptions) {
   // settings.budgetStop=true → 超出后硬停（后续轮次 finishEarly 显式失败，绝不静默）
   const budgetTokens = Number((opts.config?.settings as any)?.budgetTokens) || 0;
   const budgetStop = (opts.config?.settings as any)?.budgetStop === true;
+  // gap 硬编码修复（2026-08-18）：MAX_TURNS 32 不再写死——settings.maxTurns 可配
+  // （opencode agent.steps 对齐），夹取 1..200 防误配；opts.maxTurns 优先（调用方显式传）
+  const settingsAny = opts.config?.settings as Record<string, any> | undefined;
+  const MAX_TURNS_EFFECTIVE = Math.min(Math.max(Number(settingsAny?.maxTurns) || MAX_TURNS, 1), 200);
   // 余额耗尽自动停（余额监控护栏）：/balance auto-stop on 后，网关实测余额 ≤0
   // 写入 settings.balanceEmpty（运行时态，不落盘）→ 后续轮次硬停（显式失败闭环）
   const balanceAutoStop = ((opts.config?.settings as any)?.balanceMonitor as Record<string, any> | undefined)?.autoStop === true;
@@ -440,7 +449,7 @@ export function createAgent(opts: AgentOptions) {
     const sub = createAgent({
       ...opts,
       sessionId: sessionId + ':sub',
-      maxTurns: Math.min(opts.maxTurns ?? MAX_TURNS, 8),
+      maxTurns: Math.min(opts.maxTurns ?? MAX_TURNS_EFFECTIVE, 8),
       // P0-2：自定义 agent 定义生效——mode/指令覆盖/工具白名单（缺省保持只读子代理）
       // 审查修复：mode 继承父会话当前模式（/perm 切换后热生效）——此前恒 'smart'，
       // manual（全量确认）父会话委派后子代理 non-danger 工具自动放行，确认语义被静默降级
@@ -666,7 +675,29 @@ export function createAgent(opts: AgentOptions) {
       const v = toolCtx.secrets?.vault;
       const vaultValues = v ? v.secretNames().map(n => v.getSecret(n)).filter((x): x is string => !!x) : [];
       const safe = vaultValues.length ? (await import('./redact.js')).redactVaultValues(raw, vaultValues) : raw;
-      const out = tool.danger ? wrapDanger(safe) : safe;
+      // gap P0-1 落地（2026-08-18）：工具输出 offload——超阈值（默认 50KB/2000 行）
+      // 落盘 dataDir/truncations/ + 头尾预览 + 续读路径（opencode 思路，全工具统一覆盖）；
+      // 未达 offload 阈值但超包裹面（settings.untrustedWrapLimit）→ 诚实截断标注（绝不静默）。
+      const { offloadToolOutput, resolveWrapLimit } = await import('./toolOutput.js');
+      const oSettings = toolCtx.getSettings?.() ?? undefined;
+      const off = (oSettings?.toolOutputOffload as boolean | undefined) !== false
+        ? offloadToolOutput({ tool: name, text: safe, dataDir: opts.dataDir ?? resolveDataDir(process.cwd()), sessionId, settings: oSettings })
+        : null;
+      let out: string;
+      if (off) {
+        out = tool.danger ? wrapDanger(off.preview) : off.preview;
+      } else if (tool.danger && !safe.startsWith('<untrusted_tool_result>')) {
+        // 工具已自包裹（bash 等自带 offload/标注）→ 原样透传（避免双重包裹/双重标注）；
+        // 未包裹的危险输出 → 包裹面护栏 + 诚实截断标注（settings.untrustedWrapLimit）
+        const wrapLimit = resolveWrapLimit(oSettings);
+        const cut = safe.length > wrapLimit;
+        const wrapped = wrapDanger(cut ? safe.slice(0, wrapLimit) : safe, wrapLimit);
+        out = cut
+          ? `${wrapped}\n…[输出已截断（共 ${safe.length} 字，剩余 ${safe.length - wrapLimit} 字未读）——用更精确的命令分段获取（重定向到文件/sed/tail）]`
+          : wrapped;
+      } else {
+        out = safe;
+      }
       // 敏感操作自动截图留证（计算机视觉存证）：危险工具执行成功后，后台截屏
       // 存 dataDir/captures/ 供审计追溯（无图形环境自动降级静默；不阻断主流程）
       if (tool.danger) {
@@ -695,7 +726,7 @@ export function createAgent(opts: AgentOptions) {
       } catch { /* 静默 */ }
       // 变更即回归：文件被真实修改后调度 auto 剧本重放（防抖合并连续改动；
       // 回归重放期间的 fs_write 由 regressionRunning 守卫拦截，不会自我触发）
-      if (name === 'fs_write' || name === 'fs_edit') scheduleAutoRegression();
+      if (name === 'fs_write' || name === 'fs_edit' || name === 'apply_patch') scheduleAutoRegression();
       // 深度（Aider auto_commit 对齐）：git 仓库内文件编辑后自动提交本次文件
       // （commit 消息标注 [wxnodus]；settings.autoGitCommit=false 可关；失败静默不阻断）
       // 审查修复：运算符优先级——本意 (fs_write||fs_edit) && !被拒绝；&& 优先于 || 导致
@@ -936,7 +967,7 @@ export function createAgent(opts: AgentOptions) {
     };
 
     try {
-    while (turns < (opts.maxTurns ?? MAX_TURNS)) {
+    while (turns < (opts.maxTurns ?? MAX_TURNS_EFFECTIVE)) {
       if (st.aborted) { st.interrupted = true; break; }
       // 预算硬停（settings.budgetStop）：超预算后不再发起任何模型调用——显式失败闭环
       // （finishEarly 保证 agent.message + agent.end 事件可见，绝不静默空输出）。
@@ -959,8 +990,20 @@ export function createAgent(opts: AgentOptions) {
         bus.emit('agent.token', { text: `\n[steer] ${s}\n` });
       }
       // 自动压缩触发（机制补强）：每轮调用前估算上下文，超过模型窗口阈值
-      // （默认 max×0.85 或 +reserved>=max）→ 自动压缩内存消息后继续当前回合
-      const ctxLimit = opts2.subagent ? 64_000 : (opts.maxContextTokens ?? 64_000);
+      // （真实窗口×0.85 或 +reserved>=窗口）→ 自动压缩内存消息后继续当前回合
+      // gap 硬编码修复（2026-08-18）：64k 不再写死——压缩阈值 = 模型目录真实窗口
+      // − 输出预留（opencode overflow.ts 思路：默认 min(20k, 25%×窗口)，预留模型
+      // 输出空间；settings.ctxOutputReserve 可覆盖）；未知模型回退 FALLBACK_CTX_TOKENS。
+      // 子代理保持 64k 封顶（独立小上下文）。
+      const modelCtx = maxContextFor(String(settingsAny?.model ?? ''));
+      const rawReserve = Number(settingsAny?.ctxOutputReserve);
+      const outReserve = Number.isFinite(rawReserve) && rawReserve > 0
+        ? rawReserve
+        : Math.min(20_000, Math.max(4_000, Math.floor((modelCtx ?? FALLBACK_CTX_TOKENS) * 0.25)));
+      const ctxBase = opts2.subagent
+        ? Math.min(modelCtx ?? FALLBACK_CTX_TOKENS, FALLBACK_CTX_TOKENS)
+        : (opts.maxContextTokens ?? modelCtx ?? FALLBACK_CTX_TOKENS);
+      const ctxLimit = Math.max(4_000, ctxBase - outReserve);
       const used = estimateMessagesTokens(msgs);
       // 水位预警（会话级一次）：75% 阈值提前告知——用户可主动 /compact，
       // 避免 85% 自动压缩「被动发生」（压缩会丢中间细节，主动压缩可选保留策略）
@@ -1053,22 +1096,21 @@ export function createAgent(opts: AgentOptions) {
       }
       // 工具调用（严格 OpenAI 格式：assistant.tool_calls + tool.tool_call_id 回填）
       if (res.type === 'tool_call') {
-        // 批量工具调用（对比轮 5 修复）：同回合全部 tool_calls 顺序执行，assistant.tool_calls 一次回填
+        // 批量工具调用（对比轮 5 修复）：同回合全部 tool_calls 一次回填
         const batch = res.calls?.length
           ? res.calls.map(c => ({ id: c.id ?? `call_${Date.now().toString(36)}${turns}`, name: c.name, args: c.args ?? {}, reasoning: c.reasoning, reasoningField: c.reasoningField }))
           : [{ id: res.id ?? `call_${Date.now().toString(36)}${turns}`, name: res.name, args: res.args ?? {}, reasoning: res.reasoning, reasoningField: res.reasoningField }];
         const executed: Array<{ id: string; name: string; args: Record<string, any>; out: string; reasoning?: string; reasoningField?: string }> = [];
         let anyFail = false;
-        for (const c of batch) {
+        // gap P1-1 落地（2026-08-18）：并行工具调度（gemini scheduler 同款语义）——
+        // 批次含任一 danger（写/执行/外联）→ 整批严格串行（保证写后读顺序与审批链）；
+        // 纯只读批次且非 manual 模式（manual 下只读也逐项审批，并行会并发弹窗）→
+        // Promise.all 并行执行，结果按原始槽位回填（assistant.tool_calls 顺序不变）。
+        const runOneCall = async (c: (typeof batch)[number]): Promise<typeof executed[number]> => {
           if (!tools[c.name]) {
             // 未知工具：跳过该调用（计入阈值防模型空转），其余调用继续执行
             unknownRounds++;
-            if (unknownRounds >= MAX_UNKNOWN_TOOL_ROUNDS) {
-              bus.emit('agent.error', { message: `连续 ${MAX_UNKNOWN_TOOL_ROUNDS} 轮未知工具，终止` });
-              return finishEarly('模型连续调用未知工具，已终止');
-            }
-            executed.push({ id: c.id, name: c.name, args: c.args, out: `工具 ${c.name} 不存在` });
-            continue;
+            return { id: c.id, name: c.name, args: c.args, out: `工具 ${c.name} 不存在`, reasoning: c.reasoning, reasoningField: c.reasoningField };
           }
           unknownRounds = 0;
           const cacheKey = `${c.name}:${JSON.stringify(c.args ?? {})}`;
@@ -1080,8 +1122,26 @@ export function createAgent(opts: AgentOptions) {
             fromCache = true;
           } else {
             out = await executeTool(c.name, c.args);
+            const outcome = lastToolOutcome; // 立即捕获本调用的确定性结局（并行下防串扰）
             // 空输出归一（诚实）：'' 工具结果会让模型误判「结果丢失/幻觉」——显式「（无输出）」语义明确
             if (!out) out = '（工具无输出——操作可能已成功或无需返回内容）';
+            // gap P2-4 落地（2026-08-18）：工具输出蒸馏（settings.toolDistill=true 开关，
+            // 默认关——二次调用有成本；子代理不蒸馏防递归计费；失败保持原输出诚实降级）
+            if ((settingsAny?.toolDistill as boolean | undefined) === true && !opts2.subagent) {
+              try {
+                const { resolveDistillThreshold, DISTILL_INPUT_CHARS } = await import('./toolOutput.js');
+                if (out.length > resolveDistillThreshold(settingsAny)) {
+                  const dr = await callWithAbort({
+                    messages: [
+                      { role: 'system', content: '你是工具输出蒸馏器：把下面的工具输出摘要为 ≤500 字的中文要点（保留文件路径/行号/数值/结论，去掉重复与噪音）。只输出摘要本身。' },
+                      { role: 'user', content: out.slice(0, DISTILL_INPUT_CHARS) },
+                    ],
+                    tools: [],
+                  });
+                  if (dr.type === 'text' && dr.content.trim()) out = `[已蒸馏（原 ${out.length} 字 → ${dr.content.length} 字）]\n${dr.content.trim()}`;
+                }
+              } catch { /* 蒸馏失败保持原输出（诚实降级，不阻断） */ }
+            }
             if (READ_TOOL_CACHE.has(c.name)) {
               if (toolCache.size >= 32) {
                 const oldest = toolCache.keys().next().value;
@@ -1092,11 +1152,10 @@ export function createAgent(opts: AgentOptions) {
               // 写/执行类工具：缓存全部失效（状态已变，旧读结果不可信）
               toolCache.clear();
             }
+            // KF-023/024：确定性结局累计——只有真实执行成功（postcondition 通过）的工具计入验证副作用
+            if (!fromCache && outcome === 'verified') rs.verifiedEffects++;
           }
-          // KF-023/024：确定性结局累计——只有真实执行成功（postcondition 通过）的工具计入验证副作用
-          if (!fromCache && lastToolOutcome === 'verified') rs.verifiedEffects++;
           if (out.includes('失败') || out.includes('异常')) anyFail = true;
-          executed.push({ id: c.id, name: c.name, args: c.args, out, reasoning: c.reasoning, reasoningField: c.reasoningField });
           // 架构 P4：工具消息写 parts 分段（错误标记/截断标记独立 part——消息粒度可审计）
           try {
             const failed = out.includes('失败') || out.includes('异常');
@@ -1107,6 +1166,20 @@ export function createAgent(opts: AgentOptions) {
             ];
             opts.mem.append(sessionId, 'tool', `${c.name}: ${out.slice(0, 300)}`, undefined, parts);
           } catch { /* 忽略 */ }
+          return { id: c.id, name: c.name, args: c.args, out, reasoning: c.reasoning, reasoningField: c.reasoningField };
+        };
+        const hasWrite = batch.some(c => tools[c.name]?.danger === true);
+        if (!hasWrite && mode !== 'manual') {
+          // 纯只读批次并行（slot 保序——结果顺序与模型 tool_calls 完全一致）
+          const slot: Array<typeof executed[number]> = new Array(batch.length);
+          await Promise.all(batch.map(async (c, i) => { slot[i] = await runOneCall(c); }));
+          for (let i = 0; i < batch.length; i++) executed.push(slot[i]!);
+        } else {
+          for (const c of batch) executed.push(await runOneCall(c));
+        }
+        if (unknownRounds >= MAX_UNKNOWN_TOOL_ROUNDS) {
+          bus.emit('agent.error', { message: `连续 ${MAX_UNKNOWN_TOOL_ROUNDS} 轮未知工具，终止` });
+          return finishEarly('模型连续调用未知工具，已终止');
         }
         consecutiveFail = anyFail ? consecutiveFail + 1 : 0;
         if (consecutiveFail >= MAX_CONSECUTIVE_FAIL) {
@@ -1132,6 +1205,17 @@ export function createAgent(opts: AgentOptions) {
         });
         for (const e of executed) {
           msgs.push({ role: 'tool', tool_call_id: e.id, content: e.out });
+        }
+        // gap P2-4 落地（2026-08-18）：旧轮工具输出掩码（gemini masking——保护最新
+        // 50k token，保护窗外超过触发量才掩码；settings.toolOutputMask=false 关闭；
+        // 子代理不掩码——小上下文自带压缩）
+        if ((settingsAny?.toolOutputMask as boolean | undefined) !== false && !opts2.subagent) {
+          try {
+            const { maskOldToolOutputs, resolveMaskWindow } = await import('./toolOutput.js');
+            const win = resolveMaskWindow(settingsAny);
+            const masked = maskOldToolOutputs(msgs as any, win);
+            if (masked > 0) bus.emit('system.notice', { text: `已掩码 ${masked} 条早前工具输出（保护窗 ${win.protectTokens} token）——/compact 可将早前结果并入摘要` });
+          } catch { /* 掩码失败不影响对话 */ }
         }
       }
     }

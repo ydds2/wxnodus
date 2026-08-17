@@ -176,6 +176,13 @@ export function capabilityBadges(c: ModelCapabilities | undefined): string {
   return parts.join(' ');
 }
 
+/** 模型真实上下文窗口（token）：目录命中取 capabilities.maxContext；
+ *  未知模型名 → undefined（调用方按保守回退处理——gap 硬编码修复：压缩阈值不再写死 64k） */
+export function maxContextFor(modelId: string | undefined | null): number | undefined {
+  if (!modelId) return undefined;
+  return MODEL_CATALOG.find(x => x.modelId === modelId)?.capabilities?.maxContext;
+}
+
 // 模糊过滤模型（名称/提供商/ID 子串，不区分大小写）
 export function filterModels(q: string, catalog: ModelEntry[] = MODEL_CATALOG): ModelEntry[] {
   if (!q) return catalog;

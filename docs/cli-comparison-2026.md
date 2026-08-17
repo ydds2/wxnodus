@@ -3,6 +3,7 @@
 > 数据采集：2026-08-18，浅克隆 6 个开源 CLI 全量源码至 `Desktop\cli-compare\`（codex / gemini-cli / opencode / kimi-cli / crush / aider）。
 > Claude Code 闭源无法获取（其架构经公开资料推断，仅作参照）。所有数字以克隆快照实测为准；wxnodus 为自数据。
 > 结论先行：**wxnodus 的能力面不输竞品（很多方面独有），但「命令面」比竞品肥 2~3 倍，是主要臃肿点；真正的差距在 OS 级沙盒、并行调度、结构化补丁、工具输出蒸馏四件事上。**
+> **2026-08-18 补齐轮更新**：这四件事 + LSP 集成 + 硬编码清零已全部落地（本文件 §3 矩阵与 §4 清单已同步更新为 ✓/已完成，见各条「补齐轮」注记；评分见 cli-deep-analysis-score-2026.md §0）。
 
 ## 1. 总览
 
@@ -45,16 +46,16 @@
 | MCP | ✓ 客户端+服务端 | ✓ 客户端+服务端 | ✓ | ✓ | ✓ | ✓ | ✗ |
 | Skills | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
 | 插件 | ✓ 本地 | ✓ **+市场** | ≈ | ✓ **+市场** | ✓ | ✗ | ✗ |
-| OS 内核沙盒 | ✗ | ✓ 三平台 | ✓ | ✗ | ✗ | ✗ | ✗ |
-| 结构化补丁 apply_patch | ✗ | ✓ | ≈ replace | ✓ | ≈ | ≈ | ✓ 编辑格式 |
-| 并行工具调度 | ✗ | ≈ | ✓ | ≈ | ≈ | ✗ | ✗ |
-| 工具输出蒸馏/掩码 | ✗ | ≈ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| OS 内核沙盒 | ✓ Windows | ✓ 三平台 | ✓ | ✗ | ✗ | ✗ | ✗ |
+| 结构化补丁 apply_patch | ✓ | ✓ | ≈ replace | ✓ | ≈ | ≈ | ✓ 编辑格式 |
+| 并行工具调度 | ≈ 只读批并行 | ≈ | ✓ | ≈ | ≈ | ✗ | ✗ |
+| 工具输出蒸馏/掩码 | ✓ offload+掩码 | ≈ | ✓ | ✗ | ✗ | ✗ | ✗ |
 | 后台任务 | ✓ jobs/term/cron | ≈ | ✓ | ≈ | ✓ | ✓ | ✗ |
 | 语音 | ✓ | ✓ 实时 | ✓ | ✗ | ✓ | ✗ | ✓ |
 | 视觉 | ✓ GLM/本地 moondream | ✓ view_image | ≈ | ≈ | ✗ | ≈ | ≈ 图像输入 |
 | Computer Use 桌面控制(UIA) | ✓ **独有** | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | 离线本地模型 | ✓ **四模态** | ✓ ollama/lmstudio | ✗ | ✗ | ✗ | ≈ | ✗ |
-| LSP 集成 | ✗ (repo_map 近似) | ≈ | ✗ | ✓ | ✗ | ✓ 8 工具 | ✗ |
+| LSP 集成 | ≈ 诊断/hover/定义 | ≈ | ✗ | ✓ | ✗ | ✓ 8 工具 | ✗ |
 | vim 键位 | ✗ | ✓ | ✓ | ≈ | ✗ | ✗ | ✓ |
 | 主题 | ≈ 2 套 | ≈ | ✓ | ✓ **33 套** | ✓ | ≈ | ✗ |
 | OAuth/账号登录 | ✗（仅 key） | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -68,22 +69,23 @@
 
 ## 4. 差距清单（wxnodus 缺什么，按价值排序）
 
-**P0（用户可直接感知）**
-1. **OS 内核沙盒**：codex/gemini 的 Windows 受限令牌方案可直接对标——目前 shell 工具靠审批，无进程级隔离（`codex-rs/windows-sandbox-rs` 是现成参考）。
-2. **并行工具调度**：gemini `scheduler.ts` 连续可并行工具成批执行——wxnodus 串行，多工具回合耗时翻倍。
-3. **apply_patch 结构化补丁**：多文件单次调用，token 更省、成功率更高（codex 有 Lark 语法校验补丁）。
-4. **工具输出蒸馏/掩码**：gemini `toolDistillationService` 把 8k 字工具输出摘要成 500 字再进上下文——wxnodus 只截断不摘要，长会话性价比差。
+**P0（用户可直接感知）——2026-08-18 补齐轮：第 1-4 条已全部落地，状态如下**
+1. **OS 内核沙盒** ✅ 已落地：Windows L0-L3（L0=Low IL 只读+断网，L1=Job+断网，L2=Job+限速 10KB/s，L3=Job 遏制；`src/kernel/winSandbox.ts`，能力探测诚实降级——标准用户实测校准：CreateRestrictedToken+CreateProcessAsUser 被系统 1314 拒绝，改 SetTokenInformation(Low IL) 路径）。**仍缺**：macOS/Linux 平台（codex/gemini 三平台）。
+2. **并行工具调度** ✅ 已落地：纯只读批次 Promise.all 并行、含写批次整批串行（gemini scheduler 同款语义；`agent.ts` 槽位保序回填）。
+3. **apply_patch 结构化补丁** ✅ 已落地：多文件 Add/Update/Delete/Move + @@ 锚定，三级匹配容错（精确→行尾空白→重缩进）+ 全量校验后落盘（绝不写一半）+ 逐块报错带 did_you_mean（`src/kernel/applyPatch.ts`）。
+4. **工具输出蒸馏/掩码** ✅ 已落地：超 50KB/2000 行落盘 offload + 头尾预览 + 续读路径（bash 流式落盘保留完整输出）；旧轮掩码（保护窗 50k/触发 30k）；蒸馏开关默认关（`src/kernel/toolOutput.ts`）。
+5. **硬编码清零** ✅ 已落地（生产级红线）：压缩阈值 64k 写死 → 模型目录真实窗口 − 输出预留；wrapDanger 8000 写死 → settings.untrustedWrapLimit + offload；MAX_TURNS 32 写死 → settings.maxTurns（1..200 夹取）；全部阈值 settings 可覆盖且夹取防误配。
 
 **P1（体验/生态）**
-5. 会话浏览器（列表+预览+恢复，codex resume_picker / gemini SessionBrowser）
-6. LLM 辅助循环检测（gemini 30 轮后让 LLM 判断是否空转）
-7. 配置分层（项目级 `.wxnodus/config` 继承 user 级）
-8. 主题系统（opencode 33 套 JSON 主题最易抄）
-9. vim 键位 / 键位自定义
-10. 插件市场与远端技能安装
-11. Web UI（kimi FastAPI / opencode Tauri 桌面）
+6. 会话浏览器（列表+预览+恢复，codex resume_picker / gemini SessionBrowser）
+7. LLM 辅助循环检测（gemini 30 轮后让 LLM 判断是否空转）
+8. 配置分层（项目级 `.wxnodus/config` 继承 user 级）
+9. 主题系统（opencode 33 套 JSON 主题最易抄）
+10. vim 键位 / 键位自定义
+11. 插件市场与远端技能安装
+12. Web UI（kimi FastAPI / opencode Tauri 桌面）
 
-**P2（小众）**：LSP 集成、OAuth 登录流、share 分享、远程执行环境（codex exec-server）、GitHub PR 集成。
+**P2（小众）**：~~LSP 集成~~ ✅ 已落地基础版（lsp_diagnostics/hover/definition 三工具，settings.lsp.servers 可配任意服务器 + 内置 typescript-language-server 探测）、OAuth 登录流、share 分享、远程执行环境（codex exec-server）、GitHub PR 集成。
 
 ## 5. wxnodus 独有/领先（竞品没有的）
 
@@ -125,7 +127,7 @@
 
 ## 7. 一句话总结
 
-> wxnodus 不是功能少，而是「入口多」：能力面（44 工具）已达竞品水准、且有 7 项独有优势；真正的硬差距只有 OS 沙盒、并行调度、apply_patch、输出蒸馏四件事；真正的臃肿在 109 个命令——砍到 ~45 个（聚合同能力入口）即与竞品同构同档，且保留全部特色。
+> wxnodus 不是功能少，而是「入口多」：能力面（48 工具）已达竞品水准、且有 7 项独有优势；「OS 沙盒、并行调度、apply_patch、输出蒸馏」四件硬差距与 LSP/硬编码问题已全部补齐（2026-08-18 补齐轮）；真正的臃肿在 109 个命令——砍到 ~45 个（聚合同能力入口）即与竞品同构同档，且保留全部特色。评分已从 6.14 升至 7.25（第 4/7 名，见 cli-deep-analysis-score-2026.md）。
 
 ---
 

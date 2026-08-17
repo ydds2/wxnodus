@@ -8,6 +8,7 @@ import { join, resolve, relative, sep } from 'node:path';
 import { sanitizedEnv } from './env.js';
 import { probeProcessAvailable } from './processProbe.js';
 import { labelTruncate, capNote } from './truncate.js';
+import { UNTRUSTED_WRAP_LIMIT_DEFAULT } from './toolOutput.js';
 
 /** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性）
  * W3-11：进程探测集中到 kernel/processProbe（入口层不直接执行进程） */
@@ -98,10 +99,12 @@ export interface ToolDef {
   run(args: Record<string, any>, ctx: ToolCtx): Promise<string>;
 }
 
-export const wrapDanger = (s: string) =>
+export const wrapDanger = (s: string, limit: number = UNTRUSTED_WRAP_LIMIT_DEFAULT) =>
   // 对比轮 5 修复：defang 内嵌闭标签（hermes 同款）——工具输出含 </untrusted_tool_result> 时
   // 转义为 <\/...>，防止提前闭合包裹边界（提示注入防护）
-  `<untrusted_tool_result>\n${s.slice(0, 8000).replace(/<\/untrusted_tool_result>/g, '<\\/untrusted_tool_result>')}\n</untrusted_tool_result>`;
+  // gap 硬编码修复（2026-08-18）：8000 不再写死——settings.untrustedWrapLimit 可调，
+  // 超限走 offload 落盘（agent.executeTool 装配），此处 limit 仅作包裹面护栏
+  `<untrusted_tool_result>\n${s.slice(0, limit).replace(/<\/untrusted_tool_result>/g, '<\\/untrusted_tool_result>')}\n</untrusted_tool_result>`;
 
 // 工具调用最小间隔（纯函数可单测）：返回需等待的毫秒数（0 = 无需等待）——
 // 防模型连发搜索/抓取触发引擎 429 或封禁的自保护护栏
@@ -264,45 +267,129 @@ export function coreTools(): Record<string, ToolDef> {
             }
           }
         }
-        const timeout = AbortSignal.timeout(60000);
-        const signal = ctx.signal ? AbortSignal.any([timeout, ctx.signal]) : timeout;
-        const child = spawn(
-          process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
-          process.platform === 'win32' ? ['-NoProfile', '-Command', cmd] : ['-c', cmd],
-          { cwd: ctx.cwd, signal, stdio: ['pipe', 'pipe', 'pipe'], env: sanitizedEnv() },
-        );
-        if (stdinSecret) {
-          child.stdin?.write(stdinSecret);
-          child.stdin?.end();
-        }
-        let out = '';
-        // C12 修复：流式截断——长输出（如 dir /s）在命令结束前无界累积会撑爆内存
-        let truncated = false;
-        const appendOut = (d: Buffer) => {
-          if (out.length >= 20000) { truncated = true; return; }
-          out += d.toString();
-          if (out.length > 20000) { out = out.slice(0, 20000); truncated = true; } // 保留 8000 截断余量
-        };
-        child.stdout?.on('data', appendOut);
-        child.stderr?.on('data', appendOut);
-        await new Promise<void>((resolveP, rejectP) => {
-          child.on('error', rejectP);
-          child.on('close', (code) => {
-            if (ctx.signal?.aborted) return rejectP(new Error('已中断（用户中止）'));
-            if (code === 0) return resolveP();
-            // 非 0 退出码 → 视为失败（输出附在错误消息中——模型可见且可被失败计数识别）
-            return rejectP(new Error(`退出码 ${code}${out.trim() ? `：\n${out.slice(0, 2000)}` : ''}`));
-          });
+        // gap P0-4/P0-1 落地（2026-08-18）：
+        // ① OS 内核沙盒（winSandbox）：settings.sandbox.profile 开启时命令经
+        //    受限令牌 + Job Object + 断网限速执行；探测失败/非 Windows → 诚实提示后
+        //    按普通方式执行（绝不把未沙盒当沙盒）
+        // ② 流式落盘：完整输出写 truncations/tmp（内存封顶 20000 字防 OOM），
+        //    超限时接管为正式 offload 文件——预览 + 续读路径（不再丢尾）
+        const sSettings = ctx.getSettings?.() as Record<string, any> | undefined;
+        const { trySandboxLaunch, resolveSandboxProfile } = await import('./winSandbox.js');
+        const sandboxProfile = resolveSandboxProfile(sSettings);
+        const sandbox = await trySandboxLaunch({
+          settings: sSettings,
+          dataDir: ctx.dataDir,
+          cmd: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
+          args: process.platform === 'win32' ? ['-NoProfile', '-Command', cmd] : ['-c', cmd],
+          cwd: ctx.cwd,
+          stdin: stdinSecret ?? undefined,
+          timeoutMs: 60_000,
+          signal: ctx.signal,
         });
-        // 截断诚实标注：模型知道输出不完整（避免基于残缺输出下结论）
-        // 8000–20000 字区间此前静默截断——统一 labelTruncate 口径（共 N 字/剩余 M 字）
-        // 注：wrapDanger 自身 8000 硬截（防注入包裹面），标注附在包裹之外（自有文本，无注入风险）
+        if (sandbox.note) ctx.bus?.emit?.('system.notice', { text: sandbox.note });
+        let out = '';
+        let truncated = false;
+        let fullPath: string | null = null; // 完整输出落盘路径（接管为 offload 用）
+        let exitCode: number | null = null;
+        if (sandbox.result) {
+          // 沙盒路径：输出由助手落盘文件（受限子进程 stdout/stderr 重定向），
+          // 头尾有界读取进内存；超限文件接管为正式 offload
+          const { readHeadTail, promoteOffloadFile } = await import('./toolOutput.js');
+          const { readFileSync: rf, appendFileSync, rmSync } = await import('node:fs');
+          const outHt = readHeadTail(sandbox.result.outPath, 20_000, 0);
+          const errHt = readHeadTail(sandbox.result.errPath, 2_000, 0);
+          const outText = outHt?.head ?? '';
+          const errText = errHt?.head ?? '';
+          out = `${outText}${errText ? `${outText ? '\n' : ''}${errText}` : ''}`;
+          const outOver = (outHt?.total ?? 0) > outText.length;
+          const errOver = (errHt?.total ?? 0) > errText.length;
+          truncated = outOver || errOver;
+          exitCode = sandbox.result.code;
+          if (truncated) {
+            try {
+              if (errOver) appendFileSync(sandbox.result.outPath, rf(sandbox.result.errPath).slice(0, 1_000_000));
+              const promoted = promoteOffloadFile({ srcPath: sandbox.result.outPath, tool: 'bash', dataDir: ctx.dataDir, sessionId: ctx.sessionId });
+              fullPath = promoted?.path ?? null;
+              if (!promoted) fullPath = null;
+            } catch {
+              fullPath = null;
+              try { rmSync(sandbox.result.outPath, { force: true }); } catch { /* 清理失败静默 */ }
+            }
+            try { rmSync(sandbox.result.errPath, { force: true }); } catch { /* 清理失败静默 */ }
+          } else {
+            try { rmSync(sandbox.result.outPath, { force: true }); rmSync(sandbox.result.errPath, { force: true }); } catch { /* 清理失败静默 */ }
+          }
+          ctx.bus?.emit?.('system.notice', { text: `命令已在 OS 沙盒内执行（${sandboxProfile}）——受限令牌 + Job 遏制${sandboxProfile === 'L0' || sandboxProfile === 'L1' ? ' + 断网' : sandboxProfile === 'L2' ? ' + 限速 10KB/s' : ''}${sandboxProfile === 'L0' ? ' + 只读' : ''}` });
+        } else {
+          // 普通路径（沙盒未开启/不适用）：spawn + 流式落盘（sink 保证完整输出可续读）
+          const timeout = AbortSignal.timeout(60000);
+          const signal = ctx.signal ? AbortSignal.any([timeout, ctx.signal]) : timeout;
+          let sinkPath: string | null = null;
+          let sinkFd: number | null = null;
+          try {
+            const { mkdirSync, openSync } = await import('node:fs');
+            const tmpDir = join(ctx.dataDir, 'truncations', 'tmp');
+            mkdirSync(tmpDir, { recursive: true });
+            sinkPath = join(tmpDir, `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.log`);
+            sinkFd = openSync(sinkPath, 'w');
+          } catch { sinkPath = null; }
+          const child = spawn(
+            process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
+            process.platform === 'win32' ? ['-NoProfile', '-Command', cmd] : ['-c', cmd],
+            { cwd: ctx.cwd, signal, stdio: ['pipe', 'pipe', 'pipe'], env: sanitizedEnv() },
+          );
+          if (stdinSecret) {
+            child.stdin?.write(stdinSecret);
+            child.stdin?.end();
+          }
+          // C12 修复：流式截断——内存封顶 20000 字（完整输出已同步写 sink 文件）
+          const { writeSync, closeSync, rmSync } = await import('node:fs');
+          const appendOut = (d: Buffer) => {
+            if (sinkFd !== null) { try { writeSync(sinkFd, d); } catch { /* sink 失败不影响执行 */ } }
+            if (out.length >= 20000) { truncated = true; return; }
+            out += d.toString();
+            if (out.length > 20000) { out = out.slice(0, 20000); truncated = true; }
+          };
+          child.stdout?.on('data', appendOut);
+          child.stderr?.on('data', appendOut);
+          try {
+            await new Promise<void>((resolveP, rejectP) => {
+              child.on('error', rejectP);
+              child.on('close', (code) => {
+                if (sinkFd !== null) { try { closeSync(sinkFd); } catch { /* 忽略 */ } sinkFd = null; }
+                if (ctx.signal?.aborted) return rejectP(new Error('已中断（用户中止）'));
+                if (code === 0) return resolveP();
+                exitCode = code;
+                // 非 0 退出码 → 视为失败（输出附在错误消息中——模型可见且可被失败计数识别）
+                return rejectP(new Error(`退出码 ${code}${out.trim() ? `：\n${out.slice(0, 2000)}` : ''}`));
+              });
+            });
+          } finally {
+            if (sinkFd !== null) { try { closeSync(sinkFd); } catch { /* 忽略 */ } }
+            if (sinkPath) {
+              if (truncated) fullPath = sinkPath; else { try { rmSync(sinkPath, { force: true }); } catch { /* 忽略 */ } }
+            }
+          }
+        }
+        // 截断诚实标注（绝不静默）：超限时完整输出已落盘 offload，附续读路径；
+        // 否则提示分段获取。包裹面 8000 护栏不变（executeTool 侧大输出另有 offload）。
+        // 8000–20000 区间（未触发流式截断但超包裹面）同样显式标注——修复历史静默截断缺陷
         const body = out || '（无输出）';
-        const cut = truncated || body.length > 8000;
-        const wrapped = wrapDanger(cut ? body.slice(0, 8000) : body);
-        return cut
-          ? `${wrapped}\n…[输出已截断（共 ${body.length} 字，剩余 ${body.length - 8000} 字未读）——用更精确的命令分段获取（重定向到文件/sed/tail）]`
-          : wrapped;
+        let note = '';
+        if (truncated) {
+          if (fullPath) {
+            note = `\n…[输出已截断——完整输出已落盘：${fullPath}——用 bash cat/sed/tail 分段读取，或重定向到工作区文件后用 fs_read 分页]`;
+          } else {
+            note = `\n…[输出已截断（共 ${body.length} 字预览）——用更精确的命令分段获取（重定向到文件/sed/tail）]`;
+          }
+        } else if (body.length > 8000) {
+          note = `\n…[输出已截断（共 ${body.length} 字，剩余 ${body.length - 8000} 字未读）——用更精确的命令分段获取（重定向到文件/sed/tail）]`;
+        }
+        const wrapped = wrapDanger(body.length > 8000 ? body.slice(0, 8000) : body);
+        if (exitCode !== null && exitCode !== 0) {
+          return `${wrapped}\n命令退出码 ${exitCode}（失败）${out.trim() ? `\n${out.slice(0, 2000)}` : ''}`;
+        }
+        return note ? `${wrapped}${note}` : wrapped;
       } catch (e: any) {
         ctx.hookFailure?.('bash', String(e?.message ?? e).slice(0, 500));
         return wrapDanger(`命令失败：${e.message?.slice(0, 500)}`);
@@ -1198,7 +1285,77 @@ export function coreTools(): Record<string, ToolDef> {
       return `已动作（receipt ${r.value.receiptId}）`;
     },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, computer_observe: computerObserve, computer_uia_windows: uiaWindowsTool, computer_uia_tree: uiaTreeTool, computer_uia_find: uiaFindTool, computer_uia_click: uiaClickTool, computer_uia_type: uiaTypeTool, computer_uia_act: uiaActTool, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
+  // ── gap P0-3 落地（2026-08-18）：apply_patch 结构化多文件补丁（codex 语法子集）──
+  // 一次调用改多个文件：Add/Update/Delete/Move + @@ 锚定；全量校验通过才落盘
+  // （绝不写一半）；匹配三级容错（精确→行尾空白→重缩进）；失败逐块报行号+did_you_mean。
+  const applyPatchTool: ToolDef = {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'apply_patch',
+        description: '结构化多文件补丁（推荐的多文件编辑方式，一次调用改多个文件）。语法：*** Begin Patch / *** Update File: <路径> + @@ 上下文锚定 + -旧行 +新行 / *** Add File / *** Delete File / *** Move File + *** To File / *** End Patch。全量校验通过才写入（任一块失败则不写任何文件并逐块报原因）。',
+        parameters: {
+          type: 'object',
+          properties: { patch: { type: 'string', description: '补丁文本（codex apply_patch 语法子集）' } },
+          required: ['patch'],
+        },
+      },
+    },
+    danger: true,
+    async run({ patch }, ctx) {
+      const text = String(patch ?? '').trim();
+      if (!text) return '参数错误：patch 不能为空';
+      const { applyPatch } = await import('./applyPatch.js');
+      const r = await applyPatch(text, { cwd: ctx.cwd, dataDir: ctx.dataDir });
+      return r.text;
+    },
+  };
+  // ── gap P2「LSP 集成」落地（2026-08-18）：诊断/hover/定义三工具 ──
+  // settings.lsp.servers 可配任意语言服务器；内置 typescript-language-server 探测
+  // （PATH 或 cwd/node_modules/.bin）——缺失时诚实给安装指引，绝不假装诊断。
+  const lspRun = async (kind: 'diagnostics' | 'hover' | 'definition', pathArg: unknown, line?: unknown, col?: unknown, ctx?: ToolCtx): Promise<string> => {
+    const p = String(pathArg ?? '').trim();
+    if (!p) return '参数错误：path 不能为空';
+    const c = ctx!;
+    const mod = await import('./lspClient.js');
+    const specs = mod.discoverLspServers(c.getSettings?.(), c.cwd);
+    const spec = mod.serverForFile(specs, resolve(c.cwd, p));
+    if (!spec) return `未找到适用于 ${p} 的语言服务器——settings.lsp.servers 配置（/config set lsp {"servers":[{"id":"py","command":"pylsp","languages":["python"]}]}），或安装 typescript-language-server（npm i -g typescript-language-server）`;
+    try {
+      const session = await mod.lspSessionFor(spec, c.cwd);
+      const abs = resolve(c.cwd, p);
+      if (kind === 'diagnostics') {
+        let text = '';
+        try { const { readFileSync } = await import('node:fs'); text = readFileSync(abs, 'utf8'); } catch (e: any) { return `读取失败：${e?.message ?? e}`; }
+        const diags = await session.diagnostics(abs, text);
+        if (!diags.length) return '（无诊断——0 error 0 warning）';
+        const shown = diags.slice(0, 30);
+        return `诊断（${diags.length} 条${diags.length > 30 ? `，已截断前 ${shown.length} 条` : ''}）：\n${shown.map(d => `  ${d.severity === 'error' ? '✗' : d.severity === 'warning' ? '!' : '·'} ${p}:${d.line}:${d.col}${d.code ? ` [${d.code}]` : ''} ${d.message}`).join('\n')}`;
+      }
+      const ln = Math.max(1, Math.floor(Number(line) || 1));
+      const cl = Math.max(1, Math.floor(Number(col) || 1));
+      if (kind === 'hover') return `悬停信息（${p}:${ln}:${cl}）：\n${await session.hover(abs, ln, cl)}`;
+      return `定义位置（${p}:${ln}:${cl}）：\n${await session.definition(abs, ln, cl)}`;
+    } catch (e: any) {
+      return `LSP 调用失败：${String(e?.message ?? e).slice(0, 200)}`;
+    }
+  };
+  const lspDiagnostics: ToolDef = {
+    schema: { type: 'function', function: { name: 'lsp_diagnostics', description: 'LSP 实时诊断（类型错误/语法错误/警告，语言服务器）。改完代码后调用验证——比运行编译更快。', parameters: { type: 'object', properties: { path: { type: 'string', description: '文件路径' } }, required: ['path'] } } },
+    danger: false,
+    async run({ path }, ctx) { return lspRun('diagnostics', path, undefined, undefined, ctx); },
+  };
+  const lspHover: ToolDef = {
+    schema: { type: 'function', function: { name: 'lsp_hover', description: 'LSP 悬停信息（符号类型/文档注释）。查 API 用法与类型签名时调用。', parameters: { type: 'object', properties: { path: { type: 'string', description: '文件路径' }, line: { type: 'number', description: '行号（从 1 开始）' }, col: { type: 'number', description: '列号（从 1 开始）' } }, required: ['path', 'line', 'col'] } } },
+    danger: false,
+    async run({ path, line, col }, ctx) { return lspRun('hover', path, line, col, ctx); },
+  };
+  const lspDefinition: ToolDef = {
+    schema: { type: 'function', function: { name: 'lsp_definition', description: 'LSP 跳转定义（符号来源位置）。定位函数/类/变量定义处时调用。', parameters: { type: 'object', properties: { path: { type: 'string', description: '文件路径' }, line: { type: 'number', description: '行号（从 1 开始）' }, col: { type: 'number', description: '列号（从 1 开始）' } }, required: ['path', 'line', 'col'] } } },
+    danger: false,
+    async run({ path, line, col }, ctx) { return lspRun('definition', path, line, col, ctx); },
+  };
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, apply_patch: applyPatchTool, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, computer_observe: computerObserve, computer_uia_windows: uiaWindowsTool, computer_uia_tree: uiaTreeTool, computer_uia_find: uiaFindTool, computer_uia_click: uiaClickTool, computer_uia_type: uiaTypeTool, computer_uia_act: uiaActTool, lsp_diagnostics: lspDiagnostics, lsp_hover: lspHover, lsp_definition: lspDefinition, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

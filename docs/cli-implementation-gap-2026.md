@@ -3,6 +3,7 @@
 > 二轮深挖（2026-08-18）：4 个专案代理逐文件读了 6 家克隆源码与 wxnodus 对应模块，所有结论附 file:line 证据。
 > 配套文档：`docs/cli-comparison-2026.md`（功能面总览）。本文只谈**实现差距与落地方案**。
 > 克隆位置：`Desktop\cli-compare\{codex,gemini-cli,opencode,kimi-cli,crush,aider}`。
+> **补齐轮（2026-08-18 同日）：标注「✅ 已落地」的条目已实现并测试（证据见 cli-deep-analysis-score-2026.md §9）；沙盒机制经本机实测校准（受限令牌 1314 → Low IL，见 §3）。**
 
 ## 0. 四模态全离线（wxnodus 现有实现，代码实证）
 
@@ -30,11 +31,11 @@
 
 ### 差距与落地（按优先级）
 
-1. **工具输出回灌是命门**：wxnodus `msgs.push({role:'tool', content: e.out})` 全量（`agent.ts:1124`）——一次大 grep 打满 64k。方案：opencode 式「超 50KB/2000 行 → 落盘 `dataDir/truncations/` + 头尾预览 + `…[已截断]` 续读提示」；再叠 gemini 式「最新轮保护、旧轮掩码」（50k 保护窗/30k 触发，`toolOutputMaskingService.ts:52-66`）；蒸馏（二级模型摘要）设为开关默认关。fs_read/读类豁免（复用 `READ_TOOL_CACHE` 名单，`agent.ts:906`）。
-2. **压缩触发失真**：64k 硬编码对 128k/200k 窗口模型全错。改 opencode 式「模型真实 limit − 输出预留」双条件（对齐 kimi 的 +50k reserved 思路），且压缩输入加总 token 预算（对齐 codex 20k）。
-3. **循环检测分级**：3 次直接硬停误杀合法轮询。改 gemini 式「3 次注入提醒再跑 1-2 轮 → 5 次硬停」；签名并入输出短哈希（crush `loop_detection.go:45-71`）；加 gemini 式内容重复（chanting）检测。
-4. **每步 checkpoint + 压缩后原 prompt 重入队续跑**（kimi `kimisoul.py:1034-1037`；crush `agent.go:1203`）——wxnodus 目前中途死循环只能整回合作废。
-5. `MAX_TURNS` 32 → `settings.maxTurns` 可配置（opencode `agent.steps`）；AGENTS.md 改 findUp 到 worktree（opencode `instruction.ts:122-132`）。
+1. ✅ 已落地（补齐轮）：**工具输出回灌 offload**——超 50KB/2000 行落盘 `dataDir/truncations/` + 头尾预览 + 续读路径（`src/kernel/toolOutput.ts`）；bash 流式落盘保留完整输出（sink→promoteOffloadFile）；旧轮掩码（gemini 50k 保护窗/30k 触发，幂等）；蒸馏开关默认关（settings.toolDistill）。fs_read/读类豁免沿用 READ_TOOL_CACHE 名单。
+2. ✅ 已落地（补齐轮）：**压缩触发真实窗口**——模型目录 maxContext − 输出预留（默认 min(20k, 25%×窗口)，settings.ctxOutputReserve 可覆盖；`providers.ts maxContextFor` + `agent.ts`）。64k 硬编码清零。
+3. 循环检测分级（3 次注入提醒→5 次硬停）+ 输出哈希签名 + chanting 检测——未做（P1）。
+4. 每步 checkpoint + 压缩后原 prompt 重入队续跑——未做（P1）。
+5. ✅ 已落地（补齐轮）：**MAX_TURNS 可配置**——settings.maxTurns（1..200 夹取，默认 32）；AGENTS.md findUp 未做。
 
 ## 2. 工具系统与代码编辑
 
@@ -44,21 +45,18 @@
 - **aider**：正则解析容忍 5-9 个 fence 字符；`perfect_or_whitespace` 缩进容错 + `...` 分块 + `did_you_mean` 相似行提示 + 「只重发失败块」（`editblock_coder.py:84-124`）。
 - **wxnodus 现状**：fs_edit 单文件单处 indexOf，多出现即拒绝（`tools.ts:210-212`），失败只给 80 字附近内容。
 
-### 落地：新增 apply_patch 工具
-1. 语法取 codex lark 子集（Add/Update/Delete/Move + `@@` 锚定 + End of File）。
-2. 全量校验通过才落盘 + undoShadows 快照（已有 `tools.ts:214-217`）。
-3. 匹配容错抄 aider 缩进容忍 + gemini flexible（trim+重缩进，`edit.ts:179-237`）。
-4. 失败聚合逐块报行号+原因，附 did_you_mean。
-5. 保留 fs_edit（小改动仍最快）；apply_patch 用于多文件批次。
+### 落地：新增 apply_patch 工具 ✅ 已落地（补齐轮）
+1. ✅ 语法取 codex lark 子集（Add/Update/Delete/Move + `@@` 锚定）。
+2. ✅ 全量校验通过才落盘 + undoShadows 快照（绝不写一半，失败逐块报错）。
+3. ✅ 匹配容错抄 aider 缩进容忍 + gemini flexible（三级：精确→行尾空白→重缩进）+ did_you_mean + 退化 ctx==minus 折叠。
+4. ✅ 失败聚合逐块报行号+原因。
+5. ✅ 保留 fs_edit（小改动仍最快）；apply_patch 用于多文件批次（`src/kernel/applyPatch.ts`，13 用例）。
 
-### 并行工具调度
-- gemini 判定（`scheduler.ts:472-483,561-578`）：编辑类强制串行，其余缺省并行；两阶段（校验+审批 Promise.all → 执行 Promise.all）。
-- codex 用 RwLock 读写门（`parallel.rs:153-157`）：并行能力工具读锁并发、串行工具写锁互斥。
-- wxnodus 严格串行（`agent.ts:1052-1072` 逐个 await）。
-- **落地**：wxnodus 已有 danger 分级（`tools.ts:95`）可直接做读写门——`danger:false`（fs_read/grep/find_files/web_search/browser_snapshot）并行、`danger:true`（fs_write/fs_edit/bash）串行+同 path 互斥；审批阶段先行、执行后聚合失败计数与循环检测。
+### 并行工具调度 ✅ 已落地（补齐轮）
+- ✅ gemini 判定落地：批次含任一 danger（编辑类）→ 整批严格串行；纯只读批次 Promise.all 并行；manual 模式恒串行（审批链不并发弹窗）；结果槽位保序（`agent.ts` 批次循环，并发计数实测 2/1）。
 
-### 工具输出
-- 见 §1 第 1 条；另把 `wrapDanger` 8000 硬截（`tools.ts:104`）接入 labelTruncate + offload 路径提示，补齐「截断→存盘→续读」闭环（最小改动、全局受益）。
+### 工具输出 ✅ 已落地（补齐轮）
+- ✅ offload 截断+落盘+续读（§1 第 1 条）；wrapDanger 8000 硬截 → settings.untrustedWrapLimit（1k..100k 夹取）+ 超限 offload 接管——「截断→存盘→续读」闭环（`src/kernel/toolOutput.ts`）。
 
 ## 3. 权限与沙盒
 
@@ -72,10 +70,10 @@
   2. `/sandbox L0-L3` 只是 setMode 别名（`handlersExt.ts:1621-1642`），插件沙盒自认 crash-isolation 且 fs/network/process/credential 全 false（`processIsolationSandbox.ts:10-20`）；
   3. 会话授权 `ApprovalCache` 注释自认「只是 UI 去重不是授权」（`permissions.ts:243-245`）。
 
-### 落地
-1. **Windows OS 沙盒**（最大安全差距，抄 gemini 最简路径）：Node 侧 spawn 前经一个 C#/原生助手进程 `CreateRestrictedToken(DISABLE_MAX_PRIVILEGE) + SetTokenInformation(Low IL S-1-16-4096) + CreateJobObject(KILL_ON_CLOSE) + 无网时 JobObjectNetRateControlInformation=1B`，再用 `CreateProcessAsUser(restricted token)`。L0=read-only+断网 profile，L1/L2=workspace-write capability，L3=撤写限制保留红线。进阶路线 codex 的 elevated 后端+WFP。
-2. **execpolicy 式规则**：bash pattern 从朴素正则升级为 first-token 索引 + `PrefixPattern(first+rest, 支持 Alts)` + `Decision` 取 max（forbid>prompt>allow）；新增 `network_rule(host, protocol)`（禁通配符禁 scheme，`rule.rs:156-212`）；「批准即持久化」advisory-lock 单行追加（`amend.rs:65-125`）替代会话内存态。
-3. **approve_for_session 真实授权**：键 = (session, tool, 命令前缀|path)，优先级置 permissions.json 之上（对齐 gemini Always-Allow 4.95 层），deny 级联拒绝同会话 pending（opencode `index.ts:129-138`）。
+### 落地 ✅ 已落地（补齐轮，机制经本机实测校准）
+1. **Windows OS 沙盒**（最大安全差距，落地）：`src/kernel/winSandbox.ts`——PS 内联 C# 助手（Add-Type，零新增依赖）。**实测校准（本机标准用户，重要）**：① codex 式 `CreateRestrictedToken(DISABLE_MAX_PRIVILEGE)+CreateProcessAsUser` → **1314 ERROR_PRIVILEGE_NOT_HELD 证伪**（标准用户无 SeTcbPrivilege，受限令牌不可用于进程创建）；② gemini 式 `SetTokenInformation(Low IL S-1-16-4096)+CreateProcessAsUser` → **实测可用**，Low IL 子进程写 Medium-IL 文件「拒绝访问」= L0 只读语义；③ Job Object（KILL_ON_JOB_CLOSE+DIE_ON_UNHANDLED_EXCEPTION）+ `JobObjectNetRateControlInformation`（1B/s=断网级/10KB/s）经普通 CreateProcess 施加。最终 profile：**L0=Low IL 只读+断网｜L1=Job+断网｜L2=Job+限速 10KB/s｜L3=Job 遏制**；能力探测失败诚实降级并提示（绝不假装沙盒）；`/sandbox os L0-L3|off|status|probe` 配置持久化。内嵌 C# 纯 ASCII 红线（Add-Type 非 UTF8 代码页损坏非 ASCII 实测教训）。进阶路线（未做）：codex 的 elevated 后端+WFP、三平台化。
+2. **execpolicy 式规则**：未做（P2）——bash pattern 首词索引、network_rule、批准持久化。
+3. **approve_for_session 真实授权**：未做（P2）。
 
 ## 4. 存储 / 回滚 / 成本
 
@@ -92,24 +90,26 @@
 2. **成本五维 + Decimal**：usage_stats 加 reasoning/cache_read/cache_write 列 + message_id（SCHEMA_VERSION 6→7 走 `runDbMigrationsTo`）；`estimateCost` 原生浮点改 Decimal 链（对齐 opencode `session.ts:396-402`）；价目结构支持 tiers 阶梯与缓存费率（aider 1.25×/0.10×，`base_coder.py:2094-2097`）；保留诚实口径（unknownCount/「起」/unmeasured——这是相对 crush/aider 的优点）；补 crush 式 fallback：无 usage 元数据但确有输出时按 `(len+3)/4` 估算并打 estimated 标记。
 3. **会话体验**：fork 记血缘（`forked_from_id`，codex `protocol.rs:2869`）；会话列表带 first_user_message 摘要（gemini `sessionUtils.ts:90-121`）。
 
-## 5. 落地优先级总表（投入/收益）
+## 5. 落地优先级总表（投入/收益）——补齐轮状态
 
-| 优先级 | 事项 | 抄谁 | 证据锚点 |
-|---|---|---|---|
-| P0-1 | 工具输出 offload 截断+续读 | opencode | `truncate.ts:14-15` |
-| P0-2 | 压缩触发改真实窗口+输出预留 | opencode/kimi | `overflow.ts:14-34`、`compaction.py:60-76` |
-| P0-3 | apply_patch 多文件补丁 | codex/opencode | `apply_patch.lark:1-19` |
-| P0-4 | Windows OS 沙盒 | gemini | `GeminiSandbox.cs:247-306` |
-| P1-1 | 并行调度（danger 读写门） | gemini/codex | `scheduler.ts:472-483`、`parallel.rs:153-157` |
-| P1-2 | 循环检测分级+输出哈希签名+内容重复检测 | gemini/crush | `loopDetectionService.ts`、`loop_detection.go:45-71` |
-| P1-3 | 每步 checkpoint+压缩后原 prompt 续跑 | kimi/crush | `kimisoul.py:1034`、`agent.go:1192-1207` |
-| P1-4 | approve_for_session 真实授权 | kimi/opencode | `approval.py:354-379` |
-| P2-1 | 快照增量化+血缘 | kimi/codex | `context.py:123-167` |
-| P2-2 | 成本五维+Decimal | opencode | `session.ts:338-407` |
-| P2-3 | execpolicy 首词规则+网络域+批准持久化 | codex | `policy.rs:402-411`、`amend.rs:65-125` |
-| P2-4 | 输出蒸馏/掩码（开关默认关） | gemini | `toolDistillationService.ts:52-81` |
-| P3 | maxTurns 可配置、AGENTS.md findUp、会话浏览器、vim、主题 | 各家 | 见各节 |
+| 优先级 | 事项 | 抄谁 | 证据锚点 | 状态 |
+|---|---|---|---|---|
+| P0-1 | 工具输出 offload 截断+续读 | opencode | `truncate.ts:14-15` | ✅ 已落地（toolOutput.ts + bash 流式落盘） |
+| P0-2 | 压缩触发改真实窗口+输出预留 | opencode/kimi | `overflow.ts:14-34`、`compaction.py:60-76` | ✅ 已落地（maxContextFor − 预留） |
+| P0-3 | apply_patch 多文件补丁 | codex/opencode | `apply_patch.lark:1-19` | ✅ 已落地（applyPatch.ts，13 用例） |
+| P0-4 | Windows OS 沙盒 | gemini | `GeminiSandbox.cs:247-306` | ✅ 已落地（winSandbox.ts；受限令牌 1314 实测证伪→Low IL） |
+| P1-1 | 并行调度（danger 读写门） | gemini/codex | `scheduler.ts:472-483`、`parallel.rs:153-157` | ✅ 已落地（只读批并行/含写批串行） |
+| P1-2 | 循环检测分级+输出哈希签名+内容重复检测 | gemini/crush | `loopDetectionService.ts`、`loop_detection.go:45-71` | ⏳ 未做 |
+| P1-3 | 每步 checkpoint+压缩后原 prompt 续跑 | kimi/crush | `kimisoul.py:1034`、`agent.go:1192-1207` | ⏳ 未做 |
+| P1-4 | approve_for_session 真实授权 | kimi/opencode | `approval.py:354-379` | ⏳ 未做 |
+| P2-1 | 快照增量化+血缘 | kimi/codex | `context.py:123-167` | ⏳ 未做 |
+| P2-2 | 成本五维+Decimal | opencode | `session.ts:338-407` | ⏳ 未做 |
+| P2-3 | execpolicy 首词规则+网络域+批准持久化 | codex | `policy.rs:402-411`、`amend.rs:65-125` | ⏳ 未做 |
+| P2-4 | 输出蒸馏/掩码（开关默认关） | gemini | `toolDistillationService.ts:52-81` | ✅ 已落地（掩码默认开+蒸馏开关默认关） |
+| P3 | maxTurns 可配置、AGENTS.md findUp、会话浏览器、vim、主题 | 各家 | 见各节 | ◐ maxTurns ✅；其余未做 |
+| 追加 | LSP 集成（诊断/hover/定义） | opencode/crush | `apply_patch.ts:253-293` | ✅ 已落地基础版（lspClient.ts，settings.lsp.servers 可配） |
+| 追加 | 硬编码清零（64k/8000/32 全部 settings 可覆盖） | 生产级红线 | 本仓多文件 | ✅ 已落地（12 个新设置键入白名单） |
 
 ## 6. 一句话结论
 
-> wxnodus 的策略层（红线/分级/规则）已经追上甚至超过多数竞品；**真正的实现差距集中在「执行层」四件事**——工具输出回灌、真实窗口压缩、多文件补丁、OS 沙盒——每件都有现成抄法（文件级证据齐全）。存储/成本层差距是精度与效率问题（全量快照→增量、两维成本→五维），不急但方向明确。四模态离线与合规链路是护城河，任何改造都不得退化。
+> wxnodus 的策略层（红线/分级/规则）已经追上甚至超过多数竞品；**「执行层四件事」+ LSP + 硬编码清零已在补齐轮全部落地**（工具输出回灌、真实窗口压缩、多文件补丁、OS 沙盒——每件都有本机实测证据与测试；沙盒机制经标准用户实测校准，受限令牌路径证伪改 Low IL）。剩余差距：循环检测分级、快照增量化、成本五维、execpolicy（P1-P2，方向明确不急）。四模态离线与合规链路是护城河，任何改造都不得退化。
