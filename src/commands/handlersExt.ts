@@ -1618,7 +1618,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       return { name, label: label ?? name, kind, purpose };
     }).filter(f => f.name);
     if (!fields.length) return '用法：/input <字段1> [字段2 ...]（动态内容表——多字段敏感输入，仅内存不保存；如 /input username password api_key）';
-    if (!ctx.gateway?.requestCredentialForm) return '动态内容表需 TUI 会话（-p 非交互不可用）——配置 key 请用 /key set';
+    if (!ctx.gateway?.requestCredentialForm) return '动态内容表需 TUI 会话（-p 非交互不可用）——配置密钥请用 /model set-key';
     // P0-1 审计留痕：记录字段名与来源（不含值——值绝不落盘）
     try {
       const { appendAudit } = await import('../store/db.js');
@@ -2241,7 +2241,7 @@ export const commands = {
     if (first === '--report' || first === 'report') {
       const { resolveApiKey } = await import('../kernel/providers.js');
       const keyRes = resolveApiKey(ctx.config.get('settings') as any);
-      if (!keyRes.key) return '自我审查需要模型密钥——/key set <密钥> 后可用（AI 审查自身源码输出建议）';
+      if (!keyRes.key) return '自我审查需要模型密钥——/model set-key <密钥> 后可用（AI 审查自身源码输出建议）';
       if (!ctx.agent) return '当前环境无 agent（无法审查）';
       const scope = args.slice(1).join(' ') || 'src/kernel、src/commands、src/cli';
       const r = await ctx.agent.run(`你是 WxNodus 的自我审查引擎。审查自身源码，输出改进建议清单（只审查，绝不修改任何文件）。
@@ -2282,7 +2282,7 @@ export const commands = {
     // 1. AI 分析自身源码生成补丁（无 key 诚实提示——不产生假补丁）
     const { resolveApiKey } = await import('../kernel/providers.js');
     const keyRes = resolveApiKey(ctx.config.get('settings') as any);
-    if (!keyRes.key) return '自举需要模型密钥——/key set <密钥> 后可用（AI 分析自身源码生成补丁并自验证）';
+    if (!keyRes.key) return '自举需要模型密钥——/model set-key <密钥> 后可用（AI 分析自身源码生成补丁并自验证）';
     if (!ctx.agent) return '当前环境无 agent（无法自举）';
     // 2. 生成补丁（限定 src/kernel + src/commands——不碰装配/UI/测试，防止自毁）
     const r = await ctx.agent.run(`你是 WxNodus 的自我改进引擎。分析自身源码并生成修改补丁。
@@ -3048,7 +3048,7 @@ export const commands = {
     const { resolveDefaultModel } = await import('../kernel/defaults.js');
     const settings = ctx.config.get('settings') as { apiKeyEnc?: string | null; baseURL?: string; model?: string };
     const keyRes = resolveApiKey(settings);
-    if (!keyRes.key) return 'arena 需要模型密钥——/key set <密钥> 后可用（双模型真实对战）';
+    if (!keyRes.key) return 'arena 需要模型密钥——/model set-key <密钥> 后可用（双模型真实对战）';
     const cur = settings.model && MODEL_CATALOG.some(m => m.modelId === settings.model) ? settings.model : resolveDefaultModel(settings);
     // 次选：--model 指定 ｜ 同 provider 备选 ｜ 目录中第一个不同模型（不同 provider 也可——密钥同 env）
     let second = '';

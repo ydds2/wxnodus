@@ -62,7 +62,7 @@ export async function a2aServe(port: number, run: (text: string) => Promise<{ ok
               result: {
                 message: {
                   role: 'agent',
-                  parts: [{ text: r.text || (r.ok ? '（空回复）' : '模型未配置——/key set <密钥> 配置后使用') }],
+                  parts: [{ text: r.text || (r.ok ? '（空回复）' : '模型未配置——/model set-key <密钥> 配置后使用') }],
                   messageId: `m-${Date.now().toString(36)}`,
                 },
               },

@@ -91,7 +91,7 @@ export async function fetchBalance(profile: ProviderProfile, settings: Record<st
   let host = 'unknown';
   try { host = new URL(url).host; } catch { return { ok: false, error: `余额 URL 无效：${url.slice(0, 80)}` }; }
   const keyRes = resolveApiKey({ ...settings, baseURL: profile.baseURL });
-  if (!keyRes.key) return { ok: false, error: '当前档案未配置密钥（/key set <密钥> 配置后重试）' };
+  if (!keyRes.key) return { ok: false, error: '当前档案未配置密钥（/model set-key <密钥> 配置后重试）' };
   const r = await safeFetchText(url, { method: 'GET', headers: { Authorization: `Bearer ${keyRes.key}` }, maxBytes: 64_000, timeoutMs: 10_000 });
   if ('error' in r) return { ok: false, error: r.error };
   if (r.status >= 400) return { ok: false, error: mapHttpError(r.status), status: r.status };

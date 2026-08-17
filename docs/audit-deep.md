@@ -676,3 +676,10 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **usage 缓存可观测**：llmStream 提取 `prompt_cache_hit_tokens/prompt_cache_miss_tokens`（离线通道归零）；usage_stats 新增 cache_hit_tokens/cache_miss_tokens 双列——迁移 v7/v8（makeColumnMigration 工厂表参数化 table 字段，validate/reconcile 泛化；SCHEMA_VERSION 6→8）；agent INSERT 7 列；usageSummary 聚合 cacheHit/cacheMiss；/usage range 展示「前缀缓存命中 X token（命中率 Y%）」（0 时诚实不显示）。
 - **契约测试**：systemPrompt now 逐字一致+差异证明 1 例；llmStream 缓存字段提取 1 例+既有 usage 断言同步；usage 缓存聚合 1 例；db-migrations 版本链 6→8。
 - **handlersExt 巨文件拆分第 1 块**：确定性工具类 11 命令（/calc /hash /base64 /uuid /rand /json /timer /sql /fs /units /csv，174 行）+ safeEval + fsLsRows/fsReadRows/sqlTableRows 纯函数迁入 `src/commands/ext/deterministicTools.ts`（registerDeterministicTools(bus, ctx)）；handlersExt 以 re-export 保持 tests/commands.test.ts 导入兼容——**3912 → 3718 行（−194）**，零行为变化（迁移纯搬移，commands 契约测试全绿）。过程自伤修复：ext 模块注释含 `+-*/()` 使 `*/` 提前终结块注释（TS 解析错误）→ 注释改「四则运算符」。
+
+### 13.44 /key set 漏网清零 + 余额护栏轮（2026-08-18 /goal 预算约束轮）
+
+- **/key set 漏网第 14-19 处清零**：早前清剿被 grep 模式截断——本轮全量扫出 a2a.ts:65、balance.ts:94、handlersExt.ts:94/717/758/1524 共 6 处用户可见 `/key set` 残留（「彻底移除 /key」要求的最后一公里），sed 批量改 `/model set-key`；复扫 src 零残留（registry 注释/密钥归属文案为说明性引用，非指引）。
+- **余额护栏 `scripts/balance-guard.mjs`**：读 settings（apiKeys.deepseek 槽 → 内存解密，明文绝不回显）→ GET deepseek /user/balance → 打印余额 + 退出码协议（0≥min / 1<min 打断 / 2 无密钥或失败）。实测基线：**本机 wxnodus 仅配置 zhipu/GLM 密钥，DeepSeek 密钥缺失** → DEEPSEEK_KEY_MISSING（exit 2）——自动监控待用户 `/model set-key` 后生效。
+- **`docs/t0-budget-plan-2026.md`**：300 元预算→T0 计划——成本模型假设 + 已完成 10 轮清单 + 剩余 7 项按性价比排序（含轮数估算与止损判定 <¥20 收敛）+ 监控协议 + T0 达标判据（npm run ci 全绿 + 评分 ≥8.0）。
+- **handlersExt 拆分 2/3 块尝试与回退**：锚点切片成功（块 2/3 = 583+894 行 → ext/sessionCommands.ts、ext/profileMemoryBuildCommands.ts），但导入自动修剪脚本陷入「同行列漂移→误删在用导入→护栏死锁」循环（根因：tsc 在文件存在其它错误时对在用导入误报 unused）——按预算止损回退（保留第 1 块成果，handlersExt 3718 行），拆分重做方式已写入预算计划序 5（静态导入清单手写）。
