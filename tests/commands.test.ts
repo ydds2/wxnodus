@@ -359,3 +359,13 @@ describe('/assimilate 黑洞同化', () => {
     }
   });
 });
+
+describe('renderWaterfall 成本后缀', () => {
+  it('priceFor 提供时行尾 ≈$；null 不显示', () => {
+    const rows = [{ model: 'deepseek-chat', input_tokens: 1_000_000, output_tokens: 1_000_000, ts: Date.now() }];
+    const withCost = renderWaterfall(rows, 20, undefined, () => 0.7);
+    expect(withCost).toContain('≈$0.7000');
+    const noCost = renderWaterfall(rows, 20, undefined, () => null);
+    expect(noCost).not.toContain('≈$');
+  });
+});

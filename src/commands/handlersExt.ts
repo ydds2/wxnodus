@@ -23,7 +23,7 @@ import { HARD_REDLINES, loadPermRules, savePermRules } from '../kernel/permissio
 import { unknownSettingsKeys, knownSettingsKeys } from '../store/config.js';
 import { runCuratorReview, curatorConfigFrom, readCuratorState } from '../kernel/curator.js';
 import { usageSummary, usageRangeSince, type UsageRange } from '../kernel/usage.js';
-import { costSummary } from '../kernel/cost.js';
+import { costSummary, estimateCost } from '../kernel/cost.js';
 import { encryptKey } from '../kernel/providers.js';
 import { resolveProviderProfile } from '../kernel/profiles.js';
 import { fetchBalanceCached } from '../kernel/balance.js';
@@ -46,6 +46,7 @@ export function renderWaterfall(
   rows: Array<{ model: string; input_tokens: number; output_tokens: number; ts: number }>,
   width = 40,
   title?: string,
+  priceFor?: (model: string, inputTokens: number, outputTokens: number) => number | null,
 ): string {
   const max = Math.max(...rows.map(r => r.input_tokens + r.output_tokens), 1);
   const scale = (n: number) => Math.max(1, Math.round((n / max) * width));
@@ -55,7 +56,9 @@ export function renderWaterfall(
     const outLen = Math.max(1, scale(total) - inLen + 1);
     const bar = '░'.repeat(inLen) + '█'.repeat(outLen);
     const t = new Date(r.ts).toLocaleTimeString('zh-CN', { hour12: false });
-    return ` ${t} ${r.model.slice(0, 14).padEnd(14)} ${bar} ${total.toLocaleString()} tok（入 ${r.input_tokens.toLocaleString()} / 出 ${r.output_tokens.toLocaleString()}）`;
+    // 行尾成本（参考价目；未收录定价不显示——诚实）——哪轮烧钱一眼可见
+    const cost = priceFor ? priceFor(r.model, r.input_tokens, r.output_tokens) : null;
+    return ` ${t} ${r.model.slice(0, 14).padEnd(14)} ${bar} ${total.toLocaleString()} tok（入 ${r.input_tokens.toLocaleString()} / 出 ${r.output_tokens.toLocaleString()}）${cost !== null ? ` ≈$${cost.toFixed(4)}` : ''}`;
   });
   return lines(title ?? ` Token 瀑布（最近 ${rows.length} 轮 · ░输入 █输出） `, out);
 }
@@ -817,7 +820,10 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
           ).all(sid) as Array<{ model: string; input_tokens: number; output_tokens: number; ts: number }>;
       if (!rows.length) return '暂无 API 用量记录（--waterfall 需真实调用后查看；当前会话消息 token 可看 /context）';
       const scopeLabel = scoped ? (range === 'today' ? '今日' : range === '7d' ? '近 7 天' : '近 30 天') : '本会话';
-      return renderWaterfall(rows.reverse(), 40, ` Token 瀑布（${scopeLabel}最近 ${rows.length} 轮 · ░输入 █输出） `);
+      // 行尾成本估算（参考价目 + costPrices 覆盖；未收录定价不显示）
+      const overrides = (ctx.config.get('settings') as Record<string, any>)?.costPrices;
+      const priceFor = (model: string, i: number, o: number) => estimateCost(model, i, o, overrides);
+      return renderWaterfall(rows.reverse(), 40, ` Token 瀑布（${scopeLabel}最近 ${rows.length} 轮 · ░输入 █输出 · ≈$ 估算成本） `, priceFor);
     }
 
     const rows = ctx.db.prepare(`SELECT role, content FROM messages WHERE session_id=?`).all(sid) as any[];
