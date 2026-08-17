@@ -448,4 +448,4 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **会话预算硬停**：settings.budgetStop=true 时超 budgetTokens 硬停（此前仅告警）——同步门控置于首个模型调用前（首调也不放过），finishEarly 显式失败。
 - **成本护栏配套**：costPrices 自定义价目（中转站/私有定价档，adapter 与 /cost 同源）；/usage --waterfall [today|7d|30d] 区间瀑布；usage_stats 会话/时间索引（聚合查询不再全表扫描）。
 - **说人话直达**：NL 触发「成本多少/花了多少钱 → /cost」「余额还有多少 → /balance status」；token 用量双向匹配（用了多少 token）。
-- **验证**：全量 2314 通过；cmd-sweep 124/124（+threshold/auto-stop 两形态）；tsc 零错误。
+- **验证**：全量 2314 通过；cmd-sweep 124/124（+threshold/auto-stop 两形态）；full-scene 28/28 + cmd-verify 14/14 真机电池复测（TextInput 常驻挂载等 UI 改动在真实 pty 上无回归）；tsc 零错误。
