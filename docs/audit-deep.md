@@ -635,3 +635,8 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **修复（第四层防御）**：providers.ts 新增 `textifyForModel(content, modelId)` 纯函数——视觉模型（hasImageIn）原样放行；其余模型把 parts 数组中的 `image_url` 段替换为 `[图片]` 文本段（未知段 → `[附件]`，保持数组合法性）；`buildChatRequest`（llmStream 与 llmOnce 的唯一装配点）序列化前对全部消息执行。dataUrl 从此物理上不可能进入纯文本模型请求体。
 - **契约测试**：kernel-image-guard.test.ts 新增「装配终极闸门」3 例——纯文本模型 tool/user parts 全文本化且请求体不含 image_url/base64/data:image；视觉模型 parts 原样放行；纯函数边界（字符串/null 原样、未知段 [附件]）。
 - **/key 残留清零**（§13.35 迁移漏网收尾）：providers.ts 401 映射、handlers.ts 状态/doctor 3 处、handlersExt.ts 8 处（/profile 下一步、/learn、/assimilate、/fdr、/encrypt）共 12 处 `/key set` → `/model set-key`；marketServer.ts `/keys` 端点为 forge 公钥服务，与模型密钥无关，保留。
+
+### 13.39 本地门禁聚合 + vim 死代码清理轮（2026-08-18 /goal 自主完善）
+
+- **`npm run ci` 一键门禁**：仓库无 git remote（GitHub Actions 无意义）——诚实等价物为本地全量门禁聚合脚本：typecheck → typecheck:tests → test:all → test:known-failures → check:test-discovery → check:requirement-coverage → build。落地前逐项实测：known-failures 31 绿、发现检查无缺失根、需求覆盖 20/13 全绿——聚合脚本自始全绿而非「先红后修」。README 快速开始补一行。
+- **vim 死代码清理**（深评 UI S0 之二选一执行「从宣传移除」分支）：`src/wxnodus-ui/lib/vimKeys.ts` 41 行薄层全仓库零调用（仅 gaps 测试锁定）、无 hotkeys/helpHint/README 任何宣称——删除文件 + gaps.test.ts vim 段（差距 #1 以「无宣称不保留」关闭）；真 vim 模式如需复活应按 codex keymap 层重新设计（薄层连操作符/文本对象都没有，无保留价值）。

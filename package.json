@@ -13,6 +13,7 @@
     "dev": "tsx src/cli/index.ts",
     "start": "tsx src/cli/index.ts",
     "test": "npm run test:all",
+    "ci": "npm run typecheck && npm run typecheck:tests && npm run test:all && npm run test:known-failures && npm run check:test-discovery && npm run check:requirement-coverage && npm run build",
     "test:all": "vitest run --config vitest.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

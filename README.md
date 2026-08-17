@@ -13,6 +13,8 @@ wxnodus -p "你好" --json         # agent 结果 JSON
 wxnodus -p "你好" --wire         # 总线事件流 JSONL
 ```
 
+全量门禁（typecheck + 全量测试 + known-failures + 发现/覆盖检查 + 构建）：`npm run ci`
+
 ## 常用命令
 
 | 命令 | 作用 |

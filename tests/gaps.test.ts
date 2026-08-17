@@ -1,7 +1,7 @@
-// tests/gaps.test.ts — L6-3 差距补齐：/undo checkpoint/vim 薄层/审批预审/stream-json/@引用匹配
+// tests/gaps.test.ts — L6-3 差距补齐：/undo checkpoint/审批预审/stream-json/@引用匹配
+// （vim 薄层已作为未接线死代码移除，见 audit §13.39——差距 #1 以「无宣称不保留」方式关闭）
 import { describe, it, expect } from 'vitest';
 import { openDB, closeDB, saveCheckpoint, restoreCheckpoint } from '../src/store/db.js';
-import { vimHandleKey } from '../src/wxnodus-ui/lib/vimKeys.js';
 import { createAutoReview } from '../src/kernel/autoReview.js';
 import { resolveAtRefs } from '../src/wxnodus-ui/lib/atRefs.js';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -19,18 +19,6 @@ describe('checkpoint /undo（差距 #6）', () => {
     expect(restored.n).toBeGreaterThanOrEqual(9);
     closeDB(db);
     rmSync(dir, { recursive: true, force: true });
-  });
-});
-
-describe('vim 薄层（差距 #1）', () => {
-  it('i 进入 insert，Esc 回 normal，x 删字符，dd 清行', () => {
-    expect(vimHandleKey('i', { mode: 'normal', value: 'ab' }).mode).toBe('insert');
-    const afterInsert = vimHandleKey('c', { mode: 'insert', value: 'ab', cursor: 2 });
-    expect(afterInsert.value).toBe('abc');
-    expect(vimHandleKey('escape', { ...afterInsert, mode: 'insert' }).mode).toBe('normal');
-    expect(vimHandleKey('x', { mode: 'normal', value: 'ab', cursor: 1 }).value).toBe('a');
-    const d1 = vimHandleKey('d', { mode: 'normal', value: 'hello' });
-    expect(vimHandleKey('d', d1).value).toBe('');
   });
 });
 
