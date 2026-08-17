@@ -438,3 +438,14 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **接入层 UI 闭环**：`/model` 直达档案模型（命中切 activeProvider+baseURL）+ modelOptions 档案 provider 分组（选择器可见可选）；`/doctor` profileHealth 档案一致性检查（悬空 active/重复 id/非法 baseURL）；`/status` 一览档案/余额监控/本会话成本。
 - **SETTINGS_KEYS 白名单补齐（自伤误报根除）**：providers/activeProvider/usageRange/balanceMonitor/show_cost/autoGitCommit/vision*/proxy 等系统写入键此前不在白名单——`/config` 面板把系统自己的键报为「未知键（不生效）」；补入 + 回归测试锁死。
 - **验证**：全量 2293 通过（+28 测试）；cmd-sweep 122/122（/cost 两形态入列）；tsc 零错误。
+
+### 13.11 余额耗尽终局护栏轮（2026-08-17 持续完善）
+
+用户目标「持续完善直至余额耗尽」的自我保护闭环——把「烧到没钱」从事故变成显式可停的状态：
+
+- **低余额预警**：`numericBalance` 宽容解析（¥/$/千分位）+ `lowBalanceDecision` 状态机（低于阈值且未通知 → sticky warn；回升重新武装——防刷屏且可重复提醒）；阈值可配 `/balance threshold <数值>`（默认 5）。
+- **余额耗尽自动停**：`/balance auto-stop on` 后网关每次余额抓取把「实测 ≤0」写入运行时态 `settings.balanceEmpty`（不落盘）→ agent 环同步门控（与 budgetStop 同款 finishEarly 显式失败闭环：agent.message/end 事件可见、零模型调用）→ 充值后余额回升自动恢复；耗尽发 sticky error 通知。
+- **会话预算硬停**：settings.budgetStop=true 时超 budgetTokens 硬停（此前仅告警）——同步门控置于首个模型调用前（首调也不放过），finishEarly 显式失败。
+- **成本护栏配套**：costPrices 自定义价目（中转站/私有定价档，adapter 与 /cost 同源）；/usage --waterfall [today|7d|30d] 区间瀑布；usage_stats 会话/时间索引（聚合查询不再全表扫描）。
+- **说人话直达**：NL 触发「成本多少/花了多少钱 → /cost」「余额还有多少 → /balance status」；token 用量双向匹配（用了多少 token）。
+- **验证**：全量 2314 通过；cmd-sweep 124/124（+threshold/auto-stop 两形态）；tsc 零错误。

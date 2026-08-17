@@ -125,7 +125,7 @@ Node 22 + TypeScript 严格 ESM · 自研状态引擎（createStore/createAtom/c
 - ✅ 2247 单元/契约/进程级测试全绿（306 测试文件）+ 类型检查零错误
 - ✅ NL 路由契约测试：README「说人话」六行承诺锁定（tests/commands-intent.test.ts）
 - ✅ TUI 冒烟（真实终端 node-pty）：首屏/输入/回复/命令面板/Esc/终止不挂死
-- ✅ 全命令扫描 122/122 可用（scripts/cmd-sweep.mjs 回归工具；注册表 109 条命令全覆盖）
+- ✅ 全命令扫描 124/124 可用（scripts/cmd-sweep.mjs 回归工具；注册表 109 条命令全覆盖）
 - ✅ 概念编译器端到端：「帮我做一个待办系统」→ todo 项目生成 → 启动 → API 增删查 → healthcheck 通过 → evidence.json
 - ✅ GLM-4V 视觉实测（/vision 识别 UI 截图）
 - ✅ 技能注入实测：`/skill:名` 技能正文注入对话；hooks 实测：userPromptSubmit/stop 副作用触发

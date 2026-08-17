@@ -27,7 +27,7 @@ if (strip(out).includes('启动失败')) {
 // ── 分组命令扫描：执行 + 检查「可用」信号 ──
 const BROKEN = /不支持|未实现|unknown rpc|unsupported|not implemented|内部错误|异常：|启动失败/
 const groups = {
-  '对话': ['/help', '/clear', '/undo', '/usage', '/cost', '/cost today', '/quit', '/context', '/resume', '/new', '/title', '/undo list'],
+  '对话': ['/help', '/clear', '/undo', '/usage', '/cost', '/cost today', '/balance threshold 3', '/balance auto-stop off', '/quit', '/context', '/resume', '/new', '/title', '/undo list'],
   '模型': ['/key', '/model', '/status', '/doctor', '/version', '/thinking on', '/thinking off'],
   '记忆': ['/memory', '/hole 测试', '/compact', '/digest', '/curator', '/task show'],
   '计划': ['/plan', '/flow 用户注册流程', '/import'],
