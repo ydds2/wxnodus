@@ -30,6 +30,10 @@ export interface SysPromptOpts {
   locale?: Locale;
   /** dataDir: prompts/system.md replaces the built-in prompt when present (hot reload) */
   dataDir?: string;
+  /** Prefix stabilization for provider prompt caching (audit §13.43): when omitted, current time
+   *  is used; the agent passes a per-session frozen value — a per-turn changing timestamp in the
+   *  first message would make the whole history prefix permanently miss the cache. */
+  now?: Date;
   /** W7/KF-004: persona (settings.personality real consumption — appended as a Persona section) */
   persona?: string;
 }
@@ -58,7 +62,7 @@ function externalPromptOverride(dataDir: string | undefined): string | null {
 }
 
 export function buildSystemPrompt(opts: SysPromptOpts): string {
-  const now = new Date();
+  const now = opts.now ?? new Date();
   const lang = opts.lang === 'en' ? 'en' : 'zh';
   const locale: Locale = opts.locale ?? (lang === 'en' ? 'en' : 'zh-CN');
   const localeTag = lang === 'en' ? 'en-US' : 'zh-CN';

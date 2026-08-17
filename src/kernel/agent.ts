@@ -137,6 +137,9 @@ export function createAgent(opts: AgentOptions) {
   const bus = opts.bus;
   let sessionId = opts.sessionId; // 可变：setSessionId 热切换（多会话）
   let mode = opts.mode ?? 'smart'; // 可变：/perm 切换经 setMode 热更新
+  // 前缀稳定化（DeepSeek 上下文缓存命中，audit §13.43）：系统提示时间戳每回合变化会让
+  // 整个历史前缀缓存永久 miss——按会话冻结首次时间（会话跨天后时间不再刷新，换取缓存命中）。
+  const sessionClocks = new Map<string, Date>();
 
   // 会话 token 预算（Gemini general.budget 对齐）：settings.budgetTokens>0 时，
   // 会话累计用量超预算 → system.notice 告警一次（防刷屏）；0/缺省 = 不设限；
@@ -383,9 +386,10 @@ export function createAgent(opts: AgentOptions) {
     }
     // B2 真实用量统计：异步写库（失败静默，不阻断对话）——model 用实际调用模型（降级后）
     // 端点未上报 usage 时记 0 token 行（调用计数仍诚实；/usage unmeasured 单独口径，成本绝不虚高）
+    // 前缀缓存命中/未命中 token（DeepSeek 自动缓存；端点未上报时 0）
     try {
-      opts.db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`)
-        .run(sessionId, r.model, r.usage?.promptTokens ?? 0, r.usage?.completionTokens ?? 0, Date.now());
+      opts.db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, cache_hit_tokens, cache_miss_tokens, ts) VALUES (?,?,?,?,?,?,?)`)
+        .run(sessionId, r.model, r.usage?.promptTokens ?? 0, r.usage?.completionTokens ?? 0, r.usage?.cacheHitTokens ?? 0, r.usage?.cacheMissTokens ?? 0, Date.now());
     } catch { /* 统计失败不影响对话 */ }
     if (r.usage && (r.usage.promptTokens || r.usage.completionTokens)) {
       // 会话 token 预算（Gemini general.budget 对齐）：settings.budgetTokens>0 时，
@@ -807,6 +811,10 @@ export function createAgent(opts: AgentOptions) {
     // 结构化系统提示（智能度基础）：角色/工作准则/模式语义/输出规范/环境
     // P0-2：自定义 agent（.wxnodus/agents/*.md）经 systemPromptOverride 整体替换
     const { buildSystemPrompt } = await import('./systemPrompt.js');
+    // 前缀稳定化：系统提示时间戳按会话冻结（sessionClocks）——否则每回合时间变化
+    // 使 DeepSeek 上下文缓存从第一段消息起永久 miss。
+    const sessionClock = sessionClocks.get(sessionId) ?? new Date();
+    sessionClocks.set(sessionId, sessionClock);
     msgs.push({ role: 'system', content: opts.systemPromptOverride ?? buildSystemPrompt({
       mode, cwd: process.cwd(), model: modelName, hasImageIn: hasImageIn(modelName), sessionId,
       // 开放兼容：/lang 设置生效（输出语言）+ dataDir 支持外部 prompts/system.md 覆盖
@@ -814,6 +822,7 @@ export function createAgent(opts: AgentOptions) {
       dataDir: opts.dataDir,
       // KF-004：settings.personality 真实消费——persona 段进入系统提示
       persona: (opts.config?.settings as any)?.personality,
+      now: sessionClock,
     }) });
     // 项目规范注入（生态规范文件链）：AGENTS.md/CLAUDE.md/GEMINI.md/.cursorrules 等
     // 首个存在者进系统提示（多工具共存——一套项目规范多 CLI 消费）

@@ -22,6 +22,15 @@ describe('buildSystemPrompt', () => {
     expect(s).toContain('工作目录：/tmp/proj');
     expect(s).toContain('当前模式：smart');
   });
+  it('前缀稳定化：now 参数固定时间戳（同 now 输出逐字一致；不同 now 时间行不同）', () => {
+    const t1 = new Date(2026, 7, 18, 9, 0, 0);
+    const a = buildSystemPrompt({ ...base, now: t1 });
+    const b = buildSystemPrompt({ ...base, now: t1 });
+    expect(a).toBe(b); // 逐字一致——DeepSeek 前缀缓存命中的前提
+    const c = buildSystemPrompt({ ...base, now: new Date(2026, 7, 18, 10, 0, 0) });
+    expect(c).not.toBe(a); // 时间变化确实改变输出（证明参数被真实消费）
+    expect(a).toContain('09:00'); // zh-CN 环境段含时间
+  });
   it('/lang en 时输出规范切英文（环境段同步 en-US 时间格式）', () => {
     const s = buildSystemPrompt({ ...base, lang: 'en' });
     expect(s).toContain('Reply in English');

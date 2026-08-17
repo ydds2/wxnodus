@@ -12,14 +12,25 @@ export function usageRangeSince(range: UsageRange, now: Date = new Date()): numb
   return now.getTime() - days * 86_400_000;
 }
 
-export interface UsageSummary { input: number; output: number; total: number; calls: number; unmeasured: number }
+export interface UsageSummary {
+  input: number;
+  output: number;
+  total: number;
+  calls: number;
+  unmeasured: number;
+  /** 前缀缓存命中 token（DeepSeek 自动缓存；端点未上报时 0） */
+  cacheHit: number;
+  /** 前缀缓存未命中 token（端点未上报时 0） */
+  cacheMiss: number;
+}
 
 export function usageSummary(db: UsageDb, range: UsageRange): UsageSummary {
   const since = usageRangeSince(range);
   const row = db.prepare(
     `SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COUNT(*) c,
-            COALESCE(SUM(CASE WHEN input_tokens=0 AND output_tokens=0 THEN 1 ELSE 0 END),0) u
+            COALESCE(SUM(CASE WHEN input_tokens=0 AND output_tokens=0 THEN 1 ELSE 0 END),0) u,
+            COALESCE(SUM(cache_hit_tokens),0) ch, COALESCE(SUM(cache_miss_tokens),0) cm
      FROM usage_stats WHERE ts >= ?`
-  ).get(since) as { i: number; o: number; c: number; u: number };
-  return { input: row.i, output: row.o, total: row.i + row.o, calls: row.c, unmeasured: row.u };
+  ).get(since) as { i: number; o: number; c: number; u: number; ch: number; cm: number };
+  return { input: row.i, output: row.o, total: row.i + row.o, calls: row.c, unmeasured: row.u, cacheHit: row.ch, cacheMiss: row.cm };
 }

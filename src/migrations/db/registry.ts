@@ -30,9 +30,12 @@ interface ColumnMigrationSpec {
   column: string;
   ddl: string;
   nullable: boolean;
+  /** 目标表（默认 messages；usage_stats 等其它表可覆盖——audit §13.43） */
+  table?: string;
 }
 
 function makeColumnMigration(spec: ColumnMigrationSpec): DbMigration {
+  const table = spec.table ?? 'messages';
   const base = {
     id: spec.id,
     fromVersion: spec.fromVersion,
@@ -41,12 +44,12 @@ function makeColumnMigration(spec: ColumnMigrationSpec): DbMigration {
     behaviorVersion: '1',
     maxRtoMs: 60_000,
     validate(db: InstanceType<typeof Database>): void {
-      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='messages'").get();
-      if (!tables) throw new Error(`DB_MIGRATION_MISSING_TABLE:${spec.id}:messages`);
+      const tables = db.prepare('SELECT name FROM sqlite_master WHERE type=\'table\' AND name=?').get(table);
+      if (!tables) throw new Error(`DB_MIGRATION_MISSING_TABLE:${spec.id}:${table}`);
     },
     expand(db: InstanceType<typeof Database>): void {
       // 幂等：列已存在（新库建表已含）则跳过——同时仍记录 applied（状态已到目标）
-      if (!columnExists(db, 'messages', spec.column)) db.exec(spec.ddl);
+      if (!columnExists(db, table, spec.column)) db.exec(spec.ddl);
     },
     contract(): void {
       // forward-only：不收缩（SQLite 无法安全删除列；N-1 读者窗口关闭在 GA 后由清理任务处理）
@@ -57,10 +60,10 @@ function makeColumnMigration(spec: ColumnMigrationSpec): DbMigration {
       closeCondition: 'GA after Gate C-W0 drill passes',
     },
     reconcile(db: InstanceType<typeof Database>) {
-      const total = (db.prepare('SELECT COUNT(*) AS c FROM messages').get() as { c: number }).c;
+      const total = (db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c;
       const nonNull = spec.nullable
         ? 0
-        : (db.prepare(`SELECT COUNT(*) AS c FROM messages WHERE ${spec.column} IS NOT NULL`).get() as { c: number }).c;
+        : (db.prepare(`SELECT COUNT(*) AS c FROM ${table} WHERE ${spec.column} IS NOT NULL`).get() as { c: number }).c;
       return { reconciledRows: total, mismatches: spec.nullable ? 0 : total - nonNull };
     },
     recovery(): { mode: 'forward-fix'; recoveredRows: number } {
@@ -103,6 +106,24 @@ export function dbMigrations(): DbMigration[] {
     }),
     securityControlPlaneMigration(),
     marketMigration(),
+    makeColumnMigration({
+      id: 'db-v7-add-usage-cache-hit',
+      fromVersion: 6,
+      toVersion: 7,
+      table: 'usage_stats',
+      column: 'cache_hit_tokens',
+      ddl: 'ALTER TABLE usage_stats ADD COLUMN cache_hit_tokens INTEGER NOT NULL DEFAULT 0',
+      nullable: false,
+    }),
+    makeColumnMigration({
+      id: 'db-v8-add-usage-cache-miss',
+      fromVersion: 7,
+      toVersion: 8,
+      table: 'usage_stats',
+      column: 'cache_miss_tokens',
+      ddl: 'ALTER TABLE usage_stats ADD COLUMN cache_miss_tokens INTEGER NOT NULL DEFAULT 0',
+      nullable: false,
+    }),
   ];
 }
 

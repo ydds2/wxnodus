@@ -668,3 +668,11 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **winget/scoop manifest 生成器**：`packaging/{winget,scoop}` 模板 + `scripts/generate-package-manifests.mjs`（npm run gen:manifests）——renderWingetManifest/renderScoopManifest/zipSha256 纯函数；**诚实门禁**：--zip/--url 缺失时输出 `__RELEASE_URL_REQUIRED__`/`__SHA256_REQUIRED__` 占位并警告「不可提交发布」，绝不生成假装可发布的 manifest（本仓库无 git remote，发布 URL 尚不存在——生成器为发布日零改动就绪）。
 - **测试**：update-check 9 例（渠道/根定位/指引五渠道/报告降级/probeGit 不抛）+ package-manifest-gen 6 例（占位门禁/JSON 合法性/sha256 64hex）——15/15 绿。
 - **边界声明**：winget/scoop manifest 未提交 winget-pkgs/scoop bucket（无发布 URL）；卸载命令（opencode uninstall 模式）留待有真实安装面后补。
+
+### 13.43 deepseek 前缀缓存稳定化 + usage 缓存可观测 + handlersExt 拆分第 1 块轮（2026-08-18 /goal 自主完善——深评 §8 序 5「prompt caching 降费」落地）
+
+- **根因定位（缓存永久 miss 的主犯）**：systemPrompt.ts 环境段 `new Date()` 每回合变化——系统提示是第 0 段消息，时间戳一变整个历史前缀缓存从第一段起永久 miss（DeepSeek 上下文缓存为自动前缀精确匹配，官方 docs 核验：无启用字段、命中回 prompt_cache_hit/miss_tokens）。
+- **前缀稳定化**：buildSystemPrompt 新增 `now?: Date`（缺省保持旧行为）；agent 闭包新增 `sessionClocks: Map<sessionId, Date>`——按会话冻结首次时间传入（跨天后时间不刷新，换取缓存命中；压缩/规范文件等静态段本就先于历史，顺序已最优，未动）。
+- **usage 缓存可观测**：llmStream 提取 `prompt_cache_hit_tokens/prompt_cache_miss_tokens`（离线通道归零）；usage_stats 新增 cache_hit_tokens/cache_miss_tokens 双列——迁移 v7/v8（makeColumnMigration 工厂表参数化 table 字段，validate/reconcile 泛化；SCHEMA_VERSION 6→8）；agent INSERT 7 列；usageSummary 聚合 cacheHit/cacheMiss；/usage range 展示「前缀缓存命中 X token（命中率 Y%）」（0 时诚实不显示）。
+- **契约测试**：systemPrompt now 逐字一致+差异证明 1 例；llmStream 缓存字段提取 1 例+既有 usage 断言同步；usage 缓存聚合 1 例；db-migrations 版本链 6→8。
+- **handlersExt 巨文件拆分第 1 块**：确定性工具类 11 命令（/calc /hash /base64 /uuid /rand /json /timer /sql /fs /units /csv，174 行）+ safeEval + fsLsRows/fsReadRows/sqlTableRows 纯函数迁入 `src/commands/ext/deterministicTools.ts`（registerDeterministicTools(bus, ctx)）；handlersExt 以 re-export 保持 tests/commands.test.ts 导入兼容——**3912 → 3718 行（−194）**，零行为变化（迁移纯搬移，commands 契约测试全绿）。过程自伤修复：ext 模块注释含 `+-*/()` 使 `*/` 提前终结块注释（TS 解析错误）→ 注释改「四则运算符」。

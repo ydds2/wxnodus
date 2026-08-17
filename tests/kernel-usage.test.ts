@@ -25,7 +25,7 @@ describe('usage', () => {
       ins.run('s2', 'm2', 300, 150, Date.now());
       ins.run('s3', 'm3', 1000, 500, Date.now() - 40 * 86_400_000); // 40 天前→排除
       const s = usageSummary(db, '30d');
-      expect(s).toEqual({ input: 400, output: 200, total: 600, calls: 2, unmeasured: 0 });
+      expect(s).toEqual({ input: 400, output: 200, total: 600, calls: 2, unmeasured: 0, cacheHit: 0, cacheMiss: 0 });
       db.close();
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -40,6 +40,19 @@ describe('usage', () => {
       expect(s.calls).toBe(2); // 调用计数诚实（含未上报）
       expect(s.unmeasured).toBe(1);
       expect(s.total).toBe(150); // token 只统计已上报——绝不虚高
+      db.close();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('usageSummary: 前缀缓存命中/未命中聚合（端点上报时；未上报列默认 0）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wxn-usage-'));
+    try {
+      const db = openDB(dir);
+      const ins = db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, cache_hit_tokens, cache_miss_tokens, ts) VALUES (?,?,?,?,?,?,?)`);
+      ins.run('s1', 'm1', 1000, 50, 800, 200, Date.now()); // 命中 800/未命中 200
+      ins.run('s1', 'm1', 500, 25, 0, 0, Date.now()); // 未上报缓存字段 → 0
+      const s = usageSummary(db, 'today');
+      expect(s.cacheHit).toBe(800);
+      expect(s.cacheMiss).toBe(200);
       db.close();
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });

@@ -43,7 +43,19 @@ describe('callLlmStream — SSE 解析', () => {
     if (!r.ok) return
     expect(r.content).toBe('你好')
     expect(tokens.join('')).toBe('你好')
-    expect(r.usage).toEqual({ promptTokens: 10, completionTokens: 2 })
+    expect(r.usage).toEqual({ promptTokens: 10, completionTokens: 2, cacheHitTokens: 0, cacheMissTokens: 0 })
+  })
+
+  it('usage 含前缀缓存字段（prompt_cache_hit/miss_tokens）→ 原样提取', async () => {
+    stubFetch([
+      'data: {"choices":[{"delta":{"content":"好"}}]}\n',
+      'data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":1000,"completion_tokens":5,"prompt_cache_hit_tokens":800,"prompt_cache_miss_tokens":200}}\n',
+      'data: [DONE]\n',
+    ])
+    const r = await callLlmStream({ ...deps, messages: [MSG] })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.usage).toEqual({ promptTokens: 1000, completionTokens: 5, cacheHitTokens: 800, cacheMissTokens: 200 })
   })
 
   it('工具调用流：tool_calls 按 index 累积', async () => {

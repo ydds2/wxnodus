@@ -19,7 +19,7 @@ const requireCjs = createRequire(import.meta.url);
 
 export type Db = InstanceType<typeof Database>;
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 8; // v7/v8: usage_stats 前缀缓存命中/未命中列（audit §13.43）
 
 export { bigramZh };
 
@@ -111,6 +111,8 @@ export function openDB(dataDir: string): Db {
       model TEXT NOT NULL DEFAULT '',
       input_tokens INTEGER NOT NULL DEFAULT 0,
       output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_hit_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_miss_tokens INTEGER NOT NULL DEFAULT 0,
       ts INTEGER NOT NULL
     );
     -- /cost /usage /status 的会话与区间聚合查询索引（长期高频路径——此前全表扫描）
