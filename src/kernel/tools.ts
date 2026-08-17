@@ -1036,7 +1036,7 @@ export function coreTools(): Record<string, ToolDef> {
         const enc = (settings as any)?.apiKeyEnc as string | undefined ?? null;
         const vr = await describeImageStatus(file, enc, '描述当前屏幕内容：界面/窗口/按钮与输入框的名称与大致位置（用中文），以及屏幕上的可见文字。', settings);
         const text = vr.ok ? (vr.text ?? '') : `（视觉不可用：${vr.reason}——已截图 ${file}，可用 /img 复查或 computer_uia_tree 读元素结构）`;
-        return `截图已保存：${file}（${r.shot.width}x${r.shot.height}）\n${text.slice(0, 1500)}`;
+        return `截图已保存：${file}（${r.shot.width}x${r.shot.height}）${vr.cached ? '\n（同屏缓存：10s 内相同画面未重新识别）' : ''}\n${text.slice(0, 1500)}`;
       } catch (e: any) { return `观察失败：${String(e?.message ?? e).slice(0, 120)}`; }
     },
   };

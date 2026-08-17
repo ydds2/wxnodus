@@ -1959,7 +1959,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
       const vr = await describeImageStatus(out, enc ?? null, '描述当前屏幕内容：界面/窗口/按钮与输入框的名称与大致位置（用中文）。', settings);
       return lines(' Computer Use 观察 ', [
-        ` 截图 → ${out}`,
+        ` 截图 → ${out}${vr.cached ? '（同屏缓存：10s 内相同画面未重新识别）' : ''}`,
         vr.ok ? ` ${(vr.text ?? '').slice(0, 1200)}` : ` ⚠ 视觉不可用：${vr.reason}（可用 /computer uia tree 读元素结构）`,
       ]);
     }
