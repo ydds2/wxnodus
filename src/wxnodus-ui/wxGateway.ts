@@ -2128,6 +2128,23 @@ export class GatewayClient extends EventEmitter {
       byProvider.get(m.provider)!.models.push(m.modelId)
     }
 
+    // 接入层开放闭环：档案（/profile）作为选择器中的独立 provider 分组——
+    // 选中档案模型经 /model 直达（handlers.ts 命中档案 → 切 activeProvider + baseURL）
+    const providers = (Array.isArray((this.kernel.settings as any).providers) ? (this.kernel.settings as any).providers : []) as Array<Record<string, any>>
+    const activeProfile = (this.kernel.settings as any).activeProvider
+    for (const p of providers) {
+      const slug = `profile:${p.id}`
+      byProvider.set(slug, {
+        name: p.name ?? p.id,
+        slug,
+        models: Array.isArray(p.models) ? [...new Set(p.models as string[])] : [],
+        authenticated: Boolean(p.key) || authenticated,
+        auth_type: 'api_key',
+        key_env: `WXNODUS_${String(p.id).toUpperCase()}_KEY`,
+        ...(p.id === activeProfile ? { active: true } : {}),
+      })
+    }
+
     return {
       model: this.kernel.settings.model ?? '',
       providers: [...byProvider.values()].map((p) => ({

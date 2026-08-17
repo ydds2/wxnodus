@@ -371,9 +371,19 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const s = clean.toLowerCase();
       const hit = MODEL_CATALOG.find(m => m.name.toLowerCase() === s || m.modelId.toLowerCase() === s);
       if (!hit) {
+        // 接入层开放闭环：档案模型可经 /model 直达（选择器同链路）——命中即切换
+        // activeProvider + baseURL（resolveModelForChat 任意模型名放行的对应 UI 面）
+        const providers = (Array.isArray(ctx.config.getKey('settings', 'providers')) ? ctx.config.getKey('settings', 'providers') : []) as Array<Record<string, any>>;
+        const pHit = providers.find(p => (p.models ?? []).some((mid: string) => String(mid).toLowerCase() === s));
+        if (pHit) {
+          ctx.config.setKey('settings', 'activeProvider', pHit.id);
+          ctx.setModel(clean, pHit.baseURL);
+          return `已切换档案模型：${clean}（档案 ${pHit.id} · ${pHit.name}）`;
+        }
         const filtered = filterModels(q);
         const list = filtered.length ? filtered : MODEL_CATALOG;
-        return lines(' 模型目录 ', [`未找到「${q}」${filtered.length ? '，相近模型：' : '，可用模型：'}`, ...list.map(m => ` ${m.name}（${m.provider}）${capabilityBadges(m.capabilities)}`)]);
+        const profileRows = providers.flatMap(p => (p.models ?? []).map((mid: string) => ` ${mid}（档案 ${p.id} · ${p.name}）`));
+        return lines(' 模型目录 ', [`未找到「${q}」${filtered.length || profileRows.length ? '，相近模型：' : '，可用模型：'}`, ...list.map(m => ` ${m.name}（${m.provider}）${capabilityBadges(m.capabilities)}`), ...profileRows.slice(0, 8)]);
       }
       ctx.setModel(hit.modelId, hit.baseURL);
       return `已切换模型：${hit.name}（${hit.provider}）${capabilityBadges(hit.capabilities)}`;
