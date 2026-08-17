@@ -71,4 +71,47 @@ describe('/model 档案模型直达（接入层 UI 闭环）', () => {
       closeDB(db);
     }
   });
+
+  it('/status 一览档案/余额监控/成本（同源数据）', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-prof-'));
+    dirs.push(d);
+    const db = openDB(d);
+    db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, ts) VALUES (?,?,?,?,?)`).run('s1', 'deepseek-chat', 1_000_000, 1_000_000, Date.now());
+    const settings: Record<string, any> = {
+      providers: [{ id: 'relay1', name: '中转站', baseURL: 'https://r.example.com/v1', models: ['custom-a'], balanceUrl: 'https://r.example.com/balance' }],
+      activeProvider: 'relay1',
+      balanceMonitor: { enabled: true },
+      model: 'custom-a',
+      mode: 'smart',
+    };
+    const ctx = {
+      dataDir: d,
+      cwd: process.cwd(),
+      db,
+      mem: createMemory(db),
+      bus: createEventBus(d),
+      config: {
+        get: () => settings,
+        getKey: (_s: string, k: string) => settings[k],
+        setKey: (_s: string, k: string, v: unknown) => { settings[k] = v; },
+      },
+      agent: { getSessionId: () => 's1' },
+      getModel: () => 'custom-a',
+      getMode: () => 'smart',
+      setModel: () => {},
+      openModelPicker: () => {},
+    } as any;
+    const bus = createCommandBus();
+    registerCoreHandlers(bus, ctx as never);
+    try {
+      const r = await bus.execute('/status');
+      expect(r.ok).toBe(true);
+      const out = String(r.output);
+      expect(out).toContain('relay1（中转站）');
+      expect(out).toContain('已配置（状态栏 💰）');
+      expect(out).toContain('$0.7000');
+    } finally {
+      closeDB(db);
+    }
+  });
 });

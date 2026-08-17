@@ -11,6 +11,7 @@ import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias } from '.
 import { capabilityBadges, decryptKey, detectProvider, encryptKey, filterModels, maskKey, MODEL_CATALOG, resolveApiKey } from '../kernel/providers.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { profileHealth } from '../kernel/profiles.js';
+import { costSummary } from '../kernel/cost.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { makeSpec } from '../build/spec.js';
 import { makePlan, topoSort } from '../build/plan.js';
@@ -178,18 +179,39 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/status', () => {
     const u = { model: ctx.getModel(), mode: ctx.getMode(), cwd: ctx.cwd };
-    const sec = ((ctx.config.get('settings') as any)?.security ?? {}) as Record<string, boolean>;
-    const autoReview = (ctx.config.get('settings') as any)?.autoReview === true;
+    const s = (ctx.config.get('settings') ?? {}) as Record<string, any>;
+    const sec = (s.security ?? {}) as Record<string, boolean>;
+    const autoReview = s.autoReview === true;
+    // 接入层/余额/成本一览（/cost 与状态栏同源数据）
+    const providers = (Array.isArray(s.providers) ? s.providers : []) as Array<Record<string, any>>;
+    const activeP = providers.find(p => p.id === s.activeProvider);
+    const bm = (s.balanceMonitor ?? {}) as Record<string, any>;
+    const sid = ctx.agent?.getSessionId?.() ?? 'default';
+    let costLine = '暂无 API 用量（真实对话后 /cost 估算）';
+    try {
+      const rows = ctx.db.prepare(
+        `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? GROUP BY model`
+      ).all(sid) as Array<{ model: string; input: number; output: number }>;
+      if (rows.length) {
+        const cs = costSummary(rows);
+        costLine = cs.unknownCount === 0
+          ? `$${cs.totalUsd.toFixed(4)}（估算，本会话）`
+          : `$${cs.totalUsd.toFixed(4)} 起（${cs.unknownCount} 个模型未收录定价，本会话）`;
+      }
+    } catch { /* 成本统计失败静默 */ }
     return lines(' 状态 ', [
       ` 模型：${c(u.model || '未配置（/key set <密钥> 配置）', u.model ? '35' : '33')}`,
       ` 模式：${c(u.mode, '36')}`,
       ` 目录：${c(u.cwd, '36')}`,
       ` 命令：${c(`${SLASH.length} 个`, '36')}`,
+      ` 档案：${activeP ? `${activeP.id}（${activeP.name}）` : providers.length ? '未切换（/profile use）' : '未配置（/profile add 接入任意端点）'}`,
+      ` 余额监控：${bm.enabled === false ? '已关闭（/balance on）' : bm.url || activeP?.balanceUrl ? '已配置（状态栏 💰）' : '未配置（/balance set <余额URL>）'}`,
+      ` 成本：${costLine}（/cost 看区间）`,
       ` 智能：${[
         autoReview ? 'AI 预审' : null,
         sec.sudoInjection ? 'sudo 通道' : null,
         sec.secretInjection ? 'secret 通道' : null,
-        (ctx.config.get('settings') as any)?.lowRiskAutoApprove !== false ? '低危放行' : null,
+        s.lowRiskAutoApprove !== false ? '低危放行' : null,
       ].filter(Boolean).join(' / ') || '标准'}`,
     ]);
   });
