@@ -27,11 +27,6 @@ jobs:
       - name: Install root dependencies
         run: npm install
 
-      # ── TEMP DIAG（插件动态 import 取证，定位后删除）─────────────────────
-      - name: TEMP-DIAG plugin dynamic import
-        run: node -e "const f=require('fs'),p=require('path'),o=require('os'),u=require('url');const d=f.mkdtempSync(p.join(o.tmpdir(),'wxdiag-'));f.mkdirSync(p.join(d,'alpha'),{recursive:true});f.writeFileSync(p.join(d,'alpha','index.js'),'export const tools={alpha_hello:async()=>1};');(async()=>{for(let i=0;i<3;i++){try{const m=await import(u.pathToFileURL(p.join(d,'alpha','index.js')).href+'?t='+i);console.log('DIAG_IMPORT_OK try='+i,Object.keys(m));return;}catch(e){console.log('DIAG_IMPORT_FAIL try='+i,e.code,e.message);}}})().finally(()=>setTimeout(()=>{},2000))" && exit 0
-      # ── /TEMP DIAG ─────────────────────────────────────────────────────
-
       - name: Full local gate (npm run ci)
         run: npm run ci
 

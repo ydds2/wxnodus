@@ -107,7 +107,9 @@ export async function loadPlugin(dir: string, cwd: string, dataDir: string, extr
 
   let mod: any = {};
   try {
-    mod = await import(pathToFileURL(indexFile).href + `?t=${Date.now()}`); // 时间戳防缓存
+    // @vite-ignore：运行时动态 file URL——禁止 vitest/vite 模块运行器解析转换
+    // （本地放行但 CI runner 上转换失败致 import 抛错，2026-08-18 六轮实测 + 纯 node 对照取证）
+    mod = await import(/* @vite-ignore */ pathToFileURL(indexFile).href + `?t=${Date.now()}`); // 时间戳防缓存
   } catch (e: any) {
     // 模块加载失败：返回空工具（/plugin list 可见状态）
     return { manifest, dir, tools: {}, commands: {} };
