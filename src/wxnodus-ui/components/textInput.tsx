@@ -6,7 +6,7 @@ import { setInputSelection } from '../runtime/selectionStore.js'
 import { readClipboardText, writeClipboardText } from '../lib/clipboard.js'
 import { highlightInputAnsi } from '../lib/inputHighlight.js'
 import { resolveEditorCommand, runExternalEditor } from '../lib/editorLaunch.js'
-import { initialVimState, vimHandleKey } from '../lib/vimCore.js'
+import { initialVimState, vimHandleKey, type VimMode } from '../lib/vimCore.js'
 import { cursorLayout, offsetFromPosition } from '../lib/inputMetrics.js'
 import {
   DEFAULT_VOICE_RECORD_KEY,
@@ -524,7 +524,7 @@ export function TextInput({
   const vimRegRef = useRef('')
   const vimUndoRef = useRef<{ text: string; cursor: number }[]>([])
   const vimPendingReadRef = useRef<null | 'replace' | 'find'>(null)
-  const [vimModeUi, setVimModeUi] = useState<'normal' | 'insert'>('insert')
+  const [vimModeUi, setVimModeUi] = useState<VimMode>('insert')
 
   const cbChange = useRef(onChange)
   const cbSubmit = useRef(onSubmit)
@@ -594,7 +594,7 @@ export function TextInput({
     // 内联 ANSI 着色；仅无光标装饰的路径应用（选区/合成光标路径保持既有视觉契约）
     const displayHi = highlightInputAnsi(display)
     // 波 3 ②：NORMAL 徽标（gemini Composer.tsx:158-165 对标——normal 模式前缀暗色标记）
-    const normalPrefix = vimEnabled && vimModeUi === 'normal' ? dim('-- NORMAL -- ') : ''
+    const normalPrefix = vimEnabled && vimModeUi !== 'insert' ? dim(vimModeUi === 'visual' ? '-- VISUAL -- ' : '-- NORMAL -- ') : ''
     if (!focus) {
       return displayHi || dim(placeholder)
     }
@@ -1004,7 +1004,7 @@ export function TextInput({
       }
 
       // 波 3 ②：vim 模态按键拦截（vimEnabled 且 normal 模式全拦截；insert 模式仅截 Esc 回 normal）
-      if (vimEnabled && (vimRef.current.mode === 'normal' || k.escape)) {
+      if (vimEnabled && (vimRef.current.mode !== 'insert' || k.escape)) {
         flushKeyBurst()
 
         if (vimRef.current.mode === 'insert') {

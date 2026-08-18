@@ -5,7 +5,7 @@
 // gg G / f F t T / x X r ~ / dd cc yy D C Y / d c y+移动 / p P / u / `.` 重复 / 数字前缀；
 // 无 VISUAL、无 / 搜索、无 Ctrl-R redo（gemini vim.ts 同样没有——同档宣称）。
 
-export type VimMode = 'normal' | 'insert'
+export type VimMode = 'normal' | 'insert' | 'visual'
 
 export interface VimCoreState {
   mode: VimMode
@@ -17,6 +17,10 @@ export interface VimCoreState {
   lastCommand: { keys: string[]; count: number } | null
   /** 上次 Esc 时间（双击 Esc 清空检测 500ms，gemini :686-700） */
   lastEscTs: number
+  /** VISUAL 选区锚点（进入 visual 时的光标；-1=无选区） */
+  visualAnchor: number
+  /** 选区种类：char（v）｜line（V） */
+  visualKind: 'char' | 'line' | null
 }
 
 /** 文档模型：输入框文本 + 光标（char offset，0..text.length；\n 合法——多行输入） */
@@ -48,6 +52,8 @@ export const initialVimState = (): VimCoreState => ({
   pendingOp: null,
   lastCommand: null,
   lastEscTs: 0,
+  visualAnchor: -1,
+  visualKind: null,
 })
 
 const DOUBLE_ESC_MS = 500
@@ -316,8 +322,8 @@ export function vimHandleKey(
     return base({ state: { ...prev, count: prev.count * 10 } })
   }
 
-  // Esc：双击 500ms 内清空（gemini :686-700）
-  if (key === 'Escape' || key === '<esc>') {
+  // Esc：双击 500ms 内清空（gemini :686-700）——仅 normal；visual 的 Esc 由下方 VISUAL 块处理
+  if (prev.mode === 'normal' && (key === 'Escape' || key === '<esc>')) {
     if (prev.lastEscTs > 0 && now - prev.lastEscTs <= DOUBLE_ESC_MS) {
       return base({
         state: { ...prev, count: 0, pendingOp: null, lastEscTs: 0 },
@@ -394,6 +400,59 @@ export function vimHandleKey(
       : base()
   }
 
+  // ── VISUAL 模式（P3 增量：v=字符选区 / V=行选区；d/x/y/c/p/P 直接作用选区；
+  //  移动扩展选区；Esc 回 normal——codex textarea/vim.rs 对标，gemini vim.ts 无此模式）──
+  if (prev.mode === 'visual') {
+    if (key === 'Escape' || key === '<esc>') {
+      return base({ state: { ...prev, mode: 'normal', visualAnchor: -1, visualKind: null, count: 0 } })
+    }
+    if (/^[1-9]$/.test(key)) {
+      return base({ state: { ...prev, count: prev.count * 10 + Number(key) } })
+    }
+    const anchor = prev.visualAnchor >= 0 ? prev.visualAnchor : docIn.cursor
+    const selRange = (cur: number): [number, number] => {
+      const a = Math.min(anchor, cur)
+      const b = Math.max(anchor, cur)
+      if (prev.visualKind === 'line') {
+        const r1 = rowStart(docIn.text, cursorRow(docIn.text, a))
+        const r2s = rowStart(docIn.text, cursorRow(docIn.text, b))
+        const r2e = r2s + lineLength(docIn.text, r2s)
+        return [r1, r2e + (r2e < docIn.text.length ? 1 : 0)]
+      }
+      return [a, Math.min(docIn.text.length, b + 1)]
+    }
+    const applySel = (kind: 'd' | 'y' | 'c'): VimOutcome => {
+      const [from, to] = selRange(docIn.cursor)
+      const e = kind === 'y'
+        ? { text: docIn.text, cursor: from, yank: docIn.text.slice(from, to) }
+        : deleteRange(docIn, from, to)
+      const nextMode: VimMode = kind === 'c' ? 'insert' : 'normal'
+      return base({
+        state: { ...prev, mode: nextMode, count: 0, pendingOp: null, visualAnchor: -1, visualKind: null },
+        doc: { text: e.text, cursor: from },
+        yanked: e.yank,
+        undoable: e.text !== docIn.text || from !== docIn.cursor,
+        enteredInsert: kind === 'c',
+      })
+    }
+    if (key === 'd' || key === 'x') return applySel('d')
+    if (key === 'y') return applySel('y')
+    if (key === 'c') return applySel('c')
+    if (key === 'p' || key === 'P') {
+      const [from, to] = selRange(docIn.cursor)
+      if (!register) return base({ state: { ...prev, count: 0 } })
+      const text = docIn.text.slice(0, from) + register + docIn.text.slice(to)
+      return base({
+        state: { ...prev, mode: 'normal', count: 0, visualAnchor: -1, visualKind: null },
+        doc: { text, cursor: from },
+        undoable: true,
+      })
+    }
+    // 移动键扩展选区：applyMotion 只动光标，state 展开保留 visualAnchor/visualKind（选区扩展语义）
+    if (motionKeys[key]) return applyMotion(motionKeys[key]!())
+    return base({ state: { ...prev } })
+  }
+
   // ── 操作符挂起/行内双写（d/c/y；dd/cc/yy——双写判定必须先于挂起）──
   if (key === 'd' || key === 'c' || key === 'y') {
     if (prev.pendingOp === key) {
@@ -424,7 +483,6 @@ export function vimHandleKey(
 
   // ── 纯移动 ──
   if (motionKeys[key]) return applyMotion(motionKeys[key]!())
-
   // r 预读（hook 编 <replace:ch>）：替换 count 字符，光标不动
   const rm = /^<replace:(.)>$/.exec(key)
   if (rm) return applyEdit(editReplaceChar(docIn, rm[1]!, count), false, ['<replace:' + rm[1] + '>'])
@@ -440,6 +498,8 @@ export function vimHandleKey(
     case 'p': return applyEdit(pasteAfter(docIn, register), false, ['p'])
     case 'P': return applyEdit(pasteBefore(docIn, register), false, ['P'])
     case 'u': return base({ state: { ...prev, count: 0, pendingOp: null }, undo: true })
+    case 'v': return base({ state: { ...prev, mode: 'visual', count: 0, pendingOp: null, visualAnchor: docIn.cursor, visualKind: 'char' } })
+    case 'V': return base({ state: { ...prev, mode: 'visual', count: 0, pendingOp: null, visualAnchor: docIn.cursor, visualKind: 'line' } })
     case 'i': return base({ state: { ...prev, mode: 'insert', count: 0, pendingOp: null }, enteredInsert: true })
     case 'a': return base({
       state: { ...prev, mode: 'insert', count: 0, pendingOp: null },
