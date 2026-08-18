@@ -1011,3 +1011,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 5. **验证**：tsc 零错误；vim 四套件 41 用例绿；全量套件见尾注；本地九命令门禁全绿；远程 CI 见尾注。
 
 **尾注（2026-08-18）**：远程 CI **workflow #32194714273 全绿**（wall 9m35s）——同轮覆盖反引号对象 + §9.20 七评 + projectConfig mtime 缓存 race 修复（#32193601438 shard2 红暴露：CI 快盘两次写入同毫秒 mtimeMs 不变 → 陈旧缓存，弃缓存改直读后绿）。push 经全局代理（127.0.0.1:7897），`git ls-remote` 验证远端 = 本地 HEAD 1c74c05。
+
+
+### 13.79 /market 开放生态目录聚合（2026-08-18：S-02 市场消费侧闭环——兼容开源平台与全网资源）
+
+用户提议「市场能不能兼容开源平台和全网资源」——采纳并落地：不建自托管中央目录，直接把开放生态当目录：
+
+1. **双源搜索**：npm registry（`/-/v1/search`，类型关键字并入查询）+ GitHub topic 搜索（`api.github.com/search/repositories`，mcp-server/claude-skills/claude-plugin 主题映射）——离线/限流诚实报错。
+2. **安装路由**：mcp → 项目 `.mcp.json`（`npx -y <pkg>` 命令形式，与既有 Claude Code 生态兼容的 mcp.ts 同格式，幂等不重复）；skill → `data/skills/<name>/SKILL.md`（tar 解包 + SKILL.md frontmatter name 校验 + 原子落位 + /reload-skills 即刻可用）；plugin → 既有 /plugin install 管线（SSRF+校验+staging）。
+3. **安全**：固定源域名白名单（registry.npmjs.org/api.github.com/codeload 等六域）+ checkUrlSafety 逐跳校验 + tarball 域复核——非白名单诱导外联拒绝。
+4. **工程**：fetchImpl/safety 注入面（注册表响应 mock 可测）；GNU tar 冒号路径坑（C:/… 被当远程主机）——cwd+相对文件名规避；`/market` 入 registry + 分级表（search safe / install confirm）。
+5. **评分口径（诚实）**：S-02 能力面闭环，但 ⑧ 6→7 计分仍受 5→6（wxnodus 自身分发）前置约束——931 不变，公开决策解锁后逐档兑现。
+6. **验证**：本地九命令门禁全绿（全量 375 文件/2762 用例）；远程 CI 见尾注（watch 中）。
