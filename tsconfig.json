@@ -29,6 +29,7 @@
     "node_modules",
     "dist",
     "tests",
-    "src/**/*.test.ts"
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
   ]
 }
