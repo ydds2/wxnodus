@@ -6,7 +6,8 @@
 // P3 增量（2026-08-18，audit §13.76）：VISUAL 字符/行选区（v/V + d/x/y/c/p/P 作用选区）——
 // **六家皆无**（gemini vim.ts 1536 行 grep 零命中；codex vim.rs VimMode 仅 Normal/Insert :7-13，
 // 有括号栈文本对象 :229-264 但无 VISUAL）——wxnodus 独有。
-// 仍无：/ 搜索、Ctrl-R redo、文本对象 di(/ci(（codex 独有，P3 清单）。
+// P3 评估轮增量：文本对象 di(/da(/ciw/yi{/vi( 等（codex 括号栈深度计数对标，i/a 两键状态机）。
+// 仍无：/ 搜索、Ctrl-R redo（P3 清单）。
 
 export type VimMode = 'normal' | 'insert' | 'visual'
 
@@ -24,6 +25,8 @@ export interface VimCoreState {
   visualAnchor: number
   /** 选区种类：char（v）｜line（V） */
   visualKind: 'char' | 'line' | null
+  /** 文本对象前缀挂起（di(/da"/ciw/yi{ 的 i/a——codex vim.rs:229-264 括号栈对标，P3 评估轮） */
+  pendingIo: null | 'i' | 'a'
 }
 
 /** 文档模型：输入框文本 + 光标（char offset，0..text.length；\n 合法——多行输入） */
@@ -57,6 +60,7 @@ export const initialVimState = (): VimCoreState => ({
   lastEscTs: 0,
   visualAnchor: -1,
   visualKind: null,
+  pendingIo: null,
 })
 
 const DOUBLE_ESC_MS = 500
@@ -191,14 +195,113 @@ const motionFind = (text: string, cursor: number, ch: string, kind: 'f' | 'F' | 
   return clampCursor(text, rs + Math.max(0, landed))
 }
 
+const BRACKET_PAIRS: Record<string, string> = { '(': ')', '[': ']', '{': '}', '<': '>' }
+const CLOSERS = new Set(Object.values(BRACKET_PAIRS))
+
+/** 文本对象区间（i=内 / a=含定界符）——codex vim.rs:229-264 括号栈对标（配对深度计数）
+ *  括号 ()[]{ }<>（开/闭括号皆可作对象字符）、引号 '"、词 w/W。找不到 → null */
+export const textObjectRange = (text: string, cursor: number, io: 'i' | 'a', ch: string): [number, number] | null => {
+  const c = clampCursor(text, cursor)
+  const n = text.length
+  if (ch === 'w' || ch === 'W') {
+    const fn = ch === 'W' ? isBigWordChar : isWordChar
+    // 光标在空白上：iw/aw 选空白串本身（vim 语义——空白即"词"），不跳下一词
+    if (/\s/.test(text[c] ?? '')) {
+      let s = c
+      while (s > 0 && /\s/.test(text[s - 1]!)) s--
+      let e = c
+      while (e < n && /\s/.test(text[e]!)) e++
+      return [s, e]
+    }
+    let s = c
+    while (s > 0 && fn(text[s - 1]!)) s--
+    let e = c
+    while (e < n && fn(text[e]!)) e++
+    if (s === e) {
+      // 光标不在词字符上（标点等）：向右取下一词
+      let i = c
+      while (i < n && !fn(text[i]!)) i++
+      if (i >= n) return null
+      s = i; e = i
+      while (e < n && fn(text[e]!)) e++
+    }
+    if (io === 'a') {
+      let ee = e
+      while (ee < n && /\s/.test(text[ee]!)) ee++
+      e = ee > e ? ee : e // aw：词 + 尾随空白；无空白退化为 iw
+    }
+    return [s, e]
+  }
+  if (ch === "'" || ch === '"') {
+    const row = cursorRow(text, c)
+    const rs = rowStart(text, row)
+    const lineEnd = rs + lineLength(text, rs)
+    const open = text.indexOf(ch, rs)
+    if (open < 0 || open > lineEnd) return null
+    const close = text.indexOf(ch, open + 1)
+    if (close < 0 || close > lineEnd) return null
+    if (c < open || c > close) return null
+    return io === 'i' ? [open + 1, close] : [open, close + 1]
+  }
+  if (ch in BRACKET_PAIRS) {
+    // 开括号对象：先看光标正下方，再向左扫找最近未闭合的开括号（深度=右侧已见闭括号数）
+    let openIdx = text[c] === ch ? c : -1
+    if (openIdx < 0) {
+      let depth = 0
+      for (let i = c - 1; i >= 0; i--) {
+        const t = text[i]!
+        if (t === BRACKET_PAIRS[ch]) depth++
+        else if (t === ch) {
+          if (depth === 0) { openIdx = i; break }
+          depth--
+        }
+      }
+    }
+    if (openIdx < 0) return null
+    let d = 0
+    for (let i = openIdx + 1; i < n; i++) {
+      const t = text[i]!
+      if (t === ch) d++
+      else if (t === BRACKET_PAIRS[ch]) {
+        if (d === 0) return io === 'i' ? [openIdx + 1, i] : [openIdx, i + 1]
+        d--
+      }
+    }
+    return null
+  }
+  if (CLOSERS.has(ch)) {
+    // 闭括号对象：向左找对应开括号（深度计数）
+    let d = 0
+    let openIdx = -1
+    for (let i = c - 1; i >= 0; i--) {
+      const t = text[i]!
+      if (t === ch) d++
+      else if (t in BRACKET_PAIRS && BRACKET_PAIRS[t] === ch) {
+        if (d === 0) { openIdx = i; break }
+        d--
+      }
+    }
+    if (openIdx < 0) return null
+    let depth = 0
+    for (let i = openIdx + 1; i < n; i++) {
+      const t = text[i]!
+      if (t in BRACKET_PAIRS && BRACKET_PAIRS[t] === ch) depth++
+      else if (t === ch) {
+        if (depth === 0) return io === 'i' ? [openIdx + 1, i] : [openIdx, i + 1]
+        depth--
+      }
+    }
+    return null
+  }
+  return null
+}
+
 // ── 编辑（纯变换；yank 寄存器经 outcome 传出）──────────────────
 interface Edit {
   text: string
   cursor: number
   yank: string | null
-}
-
-const replaceRange = (doc: VimDoc, from: number, to: number, replacement: string, cursorAfter?: number): Edit => {
+}const replaceRange = (doc: VimDoc, from: number, to: number, replacement: string, cursorAfter?: number): Edit => {
   const a = Math.min(from, to)
   const b = Math.max(from, to)
   const text = doc.text.slice(0, a) + replacement + doc.text.slice(b)
@@ -345,6 +448,7 @@ export function vimHandleKey(
         ...prev,
         count: 0,
         pendingOp: null,
+        pendingIo: null,
         mode: enterInsert ? 'insert' : 'normal',
         lastCommand: repeatable ? { keys: [...countKeys, ...repeatable], count } : prev.lastCommand,
       },
@@ -451,6 +555,19 @@ export function vimHandleKey(
         undoable: true,
       })
     }
+    // 文本对象选区（vi(/va"/viw…）：i/a 前缀挂起，下一键求区间→选区直接覆盖对象
+    if (key === 'i' || key === 'a') {
+      return base({ state: { ...prev, pendingIo: key } })
+    }
+    if (prev.pendingIo) {
+      const range = textObjectRange(docIn.text, docIn.cursor, prev.pendingIo, key)
+      if (!range) return base({ state: { ...prev, pendingIo: null, count: 0 } })
+      const [from, to] = range
+      return base({
+        state: { ...prev, pendingIo: null, visualAnchor: from, count: 0 },
+        doc: { text: docIn.text, cursor: Math.max(from, Math.min(docIn.text.length, to - 1)) },
+      })
+    }
     // 移动键扩展选区：applyMotion 只动光标，state 展开保留 visualAnchor/visualKind（选区扩展语义）
     if (motionKeys[key]) return applyMotion(motionKeys[key]!())
     return base({ state: { ...prev } })
@@ -466,6 +583,20 @@ export function vimHandleKey(
     return base({ state: { ...prev, pendingOp: key } })
   }
 
+  // 操作符 + 文本对象（di( da" ciw yi{ …）——i/a 前缀挂起，下一键字符求区间（codex 括号栈对标）
+  // 必须在运动键分派之前：w/e/b 等既是运动键也是对象字符（iw/aw）——挂起对象时按对象解释
+  if (prev.pendingOp && (key === 'i' || key === 'a')) {
+    return base({ state: { ...prev, pendingIo: key } })
+  }
+  if (prev.pendingOp && prev.pendingIo) {
+    const range = textObjectRange(docIn.text, docIn.cursor, prev.pendingIo, key)
+    if (!range) return base({ state: { ...prev, pendingOp: null, pendingIo: null, count: 0 } })
+    const [from, to] = range
+    if (prev.pendingOp === 'd') return applyEdit(deleteRange(docIn, from, to), false, ['d', prev.pendingIo, key])
+    if (prev.pendingOp === 'c') return applyEdit(deleteRange(docIn, from, to), true, ['c', prev.pendingIo, key])
+    return applyEdit({ text: docIn.text, cursor: docIn.cursor, yank: docIn.text.slice(from, to) }, false, ['y', prev.pendingIo, key])
+  }
+
   // 操作符 + 移动（dw/cw/yw/d$/d0/dG…）：移动键复用 motionKeys 计算端点
   if (prev.pendingOp && motionKeys[key]) {
     const to = motionKeys[key]!()
@@ -479,9 +610,21 @@ export function vimHandleKey(
     if (prev.pendingOp === 'c') return applyEdit(deleteRange(docIn, a, end), true, ['c', key])
     return applyEdit({ text: docIn.text, cursor: docIn.cursor, yank: docIn.text.slice(a, end) }, false, ['y', key])
   }
+  // 操作符 + 文本对象（di( da" ciw yi{ …）——i/a 前缀挂起，下一键字符求区间（codex 括号栈对标）
+  if (prev.pendingOp && (key === 'i' || key === 'a')) {
+    return base({ state: { ...prev, pendingIo: key } })
+  }
+  if (prev.pendingOp && prev.pendingIo) {
+    const range = textObjectRange(docIn.text, docIn.cursor, prev.pendingIo, key)
+    if (!range) return base({ state: { ...prev, pendingOp: null, pendingIo: null, count: 0 } })
+    const [from, to] = range
+    if (prev.pendingOp === 'd') return applyEdit(deleteRange(docIn, from, to), false, ['d', prev.pendingIo, key])
+    if (prev.pendingOp === 'c') return applyEdit(deleteRange(docIn, from, to), true, ['c', prev.pendingIo, key])
+    return applyEdit({ text: docIn.text, cursor: docIn.cursor, yank: docIn.text.slice(from, to) }, false, ['y', prev.pendingIo, key])
+  }
   if (prev.pendingOp) {
     // 操作符 + 未知键：取消操作符（gemini 同款——不悬挂）
-    return base({ state: { ...prev, pendingOp: null, count: 0 } })
+    return base({ state: { ...prev, pendingOp: null, pendingIo: null, count: 0 } })
   }
 
   // ── 纯移动 ──
