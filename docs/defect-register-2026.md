@@ -13,7 +13,8 @@
 | S-02 | 插件市场/远端技能安装 | codex/opencode 市场 | 同 S-01（需托管） | ⑧ 6→7（+9） | ⏳ |
 | S-03 | IDE 插件 | gemini companion/codex vscode | 无（协议已备） | ⑦ 8→9（+11） | ⏳ 路线图 docs/ide-remote-share-roadmap-2026.md |
 | S-04 | 远程执行环境 | codex exec-server | 无（ssh 方案无阻塞） | ⑦ 9→10（+11） | ⏳ 同路线图 |
-| S-06 | 沙盒 macOS/Linux 化（⑥ 冲 10 前提） | codex/gemini 三平台 | 实机校准环境（mac/Linux） | ⑥ 9→10（+10） | ◐ 实现已落地（bwrap 构建器 + Seatbelt profile + 三平台门面 + 诚实探测），**实机校准前 ⑥ 不升 10** |
+| S-06 | 沙盒 macOS/Linux 化 | codex/gemini 三平台 | — | — | ❌ **已移除（Windows-only 决策）**——POSIX 实现（bwrap/Seatbelt）保留休眠态，探测诚实返回不适用；⑥ 冲 10 改走 S-07 Windows 双态沙盒 |
+| S-07 | Windows 双态沙盒（⑥ 冲 10：提权→受限令牌 / 标准用户→Low IL） | codex windows-sandbox-rs（提权路径） | 管理员环境（提权分支实测） | ⑥ 9→10（+10，Windows 深度口径） | ⏳ 标准用户分支已实测校准（1ec26e1）；提权分支待实现+实测 |
 | S-05 | share 云端分享 | opencode/kimi | 需中心服务器 | ⑦ +1 | 🚫 离线变体已落地（/share 打包加密，见 A-08） |
 
 ## A 级

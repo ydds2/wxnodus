@@ -1,5 +1,8 @@
 # 超越计划（Supremacy Plan）——7.25 → 8.7+（总分第一）
 
+> **2026-08-18 修订：Windows-only 版**（用户决策「只做 Windows」）——移除沙盒三平台化（原阶段 3.2），
+> POSIX 实现（bwrap/Seatbelt，591cebf）保留**休眠态**（探测诚实返回不适用，零维护），⑥ 冲 10 改走「Windows 深度」路径。
+
 > 2026-08-18 定稿。目标不再是与竞品同档，而是**总分超越 codex（8.69）成为 7 家第一**。
 > 本文档是单一事实源：上下文总结 + 现状基线 + 11 维逐维超越路径 + 三阶段执行计划 + 阻塞项。
 > 关联文档：评分 `docs/cli-deep-analysis-score-2026.md`、缺陷 `docs/defect-register-2026.md`、
@@ -39,7 +42,7 @@
 | ③ diff/媒体（8） | 4 | 8 | diff hunk 折叠/apply 操作（opencode `[`/`]` hunk 跳转）+ 图片渲染路径（is_image 接线）+ which-key | +32 |
 | ④ Agent（13） | 9 | **10** | LLM 辅助循环检测（gemini 置信度判空转）+ 按模型工具裁剪（codex）+ 子代理分型（explorer/awaiter 低 effort）+ 结构化输出 | +13 |
 | ⑤ 提示词（11） | 6 | 9 | 分族提示词（deepseek/glm/kimi 定制段——新模块承载，kf-029 零 CJK 红线不破）+ 小模型任务档（crush large/small）+ API 级 prompt caching 深化 | +33 |
-| ⑥ 安全（10） | 9 | **10** | 沙盒 macOS/Linux 化（seatbelt/bwrap+Landlock）+ execpolicy 首词规则（codex `policy.rs`）+ 审批持久化 | +10 |
+| ⑥ 安全（10） | 9 | **10（Windows 深度口径）** | **Windows 双态沙盒**（提权→受限令牌 codex 级 / 标准用户→Low IL 已实测）+ execpolicy 首词规则（codex `policy.rs`）+ 审批持久化——Windows-only 产品的满分论据是「目标平台深度第一」，评分表注明口径 | +10 |
 | ⑦ 场景（11） | 8 | 10 | IDE 插件（wire 零协议新增）+ 远程执行 ssh 通道 + CI 集成 + 桌面端协议加固（路线图文档） | +22 |
 | ⑧ 分发（9） | 5 | 9 | 真实发布（winget/scoop）+ 用户文档三件套（getting-started/troubleshooting/examples）+ 插件市场（需 remote/托管） | +36 |
 | ⑨ 工程（8） | 7 | 9 | 远程 CI + lint + madge 循环依赖 + perf 基准目录（gemini perf-tests） | +16 |
@@ -74,7 +77,7 @@
 | # | 任务 | 缺陷 ID | 前置 | 验证 |
 |---|---|---|---|---|
 | 3.1 | winget/scoop 真实发布 | S-01 | remote | 真实 URL+sha256 |
-| 3.2 | 沙盒三平台化（mac seatbelt / linux bwrap+Landlock） | ⑥ | 有 mac/linux 环境 | 探测诚实测试 |
+| 3.2 | ~~沙盒三平台化~~（已移除，POSIX 休眠）→ **Windows 双态沙盒**（提权走受限令牌、标准用户走 Low IL，探测如实报告双态） | ⑥ | 无 | 标准用户分支本机实测；提权分支探测诚实报告 |
 | 3.3 | vim/keymap + @选择器 + diff 折叠/apply | B-01/02 | 无 | 输入层测试 |
 | 3.4 | 插件市场（托管清单+远端技能安装） | S-02 | remote | 市场安装闭环 |
 | 3.5 | perf 基准目录 + lint + madge | C-01/03 | 无 | ci 挂载 |
@@ -83,6 +86,7 @@
 ## 4. 超越级差异化（只有 wxnodus 能打的牌）
 
 - **离线四模态 + 黑洞记忆 + Computer Use + 桌面端** 组合是六家无人有的「单机全栈」——阶段 2/3 的桌面端与 IDE 插件把它从「能力」变成「生态」；
+- **Windows-only 定位**：六家中 wxnodus 是唯一「Windows 原生深度」产品（渲染/ConPTY/UIA/沙盒双态）——超越叙事的差异化卖点 = 「Windows 最强 agent CLI」，而非「跨平台跟随者」；
 - **诚实工程文化**（labelTruncate/探测降级/退出码协议/审计哈希链）是长期口碑资产，任何超越动作不得退化；
 - 每阶段收尾都跑 `npm run ci` + 评分复算 + audit 实录——超越必须有分数证据，不靠口号。
 
@@ -91,7 +95,7 @@
 1. **git remote**（阶段 2 解锁：CI/发布/市场全部依赖）；
 2. **桌面端接入方式决策**：`--serve`（HTTP+SSE，推荐）还是 stdio `--wire`——决定 2.5 的协议面优先顺序；
 3. **DeepSeek 密钥**（`/model set-key`）——余额护栏与 LLM 辅助循环检测的真机验证需要；
-4. mac/Linux 环境（3.2 沙盒三平台化的实测前提）。
+4. ~~mac/Linux 环境~~（已移除——Windows-only 决策）；改为：**管理员环境**（Windows 双态沙盒的提权分支实测前提，非阻塞）。
 
 ## 6. 每轮执行协议（不变）
 

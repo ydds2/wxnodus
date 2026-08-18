@@ -769,3 +769,10 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **诚实口径（核心）**：① L2 限速在 Linux 需 root（tc）/ Seatbelt 无原语——本平台 L2 降级为「可写+联网」，常量 POSIX_L2_RATE_LIMIT_NOTE 如实标注；② **本模块 Linux/macOS 实机验证未完成（本机 Windows）**——测试仅覆盖构建器纯函数 + 非本平台诚实不适用 + 门面 off 路径；**⑥ 评分在实机校准前不升 10**（审计与寄存器同步注明）。
 - **测试**：新套件 7 用例（bwrap 四层映射/seatbelt 三档文本/降级口径断言/Windows 探测诚实/门面 off）。
 - **验证**：tsc 零错误；posix+win 沙盒套件全绿；全量 + npm run ci 见下。
+
+### 13.54 Windows-only 决策轮（2026-08-18：范围收敛 + 计划修订）
+
+- **用户决策**：「我只想做 windows」——超越计划修订为 Windows-only 版（supremacy-plan-2026.md 顶部修订注记）。
+- **处置**：POSIX 沙盒实现（591cebf）**保留休眠态**（零维护：纯函数测试仍跑、探测在非 POSIX 平台诚实返回不适用、bash 门面分派不受影响）；从路线图优先级移除；寄存器 S-06 标记 ❌ 已移除并新增 S-07（Windows 双态沙盒：提权→受限令牌 / 标准用户→Low IL，⑥ 冲 10 的 Windows 深度论据，提权分支待实现+实测）。
+- **口径**：⑥ 评分表维持 9（跨平台客观口径不变）；Windows-only 产品的 10 分论据 = 「目标平台深度第一」（双态沙盒+纵深防御清单），评分时注明口径——诚实原则：提权分支未经实测前不宣称。
+- **差异化升级**：超越叙事定为「Windows 最强 agent CLI」（渲染/ConPTY/UIA/沙盒双态唯一深度组合），而非跨平台跟随者。
