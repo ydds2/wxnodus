@@ -98,4 +98,4 @@
 | 配置分层 | ⏳ | ✅ | 项目级 .wxnodus/config.json（B-05）——fda5c95 |
 | 快照增量化 | ⏳ | ✅ | messagesUpTo 上界（A-07）——39566cc |
 
-**评分口径（诚实）**：② 冲 10 论据已齐（VISUAL 六家皆无 + 文本对象 codex 对标 + / 搜索 + redo + 既有 Ctrl-R 历史/键位/@补全）——是否 9→10 留七评复核 codex 8 种文本对象覆盖后定，本轮不预支。云端独占面取证见 docs/cli-cloud-vs-local-2026.md。
+**评分口径（七评已定）**：② 9→10 = 931（§9.20/audit §13.78）——codex 八种文本对象 8/8 全覆盖（反引号补全后）+ 独有 <> + VISUAL 六家皆无 + / 搜索 + redo，codex 差距完全闭合；严格第一 ①④⑥⑩⑪ 五项、并列第一 ②⑤⑦ 三项。云端独占面取证见 docs/cli-cloud-vs-local-2026.md。

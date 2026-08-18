@@ -999,3 +999,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 **尾注（2026-08-18）**：远程 CI **workflow #32192293135 全绿**——vscode-ext 1m2s / gate 2m12s / test 三分片 5m42s+3m28s+5m15s 全 success，wall ~8 分钟；同轮覆盖 P3 评估轮全部 7 提交（HEAD 935deb1，push 经全局代理 127.0.0.1:7897——国内直连 github.com 12s 超时问题已由全局 git 代理解决，`git ls-remote` 验证远端=本地 HEAD）。
 11. **评分口径（诚实，不预支）**：② 冲 10 论据已齐（VISUAL 六家皆无 + 文本对象 codex 对标 + / 搜索 + redo + 既有 Ctrl-R 历史搜索/键位层/@补全/外部编辑器）——是否 9→10 留七评复核 codex 8 种文本对象覆盖后定；本轮维持 922 不复算。B-03 会话浏览器 UI（数据面已备）、C-02 wxGateway 巨文件拆分两项大工程项如实留存 register。
+
+### 13.78 七评轮（2026-08-18：② 9→10 = 931——评估问题二次复评，codex 文本对象 8/8 复核）
+
+用户再次要求「评估/评分/列缺陷差异」——七评落定 §9.20：
+
+1. **codex 八种文本对象取证**（vim.rs:52-61）：Word/BigWord/Parentheses/Brackets/Braces/DoubleQuote/SingleQuote/Backtick——此前 7/8（缺反引号）。
+2. **反引号对象补全（1 用例）**：引号分支纳入 `` ` `` → **8/8 全覆盖** + 独有 `<>` + VISUAL（codex 仅 Normal/Insert）+ / 搜索 + Ctrl-R redo——② codex 差距闭合。
+3. **② 9→10（+9）→ 931**：② 与 codex 并列第一（10=10）；严格第一 ①④⑥⑩⑪ 五项、并列第一 ②⑤⑦ 三项；与 codex 差距 62。
+4. **其余维度复评不变**（③ 8/⑨ 9/⑧ 5 卡公开决策/⑥ 10 §9.14 在案）。
+5. **验证**：tsc 零错误；vim 四套件 41 用例绿；全量套件见尾注；本地九命令门禁全绿；远程 CI 见尾注。
+
+**尾注（2026-08-18）**：远程 CI（反引号对象 + §9.20 七评 + §13.78 本条目同轮）——workflow ID 待填（watch 中）。
