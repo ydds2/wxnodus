@@ -31,6 +31,7 @@
 - **双态沙盒提权分支真机实测修复（两轮）**：管理员终端实测暴露 v3 报 87（SidsToDisable 裸 SID 指针 + LocalSystem 不在令牌组）→ v4（TokenGroups 只禁用存在 SID、Attributes=0）；v4 探测 OK 但启动报 1314（受限令牌经令牌复制失去「调用方令牌受限版」豁免）→ v5（从本进程令牌直接构建 + SeIncreaseQuotaPrivilege + 探测加真实进程启动冒烟——OK-ELEVATED=全链路实测）；`scripts/probe-elevated.cmd` 重写为 CRLF + 纯 ASCII（修复双击即退）+ 失败路径可见化。
 - **双态沙盒提权分支实测收官（⑥ 9→10）**：管理员终端第三轮全绿——OK-ELEVATED（含进程启动冒烟）+ L0 拒写 + L1 可写，Windows 双态沙盒全链路真机验证；复算 825 → **835**（第 3/7，⑥=10 七家第一，第一维度增至四项）。
 - **git remote 配置（发布通道解锁）**：origin → github.com/ydds2/wxnodus（私人仓库），master 全史推送；公开前清理 drill 空库与夹具构建产物出库（.gitignore 补 `.wxnodus/*.db`）。winget/scoop 上架仍需公开下载 URL（私人仓库资产不可公开拉取）。
+- **内部测试分发（B 方案）**：W6 发布管线首跑——wxnodus-3.1.0.zip（自校验安装包：manifest 全量 sha256 + 安装前校验 install.ps1，可卸载）上传私有 GitHub Release **v3.1.0-rc.1**（仅授权成员可下载）；顺带修复生产 dist 泄漏 test.tsx（vitest/ink-testing-library 混入安装闭包，被打包门禁拦截）。
 
 ## [3.1.0] - 2026-08-18
 

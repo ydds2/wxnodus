@@ -28,3 +28,6 @@ packages/vscode-ext/*.vsix
 # 提权实测产物（管理员终端运行 scripts/probe-elevated.cmd 生成——结果贴回会话后删除）
 elevated-probe-result.txt
 sbx-write-test.txt
+
+# 安装包构建产物（scripts/package-installer.ts → dist-installer/）
+dist-installer/

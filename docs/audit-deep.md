@@ -904,3 +904,10 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **收尾 commit 两笔**：db88daa（v5 沙盒三测三修收官 + ⑥ 9→10 复算 835 全文档同步）、4156e89（清理 + gitignore）。master 全史推送 origin 成功，跟踪建立。
 - **凭证纪律**：密码不出现在任何 git 配置/文件/命令历史（GCM 交互认证）；已提醒用户 GitHub 不接受密码认证、建议改用 PAT 并轮换已暴露的密码。
 - **遗留口径（诚实）**：私人仓库 release 资产**不可公开下载**——winget/scoop 的 InstallerUrl 必须公开可达，3.1 仍需「公开性决策」（公开仓库或独立托管）后才可真实上架；CI 首绿待 GitHub Actions 运行回报。
+
+### 13.70 内部测试分发轮（2026-08-18：B 方案——私有仓库 + 内部授权测试）
+
+- **用户决策**：B——仓库保持私有；「先单独授权部分内部人员测试，后续转公开」。
+- **实现**：W6 发布管线实跑——`freeze-candidate`（cand-e582649398，commit e582649）→ `package-installer` → **wxnodus-3.1.0.zip**（5673 文件 + manifest 全量 sha256 绑定 + 安装前全量校验 install.ps1（漂移即拒，-Uninstall 按 journal 卸载）+ 确定性 zip；138.8MB，zipSha256 `d4721110…f28e8`）。GitHub Releases **v3.1.0-rc.1**（prerelease，私有仓库——仅授权成员可下载安装）。
+- **管线门禁立功（第二次拦截真实缺陷）**：首次打包被 `DEPENDENCY_CLOSURE_INCOMPLETE` 拦截——主 tsconfig `exclude` 漏 `src/**/*.test.tsx`，`turnSections.test.js` 携 vitest/ink-testing-library 混入生产 dist。修复：exclude 补 test.tsx（`typecheck:tests` 独立 include 不受影响；dist 复检 0 测试文件；全量门禁仍绿）。
+- **诚实口径**：此为**内部测试分发**（私有 release，仅授权成员），非公开发布——winget/scoop 上架留「转公开」后；⑧ 分数不动（真实生态消费者仍缺公开可达渠道）。测试者需仓库访问权限（用户侧添加 collaborators）。
