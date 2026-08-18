@@ -7,7 +7,8 @@ import { estimateTokens } from '../../kernel/memory.js';
 import { discoverSkills } from '../../kernel/skills.js';
 import { scanProject, renderAgentsMd } from '../../kernel/projectScan.js';
 import { buildRepoMap } from '../../kernel/repoMap.js';
-import { listShadows, restoreShadow, versionsOfFile, snapshotDir, restoreDirShadows } from '../../kernel/undoShadows.js';
+import { listShadows, restoreShadow, versionsOfFile, snapshotFile, snapshotDir, restoreDirShadows } from '../../kernel/undoShadows.js';
+import { lineDiff, parseHunks, applyHunkToText, reverseHunk } from '../../kernel/hunkApply.js';
 import { listScripts, loadScript, saveScript, deleteScript, isValidScriptName, scriptStats, checkScriptExpectations, type Script, type ScriptStep } from '../../kernel/scripts.js';
 import { usageSummary, usageRangeSince, type UsageRange } from '../../kernel/usage.js';
 import { estimateCost } from '../../kernel/cost.js';
@@ -222,6 +223,39 @@ export function registerSessionCommands(bus: CommandBus, ctx: HandlerCtx): void 
   // /undo：轮级回滚（机制补强）——撤销最近 N 轮（默认 1 轮），撤销前自动保存 checkpoint  //   F20 修复：软撤销（UPDATE archived=1 而非 DELETE——recall 全量永不丢，黑洞可检索）；
   //   快照含完整字段（id/archived/ts），restore 才能重建原始状态
   //   对比轮 6 补强：/undo list 列出可撤销轮次（时间 + 首句）
+  // 波 3 ③：/diff <文件> [revert <hunk序号>]——快照 vs 当前文件的完整 diff 查看 +
+  // per-hunk 选择性回滚（六家皆无的差异化：opencode diff-viewer 仅跳转无 apply/discard；
+  // 回滚前自动快照——/undo fs restore 可再滚回）
+  bus.register('/diff', (args) => {
+    const rel = String(args[0] ?? '').trim();
+    if (!rel) return '用法：/diff <文件> [revert <hunk序号>]——查看文件最近编辑快照与当前内容的差异；revert 按 hunk 序号选择性回滚该处变更（快照自动留存，/undo fs restore 可再滚回）';
+    const abs = resolve(ctx.cwd, rel);
+    try {
+      const cur = readFileSync(abs, 'utf8');
+      const versions = versionsOfFile(ctx.dataDir, abs);
+      if (!versions.length) return '该文件无编辑快照（undoShadows 为空）——先经 fs_edit/fs_write 编辑过才有对比基线';
+      const base = versions[0]!.content;
+      if (args[1] === 'revert') {
+        const idx = Number(args[2]);
+        if (!Number.isInteger(idx) || idx < 1) return '用法：/diff <文件> revert <hunk序号>（序号见 /diff <文件> 输出的 @@ 顺序，从 1 起）';
+        const hunks = parseHunks(lineDiff(base, cur));
+        const h = hunks[idx - 1];
+        if (!h) return `hunk ${idx} 不存在（共 ${hunks.length} 个）`;
+        const r = applyHunkToText(cur, reverseHunk(h));
+        if (!r.ok) return `回滚失败：${r.error}`;
+        snapshotFile(ctx.dataDir, abs, cur);
+        writeFileSync(abs, r.text, 'utf8');
+        return `已回滚 hunk ${idx}/${hunks.length}（${rel}）——快照已留存，/undo fs restore 可再滚回`;
+      }
+      const d = lineDiff(base, cur);
+      if (!d) return `${rel} 与快照无差异`;
+      return `快照 → 当前（${rel}）
+${d}
+
+（/diff ${rel} revert <hunk序号> 选择性回滚某个 hunk）`;
+    } catch (e: any) { return `diff 失败：${String(e?.message ?? e).slice(0, 120)}`; }
+  });
+
   bus.register('/undo', (args) => {
     // /undo fs：文件编辑影子快照（Aider /undo 精神的零 git 依赖版）——
     // fs_write/fs_edit 覆盖前自动备份，/undo fs list｜restore 安全撤销文件编辑
