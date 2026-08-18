@@ -814,46 +814,89 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
     ]);
   });
 
-  // ── 远程执行（supremacy 2.2：ssh 通道阶段 1，S-04）──
-  // settings.remote = "ssh://user@host[:port]" → bash 工具与 /remote run 经本机 ssh 转发执行；
-  // 本地审批链不变；远端未沙盒诚实提示（完整沙盒版对齐 codex exec-server 后上线）
+  // ── 远程执行（supremacy 2.2 ssh 通道 + S-04 完整版 exec-server，2026-08-18）──
+  // settings.remote = "ssh://user@host[:port]"（阶段 1：远端未沙盒诚实标注）
+  // settings.remoteServer = {host,port,token}（完整版：长驻 exec-server + 远端 OS 沙盒复用）
+  let execServerHandle: { close(): Promise<void> } | null = null;
   bus.register('/remote', async (args) => {
     const cur = String((ctx.config.getKey('settings', 'remote') as string | null | undefined) ?? '').trim();
+    const curSrv = (ctx.config.getKey('settings', 'remoteServer') as Record<string, any> | null | undefined) ?? null;
     if (!args[0]) {
-      return lines(' 远程执行（ssh 通道阶段 1） ', [
-        ` 当前目标：${cur || '未配置'}`,
-        ' 用法：/remote ssh://user@host[:port]（设置目标，settings 持久化）',
-        '      /remote run <命令>（经 ssh 转发执行，流式回传）',
-        '      /remote off（清除目标）   /remote status（能力信息）',
-        ' 诚实口径：远端未沙盒——远端命令以远端用户权限执行（完整沙盒版对齐 codex exec-server 后上线）',
-        ' 前置：本机需有 ssh 客户端（Windows 可选功能 OpenSSH Client）；BatchMode 执行（密钥/免密登录，不交互）',
+      return lines(' 远程执行（ssh 通道 + exec-server） ', [
+        ` 当前目标：${curSrv ? `exec-server ${curSrv.host}:${curSrv.port}` : cur || '未配置'}`,
+        ' 用法：/remote ssh://user@host[:port]（ssh 通道，远端未沙盒）',
+        '      /remote server [--port N] [--secret S] [--profile L3] [--host 0.0.0.0]（本机/远端机启动长驻 exec-server）',
+        '      /remote connect <host:port> --secret <S>（接入 exec-server——token 由共享口令 HMAC 派生）',
+        '      /remote run <命令>（优先 exec-server（远端可沙盒）；否则 ssh）',
+        '      /remote off（清除全部）   /remote status',
+        ' 安全面：exec-server 默认 127.0.0.1；Bearer=HMAC(secret)；远端可经 OS 沙盒 profile 执行',
       ]);
+    }
+    if (args[0] === 'server') {
+      if (execServerHandle) return 'exec-server 已运行（先停止当前实例）';
+      const { startExecServer } = await import('../../kernel/execServer.js');
+      const portArg = args.indexOf('--port'); const port = portArg >= 0 ? Number(args[portArg + 1]) || 0 : 0;
+      const secArg = args.indexOf('--secret'); const secret = secArg >= 0 ? String(args[secArg + 1] ?? '') : String(ctx.config.getKey('settings', 'remoteServerSecret') ?? '');
+      const profArg = args.indexOf('--profile'); const profile = profArg >= 0 ? String(args[profArg + 1] ?? 'off') : 'off';
+      const hostArg = args.indexOf('--host'); const host = hostArg >= 0 ? String(args[hostArg + 1] ?? '') : '127.0.0.1';
+      if (!secret) return '需要共享口令：/remote server --secret <口令>（token 由口令 HMAC 派生，口令不落盘不传输）';
+      try {
+        const srv = await startExecServer({ port, secret, dataDir: ctx.dataDir, host, defaultProfile: profile as never });
+        execServerHandle = srv;
+        const token = (await import('../../kernel/execServer.js')).deriveExecToken(secret);
+        const warning = srv.warning ? `\n⚠ ${srv.warning}` : '';
+        return `__KEEPALIVE__\nexec-server 已启动：http://${srv.host}:${srv.port}（POST /exec；token=${token.slice(0, 12)}…；远端 profile=${profile}；SIGINT 停止）${warning}\n客户端接入：/remote connect ${srv.host === '127.0.0.1' ? 'localhost' : srv.host}:${srv.port} --secret <口令>`;
+      } catch (e: any) {
+        return `exec-server 启动失败：${String(e?.message ?? e).slice(0, 200)}`;
+      }
+    }
+    if (args[0] === 'connect') {
+      const target = String(args[1] ?? '');
+      const m = target.match(/^([^:]+):(\d+)$/);
+      if (!m) return '用法：/remote connect <host:port> --secret <口令>';
+      const secArg = args.indexOf('--secret');
+      const secret = secArg >= 0 ? String(args[secArg + 1] ?? '') : String(ctx.config.getKey('settings', 'remoteServerSecret') ?? '');
+      if (!secret) return '需要共享口令：/remote connect <host:port> --secret <口令>';
+      const { deriveExecTokenClient } = await import('../../kernel/execServer.js');
+      const token = deriveExecTokenClient(secret);
+      ctx.config.setKey('settings', 'remoteServer', { host: m[1], port: Number(m[2]), token });
+      ctx.config.setKey('settings', 'remoteServerSecret', ''); // 口令只用于派生，绝不持久化
+      return `exec-server 已接入：${m[1]}:${m[2]}（token=${token.slice(0, 12)}…；bash 工具与 /remote run 此后经 exec-server 执行）`;
     }
     if (args[0] === 'off') {
       ctx.config.setKey('settings', 'remote', '');
+      ctx.config.setKey('settings', 'remoteServer', null);
       return '远程目标已清除（bash 恢复本地执行）';
     }
     if (args[0] === 'status') {
       const { sshClient } = await import('../../kernel/sshRemote.js');
       return lines(' 远程执行能力 ', [
-        ` ssh 客户端：${sshClient.file}（PATH 解析——/remote run 失败时给出启用指引）`,
-        ` 目标：${cur || '未配置'}`,
-        ' 沙盒：远端未沙盒（阶段 1 诚实口径）',
+        ` ssh 客户端：${sshClient.file}（ssh 通道用）`,
+        ` ssh 目标：${cur || '未配置'}`,
+        ` exec-server：${curSrv ? `${curSrv.host}:${curSrv.port}（已接入）` : '未接入（/remote server 启动 + /remote connect 接入）'}`,
+        ' 沙盒：exec-server 远端可沙盒（profile 参数）；ssh 通道远端未沙盒（阶段 1 口径）',
       ]);
     }
     if (args[0] === 'run') {
       const command = args.slice(1).join(' ').trim();
       if (!command) return '用法：/remote run <命令>';
+      // 优先 exec-server（远端可沙盒）→ 回退 ssh 通道（远端未沙盒诚实标注）
+      if (curSrv?.host && curSrv?.token) {
+        const { runRemoteExecServer } = await import('../../kernel/execServer.js');
+        const r = await runRemoteExecServer({ host: String(curSrv.host), port: Number(curSrv.port), token: String(curSrv.token) }, command);
+        const out = `${r.out}${r.err ? `\n${r.err}` : ''}`.trim();
+        return `${out || '(无输出)'}\n[exec-server ${curSrv.host}:${curSrv.port} · 退出码 ${r.code ?? '无'}${r.error ? ` · ${r.error}` : ''}]\n[${r.sandboxed ? r.note : '远端未沙盒（server 端 profile=off）'}]`;
+      }
       const { parseRemoteTarget, runRemoteCommand, REMOTE_UNSANDBOXED_NOTE } = await import('../../kernel/sshRemote.js');
       const target = parseRemoteTarget(cur);
-      if (!target) return '远程目标未配置或格式非法——先 /remote ssh://user@host[:port]';
+      if (!target) return '远程目标未配置——/remote connect <host:port> --secret <口令>（exec-server）或 /remote ssh://user@host（ssh）';
       const r = await runRemoteCommand(target, command, { timeoutMs: 60_000 });
       const out = `${r.stdout}${r.stderr ? `\n${r.stderr}` : ''}`.trim();
       return `${out || '(无输出)'}\n[远程 ${target.user}@${target.host}:${target.port} · 退出码 ${r.code ?? '无'}${r.error ? ` · ${r.error}` : ''}]\n[${REMOTE_UNSANDBOXED_NOTE}]`;
     }
     const { parseRemoteTarget } = await import('../../kernel/sshRemote.js');
     const t = parseRemoteTarget(args[0]);
-    if (!t) return '目标格式非法——应为 ssh://user@host[:port]';
+    if (!t) return '目标格式非法——ssh://user@host[:port]（或 /remote connect <host:port> --secret 接入 exec-server）';
     ctx.config.setKey('settings', 'remote', args[0]);
     return `远程目标已设置：${t.user}@${t.host}:${t.port}（bash 工具此后经 ssh 转发执行——远端未沙盒，/remote off 恢复本地）`;
   });

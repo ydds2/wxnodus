@@ -27,6 +27,7 @@
 - **Windows 双态沙盒提权分支（supremacy 3.2）**：管理员环境运行时自动切换受限令牌（禁用 Administrators/LocalSystem + Medium IL，L0 只读）——标准用户仍走已实测校准的 Low IL 路径；探测如实报告双态（提权分支实测待管理员环境）。
 - **阶段 3 收尾复评（supremacy 3.6）**：加权总分 754 → 790（② 输入 5→6、③ diff 4→5、⑦ 场景 8→9、⑨ 工程 7→8）——距 gemini 812 差 22；超越 codex（≥870）仍待 git remote（发布/市场/CI 绿）与管理员环境实测。
 - **④⑤ 补轮（supremacy 补轮）**：子代理分型（delegate kind=explore/coder/review——只读型白名单）+ 结构化输出（/build 规格化请求 json_object，宽容解析兜底）+ 工具 schema 规范排序（前缀缓存跨重启稳定）。复算 790 → **814**：反超 gemini 升至第 3/7，①④⑪ 三维度七家第一。
+- **长驻 exec-server（S-04 完整版）**：`/remote server`（HMAC 派生 token + 远端 OS 沙盒 profile 复用，不可用即拒绝绝不降级）+ `/remote connect` 接入——bash 工具与 `/remote run` 优先走 exec-server（远端可沙盒），回退 ssh 通道（未沙盒诚实标注）。复算 814 → **825**（⑦ 满格）。
 
 ## [3.1.0] - 2026-08-18
 

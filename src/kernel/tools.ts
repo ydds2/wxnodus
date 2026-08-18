@@ -278,6 +278,15 @@ export function coreTools(): Record<string, ToolDef> {
         // ② 流式落盘：完整输出写 truncations/tmp（内存封顶 20000 字防 OOM），
         //    超限时接管为正式 offload 文件——预览 + 续读路径（不再丢尾）
         const sSettings = ctx.getSettings?.() as Record<string, any> | undefined;
+        // supremacy S-04 完整版：settings.remoteServer（exec-server，远端可沙盒）优先于 ssh 通道
+        const remoteServer = sSettings?.remoteServer as { host?: string; port?: number; token?: string } | undefined;
+        if (remoteServer?.host && remoteServer?.token) {
+          const { runRemoteExecServer } = await import('./execServer.js');
+          const r = await runRemoteExecServer({ host: String(remoteServer.host), port: Number(remoteServer.port) || 4789, token: String(remoteServer.token) }, cmd, { timeoutMs: 60_000 });
+          ctx.bus?.emit?.('system.notice', { text: r.sandboxed ? (r.note ?? '远端沙盒执行') : '远端未沙盒（exec-server profile=off）' });
+          const full = `${r.out}${r.err ? `\n${r.err}` : ''}${r.error ? `\n${r.error}` : ''}`.trim();
+          return wrapDanger(`${full || '(无输出)'}\n[exec-server ${remoteServer.host}:${remoteServer.port} · 退出码 ${r.code ?? '无'} · ${r.sandboxed ? r.note : '远端未沙盒'}]`);
+        }
         // supremacy 2.2：settings.remote = "ssh://user@host[:port]" → bash 经 ssh 转发执行
         // （本地审批链不变——权限门在 agent 侧先裁决；远端未沙盒诚实提示，绝不伪装）
         const remoteTarget = parseRemoteTarget(String(sSettings?.remote ?? '').trim());

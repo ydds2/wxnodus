@@ -863,3 +863,12 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **实测脚本交付**：`scripts/elevated-probe.mjs` + `scripts/probe-elevated.cmd`（管理员终端一键：build → 双态探测 force → L0 写测试（预期拒绝=只读实测）→ L1 写测试（预期成功=可写+Job 实测）→ 落盘 `elevated-probe-result.txt`）。
 - **本机（标准用户）预演验证**：脚本机制端到端跑通——PROBE OK-STANDARD（诚实）、L0-WRITE SBX_WRITE_DENIED（Low IL 只读实测）、L1-WRITE SBX_WRITE_OK（Job 可写实测）——同一脚本在管理员终端运行即产出提权分支证据。
 - **复算口径（预先声明，防事后争议）**：用户回报 PROBE=OK-ELEVATED 且 L0 拒绝/L1 成功 → ⑥ 9→10（+10，总分 824，score/register/audit 同步）；回报 OK-STANDARD（终端未提权）→ ⑥ 保持 9，如实记录。870 线在「暂无 remote」决策下不可达（⑦⑧ 依赖发布通道），保持如实标注。
+
+### 13.65 S-04 完整版轮（2026-08-18：长驻 exec-server 落地 + ⑦ 9→10 复算 825）
+
+- **对账纠偏**：register S-04「阻塞=无」——完整版 exec-server 本不依赖 git remote（此前误标「留后续」）；本机可实现并集成实测。补做。
+- **实现**：`kernel/execServer.ts`——长驻 HTTP 服务（默认 127.0.0.1；非回环 host 返回诚实警告「token 泄露=远端用户权限」）；鉴权 = HMAC-SHA256(shared secret,'wxnodus-exec-server') 派生 Bearer + timingSafeEqual（secret 不落盘不传输，connect 后仅存派生 token）；64KB 体限 413；POST /exec {command,cwd?,timeoutMs?,profile?}——profile 走 winSandbox 同族远端沙盒（**不可用 fail-closed 拒绝执行，绝不降级裸跑**）；profile=off 普通执行并标注「远端未沙盒」。`/remote server|connect|disconnect|run` 扩展（server 走 __KEEPALIVE__ 常驻；connect 存 {host,port,token} 且 secret 零持久化）；bash 工具远程分支 remoteServer 优先于 ssh（远端可沙盒）。客户端 runRemoteExecServer（fetch + AbortSignal 超时 + 401/网络错误诚实指引）。
+- **测试**：8 本机集成单测（真实 server+client：health 零泄漏/鉴权三态/echo 往返/非零码诚实/413+400+404/沙盒 fail-closed/客户端 401+网络不可达）——与 ssh 通道 10 用例共 18 全绿。
+- **复算**：⑦ 9→10（+11）——ssh 通道（未沙盒诚实）+ 完整 exec-server（codex 对齐安全面）双通道；总分 814→**825**（第 3/7，距 opencode 841 差 16）。跨机部署验证留用户环境（如实标注）。
+- **剩余**：⑥ +10（管理员实测脚本已交付，等待回报）；⑧ +36（git remote——用户已决策跳过）。两前置完成即 871 超 codex。
+- **验证**：tsc 零错误；exec-server 8 + ssh 10 用例全绿；全量 ci 九步见下。
