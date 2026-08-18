@@ -1025,3 +1025,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 6. **验证**：本地九命令门禁全绿（全量 375 文件/2762 用例）；远程 CI 见尾注。
 
 **尾注（2026-08-18）**：远程 CI **workflow #32196854849 全绿**（wall 10m26s）——/market 功能与分级表同轮验证；push 经全局代理（127.0.0.1:7897），`git ls-remote` 验证远端 = 本地 HEAD 7fc929b。
+
+
+### 13.80 /bundle 场景整合包（2026-08-18：Modpack 对标——skill/MCP/插件/配置规整打包）
+
+用户提议「像我的世界整合包一样把市场资源规整成自定义资源包，方便安装、独立构建场景生产会话」——落地：
+
+1. **清单**：`data/bundles/<name>.bundle.json`（name/description/version/skills[]/mcps[]/plugins[]/config.settings）——create/add/remove/list 全命令面。
+2. **一键安装**：install 复用 market 安装器（skill→data/skills 原子落位、mcp→项目 .mcp.json、plugin 走 /plugin 管线——沙箱/校验契约由 /plugin 持有，整合包不代装诚实边界）；逐项 ✅/❌ 报告。
+3. **离线分发**：export → tar.gz（manifest + **vendored 已安装技能**——像 MC 整合包把 mods 打进去，离线可分发）；GNU tar 冒号路径坑延续 cwd+相对名规避。
+4. **场景生产会话**：use → config.settings 并入项目配置（B-05 分层——该 cwd 后续会话即场景生产会话）+ MCP 落 .mcp.json + 技能登记提示；projectConfig 增 writeProjectConfig/mergeProjectSettings 写入口。
+5. **后续**：自建插件托管市场待 wxnodus 公开项目后同步构建（用户决策在案）——当前 /market 消费开放生态 + /bundle 整合打包已闭环资源面。
+6. **验证**：本地九命令门禁全绿（全量 376 文件/2767 用例）；远程 CI **workflow #32198478712 全绿**（wall 9m19s）；push 经全局代理，`git ls-remote` 验证远端 = 本地 HEAD ea6c668。
