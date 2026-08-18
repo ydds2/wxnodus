@@ -204,6 +204,8 @@ export function buildChatRequest(opts: {
   baseURL: string; model: string; key: string;
   messages: ChatMessage[]; stream: boolean;
   tools?: unknown[]; temperature?: number;
+  /** supremacy ④：结构化输出（response_format json_object——端点支持时约束输出为 JSON；不支持端点由调用方宽容解析兜底） */
+  responseFormat?: 'json_object';
 }) {
   const base = opts.baseURL.replace(/\/+$/, '');
   // image_url 终极闸门（纵深防御第四层）：上游已有能力门注入/历史 contentToText/描述通道
@@ -216,6 +218,7 @@ export function buildChatRequest(opts: {
     temperature: opts.temperature ?? 0.7,
   };
   if (opts.tools?.length) body.tools = opts.tools;
+  if (opts.responseFormat) body.response_format = { type: opts.responseFormat };
   return {
     url: `${base}/chat/completions`,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opts.key}` },

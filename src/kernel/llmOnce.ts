@@ -10,6 +10,8 @@ export interface LlmOnceOpts {
   messages: ChatMessage[];
   temperature?: number;
   timeoutMs?: number;
+  /** supremacy ④：结构化输出（response_format json_object——llmSpec 等 JSON 消费方） */
+  responseFormat?: 'json_object';
 }
 
 export type LlmOnceResult = { ok: true; content: string } | { ok: false; error: string };
@@ -30,6 +32,7 @@ export async function callModelOnce(opts: LlmOnceOpts): Promise<LlmOnceResult> {
     messages: opts.messages,
     stream: false,
     temperature: opts.temperature ?? 0.7,
+    responseFormat: opts.responseFormat,
   });
   let resp: Response;
   try {

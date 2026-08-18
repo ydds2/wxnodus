@@ -10,6 +10,7 @@ import { probeProcessAvailable } from './processProbe.js';
 import { labelTruncate, capNote } from './truncate.js';
 import { UNTRUSTED_WRAP_LIMIT_DEFAULT, clampInt } from './toolOutput.js';
 import { parseRemoteTarget } from './sshRemote.js';
+import { resolveSubagentDef } from './subagentTypes.js';
 
 /** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性）
  * W3-11：进程探测集中到 kernel/processProbe（入口层不直接执行进程） */
@@ -72,7 +73,7 @@ export interface ToolCtx {
   /** C6：文字提问（clarify 工具）——返回用户文本答案 */
   clarify?: (q: string, choices?: string[]) => Promise<string>;
   /** 派生子代理（只读工具集，独立上下文）——delegate 工具真实执行入口 */
-  spawnSubagent?: (goal: string) => Promise<{ ok: boolean; output: string; turns: number }>;
+  spawnSubagent?: (goal: string, depth?: number, def?: { systemPromptOverride?: string; mode?: import('./permissions.js').Mode; tools?: string[] }) => Promise<{ ok: boolean; output: string; turns: number }>;
   /** 当前轮次的中止信号（F15：bash 等长时工具可被用户 abort 真中断） */
   signal?: AbortSignal;
   /** 敏感注入通道（P3 安全）：vault=内存保险库；sudoEnabled/secretEnabled=通道开关（/security 控制） */
@@ -912,13 +913,17 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const delegate: ToolDef = {
-    schema: { type: 'function', function: { name: 'delegate', description: '派生子代理执行独立任务（只读工具集，结果返回）', parameters: { type: 'object', properties: { goal: { type: 'string', description: '子代理目标（独立上下文，只读工具）' } }, required: ['goal'] } } },
+    schema: { type: 'function', function: { name: 'delegate', description: '派生子代理执行独立任务（独立上下文；kind 分型：explore 只读探索 / coder 编码 / review 只读审查——缺省只读）', parameters: { type: 'object', properties: { goal: { type: 'string', description: '子代理目标（独立上下文）' }, kind: { type: 'string', description: '子代理分型（explore/coder/review；缺省=只读探索型）' } }, required: ['goal'] } } },
     danger: true,
-    async run({ goal }, ctx) {
+    async run({ goal, kind }, ctx) {
       if (!ctx.spawnSubagent) return 'delegate 不可用：当前环境未提供子代理能力';
       try {
-        const r = await ctx.spawnSubagent(String(goal ?? '').trim() || '（空任务）');
-        const head = r.ok ? '子代理完成' : '子代理未完成';
+        // supremacy ④ 满格：子代理分型——kind 解析为类型定义（提示词 + 工具白名单），
+        // 未知 kind 回退默认只读子代理（零漂移）
+        const def = resolveSubagentDef(kind as string | undefined);
+        const subDef = def ? { systemPromptOverride: def.systemPrompt, tools: def.tools } : undefined;
+        const r = await ctx.spawnSubagent(String(goal ?? '').trim() || '（空任务）', undefined, subDef);
+        const head = r.ok ? `子代理完成${def ? `（${def.label}型）` : ''}` : '子代理未完成';
         return `${head}（${r.turns} 轮）：\n${labelTruncate(String(r.output ?? ''), 4000, '子代理输出过长——goal 里要求结论精简，或拆分子任务')}`;
       } catch (e: any) {
         return `子代理执行异常：${e?.message?.slice(0, 300) ?? e}`;
@@ -1379,5 +1384,7 @@ export function isDangerous(tools: Record<string, ToolDef>, name: string): boole
 
 // 工具集 → OpenAI tools 数组（模型可见）
 export function toolsToOpenAI(tools: Record<string, ToolDef>): unknown[] {
-  return Object.values(tools).map(t => t.schema);
+  // supremacy ⑤：按工具名规范排序——不同装配/合并顺序产出字节完全一致的工具数组，
+  // 首消息前缀（含 tools schema）跨重启稳定 → DeepSeek 前缀缓存持续命中（API 级 caching）
+  return Object.keys(tools).sort().map(n => tools[n]!.schema);
 }

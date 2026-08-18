@@ -33,6 +33,9 @@ export async function aiMakeSpec(
       { role: 'user', content: input },
     ],
     temperature: 0.2,
+    // supremacy ④：结构化输出——Spec 是 JSON 消费方，请求 json_object（端点不支持时
+    // extractJson 宽容解析兜底，绝不因 response_format 失败丢规格）
+    responseFormat: 'json_object',
   });
   if (!r.ok) return null;
   const parsed = extractJson(r.content);

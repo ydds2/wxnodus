@@ -849,3 +849,11 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **3.2 Windows 双态沙盒提权分支（S-07，对标 codex windows-sandbox-rs）**：runner v3——C# 增 `IsElevated`（TokenElevation 20 类）、`SetMediumIL`（S-1-16-8192）、`BuildRestrictedToken`（CreateRestrictedToken + DISABLE_MAX_PRIVILEGE + 禁用 Administrators(S-1-5-32-544)/LocalSystem(S-1-5-18) + Medium IL）；Run 运行时分流：提权 → L0/L1 走受限令牌（L0 再加 Low IL 只读）；标准用户 → 原 Low IL 路径（1314 实测证伪的是**标准用户**路径——双态分流绕开，头注释改写口径）。Probe 双态输出：OK-ELEVATED（受限令牌构建真实成功）/ OK-STANDARD；TS `parseProbeBody` 纯函数解析（提权口径「本机实测」、标准口径「提权未实测」——绝不跨态宣称）。测试：runner 源锚点 6 断言（CreateRestrictedToken/双 SID/IsElevated/双态输出）+ parseProbeBody 4 用例 + 本机真实探测（v3 编译+probe 1079ms）与 L3 端到端冒烟（沙盒内真实执行）全绿。**诚实留白**：提权分支实现完成、实测待管理员环境——⑥ 保持 9 不宣称 10。
 - **3.6 超越复评（执行协议收尾）**：② 5→6（keymap 配置层，B-01）、③ 4→5（hunk 折叠，B-02）、⑦ 8→9（IDE 插件本地 vsix/ssh 通道/serve 协议加固/文档三件套，S-03/S-04）、⑨ 7→8（lint+madge 环门禁 ci 九步挂载+修 2 运行时环+bench，C-01/03）——**总分 754→790**（第 4 名稳固，距 gemini 812 差 22）。**未达 ≥870 验收线**：剩余增量全部卡外部前置——git remote（2.4 推送/3.1 发布/3.4 市场）、管理员环境（3.2 提权实测）、④ 子代理分型+结构化输出、⑤ API 级 caching 深化。阻塞项与残留项在 register/plan 如实同步。
 - **验证**：tsc 零错误；win-sandbox 10 用例 + 真实探测/冒烟；全量 ci 九步见下。
+
+### 13.63 超越计划补轮（2026-08-18：④ 满格 + ⑤ 到 9，复算 790→814 反超 gemini）
+
+- **用户决策落定**：①「暂无 remote，跳过发布类」——2.4 推送/3.1 发布/3.4 市场保持阻塞；②「有管理员终端，可实测」——3.2 提权分支实测命令已交付用户，OK-ELEVATED 报告回来即 ⑥ 9→10。
+- **④ 满格（9→10）**：`subagentTypes.ts` 子代理分型（explore/coder/review——只读型白名单收敛：READONLY_SUBAGENT_TOOLS 15 项无任何写/执行；delegate kind 参数透传 spawnSubagent def，未知回退默认只读零漂移）；结构化输出（providers.buildChatRequest + llmOnce `responseFormat:'json_object'` 透传，llmSpec 规格化启用——response_format 不支持端点由 extractJson 宽容解析兜底，绝不因结构化约束丢规格）。5 用例（分型解析/白名单收敛/未知回退/请求体携带/llmSpec 真实启用含请求体断言）。
+- **⑤ 到 9**：API 级 caching 深化——toolsToOpenAI 按工具名规范排序（不同装配/合并顺序产出字节一致 → 首消息前缀含 tools schema 跨重启稳定，DeepSeek 前缀缓存持续命中；1 用例字节级断言 + 升序契约）。
+- **复算**：总分 790→**814**，**反超 gemini（812）升至第 3/7**；**≥3 维度第一达成**（① 渲染 10 / ④ Agent 10 / ⑪ 差异化 8）。剩余 56 分：⑥+10（管理员实测待用户回报）、⑦+11 与 ⑧+36（git remote——用户已决策跳过发布类）。**870 线在「暂无 remote」决策下不可达，如实记录。**
+- **验证**：tsc 零错误；supremacy-45 5 用例 + agent-gap/llmSpec/tools 24 回归全绿；全量 ci 九步见下。
