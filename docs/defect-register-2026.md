@@ -54,7 +54,7 @@
 ## 下一档优先级（按提分/成本）
 
 1. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）——转公开即解锁 winget/scoop；
-2. 波 3 全部落定后剩余零碎（P3）：vim VISUAL/搜索模式、git 三源 diff viewer、ACP session/load 全量实现。
+2. 波 3 全部落定后剩余零碎（P3）：vim VISUAL 已落（2026-08-18，audit §13.76）；/ 搜索模式、git 三源 diff viewer、ACP session/load 全量实现。
 4. 波 3：vim（gemini vim.ts）、完整 diff 查看器/逐 hunk 应用（差异化）、ACP 接收 + 本地语义搜索；
 5. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）。
 

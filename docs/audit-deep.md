@@ -967,6 +967,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 1. **② 8→9（6d458ca，14 单测）**：vim 模态编辑——gemini `vim.ts` 状态机 + `vim-buffer-actions.ts` 纯 reducer 语义直搬 `vimCore.ts`（纯函数、天然可 undo）；NORMAL/INSERT 双态 + 移动/编辑/操作符/寄存器/`.` 多键序列回放/数字前缀/双击 Esc 500ms 清空；textInput 按键拦截（r/fFtT 预读两键命令）+ `-- NORMAL --` 徽标 + `/vim` 命令 + settings.vimMode 配置水合（useConfigWatcher last-good 守卫）。无 VISUAL// 搜索/Ctrl-R——gemini 同档诚实边界。
 2. **③ 7→8（78728f7，10 单测）**：`hunkApply.ts`（parseHunks/applyHunkToText 上下文锚定/reverseHunk/lineDiff 行级 LCS + 1500 行超限降级）+ `/diff` 快照→当前完整 diff 查看 + `/diff revert <hunk序号>` per-hunk 选择性回滚——**取证确认六家皆无**（opencode diff-viewer 仅跳转无 apply/discard）；回滚前自动快照，/undo fs restore 可再滚回。语义校准：快照→当前 diff 的正确逐 hunk 操作是回滚（应用侧纯函数保留供未来提议式 diff 源）。
 3. **⑪ 9→10（ab5c02e，4 单测）**：`/hole --all` 本地跨会话语义召回（全会话 FTS bigram + 本地向量 KNN——六家独有取证：aider 仅文档 RAG、gemini 云端嵌入、其余纯正则）+ recallHybrid 会话隔离回归锁定；ACP stdio 接收正式入档（`acp.ts` runAcpServer + /acp + 协议测试为既有落地，本轮归入 ⑪ 论据）。
-4. **收尾**：全量套件 **365 文件 / 2712 用例绿（10 skip）**；`npm run ci` 本地九命令全绿；远程 CI 见 §13.75 尾注（watch 中）。
+4. **收尾**：全量套件 **365 文件 / 2712 用例绿（10 skip）**；`npm run ci` 本地九命令全绿；远程 CI 绿见 §13.76 尾注（波 3 HEAD 与 CI 修复/P3 增量同轮验证）。
 5. **复算 922**：② 8→9（+9）③ 7→8（+8）⑪ 9→10（+5）= +22 → **922**——**三波路线（843→878→900→922）全部落定，稳居第 1/7**；严格第一 ①④⑥⑩⑪ 五项、并列第一 ⑤⑦（与 opencode）。score §0.1/§9.18、register、supremacy-plan 3.6、upgrade-plan、CHANGELOG 已同步。
-6. **诚实口径**：⑧ 5→9（+36）仍卡公开决策（唯一剩余大增量）；vim 无 VISUAL// 搜索/Ctrl-R（gemini 同档）；/diff 源为 undoShadows 快照（git 三源留 P3）；ACP 为 stdio 单会话应答（session/load 全量实现留 P3）。
+6. **诚实口径**：⑧ 5→9（+36）仍卡公开决策（唯一剩余大增量）；vim VISUAL 已落（§13.76），/ 搜索/Ctrl-R 仍无；/diff 源为 undoShadows 快照（git 三源留 P3）；ACP 为 stdio 单会话应答（session/load 全量实现留 P3）。
+
+### 13.76 P3 增量轮（2026-08-18：CI 分片修复 + vim VISUAL 模式——波 3 收尾验证同轮）
+
+波 3 定档后、等待远程 CI 期间并行落地的两项增量（不牵动 922 复算——② 已 9 分封顶，VISUAL 仅加固论据）：
+
+1. **CI 分片首轮红 → 修复（e7d5019）**：三 job 并行（a1c4a72）首轮 shard 2/3 红——根因 `packages/wxnodus-ink/dist/entry-exports.js` 未随工件传递（旧单 job 同工作区天然存在；拆分后 test job 只拿到根 dist，ui 测试解析 `index.js → ./dist/entry-exports.js` 8 个文件加载失败 + npm pack 清单断言 2 项）。修复：gate 增传 `ink-dist` 工件（path `packages/wxnodus-ink/dist`），test 分片显式下载到原路径（两个独立工件避开 v4 多路径合并语义歧义）。本地 YAML 校验 + 复跑全绿后推送。
+2. **vim VISUAL 模式（afa7f73，6 测试）**：codex `textarea/vim.rs` 对标（gemini vim.ts 无此模式——六家对标仍成立）。v/V 进入字符/行选区（visualAnchor + visualKind），hjkl/wbe/0$^/G 等移动经 applyMotion 扩展选区（state 展开保 anchor/kind），d/x/y/c/p/P 直作用选区（y 复制不动文本、c 进 insert、p/P 寄存器替换选区、行选区整行含换行），Esc 回 normal 保光标。**三个 bug 实测逐一取证修复**：① d/c/y 被操作符挂起段截胡（VISUAL 块前移至操作符段之前）；② 行选区 selRange 把光标索引当行号传给 rowStart（`cursorRow` 修正——跨行删除曾全删文本）；③ NORMAL 双击 Esc 清空处理器无 mode 守卫截胡 visual Esc（加 `mode === 'normal'` 守卫——测试循环毫秒级连按触发清空全文）。
+3. **测试期望校准**：v,l,x 删 [0,2)→'cd'、Esc 保光标 2 后 x 删 'c'→'abde'——按真实 vim 语义重写两处初版错误期望（vim 行为实测核对的黄金标准）。
+4. **收尾**：本地九命令门禁全绿（tsc ×2 + 全量 368 文件 / 2709 用例 + known-failures + 发现/覆盖 + lint + 环 + build）；远程 CI 见尾注。
