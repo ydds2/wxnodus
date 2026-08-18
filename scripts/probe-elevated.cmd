@@ -1,7 +1,15 @@
 @echo off
-REM 3.2 双态沙盒提权分支实测（supremacy 3.6）——请在【管理员】终端运行本脚本：
-REM   方式 1：右键本文件 →「以管理员身份运行」
-REM   方式 2：管理员 PowerShell/cmd 中执行 cd 到仓库根后运行 scripts\probe-elevated.cmd
+REM 3.2 双态沙盒提权分支实测（supremacy 3.6）——双击即可（自动请求管理员提权，UAC 弹窗点「是」）。
+REM 也可以：管理员 PowerShell/cmd 中 cd 到仓库根后运行 scripts\probe-elevated.cmd
+
+REM ── 自提权：当前非管理员时经 UAC 重新以管理员身份启动自身（实测脚本必须提权才有效）──
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+  echo 需要管理员权限实测提权沙盒分支——正在请求提权（UAC 弹窗请点「是」）...
+  powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+  exit /b
+)
+
 cd /d "%~dp0.."
 echo [1/2] 构建（npm run build——首次约 1-2 分钟）...
 call npm run build
