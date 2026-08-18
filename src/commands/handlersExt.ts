@@ -1229,7 +1229,23 @@ export const commands = {
     }
     if (!ctx.agent) return 'acp server 不可用：当前环境未提供 agent';
     const { runAcpServer } = await import('../kernel/acp.js');
-    const code = await runAcpServer({ run: async (text) => { const r = await ctx.agent!.run(text); return { ok: r.ok, text: r.text }; } });
+    // P3 评估轮：db 装配 ACP 会话存储——session/new 落库真会话行、session/load 校验存在性、
+    // load_history 真历史（无 db 环境降级内存会话，能力位 loadSession 如实不宣告）
+    const db = ctx.db as any;
+    const store = db ? {
+      createSession: () => {
+        const id = `acp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+        db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?, '', ?, ?)`).run(id, Date.now(), Date.now());
+        return id;
+      },
+      sessionExists: (id: string) => (db.prepare(`SELECT COUNT(*) AS c FROM sessions WHERE id=?`).get(id) as { c: number }).c > 0,
+      loadHistory: (id: string) => (db.prepare(`SELECT role, content FROM messages WHERE session_id=? AND archived=0 ORDER BY id`).all(id) as Array<{ role: string; content: string }>)
+        .map(r => ({ role: r.role, content: String(r.content) })),
+    } : undefined;
+    const code = await runAcpServer({
+      run: async (text) => { const r = await ctx.agent!.run(text); return { ok: r.ok, text: r.text }; },
+      store,
+    });
     return `ACP 会话结束（exit ${code}）`;
   });
 
