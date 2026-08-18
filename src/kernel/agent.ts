@@ -139,12 +139,9 @@ const TOOL_CACHE_SIZE = 32;          // 读工具结果缓存上限（settings.t
 /** 数值设置解析（生产级：夹取防误配 + 非法值回退默认）——复用 toolOutput.clampInt 单一事实源 */
 import { clampInt as clampN } from './toolOutput.js';
 
-/** 输出短哈希（FNV-1a 36 进制 7 位——签名并入输出，防「同参数不同输出」空转漏检；crush SHA-256 思想） */
-export function shortHash(s: string): string {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return (h >>> 0).toString(36).padStart(7, '0');
-}
+// supremacy 3.5：shortHash 下沉 kernel/hash.ts 叶子（微基准直连 + 分层去重）
+import { shortHash } from './hash.js';
+export { shortHash };
 
 
 

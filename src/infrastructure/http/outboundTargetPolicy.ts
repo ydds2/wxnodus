@@ -2,7 +2,7 @@
 // 非 http(s) scheme / 私有或保留目标 / DNS 解析失败 / 任一解析 IP 落入私网（防重绑定）→ 稳定拒绝。
 // 与 legacy checkUrlSafety 不同：DNS 失败在此是拒绝（OUTBOUND_HTTP_DNS_UNRESOLVED），绝不放行由请求层报错。
 import { lookup } from 'node:dns/promises';
-import { isBlockedHostname } from '../../kernel/ssrf.js';
+import { isBlockedHostname } from '../../kernel/blockedHosts.js'; // 叶子直连（supremacy 3.5 环 17 修复）
 import { gatewayError } from '../../protocol/errors.js';
 import { err, ok, type OperationResult } from '../../protocol/results.js';
 

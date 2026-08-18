@@ -3,7 +3,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDB, closeDB, appendAudit, saveCheckpoint, restoreCheckpoint, searchMessages, bigramZh, auditHash, forkSession, pickResumeSession, deleteMessage, updateMessage } from '../src/store/db.js';
+import { openDB, closeDB, appendAudit, saveCheckpoint, restoreCheckpoint, bigramZh, auditHash, forkSession, pickResumeSession, deleteMessage, updateMessage } from '../src/store/db.js';
+import { searchMessages } from '../src/kernel/memory.js';
 
 let dir: string;
 let db: ReturnType<typeof openDB>;

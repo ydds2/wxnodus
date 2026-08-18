@@ -21,7 +21,7 @@ import { topoSort } from '../build/plan.js';
 import { instantiate } from '../build/scaffold.js';
 import { writeEvidence, fingerprint } from '../build/evidence.js';
 import { runGate } from '../build/gate.js';
-import { searchMessages } from '../store/db.js';
+import { searchMessages } from '../kernel/memory.js';
 import { join, isAbsolute } from 'node:path';
 import { mkdirSync, existsSync, readdirSync, cpSync, writeFileSync } from 'node:fs';
 

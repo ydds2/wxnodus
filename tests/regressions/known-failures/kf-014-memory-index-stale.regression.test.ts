@@ -4,7 +4,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { openDB, closeDB, searchMessages } from '../../../src/store/db.js';
+import { openDB, closeDB } from '../../../src/store/db.js';
+import { searchMessages } from '../../../src/kernel/memory.js';
 import { createMemory } from '../../../src/kernel/memory.js';
 
 const tempDirs: string[] = [];

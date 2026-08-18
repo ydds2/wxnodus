@@ -16,7 +16,10 @@
     "dev": "tsx src/cli/index.ts",
     "start": "tsx src/cli/index.ts",
     "test": "npm run test:all",
-    "ci": "npm run typecheck && npm run typecheck:tests && npm run test:all && npm run test:known-failures && npm run check:test-discovery && npm run check:requirement-coverage && npm run build",
+    "ci": "npm run typecheck && npm run typecheck:tests && npm run test:all && npm run test:known-failures && npm run check:test-discovery && npm run check:requirement-coverage && npm run lint && npm run check:cycles && npm run build",
+    "lint": "node scripts/lint.mjs",
+    "check:cycles": "node scripts/check-cycles.mjs",
+    "bench": "node scripts/bench/run-bench.mjs",
     "test:all": "vitest run --config vitest.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
@@ -131,6 +134,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.4",
     "ink-testing-library": "^4.0.0",
+    "madge": "^8.0.0",
     "postject": "^1.0.0-alpha.6",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4",
@@ -158,5 +162,8 @@
   "bundledDependencies": [
     "@wxnodus/ink"
   ],
-  "prepack": "npm run build"
+  "prepack": "npm run build",
+  "bundleDependencies": [
+    "@wxnodus/ink"
+  ]
 }

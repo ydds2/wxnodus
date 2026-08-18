@@ -47,9 +47,9 @@
 
 | ID | 缺陷 | 状态 |
 |---|---|---|
-| C-01 | 无远程 CI（GitHub Actions）+ 无 lint + 无 perf 基准 | ◐ `.github/workflows/ci.yml` 已备（八步：npm run ci 全门禁 + vscode-ext 独立门禁 + vsix 工件，本地语法/结构校验通过）——推送与 workflow 绿待 git remote；lint/perf 见 3.5 |
+| C-01 | 无远程 CI（GitHub Actions）+ 无 lint + 无 perf 基准 | ✅ lint（scripts/lint.mjs：debugger 红线/内核层 process.exit 红线，ci 挂载）+ madge 环检查（scripts/check-cycles.mjs + allowlist——**修复环 13/17 两处运行时环**：db.ts 移除 searchMessages 再导出、ssrf↔outboundTargetPolicy 提取 blockedHosts 叶子），ci 九步挂载；远程 CI 仍 ◐（workflow 已备，推送待 remote） |
 | C-02 | 巨文件残留（wxGateway 等） | ◐ handlersExt 已拆（3718→2180），wxGateway 待拆 |
-| C-03 | 无 perf 基准目录 | ⏳（gemini perf-tests/aider benchmark 对齐） |
+| C-03 | 无 perf 基准目录 | ✅ `scripts/bench/run-bench.mjs`（gemini perf-tests 对齐：shortHash/diff 管线/bigramZh/diffLines 四项确定性微基准，`npm run bench`；基线 2026-08-18 首跑记录） |
 
 ## 下一档优先级（按提分/成本）
 

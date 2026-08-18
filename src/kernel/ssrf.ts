@@ -5,59 +5,12 @@
 // P0-08：safeFetchText 的逐跳授权与响应体限制已接线 outboundTargetPolicy / boundedResponseReader
 //（DNS 失败 fail-closed、按真实字节拒绝超限）；checkUrlSafety 保留为兼容导出（KF-011 regression 依赖）。
 import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
 import { authorizeOutboundUrl } from '../infrastructure/http/outboundTargetPolicy.js';
 import { readBoundedBody } from '../infrastructure/http/boundedResponseReader.js';
-
-// IPv4 私网/保留段（正则形态校验）
-const IPV4_PRIVATE_RE =
-  /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|0\.0\.0\.0|169\.254\.\d{1,3}\.\d{1,3}|100\.(6[4-9]|[7-9]\d)\.\d{1,3}\.\d{1,3})$/;
-// IPv6 私网/保留段（前缀校验）
-const IPV6_PRIVATE_PREFIXES = ['::1', 'fc', 'fd', 'fe80', 'fe8', 'fe9', 'fea', 'feb', '0:0:0:0:0:0:0:1'];
-
-/** IPv6 → IPv4 归一化：::ffff:a.b.c.d（含 hex 变体）与 64:ff9b::/96 NAT64 → IPv4 点分；非映射形式返回 null */
-function v6ToV4(ip: string): string | null {
-  const low = ip.toLowerCase();
-  // IPv4-mapped: ::ffff:a.b.c.d 或 ::ffff:7f00:1（hex）
-  let m = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(low);
-  if (m) return m[1]!;
-  m = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(low);
-  if (m) {
-    const a = parseInt(m[1]!, 16);
-    const b = parseInt(m[2]!, 16);
-    return `${a >> 8}.${a & 255}.${b >> 8}.${b & 255}`;
-  }
-  // NAT64: 64:ff9b::/96 —— 末尾 32 位为 IPv4（hex 形式）
-  m = /^64:ff9b::([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(low);
-  if (m) {
-    const a = parseInt(m[1]!, 16);
-    const b = parseInt(m[2]!, 16);
-    return `${a >> 8}.${a & 255}.${b >> 8}.${b & 255}`;
-  }
-  return null;
-}
-
-function isPrivateIpLiteral(ip: string): boolean {
-  const low = ip.toLowerCase();
-  if (isIP(low) === 4) {
-    return IPV4_PRIVATE_RE.test(low);
-  }
-  if (low === '::1' || low === '0:0:0:0:0:0:0:1') return true;
-  // IPv4-mapped / NAT64 归一化后复用 IPv4 校验（防 hex 变体绕过）
-  const v4 = v6ToV4(low);
-  if (v4) return IPV4_PRIVATE_RE.test(v4);
-  for (const p of IPV6_PRIVATE_PREFIXES) {
-    if (low.startsWith(p)) return true;
-  }
-  return false;
-}
-
-/** 主机名形态校验（不解析 DNS） */
-export function isBlockedHostname(host: string): boolean {
-  const h = host.toLowerCase().replace(/^\[|\]$/g, ''); // 去 IPv6 括号
-  if (h === 'localhost' || h === '0.0.0.0' || h === '::' || h === '0:0:0:0:0:0:0:0') return true;
-  return isPrivateIpLiteral(h);
-}
+// supremacy 3.5（环 17 修复）：阻断判定下沉 kernel/blockedHosts.ts 叶子——本文件 re-export
+// 保持旧导出面兼容（isPrivateIpLiteral 供 checkUrlSafety DNS 逐 IP 校验复用）
+import { isBlockedHostname, isPrivateIpLiteral } from './blockedHosts.js';
+export { isBlockedHostname } from './blockedHosts.js';
 
 /** 完整 URL 安全检查：形态 + DNS 解析后逐 IP（防 DNS 重绑定） */
 export async function checkUrlSafety(url: string): Promise<{ ok: boolean; reason?: string }> {

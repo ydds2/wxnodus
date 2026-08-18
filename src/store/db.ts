@@ -24,7 +24,8 @@ export { bigramZh };
 // 审计追加已迁至 kernel/audit.ts（分层泄漏修复 audit §13.45）——store 仅再导出（infra→kernel 合法方向）
 export { appendAudit, auditHash, type AuditDb } from '../kernel/audit.js';
 export { saveCheckpoint } from '../kernel/checkpoint.js';
-export { searchMessages } from '../kernel/memory.js';
+// supremacy 3.5：searchMessages 再导出移除——db.ts→kernel/memory.js 是内存环 13 的运行时回边
+// （memory→memoryRepository→db→memory）。消费方直接从 kernel/memory 导入（分层正确方向）。
 
 export function openDB(dataDir: string): Db {
   mkdirSync(dataDir, { recursive: true });

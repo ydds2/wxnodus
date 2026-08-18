@@ -836,3 +836,10 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **诚实口径（重要）**：不做「伪 vim」——全模态 vim 编辑不宣称（B-01 的 vim 半句以 keymap 配置层对齐 codex keymap 机制；pager 既有 vim 风格 j/k/b/g/G 已可配）。模态编辑如接入再如实标注。
 - **diff hunk 折叠/apply（B-02，对标 opencode 双布局）**：`src/wxnodus-ui/lib/diffHunks.ts`——groupDiffSections（meta 分节/hunk 分组，unified diff 语义：上下文归 hunk 体）、buildFoldSegments（meta 合并段+hunk 段）、withDefaultFolds（超长 hunk >20 行默认折叠）、toggleFold（纯函数不可变）、extractPatchText（还原补丁——apply_patch 工具输入源，与 diffLines 互逆）；**messageLine 渲染接线**（超长 hunk 默认折叠只显 @@ 头+「…N 行已折叠」，DIFF_HILITE_MAX 约束不变）。@文件引用机制已有（lib/atRefs.resolveAtRefs）。6 单测。交互式折叠切换与一键 apply UI 动作留后续（数据路径已备）。
 - **验证**：tsc 零错误；keymap 10 + diff-hunks 6 + composer-keys 回归 19 全绿；全量 + npm run ci 见下。
+
+### 13.61 超越计划阶段 3 第二批轮（2026-08-18：supremacy 3.5 perf 基准 + lint + madge 环检查）
+
+- **lint（C-01，ci 挂载）**：`scripts/lint.mjs`——确定性结构性规则（零配置零误报）：L1 debugger 残留（src/ 内即失败）、L2 分层红线（kernel/infrastructure/domain 内 process.exit 即失败——退出语义归 cli 层）、TODO/FIXME 计数报告项。598 源文件首跑全绿。ci 链 7→9 步（+lint +check:cycles）。
+- **madge 循环依赖门禁（C-01）**：`scripts/check-cycles.mjs` + `scripts/cycle-allowlist.json`。首跑检出 17 环：**修复 2 处运行时环**——① 环 13（kernel/memory→memoryRepository→store/db→kernel/memory）：db.ts 移除 `searchMessages` 值再导出（消费方 handlers.ts + 2 测试改直连 kernel/memory——分层正确方向）；② 环 17（kernel/ssrf↔infrastructure/http/outboundTargetPolicy 互相值导入）：阻断判定（IPV4_PRIVATE_RE/IPV6 前缀/v6ToV4/isPrivateIpLiteral/isBlockedHostname）整体下沉 `kernel/blockedHosts.ts` 叶子，双方同向依赖，ssrf 保留 re-export 兼容。剩余 4 环全部登记 allowlist（type-only/dynamic import 边，运行时无环——逐条注明理由）；ink fork 渲染管线 11 环排除（fork 上游）并注明。门禁语义：**新增未知环即 ci 失败**（drift 可见），修复后必须从 allowlist 移除。
+- **perf 基准（C-03，gemini perf-tests 对齐）**：`scripts/bench/run-bench.mjs`（esbuild 按入口打包隔离依赖图——agent.ts 拖原生依赖，shortHash 随之下沉 `kernel/hash.ts` 叶子供基准直连；累计式计时修复单轮耗时收敛死循环缺陷）。四项确定性微基准基线（Windows 11/Node 22.18，2026-08-18 首跑）：shortHash 325k ops/s、diff 管线 22.2k ops/s、bigramZh 17k ops/s、diffLines 25.3k ops/s。`npm run bench`。
+- **验证**：tsc 零错误；ssrf 定向 12 用例全绿；ci 九步全绿（2546 测试）；madge 门禁/LINT_OK/BENCH_OK 实录。

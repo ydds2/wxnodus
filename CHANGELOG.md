@@ -23,6 +23,7 @@
 - **GitHub Actions CI 备件（supremacy 2.4）**：`.github/workflows/ci.yml`（npm run ci 全门禁 + vscode-ext 独立门禁 + vsix 工件）——本地校验通过，推送待仓库 remote 配置。
 - **键位配置层（supremacy 3.3）**：`/config set keymap '{"pagerClose":"ctrl+x"}'` 式 JSON 覆盖键位（pager 关闭/导航热生效；非法配置自动回退默认，绝不崩 UI）——诚实口径：不宣称伪 vim。
 - **diff hunk 折叠（supremacy 3.3）**：超长 diff hunk 默认折叠（只显 @@ 头 + 「…N 行已折叠」），补丁完整保留可经 apply_patch 应用。
+- **工程门禁扩展（supremacy 3.5）**：`npm run ci` 七步 → 九步——新增结构性 lint（debugger/内核层 exit 红线）与循环依赖门禁（madge + allowlist，未知新环即失败）；修复 2 处运行时循环依赖（db→memory 再导出环、ssrf↔outbound 互指环）。`npm run bench` 微基准（四项基线）。
 
 ## [3.1.0] - 2026-08-18
 
