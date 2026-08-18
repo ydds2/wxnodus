@@ -996,4 +996,6 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 8. **A-07 快照增量化（39566cc，3 单测）**：checkpoint 改存 `messagesUpTo` 上界（消息只增不删保证重建精确）——自动/手动快照不再每回合全量 SELECT；messagesAtCheckpoint 旧形态数组向后兼容；restore/compare/list 全链路接新形态。kimi `_checkpoint` 对标。
 9. **云端功能盘点（docs/cli-cloud-vs-local-2026.md）**：六家记忆全本地（本地记忆非独有——独有是本地向量跨会话召回）；本地模型 4/6 家支持（gemini/kimi 完全无）；云端独占 4 项（opencode 分享/GitHub agent、codex cloud-config/cloud-tasks、kimi 云搜索）；强制账号 codex/kimi/gemini 三家。
 10. **验证**：本地九命令门禁全绿（tsc ×2 + 全量 374 文件/2754 用例 + known-failures + 发现/覆盖 + lint + 环 + build）；远程 CI 见尾注。
+
+**尾注（2026-08-18）**：远程 CI **workflow #32192293135 全绿**——vscode-ext 1m2s / gate 2m12s / test 三分片 5m42s+3m28s+5m15s 全 success，wall ~8 分钟；同轮覆盖 P3 评估轮全部 7 提交（HEAD 935deb1，push 经全局代理 127.0.0.1:7897——国内直连 github.com 12s 超时问题已由全局 git 代理解决，`git ls-remote` 验证远端=本地 HEAD）。
 11. **评分口径（诚实，不预支）**：② 冲 10 论据已齐（VISUAL 六家皆无 + 文本对象 codex 对标 + / 搜索 + redo + 既有 Ctrl-R 历史搜索/键位层/@补全/外部编辑器）——是否 9→10 留七评复核 codex 8 种文本对象覆盖后定；本轮维持 922 不复算。B-03 会话浏览器 UI（数据面已备）、C-02 wxGateway 巨文件拆分两项大工程项如实留存 register。
