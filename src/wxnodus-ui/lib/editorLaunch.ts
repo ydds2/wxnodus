@@ -13,14 +13,15 @@ export interface EditorEnv {
   platform?: NodeJS.Platform
 }
 
-/** 探测链（kimi 同款）：$VISUAL → $EDITOR → 系统默认（win32 notepad / 其余 vi）。
+/** 探测链（kimi editor.py:18-50 同款）：$VISUAL → $EDITOR → 系统默认
+ *  （win32 code --wait / 其余 vi——code 未安装由 runExternalEditor 降级链兜底 notepad）。
  *  命令串按空白切分（引号含空格场景由调用方直接传 command 数组覆盖） */
 export function resolveEditorCommand(env: EditorEnv = process.env): string[] {
   for (const key of ['VISUAL', 'EDITOR'] as const) {
     const raw = env[key]
     if (raw && raw.trim()) return raw.trim().split(/\s+/)
   }
-  return env.platform === 'win32' ? ['notepad'] : ['vi']
+  return env.platform === 'win32' ? ['code', '--wait'] : ['vi']
 }
 
 export type EditorResult = { ok: true; text: string } | { ok: false; error: string }

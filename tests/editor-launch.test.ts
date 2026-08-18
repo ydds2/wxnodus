@@ -11,8 +11,8 @@ describe('resolveEditorCommand（探测链）', () => {
     expect(resolveEditorCommand({ EDITOR: 'code --wait', platform: 'linux' })).toEqual(['code', '--wait'])
   })
 
-  it('都未配置 → 系统默认（win32 notepad / 其余 vi）', () => {
-    expect(resolveEditorCommand({ platform: 'win32' })).toEqual(['notepad'])
+  it('都未配置 → 系统默认（win32 code --wait / 其余 vi；code 缺失由降级链兜底 notepad）', () => {
+    expect(resolveEditorCommand({ platform: 'win32' })).toEqual(['code', '--wait'])
     expect(resolveEditorCommand({ platform: 'linux' })).toEqual(['vi'])
   })
 })

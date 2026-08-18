@@ -1001,7 +1001,7 @@ export function TextInput({
 
         const res = runExternalEditor({
           command: resolveEditorCommand(),
-          fallback: process.platform === 'win32' ? [['code', '--wait'], ['notepad']] : [['vi']],
+          fallback: process.platform === 'win32' ? [['notepad']] : [['vi']],
           text: vRef.current,
         })
         if (res.ok) {
