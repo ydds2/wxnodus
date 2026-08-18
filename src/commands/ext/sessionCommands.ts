@@ -3,6 +3,7 @@
 import { join, resolve, dirname } from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { saveCheckpoint, replaceSessionMessages } from '../../store/db.js';
+import { snapshotMessagesUpTo, messagesAtCheckpoint } from '../../kernel/checkpoint.js';
 import { estimateTokens } from '../../kernel/memory.js';
 import { discoverSkills } from '../../kernel/skills.js';
 import { scanProject, renderAgentsMd } from '../../kernel/projectScan.js';
@@ -567,16 +568,16 @@ ${d}
       const rows = ctx.db.prepare(`SELECT id, data, ts FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 10`).all(sid) as Array<{ id: number; data: string; ts: number }>;
       if (!rows.length) return '暂无快照——/checkpoint save 保存，/undo 撤销前自动保存';
       return lines(' 快照 ', rows.map(r => {
-        const d = JSON.parse(r.data) as { kind?: string; messages?: unknown[] };
-        const n = Array.isArray(d.messages) ? d.messages.length : 0;
-        return ` #${r.id} ${d.kind ?? 'checkpoint'}（${n} 条消息）${new Date(r.ts).toLocaleString('zh-CN', { hour12: false })}`;
+        const d = JSON.parse(r.data) as { kind?: string; messages?: unknown[]; messagesUpTo?: number; count?: number };
+        const n = Array.isArray(d.messages) ? d.messages.length : (d.count ?? 0);
+        return ` #${r.id} ${d.kind ?? 'checkpoint'}（${n} 条消息${typeof d.messagesUpTo === 'number' ? `，上界 #${d.messagesUpTo}` : ''}）${new Date(r.ts).toLocaleString('zh-CN', { hour12: false })}`;
       }));
     }
     if (sub === 'save') {
-      // F20：快照含完整字段（id/archived/ts），restore 保留原始 id 与黑洞状态
-      const msgs = ctx.db.prepare(`SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=? ORDER BY id`).all(sid);
-      const id = saveCheckpoint(ctx.db, sid, { kind: 'manual', messages: msgs, ts: Date.now() });
-      return `已保存快照 #${id}（${(msgs as unknown[]).length} 条消息）`;
+      // A-07 增量化：存 messagesUpTo 上界（消息只增不删）——不再全量复制消息
+      const upTo = snapshotMessagesUpTo(ctx.db, sid);
+      const id = saveCheckpoint(ctx.db, sid, { kind: 'manual', ...upTo, ts: Date.now() });
+      return `已保存快照 #${id}（${upTo.count} 条消息，上界 #${upTo.messagesUpTo}）`;
     }
     if (sub === 'restore') {
       const id = rest[0];
@@ -584,12 +585,13 @@ ${d}
         ? ctx.db.prepare(`SELECT data FROM checkpoints WHERE id=? AND session_id=?`).get(id, sid) as { data: string } | undefined
         : ctx.db.prepare(`SELECT data FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 1`).get(sid) as { data: string } | undefined;
       if (!row) return `未找到快照${id ? ` #${id}` : ''}`;
-      const d = JSON.parse(row.data) as { messages?: Array<{ id?: number; role: string; content: string; tool_call_id?: string | null; archived?: number; ts?: number }> };
-      if (!Array.isArray(d.messages)) return '快照数据不完整';
+      const d = JSON.parse(row.data) as any;
+      const msgs = messagesAtCheckpoint(ctx.db, sid, d);
+      if (!msgs) return '快照数据不完整';
       // A25：统一恢复函数——清理 FTS 旧行 + 重置 AUTOINCREMENT 序列再重插
       // （此前手写 DELETE+重插：FTS5 触发器使同 rowid 重插 constraint failed）
-      replaceSessionMessages(ctx.db, sid, d.messages);
-      return `已从快照${id ? ` #${id}` : ''}恢复 ${d.messages.length} 条消息（保留原始 id/archived）`;
+      replaceSessionMessages(ctx.db, sid, msgs);
+      return `已从快照${id ? ` #${id}` : ''}恢复 ${msgs.length} 条消息（保留原始 id/archived）`;
     }
     if (sub === 'compare') {
       // P1-4：快照 vs 当前三态对比（Claude Code checkpoint 三态语义补全）——
@@ -599,10 +601,11 @@ ${d}
         ? ctx.db.prepare(`SELECT data FROM checkpoints WHERE id=? AND session_id=?`).get(id, sid) as { data: string } | undefined
         : ctx.db.prepare(`SELECT data FROM checkpoints WHERE session_id=? ORDER BY id DESC LIMIT 1`).get(sid) as { data: string } | undefined;
       if (!row) return `未找到快照${id ? ` #${id}` : ''}（/checkpoint list 查看）`;
-      const snap = JSON.parse(row.data) as { kind?: string; messages?: Array<{ id?: number; role: string; content: string; archived?: number }> };
-      if (!Array.isArray(snap.messages)) return '快照数据不完整';
+      const snapData = JSON.parse(row.data) as any;
+      const snap = messagesAtCheckpoint(ctx.db, sid, snapData);
+      if (!snap) return '快照数据不完整';
       const cur = ctx.db.prepare(`SELECT id, role, content, archived FROM messages WHERE session_id=? ORDER BY id`).all(sid) as Array<{ id: number; role: string; content: string; archived: number }>;
-      const snapById = new Map(snap.messages.map(m => [m.id, m]));
+      const snapById = new Map(snap.map(m => [m.id, m]));
       const curById = new Map(cur.map(m => [m.id, m]));
       const added: Array<{ id: number; content: string }> = [];
       const removed: Array<{ id?: number; content?: string }> = [];
@@ -610,10 +613,10 @@ ${d}
       for (const c of cur) {
         if (!snapById.has(c.id)) added.push({ id: c.id, content: c.content });
       }
-      for (const s of snap.messages) {
+      for (const s of snap) {
         if (!curById.has(s.id!)) removed.push({ id: s.id, content: s.content });
       }
-      for (const s of snap.messages) {
+      for (const s of snap) {
         const c = curById.get(s.id!);
         if (c && (c.content !== s.content || c.archived !== (s.archived ?? 0))) {
           modified.push({ id: s.id!, from: String(s.content ?? '').slice(0, 40), to: String(c.content ?? '').slice(0, 40) });
@@ -621,8 +624,8 @@ ${d}
       }
       const preview = (list: Array<{ id?: number; content?: string }>, n: number) =>
         list.slice(0, n).map(x => ` #${x.id} ${String(x.content ?? '').slice(0, 50)}`).join('\n');
-      return lines(` 快照对比 #${id ?? '最新'}（${snap.kind ?? 'checkpoint'}） `, [
-        ` 新增 ${added.length} 条｜删除 ${removed.length} 条｜修改 ${modified.length} 条（快照 ${snap.messages.length} → 当前 ${cur.length}）`,
+      return lines(` 快照对比 #${id ?? '最新'}（${snapData.kind ?? 'checkpoint'}） `, [
+        ` 新增 ${added.length} 条｜删除 ${removed.length} 条｜修改 ${modified.length} 条（快照 ${snap.length} → 当前 ${cur.length}）`,
         added.length ? `— 新增预览 —\n${preview(added, 5)}` : '',
         removed.length ? `— 删除预览 —\n${preview(removed, 5)}` : '',
         modified.length ? `— 修改预览 —\n${modified.map(m => ` #${m.id} ${m.from} → ${m.to}`).slice(0, 5).join('\n')}` : '',

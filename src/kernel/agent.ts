@@ -1444,11 +1444,12 @@ export function createAgent(opts: AgentOptions) {
     hooks?.sessionEnd?.({ ok, turns });
     // P2-全方面：自动 checkpoint（Claude Code 每 prompt 快照对齐）——回合结束自动快照，
     // 保留最近 10 个（saveCheckpoint 内部循环清理）；/rewind 可回滚任意自动快照
+    // A-07 增量化：存 messagesUpTo 上界（消息只增不删）——不再每回合全量 SELECT 复制
     if (!opts2.subagent) {
       try {
-        const { saveCheckpoint } = await import('./checkpoint.js');
-        const msgsSnap = opts.db.prepare(`SELECT id, role, content, tool_call_id, archived, ts FROM messages WHERE session_id=? ORDER BY id`).all(sessionId);
-        saveCheckpoint(opts.db, sessionId, { kind: 'auto', messages: msgsSnap, ts: Date.now() });
+        const { saveCheckpoint, snapshotMessagesUpTo } = await import('./checkpoint.js');
+        const upTo = snapshotMessagesUpTo(opts.db, sessionId);
+        saveCheckpoint(opts.db, sessionId, { kind: 'auto', ...upTo, ts: Date.now() });
       } catch { /* 快照失败不阻断（临时目录等） */ }
     }
     return { ok, text: finalText, turns, interrupted: st.interrupted, ...(status ? { status } : {}) };
