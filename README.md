@@ -42,6 +42,8 @@ cat 文件.txt | wxnodus -p "总结内容"   # stdin 管道（-p 为指令、std
 | 入口 | 文档 |
 |---|---|
 | `--wire` / `--stream-json` 事件流（JSONL + stdin 双向帧 + 退出码协议） | `docs/wire-protocol.md`（含 `examples/wire-events.mjs`、`examples/wire-approval-responder.mjs` 可运行示例） |
+| `--serve` HTTP 网关（SSE 事件 + 会话 RPC + Bearer/CSRF——桌面端/面板契约） | `docs/serve-protocol.md` |
+| VS Code 插件（wire 桥接 + 对话面板 + 审批模态，本地 vsix） | `packages/vscode-ext/README.md` |
 | ACP stdio 服务器（`wxnodus -p "/acp server"`，Zed/JetBrains 接入） | `docs/acp-zed-jetbrains.md` |
 | stdin 管道（`cat 文件 | wxnodus -p "指令"`） | `--help` 用法表 |
 | 更新检查（`/update`：渠道探测/版本/仓库状态/更新命令） | `CHANGELOG.md` |

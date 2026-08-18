@@ -19,6 +19,8 @@
 - **IDE 插件（supremacy 2.1）**：`packages/vscode-ext/`——VS Code 伴侣插件（`--wire` 桥接 + 对话面板 + 审批/澄清/密码原生模态），本地 vsix 可装（marketplace 上架需后续发布通道）；连带修复 wire 协议审批广播缺口（`approval.request` 等四事件现真实广播 request_id）。
 - **远程执行 ssh 通道（supremacy 2.2）**：`/remote ssh://user@host` 设置目标后 bash 工具经 ssh 转发执行（输出恒带「远端未沙盒」诚实标注）。
 - **用户文档三件套（supremacy 2.3）**：`docs/getting-started.md` / `docs/troubleshooting.md` / `docs/examples.md` + README 链接（命令-注册表对账测试）。
+- **--serve 协议加固（supremacy 2.5）**：`sessions` RPC 返回结构化会话列表（首问摘要/消息数/分支数/血缘，与 `/sessions --json` 同源）；`/events` SSE 新增 `session.changed` 会话变更广播（事件驱动刷新，无轮询）；`docs/serve-protocol.md` 桌面端契约。
+- **GitHub Actions CI 备件（supremacy 2.4）**：`.github/workflows/ci.yml`（npm run ci 全门禁 + vscode-ext 独立门禁 + vsix 工件）——本地校验通过，推送待仓库 remote 配置。
 
 ## [3.1.0] - 2026-08-18
 

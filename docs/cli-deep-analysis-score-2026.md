@@ -232,3 +232,9 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 - **2.2 远程执行 ssh 通道（S-04 阶段 1）**：`sshRemote.ts`（目标解析/ssh 参数 BatchMode/流式回传/超时 kill/ENOENT 指引/注入式 runner）+ bash 工具远程分支（settings.remote 时经 ssh 转发，本地审批链不变）+ `/remote` 命令（设置/运行/状态/off）——**远端未沙盒诚实标注恒在**。10 mock 单测。
 - **2.3 用户文档三件套（S-01 部分）**：`docs/getting-started.md`/`troubleshooting.md`/`examples.md` + README 链接契约 + **不撒谎对账测试**（文档提到的命令与 SLASH 注册表对账——当场抓到真实缺口：/share、/balance 注册但不在目录，已修复）。
 - **评分口径**：⑦ 场景矩阵「IDE 插件」✗→≈（本地 vsix 真实消费者，marketplace 上架前不加满）+「远程」✗→≈（ssh 通道阶段 1，完整 exec-server 前不加满）——按执行协议，⑦ 复算计入**阶段 2 收尾**（2.4 CI + 2.5 桌面端协议完成后一次复算）；本批分数保持 754 不变，如实记录。
+
+### 9.7 超越计划阶段 2 第二批（2026-08-18：2.5 桌面端协议加固 + 2.4 CI workflow 备件）
+
+- **2.5 桌面端协议加固（--serve 路径，路线图既定推荐）**：`serve.ts`——① 结构化 `sessions` RPC（与 `/sessions --json`、桌面端共用 `listSessionsStructured` 单一事实源：首问摘要/消息数/分支数/血缘；窄端口回退裸 SQL 诚实降级）② **`session.changed` SSE 广播**（SSE 订阅者注册表 + chat/command RPC 完成后推送——面板事件驱动刷新会话列表，无轮询）；`docs/serve-protocol.md` v1（路由/RPC/SSE/安全/桌面端施工图，诚实边界：serve 模式审批暂缺省 deny，交互审批走 --wire 宿主模式）。3 协议用例（真实 db 结构化断言 + SSE 双 reason 广播）+ 8 既有 serve 用例全绿。
+- **2.4 CI workflow 备件（remote 待用户）**：`.github/workflows/ci.yml`——八步（checkout/setup-node 22/npm install/`npm run ci` 全门禁/vscode-ext install+typecheck+test/vsce 打包/上传 vsix 工件），本地 YAML 语法+结构校验通过；**推送与首次 workflow 绿待 git remote**（阻塞如实标注）。
+- **评分口径**：⑨ 工程 CI 仍是「本地门禁 + 备件」——workflow 未在真实 runner 上绿过，⑨ 不加分；⑦ 复算仍计入阶段 2 收尾（2.4 推送绿后）。分数保持 754 不变。

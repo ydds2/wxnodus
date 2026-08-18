@@ -47,7 +47,7 @@
 
 | ID | 缺陷 | 状态 |
 |---|---|---|
-| C-01 | 无远程 CI（GitHub Actions）+ 无 lint + 无 perf 基准 | ◐ npm run ci 本地门禁代替；其余 ⏳ |
+| C-01 | 无远程 CI（GitHub Actions）+ 无 lint + 无 perf 基准 | ◐ `.github/workflows/ci.yml` 已备（八步：npm run ci 全门禁 + vscode-ext 独立门禁 + vsix 工件，本地语法/结构校验通过）——推送与 workflow 绿待 git remote；lint/perf 见 3.5 |
 | C-02 | 巨文件残留（wxGateway 等） | ◐ handlersExt 已拆（3718→2180），wxGateway 待拆 |
 | C-03 | 无 perf 基准目录 | ⏳（gemini perf-tests/aider benchmark 对齐） |
 

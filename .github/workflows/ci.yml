@@ -1,0 +1,43 @@
+name: CI
+
+# supremacy 2.4：GitHub Actions CI（本地已生成 + 语法校验；推送待仓库 remote 配置后自动生效）
+# 门禁与本地 `npm run ci` 同源（七步：typecheck×2 + 全量测试 + known-failures + 发现/覆盖检查 + 构建），
+# 另加 packages/vscode-ext 独立门禁（typecheck + node:test + esbuild + vsce 打包）与 vsix 工件上传。
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Full local gate (npm run ci)
+        run: npm run ci
+
+      - name: Install vscode-ext dependencies
+        run: npm --prefix packages/vscode-ext install
+
+      - name: vscode-ext typecheck + tests
+        run: npm --prefix packages/vscode-ext run typecheck && npm --prefix packages/vscode-ext run test
+
+      - name: Package vscode-ext (vsix)
+        run: npm --prefix packages/vscode-ext run package
+
+      - name: Upload vsix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wxnodus-vscode-vsix
+          path: packages/vscode-ext/wxnodus-vscode.vsix
+          if-no-files-found: error

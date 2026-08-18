@@ -817,3 +817,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **文档**：register S-03/S-04 → ◐ 落地；plan 阶段 2 表 2.1/2.2/2.3 ✅（加状态列）；score §9.6；wire-protocol.md 修订；本审计条目。
 - **口径**：⑦「IDE 插件/远程」✗→≈（真实消费者/真实通道，但 marketplace 上架与完整 exec-server 未到）——⑦ 复算计入阶段 2 收尾（2.4/2.5 完成后一次复算）；当前分数 754 不变。
 - **验证**：根 tsc 零错误；新增根级 18 用例（ssh 10 + wire 请求 4 + docs 4）；vscode-ext 独立 typecheck+4 单测+vsix；全量 + npm run ci 见下。
+
+### 13.59 超越计划阶段 2 第二批轮（2026-08-18：supremacy 2.5 桌面端协议加固 + 2.4 CI workflow 备件）
+
+- **用户决策缺席**：2.4（git remote）与 2.5（--serve vs --wire）两问未获答复——按最佳判断推进：2.4 走「只备 workflow 不推送」（不虚构 remote）；2.5 按路线图文档既定推荐走 --serve 路径（ide-remote-share-roadmap 明确「建议桌面端直接消费 --serve」）。
+
+- **2.5 桌面端协议加固（--serve）**：`serve.ts` ① 结构化 `sessions` RPC——弃裸 SQL 改 `listSessionsStructured`（与 `/sessions --json`、桌面端共用单一事实源：id/title/createdAt/updatedAt/msgCount/firstUser/forkedFromId/forkCount）；窄端口（测试桩/内存模式）try/catch 回退裸 SQL（诚实降级不崩，既有 8 用例零漂移）② **SSE 订阅者注册表 + `session.changed` 广播**——chat/command RPC 完成即推 `{sessionId, reason, ts}`（面板事件驱动刷新会话列表，无轮询）；`docs/serve-protocol.md` v1（路由/RPC/SSE/安全/桌面端施工图）——诚实边界写明：serve 模式审批缺省 deny（交互审批走 --wire 宿主模式，IDE 插件同款桥接），serve 审批 RPC 通道列后续协议版本。测试：`tests/cli-serve-protocol.test.ts` 3 用例（真实 db 种子血缘断言结构化行；SSE chat/command 双 reason 广播）——与既有 `kernel-serve.test.ts` 8 用例共绿。
+
+- **2.4 CI workflow 备件（C-01）**：`.github/workflows/ci.yml`——on push/pull_request；八步：checkout → setup-node 22（npm cache）→ npm install → `npm run ci`（七步门禁全量）→ vscode-ext install → vscode-ext typecheck+test → vsce 打包 → upload-artifact（vsix，if-no-files-found: error）。本地 YAML 语法+结构校验通过（python yaml：name/triggers/jobs/steps/门禁命令/工件全断言）。**推送与首次 workflow 绿待 git remote**（阻塞如实标注，⑨ 不加分）。
+
+- **文档**：register C-01 → ◐（备件）；plan 阶段 2 表 2.4 ◐/2.5 ✅；score §9.7；README 协议与集成增 serve/vscode-ext 两行；本审计条目。
+- **口径**：⑦ 复算仍计入阶段 2 收尾（2.4 推送绿后一次复算）；当前分数 754 不变。
+- **验证**：tsc 零错误；新增 3 协议用例；全量 + npm run ci 见下。

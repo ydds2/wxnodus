@@ -86,6 +86,16 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
     ?? (process.env.WXNODUS_SERVE_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
   const maxBodyBytes = opts.maxBodyBytes ?? BODY_TOO_LARGE;
 
+  // supremacy 2.5：SSE 订阅者注册表 + 会话变更广播——桌面端/面板经 /events 订阅，
+  // /rpc（chat/command）变更会话后实时收到 session.changed（协议见 docs/serve-protocol.md）
+  const sseClients = new Set<ServerResponse>();
+  const broadcast = (type: string, payload: unknown) => {
+    const data = JSON.stringify(payload ?? {});
+    for (const client of [...sseClients]) {
+      try { client.write(`event: ${type}\ndata: ${data}\n\n`); } catch { /* 断开由 close 清理 */ }
+    }
+  };
+
   const bearerOf = (req: IncomingMessage): string | null => {
     const header = req.headers.authorization;
     if (!header || !header.startsWith('Bearer ')) return null;
@@ -158,16 +168,20 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
       }
 
       if (req.method === 'GET' && url.pathname === '/events') {
-        // SSE 事件流：总线事件实时转发（外部工具/面板可订阅；Bearer 认证）
+        // SSE 事件流：总线事件实时转发 + session.changed 会话变更广播（外部面板/桌面端订阅；Bearer 认证）
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
         res.write('event: ready\ndata: {"connected":true}\n\n');
+        sseClients.add(res);
         const offs: Array<() => void> = [];
         for (const type of ['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'system.notice', 'voice.transcript']) {
           offs.push(k.bus.on(type, (e: any) => {
             try { res.write(`event: ${type}\ndata: ${JSON.stringify(e?.payload ?? {})}\n\n`); } catch { /* 连接断开 */ }
           }));
         }
-        req.on('close', () => { for (const off of offs) { try { off(); } catch {} } });
+        req.on('close', () => {
+          sseClients.delete(res);
+          for (const off of offs) { try { off(); } catch {} }
+        });
         return;
       }
 
@@ -195,6 +209,7 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
             const r = await k.agent.run(prompt);
             const status = httpStatusForCompletion(r.interrupted ? 'cancelled' : r.ok ? 'succeeded' : 'failed');
             json(res, req, status, { ok: r.ok, text: r.text, turns: r.turns, interrupted: r.interrupted }, allowlist);
+            broadcast('session.changed', { sessionId: k.agent.getSessionId?.() ?? String(params.session_id ?? 'default'), reason: 'chat', ts: Date.now() });
             return;
           }
           case 'command': {
@@ -202,6 +217,7 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
             if (!cmd.trim()) { json(res, req, 400, { ok: false, error: 'command 必填' }, allowlist); return; }
             const r = await k.commandBus.execute(cmd);
             json(res, req, httpStatusForCompletion(r.completionStatus ?? (r.ok ? 'succeeded' : 'failed')), { ok: r.ok, output: r.output ?? '', error: r.error }, allowlist);
+            broadcast('session.changed', { sessionId: k.agent.getSessionId?.() ?? 'default', reason: 'command', ts: Date.now() });
             return;
           }
           case 'memory.search': {
@@ -216,10 +232,17 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
             return;
           }
           case 'sessions': {
+            // supremacy 2.5：结构化会话列表（与 /sessions --json、桌面端共用 listSessionsStructured
+            // 单一事实源——首问摘要/消息数/分支数/血缘）；窄端口（测试桩/内存模式）回退裸 SQL 诚实降级
             let rows: unknown[] = [];
             try {
-              rows = k.db.prepare('SELECT id, title, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 50').all() as unknown[];
-            } catch { /* 内存模式 */ }
+              const { listSessionsStructured } = await import('../kernel/sessionLineage.js');
+              rows = listSessionsStructured(k.db as import('../store/db.js').Db);
+            } catch {
+              try {
+                rows = k.db.prepare('SELECT id, title, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 50').all() as unknown[];
+              } catch { /* 内存模式 */ }
+            }
             json(res, req, 200, { ok: true, sessions: rows }, allowlist);
             return;
           }
