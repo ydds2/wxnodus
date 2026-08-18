@@ -805,3 +805,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **阶段 1 收尾复算（执行协议）**：⑤ 6→8（A-02 +11、A-03 +11）；⑩ 8→9（A-06 +7）。**总分 725→754**（第 4 名稳固，距 gemini 812 差 58）。诚实留白：④ 保持 9（满格需子代理分型+结构化输出，阶段 3）；⑥ 保持 9（execpolicy+审批持久化已落地，但双态沙盒提权分支 S-07 未经实测不宣称 10）；⑤ 到 9 还差 API 级 caching 深化（阶段 3）；A-01 按口径不直接加分。
 - **文档**：register A-01/A-04/A-05/B-06 → ✅；plan 阶段 1 表全 ✅ + 阶段 2 起点同步 754；score §0.1 表（⑤8/⑩9/总分754）+ §9.5；CHANGELOG；本审计条目。
 - **验证**：tsc 零错误；本批新增 40 用例（11+7+7+8+7…）+ 既有套件定向全绿；全量 + npm run ci 见下。
+
+### 13.58 超越计划阶段 2 首批轮（2026-08-18：supremacy 2.1 IDE 插件 / 2.2 ssh 通道 / 2.3 用户文档三件套）
+
+- **需求**：阶段 2「生态上车」无前置三项先行（2.4 git remote / 2.5 桌面端接入方式待用户决策）。
+
+- **2.1 IDE 插件（S-03 落地，对标 gemini companion/codex vscode）**：`packages/vscode-ext/` 独立包（零污染根依赖——独立 npm install + 独立 tsconfig/esbuild/vsce；根 .gitignore 排除 node_modules/dist/vsix）。extension.ts：`wxnodus.run/panel/stop` 三命令；spawn `wxnodus -p <提问> --wire --data-dir <globalStorage>`（dataDir 与 CLI 主数据隔离）；stdout JSONL → webview（token 增量/工具状态/终态）；`approval.request` → showWarningMessage 真阻塞模态（Allow/Allow session/Deny）→ `approval.respond` 帧闭环；clarify/secret/form → showInputBox（密码框）。wireBridge.ts 纯函数零 vscode 依赖（node:test 4 用例）。验证：typecheck + 4 单测 + esbuild 单文件 + `vsce package` 产出 `wxnodus-vscode.vsix`（7.6KB，5 文件）——本地安装不受 S-01 阻塞。
+- **wire 协议缺口修复（2.1 连带，重要）**：headless wire 网关此前 `requestApproval/Clarify/Secret/Form` 只把 request_id 存内存 Map、**从不广播**——外部前端拿不到 id 就无从应答（示例 responder 只能示意）。修复：`createHeadlessWireGateway` 增加 `onRequest` 广播回调 → wire 流新增 `approval.request`/`clarify.request`/`secret.request`/`form.request` 四事件（cli/index.ts 接线 console.log JSONL）；wire-protocol.md §1/§2 修订（含 `credential_form.respond` 补录——实现早已存在文档漏记）；示例 responder 改走真实 request_id（toolId 与 request_id 不可混用——注释明确）；4 用例（广播/应答闭环/未知 id handled=false/无 onRequest 兼容零漂移）。
+- **2.2 远程执行 ssh 通道（S-04 阶段 1，对标 codex exec-server 的先行通道）**：`kernel/sshRemote.ts`——`parseRemoteTarget`（ssh://user@host[:port]，端口 1..65535 夹取）、`buildSshArgs`（BatchMode=yes 防交互卡死 + ConnectTimeout=10 + 无伪终端）、`runRemoteCommand`（注入式 runner 默认 execFile 'ssh'，流式回传、超时 kill、ENOENT 给 Windows OpenSSH Client 启用指引、abort 中断）——**REMOTE_UNSANDBOXED_NOTE 恒附带**（远端未沙盒诚实口径）。接线：bash 工具 remote 分支（settings.remote 时经 ssh 转发，本地审批链不变——权限门在 agent 侧先裁决）；`/remote` 命令（设置/run/status/off，settings 持久化）；registry 收录（目录/分类/描述齐全）。10 mock 单测（成功/非零码/ENOENT/超时/中断/未配置/解析/参数/诚实口径）。
+- **2.3 用户文档三件套（S-01 部分）**：`docs/getting-started.md`（安装/三步/能力速览/离线能力）、`docs/troubleshooting.md`（按症状索引五节）、`docs/examples.md`（10 个可复现场景）——README 增「用户文档」节；`tests/docs-links.test.ts` 链接契约 4 用例，其中**不撒谎对账**（文档命令与 SLASH 注册表逐一对账）当场抓到真实缺口：`/share`、`/balance` 注册但不在 SLASH 目录（/help 与 command_search 盲区）——已修复并收录描述/分类。
+- **文档**：register S-03/S-04 → ◐ 落地；plan 阶段 2 表 2.1/2.2/2.3 ✅（加状态列）；score §9.6；wire-protocol.md 修订；本审计条目。
+- **口径**：⑦「IDE 插件/远程」✗→≈（真实消费者/真实通道，但 marketplace 上架与完整 exec-server 未到）——⑦ 复算计入阶段 2 收尾（2.4/2.5 完成后一次复算）；当前分数 754 不变。
+- **验证**：根 tsc 零错误；新增根级 18 用例（ssh 10 + wire 请求 4 + docs 4）；vscode-ext 独立 typecheck+4 单测+vsix；全量 + npm run ci 见下。

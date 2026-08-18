@@ -248,7 +248,12 @@ if (pre.mode === 'error') {
   // approval/clarify/sudo/secret/form responder 等待 stdin 帧，超时 fail-closed（deny/''/null）。
   if (opts.wire && opts.prompt && !opts.serve) {
     const { createHeadlessWireGateway } = await import('./headlessGateway.js');
-    gateway = createHeadlessWireGateway({ sessionId: opts.session ?? 'default' });
+    // supremacy 2.1：pending 请求（审批/澄清/密码/表单）经 onRequest 广播进 wire 事件流——
+    // 外部前端（IDE 插件/桌面端）凭 request_id 回 approval.respond/clarify.respond 等帧
+    gateway = createHeadlessWireGateway({
+      sessionId: opts.session ?? 'default',
+      onRequest: (ev) => console.log(JSON.stringify({ type: ev.type, ...(Object.fromEntries(Object.entries(ev).filter(([k]) => k !== 'type'))) })),
+    });
   }
   // 模式/主题状态
   let mode = (config.get('settings') as any).mode ?? 'smart';

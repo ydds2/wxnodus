@@ -11,8 +11,8 @@
 |---|---|---|---|---|---|
 | S-01 | 真实分发（winget/scoop 上架、installer、更新通道） | opencode 9 渠道 | 无 git remote → 无发布 URL | ⑧ 5→6（+9） | ◐ 模板/生成器已备（`packaging/`），发布日零改动 |
 | S-02 | 插件市场/远端技能安装 | codex/opencode 市场 | 同 S-01（需托管） | ⑧ 6→7（+9） | ⏳ |
-| S-03 | IDE 插件 | gemini companion/codex vscode | 无（协议已备） | ⑦ 8→9（+11） | ⏳ 路线图 docs/ide-remote-share-roadmap-2026.md |
-| S-04 | 远程执行环境 | codex exec-server | 无（ssh 方案无阻塞） | ⑦ 9→10（+11） | ⏳ 同路线图 |
+| S-03 | IDE 插件 | gemini companion/codex vscode | 无（协议已备） | ⑦ 8→9（+11） | ◐ **落地**：`packages/vscode-ext`（--wire 桥接 + webview 面板 + 审批/澄清/密码原生模态），typecheck+4 单测+esbuild+vsce 本地 vsix 全绿（supremacy 2.1）；marketplace 上架仍受 S-01 |
+| S-04 | 远程执行环境 | codex exec-server | 无（ssh 方案无阻塞） | ⑦ 9→10（+11） | ◐ **ssh 通道阶段 1 落地**：`sshRemote.ts` + `/remote` + bash 工具远程分支（远端未沙盒诚实标注），10 mock 单测（supremacy 2.2）；完整版 exec-server（远端沙盒复用）留后续 |
 | S-06 | 沙盒 macOS/Linux 化 | codex/gemini 三平台 | — | — | ❌ **已移除（Windows-only 决策）**——POSIX 实现（bwrap/Seatbelt）保留休眠态，探测诚实返回不适用；⑥ 冲 10 改走 S-07 Windows 双态沙盒 |
 | S-07 | Windows 双态沙盒（⑥ 冲 10：提权→受限令牌 / 标准用户→Low IL） | codex windows-sandbox-rs（提权路径） | 管理员环境（提权分支实测） | ⑥ 9→10（+10，Windows 深度口径） | ⏳ 标准用户分支已实测校准（1ec26e1）；提权分支待实现+实测 |
 | S-05 | share 云端分享 | opencode/kimi | 需中心服务器 | ⑦ +1 | 🚫 离线变体已落地（/share 打包加密，见 A-08） |

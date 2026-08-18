@@ -814,6 +814,50 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
     ]);
   });
 
+  // ── 远程执行（supremacy 2.2：ssh 通道阶段 1，S-04）──
+  // settings.remote = "ssh://user@host[:port]" → bash 工具与 /remote run 经本机 ssh 转发执行；
+  // 本地审批链不变；远端未沙盒诚实提示（完整沙盒版对齐 codex exec-server 后上线）
+  bus.register('/remote', async (args) => {
+    const cur = String((ctx.config.getKey('settings', 'remote') as string | null | undefined) ?? '').trim();
+    if (!args[0]) {
+      return lines(' 远程执行（ssh 通道阶段 1） ', [
+        ` 当前目标：${cur || '未配置'}`,
+        ' 用法：/remote ssh://user@host[:port]（设置目标，settings 持久化）',
+        '      /remote run <命令>（经 ssh 转发执行，流式回传）',
+        '      /remote off（清除目标）   /remote status（能力信息）',
+        ' 诚实口径：远端未沙盒——远端命令以远端用户权限执行（完整沙盒版对齐 codex exec-server 后上线）',
+        ' 前置：本机需有 ssh 客户端（Windows 可选功能 OpenSSH Client）；BatchMode 执行（密钥/免密登录，不交互）',
+      ]);
+    }
+    if (args[0] === 'off') {
+      ctx.config.setKey('settings', 'remote', '');
+      return '远程目标已清除（bash 恢复本地执行）';
+    }
+    if (args[0] === 'status') {
+      const { sshClient } = await import('../../kernel/sshRemote.js');
+      return lines(' 远程执行能力 ', [
+        ` ssh 客户端：${sshClient.file}（PATH 解析——/remote run 失败时给出启用指引）`,
+        ` 目标：${cur || '未配置'}`,
+        ' 沙盒：远端未沙盒（阶段 1 诚实口径）',
+      ]);
+    }
+    if (args[0] === 'run') {
+      const command = args.slice(1).join(' ').trim();
+      if (!command) return '用法：/remote run <命令>';
+      const { parseRemoteTarget, runRemoteCommand, REMOTE_UNSANDBOXED_NOTE } = await import('../../kernel/sshRemote.js');
+      const target = parseRemoteTarget(cur);
+      if (!target) return '远程目标未配置或格式非法——先 /remote ssh://user@host[:port]';
+      const r = await runRemoteCommand(target, command, { timeoutMs: 60_000 });
+      const out = `${r.stdout}${r.stderr ? `\n${r.stderr}` : ''}`.trim();
+      return `${out || '(无输出)'}\n[远程 ${target.user}@${target.host}:${target.port} · 退出码 ${r.code ?? '无'}${r.error ? ` · ${r.error}` : ''}]\n[${REMOTE_UNSANDBOXED_NOTE}]`;
+    }
+    const { parseRemoteTarget } = await import('../../kernel/sshRemote.js');
+    const t = parseRemoteTarget(args[0]);
+    if (!t) return '目标格式非法——应为 ssh://user@host[:port]';
+    ctx.config.setKey('settings', 'remote', args[0]);
+    return `远程目标已设置：${t.user}@${t.host}:${t.port}（bash 工具此后经 ssh 转发执行——远端未沙盒，/remote off 恢复本地）`;
+  });
+
   bus.register('/compliance', async () => {
     const ledger = ctx.db.prepare(`SELECT COUNT(*) c FROM audit`).get() as any;
     // 审计修复：许可扫描从静态文案改为真实扫描（激活 compliance.ts 模块——

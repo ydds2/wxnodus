@@ -9,6 +9,7 @@ import { sanitizedEnv } from './env.js';
 import { probeProcessAvailable } from './processProbe.js';
 import { labelTruncate, capNote } from './truncate.js';
 import { UNTRUSTED_WRAP_LIMIT_DEFAULT, clampInt } from './toolOutput.js';
+import { parseRemoteTarget } from './sshRemote.js';
 
 /** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性）
  * W3-11：进程探测集中到 kernel/processProbe（入口层不直接执行进程） */
@@ -276,6 +277,16 @@ export function coreTools(): Record<string, ToolDef> {
         // ② 流式落盘：完整输出写 truncations/tmp（内存封顶 20000 字防 OOM），
         //    超限时接管为正式 offload 文件——预览 + 续读路径（不再丢尾）
         const sSettings = ctx.getSettings?.() as Record<string, any> | undefined;
+        // supremacy 2.2：settings.remote = "ssh://user@host[:port]" → bash 经 ssh 转发执行
+        // （本地审批链不变——权限门在 agent 侧先裁决；远端未沙盒诚实提示，绝不伪装）
+        const remoteTarget = parseRemoteTarget(String(sSettings?.remote ?? '').trim());
+        if (remoteTarget) {
+          const { runRemoteCommand, REMOTE_UNSANDBOXED_NOTE } = await import('./sshRemote.js');
+          ctx.bus?.emit?.('system.notice', { text: REMOTE_UNSANDBOXED_NOTE });
+          const r = await runRemoteCommand(remoteTarget, cmd, { timeoutMs: 60_000, signal: ctx.signal });
+          const full = `${r.stdout}${r.stderr ? `\n${r.stderr}` : ''}${r.error ? `\n${r.error}` : ''}`.trim();
+          return wrapDanger(`${full || '(无输出)'}\n[远程 ${remoteTarget.user}@${remoteTarget.host}:${remoteTarget.port} · 退出码 ${r.code ?? '无'} · ${REMOTE_UNSANDBOXED_NOTE}]`);
+        }
         const { tryOsSandboxLaunch, resolveSandboxProfile } = await import('./osSandbox.js');
         const sandboxProfile = resolveSandboxProfile(sSettings);
         const sandbox = await tryOsSandboxLaunch({

@@ -51,6 +51,10 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/balance': 'confirm', '/balance set': 'confirm', '/balance refresh': 'confirm', '/balance on': 'confirm', '/balance off': 'confirm', '/balance threshold': 'confirm', '/balance auto-stop': 'confirm',
   '/config import': 'confirm',
   '/a2a': 'confirm', '/acp': 'confirm', '/download': 'confirm', '/swarm': 'confirm', '/duo': 'confirm',
+  // supremacy 2.2：远程执行=远端任意命令（未沙盒口径）——run 需确认；查看状态/清除为 safe
+  '/remote': 'confirm', '/remote run': 'confirm', '/remote status': 'safe', '/remote off': 'safe',
+  // 会话分享：导出落盘文件/导入写库——副作用操作需确认；裸 /share 仅用法说明
+  '/share': 'safe', '/share export': 'confirm', '/share import': 'confirm',
   '/cron': 'confirm', '/cron add': 'confirm', '/cron del': 'confirm', '/timer': 'confirm',
   '/delegate': 'confirm', '/goal': 'confirm', '/btw': 'confirm',
   '/rewind': 'confirm', '/reload-skills': 'confirm', '/script': 'confirm',

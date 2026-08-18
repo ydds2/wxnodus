@@ -18,3 +18,8 @@ tests/fixtures/windows/uia/*/obj/
 tests/fixtures/windows/uia/electron/node_modules/
 tests/fixtures/windows/uia/electron/dist/
 scripts/provisioned-runner.json
+
+# packages/vscode-ext 本地构建产物（supremacy 2.1——依赖独立 npm install，不入库）
+packages/vscode-ext/node_modules/
+packages/vscode-ext/dist/
+packages/vscode-ext/*.vsix

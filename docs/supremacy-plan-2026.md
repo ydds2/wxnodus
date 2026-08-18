@@ -67,13 +67,13 @@
 | 1.7 | execpolicy 首词规则 + 审批持久化 | B-06 | codex | 规则匹配单测 | ✅ 8 用例（含安全等价断言） |
 
 ### 阶段 2「生态上车」（需 git remote 与桌面端决策）→ 754 → ~840
-| # | 任务 | 缺陷 ID | 前置 | 验证 |
-|---|---|---|---|---|
-| 2.1 | IDE 插件 packages/vscode-ext（wire 桥接 + webview + approval 模态） | S-03 | 无 | typecheck + build + 本地 vsix |
-| 2.2 | 远程执行 ssh 通道（诚实标注「远端未沙盒」） | S-04 | 无 | mock ssh 单测 |
-| 2.3 | 用户文档三件套（getting-started/troubleshooting/examples） | S-01 | 无 | 链接契约 |
-| 2.4 | **git remote + GitHub Actions CI** | C-01 | 用户操作 | workflow 绿 |
-| 2.5 | 桌面端协议加固（serve 会话 RPC + SSE 会话变更事件） | — | 用户定接入方式 | 协议测试 |
+| # | 任务 | 缺陷 ID | 前置 | 验证 | 状态 |
+|---|---|---|---|---|---|
+| 2.1 | IDE 插件 packages/vscode-ext（wire 桥接 + webview + approval 模态） | S-03 | 无 | typecheck + build + 本地 vsix | ✅ typecheck+4 单测+vsix 7.6KB（另修复 wire 审批广播缺口 + 4 用例） |
+| 2.2 | 远程执行 ssh 通道（诚实标注「远端未沙盒」） | S-04 | 无 | mock ssh 单测 | ✅ 10 用例 + /remote 命令 + bash 远程分支 |
+| 2.3 | 用户文档三件套（getting-started/troubleshooting/examples） | S-01 | 无 | 链接契约 | ✅ 4 契约用例（另抓到 /share /balance 注册表缺口已修） |
+| 2.4 | **git remote + GitHub Actions CI** | C-01 | 用户操作 | workflow 绿 | ⏳ 待用户提供 remote |
+| 2.5 | 桌面端协议加固（serve 会话 RPC + SSE 会话变更事件） | — | 用户定接入方式 | 协议测试 | ⏳ 待用户决策 --serve vs --wire |
 
 ### 阶段 3「Windows 收官」→ ~840 → 870+
 | # | 任务 | 缺陷 ID | 前置 | 验证 |

@@ -26,6 +26,10 @@
 | `agent.error` | `message` | 回合级错误 |
 | `agent.end` | `ok`, `turns` | 回合结束标记（最终文本另由 agent.message 承载） |
 | `system.notice` | `text` | 系统提示（压缩/降级/进度） |
+| `approval.request` | `request_id`, `tool`, `args?` | 审批弹窗请求（supremacy 2.1 起广播——此前 request_id 只存网关内存，前端无从应答） |
+| `clarify.request` | `request_id`, `question`, `choices?` | 澄清提问请求（同轮修复广播） |
+| `secret.request` | `request_id`, `kind`, `prompt`, `name?` | sudo/密钥输入请求 |
+| `form.request` | `request_id`, `fields`, `prompt?` | 动态内容表请求 |
 | `agent.result` | `ok`, `text`, `turns`, `interrupted`, `wireFinal` | **终态行（恒为最后一行）** |
 | `wire.response` | `method`, `ok`, ...RPC 返回字段 / `error: {code}` | stdin 请求帧的应答 |
 
@@ -38,10 +42,11 @@
 
 | method | params | 用途 |
 |---|---|---|
-| `approval.respond` | `{request_id, answer: "allow"\|"deny"\|...}` | 应答工具审批弹窗 |
+| `approval.respond` | `{request_id, answer: "allow"\|"deny"\|"session"\|...}` | 应答工具审批弹窗 |
 | `clarify.respond` | `{request_id, answer}` | 应答澄清提问 |
-| `sudo.respond` | `{request_id, ...}` | 应答 sudo 弹窗 |
-| `secret.respond` | `{request_id, ...}` | 应答密钥输入弹窗 |
+| `sudo.respond` | `{request_id, password\|value}` | 应答 sudo 弹窗 |
+| `secret.respond` | `{request_id, value}` | 应答密钥输入弹窗 |
+| `credential_form.respond` | `{request_id, value\|json}` | 应答动态内容表（supremacy 2.1 补录文档——实现早已存在） |
 
 规则：
 - gateway/frontend 全部装配完成前到达的帧 → 回 `{"type":"wire.response","method":…,"ok":false,"error":{"code":"WIRE_GATEWAY_NOT_READY"}}`（KF-027，绝不静默吞掉）。

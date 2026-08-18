@@ -9,6 +9,9 @@
   },
   "scripts": {
     "build": "npm run clean && npm run build:ink && tsc",
+    "build:vscode-ext": "npm --prefix packages/vscode-ext run build",
+    "test:vscode-ext": "npm --prefix packages/vscode-ext run typecheck && npm --prefix packages/vscode-ext run test",
+    "package:vscode-ext": "npm --prefix packages/vscode-ext run package",
     "build:ink": "npm --prefix packages/wxnodus-ink run build",
     "dev": "tsx src/cli/index.ts",
     "start": "tsx src/cli/index.ts",

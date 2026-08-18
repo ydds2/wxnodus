@@ -4,7 +4,7 @@ import { classifyCommand, COMMAND_LEVEL_ICON, COMMAND_LEVEL_LABEL } from '../ker
 
 export const SLASH: string[] = [
   // 对话
-  '/help', '/clear', '/undo', '/usage', '/cost', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint', '/versions', '/snapshot', '/script', '/self-evolve',
+  '/help', '/clear', '/undo', '/usage', '/cost', '/balance', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint', '/versions', '/snapshot', '/script', '/self-evolve',
   // 模型
   '/model', '/profile', '/status', '/doctor', '/version', '/update', '/thinking', '/hooks',
   // 记忆（黑洞引擎）
@@ -18,9 +18,9 @@ export const SLASH: string[] = [
   // 视觉与媒体（可视化 AI 技能）
   '/vision', '/img', '/video', '/render', '/capture', '/input', '/computer',
   // 网络与集成
-  '/claw', '/web', '/search', '/browser', '/download', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp',
+  '/claw', '/web', '/search', '/browser', '/download', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp', '/remote',
   // 协作
-  '/swarm', '/duo', '/cron', '/jobs', '/term', '/task', '/delegate', '/agent', '/arena', '/review', '/understand', '/session-stream', '/goal', '/btw',
+  '/swarm', '/duo', '/cron', '/jobs', '/term', '/task', '/delegate', '/agent', '/arena', '/review', '/understand', '/session-stream', '/goal', '/btw', '/share',
   // 工具（确定性）
   '/calc', '/hash', '/base64', '/uuid', '/rand', '/json', '/timer', '/sql', '/fs', '/units', '/csv',
   // 上下文工程（P3：repo map / 快照回滚 / 技能热重载）
@@ -30,15 +30,15 @@ export const SLASH: string[] = [
 export const COMMAND_CAT: Record<string, string> = {
   // 分类符号全部 BMP 宽字符（无 emoji 代理对）——旧终端字体/winpty 下不产生 � 乱码；
   // 每类唯一符号（/help 分组按符号聚合——此前模型/系统共用 ⚙、对话/协作共用 ◈ 导致组错乱合并）
-  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/cost': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈', '/versions': '◈', '/snapshot': '◈', '/script': '◈', '/self-evolve': '◈',
+  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/cost': '◈', '/balance': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈', '/versions': '◈', '/snapshot': '◈', '/script': '◈', '/self-evolve': '◈',
   '/model': '⚙', '/profile': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/update': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆', '/assimilate': '◆',
   '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨', '/offline': '⬇',
   '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉', '/voice': '◉', '/fortune': '◉', '/workspace': '◉',
   '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿', '/computer': '⛭',
-  '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/download': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭',
-  '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/arena': '◍', '/review': '◍', '/understand': '◍', '/session-stream': '◍', '/goal': '◍', '/btw': '◍',
+  '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/download': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭', '/remote': '⛭',
+  '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/arena': '◍', '/review': '◍', '/understand': '◍', '/session-stream': '◍', '/goal': '◍', '/btw': '◍', '/share': '◍',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
   '/map': '⬡', '/rewind': '⬡', '/reload-skills': '⬡',
 };
@@ -53,6 +53,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/snapshot': '目录级快照（建档/整体回滚，/snapshot restore）',
   '/usage': '用量统计（token/成本；--waterfall 瀑布）',
   '/cost': '成本估算（会话/今日/7天/30天；公开参考价目，未收录模型只报 token）',
+  '/balance': '余额监控（auto-stop on/off——余额耗尽自动停，防烧钱）',
   '/quit': '退出',
   '/new': '新建空会话并切换',
   '/title': '重命名当前会话',
@@ -130,6 +131,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/webhook': 'Webhook 配置',
   '/a2a': 'A2A 跨 agent 协议',
   '/acp': 'ACP server',
+  '/remote': '远程执行（ssh 通道：目标/运行/状态——远端未沙盒诚实口径）',
   '/swarm': '同种子代理多开',
   '/duo': '双脑协作',
   '/cron': '定时任务（add/list/del/pause 真实调度）',
@@ -143,6 +145,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/understand': '逆向编译（代码→概念规格，与 /build 形成双向编译闭环——竞品无此设计）',
   '/goal': '循环目标执行',
   '/btw': '侧边提问（隔离只读上下文，不打断主对话）',
+  '/share': '会话离线分享打包（export/import——.wxnshare 单文件，sha256 防篡改 + 可选 AES-256-GCM 加密）',
   '/calc': '计算器（自然语言直达）',
   '/hash': '哈希（md5/sha256）',
   '/base64': 'Base64 编解码',

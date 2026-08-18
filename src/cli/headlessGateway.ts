@@ -43,8 +43,12 @@ export interface HeadlessWireGateway {
   requestCredentialForm(fields: Array<{ name: string; label?: string; kind: string }>, prompt?: string): Promise<Record<string, string> | null>;
 }
 
-export function createHeadlessWireGateway(input: { sessionId: string; timeoutMs?: number }): HeadlessWireGateway {
+export function createHeadlessWireGateway(input: { sessionId: string; timeoutMs?: number; onRequest?: (ev: { type: string } & Record<string, unknown>) => void }): HeadlessWireGateway {
   const timeoutMs = input.timeoutMs ?? 60_000;
+  // supremacy 2.1 修复：pending 请求必须把 request_id 广播给 wire 事件流——
+  // 否则外部前端（IDE 插件/桌面端）无法应答审批/澄清/密码（此前 id 只存在于内存 Map，
+  // wire 流上无对应事件——approval.respond 帧无从写起，示例 responder 只能示意）。
+  const onRequest = input.onRequest ?? (() => {});
   const approvals = new Map<string, PendingApproval>();
   const clarifies = new Map<string, PendingText>();
   const secrets = new Map<string, PendingText>();
@@ -188,29 +192,33 @@ export function createHeadlessWireGateway(input: { sessionId: string; timeoutMs?
         p.resolve(null);
       }
     },
-    requestApproval: (_name, _args) =>
+    requestApproval: (name, args) =>
       new Promise(resolve => {
         const id = randomUUID();
         const timer = approvalTimeout(id, approvals, resolve);
         approvals.set(id, { resolve, timer });
+        onRequest({ type: 'approval.request', request_id: id, tool: name, args });
       }),
-    requestClarify: () =>
+    requestClarify: (question, choices) =>
       new Promise(resolve => {
         const id = randomUUID();
         const timer = textTimeout(id, clarifies, resolve);
         clarifies.set(id, { resolve, timer });
+        onRequest({ type: 'clarify.request', request_id: id, question, choices: choices ?? [] });
       }),
-    requestSecretInput: () =>
+    requestSecretInput: (kind, prompt, name) =>
       new Promise(resolve => {
         const id = randomUUID();
         const timer = textTimeout(id, secrets, resolve);
         secrets.set(id, { resolve, timer });
+        onRequest({ type: 'secret.request', request_id: id, kind, prompt, name: name ?? '' });
       }),
-    requestCredentialForm: () =>
+    requestCredentialForm: (fields, prompt) =>
       new Promise(resolve => {
         const id = randomUUID();
         const timer = formTimeout(id, forms, resolve);
         forms.set(id, { resolve, timer });
+        onRequest({ type: 'form.request', request_id: id, fields, prompt: prompt ?? '' });
       }),
   };
 }

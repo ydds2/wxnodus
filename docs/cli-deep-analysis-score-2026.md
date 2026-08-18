@@ -225,3 +225,10 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 - **阶段 1 复算**：⑤ 6→8（A-02 +11、A-03 +11）；⑩ 8→9（A-06 +7）。**总分 725 → 754**（第 4 名稳固，与 gemini 812 差距 58）。
 - **诚实留白**：④ 保持 9（计划 10 需「子代理分型 + 结构化输出」，留阶段 3）；⑥ 保持 9（execpolicy+审批持久化已落地，但双态沙盒提权分支 S-07 未经实测不宣称 10）；⑤ 到 9 还差「API 级 caching 深化」（阶段 3）。A-01 按口径不直接加分（原始诉求，消臃肿不计分）。
 - **阶段 1 验收**：七项任务全 ✅；新增测试 40 个（11+7+7+8+7 本批 + 此前 1.1/1.2/1.4 批次）；`npm run ci` 七步全绿。
+
+### 9.6 超越计划阶段 2 首批（2026-08-18：2.1 IDE 插件 / 2.2 ssh 通道 / 2.3 用户文档）
+
+- **2.1 IDE 插件（S-03 落地）**：`packages/vscode-ext/`——extension.ts（spawn `--wire` 无头执行 → webview 面板渲染 token/tool/终态 → approval/clarify/secret/form 走 vscode 原生模态 → stdin responder 帧闭环）+ wireBridge 纯函数（零 vscode 依赖，node:test 4 用例）+ esbuild 单文件 + vsce 本地打包（`wxnodus-vscode.vsix` 7.6KB，上架 marketplace 仍受 S-01）。**连带修复 wire 协议缺口**：headless 网关此前把审批 request_id 只存内存不广播——外部前端无从应答（`headlessGateway.ts` onRequest 广播 + `approval.request`/`clarify.request`/`secret.request`/`form.request` 四事件 + wire-protocol.md 修订 + 4 用例 + 示例 responder 改走真实 request_id）。
+- **2.2 远程执行 ssh 通道（S-04 阶段 1）**：`sshRemote.ts`（目标解析/ssh 参数 BatchMode/流式回传/超时 kill/ENOENT 指引/注入式 runner）+ bash 工具远程分支（settings.remote 时经 ssh 转发，本地审批链不变）+ `/remote` 命令（设置/运行/状态/off）——**远端未沙盒诚实标注恒在**。10 mock 单测。
+- **2.3 用户文档三件套（S-01 部分）**：`docs/getting-started.md`/`troubleshooting.md`/`examples.md` + README 链接契约 + **不撒谎对账测试**（文档提到的命令与 SLASH 注册表对账——当场抓到真实缺口：/share、/balance 注册但不在目录，已修复）。
+- **评分口径**：⑦ 场景矩阵「IDE 插件」✗→≈（本地 vsix 真实消费者，marketplace 上架前不加满）+「远程」✗→≈（ssh 通道阶段 1，完整 exec-server 前不加满）——按执行协议，⑦ 复算计入**阶段 2 收尾**（2.4 CI + 2.5 桌面端协议完成后一次复算）；本批分数保持 754 不变，如实记录。

@@ -106,6 +106,8 @@ export const SETTINGS_KEYS = new Set([
   'toolTrim',
   // supremacy 1.5：LLM 辅助循环检测（true 开启单轮语义判定，默认关）
   'loopJudge',
+  // supremacy 2.2：远程执行 ssh 通道（"ssh://user@host[:port]"；空/缺省=本地执行）
+  'remote',
   // 视觉开放通道（settings.vision* 与 visionLocal/visionOcr）
   'visionBaseURL', 'visionModel', 'visionKey', 'visionLocal', 'visionOcr',
   // 代理（/proxy 命令消费 settings.proxy）

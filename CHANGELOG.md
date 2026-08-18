@@ -16,6 +16,9 @@
 
 ### Changed
 - 超越计划阶段 1 七项任务全部完成，阶段 1 收尾复算：加权总分 725 → 754（⑤ 提示词 6→8、⑩ 性能 8→9）。
+- **IDE 插件（supremacy 2.1）**：`packages/vscode-ext/`——VS Code 伴侣插件（`--wire` 桥接 + 对话面板 + 审批/澄清/密码原生模态），本地 vsix 可装（marketplace 上架需后续发布通道）；连带修复 wire 协议审批广播缺口（`approval.request` 等四事件现真实广播 request_id）。
+- **远程执行 ssh 通道（supremacy 2.2）**：`/remote ssh://user@host` 设置目标后 bash 工具经 ssh 转发执行（输出恒带「远端未沙盒」诚实标注）。
+- **用户文档三件套（supremacy 2.3）**：`docs/getting-started.md` / `docs/troubleshooting.md` / `docs/examples.md` + README 链接（命令-注册表对账测试）。
 
 ## [3.1.0] - 2026-08-18
 
