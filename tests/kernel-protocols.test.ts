@@ -1,6 +1,8 @@
 // tests/kernel-protocols.test.ts — A2A/ACP 协议：本地环回端到端
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { a2aServe, a2aCall } from '../src/kernel/a2a.js';
 
 const servers: Array<{ stop(): void }> = [];
@@ -23,8 +25,10 @@ describe('A2A 协议（本地环回）', () => {
 
 describe('ACP 协议（stdio 管道）', () => {
   it('initialize + session/new 握手响应', () => {
+    // 动态计算 dist 路径（禁止硬编码开发机绝对路径——CI 首轮实测暴露 file:///C:/Users/20164 泄漏）
+    const acpUrl = pathToFileURL(join(process.cwd(), 'dist', 'kernel', 'acp.js')).href;
     const script = `
-      import { runAcpServer } from 'file:///C:/Users/20164/Desktop/WxNodusV3CLI/dist/kernel/acp.js';
+      import { runAcpServer } from '${acpUrl}';
       runAcpServer({ run: async (t) => ({ ok: true, text: 'acp:' + t }) });
     `;
     const input = [

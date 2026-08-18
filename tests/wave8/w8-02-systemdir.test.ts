@@ -2,7 +2,7 @@
 // 契约：分类正确（系统目录/隐藏·系统属性/reparse/workspace/other）；管线 decide 对 system-touch
 // 强制专属确认（SYSTEM_TOUCH_REQUIRES_CONFIRMATION + 分类理由透出审批）；未确认零副作用；
 // 普通工作区文件不受影响；非 win32 诚实降级 other。
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -18,7 +18,10 @@ const cleanup: Array<() => void> = [];
 afterEach(() => { for (const close of cleanup.splice(0)) { try { close(); } catch { /* already closed */ } } });
 
 const isWin = process.platform === 'win32';
-const tmp = () => { const d = mkdtempSync(join(tmpdir(), 'w8-sysdir-')); cleanup.push(() => { try { rmSync(d, { recursive: true, force: true }); } catch { /* 清理失败静默 */ } }); return d; };
+// 夹具根显式放 LOCALAPPDATA：分类前提「temp 在 user-appdata 下」——CI runner 的 tmpdir 是
+// D:\a\_temp（junction 且非 appdata），不强制会分类漂移（2026-08-18 CI 实测）
+const appdataTempRoot = () => { const p = join(process.env.LOCALAPPDATA ?? tmpdir(), 'w8-sysdir-tmp'); mkdirSync(p, { recursive: true }); return p; };
+const tmp = () => { const d = mkdtempSync(appdataTempRoot()); cleanup.push(() => { try { rmSync(d, { recursive: true, force: true }); } catch { /* 清理失败静默 */ } }); return d; };
 const policyDoc = {
   version: 1 as const,
   hardRedlineKinds: [],
@@ -31,7 +34,7 @@ const policyDoc = {
 };
 
 function fixture(approver: (req: { toolId: unknown; args: unknown; effect: unknown; reasonCode?: string; obligations?: unknown[] }) => Promise<boolean> = async () => false) {
-  const dir = mkdtempSync(join(tmpdir(), 'w8-systemdir-'));
+  const dir = mkdtempSync(appdataTempRoot());
   const db = openDB(dir);
   const memoryRepository = openMemoryRepository(db, { now: () => Date.now(), idFactory: p => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}` });
   cleanup.push(() => { try { closeDB(db); } catch { /* already closed */ } rmSync(dir, { recursive: true, force: true }); });

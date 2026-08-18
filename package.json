@@ -16,7 +16,7 @@
     "dev": "tsx src/cli/index.ts",
     "start": "tsx src/cli/index.ts",
     "test": "npm run test:all",
-    "ci": "npm run typecheck && npm run typecheck:tests && npm run test:all && npm run test:known-failures && npm run check:test-discovery && npm run check:requirement-coverage && npm run lint && npm run check:cycles && npm run build",
+    "ci": "npm run typecheck && npm run typecheck:tests && npm run build && npm run test:all && npm run test:known-failures && npm run check:test-discovery && npm run check:requirement-coverage && npm run lint && npm run check:cycles",
     "lint": "node scripts/lint.mjs",
     "check:cycles": "node scripts/check-cycles.mjs",
     "bench": "node scripts/bench/run-bench.mjs",

@@ -28,7 +28,13 @@ jobs:
         run: npm install
 
       - name: Full local gate (npm run ci)
-        run: npm run ci
+        # TMP/TEMP 指到工作区真实目录：GitHub runner 的 D:\a\_temp 是 junction——
+        # 证据存储 validateTrustedRoot（realpath 与词法路径一致性）会把全部 tmpdir
+        # 夹具判 EVIDENCE_INTEGRITY_FAILED（2026-08-18 七轮实测，100+ 用例的根因）
+        env:
+          TMP: ${{ github.workspace }}\.tmp
+          TEMP: ${{ github.workspace }}\.tmp
+        run: New-Item -ItemType Directory -Force -Path .tmp | Out-Null; npm run ci
 
       - name: Install vscode-ext dependencies
         run: npm --prefix packages/vscode-ext install
