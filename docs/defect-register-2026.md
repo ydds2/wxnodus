@@ -21,11 +21,11 @@
 
 | ID | 缺陷 | 对标 | 影响维度/提分 | 状态 |
 |---|---|---|---|---|
-| A-01 | 命令面臃肿（114 注册/~109 命令，竞品 2~3 倍） | gemini 47/opencode 动态 | 臃肿度原始诉求（不直接加分） | ⏳ 方案已定（109→~45 聚合） |
+| A-01 | 命令面臃肿（114 注册/~109 命令，竞品 2~3 倍） | gemini 47/opencode 动态 | 臃肿度原始诉求（不直接加分） | ✅ 两层命令面：主干 47 条 + 扩展 63 条（零删除，契约不变）——/help 默认主干、/help all 全目录、command_search 主干优先（supremacy 1.6） |
 | A-02 | 模型分族提示词（deepseek/glm/kimi 定制段） | gemini 分族 | ⑤ 6→7（+11） | ✅ providerPrompts.ts 承载中文段（systemPrompt 零 CJK 红线不破），agent 按 model/端点解析注入，7 用例（supremacy 1.1） |
 | A-03 | 小模型任务档（标题/摘要走小模型） | crush large/small | ⑤ 7→8、⑩ +1 | ✅ settings.titleModel/summaryModel 白名单 + 标题小模型路由（10s 超时/无密钥/异常全部回退切片标题，已有标题零调用），9 用例（supremacy 1.2） |
-| A-04 | 按模型工具裁剪（48 schema 全量发给所有模型） | codex 按模型 | ⑤/⑩ | ⏳ |
-| A-05 | LLM 辅助循环检测（置信度判空转） | gemini | ④ 与 gemini 最后差距 | ⏳ |
+| A-04 | 按模型工具裁剪（48 schema 全量发给所有模型） | codex 按模型 | ⑤/⑩ | ✅ toolTrim.ts 能力驱动裁剪（文本模型裁图片输出工具、小窗口文本模型裁 GUI 套件、视觉模型全保留、未知模型不臆测）+ settings.toolTrim + updateTools 不绕过，11 用例（supremacy 1.3） |
+| A-05 | LLM 辅助循环检测（置信度判空转） | gemini | ④ 与 gemini 最后差距 | ✅ loopJudge.ts 语义判定（loop 提前硬停/progress 复位计数/unknown 回退静态），settings.loopJudge 默认关，7 用例（supremacy 1.5）；④ 满格还需子代理分型+结构化输出（阶段 3） |
 | A-06 | 成本五维（reasoning/cache_read/cache_write）+ Decimal | opencode | ⑩ | ✅ usage_stats v10 加 reasoning_tokens；五维计价（reasoning 按输出价、cacheMiss 按输入价、cacheHit 走 cacheRead 价）全整数 µUSD BigInt 定点（零浮点漂移）；kf-030/迁移断言同步 10；14 成本用例（supremacy 1.4） |
 | A-07 | 快照增量化（消息 id 上界 vs 全量复制） | kimi `_checkpoint` | ⑨ | ⏳（血缘已 ✅，见 79c3226） |
 | A-08 | share 分享 | opencode/kimi | ⑦ 场景矩阵 | ✅ 离线加密打包（kernel/share.ts + /share，AES-256-GCM+sha256）——云端版受 S-05 阻塞 |
@@ -39,7 +39,7 @@
 | B-03 | 会话浏览器 UI（列表+预览） | codex resume_picker/gemini SessionBrowser | ◐ 数据面已备（listSessionsStructured + --json），UI 面待桌面端 |
 | B-04 | 主题系统 | opencode 33 套 | ⏳ |
 | B-05 | 配置分层（项目级 .wxnodus/config 继承） | gemini 四层 | ⏳ |
-| B-06 | execpolicy 首词前缀规则 | codex first-token 索引 | ⏳（刻意未做理由见 sessionGrants 注释：前缀放行有连带风险） |
+| B-06 | execpolicy 首词前缀规则 | codex first-token 索引 | ✅ execPolicy.ts 首词索引（pattern 锚定保证与全量 applyRules 数学等价——安全等价断言在测）；审批持久化复用 permissions.json（/perm rule，P0-2 存储面不新增）；agent bash 规则经索引裁决，8 用例（supremacy 1.7） |
 | B-07 | 会话列表 first_user 摘要/血缘 | gemini/codex | ✅（79c3226） |
 | B-08 | approve_for_session 真实授权 | kimi | ✅（79c3226） |
 

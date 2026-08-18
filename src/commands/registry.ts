@@ -179,6 +179,48 @@ export function isSlash(text: string): boolean {
   return /^\/[^\s/]*(?:\s|$)/.test(text);
 }
 
+// ── supremacy 1.6：命令面瘦身（A-01，对标 gemini 47）──────────────────
+// 两层命令面：主干（CORE_COMMANDS，47 条日常驾驶命令）与扩展（其余 63 条进阶命令）。
+// 原则：**零删除**——所有命令照常注册与分发（契约不变），只改「展示面」：
+//   /help 默认渲染主干层（一眼看完）＋尾部「扩展命令 N 个——/help all 查看全部」；
+//   command_search（AI 目录检索）主干命中优先排序（模型先拿日常主干，扩展标注 tier）。
+// 主干选择口径：日常驾驶命令（会话/模型/记忆/构建/安全/系统/视觉/网络/协作/工具/上下文
+// 每类保留高频面）；进阶/别名/低频命令归扩展层（仍在全目录可检索可执行）。
+export const CORE_COMMANDS: Set<string> = new Set([
+  // 对话
+  '/help', '/clear', '/undo', '/usage', '/quit', '/sessions', '/resume', '/new', '/fork',
+  // 模型
+  '/model', '/status', '/doctor', '/update',
+  // 记忆
+  '/memory', '/hole', '/compact',
+  // 构建
+  '/build', '/deploy', '/skill', '/gate', '/assimilate',
+  // 安全
+  '/perm', '/sandbox', '/compliance', '/audit', '/offline',
+  // 系统
+  '/config', '/lang', '/backup', '/workspace',
+  // 视觉
+  '/img', '/computer',
+  // 网络
+  '/claw', '/search', '/browser', '/mcp', '/plugin',
+  // 协作
+  '/cron', '/jobs', '/agent', '/goal',
+  // 工具
+  '/calc', '/hash', '/sql', '/fs',
+  // 上下文工程
+  '/map', '/reload-skills',
+]);
+
+/** 主干判定（不在 SLASH 的一律 false——安全面） */
+export function isCoreCommand(cmd: string): boolean {
+  return CORE_COMMANDS.has(cmd) && SLASH.includes(cmd);
+}
+
+/** 扩展层命令（SLASH 全集减主干——零删除契约的事实来源） */
+export function extendedCommands(): string[] {
+  return SLASH.filter(c => !CORE_COMMANDS.has(c));
+}
+
 // ── A22 command_search 数据源：命令目录检索 ─────────────────────────
 // 解决核心缺口：96 条 COMMAND_DESC 从不注入模型 → AI 盲调 wx_cmd。
 // 模型先 command_search（按关键词/意图检索目录），拿到名称/描述/等级/
@@ -190,6 +232,8 @@ export interface CommandCatalogHit {
   level: string
   merge?: string
   name: string
+  /** supremacy 1.6：主干/扩展分层（AI 目录检索：主干命中优先排序） */
+  tier?: 'core' | 'extended'
 }
 
 export function searchCommandCatalog(query: string, limit = 8): CommandCatalogHit[] {
@@ -210,20 +254,23 @@ export function searchCommandCatalog(query: string, limit = 8): CommandCatalogHi
         level: `${COMMAND_LEVEL_ICON[classifyCommand(cmd)] ?? ''}${COMMAND_LEVEL_LABEL[classifyCommand(cmd)] ?? '确认'}`,
         merge,
         name: cmd,
+        tier: (CORE_COMMANDS.has(cmd) ? 'core' : 'extended') as 'core' | 'extended',
         score,
       };
     })
     .filter((h): h is NonNullable<typeof h> => h !== null)
-    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+    // supremacy 1.6：主干优先（同分时主干在前——模型先看到日常命令，扩展标注 tier）
+    .sort((a, b) => b.score - a.score || (a.tier === b.tier ? a.name.localeCompare(b.name) : (a.tier === 'core' ? -1 : 1)))
     .slice(0, limit);
 
   if (!q) {
-    // 空查询：全目录抽样 + 引导（模型拿不到目录时的兜底入口）
-    return SLASH.slice(0, limit).map(cmd => ({
+    // 空查询：主干全目录 + 引导（模型拿不到目录时的兜底入口——主干层已够日常驾驶）
+    return SLASH.filter(c => CORE_COMMANDS.has(c)).slice(0, limit).map(cmd => ({
       desc: COMMAND_DESC[cmd] ?? '',
       level: `${COMMAND_LEVEL_ICON[classifyCommand(cmd)] ?? ''}${COMMAND_LEVEL_LABEL[classifyCommand(cmd)] ?? '确认'}`,
       merge: COMMAND_MERGE[cmd],
       name: cmd,
+      tier: 'core' as const,
     }));
   }
 

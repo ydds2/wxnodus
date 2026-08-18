@@ -102,6 +102,10 @@ export const SETTINGS_KEYS = new Set([
   'approveForSession',
   // supremacy 1.2：小模型任务档（titleModel/summaryModel——标题/摘要等轻任务路由到小模型）
   'titleModel', 'summaryModel',
+  // supremacy 1.3：按模型工具裁剪（'auto' 默认按能力裁 / 'off' 全量）
+  'toolTrim',
+  // supremacy 1.5：LLM 辅助循环检测（true 开启单轮语义判定，默认关）
+  'loopJudge',
   // 视觉开放通道（settings.vision* 与 visionLocal/visionOcr）
   'visionBaseURL', 'visionModel', 'visionKey', 'visionLocal', 'visionOcr',
   // 代理（/proxy 命令消费 settings.proxy）

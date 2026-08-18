@@ -8,7 +8,14 @@
 ### Added
 - **分族提示词（supremacy 1.1）**：DeepSeek/Kimi/GLM 三族模型专属系统提示段自动注入（真实 API 行为提示：推理字段回传/前缀缓存/窗口档位），按当前模型/端点解析，`systemPrompt.ts` 零 CJK 红线不变。
 - **小模型任务档（supremacy 1.2）**：`/config set titleModel <模型>` 后会话标题改由小模型生成（10s 超时、失败自动回退切片标题、已有标题零调用）；`summaryModel` 槽位同白名单。
+- **按模型工具裁剪（supremacy 1.3）**：文本模型自动隐藏图片输出工具、小窗口文本模型再隐藏 GUI 套件（省 schema token）；`/config set toolTrim off` 恢复全量；目录未收录模型不裁剪。
 - **成本五维 + 整数分计价（supremacy 1.4）**：用量统计新增推理 token 维度（输入/输出/缓存读/缓存写/推理）；成本计算全部走整数微美元定点（BigInt，零浮点漂移）；DeepSeek 前缀缓存读价（$0.07/$0.14）纳入计价（未收录价目保守按输入价估算，绝不低估）。
+- **LLM 辅助循环检测（supremacy 1.5）**：`/config set loopJudge true` 开启后，重复工具调用达提醒阈值时主模型语义判定——死循环提前硬停（比静态阈值更早止损）、合法轮询复位计数继续；判定失败自动回退静态路径（默认关，零额外调用）。
+- **命令面瘦身（supremacy 1.6）**：/help 默认展示主干 47 条日常命令（对标 gemini 47），扩展 63 条照常可用——`/help all` 查看全目录；AI 目录检索（command_search）主干优先。
+- **execpolicy 首词规则（supremacy 1.7）**：bash 审批规则按命令首词索引快速裁决（与既有 /perm rule 语义完全一致，pattern 锚定保证等价）；`/perm rule add bash <前缀> allow|deny|ask` 持久化生效。
+
+### Changed
+- 超越计划阶段 1 七项任务全部完成，阶段 1 收尾复算：加权总分 725 → 754（⑤ 提示词 6→8、⑩ 性能 8→9）。
 
 ## [3.1.0] - 2026-08-18
 

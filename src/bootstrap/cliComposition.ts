@@ -261,6 +261,36 @@ export async function createCliComposition(deps: CliCompositionDeps): Promise<Op
             return null;
           }
         },
+        // supremacy 1.5：LLM 辅助循环检测（settings.loopJudge=true 开启，默认关）——
+        // 重复达提醒阈值时单轮语义判定 loop/progress（10s 超时；无密钥/失败 → unknown 回退静态路径）
+        loopJudge: settings.loopJudge === true
+          ? async (evidence) => {
+              try {
+                const { resolveApiKey } = await import('../kernel/providers.js');
+                const { resolveDefaultModel, resolveDefaultBaseURL } = await import('../kernel/defaults.js');
+                const { callModelOnce } = await import('../kernel/llmOnce.js');
+                const { buildLoopJudgePrompt, parseLoopVerdict } = await import('../kernel/loopJudge.js');
+                const keyRes = resolveApiKey(settings);
+                const key = keyRes.key;
+                if (!key) return 'unknown';
+                const { system, user } = buildLoopJudgePrompt(evidence.last, evidence.repeatCount);
+                const r = await callModelOnce({
+                  baseURL: resolveDefaultBaseURL(settings),
+                  model: resolveDefaultModel(settings),
+                  key,
+                  messages: [
+                    { role: 'system', content: system },
+                    { role: 'user', content: user },
+                  ],
+                  temperature: 0,
+                  timeoutMs: 10_000,
+                });
+                return r.ok ? parseLoopVerdict(r.content) : 'unknown';
+              } catch {
+                return 'unknown';
+              }
+            }
+          : undefined,
         // AI 自主调用通道（wx_cmd 工具）：桥闭包引用 CLI commandBus（命令注册在组合后完成，调用时才求值）
         onCommand: bridges.onCommand,
       });

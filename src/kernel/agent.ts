@@ -22,6 +22,8 @@ import { resolveModelForChat } from './profiles.js';
 import { maxContextFor } from './providers.js';
 import { checkSessionGrant, grantSession } from './sessionGrants.js';
 import { providerPromptFor, resolveProviderForPrompt } from './providerPrompts.js';
+import { trimToolsForModel } from './toolTrim.js';
+import { buildExecPolicyIndex, applyExecPolicy } from './execPolicy.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
 import { isCompletionClaim, GOAL_DONE_MARK } from './completionClaim.js';
 import type { HookRunner } from './hooks.js';
@@ -74,6 +76,10 @@ export interface AgentOptions {
   /** 小模型任务档标题生成（supremacy 1.2）：settings.titleModel 配置时由 CLI 注入（独立单轮小模型调用，
    *  10s 超时、失败静默）；未注入/返回 null/抛出 → 回退首行切片标题（诚实降级，行为不劣于原版） */
   titleGenerator?: (prompt: string) => Promise<string | null>;
+  /** LLM 辅助循环检测（supremacy 1.5）：settings.loopJudge=true 时由 CLI 注入单轮语义判定
+   *  （loop=提前硬停 / progress=复位签名计数 / unknown=回退静态提醒→硬停路径）；
+   *  未注入 → 纯静态路径（默认，零额外调用） */
+  loopJudge?: (evidence: { repeatCount: number; last: Array<{ name: string; args: string; outputHead: string }> }) => Promise<'loop' | 'progress' | 'unknown'>;
   /** AI 自主调用通道（wx_cmd 工具）：执行斜杠指令并返回文本输出（cli 装配 bus.execute 包装） */
   onCommand?: (input: string) => Promise<string>;
   /** C3：agent 工具 runner（生产 11-port pipeline 分层复用）——danger/写类工具经 pipeline 记账执行；
@@ -160,12 +166,28 @@ export function createAgent(opts: AgentOptions) {
   // （plugin-smoke 等演示脚本用）。工具仍在注册表/命令侧可用（人工经插件命令调用）。
   const DEMO_TOOL_RE = /^example_/;
   const includeDemoTools = process.env.WXNODUS_INCLUDE_DEMO_TOOLS === '1';
-  let tools = Object.fromEntries(
-    Object.entries({ ...coreTools(), ...extraTools })
-      .filter(([n]) => !(opts.excludeTools ?? []).includes(n))
-      .filter(([n, t]) => includeDemoTools || (!(t as ToolDef).demo && !DEMO_TOOL_RE.test(n))),
-  );
+  // 按模型工具裁剪（supremacy 1.3 / A-04）：settings.toolTrim='off' 全量，'auto'（默认）按
+  // 模型能力裁（文本模型不拿图片输出工具、小窗口文本模型不拿 GUI 套件）；目录未收录模型不裁。
+  // assembleTools 是唯一装配点——初始化与 updateTools 热重载共用（裁剪永不漏挂），
+  // 裁剪结果随装配缓存（getToolTrim 查询面）。
+  const settingsAny0 = opts.config?.settings as Record<string, any> | undefined;
+  let lastTrimInfo: { dropped: string[]; tier: 'full' | 'lite' } = { dropped: [], tier: 'full' };
+  const assembleTools = (): Record<string, ToolDef> => {
+    const merged = Object.fromEntries(
+      Object.entries({ ...coreTools(), ...extraTools })
+        .filter(([n]) => !(opts.excludeTools ?? []).includes(n))
+        .filter(([n, t]) => includeDemoTools || (!(t as ToolDef).demo && !DEMO_TOOL_RE.test(n))),
+    );
+    const r = trimToolsForModel(String(settingsAny0?.model ?? ''), merged, { mode: String(settingsAny0?.toolTrim ?? 'auto') });
+    lastTrimInfo = { dropped: r.dropped, tier: r.tier };
+    return r.tools;
+  };
+  let tools = assembleTools();
   const bus = opts.bus;
+  if (lastTrimInfo.dropped.length > 0) {
+    // 一次性告知（创建时广播；updateTools 重裁剪不重复打扰）
+    bus.emit('system.notice', { text: `工具面已按模型裁剪（隐藏 ${lastTrimInfo.dropped.length} 个不适配工具）——/config set toolTrim off 恢复全量` });
+  }
   let sessionId = opts.sessionId; // 可变：setSessionId 热切换（多会话）
   let mode = opts.mode ?? 'smart'; // 可变：/perm 切换经 setMode 热更新
   // 前缀稳定化（DeepSeek 上下文缓存命中，audit §13.43）：系统提示时间戳每回合变化会让
@@ -563,6 +585,9 @@ export function createAgent(opts: AgentOptions) {
 
   // P0-2 审批规则文件：启动加载 data/permissions.json，工具执行前应用（deny>allow>ask）
   const permRules = loadPermRules(opts.dataDir ?? resolveDataDir(process.cwd()));
+  // supremacy 1.7：execpolicy 首词索引（codex first-token 机制）——bash 规则按命令首词
+  // 预筛候选（pattern 锚定保证与全量 applyRules 等价），装配一次、逐工具调用复用
+  const execPolicyIndex = buildExecPolicyIndex(permRules);
 
   // F7：steer 注入队列（运行中向当前回合注入用户消息）
   const steerQueue: string[] = [];
@@ -618,8 +643,11 @@ export function createAgent(opts: AgentOptions) {
       }
       // F12：权限模型读 tool.danger（单一事实来源）
       // P0-2：持久化规则优先裁决（deny 直接拒绝 / allow 跳过审批 / ask 强制确认）
-      // 深度：applyRules 支持 priority/modes/commandPrefix/denyMessage（Gemini policy 对齐）
-      const ruleHit = applyRules(name, args, permRules, mode);
+      // 深度：applyRules 支持 priority/modes/commandPrefix/denyMessage（Gemini policy 对齐）；
+      // supremacy 1.7：bash 走 execpolicy 首词预筛（同语义、O(首词桶) 而非 O(全规则)）
+      const ruleHit = name === 'bash'
+        ? applyExecPolicy(String((args as any)?.command ?? ''), args, execPolicyIndex, mode)
+        : applyRules(name, args, permRules, mode);
       if (ruleHit?.decision === 'deny') {
         auditTool('tool.denied', { tool: name, rule: 'deny', reason: ruleHit.rule.reason ?? '' });
         return `工具被规则拒绝：${name}${ruleHit.rule.denyMessage ? `——${ruleHit.rule.denyMessage}` : ''}（/perm rule remove 可移除规则）`;
@@ -1265,9 +1293,33 @@ export function createAgent(opts: AgentOptions) {
           return finishEarly(`工具调用循环检测（相同调用重复 ${repeatCount} 次）——任务无进展，已终止；请换一种方式或拆分子任务`);
         }
         if (repeatCount >= EFF.loopRemindAt && !loopReminded) {
-          loopReminded = true;
-          bus.emit('system.notice', { text: `检测到重复工具调用（${repeatCount} 次）——已注入换策略提醒；继续重复到 ${EFF.loopHardStopAt} 次将终止` });
-          msgs.push({ role: 'system', content: '【循环提醒】你正在重复相同的工具调用且没有进展。请立即改变策略：换一种方法、拆分子任务、或调用 clarify 向用户澄清。' });
+          // supremacy 1.5：LLM 辅助循环检测（settings.loopJudge，CLI 注入 loopJudge 时启用）——
+          // 达到提醒阈值先语义判定一次：loop=提前硬停（不等硬停阈值空烧 token）；
+          // progress=复位该签名计数（合法轮询继续，再爬到阈值会重新判定）；
+          // unknown/异常=回退静态提醒→硬停路径（行为不劣于原版）
+          let verdict: 'loop' | 'progress' | 'unknown' = 'unknown';
+          if (opts.loopJudge) {
+            try {
+              const last = executed.slice(-3).map(e => ({ name: e.name, args: JSON.stringify(e.args ?? {}), outputHead: e.out.slice(0, 300) }));
+              verdict = await opts.loopJudge({ repeatCount, last });
+            } catch { verdict = 'unknown'; }
+          }
+          if (verdict === 'loop') {
+            bus.emit('agent.error', { message: `LLM 判定重复调用无进展（${repeatCount} 次），提前终止` });
+            return finishEarly(`LLM 循环判定：相同工具调用重复 ${repeatCount} 次且无进展——已提前终止（比静态阈值更早止损）；请换一种方式或拆分子任务（/config set loopJudge false 可关闭辅助判定）`);
+          }
+          if (verdict === 'progress') {
+            // 合法重复：复位该签名计数（const 数组原地清本签名）——不注入提醒、不消耗
+            // loopReminded（下次再爬到阈值重新判定）
+            for (let i = recentToolSigs.length - 1; i >= 0; i--) {
+              if (recentToolSigs[i] === sig) recentToolSigs.splice(i, 1);
+            }
+            bus.emit('system.notice', { text: `LLM 判定当前重复为合法操作（构建/重试/轮询）——继续执行` });
+          } else {
+            loopReminded = true;
+            bus.emit('system.notice', { text: `检测到重复工具调用（${repeatCount} 次）——已注入换策略提醒；继续重复到 ${EFF.loopHardStopAt} 次将终止` });
+            msgs.push({ role: 'system', content: '【循环提醒】你正在重复相同的工具调用且没有进展。请立即改变策略：换一种方法、拆分子任务、或调用 clarify 向用户澄清。' });
+          }
         }
         const first = executed[0]!;
         msgs.push({
@@ -1442,12 +1494,13 @@ export function createAgent(opts: AgentOptions) {
     steer(text: string): boolean { return steer(text); },
     // P1b：插件热重载——重建工具表（extraTools 合并 + excludeTools 过滤）
     updateTools(extra: Record<string, import('./tools.js').ToolDef>) {
-      // KF-015：增量合并——多次 updateTools 各自 scope 共存（绝不整体重建覆盖先前注册）
+      // KF-015：增量合并——多次 updateTools 各自 scope 共存（绝不整体重建覆盖先前注册）；
+      // supremacy 1.3：重装配统一走 assembleTools（demo 过滤 + 按模型裁剪同步重算）
       extraTools = { ...extraTools, ...extra };
-      tools = Object.fromEntries(
-        Object.entries({ ...coreTools(), ...extraTools }).filter(([n]) => !(opts.excludeTools ?? []).includes(n)),
-      );
+      tools = assembleTools();
     },
+    /** 按模型裁剪结果查询（supremacy 1.3）——UI/测试诊断面 */
+    getToolTrim(): { dropped: string[]; tier: 'full' | 'lite' } { return { ...lastTrimInfo, dropped: [...lastTrimInfo.dropped] }; },
     // 会话切换：多会话 UI 复用同一 agent 实例（消息经 mem.append 落库到目标会话）
     setSessionId(id: string) { sessionId = id; },
     // M4：当前会话读取——命令层（/undo /fork 等）定位真实会话，不再硬编码 'default'

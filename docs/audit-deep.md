@@ -793,3 +793,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **文档**：register A-02/A-03/A-06 → ✅；plan 阶段 1 表加状态列；score §9.4；本审计条目。
 - **口径**：三项预计提分（⑤+11/⑤+1/⑩）**计入阶段 1 收尾复算**（执行协议：阶段完成一次复算，不逐项碎片化加分）——当前分数 725 不变。
 - **验证**：tsc 零错误；定向套件全绿；全量 + npm run ci 见下。
+
+### 13.57 超越计划阶段 1 收官轮（2026-08-18：supremacy 1.3/1.5/1.6/1.7 全量完成 + 阶段 1 收尾复算 725→754）
+
+- **需求**：完成阶段 1 剩余四项并执行协议收尾复算（阶段 1 七项全 ✅）。
+
+- **1.3 按模型工具裁剪（A-04，对标 codex）**：`kernel/toolTrim.ts`——能力驱动确定性裁剪：文本模型裁 3 个图片输出工具（browser_screenshot/computer_screenshot/computer_observe——文本模型不可消费）；小窗口（≤32k）+文本模型再裁 GUI 文本套件（browser 动作/computer 动作/UIA 树，前缀正则派生）；视觉模型全保留（看图是核心用途）；目录未收录 → 不裁剪（未知能力不臆测）。settings.toolTrim auto/off 逃生门；agent 装配唯一化（assembleTools——updateTools 热重载重算裁剪，不漏挂）；getToolTrim 诊断面；创建时一次性 system.notice。11 用例。
+- **1.5 LLM 辅助循环检测（A-05，对标 gemini 置信度判空转）**：`kernel/loopJudge.ts` 判定器（buildLoopJudgePrompt 带重复次数+最近证据 / parseLoopVerdict 宽容解析）；agent 集成：重复达提醒阈值时语义判定一次——loop=提前硬停（显式失败文案，不等静态硬停阈值空烧 token）、progress=复位该签名计数（合法轮询穿过静态阈值；再爬到阈值重新判定，调用有界）、unknown/异常=回退静态提醒→硬停（不劣于原版）。settings.loopJudge=true 开启（默认关，零额外调用）；CLI 注入主模型单轮 callModelOnce（10s 超时）。7 用例（含默认关回归锚）。
+- **1.6 命令面瘦身（A-01，对标 gemini 47）**：两层命令面——`CORE_COMMANDS` 主干 47 条（日常驾驶）+ 扩展 63 条。**零删除**：SLASH 全集不变、分发契约不变（103 命令回归全绿）；/help 默认主干渲染+扩展计数提示、`/help all` 全目录、单命令详情标注扩展层；command_search 主干优先排序（AI 目录检索心智模型——空查询兜底改为主干全目录）。7 用例。
+- **1.7 execpolicy 首词规则（B-06，对标 codex first-token）**：`kernel/execPolicy.ts` 首词索引（firstWordOf 提取/通配首词进 catch-all；buildExecPolicyIndex 分桶；pickExecPolicyCandidates 预筛；applyExecPolicy 判定）。**安全等价断言在测**：pattern 锚定 ^ 保证首词预筛与全量 applyRules 数学等价（测试逐命令对照）。审批持久化**不新增存储面**——复用 permissions.json（/perm rule add|list|remove，P0-2 既有）；sessionGrants 精确授权口径保持不动（B-06 原「前缀放行连带风险」顾虑由「显式用户 authored 规则 + deny 优先 + priority」化解，非会话自动授权）。agent bash 规则经索引裁决（装配一次复用）。8 用例（含 agent 端到端：deny 直拒不弹窗/allow 放行零弹窗）。
+- **阶段 1 收尾复算（执行协议）**：⑤ 6→8（A-02 +11、A-03 +11）；⑩ 8→9（A-06 +7）。**总分 725→754**（第 4 名稳固，距 gemini 812 差 58）。诚实留白：④ 保持 9（满格需子代理分型+结构化输出，阶段 3）；⑥ 保持 9（execpolicy+审批持久化已落地，但双态沙盒提权分支 S-07 未经实测不宣称 10）；⑤ 到 9 还差 API 级 caching 深化（阶段 3）；A-01 按口径不直接加分。
+- **文档**：register A-01/A-04/A-05/B-06 → ✅；plan 阶段 1 表全 ✅ + 阶段 2 起点同步 754；score §0.1 表（⑤8/⑩9/总分754）+ §9.5；CHANGELOG；本审计条目。
+- **验证**：tsc 零错误；本批新增 40 用例（11+7+7+8+7…）+ 既有套件定向全绿；全量 + npm run ci 见下。

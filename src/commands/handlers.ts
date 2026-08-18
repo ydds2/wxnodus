@@ -7,7 +7,7 @@ import { appendAudit } from '../store/db.js';
 import { salienceFlag, salienceFromMultiplier } from './memorySalience.js';
 import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
-import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias } from './registry.js';
+import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias, CORE_COMMANDS } from './registry.js';
 import { capabilityBadges, decryptKey, filterModels, maskKey, MODEL_CATALOG, resolveApiKey } from '../kernel/providers.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { parseModelAddArgs, addCustomModel, applyModelKey } from '../kernel/modelRegistry.js';
@@ -95,7 +95,7 @@ export const c = (s: string, code: string): string => (process.stdout.isTTY === 
 export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // 对话
   bus.register('/help', (args) => {
-    if (args[0]) {
+    if (args[0] && args[0] !== 'all') {
       const cmd = resolveAlias('/' + args[0].replace(/^\//, ''));
       const merge = COMMAND_MERGE[cmd];
       // 审查修复：UI 本地命令（/details /copy /voice 等）不在内核注册表——此前返回
@@ -103,8 +103,11 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       if (!COMMAND_DESC[cmd] && !SLASH.includes(cmd)) {
         return `${cmd}：TUI 本地命令（麦克风钮/Ctrl+K/? 面板等处可用）——/help 全目录不含 UI 层命令`;
       }
-      return `${cmd}：${COMMAND_DESC[cmd] ?? '无描述'}${merge ? `（已并入 ${merge}）` : ''}`;
+      return `${cmd}：${COMMAND_DESC[cmd] ?? '无描述'}${merge ? `（已并入 ${merge}）` : ''}${!CORE_COMMANDS.has(cmd) && SLASH.includes(cmd) ? '（扩展命令——默认 /help 不列出，/help all 可见）' : ''}`;
     }
+    // supremacy 1.6：命令面瘦身——默认渲染主干层（47 条日常驾驶命令），
+    // /help all 渲染全目录（扩展层照常可用，零删除）
+    const showAll = args[0] === 'all';
     // 100% 重构：分组标题行 + 每命令一行两列（命令名 / 描述）——TTY 门控 ANSI 彩色，
     // TUI 彩色（slash 消息已支持 Ansi 渲染）、-p 管道/测试纯文本
     const catName: Record<string, string> = {
@@ -112,8 +115,9 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       '❖': '视觉', '⚿': '输入', '⛭': '网络', '◍': '协作', '☆': '工具', '⬡': '上下文',
       '⬇': '离线',
     };
+    const visible = SLASH.filter(cmd => showAll || CORE_COMMANDS.has(cmd));
     const cats = new Map<string, string[]>();
-    for (const cmd of SLASH) {
+    for (const cmd of visible) {
       const cat = COMMAND_CAT[cmd] ?? '·';
       if (!cats.has(cat)) cats.set(cat, []);
       cats.get(cat)!.push(cmd);
@@ -127,8 +131,13 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         rows.push(`    ${c(cmd.padEnd(26), '35')}${COMMAND_DESC[cmd] ?? ''}${merge ? c(`（=${merge}）`, '2') : ''}`);
       }
     }
+    const extCount = SLASH.length - CORE_COMMANDS.size;
     rows.push('', `${c(' ◈ 提示', '1;33')}：/help <命令> 查看单个命令详情 · /map 生成仓库地图`);
-    return lines(` 命令（共 ${SLASH.length} 个） `, rows);
+    if (!showAll && extCount > 0) {
+      rows.push(`${c(` ◈ 扩展命令 ${extCount} 个（进阶/别名/低频——照常可用）——/help all 查看全部`, '2')}`);
+    }
+    const title = showAll ? ` 命令（全目录 ${SLASH.length} 个） ` : ` 命令（主干 ${CORE_COMMANDS.size} 个） `;
+    return lines(title, rows);
   });
 
   bus.register('/clear', async () => { ctx.clearHistory(); return '已清空'; });
