@@ -227,11 +227,21 @@ export function createAgent(opts: AgentOptions) {
   let budgetExceeded = false;
   // 上下文水位预警标记（会话级一次——75% 阈值提示主动压缩）
   let ctxWarned = false;
-  // 波 1 ⑤：摘要失败护栏（gemini chatCompressionService.ts:287-321 对标）——会话级：
-  // 失败一次 → 本会话后续压缩直接确定性截断（不再烧 LLM）。summarizeRef 每回合指向
-  // 当轮 callWithAbort（abort 信号随轮更新），护栏闭包跨回合持存（不随轮重建）。
+  // 波 1 ⑤：摘要失败护栏（gemini chatCompressionService.ts:287-321 对标）——按会话隔离
+  // （agent 实例可经 setSessionId 复用多会话，失败标记绝不跨会话污染）：失败一次 →
+  // 该会话后续压缩直接确定性截断（不再烧 LLM）。summarizeRef 每回合指向当轮
+  // callWithAbort（abort 信号随轮更新），护栏闭包跨回合持存（不随轮重建）。
   let summarizeRef: (text: string) => Promise<string> = async () => '';
-  const sessionSummarize = summarizeOnce((text: string) => summarizeRef(text));
+  const summarizeGuards = new Map<string, (text: string) => Promise<string>>();
+  const sessionSummarizeFor = (sid: string): ((text: string) => Promise<string>) => {
+    let g = summarizeGuards.get(sid);
+    if (!g) {
+      g = summarizeOnce((text: string) => summarizeRef(text));
+      summarizeGuards.set(sid, g);
+      if (summarizeGuards.size > 32) summarizeGuards.delete(summarizeGuards.keys().next().value!); // 上限保护
+    }
+    return g;
+  };
   // 剧本录制器（/script record 挂载）：executeTool 每个调用回调（name/args）
   let scriptRecorder: ((name: string, args: Record<string, any>) => void) | null = null;
 
@@ -1142,7 +1152,7 @@ export function createAgent(opts: AgentOptions) {
             break;
           }
         }
-        const condensed = await compactMessages(msgs as any, sessionSummarize, { priorSummary });
+        const condensed = await compactMessages(msgs as any, sessionSummarizeFor(sessionId), { priorSummary });
         msgs.splice(0, msgs.length, ...condensed);
         // DB 联动（深化）：compactSmart 归档 DB 中部消息——摘要复用已生成文本
         // （不重复调 LLM）；recall 全量保留，working 窗口与内存一致收缩
