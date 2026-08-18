@@ -159,7 +159,17 @@ export function registerSessionCommands(bus: CommandBus, ctx: HandlerCtx): void 
   //   /offline pack dir     —— 模型缓存路径
   //   /offline on           —— 切换离线模型（= /model 离线 Qwen2.5-1.5B）
   bus.register('/offline', async (args) => {
-    const { OFFLINE_MODELS, offlineModelId, isOfflineModelReady, offlineCacheBytes, downloadOfflineModel } = await import('../../kernel/offlineModel.js');
+    const { OFFLINE_MODELS, offlineModelId, isOfflineModelReady, offlineCacheBytes, ensureOfflineModelReady } = await import('../../kernel/offlineModel.js');
+    // 波 2 ⑪：拉取进度回报（codex pull_with_reporter 对标——5% 步进节流，TUI 状态行实时显示）
+    const progressNotice = (model: string) => {
+      let lastPct = -1;
+      return (p: { percent: number }) => {
+        if (p.percent - lastPct >= 5 || p.percent >= 100) {
+          lastPct = p.percent;
+          try { ctx.bus.emit('system.notice', { text: `⬇ 下载离线模型 ${model}…${Math.floor(p.percent)}%` }); } catch { /* 静默 */ }
+        }
+      };
+    };
     const { resolveDataDir } = await import('../../kernel/paths.js');
     const sub = args[0];
     if (sub === 'pack' && args[1] === 'status') {
@@ -181,9 +191,9 @@ export function registerSessionCommands(bus: CommandBus, ctx: HandlerCtx): void 
     if (sub === 'pack' && args[1] === 'download') {
       const model = args[2] ? `offline:${args[2]}` : 'offline:Qwen2.5-1.5B';
       if (!offlineModelId(model)) return `未知离线模型：${model}（可选 Qwen2.5-1.5B / Qwen2.5-3B）`;
-      if (isOfflineModelReady(model)) return `${model} 已就绪——直接 /model 切换使用`;
-      const r = await downloadOfflineModel(model);
-      return r.message;
+      // 波 2 ⑪：缺模型即拉取 + 进度回报（codex ensure_oss_ready/pull_with_reporter 对标）
+      const r = await ensureOfflineModelReady(model, progressNotice(model));
+      return r.already ? r.message : r.message;
     }
     if (sub === 'pack' && args[1] === 'dir') {
       return `模型缓存：${resolveDataDir(process.cwd())}（WXNODUS_DATA_DIR 可改）`;
@@ -192,9 +202,12 @@ export function registerSessionCommands(bus: CommandBus, ctx: HandlerCtx): void 
       const { MODEL_CATALOG } = await import('../../kernel/providers.js');
       const hit = MODEL_CATALOG.find(m => m.modelId === 'offline:Qwen2.5-1.5B');
       if (hit) ctx.setModel(hit.modelId, hit.baseURL);
-      return isOfflineModelReady('offline:Qwen2.5-1.5B')
+      // 波 2 ⑪：切完即自动就绪（codex ensure_oss_ready 对标——缺模型即拉取，零门槛离线）
+      const r = await ensureOfflineModelReady('offline:Qwen2.5-1.5B', progressNotice('offline:Qwen2.5-1.5B'));
+      if (!r.ok) return `已切换离线模型：Qwen2.5-1.5B（本地）——但模型下载失败：${r.message}（重试 /offline pack download）`;
+      return r.already
         ? '已切换离线模型：Qwen2.5-1.5B（本地）——对话断网可用'
-        : '已切换离线模型：Qwen2.5-1.5B（本地）——但模型未下载：/offline pack download';
+        : `已切换离线模型：Qwen2.5-1.5B（本地）——${r.message}`;
     }
     return lines(' 离线 token 包 ', [
       ' 用法：',

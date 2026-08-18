@@ -645,6 +645,60 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       return `已${label}记忆 ${id}（salience ×${mult}）——/memory list 查看置顶项`;
     }
 
+    // 波 2 ⑪：记忆收件箱（gemini .inbox 对标）——审阅 AI 写入的候选记忆：apply 批准
+    // 生效（写入 modern 记忆层）/ discard 丢弃 / undo 按记录撤销（可审可退，
+    // 堵「不可控记忆」评审攻击）；settings.memoryInbox=true 时 memory_write 先入箱
+    if (sub === 'inbox') {
+      const op = String(args[1] ?? 'list').trim();
+      const id = String(args[2] ?? '').trim();
+      const { ensureMemoryInbox, inboxList, inboxMark, inboxGet } = await import('../kernel/memoryInbox.js');
+      ensureMemoryInbox(ctx.db);
+      const sid = ctx.agent?.getSessionId?.() ?? 'default';
+      if (op === 'list') {
+        const rows = inboxList(ctx.db, sid, 'pending');
+        if (!rows.length) return '收件箱为空（无待审记忆）——settings.memoryInbox=true 时 AI 写入先入箱待审';
+        return lines(' 记忆收件箱（待审） ', rows.map(r => ` [${r.id}] ${snippet(r.content, 60)}（${new Date(r.ts).toLocaleString()}）`));
+      }
+      if (!id) return '用法：/memory inbox list | apply <id> | discard <id> | undo <id>';
+      if (op === 'apply') {
+        const row = inboxGet(ctx.db, id);
+        if (!row) return `收件箱无此记录：${id}`;
+        if (row.status !== 'pending') return `记录 ${id} 状态为 ${row.status}（仅 pending 可批准）`;
+        const svc = svcFor();
+        if (!svc) return '记忆权威层未装配（memoryServiceFor 缺失——fail-closed）';
+        const result = svc.append({
+          role: 'assistant',
+          content: row.content,
+          salience: 0.5,
+          retention: { class: 'session', retainUntil: null },
+          provenance: {
+            sourceType: 'tool', sourceId: sid, sourceUri: undefined,
+            capturedAt: new Date().toISOString(), actorId: sid,
+            correlationId: 'memory_inbox_apply', policySnapshotId: 'inbox', sourceTrust: 1,
+          },
+        });
+        if (!result.ok) return `批准失败：${result.error.code}`;
+        inboxMark(ctx.db, id, 'applied', result.value.record.id);
+        return `已批准记忆 ${id} 生效（modern 记录 ${result.value.record.id}）——/memory search 可检索；/memory inbox undo ${id} 可撤销`;
+      }
+      if (op === 'discard') {
+        if (!inboxMark(ctx.db, id, 'discarded')) return `收件箱无此记录：${id}`;
+        return `已丢弃记忆 ${id}（未进记忆库）`;
+      }
+      if (op === 'undo') {
+        const row = inboxGet(ctx.db, id);
+        if (!row) return `收件箱无此记录：${id}`;
+        if (row.status !== 'applied' || !row.memory_record_id) return `记录 ${id} 无可撤销的生效状态（status=${row.status}）`;
+        const svc = svcFor();
+        if (!svc) return '记忆权威层未装配（memoryServiceFor 缺失——fail-closed）';
+        const result = svc.delete(row.memory_record_id);
+        if (!result.ok) return `撤销失败：${result.error.code}`;
+        inboxMark(ctx.db, id, 'reverted');
+        return `已撤销记忆 ${id}（modern 记录 ${row.memory_record_id} 已删除）`;
+      }
+      return '用法：/memory inbox list | apply <id> | discard <id> | undo <id>';
+    }
+
     // 列表——/memory list [N]（modern 显式记录，updated_at 降序）
     if (sub === 'list') {
       const n = Math.min(Number(args[1] ?? 10) || 10, 30);

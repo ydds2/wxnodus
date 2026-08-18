@@ -133,19 +133,63 @@ export async function callOfflineLlm(model: string, opts: OfflineChatOpts): Prom
   }
 }
 
-/** 预下载离线模型（/offline pack download）——下载后完全断网可用 */
-export async function downloadOfflineModel(model: string): Promise<{ ok: boolean; message: string }> {
+// 波 2 ⑪：拉取进度（codex ollama/lib.rs:22-34 ensure_oss_ready→pull_with_reporter 对标）——
+// transformers.js progress_callback → 归一化进度事件（纯函数可单测，见 normalizePipelineProgress）
+export interface OfflineDownloadProgress {
+  status: string;
+  file?: string;
+  /** 0-100（progress 字段优先；缺省按 loaded/total 估算） */
+  percent: number;
+}
+
+export function normalizePipelineProgress(raw: unknown): OfflineDownloadProgress {
+  const p = (raw ?? {}) as Record<string, unknown>;
+  const loaded = Number(p.loaded ?? 0);
+  const total = Number(p.total ?? 0);
+  const percent = typeof p.progress === 'number'
+    ? Math.max(0, Math.min(100, p.progress))
+    : total > 0
+      ? Math.max(0, Math.min(100, (loaded / total) * 100))
+      : 0;
+  return {
+    status: String(p.status ?? 'progress'),
+    file: typeof p.file === 'string' ? p.file : undefined,
+    percent: Math.round(percent * 10) / 10,
+  };
+}
+
+/** 预下载离线模型（/offline pack download）——下载后完全断网可用；onProgress 回调流式进度 */
+export async function downloadOfflineModel(
+  model: string,
+  onProgress?: (p: OfflineDownloadProgress) => void,
+): Promise<{ ok: boolean; message: string }> {
   const hfId = offlineModelId(model);
   if (!hfId) return { ok: false, message: `未知离线模型：${model}` };
   try {
     const { pipeline } = await import('@huggingface/transformers');
     // 下载通道显式允许远程（getPipe 推理通道已禁网——此处重新打开，仅此入口联网）
     env.allowRemoteModels = true;
-    await pipeline('text-generation', hfId, { dtype: 'q4' });
+    await pipeline('text-generation', hfId, {
+      dtype: 'q4',
+      progress_callback: onProgress ? (raw: unknown) => onProgress(normalizePipelineProgress(raw)) : undefined,
+    });
     return { ok: true, message: `离线模型已就绪：${model}（缓存 ${resolveDataDir(process.cwd())}）——断网可用` };
   } catch (e: any) {
     return { ok: false, message: `下载失败：${String(e?.message ?? e).slice(0, 150)}（需要网络；成功后断网可用）` };
   }
+}
+
+/** 缺模型即拉取（codex ensure_oss_ready 对标）：已就绪零下载直接返回；未就绪下载并回报进度。
+ *  /offline on 等入口零门槛可用——不再要求用户先记着跑 download。 */
+export async function ensureOfflineModelReady(
+  model: string,
+  onProgress?: (p: OfflineDownloadProgress) => void,
+): Promise<{ ok: boolean; message: string; already?: boolean }> {
+  if (isOfflineModelReady(model)) {
+    return { ok: true, message: `${model} 已就绪——断网可用`, already: true };
+  }
+  const r = await downloadOfflineModel(model, onProgress);
+  return { ...r, already: false };
 }
 
 /** 离线模型缓存大小（字节）——/offline pack status */

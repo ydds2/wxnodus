@@ -688,6 +688,15 @@ export function coreTools(): Record<string, ToolDef> {
       const c = String(content ?? '').trim();
       if (!c) return '记忆内容为空';
       try {
+        // 波 2 ⑪：记忆收件箱（gemini .inbox 对标）——settings.memoryInbox=true 时
+        // AI 写入先进收件箱待审（pending），/memory inbox apply 批准后才进 modern 记忆层；
+        // 默认关：直写零漂移（既有闭环契约不变）
+        if ((ctx.getSettings?.() as any)?.memoryInbox === true && ctx.db) {
+          const { ensureMemoryInbox, inboxAdd } = await import('./memoryInbox.js');
+          ensureMemoryInbox(ctx.db);
+          const row = inboxAdd(ctx.db, ctx.sessionId ?? 'default', c, `inbox-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, Date.now());
+          return `记忆已入收件箱（待审）：id=${row.id}——用户 /memory inbox apply ${row.id} 批准生效（discard 丢弃；settings.memoryInbox=false 关闭审阅）`;
+        }
         const { memoryServiceForTool } = await import('../application/memory/memoryToolService.js');
         const svc = memoryServiceForTool(ctx);
         const result = svc.append({
