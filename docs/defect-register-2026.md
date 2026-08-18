@@ -9,8 +9,8 @@
 
 | ID | 缺陷 | 对标 | 阻塞 | 影响维度/提分 | 状态 |
 |---|---|---|---|---|---|
-| S-01 | 真实分发（winget/scoop 上架、installer、更新通道） | opencode 9 渠道 | 无 git remote → 无发布 URL | ⑧ 5→6（+9） | ◐ 模板/生成器已备（`packaging/`），发布日零改动 |
-| S-02 | 插件市场/远端技能安装 | codex/opencode 市场 | 同 S-01（需托管） | ⑧ 6→7（+9） | ⏳ |
+| S-01 | 真实分发（winget/scoop 上架、installer、更新通道） | opencode 9 渠道 | 已配 remote ✅——剩「公开下载 URL」（私人仓库 release 资产不可公开拉取） | ⑧ 5→6（+9） | ◐ 模板/生成器已备（`packaging/`），发布日零改动；remote 已推送（2026-08-18）——剩公开性决策（公开仓库或独立托管） |
+| S-02 | 插件市场/远端技能安装 | codex/opencode 市场 | 已解锁（remote ✅ 2026-08-18）——托管+公开性待决策 | ⑧ 6→7（+9） | ⏳ 本地磁盘变体（/skill install <路径> 与本地市场目录）已具可行性（/assimilate 跨品牌吸收已存在） |
 | S-03 | IDE 插件 | gemini companion/codex vscode | 无（协议已备） | ⑦ 8→9（+11） | ◐ **落地**：`packages/vscode-ext`（--wire 桥接 + webview 面板 + 审批/澄清/密码原生模态），typecheck+4 单测+esbuild+vsce 本地 vsix 全绿（supremacy 2.1）；marketplace 上架仍受 S-01 |
 | S-04 | 远程执行环境 | codex exec-server | 无（ssh 方案无阻塞） | ⑦ 9→10（+11） | ✅ **完整版落地**：ssh 通道阶段 1（sshRemote.ts + /remote + bash 分支，10 mock 单测）+ **长驻 exec-server**（execServer.ts：HMAC 派生 Bearer + timingSafeEqual、64KB 体限、远端 OS 沙盒 profile 复用（winSandbox 同族，不可用 fail-closed 拒绝绝不降级）、`/remote server|connect|run` 与 bash 工具接入（remoteServer 优先于 ssh）、默认 127.0.0.1 + 非回环诚实警告）——8 本机集成单测（真实 server+client 闭环），supremacy 补轮 |
 | S-06 | 沙盒 macOS/Linux 化 | codex/gemini 三平台 | — | — | ❌ **已移除（Windows-only 决策）**——POSIX 实现（bwrap/Seatbelt）保留休眠态，探测诚实返回不适用；⑥ 冲 10 改走 S-07 Windows 双态沙盒 |

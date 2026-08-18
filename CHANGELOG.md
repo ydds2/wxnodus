@@ -30,6 +30,7 @@
 - **长驻 exec-server（S-04 完整版）**：`/remote server`（HMAC 派生 token + 远端 OS 沙盒 profile 复用，不可用即拒绝绝不降级）+ `/remote connect` 接入——bash 工具与 `/remote run` 优先走 exec-server（远端可沙盒），回退 ssh 通道（未沙盒诚实标注）。复算 814 → **825**（⑦ 满格）。
 - **双态沙盒提权分支真机实测修复（两轮）**：管理员终端实测暴露 v3 报 87（SidsToDisable 裸 SID 指针 + LocalSystem 不在令牌组）→ v4（TokenGroups 只禁用存在 SID、Attributes=0）；v4 探测 OK 但启动报 1314（受限令牌经令牌复制失去「调用方令牌受限版」豁免）→ v5（从本进程令牌直接构建 + SeIncreaseQuotaPrivilege + 探测加真实进程启动冒烟——OK-ELEVATED=全链路实测）；`scripts/probe-elevated.cmd` 重写为 CRLF + 纯 ASCII（修复双击即退）+ 失败路径可见化。
 - **双态沙盒提权分支实测收官（⑥ 9→10）**：管理员终端第三轮全绿——OK-ELEVATED（含进程启动冒烟）+ L0 拒写 + L1 可写，Windows 双态沙盒全链路真机验证；复算 825 → **835**（第 3/7，⑥=10 七家第一，第一维度增至四项）。
+- **git remote 配置（发布通道解锁）**：origin → github.com/ydds2/wxnodus（私人仓库），master 全史推送；公开前清理 drill 空库与夹具构建产物出库（.gitignore 补 `.wxnodus/*.db`）。winget/scoop 上架仍需公开下载 URL（私人仓库资产不可公开拉取）。
 
 ## [3.1.0] - 2026-08-18
 

@@ -293,5 +293,5 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 - **三测三修时间线（管理员终端真机实测，每轮都有实证）**：① v3 报 87（SidsToDisable 裸 SID 指针 + LocalSystem 不在令牌组）→ v4（TokenGroups 只禁用存在 SID + SID_AND_ATTRIBUTES 布局 + Attributes=0）；② v4 探测 OK 但启动报 1314（受限令牌经 DuplicateTokenEx 中转失去「调用方令牌受限版」豁免）→ v5（从本进程令牌直接构建 + SeIncreaseQuotaPrivilege + 探测加真实进程启动冒烟）；③ v5 全绿（见下）。
 - **第三轮实测证据（elevated-probe-result.txt，管理员终端）**：`PROBE: OK`（CreateRestrictedToken 禁用 Administrators/LocalSystem + Medium IL + **真实进程启动冒烟**）· `L0-WRITE: exit=0 · SBX_WRITE_DENIED`（提权→受限令牌+Low IL 只读语义真机证实）· `L1-WRITE: exit=0 · SBX_WRITE_OK`（提权→受限令牌+Job 可写+断网真机证实）。标准用户路径此前已实测（OK-STANDARD + L0 拒写），v5 重构后自测无回归。
 - **评分口径**：⑥ 安全工程 9→10——Windows 双态沙盒（提权→受限令牌 / 标准用户→Low IL）真机实测全链路验证，诚实口径要求的「管理员环境实测」已交付；仅 Windows 单平台不扣本档（Windows-only 已为明确决策，S-06 移除在案）。**⑥=10 七家第一**（codex/gemini 9）——第一维度增至四项。
-- **复算**：总分 825 → **835**（第 3/7；距 opencode 841 差 6、距 codex 869 差 34）。870 线剩余唯一增量 = ⑧ 5→9（+36，git remote 发布通道，用户已决策跳过）。
+- **复算**：总分 825 → **835**（第 3/7；距 opencode 841 差 6、距 codex 869 差 34）。870 线剩余唯一增量 = ⑧ 5→9（+36，发布通道——**git remote 已于 2026-08-18 配置推送**（ydds2/wxnodus 私人仓库），剩真实发布落地）。
 - **验证**：tsc 零错误；winSandbox 10 单测绿；全量套件 346 文件/2579 用例绿；标准用户自测 OK-STANDARD + L0 SBX_WRITE_DENIED。

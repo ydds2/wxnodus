@@ -72,16 +72,16 @@
 | 2.1 | IDE 插件 packages/vscode-ext（wire 桥接 + webview + approval 模态） | S-03 | 无 | typecheck + build + 本地 vsix | ✅ typecheck+4 单测+vsix 7.6KB（另修复 wire 审批广播缺口 + 4 用例） |
 | 2.2 | 远程执行 ssh 通道（诚实标注「远端未沙盒」） | S-04 | 无 | mock ssh 单测 | ✅ 10 用例 + /remote 命令 + bash 远程分支 |
 | 2.3 | 用户文档三件套（getting-started/troubleshooting/examples） | S-01 | 无 | 链接契约 | ✅ 4 契约用例（另抓到 /share /balance 注册表缺口已修） |
-| 2.4 | **git remote + GitHub Actions CI** | C-01 | 用户操作 | workflow 绿 | ◐ workflow 已备（.github/workflows/ci.yml，本地校验通过）——推送与首次绿待 remote |
+| 2.4 | **git remote + GitHub Actions CI** | C-01 | 用户操作 | workflow 绿 | ✅ **已推送**（2026-08-18 origin=github.com/ydds2/wxnodus 私人仓库，master 全史推送 + 两笔收尾 commit）；CI 首绿待 GitHub Actions 运行回报 |
 | 2.5 | 桌面端协议加固（serve 会话 RPC + SSE 会话变更事件） | — | 用户定接入方式 | 协议测试 | ✅ --serve 路径（路线图既定推荐）：结构化 sessions RPC + session.changed SSE + docs/serve-protocol.md + 3 协议用例 |
 
 ### 阶段 3「Windows 收官」→ ~840 → 870+
 | # | 任务 | 缺陷 ID | 前置 | 验证 |
 |---|---|---|---|---|
-| 3.1 | winget/scoop 真实发布 | S-01 | remote | 真实 URL + sha256 |
+| 3.1 | winget/scoop 真实发布 | S-01 | remote（已配 ✅）→ 公开下载 URL | 真实 URL + sha256 | ◐ **已解锁**——待公开性决策（私人仓库 release 资产不可公开下载，需公开仓库或独立托管） |
 | 3.2 | **Windows 双态沙盒**（提权受限令牌 + 标准用户 Low IL，探测双态如实报告） | S-07 | 管理员环境（非阻塞） | 标准用户分支实测；提权分支探测诚实 | ✅ **全链路实测收官**（三测三修：87→v4、1314→v5；管理员终端 OK-ELEVATED（含进程启动冒烟）+ L0 拒写 + L1 可写，⑥ 9→10） |
 | 3.3 | vim/keymap + @选择器 + diff 折叠/apply | B-01/02 | 无 | 输入层测试 | ✅ keymap 配置层 10 用例 + diff hunk 模型 6 用例（@机制已有 resolveAtRefs） |
-| 3.4 | 插件市场（托管清单 + 远端技能安装） | S-02 | remote | 市场安装闭环 |
+| 3.4 | 插件市场（托管清单 + 远端技能安装） | S-02 | remote（已配 ✅） | 市场安装闭环 | ◐ **已解锁**——待清单托管与公开性决策 |
 | 3.5 | perf 基准 + lint + madge | C-01/03 | 无 | ci 挂载 | ✅ lint+环门禁入 ci（九步）+ 修环 13/17 + bench 四项基线 |
 | 3.6 | 超越复评：11 维评分 ≥ 870 | — | 全部 | score 更新 | ◐ 复评 835（790→814→825→835；⑥ 满格后距 codex 差 34——870 剩余唯一增量 = ⑧ +36 卡 git remote，用户已决策跳过） |
 

@@ -896,3 +896,11 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **三测三修回顾**：87（SidsToDisable 布局）→ 1314（DuplicateTokenEx 断父子链失豁免）→ 全绿（v5：直接构建 + quota + 启动冒烟）。每轮失败都如实入档，未在证据前宣称可用——诚实口径最终兑现。
 - **复算**：⑥ 9→10（+10）——双态沙盒提权分支真机全链路验证（Windows-only 为既定决策，S-06 移除在案）；总分 825 → **835**，⑥=10 七家第一（第一维度增至四项：①④⑥⑪）。870 线剩余唯一增量 = ⑧ +36（git remote，用户已决策跳过）。
 - **验证**：tsc 零错误；winSandbox 10 单测绿；全量套件 346 文件/2579 用例绿；标准用户自测 OK-STANDARD + L0 SBX_WRITE_DENIED（v5 重构无回归）。
+
+### 13.69 git remote 配置轮（2026-08-18：发布通道解锁）
+
+- **事件**：用户提供 remote `github.com/ydds2/wxnodus`（私人仓库）——此前「暂无 remote，跳过发布类」决策解除，2.4/3.1/3.4 三条卡点解锁。
+- **公开前清理**：① 两个 wave2 drill 空库（.wxnodus/*.db，逐表扫描零行无敏感数据）出库（git rm --cached，本地保留）；② 87 项夹具构建产物（tests/fixtures/windows/uia/win32/bin+obj 二进制）出库——符合项目自身「fixture 构建产物不入库（锁哈希核验）」政策（此前历史提交早于 ignore 规则）；③ .gitignore 补 `.wxnodus/*.db`。注意：**历史提交仍含早期二进制与空库**——私人仓库无泄露风险，体积优化可日后 filter-repo（未做，如实记录）。
+- **收尾 commit 两笔**：db88daa（v5 沙盒三测三修收官 + ⑥ 9→10 复算 835 全文档同步）、4156e89（清理 + gitignore）。master 全史推送 origin 成功，跟踪建立。
+- **凭证纪律**：密码不出现在任何 git 配置/文件/命令历史（GCM 交互认证）；已提醒用户 GitHub 不接受密码认证、建议改用 PAT 并轮换已暴露的密码。
+- **遗留口径（诚实）**：私人仓库 release 资产**不可公开下载**——winget/scoop 的 InstallerUrl 必须公开可达，3.1 仍需「公开性决策」（公开仓库或独立托管）后才可真实上架；CI 首绿待 GitHub Actions 运行回报。
