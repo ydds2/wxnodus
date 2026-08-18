@@ -748,3 +748,11 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **测试**：新套件 7 用例（血缘链/首问摘要/授权 upsert deny 优先撤销/agent 批准一次→同键免弹窗真实执行/deny 直拒不弹窗/红线不可被授权绕过）；kf-030、db-migrations 双版本断言 8→9。
 - **教训**：① agent 测试共享 sessionId 导致 DB 行跨用例串扰——断言改「最新 N 行」而非全量；② 收尾文本 'done' 触发 isCompletionClaim 零副作用判 incomplete（KF-023/024 契约）——测试收尾用中性文本。
 - **验证**：tsc 零错误；定向全绿；全量 2458 通过 / 10 跳过 / 0 失败；npm run ci 七步全绿（CI_EXIT=0）。
+
+### 13.51 分享/路线图轮（2026-08-18：/share 离线加密打包 + 缺陷寄存器 + IDE/远程路线图）
+
+- **需求**：「IDE 插件、远程执行、share 分享实现原理和难易程度，完善缺陷清单，提高上限」。
+- **/share 离线打包（kernel/share.ts）**：openecode/kimi 云端分享依赖中心服务器（S-05 阻塞 + 数据不出机红线）→ 实现离线变体——明文包 `{format,version,exportedAt,source,messages,sha256}`（sha256 覆盖规范化 JSON 防篡改/截断）；`--encrypt` AES-256-GCM + scrypt(N=16384,r=8,p=1) 口令派生（盐/iv 随机、tag 校验、口令绝不入包）；导入先校验再入库、血缘 `share:<源id>`；命令层 argv 口令可见性风险如实提示（推荐 WXNODUS_SHARE_PASS 环境变量）。
+- **缺陷寄存器（docs/defect-register-2026.md）**：S/A/B/C 四级 21 项——与评分维度、提分预估、阻塞项（无 remote/无服务器）一一联动；A-08 ✅、B-07/B-08 ✅（前轮）、其余状态如实。
+- **路线图（docs/ide-remote-share-roadmap-2026.md）**：三块空白原理对照（gemini ide-companion ACP stdio / codex app-server SSE / opencode Tauri+token / codex exec-server / opencode share POST）→ wxnodus 落地方案：IDE 插件走现成 `--wire`（零协议新增，~600-900 行，本地 vsix 不受 S-01 阻塞）；远程执行 ssh 通道先行（标注「远端未沙盒」诚实口径）+ 完整版 exec-server 安全面对齐 codex；桌面端与 IDE 插件共用协议层（serve SSE + /sessions --json）。
+- **验证**：tsc 零错误；share 4 用例全绿（篡改拒绝/错误口令拒绝/加密往返保真/血缘标记）；全量 + npm run ci 见下。

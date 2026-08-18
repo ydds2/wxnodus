@@ -1,0 +1,58 @@
+# 缺陷寄存器（2026-08-18，终版盘点）
+
+> 单一事实源：wxnodus 相对 6 家竞品（codex/gemini-cli/opencode/kimi-cli/crush/aider）的**剩余缺陷全表**。
+> 状态列：✅ 已落地（commit 可溯）｜◐ 部分落地｜⏳ 未做｜🚫 不可为（缺外部依赖，注明阻塞）。
+> 严重度定义：S=用户视角不成立/安全边界；A=能力面子集；B=体验；C=工程债。
+> 评分联动：`docs/cli-deep-analysis-score-2026.md`（当前 7.25，第 4/7）；每缺陷标注影响的评分维度与提分预估。
+
+## S 级
+
+| ID | 缺陷 | 对标 | 阻塞 | 影响维度/提分 | 状态 |
+|---|---|---|---|---|---|
+| S-01 | 真实分发（winget/scoop 上架、installer、更新通道） | opencode 9 渠道 | 无 git remote → 无发布 URL | ⑧ 5→6（+9） | ◐ 模板/生成器已备（`packaging/`），发布日零改动 |
+| S-02 | 插件市场/远端技能安装 | codex/opencode 市场 | 同 S-01（需托管） | ⑧ 6→7（+9） | ⏳ |
+| S-03 | IDE 插件 | gemini companion/codex vscode | 无（协议已备） | ⑦ 8→9（+11） | ⏳ 路线图 docs/ide-remote-share-roadmap-2026.md |
+| S-04 | 远程执行环境 | codex exec-server | 无（ssh 方案无阻塞） | ⑦ 9→10（+11） | ⏳ 同路线图 |
+| S-05 | share 云端分享 | opencode/kimi | 需中心服务器 | ⑦ +1 | 🚫 离线变体已落地（/share 打包加密，见 A-08） |
+
+## A 级
+
+| ID | 缺陷 | 对标 | 影响维度/提分 | 状态 |
+|---|---|---|---|---|
+| A-01 | 命令面臃肿（114 注册/~109 命令，竞品 2~3 倍） | gemini 47/opencode 动态 | 臃肿度原始诉求（不直接加分） | ⏳ 方案已定（109→~45 聚合） |
+| A-02 | 模型分族提示词（deepseek/glm/kimi 定制段） | gemini 分族 | ⑤ 6→7（+11） | ⏳ 注：systemPrompt.ts 零 CJK 红线 → 新模块承载 |
+| A-03 | 小模型任务档（标题/摘要走小模型） | crush large/small | ⑤ 7→8、⑩ +1 | ⏳ |
+| A-04 | 按模型工具裁剪（48 schema 全量发给所有模型） | codex 按模型 | ⑤/⑩ | ⏳ |
+| A-05 | LLM 辅助循环检测（置信度判空转） | gemini | ④ 与 gemini 最后差距 | ⏳ |
+| A-06 | 成本五维（reasoning/cache_read/cache_write）+ Decimal | opencode | ⑩ | ⏳ |
+| A-07 | 快照增量化（消息 id 上界 vs 全量复制） | kimi `_checkpoint` | ⑨ | ⏳（血缘已 ✅，见 79c3226） |
+| A-08 | share 分享 | opencode/kimi | ⑦ 场景矩阵 | ✅ 离线加密打包（kernel/share.ts + /share，AES-256-GCM+sha256）——云端版受 S-05 阻塞 |
+
+## B 级
+
+| ID | 缺陷 | 对标 | 状态 |
+|---|---|---|---|
+| B-01 | vim 无接线 / keymap 不可配 | codex 真 vim+config | ⏳ |
+| B-02 | @文件选择器、diff hunk 折叠/apply | opencode 双布局 | ⏳ |
+| B-03 | 会话浏览器 UI（列表+预览） | codex resume_picker/gemini SessionBrowser | ◐ 数据面已备（listSessionsStructured + --json），UI 面待桌面端 |
+| B-04 | 主题系统 | opencode 33 套 | ⏳ |
+| B-05 | 配置分层（项目级 .wxnodus/config 继承） | gemini 四层 | ⏳ |
+| B-06 | execpolicy 首词前缀规则 | codex first-token 索引 | ⏳（刻意未做理由见 sessionGrants 注释：前缀放行有连带风险） |
+| B-07 | 会话列表 first_user 摘要/血缘 | gemini/codex | ✅（79c3226） |
+| B-08 | approve_for_session 真实授权 | kimi | ✅（79c3226） |
+
+## C 级
+
+| ID | 缺陷 | 状态 |
+|---|---|---|
+| C-01 | 无远程 CI（GitHub Actions）+ 无 lint + 无 perf 基准 | ◐ npm run ci 本地门禁代替；其余 ⏳ |
+| C-02 | 巨文件残留（wxGateway 等） | ◐ handlersExt 已拆（3718→2180），wxGateway 待拆 |
+| C-03 | 无 perf 基准目录 | ⏳（gemini perf-tests/aider benchmark 对齐） |
+
+## 下一档优先级（按提分/成本）
+
+1. A-02+A-03（⑤ 6→7→8，+11~22）——提示词分族与小模型任务档，纯内核改动零外部依赖；
+2. S-03 IDE 插件（⑦ 8→9，+11）——协议已备，工程量中；
+3. A-01 命令面瘦身（原始诉求，不直接加分但消臃肿）;
+4. A-06 成本五维（⑩，中）；
+5. S-04 远程执行 ssh 通道（⑦，中）；S-01 发布（有 remote 即解锁）。

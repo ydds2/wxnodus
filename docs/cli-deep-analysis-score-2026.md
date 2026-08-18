@@ -85,7 +85,7 @@
 | MCP | server+client | client | client 强 | client | client | 管理组+OAuth | 仅配置 |
 | ACP | ✓(stdio) | ✗ | ✓+测试 | ✓ | ✗ | ✓ | ✗ |
 | A2A | ≈(91 行子集) | ✗ | ✓(独立包) | ✗ | ✗ | ✗ | ✗ |
-| 远程/分享 | ✗ | exec-server/cloud | ✗ | share/slack/CI | ✗ | share/web | ✗ |
+| 远程/分享 | ≈ 离线打包 | exec-server/cloud | ✗ | share/slack/CI | ✗ | share/web | ✗ |
 | IDE | ✗(仅协议) | ✓ | ✓(companion 包) | ✓ | ✗ | ✓ | ≈(第三方) |
 | doctor/诊断 | ✓(真检测) | ✓(10 模块) | ✗ | ✓(debug 组) | ≈(logs) | ≈ | ✗ |
 
@@ -192,3 +192,10 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 - **会话血缘 + 结构化会话列表（gap P2-1 部分）**：sessions 表 `forked_from_id`（SCHEMA v9 迁移）；`/fork` 记血缘 + `/fork lineage [id]` 祖先链；`/sessions [--json]` 结构化列表（首问摘要/消息数/分支数/血缘——gemini sessionUtils 对齐），JSON 出口与 serve 网关共用 `listSessionsStructured` 单一事实源——桌面端历史树/会话浏览器的数据面就绪。
 - **approve_for_session 真实授权（gap P1-4）**：session_grants 表持久化（批准一次 → 本会话同键自动放行，跨重启生效）；优先级红线 > 规则 deny > 会话 deny > 会话 allow > 模式判定；`/perm session-allow|deny|revoke|list`；settings.approveForSession 开关（默认关，opt-in）。授权粒度诚实原则：bash 精确命令串、fs 精确 path（刻意不做首词前缀——批准 `git` 前缀会连带放行 `git push --force`；execpolicy 式前缀规则留 P2-3）。
 - **评分口径**：本批服务「生态 + 桌面端」，④ 授权层/⑦ 会话面质量提升但未越档（④ 仍与三家并列 9；桌面端未上线前 ⑦ 不加分）——分数保持 725 不变，如实记录。
+
+### 9.3 分享/路线图轮（2026-08-18 五评）
+
+- **share 离线加密打包（A-08 落地）**：`kernel/share.ts` + `/share export|import`——单文件 .wxnshare（明文 sha256 防篡改；`--encrypt` AES-256-GCM + scrypt 口令派生，盐/iv 随机，口令不落包）；导入记血缘 `share:<源id>`；4 用例（往返保真/篡改拒绝/错误口令拒绝/伪造格式拒绝）。opencode/kimi 的云端分享依赖中心服务器——wxnodus 数据不出机红线下的诚实离线变体。
+- **缺陷寄存器**：`docs/defect-register-2026.md`——S/A/B/C 四级 21 项全表（含阻塞项与提分预估），评分与缺陷一一联动。
+- **IDE/远程路线图**：`docs/ide-remote-share-roadmap-2026.md`——三块空白原理对照（gemini ACP companion / codex app-server+exec-server / opencode share）+ 难易度 + 分阶段方案（IDE 插件走现成 --wire 零协议新增；远程 ssh 通道先行、完整 exec-server 标注安全面；与桌面端共用协议层）。
+- **评分口径**：⑦ 场景矩阵「远程/分享」✗→≈（离线打包），但云端分享与远程执行未做——⑦ 保持 8 不越档；总分 725 不变。

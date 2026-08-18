@@ -13,6 +13,7 @@ import { usageSummary, usageRangeSince, type UsageRange } from '../../kernel/usa
 import { estimateCost } from '../../kernel/cost.js';
 import { sessionCost, rangeCost, costText, type CostQueryResult } from '../../kernel/costQuery.js';
 import { listSessionsStructured, forkSession, sessionLineage } from '../../kernel/sessionLineage.js';
+import { exportSessionBundle, importSessionBundle } from '../../kernel/share.js';
 import { c, type HandlerCtx } from '../handlers.js';
 import { type CommandBus } from '../../app/CommandBus.js';
 
@@ -90,6 +91,36 @@ export function registerSessionCommands(bus: CommandBus, ctx: HandlerCtx): void 
       const forks = s.forkCount > 0 ? ` ⑂${s.forkCount}` : '';
       return ` ${s.id}  ${s.title || '(无标题)'}${lineage}${forks}  [${s.msgCount} 条] ${head}`;
     }));
+  });
+
+  // /share export|import：离线加密打包分享（数据不出机——opencode/kimi 云端分享的离线变体；
+  // 明文包 sha256 防篡改、--encrypt 为 AES-256-GCM（scrypt 口令派生，盐/iv 随机，口令不落包））
+  bus.register('/share', (args) => {
+    const sub = args[0];
+    const passIdx = args.indexOf('--pass');
+    const pass = passIdx >= 0 ? args[passIdx + 1] : process.env.WXNODUS_SHARE_PASS;
+    const clean = (a: string[]) => a.filter((_, i) => a[i - 1] !== '--pass' && a[i] !== '--pass');
+    if (sub === 'export') {
+      const rest = clean(args.slice(1));
+      const encrypt = rest.includes('--encrypt');
+      const outIdx = rest.indexOf('--out');
+      const sid = rest.filter((_, i) => i !== outIdx && i !== outIdx + 1).find(a => !a.startsWith('--')) ?? ctx.agent?.getSessionId?.() ?? 'default';
+      const r = exportSessionBundle(ctx.db, sid, { password: encrypt ? pass : undefined });
+      if (!r.ok) return r.error;
+      const outPath = outIdx >= 0 && rest[outIdx + 1] ? rest[outIdx + 1] : join(process.cwd(), `wxn-share-${sid}-${Date.now().toString(36)}.wxnshare`);
+      try { writeFileSync(outPath, r.bundle, 'utf8'); } catch (e: any) { return `写入失败：${e?.message ?? e}`; }
+      return `已导出会话 ${sid}（${r.summary.msgCount} 条消息${r.summary.encrypted ? '，AES-256-GCM 加密' : '，明文——建议 --encrypt 口令加密'}）→ ${outPath}\n对方导入：/share import ${outPath}${r.summary.encrypted ? ' --pass <口令>' : ''}`;
+    }
+    if (sub === 'import') {
+      const file = clean(args.slice(1)).find(a => !a.startsWith('--'));
+      if (!file) return '用法：/share import <文件> [--pass <口令>]（口令也可用环境变量 WXNODUS_SHARE_PASS）';
+      let bundle: string;
+      try { bundle = readFileSync(resolve(process.cwd(), file), 'utf8'); } catch (e: any) { return `读取失败：${e?.message ?? e}`; }
+      const r = importSessionBundle(ctx.db, bundle, { password: pass });
+      if (!r.ok) return r.error;
+      return `已导入会话（来源 ${r.sourceId}）→ ${r.sessionId}（${r.msgCount} 条消息，血缘已标记 share:${r.sourceId}）——/resume ${r.sessionId} 恢复`;
+    }
+    return '用法：/share export [sid] [--encrypt] [--pass <口令>] [--out <文件>] ｜ /share import <文件> [--pass <口令>]\n说明：离线加密打包分享（数据不出机）；口令 argv 可见，敏感环境请用环境变量 WXNODUS_SHARE_PASS';
   });
 
   // /new：新建空会话并切换
