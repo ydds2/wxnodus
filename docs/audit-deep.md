@@ -1022,4 +1022,6 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 3. **安全**：固定源域名白名单（registry.npmjs.org/api.github.com/codeload 等六域）+ checkUrlSafety 逐跳校验 + tarball 域复核——非白名单诱导外联拒绝。
 4. **工程**：fetchImpl/safety 注入面（注册表响应 mock 可测）；GNU tar 冒号路径坑（C:/… 被当远程主机）——cwd+相对文件名规避；`/market` 入 registry + 分级表（search safe / install confirm）。
 5. **评分口径（诚实）**：S-02 能力面闭环，但 ⑧ 6→7 计分仍受 5→6（wxnodus 自身分发）前置约束——931 不变，公开决策解锁后逐档兑现。
-6. **验证**：本地九命令门禁全绿（全量 375 文件/2762 用例）；远程 CI 见尾注（watch 中）。
+6. **验证**：本地九命令门禁全绿（全量 375 文件/2762 用例）；远程 CI 见尾注。
+
+**尾注（2026-08-18）**：远程 CI **workflow #32196854849 全绿**（wall 10m26s）——/market 功能与分级表同轮验证；push 经全局代理（127.0.0.1:7897），`git ls-remote` 验证远端 = 本地 HEAD 7fc929b。
