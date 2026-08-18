@@ -92,6 +92,15 @@ describe('bash 工具安全注入', () => {
     const c = ctx();
     let asked = 0;
     c.requestSecret = async (kind) => { asked++; expect(kind).toBe('sudo'); return 'sudo-pw-123'; };
+    if (process.platform === 'win32') {
+      // Windows 无 sudo -S 语义（CI runner=Server 2025 自带真 sudo，重写调用会挂死）——诚实拒绝
+      // 且绝不询问密码（本用例的 POSIX 管道断言在非 Windows 平台继续有效）
+      const r = await bash.run({ command: 'sudo echo hi' }, c);
+      expect(String(r)).toContain('POSIX');
+      expect(asked).toBe(0);
+      expect(c.secrets.vault.getSudoPassword()).toBeNull();
+      return;
+    }
     const r = await bash.run({ command: 'sudo echo hi' }, c);
     expect(asked).toBe(1);
     expect(c.secrets.vault.getSudoPassword()).toBe('sudo-pw-123'); // 已缓存
@@ -110,6 +119,12 @@ describe('bash 工具安全注入', () => {
   it('sudo 拒绝输入 → 拒绝执行并提示', async () => {
     const c = ctx();
     c.requestSecret = async () => null;
+    if (process.platform === 'win32') {
+      // win32 在询问前即诚实拒绝（POSIX 语义门）——requestSecret 不应被调用
+      const r = await bash.run({ command: 'sudo echo hi' }, c);
+      expect(String(r)).toContain('POSIX');
+      return;
+    }
     const r = await bash.run({ command: 'sudo echo hi' }, c);
     expect(String(r)).toContain('输入不可用');
   });

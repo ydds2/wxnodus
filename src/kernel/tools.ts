@@ -246,6 +246,11 @@ export function coreTools(): Record<string, ToolDef> {
           if (!ctx.secrets?.sudoEnabled) {
             return wrapDanger('检测到 sudo 命令但注入通道未开启——请 /security sudo on 开启（密码仅内存使用，关闭通道即清除）');
           }
+          // sudo -S 从 stdin 读密是 POSIX 机制——Windows 无此语义（CI runner=Server 2025 自带
+          // 真 sudo：重写后调用系统 sudo 在非交互会话挂死，十二轮 CI 实测）。诚实拒绝，绝不假提权执行。
+          if (process.platform === 'win32') {
+            return wrapDanger('sudo 密码注入语义为 POSIX 设计（sudo -S stdin 读密）——Windows 不适用：请以普通命令执行，或使用提权沙盒（/sandbox 提权分支）');
+          }
           let pwd = ctx.secrets.vault.getSudoPassword();
           if (!pwd) {
             pwd = (await ctx.requestSecret?.('sudo', 'bash 工具需要 sudo 密码（仅本次内存使用，不落盘）')) ?? null;
