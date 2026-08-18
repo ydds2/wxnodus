@@ -10,8 +10,8 @@ import { sectionMode } from '../domain/details.js'
 import { userDisplay } from '../domain/messages.js'
 import { ROLE } from '../domain/roles.js'
 import { writeClipboardText } from '../lib/clipboard.js'
-import { DIFF_HILITE_MAX, diffLines, stripDiffFence, type DiffLineKind } from '../lib/diffHighlight.js'
-import { buildFoldSegments, withDefaultFolds } from '../lib/diffHunks.js'
+import { stripDiffFence } from '../lib/diffHighlight.js'
+import { diffBodyOf } from '../lib/diffGutter.js'
 import { transcriptBodyWidth, transcriptGutterWidth } from '../lib/inputMetrics.js'
 import {
   boundedLiveRenderText,
@@ -36,6 +36,7 @@ import { Md } from './markdown.js'
 import { StreamingMd } from './streamingMarkdown.js'
 import { ToolTrail } from './thinking.js'
 import { TodoPanel } from './todoPanel.js'
+import { DiffRenderer } from './diffRenderer.js'
 import { icon } from '../glyphs.js'
 
 // Collapse threshold for long system messages (system prompt etc.)
@@ -277,6 +278,18 @@ export const MessageLine = memo(function MessageLine({
     const maxChars = Math.max(24, cols - 14)
     const stripped = hasAnsi(msg.text) ? stripAnsi(msg.text) : msg.text
     const safeAnsi = hasAnsi(msg.text) ? sanitizeAnsiForRender(msg.text) : msg.text
+    // ③ 波 1：工具结果 diff 回显（fs_edit 等结果含 @@ hunk → 行号 gutter 全量渲染，
+    // gemini DiffRenderer 对标）——摘要头 + diff 组件，替代截断预览
+    const diffTail = diffBodyOf(stripped)
+    if (diffTail) {
+      const head = stripped.slice(0, stripped.indexOf(diffTail)).trim()
+      return (
+        <Box alignSelf="flex-start" borderColor={t.color.border} borderStyle="round" marginLeft={3} paddingX={1} flexDirection="column">
+          {head ? <Text color={t.color.muted}>{head}</Text> : null}
+          <DiffRenderer t={t} body={diffTail} />
+        </Box>
+      )
+    }
     const preview = compactPreview(stripped, maxChars) || '(empty tool result)'
     // 工具结果卡片按结果着色：输出含失败信号 → error 边框（一眼定位失败工具）
     const failed = /失败|错误|异常|不存在|无权限|error|failed|exception/i.test(stripped.slice(0, 200))
@@ -342,61 +355,12 @@ export const MessageLine = memo(function MessageLine({
     }
 
     // ── diff 语法高亮（#7 UX 债：Aider/Claude Code 同款 +/-/@@ 着色）──
-    // kind:'diff' 段（pushInlineDiffSegment 产出的 ```diff 块）逐行分类着色：
-    // add 绿 / del 红 / hunk 青 / meta 灰 / context 正文色。超长 diff 只高亮
-    // 前 DIFF_HILITE_MAX 行，余行合并单块（内容完整保留，仅着色降级——防节点爆炸）。
+    // kind:'diff' 段（pushInlineDiffSegment 产出的 ```diff 块）走 DiffRenderer 全量回显：
+    // 行号 gutter + add 绿 / del 红 / hunk 青 / meta 灰 + hunk 折叠（opencode 语义）+
+    // 超大 diff 保护（前 DIFF_HILITE_MAX 行高亮，余行合并单块——内容完整保留，仅着色降级）。
     if (msg.kind === 'diff') {
       const bodyText = stripDiffFence(msg.text)
-
-      if (bodyText) {
-        const lines = diffLines(bodyText)
-        // supremacy 3.3：hunk 折叠（opencode 语义）——超长 hunk 默认折叠只显 @@ 头 +
-        // 「…N 行已折叠」提示；短 hunk 全显。折叠渲染线数受 DIFF_HILITE_MAX 约束
-        // （内容完整保留在 extractPatchText 还原路径——apply_patch 不丢内容）。
-        const segs = withDefaultFolds(buildFoldSegments(lines.slice(0, DIFF_HILITE_MAX)))
-        const rest = lines.slice(DIFF_HILITE_MAX)
-        const lineColor = (kind: DiffLineKind) =>
-          kind === 'add'
-            ? t.color.statusGood
-            : kind === 'del'
-              ? t.color.error
-              : kind === 'hunk'
-                ? t.color.accent
-                : kind === 'meta'
-                  ? t.color.muted
-                  : body
-
-        return (
-          <Box flexDirection="column">
-            {segs.map(seg => {
-              if (seg.kind === 'meta') {
-                return (
-                  <Box key={seg.index} flexDirection="column">
-                    {seg.lines.map((l, i) => (
-                      <Text key={i} color={lineColor(l.kind)}>{l.text}</Text>
-                    ))}
-                  </Box>
-                )
-              }
-              return (
-                <Box key={seg.index} flexDirection="column">
-                  <Text color={lineColor(seg.header.kind)}>{seg.header.text}</Text>
-                  {seg.folded ? (
-                    <Text color={t.color.muted} dimColor>{`…${seg.body.length} 行已折叠（超长 hunk）`}</Text>
-                  ) : (
-                    seg.body.map((l, i) => (
-                      <Text key={i} color={lineColor(l.kind)}>{l.text}</Text>
-                    ))
-                  )}
-                </Box>
-              )
-            })}
-            {rest.length ? (
-              <Text color={t.color.muted}>{rest.map(l => l.text).join('\n')}</Text>
-            ) : null}
-          </Box>
-        )
-      }
+      if (bodyText) return <DiffRenderer t={t} body={bodyText} />
     }
 
     if (msg.role === 'assistant') {

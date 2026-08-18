@@ -308,7 +308,9 @@ export function createAgent(opts: AgentOptions) {
           const out = await executeTool(tc.name, tc.args ?? {});
           log.push({ kind: 'result', step: si, name: tc.name, text: out });
           lastOut = out;
-          try { opts.mem.append(sessionId, 'tool', `${tc.name}: ${out.slice(0, 300)}`); } catch { /* 忽略 */ }
+          // ③ 波 1：工具结果切片 300→900 字——fs_edit 的 diff 回显块（≤~800 字）需完整落库
+          // 供 UI DiffRenderer 渲染；recall/absorb 另有截断保护，库体积影响可控
+          try { opts.mem.append(sessionId, 'tool', `${tc.name}: ${out.slice(0, 900)}`); } catch { /* 忽略 */ }
         }
         si++;
       }
@@ -598,7 +600,7 @@ export function createAgent(opts: AgentOptions) {
   // 拒绝/参数错/未知工具记 other，异常记 failed）；字符串启发式（「失败」/「异常」）仍用于模型回填
   let lastToolOutcome: 'verified' | 'failed' | 'other' = 'other';
 
-  async function executeTool(name: string, args: Record<string, any>): Promise<string> {
+  async function executeTool(name: string, args: Record<string, any>, imgOut?: { images: Array<{ type: 'image_url'; image_url: { url: string } }> | null }): Promise<string> {
     lastToolOutcome = 'other';
     // C3 修复：工具调用稳定 id（start/complete 同 id，UI 工具卡可正确闭合）
     const toolId = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -758,6 +760,11 @@ export function createAgent(opts: AgentOptions) {
         raw = pres.value.output;
       } else {
         raw = await tool.run(args, toolCtx);
+      }
+      // ③ 波 1：图片输入通道——extractImages 钩子在执行现场（toolCtx 作用域内）收集图片
+      // parts；imgOut 出参回传（并行批次安全——无共享状态），失败静默 null（不阻断工具结果）
+      if (tool.extractImages && imgOut) {
+        try { imgOut.images = await tool.extractImages(args, toolCtx); } catch { imgOut.images = null; }
       }
       // P0-2：vault 值输出脱敏——工具输出回填模型前，按内存敏感值精确替换（最后防线）
       const v = toolCtx.secrets?.vault;
@@ -1194,7 +1201,7 @@ export function createAgent(opts: AgentOptions) {
         const batch = res.calls?.length
           ? res.calls.map(c => ({ id: c.id ?? `call_${Date.now().toString(36)}${turns}`, name: c.name, args: c.args ?? {}, reasoning: c.reasoning, reasoningField: c.reasoningField }))
           : [{ id: res.id ?? `call_${Date.now().toString(36)}${turns}`, name: res.name, args: res.args ?? {}, reasoning: res.reasoning, reasoningField: res.reasoningField }];
-        const executed: Array<{ id: string; name: string; args: Record<string, any>; out: string; reasoning?: string; reasoningField?: string }> = [];
+        const executed: Array<{ id: string; name: string; args: Record<string, any>; out: string; reasoning?: string; reasoningField?: string; images?: Array<{ type: 'image_url'; image_url: { url: string } }> | null }> = [];
         let anyFail = false;
         // gap P1-1 落地（2026-08-18）：并行工具调度（gemini scheduler 同款语义）——
         // 批次含任一 danger（写/执行/外联）→ 整批严格串行（保证写后读顺序与审批链）；
@@ -1210,13 +1217,18 @@ export function createAgent(opts: AgentOptions) {
           const cacheKey = `${c.name}:${JSON.stringify(c.args ?? {})}`;
           let out: string;
           let fromCache = false;
+          let images: Array<{ type: 'image_url'; image_url: { url: string } }> | null = null;
           if (READ_TOOL_CACHE.has(c.name) && toolCache.has(cacheKey)) {
             // 同参重复读调用：合并返回缓存（提示模型无需重跑）
             out = `${toolCache.get(cacheKey)}\n（结果已缓存——同参重复调用已合并，无需重跑）`;
             fromCache = true;
           } else {
-            out = await executeTool(c.name, c.args);
+            const imgSlot: { images: Array<{ type: 'image_url'; image_url: { url: string } }> | null } = { images: null };
+            out = await executeTool(c.name, c.args, imgSlot);
             const outcome = lastToolOutcome; // 立即捕获本调用的确定性结局（并行下防串扰）
+            // ③ 波 1：图片输入通道——extractImages 在执行现场收集（imgOut 出参，并行安全）；
+            // 仅视觉模型会话附加进 msgs（纯文本模型绝不收 dataUrl）
+            images = imgSlot.images;
             // 空输出归一（诚实）：'' 工具结果会让模型误判「结果丢失/幻觉」——显式「（无输出）」语义明确
             if (!out) out = '（工具无输出——操作可能已成功或无需返回内容）';
             // gap P2-4 落地（2026-08-18）：工具输出蒸馏（settings.toolDistill=true 开关，
@@ -1256,11 +1268,11 @@ export function createAgent(opts: AgentOptions) {
             const truncated = out.includes('已截断');
             const parts = [
               { kind: 'tool', name: c.name, ok: !failed },
-              { kind: failed ? 'error' : 'text', text: out.slice(0, 300), truncated: truncated || undefined },
+              { kind: failed ? 'error' : 'text', text: out.slice(0, 900), truncated: truncated || undefined },
             ];
-            opts.mem.append(sessionId, 'tool', `${c.name}: ${out.slice(0, 300)}`, undefined, parts);
+            opts.mem.append(sessionId, 'tool', `${c.name}: ${out.slice(0, 900)}`, undefined, parts);
           } catch { /* 忽略 */ }
-          return { id: c.id, name: c.name, args: c.args, out, reasoning: c.reasoning, reasoningField: c.reasoningField };
+          return { id: c.id, name: c.name, args: c.args, out, reasoning: c.reasoning, reasoningField: c.reasoningField, images };
         };
         const hasWrite = batch.some(c => tools[c.name]?.danger === true);
         if (!hasWrite && mode !== 'manual') {
@@ -1329,6 +1341,12 @@ export function createAgent(opts: AgentOptions) {
         });
         for (const e of executed) {
           msgs.push({ role: 'tool', tool_call_id: e.id, content: e.out });
+        }
+        // ③ 波 1：图片输入通道——工具结果附带的图片 parts 以 user 消息附加进模型通道
+        // （视觉模型会话才附加；纯文本模型由 toolTrim 白名单裁掉图片工具 + 这里双保险不附加）
+        const imgOuts = executed.flatMap(e => e.images ?? []);
+        if (imgOuts.length && hasImageIn(modelName)) {
+          msgs.push({ role: 'user', content: [{ type: 'text', text: '（view_image 载入的图片内容，已附加）' }, ...imgOuts] });
         }
         // gap P2-4 落地（2026-08-18）：旧轮工具输出掩码（gemini masking——保护最新
         // 50k token，保护窗外超过触发量才掩码；settings.toolOutputMask=false 关闭；

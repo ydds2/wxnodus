@@ -866,7 +866,7 @@ describe('工具延迟加载', () => {
     await agent.run('你好');
     const names = seenTools[0]!.map((t: any) => t.function.name);
     expect(names).not.toContain('tool_search');
-    expect(names.length).toBe(48); // 全表（44 内置 + apply_patch + lsp_diagnostics/hover/definition——gap 2026 四件新工具）
+    expect(names.length).toBe(49); // 全表（44 内置 + apply_patch + lsp 三件 + view_image——gap 2026 五件新工具）
   });
 });
 

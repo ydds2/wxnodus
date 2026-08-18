@@ -32,9 +32,9 @@ describe('trimToolsForModel（裁剪集）', () => {
     expect(names(r.tools)).toEqual(names(fullTools));
   });
 
-  it('文本模型（deepseek-chat 64k）→ 恰好裁掉 3 个图片输出工具；GUI 文本套件保留', () => {
+  it('文本模型（deepseek-chat 64k）→ 恰好裁掉 4 个图片输出/输入工具；GUI 文本套件保留', () => {
     const r = trimToolsForModel('deepseek-chat', fullTools);
-    expect(r.dropped.sort()).toEqual(['browser_screenshot', 'computer_observe', 'computer_screenshot'].sort());
+    expect(r.dropped.sort()).toEqual(['browser_screenshot', 'computer_observe', 'computer_screenshot', 'view_image'].sort());
     expect(r.tier).toBe('full');
     // 文本可用的 GUI/LSP/核心工具全保留
     for (const keep of ['browser_click', 'browser_snapshot', 'computer_uia_tree', 'computer_click', 'lsp_diagnostics', 'bash', 'apply_patch']) {
@@ -43,9 +43,9 @@ describe('trimToolsForModel（裁剪集）', () => {
     expect(r.reasons.length).toBeGreaterThan(0);
   });
 
-  it('文本大窗口模型（glm-4-flash 128k）→ 同样只裁图片输出工具', () => {
+  it('文本大窗口模型（glm-4-flash 128k）→ 同样只裁图片输出/输入工具', () => {
     const r = trimToolsForModel('glm-4-flash', fullTools);
-    expect(r.dropped).toHaveLength(3);
+    expect(r.dropped).toHaveLength(4);
     expect(r.tier).toBe('full');
   });
 
@@ -114,15 +114,16 @@ describe('agent 装配裁剪（supremacy 1.3 契约）', () => {
     return { agent, seen: () => seen };
   };
 
-  it('deepseek-chat 装配：模型可见工具表不含图片输出工具；getToolTrim 报告 3 项', async () => {
+  it('deepseek-chat 装配：模型可见工具表不含图片输出/输入工具；getToolTrim 报告 4 项', async () => {
     const { agent, seen } = makeAgent('deepseek-chat');
     await agent.run('你好');
     const s = seen();
     expect(s).not.toContain('computer_screenshot');
     expect(s).not.toContain('browser_screenshot');
     expect(s).not.toContain('computer_observe');
+    expect(s).not.toContain('view_image');
     expect(s).toContain('browser_click');
-    expect(agent.getToolTrim().dropped).toHaveLength(3);
+    expect(agent.getToolTrim().dropped).toHaveLength(4);
     expect(agent.getToolTrim().tier).toBe('full');
   });
 
@@ -136,9 +137,9 @@ describe('agent 装配裁剪（supremacy 1.3 契约）', () => {
   it('updateTools 热重载后裁剪仍生效（不绕过裁剪层）', async () => {
     const { agent } = makeAgent('deepseek-chat');
     agent.updateTools({ extra_tool: { schema: { type: 'function', function: { name: 'extra_tool', description: 'x', parameters: { type: 'object', properties: {} } } }, danger: false, run: async () => 'ok' } } as any);
-    expect(agent.getToolTrim().dropped).toHaveLength(3);
+    expect(agent.getToolTrim().dropped).toHaveLength(4);
     const { seen } = makeAgent('deepseek-chat'); // 新一轮观察实际注入面
-    expect(agent.getToolTrim().dropped).toHaveLength(3);
+    expect(agent.getToolTrim().dropped).toHaveLength(4);
     void seen;
   });
 });

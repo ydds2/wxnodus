@@ -12,8 +12,8 @@
 import { MODEL_CATALOG, type ModelEntry } from './providers.js';
 import type { ToolDef } from './tools.js';
 
-/** 图片输出工具：返回图像给模型「看」——文本模型消费不了 */
-export const VISION_IMAGE_TOOLS = new Set(['browser_screenshot', 'computer_screenshot', 'computer_observe']);
+/** 图片输出/输入工具：返回图像给模型「看」或把图片送进视觉通道——文本模型消费不了 */
+export const VISION_IMAGE_TOOLS = new Set(['browser_screenshot', 'computer_screenshot', 'computer_observe', 'view_image']);
 
 /** GUI 文本会话套件：browser_*（除 screenshot）/ computer_*（除 screenshot/observe）/ computer_uia_* */
 export const GUI_TEXT_RE = /^browser_(?!screenshot$)|^computer_(?!screenshot$|observe$)|^computer_uia_/;

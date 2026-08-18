@@ -11,6 +11,7 @@ import { labelTruncate, capNote } from './truncate.js';
 import { UNTRUSTED_WRAP_LIMIT_DEFAULT, clampInt } from './toolOutput.js';
 import { parseRemoteTarget } from './sshRemote.js';
 import { resolveSubagentDef } from './subagentTypes.js';
+import { detectImageType, readImageDimensions, estimateVisionTokens } from './imageMeta.js';
 
 /** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性）
  * W3-11：进程探测集中到 kernel/processProbe（入口层不直接执行进程） */
@@ -98,6 +99,9 @@ export interface ToolDef {
   danger: boolean;
   /** 演示工具标记（插件脚手架）：对模型隐藏（不注入 schema、不可调用）——见 agent.ts 过滤 */
   demo?: boolean;
+  /** ③ 波 1 图片输入通道：工具结果附带的图片 parts（view_image 等）——agent 在视觉模型
+   *  会话把 parts 以 user 消息附加进模型通道；纯文本模型会话不附加（image_url 400 防御）。 */
+  extractImages?: (args: Record<string, any>, ctx: ToolCtx) => Promise<Array<{ type: 'image_url'; image_url: { url: string } }> | null>;
   run(args: Record<string, any>, ctx: ToolCtx): Promise<string>;
 }
 
@@ -224,7 +228,16 @@ export function coreTools(): Record<string, ToolDef> {
         } catch { /* 快照失败不影响编辑 */ }
         const idx = positions[0]!;
         writeFileSync(p, content.slice(0, idx) + String(newText) + content.slice(idx + needle.length), 'utf8');
-        return `已替换 ${path} 中 1 处`;
+        // ③ 波 1：结果携带统一 diff 块（UI DiffRenderer 行号 gutter 回显；模型也能看到精确变更——
+        // codex verify→RespondToModel 同款「回给模型看变更」；行数/行长上限见 diffText.ts）
+        const { renderUnifiedDiff } = await import('./diffText.js');
+        const newLine = lineNumbersOf(content, [idx])[0]!;
+        const lineStart = content.lastIndexOf('\n', idx - 1) + 1;
+        const before = content.slice(lineStart, idx);
+        const afterStart = idx + needle.length;
+        const lineEnd = content.indexOf('\n', afterStart);
+        const after = lineEnd < 0 ? content.slice(afterStart) : content.slice(afterStart, lineEnd);
+        return `已替换 ${path} 中 1 处\n${renderUnifiedDiff({ newLine, oldText: needle, newText: String(newText), before, after })}`;
       } catch (e: any) { return `编辑失败：${e.message}`; }
     },
   };
@@ -1389,7 +1402,38 @@ export function coreTools(): Record<string, ToolDef> {
     danger: false,
     async run({ path, line, col }, ctx) { return lspRun('definition', path, line, col, ctx); },
   };
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, apply_patch: applyPatchTool, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, computer_observe: computerObserve, computer_uia_windows: uiaWindowsTool, computer_uia_tree: uiaTreeTool, computer_uia_find: uiaFindTool, computer_uia_click: uiaClickTool, computer_uia_type: uiaTypeTool, computer_uia_act: uiaActTool, lsp_diagnostics: lspDiagnostics, lsp_hover: lspHover, lsp_definition: lspDefinition, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch };
+  // ── ③ 波 1：view_image 图片模型输入通道（kimi read_media.py 对标）──
+  // 视觉模型会话：工具结果附 image_url parts（extractImages 钩子，agent 附加进模型通道）；
+  // 纯文本模型会话：toolTrim 白名单裁掉本工具（VISION_IMAGE_TOOLS）——dataUrl 绝不进纯文本请求。
+  const viewImage: ToolDef = {
+    schema: { type: 'function', function: { name: 'view_image', description: '读取本地图片送入视觉通道（png/jpg/jpeg/webp/gif，≤8MB）：返回尺寸/格式/视觉 token 估算，图片内容自动附加供视觉模型分析。', parameters: { type: 'object', properties: { path: { type: 'string', description: '图片文件路径（工作区内或绝对路径）' } }, required: ['path'] } } },
+    danger: false,
+    async run({ path }, ctx) {
+      try {
+        const p = resolve(ctx.cwd, path);
+        const buf = readFileSync(p);
+        const kind = detectImageType(buf);
+        if (!kind) return '不是可识别的图片格式（png/jpg/jpeg/webp/gif）——检查路径或文件内容';
+        if (buf.length > 8 * 1024 * 1024) return `图片过大（${(buf.length / 1048576).toFixed(1)}MB > 8MB 上限）——压缩后重试或改用 /img 分析`;
+        const dims = readImageDimensions(buf);
+        const dimTxt = dims ? `${dims.width}×${dims.height}` : '未知尺寸';
+        const tokenTxt = dims ? `，视觉 token ≈${estimateVisionTokens(dims.width, dims.height)}` : '';
+        return `图片已载入：${p}（${kind.toUpperCase()} ${dimTxt}，${(buf.length / 1024).toFixed(1)} KB${tokenTxt}）——图片内容已附加进视觉通道`;
+      } catch (e: any) { return `图片载入失败：${String(e?.message ?? e).slice(0, 120)}`; }
+    },
+    async extractImages({ path }, ctx) {
+      try {
+        const p = resolve(ctx.cwd, path);
+        const buf = readFileSync(p);
+        const kind = detectImageType(buf);
+        if (!kind || buf.length > 8 * 1024 * 1024) return null; // 与 run 同源校验——非法直接不附加（诚实降级）
+        const mime = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' }[kind]!;
+        return [{ type: 'image_url' as const, image_url: { url: `data:${mime};base64,${buf.toString('base64')}` } }];
+      } catch { return null; }
+    },
+  };
+
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, apply_patch: applyPatchTool, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, computer_observe: computerObserve, computer_uia_windows: uiaWindowsTool, computer_uia_tree: uiaTreeTool, computer_uia_find: uiaFindTool, computer_uia_click: uiaClickTool, computer_uia_type: uiaTypeTool, computer_uia_act: uiaActTool, lsp_diagnostics: lspDiagnostics, lsp_hover: lspHover, lsp_definition: lspDefinition, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch, view_image: viewImage };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {
