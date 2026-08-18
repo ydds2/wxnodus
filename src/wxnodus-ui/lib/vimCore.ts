@@ -237,7 +237,7 @@ export const textObjectRange = (text: string, cursor: number, io: 'i' | 'a', ch:
     }
     return [s, e]
   }
-  if (ch === "'" || ch === '"') {
+  if (ch === "'" || ch === '"' || ch === '`') {
     const row = cursorRow(text, c)
     const rs = rowStart(text, row)
     const lineEnd = rs + lineLength(text, rs)

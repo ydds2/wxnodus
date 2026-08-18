@@ -36,6 +36,13 @@ describe('textObjectRange 纯函数', () => {
     expect(textObjectRange('say "hi" now', 5, 'i', '"')).toEqual([5, 7])
     expect(textObjectRange('say "hi" now', 5, 'a', '"')).toEqual([4, 8])
   })
+  it('反引号对象（codex 八种之八——七评补全后 8/8 全覆盖）', () => {
+    expect(textObjectRange('x`hi`y', 3, 'i', '`')).toEqual([2, 4])
+    expect(textObjectRange('x`hi`y', 3, 'a', '`')).toEqual([1, 5])
+    const d = run(['Escape', 'd', 'i', '`'], 'x`hi`y', 3)
+    expect(d.doc.text).toBe('x``y')
+    expect(d.yanked).toBe('hi')
+  })
   it('词对象 iw/aw', () => {
     expect(textObjectRange('foo bar', 1, 'i', 'w')).toEqual([0, 3])
     expect(textObjectRange('foo bar', 0, 'a', 'w')).toEqual([0, 4])
