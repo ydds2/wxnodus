@@ -911,3 +911,21 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **实现**：W6 发布管线实跑——`freeze-candidate`（cand-e582649398，commit e582649）→ `package-installer` → **wxnodus-3.1.0.zip**（5673 文件 + manifest 全量 sha256 绑定 + 安装前全量校验 install.ps1（漂移即拒，-Uninstall 按 journal 卸载）+ 确定性 zip；138.8MB，zipSha256 `d4721110…f28e8`）。GitHub Releases **v3.1.0-rc.1**（prerelease，私有仓库——仅授权成员可下载安装）。
 - **管线门禁立功（第二次拦截真实缺陷）**：首次打包被 `DEPENDENCY_CLOSURE_INCOMPLETE` 拦截——主 tsconfig `exclude` 漏 `src/**/*.test.tsx`，`turnSections.test.js` 携 vitest/ink-testing-library 混入生产 dist。修复：exclude 补 test.tsx（`typecheck:tests` 独立 include 不受影响；dist 复检 0 测试文件；全量门禁仍绿）。
 - **诚实口径**：此为**内部测试分发**（私有 release，仅授权成员），非公开发布——winget/scoop 上架留「转公开」后；⑧ 分数不动（真实生态消费者仍缺公开可达渠道）。测试者需仓库访问权限（用户侧添加 collaborators）。
+
+### 13.71 远程 CI 首绿收官 + 第三方插件接收轮（2026-08-18）
+
+- **远程 CI 十五轮收官全绿**（9 命令门禁 + vscode-ext 独立门禁 + vsix 工件，windows-latest；第 15 轮 `conclusion: success` 实证）。从首推至今共修 **11 类「本地绿≠远程绿」缺陷**，每类均有取证与本地全绿验证：
+  ① typecheck:tests 扫 packages/vscode-ext（依赖本机残留 node_modules 的 vscode 类型——改扫 wxnodus-ink，插件由 CI 5-7 步独立门禁覆盖）
+  ② install.ps1 的 Get-FileHash 在 pwsh 继承环境下无法解析（改纯 .NET SHA256 Get-WxSha256——零模块依赖）
+  ③ hooks CJK 未知命令 PS 发现慢/挂（改外部 `cmd /c` 确定性失败语义 + `-EncodedCommand` 编码加固）
+  ④ runner `D:\a\_temp` 是 **junction**——证据存储 validateTrustedRoot（realpath 与词法路径一致）轰 100+ 用例（TMP/TEMP 覆盖 LOCALAPPDATA 真实目录）+ 插件动态 import 同根因
+  ⑤ locale 漂移（en-US runner vs zh-CN 开发机——CLI 帮助文案契约，门禁步骤钉 WXNODUS_LANG=zh-CN）
+  ⑥ Node 版本漂移（22.23.2 vs 22.18.0——锁定 22.18.0）
+  ⑦ **undoShadows 真缺陷**：同毫秒+同长度快照 id 碰撞互相覆盖（undo 数据丢失级——内容摘要入 id + 单调 ts）
+  ⑧ .mjs 被 vitest 在 runner 上 inline 主入口块（[eval] SyntaxError——纯函数抽 TS 模块 manifestGen.ts，.mjs 只留 CLI 壳）
+  ⑨ Defender 进程级扫描拖慢 spawn-heavy 用例（-ExclusionProcess + 全局 testTimeout 15s→60s）
+  ⑩ w8-02 夹具依赖「temp 在 LOCALAPPDATA」前提（显式 LOCALAPPDATA 根）；ACP 测试硬编码开发机绝对路径（动态 dist 路径 + ci 顺序 build 前置）
+  ⑪ **Windows sudo 诚实拒绝**：runner=Server 2025 自带真 sudo——`sudo -S` 重写调用系统 sudo 在非交互会话挂死 60s；win32 在询问密码前即拒绝（POSIX 语义门），绝不假提权执行
+- **第三方插件接收（S-02 接收侧——用户口径：暂缓公开市场托管，能接收即可）**：`/plugin install <目录|本地 zip|https URL>`——downloadService（checkUrlSafety 逐跳 SSRF 授权）复用 + readZip 解包（根级/单层目录布局归一）+ parsePluginManifest 校验 + `--sha256` 完整性（未提供诚实提示）+ staging 原子落位 + enable 失败回滚——10 单测 + 命令面回归绿。
+- **第十三~十五轮追加**：⑫ known-failures 闭包用例对空 `cases/` 目录 ENOENT（git 不跟踪空目录——干净克隆无该目录，31 用例全挂；ENOENT 容忍 + .gitkeep 双保险）；⑬ 环门禁报告方向随入口集变化（新增插件安装器入口后同一良性环被反方向报告——按字典序最小节点起旋归一化比较，不硬编码方向）。
+- **复算**：⑨ 8→9（+8）——远程 CI 绿为预声明条件，已兑现。总分 835 → **843**——**反超 opencode（841）升至第 2/7**，距 codex 869 差 26（score §9.15）。rc.2 安装包重建同随（v3.1.0-rc.2）。
