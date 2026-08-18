@@ -1,15 +1,18 @@
 name: CI
 
-# supremacy 2.4：GitHub Actions CI（本地已生成 + 语法校验；推送待仓库 remote 配置后自动生效）
-# 门禁与本地 `npm run ci` 同源（九命令：typecheck×2 + 全量测试 + known-failures + 发现/覆盖检查 + lint + 环检查 + 构建），
-# 另加 packages/vscode-ext 独立门禁（typecheck + node:test + esbuild + vsce 打包）与 vsix 工件上传。
-# 注意：vscode-ext 由本工作流第 5-7 步独立门禁覆盖，根 tsconfig.tests.json 不扫 packages/vscode-ext（其
-# 'vscode' 模块类型仅在自身 node_modules 中——根门禁扫描会因安装顺序而红，2026-08-18 首轮实测修复）。
+# supremacy 2.4：GitHub Actions CI——门禁与本地 `npm run ci` 同源（九命令：typecheck×2 + 全量测试 +
+# known-failures + 发现/覆盖检查 + lint + 环检查 + 构建），另加 packages/vscode-ext 独立门禁与 vsix 工件。
+# 注意：vscode-ext 由独立 job 门禁覆盖，根 tsconfig.tests.json 不扫 packages/vscode-ext（其 'vscode' 模块
+# 类型仅在自身 node_modules 中——根门禁扫描会因安装顺序而红，2026-08-18 首轮实测修复）。
+#
+# 效率演进（2026-08-18）：concurrency cancel-in-progress（只验最新 HEAD）+ paths-ignore（纯文档不跑）+
+# workflow_dispatch（手动兜底）+ 三 job 并行化（gate 静态门禁/build → test 3 分片 → vscode-ext 并行）——
+# 单轮 wall 由 ~14 分钟压到 ~9 分钟（测试分片并行 + 独立门禁解耦）。
 
 on:
   push:
     branches: [main, master]
-    # 效率：纯文档提交（docs/CHANGELOG/README）不触发 15 分钟全量门禁——代码零变化零价值
+    # 效率：纯文档提交（docs/CHANGELOG/README）不触发全量门禁——代码零变化零价值
     paths-ignore:
       - 'docs/**'
       - 'CHANGELOG.md'
@@ -18,52 +21,108 @@ on:
   # 手动触发兜底（webhook 异常时 gh workflow run CI --ref master 可强制起跑）
   workflow_dispatch:
 
-# 效率：新提交到来即取消排队/进行中的旧运行——只验最新 HEAD（私有仓 runner 串行，
-# 每轮 ~15 分钟，取消旧轮立省一轮）
+# 效率：新提交到来即取消排队/进行中的旧运行——只验最新 HEAD
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  ci:
+  gate:
+    # 构建 + 静态门禁（typecheck×2/build/发现/覆盖/lint/环）——产出 dist 供测试分片复用
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          # 锁定与开发机一致的版本：22.23.x 出现过插件动态 import 与 CJK argv 编码差异
-          # （本地 22.18.0 全绿 / CI 22.23.2 红——2026-08-18 三轮实测），版本漂移类缺陷一刀切。
           node-version: 22.18.0
           cache: npm
 
       - name: Install root dependencies
         run: npm install
 
-      # Defender 实时扫描豁免工作区与 CI 临时目录：运行器文件/进程级扫描拖慢
-      # spawn-heavy 测试（多轮超时实测）——一次性系统级提速，不改变测试语义
       - name: Exempt Defender scanning (runner perf)
         shell: pwsh
         run: |
           try { Add-MpPreference -ExclusionPath 'D:\a' -ErrorAction SilentlyContinue } catch {}
           try { Add-MpPreference -ExclusionPath (Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp') -ErrorAction SilentlyContinue } catch {}
-          # 进程级豁免才是 spawn-heavy 测试的关键（路径豁免不覆盖进程执行扫描）
           foreach ($p in 'powershell.exe','pwsh.exe','node.exe','cmd.exe','conhost.exe') {
             try { Add-MpPreference -ExclusionProcess $p -ErrorAction SilentlyContinue } catch {}
           }
 
-      - name: Full local gate (npm run ci)
+      - name: Static gate + build (no tests)
         shell: pwsh
         run: |
-          # TMP/TEMP 指到 LOCALAPPDATA 真实目录（非 runner 的 D:\a\_temp junction——证据存储
-          # realpath 校验与 vite 模块加载被 junction 坑过；也非工作区内目录——findRepoRoot/
-          # probeGit 的「非仓库」用例要求 temp 在仓库外）；WXNODUS_LANG 钉中文（CLI 帮助
-          # 文案契约与开发机 locale 一致——en-US runner 默认英文会误红）
           $ciTmp = Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp'
           New-Item -ItemType Directory -Force -Path $ciTmp | Out-Null
           $env:TMP = $ciTmp; $env:TEMP = $ciTmp
           $env:WXNODUS_LANG = 'zh-CN'
-          npm run ci
+          npm run typecheck
+          npm run typecheck:tests
+          npm run build
+          npm run check:test-discovery
+          npm run check:requirement-coverage
+          npm run lint
+          npm run check:cycles
+
+      - name: Upload dist artifact (test shards reuse)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+
+  test:
+    needs: gate
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Exempt Defender scanning (runner perf)
+        shell: pwsh
+        run: |
+          try { Add-MpPreference -ExclusionPath 'D:\a' -ErrorAction SilentlyContinue } catch {}
+          foreach ($p in 'powershell.exe','pwsh.exe','node.exe','cmd.exe','conhost.exe') {
+            try { Add-MpPreference -ExclusionProcess $p -ErrorAction SilentlyContinue } catch {}
+          }
+
+      - name: Test shard ${{ matrix.shard }}/3 (+ known-failures on shard 1)
+        shell: pwsh
+        run: |
+          $ciTmp = Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp'
+          New-Item -ItemType Directory -Force -Path $ciTmp | Out-Null
+          $env:TMP = $ciTmp; $env:TEMP = $ciTmp
+          $env:WXNODUS_LANG = 'zh-CN'
+          npx vitest run --config vitest.config.ts --shard=${{ matrix.shard }}/3
+          if (${{ matrix.shard }} -eq 1) { npm run test:known-failures }
+
+  vscode-ext:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: npm
 
       - name: Install vscode-ext dependencies
         run: npm --prefix packages/vscode-ext install
