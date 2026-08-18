@@ -80,7 +80,7 @@
 |---|---|---|---|---|
 | 3.1 | winget/scoop 真实发布 | S-01 | remote | 真实 URL + sha256 |
 | 3.2 | **Windows 双态沙盒**（提权受限令牌 + 标准用户 Low IL，探测双态如实报告） | S-07 | 管理员环境（非阻塞） | 标准用户分支实测；提权分支探测诚实 |
-| 3.3 | vim/keymap + @选择器 + diff 折叠/apply | B-01/02 | 无 | 输入层测试 |
+| 3.3 | vim/keymap + @选择器 + diff 折叠/apply | B-01/02 | 无 | 输入层测试 | ✅ keymap 配置层 10 用例 + diff hunk 模型 6 用例（@机制已有 resolveAtRefs） |
 | 3.4 | 插件市场（托管清单 + 远端技能安装） | S-02 | remote | 市场安装闭环 |
 | 3.5 | perf 基准 + lint + madge | C-01/03 | 无 | ci 挂载 |
 | 3.6 | 超越复评：11 维评分 ≥ 870 | — | 全部 | score 更新 |

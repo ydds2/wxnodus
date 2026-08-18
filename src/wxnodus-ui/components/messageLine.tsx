@@ -11,6 +11,7 @@ import { userDisplay } from '../domain/messages.js'
 import { ROLE } from '../domain/roles.js'
 import { writeClipboardText } from '../lib/clipboard.js'
 import { DIFF_HILITE_MAX, diffLines, stripDiffFence, type DiffLineKind } from '../lib/diffHighlight.js'
+import { buildFoldSegments, withDefaultFolds } from '../lib/diffHunks.js'
 import { transcriptBodyWidth, transcriptGutterWidth } from '../lib/inputMetrics.js'
 import {
   boundedLiveRenderText,
@@ -349,7 +350,10 @@ export const MessageLine = memo(function MessageLine({
 
       if (bodyText) {
         const lines = diffLines(bodyText)
-        const hilite = lines.slice(0, DIFF_HILITE_MAX)
+        // supremacy 3.3：hunk 折叠（opencode 语义）——超长 hunk 默认折叠只显 @@ 头 +
+        // 「…N 行已折叠」提示；短 hunk 全显。折叠渲染线数受 DIFF_HILITE_MAX 约束
+        // （内容完整保留在 extractPatchText 还原路径——apply_patch 不丢内容）。
+        const segs = withDefaultFolds(buildFoldSegments(lines.slice(0, DIFF_HILITE_MAX)))
         const rest = lines.slice(DIFF_HILITE_MAX)
         const lineColor = (kind: DiffLineKind) =>
           kind === 'add'
@@ -364,11 +368,29 @@ export const MessageLine = memo(function MessageLine({
 
         return (
           <Box flexDirection="column">
-            {hilite.map((l, i) => (
-              <Text key={i} color={lineColor(l.kind)}>
-                {l.text}
-              </Text>
-            ))}
+            {segs.map(seg => {
+              if (seg.kind === 'meta') {
+                return (
+                  <Box key={seg.index} flexDirection="column">
+                    {seg.lines.map((l, i) => (
+                      <Text key={i} color={lineColor(l.kind)}>{l.text}</Text>
+                    ))}
+                  </Box>
+                )
+              }
+              return (
+                <Box key={seg.index} flexDirection="column">
+                  <Text color={lineColor(seg.header.kind)}>{seg.header.text}</Text>
+                  {seg.folded ? (
+                    <Text color={t.color.muted} dimColor>{`…${seg.body.length} 行已折叠（超长 hunk）`}</Text>
+                  ) : (
+                    seg.body.map((l, i) => (
+                      <Text key={i} color={lineColor(l.kind)}>{l.text}</Text>
+                    ))
+                  )}
+                </Box>
+              )
+            })}
             {rest.length ? (
               <Text color={t.color.muted}>{rest.map(l => l.text).join('\n')}</Text>
             ) : null}

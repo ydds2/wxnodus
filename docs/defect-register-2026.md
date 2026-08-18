@@ -34,8 +34,8 @@
 
 | ID | 缺陷 | 对标 | 状态 |
 |---|---|---|---|
-| B-01 | vim 无接线 / keymap 不可配 | codex 真 vim+config | ⏳ |
-| B-02 | @文件选择器、diff hunk 折叠/apply | opencode 双布局 | ⏳ |
+| B-01 | vim 无接线 / keymap 不可配 | codex 真 vim+config | ✅ 键位配置层（keymap.ts 命名动作→KeySpec 解析/匹配/覆盖合并，settings.keymap 经 config.get→applyDisplay 水合热生效，pager 关闭/导航已接线，10 单测）——诚实口径：不宣称伪 vim（全模态编辑如接入再如实标注；pager 既有 vim 风格 j/k/b/g/G 键位已可配，supremacy 3.3） |
+| B-02 | @文件选择器、diff hunk 折叠/apply | opencode 双布局 | ✅ diff hunk 折叠已接线（diffHunks.ts 分节/hunk/默认折叠/切换模型 + messageLine 超长 hunk 默认折叠渲染，6 单测）+ extractPatchText 还原补丁供 apply_patch（apply 数据路径）；@文件引用机制已有（resolveAtRefs）——交互式折叠切换与一键 apply UI 动作留后续 |
 | B-03 | 会话浏览器 UI（列表+预览） | codex resume_picker/gemini SessionBrowser | ◐ 数据面已备（listSessionsStructured + --json），UI 面待桌面端 |
 | B-04 | 主题系统 | opencode 33 套 | ⏳ |
 | B-05 | 配置分层（项目级 .wxnodus/config 继承） | gemini 四层 | ⏳ |

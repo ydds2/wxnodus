@@ -21,6 +21,8 @@
 - **用户文档三件套（supremacy 2.3）**：`docs/getting-started.md` / `docs/troubleshooting.md` / `docs/examples.md` + README 链接（命令-注册表对账测试）。
 - **--serve 协议加固（supremacy 2.5）**：`sessions` RPC 返回结构化会话列表（首问摘要/消息数/分支数/血缘，与 `/sessions --json` 同源）；`/events` SSE 新增 `session.changed` 会话变更广播（事件驱动刷新，无轮询）；`docs/serve-protocol.md` 桌面端契约。
 - **GitHub Actions CI 备件（supremacy 2.4）**：`.github/workflows/ci.yml`（npm run ci 全门禁 + vscode-ext 独立门禁 + vsix 工件）——本地校验通过，推送待仓库 remote 配置。
+- **键位配置层（supremacy 3.3）**：`/config set keymap '{"pagerClose":"ctrl+x"}'` 式 JSON 覆盖键位（pager 关闭/导航热生效；非法配置自动回退默认，绝不崩 UI）——诚实口径：不宣称伪 vim。
+- **diff hunk 折叠（supremacy 3.3）**：超长 diff hunk 默认折叠（只显 @@ 头 + 「…N 行已折叠」），补丁完整保留可经 apply_patch 应用。
 
 ## [3.1.0] - 2026-08-18
 

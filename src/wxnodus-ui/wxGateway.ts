@@ -1533,6 +1533,8 @@ export class GatewayClient extends EventEmitter {
         display,
         paste_collapse_threshold: 5,
         paste_collapse_char_threshold: 2000,
+        // supremacy 3.3：键位配置层透出（settings.keymap JSON——TUI 水合后热生效）
+        ...(s.keymap ? { keymap: s.keymap } : {}),
       },
       value: s.busy_input_mode ?? 'interrupt',
     }

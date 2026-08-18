@@ -22,6 +22,7 @@ import {
   type IndicatorStyle,
   type StatusBarMode
 } from '../bridge/interfaces.js'
+import { resolveKeymap, setActiveKeymap } from '../config/keymap.js'
 import { turnController } from '../runtime/flowController.js'
 import { patchUiState } from '../runtime/viewStore.js'
 
@@ -200,6 +201,11 @@ export const applyDisplay = (
   // the last-good state and lets the next successful poll refresh it.
   if (setVoiceRecordKey && cfg) {
     setVoiceRecordKey(_voiceRecordKeyFromConfig(cfg))
+  }
+
+  // supremacy 3.3：键位配置层水合（cfg 为 null 保持上次有效值——同 voice 的 last-good 守卫）
+  if (cfg?.config?.keymap) {
+    setActiveKeymap(resolveKeymap(cfg.config.keymap))
   }
 
   patchUiState({

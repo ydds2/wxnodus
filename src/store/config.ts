@@ -108,6 +108,8 @@ export const SETTINGS_KEYS = new Set([
   'loopJudge',
   // supremacy 2.2：远程执行 ssh 通道（"ssh://user@host[:port]"；空/缺省=本地执行）
   'remote',
+  // supremacy 3.3：键位配置层（settings.keymap JSON 覆盖 pager 等键位——非法配置回退默认）
+  'keymap',
   // 视觉开放通道（settings.vision* 与 visionLocal/visionOcr）
   'visionBaseURL', 'visionModel', 'visionKey', 'visionLocal', 'visionOcr',
   // 代理（/proxy 命令消费 settings.proxy）

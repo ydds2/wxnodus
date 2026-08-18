@@ -829,3 +829,10 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **文档**：register C-01 → ◐（备件）；plan 阶段 2 表 2.4 ◐/2.5 ✅；score §9.7；README 协议与集成增 serve/vscode-ext 两行；本审计条目。
 - **口径**：⑦ 复算仍计入阶段 2 收尾（2.4 推送绿后一次复算）；当前分数 754 不变。
 - **验证**：tsc 零错误；新增 3 协议用例；全量 + npm run ci 见下。
+
+### 13.60 超越计划阶段 3 首批轮（2026-08-18：supremacy 3.3 键位配置层 + diff hunk 折叠）
+
+- **3.3 键位配置层（B-01，对标 codex keymap）**：`src/wxnodus-ui/config/keymap.ts`——命名动作→KeySpec 映射（parseKeySpec：ctrl/shift/meta 组合、命名键大小写不敏感、单字符保留大小写 G≠g、space 归一；非法规范/未知修饰/超长 → null）；matchesKey/matchesAny（单字符要求修饰一致——ctrl+c 与裸 c 不同键）；resolveKeymap（settings.keymap JSON 覆盖合并，EFF 模式：默认=既有硬编码零漂移、部分非法保留合法、全非法回退默认、非对象忽略）；模块级单例 setActiveKeymap/getActiveKeymap（与 permissions.setReadonlyTools 同模式——TUI 水合通道）。**接线闭环**：settings 白名单 `keymap` → wxGateway configGet 'full' 透出 `config.keymap` → ConfigFullResponse 类型 → useConfigWatcher.applyDisplay 水合（cfg null 保持 last-good，同 voice 守卫）→ useKeyBindings pager 关闭/上/下/半页/首/尾六动作改走 matchesAny(km.*)（默认键位逐项对应原硬编码：escape/ctrl+c/q、↑/k、↓/j、PageUp/b、PageDown/空格/回车、g/G——行为零漂移）。10 单测。
+- **诚实口径（重要）**：不做「伪 vim」——全模态 vim 编辑不宣称（B-01 的 vim 半句以 keymap 配置层对齐 codex keymap 机制；pager 既有 vim 风格 j/k/b/g/G 已可配）。模态编辑如接入再如实标注。
+- **diff hunk 折叠/apply（B-02，对标 opencode 双布局）**：`src/wxnodus-ui/lib/diffHunks.ts`——groupDiffSections（meta 分节/hunk 分组，unified diff 语义：上下文归 hunk 体）、buildFoldSegments（meta 合并段+hunk 段）、withDefaultFolds（超长 hunk >20 行默认折叠）、toggleFold（纯函数不可变）、extractPatchText（还原补丁——apply_patch 工具输入源，与 diffLines 互逆）；**messageLine 渲染接线**（超长 hunk 默认折叠只显 @@ 头+「…N 行已折叠」，DIFF_HILITE_MAX 约束不变）。@文件引用机制已有（lib/atRefs.resolveAtRefs）。6 单测。交互式折叠切换与一键 apply UI 动作留后续（数据路径已备）。
+- **验证**：tsc 零错误；keymap 10 + diff-hunks 6 + composer-keys 回归 19 全绿；全量 + npm run ci 见下。

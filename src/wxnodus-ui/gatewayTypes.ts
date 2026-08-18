@@ -95,7 +95,7 @@ export interface ConfigVoiceConfig {
 }
 
 export interface ConfigFullResponse {
-  config?: { display?: ConfigDisplayConfig; voice?: ConfigVoiceConfig; paste_collapse_threshold?: number; paste_collapse_char_threshold?: number }
+  config?: { display?: ConfigDisplayConfig; voice?: ConfigVoiceConfig; paste_collapse_threshold?: number; paste_collapse_char_threshold?: number; keymap?: unknown }
 }
 
 export interface ConfigMtimeResponse {

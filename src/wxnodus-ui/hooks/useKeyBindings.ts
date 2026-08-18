@@ -1,3 +1,4 @@
+import { getActiveKeymap, matchesAny } from '../config/keymap.js'
 import { forceRedraw, useInput } from '@wxnodus/ink'
 import { useAtom as useStore } from '../../app/stores/engine.js'
 import { useEffect, useRef } from 'react'
@@ -307,7 +308,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       }
 
       if (overlay.pager) {
-        if (key.escape || isCtrl(key, ch, 'c') || ch === 'q') {
+        // supremacy 3.3：pager 键位走 settings.keymap 配置层（默认=既有行为零漂移；
+        // /config set keymap '{"pagerClose":"ctrl+x"}' 等热生效）
+        const km = getActiveKeymap()
+        if (matchesAny(key, ch, km.pagerClose)) {
           return patchOverlayState({ pager: null })
         }
 
@@ -325,27 +329,27 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
             return next === offset ? prev : { ...prev, pager: { ...prev.pager, offset: next } }
           })
 
-        if (key.upArrow || ch === 'k') {
+        if (matchesAny(key, ch, km.pagerUp)) {
           return move(-1)
         }
 
-        if (key.downArrow || ch === 'j') {
+        if (matchesAny(key, ch, km.pagerDown)) {
           return move(1)
         }
 
-        if (key.pageUp || ch === 'b') {
+        if (matchesAny(key, ch, km.pagerHalfUp)) {
           return move(-pagerPageSize)
         }
 
-        if (ch === 'g') {
+        if (matchesAny(key, ch, km.pagerTop)) {
           return move('top')
         }
 
-        if (ch === 'G') {
+        if (matchesAny(key, ch, km.pagerBottom)) {
           return move('bottom')
         }
 
-        if (key.return || ch === ' ' || key.pageDown) {
+        if (matchesAny(key, ch, km.pagerHalfDown) || key.return) {
           patchOverlayState(prev => {
             if (!prev.pager) {
               return prev
