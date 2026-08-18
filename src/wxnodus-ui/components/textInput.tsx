@@ -4,6 +4,8 @@ import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'rea
 
 import { setInputSelection } from '../runtime/selectionStore.js'
 import { readClipboardText, writeClipboardText } from '../lib/clipboard.js'
+import { highlightInputAnsi } from '../lib/inputHighlight.js'
+import { resolveEditorCommand, runExternalEditor } from '../lib/editorLaunch.js'
 import { cursorLayout, offsetFromPosition } from '../lib/inputMetrics.js'
 import {
   DEFAULT_VOICE_RECORD_KEY,
@@ -580,8 +582,11 @@ export function TextInput({
   // 0 and visually marks the input start. Non-TTY surfaces still need the
   // synthetic inverse first-char to draw a cursor at all.
   const rendered = useMemo(() => {
+    // ② 波 1：token 高亮（gemini highlight.ts:29-57 对标）——斜杠命令/@提及/占位符
+    // 内联 ANSI 着色；仅无光标装饰的路径应用（选区/合成光标路径保持既有视觉契约）
+    const displayHi = highlightInputAnsi(display)
     if (!focus) {
-      return display || dim(placeholder)
+      return displayHi || dim(placeholder)
     }
 
     if (!display && placeholder) {
@@ -593,7 +598,7 @@ export function TextInput({
       return renderWithSelection(display, selected.start, selected.end)
     }
 
-    return nativeCursor ? display || ' ' : renderWithCursor(display, cur)
+    return nativeCursor ? displayHi || ' ' : renderWithCursor(display, cur)
   }, [cur, display, focus, nativeCursor, placeholder, selected])
 
   useEffect(() => {
@@ -984,6 +989,28 @@ export function TextInput({
       // ordinary typing and plain paste when voice is unbound to 'v'.
       if (shouldPassThroughToGlobalHandler(inp, k, voiceRecordKey)) {
         flushKeyBurst()
+
+        return
+      }
+
+      // ② 波 1：Ctrl+O 外部编辑器（kimi editor.py:18-50 探测链 + crush ui.go:3688-3725
+      // 临时文件往返）——当前草稿写临时文件 → 阻塞等编辑器退出 → 读回替换。
+      // 失败（编辑器缺失/超时）诚实保留草稿——输入不丢。
+      if (k.ctrl && inp === 'o' && !k.shift && !k.meta && !k.alt) {
+        flushKeyBurst()
+
+        const res = runExternalEditor({
+          command: resolveEditorCommand(),
+          fallback: process.platform === 'win32' ? [['code', '--wait'], ['notepad']] : [['vi']],
+          text: vRef.current,
+        })
+        if (res.ok) {
+          const next = res.text.replace(/\n+$/, '')
+          if (next !== vRef.current) {
+            commit(next, next.length)
+          }
+        }
+        // 失败静默保留草稿（无通知通道——避免打断输入；error 详情在返回结构中可审计）
 
         return
       }
