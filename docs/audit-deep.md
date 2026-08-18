@@ -981,3 +981,19 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 4. **收尾**：本地九命令门禁全绿（tsc ×2 + 全量 368 文件 / 2709 用例 + known-failures + 发现/覆盖 + lint + 环 + build）；远程 CI 见尾注。
 
 **尾注（2026-08-18）**：远程 CI **workflow #32179602007 全绿**——vscode-ext 58s / gate 2m21s / test 三分片 4m36s+5m3s+5m41s 全 success，单轮 wall ~8.5 分钟（提速后 ~14→~9 达标实测）；同轮覆盖波 3 HEAD（226b3c6，被 concurrency 取消的原轮由本轮代验）+ CI ink-dist 修复 + P3 vim VISUAL。push 验证：`git ls-remote` 远端 master = afa7f73 = 本地 HEAD（`$?` 双查防 tail 假成功）。
+
+### 13.77 P3 评估轮（2026-08-18：A 级清零 + B 级三落 + 沙盒 fail-closed——评估报告缺陷清单全量处置）
+
+用户要求「解决本地 bash 沙盒探测失败问题、A 级缺陷、B/C 级问题，并盘点他 CLI 云端功能」——逐项落定：
+
+1. **沙盒 fail-closed（dd02d5f，8 单测）**：本地 bash 沙盒探测失败 fail-open → **fail-closed**——沙盒请求但不可用默认拒绝执行绝不静默裸跑（`classifySandboxOutcome` 纯决策门：result→照常 / off→普通 / probe-failed·launch-failed·not-win32→refuse）；`settings.sandbox.failOpen=true` 显式逃生门（降级执行每次标注未沙盒）+ `/sandbox os failopen on|off` 一键切换；用户中止透传原文不套沙盒框架（codex/gemini 沙盒必开对标）。
+2. **vim 文本对象（ee6c318，13 单测）**：`di(/da(/ci(/yi(/vi(` 等——`pendingIo` 两键状态机 + `textObjectRange` 深度计数配对（codex vim.rs:229-264 括号栈对标；开/闭括号、引号、iw/aw 空白串 vim 语义、光标在定界符上算在内）；操作符段重排——对象分派先于运动分派（w/e/b 既是运动也是对象字符）；无效对象取消不悬挂。
+3. **vim / 搜索 + Ctrl-R redo（c517524，10 单测）**：`/ ?` 增量搜索状态机（逐字符匹配移动光标、回绕、Backspace 退格重匹配、Enter 确认/Esc 还原锚点、挂起期数字进查询不进 count、清 pendingOp；搜索期徽标实时显示 `/query`；r/fFtT 预读不截胡）；Ctrl-R → `<redo>` 信号 + `vimHistoryPush/Undo/Redo` 纯函数（新编辑清 redo vim 语义、200 上限）；textInput 双栈接线。
+4. **/diff git 三源（e941840，真实 git 集成 3 测）**：`gitDiff.ts`（spawnSync 参数数组无注入面、退出码 0/1/>1 语义、非仓库/仓库外/非法分支名三类诚实报错）+ `/diff <文件> git|branch <分支名>|turn`（opencode diff-viewer.tsx:46 对标；revert 仅 turn 源——git 侧改动归 git 管理诚实边界；快照源默认行为与既有测试不变）。
+5. **ACP session/load 全量（3f717cc，协议子进程 2 测）**：`AcpStore` 注入（db 装配）——session/new 落库真会话行、session/load 校验存在性（缺失 -32602）、load_history 真历史（archived=0 过滤）、update 诚实 ack、cancel 诚实报错不假装（宿主 agent 会话绑定无 sid 级 abort）；loadSession 能力位随 store 有无如实宣告；无 db 降级内存会话。对标 gemini acpResume / kimi server.py:101 / opencode service.ts:211。
+6. **B-05 配置分层（fda5c95，4 单测）**：项目级 `.wxnodus/config.json` settings 段键级覆盖全局（浅合并；无项目文件原引用零拷贝）；mtime 缓存（每次调用 statSync 一次）；agent getSettings 动态分层；/config 三态诊断（已加载/未配置/解析失败）。gemini 四层对标。
+7. **B-04 主题预设（5befc4b，4 单测）**：10 套命名预设（**诚实口径：非 opencode 33 套**——nord/dracula/tokyo-night/monokai/gruvbox/solarized/one-dark/catppuccin/everforest/synthwave）；themeByName 解析（三元组覆盖、语义色继承基底保可读性、未知名 null 回退）；theme.changed 事件适配；/theme 列预设。
+8. **A-07 快照增量化（39566cc，3 单测）**：checkpoint 改存 `messagesUpTo` 上界（消息只增不删保证重建精确）——自动/手动快照不再每回合全量 SELECT；messagesAtCheckpoint 旧形态数组向后兼容；restore/compare/list 全链路接新形态。kimi `_checkpoint` 对标。
+9. **云端功能盘点（docs/cli-cloud-vs-local-2026.md）**：六家记忆全本地（本地记忆非独有——独有是本地向量跨会话召回）；本地模型 4/6 家支持（gemini/kimi 完全无）；云端独占 4 项（opencode 分享/GitHub agent、codex cloud-config/cloud-tasks、kimi 云搜索）；强制账号 codex/kimi/gemini 三家。
+10. **验证**：本地九命令门禁全绿（tsc ×2 + 全量 374 文件/2754 用例 + known-failures + 发现/覆盖 + lint + 环 + build）；远程 CI 见尾注。
+11. **评分口径（诚实，不预支）**：② 冲 10 论据已齐（VISUAL 六家皆无 + 文本对象 codex 对标 + / 搜索 + redo + 既有 Ctrl-R 历史搜索/键位层/@补全/外部编辑器）——是否 9→10 留七评复核 codex 8 种文本对象覆盖后定；本轮维持 922 不复算。B-03 会话浏览器 UI（数据面已备）、C-02 wxGateway 巨文件拆分两项大工程项如实留存 register。

@@ -27,8 +27,9 @@
 | A-04 | 按模型工具裁剪（48 schema 全量发给所有模型） | codex 按模型 | ⑤/⑩ | ✅ toolTrim.ts 能力驱动裁剪（文本模型裁图片输出工具、小窗口文本模型裁 GUI 套件、视觉模型全保留、未知模型不臆测）+ settings.toolTrim + updateTools 不绕过，11 用例（supremacy 1.3） |
 | A-05 | LLM 辅助循环检测（置信度判空转） | gemini | ④ 与 gemini 最后差距 | ✅ loopJudge.ts 语义判定（7 用例，supremacy 1.5）；④ 满格达成（子代理分型 subagentTypes + responseFormat 结构化输出，supremacy 补轮）——④=10 七家第一 |
 | A-06 | 成本五维（reasoning/cache_read/cache_write）+ Decimal | opencode | ⑩ | ✅ usage_stats v10 加 reasoning_tokens；五维计价（reasoning 按输出价、cacheMiss 按输入价、cacheHit 走 cacheRead 价）全整数 µUSD BigInt 定点（零浮点漂移）；kf-030/迁移断言同步 10；14 成本用例（supremacy 1.4） |
-| A-07 | 快照增量化（消息 id 上界 vs 全量复制） | kimi `_checkpoint` | ⑨ | ⏳（血缘已 ✅，见 79c3226） |
-| A-08 | share 分享 | opencode/kimi | ⑦ 场景矩阵 | ✅ 离线加密打包（kernel/share.ts + /share，AES-256-GCM+sha256）——云端版受 S-05 阻塞 |
+| A-07 | 快照增量化（消息 id 上界 vs 全量复制） | kimi `_checkpoint` | ⑨ | ✅ **messagesUpTo 上界**（39566cc）：自动/手动 checkpoint 不再全量 SELECT，重建=id≤上界精确（消息只增不删保证）；messagesAtCheckpoint 旧形态数组兼容 |
+| A-08 | share 分享 | opencode/kimi | ⑦ 场景矩阵 | ✅ 离线加密打包（kernel/share.ts + /share，AES-256-GCM+sha256）——云端版受 S-05 阻塞（对照 opencode opncd.ai 云分享见 docs/cli-cloud-vs-local-2026.md） |
+| A-09 | 本地 bash 沙盒探测失败 fail-open | codex/gemini 沙盒必开 | ⑥ | ✅ **fail-closed**（dd02d5f）：沙盒请求但不可用→拒绝执行绝不静默裸跑；settings.sandbox.failOpen=true 显式逃生门（降级每次标注）；/sandbox os failopen on|off |
 
 ## B 级
 
@@ -37,8 +38,8 @@
 | B-01 | vim 无接线 / keymap 不可配 | codex 真 vim+config | ✅ 键位配置层（keymap.ts 命名动作→KeySpec 解析/匹配/覆盖合并，settings.keymap 经 config.get→applyDisplay 水合热生效，pager 关闭/导航已接线，10 单测）——诚实口径：不宣称伪 vim（全模态编辑如接入再如实标注；pager 既有 vim 风格 j/k/b/g/G 键位已可配，supremacy 3.3） |
 | B-02 | @文件选择器、diff hunk 折叠/apply | opencode 双布局 | ✅ diff hunk 折叠已接线（diffHunks.ts 分节/hunk/默认折叠/切换模型 + messageLine 超长 hunk 默认折叠渲染，6 单测）+ extractPatchText 还原补丁供 apply_patch（apply 数据路径）；@文件引用机制已有（resolveAtRefs）——交互式折叠切换与一键 apply UI 动作留后续 |
 | B-03 | 会话浏览器 UI（列表+预览） | codex resume_picker/gemini SessionBrowser | ◐ 数据面已备（listSessionsStructured + --json），UI 面待桌面端 |
-| B-04 | 主题系统 | opencode 33 套 | ⏳ |
-| B-05 | 配置分层（项目级 .wxnodus/config 继承） | gemini 四层 | ⏳ |
+| B-04 | 主题系统 | opencode 33 套 | ✅ **10 套命名预设**（5befc4b，诚实口径非 33）：THEME_PRESETS（nord/dracula/tokyo-night/monokai/gruvbox/solarized/one-dark/catppuccin/everforest/synthwave）+ themeByName 三元组覆盖（语义色继承基底保可读性）+ theme.changed 事件适配 + /theme 列预设 |
+| B-05 | 配置分层（项目级 .wxnodus/config 继承） | gemini 四层 | ✅ **projectConfig.ts**（fda5c95）：.wxnodus/config.json settings 键级覆盖全局（浅合并），mtime 缓存零解析，agent getSettings 动态分层，/config 三态诊断——4 单测 |
 | B-06 | execpolicy 首词前缀规则 | codex first-token 索引 | ✅ execPolicy.ts 首词索引（pattern 锚定保证与全量 applyRules 数学等价——安全等价断言在测）；审批持久化复用 permissions.json（/perm rule，P0-2 存储面不新增）；agent bash 规则经索引裁决，8 用例（supremacy 1.7） |
 | B-07 | 会话列表 first_user 摘要/血缘 | gemini/codex | ✅（79c3226） |
 | B-08 | approve_for_session 真实授权 | kimi | ✅（79c3226） |
@@ -54,7 +55,7 @@
 ## 下一档优先级（按提分/成本）
 
 1. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）——转公开即解锁 winget/scoop；
-2. 波 3 全部落定后剩余零碎（P3）：vim VISUAL 已落（2026-08-18，audit §13.76）；/ 搜索模式、git 三源 diff viewer、ACP session/load 全量实现。
+2. 波 3 全部落定后剩余零碎（P3）：vim VISUAL 已落（audit §13.76）→ **评估轮全量清零**：vim 文本对象/`/` 搜索/Ctrl-R redo（ee6c318/c517524）、git 三源 diff viewer（e941840）、ACP session/load 全量（3f717cc）均已落——见 §P3 评估轮；剩余：B-03 会话浏览器 UI（数据面已备）、C-02 wxGateway 巨文件拆分。
 4. 波 3：vim（gemini vim.ts）、完整 diff 查看器/逐 hunk 应用（差异化）、ACP 接收 + 本地语义搜索；
 5. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）。
 
@@ -83,3 +84,18 @@
 | ② 输入/编辑器 | 8 | 9 | vim 模态（gemini vim.ts 纯 reducer 直搬 + /vim 开关热生效） |
 | ③ diff/媒体 | 7 | 8 | 完整 diff 查看 + per-hunk 选择性回滚（六家皆无差异化，取证确认） |
 | ⑪ 差异化 | 9 | 10 | 本地跨会话语义召回（六家独有）+ ACP stdio 接收入档 |
+
+## P3 评估轮落定（2026-08-18：A 级清零 + B 级三落 + 沙盒 fail-closed，证据 audit §13.77）
+
+| 项 | 前 | 后 | 落定内容（对标锚点） |
+|---|---|---|---|
+| vim 文本对象 | 无 | ✅ | di(/da(/ci(/yi(/vi( 等（codex vim.rs:229-264 括号栈深度计数）——ee6c318，13 单测 |
+| vim / 搜索 + Ctrl-R redo | 无 | ✅ | / ? 增量搜索（回绕/Backspace/Enter/Esc）+ redo 信号 + undo/redo 历史纯函数——c517524，10 单测 |
+| /diff git 三源 | 快照单源 | ✅ | git/branch/turn 三源（opencode diff-viewer.tsx:46 对标；revert 仅 turn 源诚实边界）——e941840，真实 git 集成 3 测 |
+| ACP session/load | stdio 单会话 | ✅ | store 注入：new 落库/load 校验/load_history 真历史/cancel 诚实报错——3f717cc，协议子进程 2 测 |
+| 沙盒探测失败 | fail-open 降级 | ✅ | fail-closed 拒绝执行 + failOpen 显式逃生门（A-09）——dd02d5f，8 单测 |
+| 主题系统 | ⏳ | ✅ | 10 套命名预设（B-04）——5befc4b |
+| 配置分层 | ⏳ | ✅ | 项目级 .wxnodus/config.json（B-05）——fda5c95 |
+| 快照增量化 | ⏳ | ✅ | messagesUpTo 上界（A-07）——39566cc |
+
+**评分口径（诚实）**：② 冲 10 论据已齐（VISUAL 六家皆无 + 文本对象 codex 对标 + / 搜索 + redo + 既有 Ctrl-R 历史/键位/@补全）——是否 9→10 留七评复核 codex 8 种文本对象覆盖后定，本轮不预支。云端独占面取证见 docs/cli-cloud-vs-local-2026.md。
