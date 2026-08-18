@@ -34,7 +34,7 @@ describe('wordDiffPair（kimi SequenceMatcher 移植）', () => {
 
 describe('pairHunkBody（kimi _highlight_hunk 配对规则）', () => {
   it('连续 -/+ 块逐对配对；多出的单侧行原样保留', () => {
-    const body = [L('del', '-a1'), L('del', '-a2'), L('add', '+b1'), L('ctx', ' c'), L('add', '+only')]
+    const body = [L('del', '-a1'), L('del', '-a2'), L('add', '+b1'), L('context', ' c'), L('add', '+only')]
     const items = pairHunkBody(body)
     expect(items.map(i => i.kind)).toEqual(['pair', 'del', 'ctx', 'add'])
     expect((items[0] as any).del.text).toBe('-a1')
