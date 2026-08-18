@@ -118,10 +118,10 @@ describe('「缓存省了多少」展示', () => {
 });
 
 describe('摘要独立请求契约（gemini chatCompressionService.ts:361-379 对标）', () => {
-  it('COMPRESSOR_SYSTEM_PROMPT 契约：压缩器/字数上限/只输出摘要', () => {
+  it('COMPRESSOR_SYSTEM_PROMPT 契约：压缩器/字数上限/只输出快照（波 1 ⑤ 结构化后口径）', () => {
     expect(COMPRESSOR_SYSTEM_PROMPT).toContain('压缩器');
-    expect(COMPRESSOR_SYSTEM_PROMPT).toContain('≤400 字');
-    expect(COMPRESSOR_SYSTEM_PROMPT).toContain('只输出摘要');
+    expect(COMPRESSOR_SYSTEM_PROMPT).toContain('≤1200 字');
+    expect(COMPRESSOR_SYSTEM_PROMPT).toContain('只输出 <state_snapshot>');
   });
 
   it('compactMessages：summarize 只收到中部文本（不含头尾），结果以 system 摘要写回，主数组不增不减', async () => {

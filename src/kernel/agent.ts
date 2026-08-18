@@ -15,7 +15,7 @@ import { appendAudit } from './audit.js';
 import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
 import { resolveDataDir } from './paths.js';
-import { estimateMessagesTokens, compactMessages, contentToText, COMPRESSOR_SYSTEM_PROMPT } from './memory.js';
+import { estimateMessagesTokens, compactMessages, contentToText, COMPRESSOR_SYSTEM_PROMPT, summarizeOnce } from './memory.js';
 import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx, type ToolDef } from './tools.js';
 import { labelTruncate } from './truncate.js';
 import { resolveModelForChat } from './profiles.js';
@@ -227,6 +227,11 @@ export function createAgent(opts: AgentOptions) {
   let budgetExceeded = false;
   // 上下文水位预警标记（会话级一次——75% 阈值提示主动压缩）
   let ctxWarned = false;
+  // 波 1 ⑤：摘要失败护栏（gemini chatCompressionService.ts:287-321 对标）——会话级：
+  // 失败一次 → 本会话后续压缩直接确定性截断（不再烧 LLM）。summarizeRef 每回合指向
+  // 当轮 callWithAbort（abort 信号随轮更新），护栏闭包跨回合持存（不随轮重建）。
+  let summarizeRef: (text: string) => Promise<string> = async () => '';
+  const sessionSummarize = summarizeOnce((text: string) => summarizeRef(text));
   // 剧本录制器（/script record 挂载）：executeTool 每个调用回调（name/args）
   let scriptRecorder: ((name: string, args: Record<string, any>) => void) | null = null;
 
@@ -1116,9 +1121,8 @@ export function createAgent(opts: AgentOptions) {
           bus.emit('system.notice', { text: '压缩被 hook 阻止（preCompact BLOCK）' });
         } else {
         bus.emit('system.notice', { text: `上下文已达 ${Math.round((used / ctxLimit) * 100)}%（${used} token）——自动压缩…` });
-        const condensed = await compactMessages(msgs as any, async (text) => {
-          // 前缀缓存工程：摘要走独立单轮请求（全新 [system,user] 对，不写主 msgs——
-          // 只把结果以 system 摘要消息写回），主对话前缀缓存不被压缩原文打断
+        // 本回合的摘要实现（独立单轮请求——前缀缓存工程，结果只写回主对话）
+        summarizeRef = async (text) => {
           const r = await callWithAbort({
             messages: [
               { role: 'system', content: COMPRESSOR_SYSTEM_PROMPT },
@@ -1127,7 +1131,18 @@ export function createAgent(opts: AgentOptions) {
             tools: [],
           });
           return r.type === 'text' ? r.content : '';
-        });
+        };
+        // 波 1 ⑤：已有快照合并锚定（gemini chatCompressionService.ts:353-359 对标）——
+        // 找到最近一条压缩摘要作为 priorSummary 传入（未完成事项/约束不丢）
+        let priorSummary: string | undefined;
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          const pm = msgs[i] as any;
+          if (pm?.role === 'system' && String(pm.content ?? '').includes('压缩摘要')) {
+            priorSummary = String(pm.content).replace(/^\s*（自动压缩摘要）\s*/, '');
+            break;
+          }
+        }
+        const condensed = await compactMessages(msgs as any, sessionSummarize, { priorSummary });
         msgs.splice(0, msgs.length, ...condensed);
         // DB 联动（深化）：compactSmart 归档 DB 中部消息——摘要复用已生成文本
         // （不重复调 LLM）；recall 全量保留，working 窗口与内存一致收缩
