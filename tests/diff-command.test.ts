@@ -1,8 +1,10 @@
 // tests/diff-command.test.ts — 波 3 ③ 7→8：/diff 快照对比 + per-hunk 应用（六家皆无差异化）
-import { describe, expect, it, afterAll } from 'vitest'
+// P3 评估轮：三源扩展（opencode diff-viewer.tsx:46 git|branch|last-turn 对标）——git/branch 源真实 git 仓库集成
+import { describe, expect, it, afterAll, beforeAll } from 'vitest'
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { createCommandBus } from '../src/app/CommandBus.js'
 import { registerSessionCommands } from '../src/commands/ext/sessionCommands.js'
 import { snapshotFile } from '../src/kernel/undoShadows.js'
@@ -41,5 +43,63 @@ describe('/diff 快照对比 + per-hunk 应用', () => {
     // 越界 hunk 诚实报错
     const bad = await (bus as any).execute('/diff f.txt revert 9')
     expect(bad.output).toContain('不存在')
+  })
+})
+
+// P3 评估轮：git/branch 三源（真实 git 仓库；git 不可用则整块跳过）
+const gitOk = spawnSync('git', ['--version'], { encoding: 'utf8' }).status === 0
+describe.skipIf(!gitOk)('/diff git 三源（opencode DiffMode 对标）', () => {
+  const gdir = mkdtempSync(join(tmpdir(), 'wxn-gitdiff-'))
+  const file = join(gdir, 'g.txt')
+  const bus = createCommandBus()
+  const ctx = { cwd: gdir, dataDir: join(gdir, 'data'), config: { get: () => ({}), getKey: () => undefined, setKey: () => undefined }, db: undefined, bus: bus as any, agent: { getSessionId: () => 's' } } as any
+
+  beforeAll(() => {
+    mkdirSync(join(gdir, 'data'), { recursive: true })
+    spawnSync('git', ['init', '-b', 'master'], { cwd: gdir, encoding: 'utf8' })
+    spawnSync('git', ['config', 'user.email', 't@t'], { cwd: gdir })
+    spawnSync('git', ['config', 'user.name', 't'], { cwd: gdir })
+    writeFileSync(file, 'v1\nv2\n', 'utf8')
+    spawnSync('git', ['add', '.'], { cwd: gdir })
+    spawnSync('git', ['commit', '-m', 'base'], { cwd: gdir, encoding: 'utf8' })
+    registerSessionCommands(bus as any, ctx)
+  })
+  afterAll(() => rmSync(gdir, { recursive: true, force: true }))
+
+  it('git 源：工作区 vs HEAD 可见未提交改动；无改动诚实报无差异', async () => {
+    writeFileSync(file, 'v1\nv2X\n', 'utf8')
+    const d = await (bus as any).execute('/diff g.txt git')
+    expect(d.output).toContain('工作区 → HEAD')
+    expect(d.output).toContain('-v2')
+    expect(d.output).toContain('+v2X')
+    writeFileSync(file, 'v1\nv2\n', 'utf8')
+    const none = await (bus as any).execute('/diff g.txt git')
+    expect(none.output).toContain('无差异')
+  })
+
+  it('branch 源：工作区 vs 指定分支；缺分支名/非法分支名诚实报错', async () => {
+    spawnSync('git', ['checkout', '-b', 'other'], { cwd: gdir, encoding: 'utf8' })
+    writeFileSync(file, 'v1\nv2-other\n', 'utf8')
+    spawnSync('git', ['commit', '-am', 'other'], { cwd: gdir, encoding: 'utf8' })
+    spawnSync('git', ['checkout', 'master'], { cwd: gdir, encoding: 'utf8' })
+    writeFileSync(file, 'v1\nv2-master\n', 'utf8')
+    const d = await (bus as any).execute('/diff g.txt branch other')
+    expect(d.output).toContain('分支 other')
+    expect(d.output).toContain('v2-master')
+    const missing = await (bus as any).execute('/diff g.txt branch')
+    expect(missing.output).toContain('用法')
+    const bad = await (bus as any).execute('/diff g.txt branch "x y"')
+    expect(bad.output).toContain('分支名非法')
+  })
+
+  it('非 git 仓库诚实报错', async () => {
+    const plain = mkdtempSync(join(tmpdir(), 'wxn-nogit-'))
+    mkdirSync(join(plain, 'data'), { recursive: true })
+    writeFileSync(join(plain, 'p.txt'), 'x', 'utf8')
+    const plainBus = createCommandBus()
+    registerSessionCommands(plainBus as any, { cwd: plain, dataDir: join(plain, 'data'), config: { get: () => ({}), getKey: () => undefined, setKey: () => undefined }, db: undefined, bus: plainBus as any, agent: { getSessionId: () => 's' } } as any)
+    const r = await (plainBus as any).execute('/diff p.txt git')
+    expect(r.output).toContain('不是 git 仓库')
+    rmSync(plain, { recursive: true, force: true })
   })
 })

@@ -226,14 +226,40 @@ export function registerSessionCommands(bus: CommandBus, ctx: HandlerCtx): void 
   // 波 3 ③：/diff <文件> [revert <hunk序号>]——快照 vs 当前文件的完整 diff 查看 +
   // per-hunk 选择性回滚（六家皆无的差异化：opencode diff-viewer 仅跳转无 apply/discard；
   // 回滚前自动快照——/undo fs restore 可再滚回）
-  bus.register('/diff', (args) => {
+  // P3 评估轮：三源扩展（opencode diff-viewer.tsx:46 git|branch|last-turn 对标）——
+  // turn（默认，快照 vs 当前）/ git（工作区 vs HEAD）/ branch <分支名>（工作区 vs 分支）；
+  // revert 仅 turn 源可用（git 源改动在 git 侧管理，诚实边界）
+  bus.register('/diff', async (args) => {
     const rel = String(args[0] ?? '').trim();
-    if (!rel) return '用法：/diff <文件> [revert <hunk序号>]——查看文件最近编辑快照与当前内容的差异；revert 按 hunk 序号选择性回滚该处变更（快照自动留存，/undo fs restore 可再滚回）';
+    if (!rel) return '用法：/diff <文件> [turn|git|branch <分支名>|revert <hunk序号>]——turn（默认）快照 vs 当前；git 工作区 vs HEAD；branch 工作区 vs 指定分支；revert 按 hunk 序号选择性回滚（仅 turn 源）';
     const abs = resolve(ctx.cwd, rel);
+    const source = String(args[1] ?? '').toLowerCase();
+    if (source === 'git' || source === 'branch') {
+      try {
+        const { gitDiffWorkingVsHead, gitDiffVsBranch } = await import('../../kernel/gitDiff.js');
+        if (source === 'branch') {
+          const b = String(args[2] ?? '').trim();
+          if (!b) return '用法：/diff <文件> branch <分支名>（工作区 vs 该分支同名文件）';
+          const r = gitDiffVsBranch(ctx.cwd, abs, b);
+          if (!r.ok) return `diff 失败：${r.error}`;
+          if (!r.diff) return `${rel} 与分支 ${b} 无差异`;
+          return `工作区 → 分支 ${b}（${rel}）
+${r.diff}`;
+        }
+        const r = gitDiffWorkingVsHead(ctx.cwd, abs);
+        if (!r.ok) return `diff 失败：${r.error}`;
+        if (!r.diff) return `${rel} 工作区与 HEAD 无差异`;
+        return `工作区 → HEAD（${rel}）
+${r.diff}`;
+      } catch (e: any) { return `diff 失败：${String(e?.message ?? e).slice(0, 120)}`; }
+    }
+    if (source && source !== 'turn' && source !== 'revert') {
+      return '未知 diff 源——支持：turn（默认）/ git / branch <分支名> / revert <hunk序号>';
+    }
     try {
       const cur = readFileSync(abs, 'utf8');
       const versions = versionsOfFile(ctx.dataDir, abs);
-      if (!versions.length) return '该文件无编辑快照（undoShadows 为空）——先经 fs_edit/fs_write 编辑过才有对比基线';
+      if (!versions.length) return '该文件无编辑快照（undoShadows 为空）——turn 源需要先经 fs_edit/fs_write 编辑过才有对比基线（git 源可用 /diff <文件> git）';
       const base = versions[0]!.content;
       if (args[1] === 'revert') {
         const idx = Number(args[2]);
@@ -252,7 +278,7 @@ export function registerSessionCommands(bus: CommandBus, ctx: HandlerCtx): void 
       return `快照 → 当前（${rel}）
 ${d}
 
-（/diff ${rel} revert <hunk序号> 选择性回滚某个 hunk）`;
+（/diff ${rel} revert <hunk序号> 选择性回滚某个 hunk；git 源：/diff ${rel} git）`;
     } catch (e: any) { return `diff 失败：${String(e?.message ?? e).slice(0, 120)}`; }
   });
 
