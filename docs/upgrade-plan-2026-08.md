@@ -9,7 +9,7 @@
 | 波 | 维度档位 | 增量 | 总分 | 里程碑 |
 |---|---|---|---|---|
 | 波 1 小步快跑 ✅ 已落定（2026-08-18） | ③5→6 ②6→7 ⑩9→10 ⑤9→10 | +8+9+7+11=**+35** | **878** | **反超 codex（869）——不依赖公开决策，score §9.16** |
-| 波 2 核心体验 | ②7→8 ③6→7 ⑪8→9 | +9+8+5=**+22** | **900** | 编辑器/diff 追平头部体验 |
+| 波 2 核心体验 ✅ 已落定（2026-08-18） | ②7→8 ③6→7 ⑪8→9 | +9+8+5=**+22** | **900** | 编辑器/diff 追平头部体验，score §9.17 |
 | 波 3 专家档 | ②8→9 ③7→8 ⑪9→10 | +9+8+5=**+22** | **922** | 独占点成型（per-hunk 应用/本地语义检索） |
 | 阻塞项 | ⑧ 5→9 | +36 | — | 卡公开决策（用户暂缓：第三方接收已落地） |
 
@@ -43,21 +43,21 @@
 
 ## 2. 波 2「核心体验」→ 900（三任务，约 1-2 周，中工作量）
 
-### 2.1 ② 7→8：@文件补全弹窗 + slash 输入内补全（+9）
+### 2.1 ② 7→8：@文件补全弹窗 + slash 输入内补全（+9）——✅ 已落定（f75b67a）
 - **对标取证**：**6/6 全有** @补全（wxnodus 只有提交前展开，无 UI 补全）。
 - **抄谁**：gemini `packages/cli/src/ui/hooks/useAtCompletion.ts:19-206`（同栈骨架）+ crush `internal/ui/completions/completions.go:205-260`（basename 精确>前缀>路径段 分层排序）+ opencode `autocomplete.tsx:29-58`（`#L1-L5` 行区间）+ `prompt/frecency.tsx:10-42`（frecency 排序）；kimi `prompt.py:1276-1290`（enter 双语义：slash 接受即提交）。
 - **改动**：textInput token 前缀检测 + 弹窗（@文件/agent 双源、模糊排序、行区间）；与 `kernel/mentions.ts` 展开链路打通；slash 补全复用 commandPalette 数据。
 - **验收**：10 单测（排序分层/行区间/enter 双语义/frecency 权重）。
 - **工作量**：中。
 
-### 2.2 ③ 6→7：词级 inline diff + hunk 跳转（+8）
+### 2.2 ③ 6→7：词级 inline diff + hunk 跳转（+8）——✅ 已落定（4753824）
 - **对标取证**：词级 diff 为 **kimi 六家独有**（`diff_render.py:184-218` SequenceMatcher 配对 + ratio<0.5 跳过 + tab 偏移映射）；hunk 跳转为 opencode 独有（`diff-viewer.tsx:282-315`）。
 - **抄谁**：kimi 算法直译 TS；opencode 跳转（结构化 diff 解析的扩展，复用 1.1 组件）。
 - **改动**：diffRenderer 升级词级红绿；pager 键位加 `[`/`]` hunk 跳转 + 底部快捷键提示。
 - **验收**：6 单测（词级配对/阈值跳过/跳转边界）。
 - **工作量**：中。
 
-### 2.3 ⑪ 8→9：离线「缺模型即拉取」+ 记忆审阅撤销层（+5）
+### 2.3 ⑪ 8→9：离线「缺模型即拉取」+ 记忆审阅撤销层（+5）——✅ 已落定（c47f51f）
 - **对标取证**：codex `codex-rs/ollama/src/lib.rs:22-34`（ensure_oss_ready→缺则 pull_with_reporter 进度）；gemini `memoryService.ts` + `memoryPatchUtils.ts:984-1013`（.inbox 人工批准 / .patch / apply-discard）。
 - **改动**：① `offlineModel.ts` downloadOfflineModel 加进度事件/自动就绪（零门槛离线）；② 黑洞记忆加「inbox 审阅 + apply/discard + 按记录撤销」命令面（可审可退，堵「不可控记忆」评审攻击）。
 - **验收**：6 单测（拉取进度状态机/inbox 批准流/撤销）；文档补「记忆可审可退」宣称。

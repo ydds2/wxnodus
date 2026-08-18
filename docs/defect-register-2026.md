@@ -53,9 +53,8 @@
 
 ## 下一档优先级（按提分/成本）
 
-1. 波 2 ②7→8（@补全——6/6 全有，wxnodus 唯一缺的最后一题）；
-2. 波 2 ③6→7（word-level diff，kimi 独有 + hunk 跳转，opencode）；
-3. 波 2 ⑪8→9（离线拉取进度 + 记忆收件箱）；
+1. 波 3：vim（gemini vim.ts 1536 行）、完整 diff 查看器/逐 hunk 应用（差异化）、ACP 接收 + 本地语义搜索（unique）；
+2. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）；
 4. 波 3：vim（gemini vim.ts）、完整 diff 查看器/逐 hunk 应用（差异化）、ACP 接收 + 本地语义搜索；
 5. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）。
 
@@ -68,3 +67,11 @@
 | ⑩ 性能/token | 9 | 10 | 字段固定序 + cache_control 断点（crush）+ 缓存写价/节省展示（aider）+ 摘要独立请求（gemini/kimi） |
 | ⑤ 提示词/适配 | 9 | 10 | 7 块结构化快照 + 反注入段（gemini snippets.ts）+ 保留规则（kimi compact.md）+ 合并锚定 + 失败护栏（gemini） |
 
+
+## 波 2 落定（2026-08-18：②③⑪ 三维齐升——878 → 900，稳居第 1/7，证据 score §9.17 / audit §13.74）
+
+| 维度 | 波 2 前 | 波 2 后 | 落定内容（对标锚点） |
+|---|---|---|---|
+| ② 输入/编辑器 | 7 | 8 | @补全（crush 分层排序 + opencode frecency + kimi enter 双语义 + #L 行区间） |
+| ③ diff/媒体 | 6 | 7 | 词级 inline diff（kimi 六家独有移植）+ pager hunk 跳转（opencode 独有） |
+| ⑪ 差异化 | 8 | 9 | 离线缺模型即拉取（codex ollama）+ AI 记忆收件箱（gemini .inbox） |

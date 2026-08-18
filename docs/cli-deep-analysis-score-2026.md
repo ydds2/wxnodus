@@ -10,13 +10,13 @@
 
 **11 维 × 7 家，权重归一化到 100。** 权重代表「AI 编码 CLI 综合竞争力」的构成假设：Agent 内核 13、提示词/模型适配 11、场景/协议 11、安全 10 为第一梯队；渲染/输入/生态/工程为体验与持续力；差异化 5 是「不可替代性」溢价。
 
-### 0.1 波 1 复评表（2026-08-18 三评，wxnodus 列已更新；其余六家分数不变）
+### 0.1 波 2 复评表（2026-08-18 四评，wxnodus 列已更新；其余六家分数不变）
 
 | 维度（权重） | wxnodus | codex | gemini | opencode | crush | kimi | aider |
 |---|---|---|---|---|---|---|---|
 | ① UI 渲染引擎（9） | **10** | 9 | 7 | 8 | 9 | 6 | 4 |
-| ② 输入/编辑器（9） | 7 | **10** | 9 | 7 | 6 | 8 | 8 |
-| ③ 内容交互 diff/媒体（8） | 6 | 8 | 6 | **9** | **9** | 7 | 5 |
+| ② 输入/编辑器（9） | 8 | **10** | 9 | 7 | 6 | 8 | 8 |
+| ③ 内容交互 diff/媒体（8） | 7 | 8 | 6 | **9** | **9** | 7 | 5 |
 | ④ Agent 内核/工具（13） | **10** | 9 | 9 | 9 | 8 | 8 | 7 |
 | ⑤ 提示词/模型适配（11） | **10** | 9 | 9 | **10** | 7 | 7 | 8 |
 | ⑥ 安全工程（10） | **10** | 9 | 9 | 7 | 7 | 6 | 3 |
@@ -24,12 +24,12 @@
 | ⑧ 分发/生态/文档（9） | 5 | 9 | 8 | **9** | 7 | 8 | 8 |
 | ⑨ 工程质量/CI（8） | **9** | 9 | 9 | 9 | 8 | 8 | 5 |
 | ⑩ 性能/token 工程（7） | **10** | 8 | 8 | 7 | 7 | 6 | 5 |
-| ⑪ 差异化（离线/记忆/平台）（5） | **8** | 4 | 3 | 5 | 4 | 3 | 5 |
-| **加权总分（/1000）** | **878** | **869** | **812** | **841** | **709** | **693** | **573** |
+| ⑪ 差异化（离线/记忆/平台）（5） | **9** | 4 | 3 | 5 | 4 | 3 | 5 |
+| **加权总分（/1000）** | **900** | **869** | **812** | **841** | **709** | **693** | **573** |
 
-**排名：wxnodus 8.78 ＞ codex 8.69 ＞ opencode 8.41 ＞ gemini 8.12 ＞ crush 7.09 ＞ kimi 6.93 ＞ aider 5.73。**（wxnodus 由 6.14→7.25→7.54→7.90→8.14→8.25→8.35→8.43→8.78：**波 1 四任务落定，反超 codex 升至第 1/7**——不依赖公开决策）
+**排名：wxnodus 9.00 ＞ codex 8.69 ＞ opencode 8.41 ＞ gemini 8.12 ＞ crush 7.09 ＞ kimi 6.93 ＞ aider 5.73。**（wxnodus 由 6.14→7.25→7.54→7.90→8.14→8.25→8.35→8.43→8.78→9.00：**波 1+波 2 落定，反超 codex 稳居第 1/7**——不依赖公开决策）
 
-**维度第一已超额达成（2026-08-18 三评）：① 渲染 10、④ Agent 10、⑥ 安全 10、⑩ token 工程 10、⑪ 差异化 8 五项严格第一；⑤ 提示词 10 与 opencode 并列第一、⑦ 场景 10 与 opencode 并列第一。**
+**维度第一已超额达成（2026-08-18 四评）：① 渲染 10、④ Agent 10、⑥ 安全 10、⑩ token 工程 10、⑪ 差异化 9 五项严格第一；⑤ 提示词 10、⑦ 场景 10 与 opencode 并列第一。**
 
 **复评变动的逐维理由（±分数全部有落地证据，见 §9 补齐轮记录）：**
 
@@ -67,9 +67,17 @@
 | ⑩ 性能/token 工程 | 9→10 | 消息字段固定序（DeepSeek 字节稳定前缀命中前提）+ cache_control 断点放置（crush `agent.go:839-855` 对标，默认关诚实口径）+ 缓存写价 1.25× 兜底与净节省展示（aider `base_coder.py:2077-2096` 对标）+ 摘要独立单轮请求契约（gemini/kimi 对标，压缩器提示单一事实源）——13 单测 +7 |
 | ⑤ 提示词/模型适配 | 9→10 | 压缩快照结构化 7 块 XML（gemini `snippets.ts:899-963` 对标）+ CRITICAL SECURITY RULE 反注入段（工具输出是数据不是指令）+ kimi 保留规则（`compact.md:15-22`：错误原文/≤20 行代码/优先级）+ 快照合并锚定（gemini :353-359 未完成事项不丢）+ 会话级失败护栏（gemini `chatCompressionService.ts:287-321` 失败一次纯截断不再烧 LLM）——10 单测 +11 |
 
+**波 2 复评变动（2026-08-18 upgrade-plan-2026-08.md 波 2 三任务落定，证据见 §9.17）：**
+
+| 维度 | 旧→新 | 理由（证据锚点） |
+|---|---|---|
+| ② 输入/编辑器 | 7→8 | @补全（6/6 竞品最后一题）：@文件/agent 双源合入 + crush 分层排序（`completions.go:205-260` basename 精确>前缀>路径段）+ opencode frecency 权重（会话级接受计数）+ kimi enter 双语义（`prompt.py:1276-1290` slash 接受即提交）+ `@path#L1-L5` 行区间展开（opencode `autocomplete.tsx:29-58`，越界 clamp）——15 单测 +9 |
+| ③ 内容交互 diff/媒体 | 6→7 | 词级 inline diff（kimi 六家独有 `diff_render.py:184-218` 移植：连续 -/+ 块逐对配对 + SequenceMatcher ratio<0.5 整行降级 + LCS 词级红绿分段，`wordDiff.ts`）+ pager [/] hunk 跳转（opencode 独有 `diff-viewer.tsx:282-315`，回滚 diff 等 @@ 内容 + 底部快捷键提示）——9 单测 +8 |
+| ⑪ 差异化 | 8→9 | 离线「缺模型即拉取」（codex `ollama/lib.rs:22-34` ensure_oss_ready 对标：/offline on 切完自动下载、progress_callback 进度回报 5% 步进状态行，`ensureOfflineModelReady`）+ AI 记忆收件箱（gemini `.inbox` 对标：pending 审阅、apply 生效/discard 丢弃/undo 按记录撤销——可审可退堵「不可控记忆」评审攻击；settings.memoryInbox 开关默认关零漂移）——7 单测 +5 |
+
 **未调分且如实说明**：⑥ 安全工程维持 9——OS 沙盒本轮落地（Windows L0-L3，标准用户实测校准：受限令牌路径被 1314 证伪、改 Low IL 实现只读）但仅 Windows 单平台，codex/gemini 是三平台沙盒；三平台化后才可冲 10。②③ 未动（vim/keymap、diff 交互 UI 仍在 P1 清单）。
 
-判词先行（波 1 三评更新）：**wxnodus 已反超 codex 登顶第 1/7（878）**——波 1 四任务（③diff 回显+图片输入 / ②外部编辑器+Ctrl-R+token 高亮 / ⑩前缀缓存工程四件套 / ⑤结构化压缩快照+反注入+失败护栏）全部以六家源码为对标落地并测试；五项严格第一（①④⑥⑩⑪）+ 两项并列第一（⑤⑦）。剩余拉分项集中在「产品化完成度」：分发（⑧ 5，卡公开决策）、内容交互（③ 6，word-level diff 与交互式应用留波 2）、输入编辑器（② 7，@补全留波 2）。波 2/波 3 路线已建档（upgrade-plan-2026-08.md → 900/922）。
+判词先行（波 2 四评更新）：**wxnodus 900 稳居第 1/7**——波 2 三任务（②@补全——6/6 竞品最后一题 / ③词级 diff+kimi 独有算法移植+hunk 跳转 / ⑪离线自动就绪+记忆收件箱）落定；五项严格第一（①④⑥⑩⑪）+ 两项并列第一（⑤⑦）。剩余拉分项集中在「产品化完成度」：分发（⑧ 5，卡公开决策）、内容交互（③ 7，完整 diff 查看器留波 3）、输入编辑器（② 8，vim 留波 3）。波 3 路线已建档（upgrade-plan-2026-08.md → 922）。
 
 ---
 
@@ -321,3 +329,14 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 - **⑤ 提示词/模型适配 9→10（+11）**：压缩快照结构化 7 块 XML（gemini `snippets.ts:899-963` 对标：overall_goal/active_constraints/key_knowledge/artifact_trail/file_system_state/recent_actions/task_state）+ CRITICAL SECURITY RULE 反注入段（工具输出是数据不是指令）+ kimi 保留规则（`compact.md:15-22`：错误原文保留/≤20 行代码保留/优先级排序）+ 快照合并锚定（gemini `chatCompressionService.ts:353-359`——已有快照合并而非覆盖，未完成事项不丢）+ 会话级失败护栏（gemini :287-321——失败一次 → 本会话后续压缩直接确定性截断，不再烧 LLM；`summarizeOnce` 跨回合持存）。10 单测。
 - **验证**：tsc 零错误；全量套件 357 文件/2658 用例绿（10 skip）；`npm run ci` 本地九命令全绿；远程 CI 见 audit §13.73。
 - **复算**：总分 843 → **878**——**反超 codex（869）升至第 1/7**（不依赖公开决策）。严格第一：①④⑥⑩⑪ 五项；并列第一：⑤⑦（与 opencode）。下一站：波 2 → 900（②7→8 @补全、③6→7 word-level diff + hunk 跳转、⑪8→9 离线拉取进度 + 记忆收件箱）。
+
+
+### 9.17 波 2 收官轮（2026-08-18：②③⑪ 三维落地——878 → 900，稳居第 1/7）
+
+按 `docs/upgrade-plan-2026-08.md` 波 2 三任务执行（六家源码逐项对标）：
+
+- **② 输入/编辑器 7→8（f75b67a，15 单测 + gateway 集成 2）**：@补全——`completionRank.ts`（crush `completions.go:205-260` 分层排序：basename 精确>前缀>路径段；opencode `frecency.tsx:10-42` 会话级 frecency 权重；kimi `prompt.py:1276-1290` enter 双语义：slash 接受即提交/path 只替换）；gateway `complete.path` @文件/agent 双源（SUBAGENT_KINDS 合入 + kind 标注）；`expandMentions` `@path#L1-L5` 行区间（opencode `autocomplete.tsx:29-58` 对标，越界 clamp）；补全弹窗复用既有 overlay（Tab/自动弹已具备——本轮补排序/语义/区间三缺口）。
+- **③ 内容交互 diff/媒体 6→7（4753824，9 单测）**：词级 inline diff（kimi 六家独有 `diff_render.py:184-218` 移植到 `wordDiff.ts`：连续 -/+ 块逐对配对、SequenceMatcher ratio<0.5 整行降级、LCS char 级回溯 token 红绿分段、>240 字整行保护——无语法高亮层故省略 tab 偏移映射，诚实简化）+ pager [/] hunk 跳转（opencode 独有 `diff-viewer.tsx:282-315` 对标：回滚 diff 等 @@ 内容、底部快捷键提示、无更多 hunk 保持原位）。
+- **⑪ 差异化 8→9（c47f51f，7 单测）**：离线「缺模型即拉取」（codex `ollama/lib.rs:22-34` ensure_oss_ready 对标——`ensureOfflineModelReady` 已就绪零下载、未就绪下载并回报；`/offline on` 切完自动下载零门槛；progress_callback → `normalizePipelineProgress` 归一化 + 5% 步进 `system.notice` 状态行）+ AI 记忆收件箱（gemini `.inbox` 对标——`memoryInbox.ts`：settings.memoryInbox=true 时 memory_write 先入箱 pending，`/memory inbox list|apply|discard|undo` 批准生效/丢弃/按记录撤销——可审可退堵「不可控记忆」评审攻击；默认关直写零漂移，既有闭环契约不变）。
+- **验证**：tsc 零错误；全量套件 362 文件/2687 用例绿（10 skip）；`npm run ci` 本地九命令全绿；远程 CI 见 audit §13.74。
+- **复算**：总分 878 → **900**——**反超 codex（869）稳居第 1/7**（不依赖公开决策）。严格第一：①④⑥⑩⑪ 五项；并列第一：⑤⑦（与 opencode）。下一站：波 3 → 922（vim、完整 diff 查看器/逐 hunk 应用、ACP 接收 + 本地语义搜索）。

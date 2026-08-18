@@ -948,3 +948,14 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 5. **收尾（f1f40f8）**：gateway 价格快照补 cacheWrite 断言 + 波 1 测试类型收口；全量套件 **357 文件 / 2658 用例绿（10 skip）**；`npm run ci` 本地九命令全绿；远程 CI 全绿（workflow #32164158190）。
 6. **复算 878**：② 6→7（+9）③ 5→6（+8）⑩ 9→10（+7）⑤ 9→10（+11）= +35 → **878**——**反超 codex（869）登顶第 1/7**；严格第一 ①④⑥⑩⑪ 五项、并列第一 ⑤⑦（与 opencode）。score §0.1/§9.16、register、supremacy-plan 3.6、CHANGELOG、upgrade-plan 已同步。
 7. **诚实口径**：⑧ 5→9（+36）仍卡公开决策未动；视觉模型回显子项留待带密钥会话；cache_control 断点为能力位预留（当前目录无 Anthropic 式端点）。
+
+### 13.74 波 2 收官轮（2026-08-18：②③⑪ 三维齐升——878 → 900 稳居第 1/7）
+
+按 `docs/upgrade-plan-2026-08.md` 波 2 三任务执行（六家源码逐项对标，每任务独立提交 + 独立测试）：
+
+1. **② 7→8（f75b67a，15 单测 + gateway 集成 2）**：@补全（6/6 竞品最后一题）——`completionRank.ts` 分层排序（crush `completions.go:205-260`）+ frecency 权重（opencode `frecency.tsx:10-42`，会话级接受计数 Map，128 上限）+ enter 双语义（kimi `prompt.py:1276-1290`——slash 接受即提交、path/agent 只替换）；gateway `complete.path` @文件/agent 双源合入（kind 标注进 CompletionItem）；`expandMentions` `@path#L1-L5` 行区间（opencode `autocomplete.tsx:29-58`，越界 clamp，bytes 记录区间切片）；补全弹窗复用既有 overlay（Tab/自动弹已具备——补齐排序/语义/区间三缺口）。
+2. **③ 6→7（4753824，9 单测）**：词级 inline diff（kimi 六家独有 `diff_render.py:184-218` 移植 `wordDiff.ts`——连续 -/+ 块逐对配对、SequenceMatcher ratio<0.5 整行降级、char 级 LCS 回溯 token 红绿分段、>240 字整行保护；无语法高亮层故省略 tab 偏移映射，诚实简化）+ pager [/] hunk 跳转（opencode 独有 `diff-viewer.tsx:282-315` 对标——`hunkJump` 纯函数、回滚 diff 等 @@ 内容、底部快捷键提示按内容条件显示、无更多 hunk 保持原位）。
+3. **⑪ 8→9（c47f51f，7 单测）**：离线「缺模型即拉取」（codex `ollama/lib.rs:22-34` ensure_oss_ready 对标——`ensureOfflineModelReady` 已就绪零下载；`/offline on` 切完自动下载；progress_callback → `normalizePipelineProgress`（progress 字段优先/loaded-total 兜底/0-100 夹取）+ 5% 步进 `system.notice` 状态行）+ AI 记忆收件箱（gemini `.inbox` 对标——`memoryInbox.ts` 惰性自建表；settings.memoryInbox=true 时 memory_write 入箱 pending、`/memory inbox list|apply|discard|undo` 批准生效/丢弃/按记录撤销；默认关直写零漂移，memory_write 闭环既有契约测试不变）。
+4. **收尾（8d56e76）**：word-diff 夹具类型收口；全量套件 **362 文件 / 2687 用例绿（10 skip）**；`npm run ci` 本地九命令全绿；远程 CI 见 §13.74 尾注（watch 中）。
+5. **复算 900**：② 7→8（+9）③ 6→7（+8）⑪ 8→9（+5）= +22 → **900**——**反超 codex（869）稳居第 1/7**；严格第一 ①④⑥⑩⑪ 五项、并列第一 ⑤⑦（与 opencode）。score §0.1/§9.17、register、supremacy-plan 3.6、upgrade-plan、CHANGELOG 已同步。
+6. **诚实口径**：⑧ 5→9（+36）仍卡公开决策；frecency 为 UI 会话级（跨会话不复用）；@补全弹窗 UI 复用既有 overlay（无新组件重写）；词级 diff 省略 kimi 的语法高亮 tab 偏移映射（无该层）。
