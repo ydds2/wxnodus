@@ -393,6 +393,36 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         if (!result.ok) return `[${result.error.code}] ${result.error.message}`;
         return `插件已卸载：${name}`;
       }
+      if (sub === 'install' && name) {
+        // 第三方插件接收（S-02 接收侧，2026-08-18）：目录 / zip / https URL —— SSRF 防护下载 +
+        // 包结构校验 + 可选 --sha256 完整性校验 + staging 原子落位 + 启用失败回滚
+        const shaFlag = rest.findIndex((a) => a === '--sha256');
+        const expectedSha256 = shaFlag >= 0 ? rest[shaFlag + 1] : undefined;
+        const { installPluginPackage } = await import('../application/extensions/pluginInstaller.js');
+        const r = await installPluginPackage({
+          source: name,
+          dataDir: ctx.dataDir,
+          expectedSha256,
+          download: typeof ctx.download === 'function'
+            ? async (url) => {
+                const ws = ctx.workspaceRoot ?? ctx.cwd;
+                const res = await ctx.download!(url, join(ws, 'downloads'));
+                if (!res.ok) throw new Error(`${res.error.code}: ${res.error.message}`);
+                return { filePath: res.value.filePath, bytes: res.value.bytes };
+              }
+            : undefined,
+          enable: async (dir) => {
+            const result = await service.enable(dir, context, AbortSignal.timeout(60_000));
+            return result.ok ? { ok: true } : { ok: false, detail: `${result.error.code}: ${result.error.message}` };
+          },
+        });
+        if (!r.ok) return `[${r.code}] ${r.message}`;
+        return [
+          `插件已安装：${r.name} v${r.version}（工具 ${r.toolCount} 个；sha256=${r.sourceSha256 ?? 'N/A'}${r.sha256Verified ? ' ✅ 已校验' : ' ⚠ 未校验'}）`,
+          r.enabled ? '  已启用（沙箱门/owned scope 由 lifecycle 承担）' : `  未自动启用——/plugin enable ${r.name}`,
+          r.note ? `  ${r.note}` : null,
+        ].filter(Boolean).join('\n');
+      }
       if (!sub || sub === 'list') {
         return lines(' 插件（modern 路由） ', [
           ' /plugin enable <名称> —— manifest→checksum→probe→沙箱门→owned scope 原子换入',
