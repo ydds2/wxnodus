@@ -39,7 +39,7 @@
 | B-02 | @文件选择器、diff hunk 折叠/apply | opencode 双布局 | ✅ diff hunk 折叠已接线（diffHunks.ts 分节/hunk/默认折叠/切换模型 + messageLine 超长 hunk 默认折叠渲染，6 单测）+ extractPatchText 还原补丁供 apply_patch（apply 数据路径）；@文件引用机制已有（resolveAtRefs）——交互式折叠切换与一键 apply UI 动作留后续 |
 | B-03 | 会话浏览器 UI（列表+预览） | codex resume_picker/gemini SessionBrowser | ◐ 数据面已备（listSessionsStructured + --json），UI 面待桌面端 |
 | B-04 | 主题系统 | opencode 33 套 | ✅ **10 套命名预设**（5befc4b，诚实口径非 33）：THEME_PRESETS（nord/dracula/tokyo-night/monokai/gruvbox/solarized/one-dark/catppuccin/everforest/synthwave）+ themeByName 三元组覆盖（语义色继承基底保可读性）+ theme.changed 事件适配 + /theme 列预设 |
-| B-05 | 配置分层（项目级 .wxnodus/config 继承） | gemini 四层 | ✅ **projectConfig.ts**（fda5c95）：.wxnodus/config.json settings 键级覆盖全局（浅合并），mtime 缓存零解析，agent getSettings 动态分层，/config 三态诊断——4 单测 |
+| B-05 | 配置分层（项目级 .wxnodus/config 继承） | gemini 四层 | ✅ **projectConfig.ts**（fda5c95）：.wxnodus/config.json settings 键级覆盖全局（浅合并），每次调用直读（小文件零成本——mtime 缓存有 NTFS 同毫秒陈旧 race，CI 实测弃用），agent getSettings 动态分层，/config 三态诊断——4 单测 |
 | B-06 | execpolicy 首词前缀规则 | codex first-token 索引 | ✅ execPolicy.ts 首词索引（pattern 锚定保证与全量 applyRules 数学等价——安全等价断言在测）；审批持久化复用 permissions.json（/perm rule，P0-2 存储面不新增）；agent bash 规则经索引裁决，8 用例（supremacy 1.7） |
 | B-07 | 会话列表 first_user 摘要/血缘 | gemini/codex | ✅（79c3226） |
 | B-08 | approve_for_session 真实授权 | kimi | ✅（79c3226） |

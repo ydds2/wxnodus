@@ -21,7 +21,7 @@ describe('项目配置读取', () => {
     expect(bad.cfg).toBeNull()
     expect(bad.error).toBeTruthy()
     writeFileSync(join(wxn, 'config.json'), JSON.stringify({ settings: { vimMode: true } }), 'utf8')
-    expect(readProjectConfig(dir).cfg?.settings?.vimMode).toBe(true) // mtime 缓存失效后读到新值
+    expect(readProjectConfig(dir).cfg?.settings?.vimMode).toBe(true) // 同毫秒覆盖陈旧内容回归（CI 快盘实测撞过 mtime 缓存 race——已弃缓存直读）
   })
 
   it('layeredSettings：无项目文件 → 原引用零拷贝；有项目 → 键级覆盖（不深合并）', () => {

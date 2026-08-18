@@ -1,32 +1,22 @@
 // src/kernel/projectConfig.ts — 项目级配置分层（B-05，gemini 四层配置对标：默认→全局→项目→CLI/env）
 // 项目文件：<cwd>/.wxnodus/config.json 的 settings 段——键级覆盖全局 settings（浅合并，不深合并）。
-// 读取按 mtime 缓存（工具调用每次 statSync 一次，命中缓存零解析）；非法 JSON 诚实暴露诊断不崩。
-import { existsSync, readFileSync, statSync } from 'node:fs';
+// 读取策略：每次调用直接读+解析（文件极小，成本可忽略；不做 mtime 缓存——CI 实测 Windows NTFS
+// 同毫秒内两次写入 mtimeMs 不变会返回陈旧内容，缓存正确性不可证故弃用）。
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface ProjectConfig { settings?: Record<string, any>; [k: string]: any }
 
-const cache = new Map<string, { mtimeMs: number; cfg: ProjectConfig | null }>();
-
 export const projectConfigPath = (cwd: string): string => join(cwd, '.wxnodus', 'config.json');
 
-/** 读项目配置（缺失/非法 → cfg null + error 诊断；mtime 缓存） */
+/** 读项目配置（缺失/非法 → cfg null + error 诊断） */
 export function readProjectConfig(cwd: string): { cfg: ProjectConfig | null; error?: string } {
   const p = projectConfigPath(cwd);
   try {
-    if (!existsSync(p)) {
-      cache.set(p, { mtimeMs: -1, cfg: null });
-      return { cfg: null };
-    }
-    const mtimeMs = statSync(p).mtimeMs;
-    const hit = cache.get(p);
-    if (hit && hit.mtimeMs === mtimeMs) return { cfg: hit.cfg };
+    if (!existsSync(p)) return { cfg: null };
     const parsed = JSON.parse(readFileSync(p, 'utf8')) as ProjectConfig;
-    const cfg = parsed && typeof parsed === 'object' ? parsed : null;
-    cache.set(p, { mtimeMs, cfg });
-    return { cfg };
+    return { cfg: parsed && typeof parsed === 'object' ? parsed : null };
   } catch (e: any) {
-    cache.set(p, { mtimeMs: -1, cfg: null });
     return { cfg: null, error: String(e?.message ?? e).slice(0, 120) };
   }
 }
