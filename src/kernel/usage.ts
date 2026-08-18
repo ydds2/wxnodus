@@ -22,6 +22,8 @@ export interface UsageSummary {
   cacheHit: number;
   /** 前缀缓存未命中 token（端点未上报时 0） */
   cacheMiss: number;
+  /** 推理 token（completion_tokens_details.reasoning_tokens；端点未上报时 0）——成本五维 */
+  reasoning: number;
 }
 
 export function usageSummary(db: UsageDb, range: UsageRange): UsageSummary {
@@ -29,8 +31,9 @@ export function usageSummary(db: UsageDb, range: UsageRange): UsageSummary {
   const row = db.prepare(
     `SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COUNT(*) c,
             COALESCE(SUM(CASE WHEN input_tokens=0 AND output_tokens=0 THEN 1 ELSE 0 END),0) u,
-            COALESCE(SUM(cache_hit_tokens),0) ch, COALESCE(SUM(cache_miss_tokens),0) cm
+            COALESCE(SUM(cache_hit_tokens),0) ch, COALESCE(SUM(cache_miss_tokens),0) cm,
+            COALESCE(SUM(reasoning_tokens),0) rn
      FROM usage_stats WHERE ts >= ?`
-  ).get(since) as { i: number; o: number; c: number; u: number; ch: number; cm: number };
-  return { input: row.i, output: row.o, total: row.i + row.o, calls: row.c, unmeasured: row.u, cacheHit: row.ch, cacheMiss: row.cm };
+  ).get(since) as { i: number; o: number; c: number; u: number; ch: number; cm: number; rn: number };
+  return { input: row.i, output: row.o, total: row.i + row.o, calls: row.c, unmeasured: row.u, cacheHit: row.ch, cacheMiss: row.cm, reasoning: row.rn };
 }

@@ -40,8 +40,9 @@ export type LlmStreamResult =
       reasoning?: string;
       reasoningField?: string;
       toolCalls: Array<{ id: string; name: string; arguments: string }>;
-      /** 流尾 usage（OpenAI 兼容）；缺失时 undefined。cacheHit/cacheMiss 为前缀缓存命中/未命中 token（端点未上报时 0）。 */
-      usage?: { promptTokens: number; completionTokens: number; cacheHitTokens: number; cacheMissTokens: number };
+      /** 流尾 usage（OpenAI 兼容）；缺失时 undefined。cacheHit/cacheMiss 为前缀缓存命中/未命中 token，
+       *  reasoningTokens 为推理 token（completion_tokens_details.reasoning_tokens；端点未上报时 0）。 */
+      usage?: { promptTokens: number; completionTokens: number; cacheHitTokens: number; cacheMissTokens: number; reasoningTokens: number };
       /** 实际使用的模型（降级后为备选） */
       model: string;
     }
@@ -62,8 +63,8 @@ export async function callLlmStream(opts: LlmStreamOpts): Promise<LlmStreamResul
       onReasoning: opts.onReasoning,
     });
     if (!r.ok) return { ok: false, error: r.error };
-    // 离线本地模型无云端缓存语义——缓存字段归零
-    return { ok: true, content: r.content, toolCalls: [], usage: r.usage ? { ...r.usage, cacheHitTokens: 0, cacheMissTokens: 0 } : undefined, model: opts.model };
+    // 离线本地模型无云端缓存/推理语义——缓存与推理字段归零
+    return { ok: true, content: r.content, toolCalls: [], usage: r.usage ? { ...r.usage, cacheHitTokens: 0, cacheMissTokens: 0, reasoningTokens: 0 } : undefined, model: opts.model };
   }
   const timeoutMs = opts.timeoutMs ?? 120_000;
   const fetchSignal = opts.signal
@@ -117,7 +118,7 @@ export async function callLlmStream(opts: LlmStreamOpts): Promise<LlmStreamResul
   let fullReasoning = '';
   let reasoningField: string | null = null;
   const toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
-  let usage: { promptTokens: number; completionTokens: number; cacheHitTokens: number; cacheMissTokens: number } | null = null;
+  let usage: { promptTokens: number; completionTokens: number; cacheHitTokens: number; cacheMissTokens: number; reasoningTokens: number } | null = null;
   let finished = false;
 
   try {
@@ -140,12 +141,14 @@ export async function callLlmStream(opts: LlmStreamOpts): Promise<LlmStreamResul
           return { ok: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg).slice(0, 300) };
         }
         if (j?.usage) {
-          // 上下文缓存命中/未命中 token（DeepSeek 自动前缀缓存；OpenAI 兼容端点同名字段）
+          // 成本五维（supremacy 1.4）：输入/输出/缓存命中/缓存未命中/推理 token
+          // （DeepSeek 自动前缀缓存 + completion_tokens_details.reasoning_tokens；端点未上报字段为 0）
           usage = {
             promptTokens: j.usage.prompt_tokens ?? 0,
             completionTokens: j.usage.completion_tokens ?? 0,
             cacheHitTokens: j.usage.prompt_cache_hit_tokens ?? 0,
             cacheMissTokens: j.usage.prompt_cache_miss_tokens ?? 0,
+            reasoningTokens: j.usage.completion_tokens_details?.reasoning_tokens ?? 0,
           };
         }
         const delta = j?.choices?.[0]?.delta;

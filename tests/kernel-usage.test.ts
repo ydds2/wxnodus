@@ -25,7 +25,7 @@ describe('usage', () => {
       ins.run('s2', 'm2', 300, 150, Date.now());
       ins.run('s3', 'm3', 1000, 500, Date.now() - 40 * 86_400_000); // 40 天前→排除
       const s = usageSummary(db, '30d');
-      expect(s).toEqual({ input: 400, output: 200, total: 600, calls: 2, unmeasured: 0, cacheHit: 0, cacheMiss: 0 });
+      expect(s).toEqual({ input: 400, output: 200, total: 600, calls: 2, unmeasured: 0, cacheHit: 0, cacheMiss: 0, reasoning: 0 });
       db.close();
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -53,6 +53,19 @@ describe('usage', () => {
       const s = usageSummary(db, 'today');
       expect(s.cacheHit).toBe(800);
       expect(s.cacheMiss).toBe(200);
+      expect(s.reasoning).toBe(0);
+      db.close();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('usageSummary: 推理 token 聚合（成本五维——端点上报时）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wxn-usage-'));
+    try {
+      const db = openDB(dir);
+      const ins = db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, reasoning_tokens, ts) VALUES (?,?,?,?,?,?)`);
+      ins.run('s1', 'm1', 500, 100, 80, Date.now());
+      ins.run('s1', 'm1', 100, 20, 0, Date.now()); // 未上报推理字段 → 0
+      const s = usageSummary(db, 'today');
+      expect(s.reasoning).toBe(80);
       db.close();
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });

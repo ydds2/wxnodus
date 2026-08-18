@@ -201,3 +201,10 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 - **缺陷寄存器**：`docs/defect-register-2026.md`——S/A/B/C 四级 21 项全表（含阻塞项与提分预估），评分与缺陷一一联动。
 - **IDE/远程路线图**：`docs/ide-remote-share-roadmap-2026.md`——三块空白原理对照（gemini ACP companion / codex app-server+exec-server / opencode share）+ 难易度 + 分阶段方案（IDE 插件走现成 --wire 零协议新增；远程 ssh 通道先行、完整 exec-server 标注安全面；与桌面端共用协议层）。
 - **评分口径**：⑦ 场景矩阵「远程/分享」✗→≈（离线打包），但云端分享与远程执行未做——⑦ 保持 8 不越档；总分 725 不变。
+
+### 9.4 超越计划阶段 1 首批（2026-08-18：supremacy 1.1/1.2/1.4）
+
+- **1.1 分族提示词（A-02）**：`providerPrompts.ts` 承载 DeepSeek/Kimi/GLM 三族中文专属段（只写真实 API 行为：reasoning_content 回传、前缀缓存、窗口、语言），`systemPrompt.ts` 保持零 CJK（kf-029 红线）经 `providerPrompt` 参数注入（persona 之后）；agent 按 `model 目录 → baseURL 探测` 解析 provider。7 用例（注入位置/零漂移/目录优先/探测回退）。
+- **1.2 小模型任务档（A-03）**：`taskModels.ts` 标题/摘要生成纯函数（剥引号/截断/异常降级 null）；settings.titleModel/summaryModel 入白名单；CLI 注入 `titleGenerator`（独立单轮小模型、10s 超时、无密钥零调用），agent 回合末：小模型标题 → 回退首行切片，**已有标题不触发调用**（查库门）。9 用例（含 5 条 agent 端到端降级契约）。
+- **1.4 成本五维 + 整数分计价（A-06）**：usage_stats v10 新增 `reasoning_tokens`（llmStream 解析 `completion_tokens_details.reasoning_tokens`，agent 落库，usageSummary/costQuery 全链路聚合）；`cost.ts` 五维计价（reasoning×输出价、cacheMiss×输入价、cacheHit×cacheRead 价——仅收录 DeepSeek 官方公布缓存读价，未收录保守按输入价）+ 全部金额**整数 µUSD BigInt 定点**（零浮点累加漂移，展示层才换算 USD）；kf-030/db-migrations 断言同步 schema 10。14 成本用例 + llmStream/usage/gateway 断言同步。
+- **评分口径**：三缺陷的预计提分（A-02 ⑤+11、A-03 ⑤+1/⑩+1、A-06 ⑩）**计入阶段 1 收尾复算**——执行协议要求阶段完成时一次复算（避免逐项碎片化加分）；本批分数保持 725 不变，如实记录。

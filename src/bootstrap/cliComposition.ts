@@ -18,6 +18,8 @@ import type { SecretVault } from '../kernel/secrets.js';
 import type { OperationResult } from '../protocol/results.js';
 import { configError } from '../domain/config/configSchema.js';
 import { createShutdown } from './bootstrapShutdown.js';
+// supremacy 1.2：小模型任务档（标题/摘要路由）——taskModels 纯函数 + CLI 侧装配 callOnce
+import { resolveTaskModel, generateTitle } from '../kernel/taskModels.js';
 
 /** 表现层桥（CLI 注入）：gateway/TUI/headless 与命令总线依赖经此进入组合根——CLI 不再内联内核装配 */
 export interface KernelBridges {
@@ -229,6 +231,36 @@ export async function createCliComposition(deps: CliCompositionDeps): Promise<Op
         ),
         hooks: hookRunner,
         extraTools: { ...mcpClientsToTools(mcpHolder.clients), ...pluginToolsToExtra(plugins) },
+        // supremacy 1.2：小模型任务档——settings.titleModel 配置时标题走小模型（独立单轮、
+        // 10s 超时、失败静默回退切片标题）；未配置/无密钥直接 null（零调用，行为=原版）
+        titleGenerator: async (prompt) => {
+          const titleModel = resolveTaskModel(settings, 'title');
+          if (!titleModel) return null;
+          try {
+            const { resolveApiKey } = await import('../kernel/providers.js');
+            const { resolveDefaultBaseURL } = await import('../kernel/defaults.js');
+            const { callModelOnce } = await import('../kernel/llmOnce.js');
+            const keyRes = resolveApiKey(settings);
+            const key = keyRes.key;
+            if (!key) return null;
+            return await generateTitle(prompt, async (sys, usr) => {
+              const r = await callModelOnce({
+                baseURL: resolveDefaultBaseURL(settings),
+                model: titleModel,
+                key,
+                messages: [
+                  { role: 'system', content: sys },
+                  { role: 'user', content: usr },
+                ],
+                temperature: 0,
+                timeoutMs: 10_000,
+              });
+              return r.ok ? r.content : null;
+            });
+          } catch {
+            return null;
+          }
+        },
         // AI 自主调用通道（wx_cmd 工具）：桥闭包引用 CLI commandBus（命令注册在组合后完成，调用时才求值）
         onCommand: bridges.onCommand,
       });

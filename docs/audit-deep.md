@@ -781,3 +781,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 - 用户「请你重写计划」——将打补丁式修订（13.54）升级为**干净完整版**：`docs/supremacy-plan-2026.md` 整体重写为 Windows-only 定稿（定位「Windows 最强 agent CLI」、六轮落地表、Windows-only 天花板 ≈940、⑥ Windows 深度口径、三阶段 18 项任务表、休眠资产声明、四前置项、执行协议）。
 - 无代码改动；文档一致性核验：register S-07 与 plan 3.2 对齐、score §8 挂接不变。
+
+### 13.56 超越计划阶段 1 首批轮（2026-08-18：supremacy 1.1 分族提示词 / 1.2 小模型任务档 / 1.4 成本五维+整数分）
+
+- **需求**：执行 supremacy-plan-2026.md 阶段 1（内核登顶，0 外部依赖）。本批交付 1.1/1.2/1.4 三项（其余 1.3/1.5/1.6/1.7 留后续轮）。
+
+- **1.1 分族提示词（A-02，对标 gemini 分族）**：新模块 `kernel/providerPrompts.ts` 承载 DeepSeek/Kimi/GLM 三族中文专属段（内容口径=真实 API 行为：reasoning_content 必须原样回传否则 400、前缀缓存提示、窗口档位、中文优先——零营销文案）；`systemPrompt.ts` 保持零 CJK（kf-029 红线）——`SysPromptOpts.providerPrompt` 参数注入（persona 之后）；`agent.ts` 按 `model 目录 modelId 优先 → baseURL 探测回退` 解析 provider（`resolveProviderForPrompt`）。关键决策：provider 段注入位置在 external system.md 覆盖**之前短路**——外部 prompt 整体替换时不含 provider 段（用户全权控制语义，诚实不叠加）。
+- **1.2 小模型任务档（A-03，对标 crush large/small）**：`kernel/taskModels.ts` 纯函数（resolveTaskModel 槽位隔离 / generateTitle 剥引号截 20 字 / generateSummary 截 200 字，异常一律 null）；settings 白名单 +`titleModel`/`summaryModel`；CLI 装配 `titleGenerator`（独立单轮 callModelOnce、10s 超时、无密钥零调用）；agent 回合末标题块：小模型 → 回退首行切片，**已有标题不触发调用**（sessions 查库门，避免每回合浪费小模型请求），注入器抛出不崩溃（内层 catch，诚实降级不劣于原版）。
+- **1.4 成本五维 + 整数分计价（A-06，对标 opencode）**：`usage_stats` **v10** 新增 `reasoning_tokens`（registry v10 列迁移 + db.ts CREATE TABLE + SCHEMA_VERSION=10 + kf-030/db-migrations 断言同步 10）；llmStream 解析 `completion_tokens_details.reasoning_tokens`（端点未上报 0）；`cost.ts` 重写——五维计价（input×in、output×out、reasoning×out、cacheMiss×in、cacheHit×cacheRead——cacheRead 仅收录 DeepSeek 官方公布价 0.07/0.14，未收录保守按输入价**高估不低估**），全部金额**整数 µUSD BigInt 定点**（microFor 四舍五入，杜绝浮点累加漂移；仅展示层 /1e6 换算 USD）；costQuery/usageSummary 全链路聚合五维（/cost /usage /status 状态栏同源）。
+- **测试**：新套件 kernel-provider-prompts（7）+ kernel-task-models（9）；kernel-cost 扩到 14（含定点精度断言：3 token×280000µ=1µ）；llmStream/usage/gateway 快照同步 reasoning/cacheRead 字段；kf-029 中文注释事故（systemPrompt.ts 注入注释改英文 ASCII）当场修复。
+- **文档**：register A-02/A-03/A-06 → ✅；plan 阶段 1 表加状态列；score §9.4；本审计条目。
+- **口径**：三项预计提分（⑤+11/⑤+1/⑩）**计入阶段 1 收尾复算**（执行协议：阶段完成一次复算，不逐项碎片化加分）——当前分数 725 不变。
+- **验证**：tsc 零错误；定向套件全绿；全量 + npm run ci 见下。

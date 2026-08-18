@@ -18,7 +18,7 @@ const requireCjs = createRequire(import.meta.url);
 
 export type Db = InstanceType<typeof Database>;
 
-const SCHEMA_VERSION = 9; // v7/v8: usage_stats 前缀缓存列（audit §13.43）；v9: sessions.forked_from_id 血缘（audit §13.50）
+const SCHEMA_VERSION = 10; // v7/v8: usage_stats 前缀缓存列（audit §13.43）；v9: sessions.forked_from_id 血缘（audit §13.50）；v10: usage_stats.reasoning_tokens 成本五维（audit §13.56）
 
 export { bigramZh };
 // 审计追加已迁至 kernel/audit.ts（分层泄漏修复 audit §13.45）——store 仅再导出（infra→kernel 合法方向）
@@ -123,6 +123,7 @@ export function openDB(dataDir: string): Db {
       output_tokens INTEGER NOT NULL DEFAULT 0,
       cache_hit_tokens INTEGER NOT NULL DEFAULT 0,
       cache_miss_tokens INTEGER NOT NULL DEFAULT 0,
+      reasoning_tokens INTEGER NOT NULL DEFAULT 0,
       ts INTEGER NOT NULL
     );
     -- /cost /usage /status 的会话与区间聚合查询索引（长期高频路径——此前全表扫描）

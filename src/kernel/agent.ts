@@ -21,6 +21,7 @@ import { labelTruncate } from './truncate.js';
 import { resolveModelForChat } from './profiles.js';
 import { maxContextFor } from './providers.js';
 import { checkSessionGrant, grantSession } from './sessionGrants.js';
+import { providerPromptFor, resolveProviderForPrompt } from './providerPrompts.js';
 import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
 import { isCompletionClaim, GOAL_DONE_MARK } from './completionClaim.js';
 import type { HookRunner } from './hooks.js';
@@ -70,6 +71,9 @@ export interface AgentOptions {
   /** 工具延迟加载（P2，默认关）：开启后首轮只注入核心工具 + tool_search，
    *  模型检索到高级工具后动态激活——省工具 schema token（Codex tool_search 自研版） */
   toolLazyLoad?: boolean;
+  /** 小模型任务档标题生成（supremacy 1.2）：settings.titleModel 配置时由 CLI 注入（独立单轮小模型调用，
+   *  10s 超时、失败静默）；未注入/返回 null/抛出 → 回退首行切片标题（诚实降级，行为不劣于原版） */
+  titleGenerator?: (prompt: string) => Promise<string | null>;
   /** AI 自主调用通道（wx_cmd 工具）：执行斜杠指令并返回文本输出（cli 装配 bus.execute 包装） */
   onCommand?: (input: string) => Promise<string>;
   /** C3：agent 工具 runner（生产 11-port pipeline 分层复用）——danger/写类工具经 pipeline 记账执行；
@@ -433,10 +437,10 @@ export function createAgent(opts: AgentOptions) {
     }
     // B2 真实用量统计：异步写库（失败静默，不阻断对话）——model 用实际调用模型（降级后）
     // 端点未上报 usage 时记 0 token 行（调用计数仍诚实；/usage unmeasured 单独口径，成本绝不虚高）
-    // 前缀缓存命中/未命中 token（DeepSeek 自动缓存；端点未上报时 0）
+    // 成本五维（supremacy 1.4）：输入/输出/缓存命中/缓存未命中/推理 token（端点未上报字段为 0）
     try {
-      opts.db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, cache_hit_tokens, cache_miss_tokens, ts) VALUES (?,?,?,?,?,?,?)`)
-        .run(sessionId, r.model, r.usage?.promptTokens ?? 0, r.usage?.completionTokens ?? 0, r.usage?.cacheHitTokens ?? 0, r.usage?.cacheMissTokens ?? 0, Date.now());
+      opts.db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, cache_hit_tokens, cache_miss_tokens, reasoning_tokens, ts) VALUES (?,?,?,?,?,?,?,?)`)
+        .run(sessionId, r.model, r.usage?.promptTokens ?? 0, r.usage?.completionTokens ?? 0, r.usage?.cacheHitTokens ?? 0, r.usage?.cacheMissTokens ?? 0, r.usage?.reasoningTokens ?? 0, Date.now());
     } catch { /* 统计失败不影响对话 */ }
     if (r.usage && (r.usage.promptTokens || r.usage.completionTokens)) {
       // 会话 token 预算（Gemini general.budget 对齐）：settings.budgetTokens>0 时，
@@ -913,6 +917,8 @@ export function createAgent(opts: AgentOptions) {
       dataDir: opts.dataDir,
       // KF-004：settings.personality 真实消费——persona 段进入系统提示
       persona: (opts.config?.settings as any)?.personality,
+      // supremacy 1.1：分族提示词（provider 由 model/端点派生，会话内稳定——前缀缓存不受影响）
+      providerPrompt: providerPromptFor(resolveProviderForPrompt(modelName, (opts.config?.settings as any)?.baseURL))?.body,
       now: sessionClock,
     }) });
     // 项目规范注入（生态规范文件链）：AGENTS.md/CLAUDE.md/GEMINI.md/.cursorrules 等
@@ -1309,11 +1315,21 @@ export function createAgent(opts: AgentOptions) {
       bus.emit('agent.message', { content: finalText });
       try { opts.mem.append(sessionId, 'assistant', finalText); } catch { /* 忽略 */ }
     }
-    // 自动标题（机制补强）：回合结束后若会话无标题，用首条用户消息前 20 字命名
+    // 自动标题（机制补强 + supremacy 1.2 小模型任务档）：会话无标题时优先小模型生成（titleGenerator 注入），
+    // 未配置/无密钥/失败/返回空 → 回退首条用户消息前 20 字切片（诚实降级，行为不劣于原版）。
+    // 已有标题不触发任何调用（查库门——避免每回合浪费一次小模型请求）
     if (!opts2.subagent && finalText.length > 0) {
       try {
-        const title = prompt.split('\n')[0]!.trim().slice(0, 20) || '新会话';
-        opts.mem.setTitleIfEmpty(sessionId, title);
+        const row = opts.db.prepare(`SELECT title FROM sessions WHERE id=?`).get(sessionId) as { title: string } | undefined;
+        if (!row || !row.title.trim()) {
+          // 注入器异常视为未配置（诚实降级）——小模型挂了绝不影响回合闭环
+          let generated: string | null = null;
+          if (opts.titleGenerator) {
+            try { generated = await opts.titleGenerator(prompt); } catch { /* 回退切片 */ }
+          }
+          const title = generated ?? (prompt.split('\n')[0]!.trim().slice(0, 20) || '新会话');
+          opts.mem.setTitleIfEmpty(sessionId, title);
+        }
       } catch { /* 标题写入失败不阻断 */ }
     }
     // KF-023/024：ok 绝不从文本长度推导——完成声明（「完成了」/[GOAL_DONE]/done）且零验证副作用

@@ -12,27 +12,33 @@ export interface CostQueryResult {
   /** 未收录定价的模型数 */
   unknown: number;
   tokens: { input: number; output: number; total: number };
+  /** 成本五维扩展（supremacy 1.4）：缓存读/写、推理 token 总量 */
+  dims: { cacheHit: number; cacheMiss: number; reasoning: number };
   /** 参与统计的模型数 */
   models: number;
   /** 按模型明细（/cost 表格渲染同源） */
-  rows: Array<{ model: string; input: number; output: number; usd: number | null }>;
+  rows: Array<{ model: string; input: number; output: number; cacheHit: number; cacheMiss: number; reasoning: number; usd: number | null }>;
 }
 
-export type CostOverrides = Record<string, { in: number; out: number } | 'free'> | null | undefined;
+export type CostOverrides = Record<string, { in: number; out: number; cacheRead?: number } | 'free'> | null | undefined;
 
-const summarize = (rows: Array<{ model: string; input: number; output: number }>, overrides: CostOverrides): CostQueryResult | null => {
+const summarize = (rows: Array<{ model: string; input: number; output: number; cacheHit: number; cacheMiss: number; reasoning: number }>, overrides: CostOverrides): CostQueryResult | null => {
   if (!rows.length) return null;
   const s = costSummary(rows, overrides);
   const tokens = rows.reduce((a, r) => ({ input: a.input + r.input, output: a.output + r.output, total: a.total + r.input + r.output }), { input: 0, output: 0, total: 0 });
-  return { usd: s.totalUsd, unknown: s.unknownCount, tokens, models: rows.length, rows: s.rows };
+  const dims = rows.reduce((a, r) => ({ cacheHit: a.cacheHit + r.cacheHit, cacheMiss: a.cacheMiss + r.cacheMiss, reasoning: a.reasoning + r.reasoning }), { cacheHit: 0, cacheMiss: 0, reasoning: 0 });
+  return { usd: s.totalUsd, unknown: s.unknownCount, tokens, dims, models: rows.length, rows: s.rows };
 };
 
 /** 会话成本（session_id；0 token 行=端点未上报用量——不计入明细，防误标「免费/离线」） */
 export function sessionCost(db: CostDb, sessionId: string, overrides?: CostOverrides): CostQueryResult | null {
   try {
     const rows = db.prepare(
-      `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE session_id=? AND (input_tokens>0 OR output_tokens>0) GROUP BY model`
-    ).all(sessionId) as Array<{ model: string; input: number; output: number }>;
+      `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output,
+              COALESCE(SUM(cache_hit_tokens),0) AS cacheHit, COALESCE(SUM(cache_miss_tokens),0) AS cacheMiss,
+              COALESCE(SUM(reasoning_tokens),0) AS reasoning
+         FROM usage_stats WHERE session_id=? AND (input_tokens>0 OR output_tokens>0) GROUP BY model`
+    ).all(sessionId) as Array<{ model: string; input: number; output: number; cacheHit: number; cacheMiss: number; reasoning: number }>;
     return summarize(rows, overrides);
   } catch { return null; }
 }
@@ -41,8 +47,11 @@ export function sessionCost(db: CostDb, sessionId: string, overrides?: CostOverr
 export function rangeCost(db: CostDb, since: number, overrides?: CostOverrides): CostQueryResult | null {
   try {
     const rows = db.prepare(
-      `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM usage_stats WHERE ts >= ? AND (input_tokens>0 OR output_tokens>0) GROUP BY model`
-    ).all(since) as Array<{ model: string; input: number; output: number }>;
+      `SELECT model, COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output,
+              COALESCE(SUM(cache_hit_tokens),0) AS cacheHit, COALESCE(SUM(cache_miss_tokens),0) AS cacheMiss,
+              COALESCE(SUM(reasoning_tokens),0) AS reasoning
+         FROM usage_stats WHERE ts >= ? AND (input_tokens>0 OR output_tokens>0) GROUP BY model`
+    ).all(since) as Array<{ model: string; input: number; output: number; cacheHit: number; cacheMiss: number; reasoning: number }>;
     return summarize(rows, overrides);
   } catch { return null; }
 }

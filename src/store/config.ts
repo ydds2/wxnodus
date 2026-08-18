@@ -100,6 +100,8 @@ export const SETTINGS_KEYS = new Set([
   'fsReadLimit', 'bashOutputCap',
   // P1-4 会话授权（approve_for_session）
   'approveForSession',
+  // supremacy 1.2：小模型任务档（titleModel/summaryModel——标题/摘要等轻任务路由到小模型）
+  'titleModel', 'summaryModel',
   // 视觉开放通道（settings.vision* 与 visionLocal/visionOcr）
   'visionBaseURL', 'visionModel', 'visionKey', 'visionLocal', 'visionOcr',
   // 代理（/proxy 命令消费 settings.proxy）

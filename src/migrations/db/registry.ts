@@ -133,6 +133,15 @@ export function dbMigrations(): DbMigration[] {
       ddl: 'ALTER TABLE sessions ADD COLUMN forked_from_id TEXT',
       nullable: true,
     }),
+    makeColumnMigration({
+      id: 'db-v10-add-usage-reasoning',
+      fromVersion: 9,
+      toVersion: 10,
+      table: 'usage_stats',
+      column: 'reasoning_tokens',
+      ddl: 'ALTER TABLE usage_stats ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0',
+      nullable: false,
+    }),
   ];
 }
 

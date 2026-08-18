@@ -22,11 +22,11 @@
 | ID | 缺陷 | 对标 | 影响维度/提分 | 状态 |
 |---|---|---|---|---|
 | A-01 | 命令面臃肿（114 注册/~109 命令，竞品 2~3 倍） | gemini 47/opencode 动态 | 臃肿度原始诉求（不直接加分） | ⏳ 方案已定（109→~45 聚合） |
-| A-02 | 模型分族提示词（deepseek/glm/kimi 定制段） | gemini 分族 | ⑤ 6→7（+11） | ⏳ 注：systemPrompt.ts 零 CJK 红线 → 新模块承载 |
-| A-03 | 小模型任务档（标题/摘要走小模型） | crush large/small | ⑤ 7→8、⑩ +1 | ⏳ |
+| A-02 | 模型分族提示词（deepseek/glm/kimi 定制段） | gemini 分族 | ⑤ 6→7（+11） | ✅ providerPrompts.ts 承载中文段（systemPrompt 零 CJK 红线不破），agent 按 model/端点解析注入，7 用例（supremacy 1.1） |
+| A-03 | 小模型任务档（标题/摘要走小模型） | crush large/small | ⑤ 7→8、⑩ +1 | ✅ settings.titleModel/summaryModel 白名单 + 标题小模型路由（10s 超时/无密钥/异常全部回退切片标题，已有标题零调用），9 用例（supremacy 1.2） |
 | A-04 | 按模型工具裁剪（48 schema 全量发给所有模型） | codex 按模型 | ⑤/⑩ | ⏳ |
 | A-05 | LLM 辅助循环检测（置信度判空转） | gemini | ④ 与 gemini 最后差距 | ⏳ |
-| A-06 | 成本五维（reasoning/cache_read/cache_write）+ Decimal | opencode | ⑩ | ⏳ |
+| A-06 | 成本五维（reasoning/cache_read/cache_write）+ Decimal | opencode | ⑩ | ✅ usage_stats v10 加 reasoning_tokens；五维计价（reasoning 按输出价、cacheMiss 按输入价、cacheHit 走 cacheRead 价）全整数 µUSD BigInt 定点（零浮点漂移）；kf-030/迁移断言同步 10；14 成本用例（supremacy 1.4） |
 | A-07 | 快照增量化（消息 id 上界 vs 全量复制） | kimi `_checkpoint` | ⑨ | ⏳（血缘已 ✅，见 79c3226） |
 | A-08 | share 分享 | opencode/kimi | ⑦ 场景矩阵 | ✅ 离线加密打包（kernel/share.ts + /share，AES-256-GCM+sha256）——云端版受 S-05 阻塞 |
 

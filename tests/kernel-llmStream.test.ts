@@ -43,7 +43,7 @@ describe('callLlmStream — SSE 解析', () => {
     if (!r.ok) return
     expect(r.content).toBe('你好')
     expect(tokens.join('')).toBe('你好')
-    expect(r.usage).toEqual({ promptTokens: 10, completionTokens: 2, cacheHitTokens: 0, cacheMissTokens: 0 })
+    expect(r.usage).toEqual({ promptTokens: 10, completionTokens: 2, cacheHitTokens: 0, cacheMissTokens: 0, reasoningTokens: 0 })
   })
 
   it('usage 含前缀缓存字段（prompt_cache_hit/miss_tokens）→ 原样提取', async () => {
@@ -55,7 +55,19 @@ describe('callLlmStream — SSE 解析', () => {
     const r = await callLlmStream({ ...deps, messages: [MSG] })
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.usage).toEqual({ promptTokens: 1000, completionTokens: 5, cacheHitTokens: 800, cacheMissTokens: 200 })
+    expect(r.usage).toEqual({ promptTokens: 1000, completionTokens: 5, cacheHitTokens: 800, cacheMissTokens: 200, reasoningTokens: 0 })
+  })
+
+  it('usage 含推理 token（completion_tokens_details.reasoning_tokens）→ 成本五维提取（supremacy 1.4）', async () => {
+    stubFetch([
+      'data: {"choices":[{"delta":{"content":"好"}}]}\n',
+      'data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":500,"completion_tokens":100,"completion_tokens_details":{"reasoning_tokens":80}}}\n',
+      'data: [DONE]\n',
+    ])
+    const r = await callLlmStream({ ...deps, messages: [MSG] })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.usage).toEqual({ promptTokens: 500, completionTokens: 100, cacheHitTokens: 0, cacheMissTokens: 0, reasoningTokens: 80 })
   })
 
   it('工具调用流：tool_calls 按 index 累积', async () => {

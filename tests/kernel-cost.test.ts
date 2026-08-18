@@ -1,6 +1,6 @@
 // tests/kernel-cost.test.ts — /cost 成本估算（纯函数 + costQuery 数据库助手）
 import { describe, it, expect } from 'vitest';
-import { estimateCost, costSummary, priceForModel } from '../src/kernel/cost.js';
+import { estimateCost, costSummary, priceForModel, estimateCostMicroUsd } from '../src/kernel/cost.js';
 import { sessionCost, rangeCost, costText } from '../src/kernel/costQuery.js';
 import { openDB } from '../src/store/db.js';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -23,9 +23,44 @@ describe('estimateCost 成本估算', () => {
   });
 
   it('priceForModel 快照', () => {
-    expect(priceForModel('deepseek-chat')).toEqual({ in: 0.28, out: 0.42 });
+    expect(priceForModel('deepseek-chat')).toEqual({ in: 0.28, out: 0.42, cacheRead: 0.07 });
     expect(priceForModel('glm-4-flash')).toEqual({ in: 0, out: 0 });
     expect(priceForModel('unknown')).toBeNull();
+  });
+});
+
+describe('成本五维 + 整数分计价（supremacy 1.4）', () => {
+  it('estimateCostMicroUsd：五维全量计价（缓存读走 cacheRead 价，推理按输出价）', () => {
+    // deepseek-chat：1M in（0.28）+ 1M out（0.42）+ 1M cacheHit（0.07）+ 1M cacheMiss（0.28）+ 1M reasoning（0.42）
+    const micro = estimateCostMicroUsd('deepseek-chat', { input: 1_000_000, output: 1_000_000, cacheHit: 1_000_000, cacheMiss: 1_000_000, reasoning: 1_000_000 });
+    expect(micro).toBe(1_470_000); // 1.47 USD 的整数 µUSD 表示
+  });
+  it('整数分：1M token × 0.07 缓存读价 = 精确 70000 µUSD（无浮点尾差）', () => {
+    expect(estimateCostMicroUsd('deepseek-chat', { input: 0, output: 0, cacheHit: 1_000_000 })).toBe(70_000);
+    // 非整 token 数也走 BigInt 定点：3 token × 280000 µUSD/1M = 0.84 µUSD → 四舍五入 1
+    expect(estimateCostMicroUsd('deepseek-chat', { input: 3, output: 0 })).toBe(1);
+  });
+  it('未收录 cacheRead 的模型：缓存读按输入价保守估算（高估不低估）', () => {
+    // kimi-k2.7 无 cacheRead 价 → 1M cacheHit 按 0.6 计
+    expect(estimateCostMicroUsd('kimi-k2.7', { input: 0, output: 0, cacheHit: 1_000_000 })).toBe(600_000);
+  });
+  it('免费模型五维全 0；未知模型 null', () => {
+    expect(estimateCostMicroUsd('glm-4-flash', { input: 10_000_000, output: 10_000_000, cacheHit: 1, cacheMiss: 1, reasoning: 1 })).toBe(0);
+    expect(estimateCostMicroUsd('unknown', { input: 1, output: 1 })).toBeNull();
+  });
+  it('costSummary 聚合五维并输出明细维度', () => {
+    const s = costSummary([
+      { model: 'deepseek-chat', input: 1_000_000, output: 0, cacheHit: 2_000_000, cacheMiss: 0, reasoning: 0 },
+      { model: 'deepseek-chat', input: 0, output: 1_000_000, cacheHit: 0, cacheMiss: 1_000_000, reasoning: 1_000_000 },
+    ]);
+    const ds = s.rows.find(r => r.model === 'deepseek-chat')!;
+    expect(ds.input).toBe(1_000_000);
+    expect(ds.cacheHit).toBe(2_000_000);
+    expect(ds.cacheMiss).toBe(1_000_000);
+    expect(ds.reasoning).toBe(1_000_000);
+    // 0.28 + 0.14 + 0.28 + 0.42 + 0.42 = 1.54
+    expect(ds.usd).toBeCloseTo(1.54, 6);
+    expect(s.totalUsd).toBeCloseTo(1.54, 6);
   });
 });
 

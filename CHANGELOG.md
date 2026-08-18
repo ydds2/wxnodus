@@ -3,6 +3,13 @@
 本文件记录 wxnodus 的用户可见变更。格式参考 Keep a Changelog，版本遵循 SemVer。
 内部工程/审计细节见 `docs/audit-deep.md`（§13.x 按轮实录）。
 
+## [Unreleased]
+
+### Added
+- **分族提示词（supremacy 1.1）**：DeepSeek/Kimi/GLM 三族模型专属系统提示段自动注入（真实 API 行为提示：推理字段回传/前缀缓存/窗口档位），按当前模型/端点解析，`systemPrompt.ts` 零 CJK 红线不变。
+- **小模型任务档（supremacy 1.2）**：`/config set titleModel <模型>` 后会话标题改由小模型生成（10s 超时、失败自动回退切片标题、已有标题零调用）；`summaryModel` 槽位同白名单。
+- **成本五维 + 整数分计价（supremacy 1.4）**：用量统计新增推理 token 维度（输入/输出/缓存读/缓存写/推理）；成本计算全部走整数微美元定点（BigInt，零浮点漂移）；DeepSeek 前缀缓存读价（$0.07/$0.14）纳入计价（未收录价目保守按输入价估算，绝不低估）。
+
 ## [3.1.0] - 2026-08-18
 
 ### Added

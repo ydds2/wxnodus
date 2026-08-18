@@ -36,6 +36,9 @@ export interface SysPromptOpts {
   now?: Date;
   /** W7/KF-004: persona (settings.personality real consumption — appended as a Persona section) */
   persona?: string;
+  /** Provider-specific prompt segment (kernel/providerPrompts.ts — CJK lives in that module,
+   *  zero-CJK invariant kf-029 stays intact here; appended after persona). */
+  providerPrompt?: string;
 }
 
 const EN_OUTPUT_RULES: readonly string[] = [
@@ -101,6 +104,11 @@ export function buildSystemPrompt(opts: SysPromptOpts): string {
   ];
   if (opts.persona && opts.persona.trim()) {
     lines.push('', fill(translate(locale, 'system.persona'), { persona: opts.persona.trim() }));
+  }
+  // Provider-specific prompt segment (supremacy 1.1): injected by the caller — CJK text lives in
+  // kernel/providerPrompts.ts so this file stays zero-CJK (kf-029); appended after persona.
+  if (opts.providerPrompt && opts.providerPrompt.trim()) {
+    lines.push('', opts.providerPrompt.trim());
   }
   return lines.join('\n');
 }
