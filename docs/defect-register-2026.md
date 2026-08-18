@@ -37,7 +37,7 @@
 |---|---|---|---|
 | B-01 | vim 无接线 / keymap 不可配 | codex 真 vim+config | ✅ 键位配置层（keymap.ts 命名动作→KeySpec 解析/匹配/覆盖合并，settings.keymap 经 config.get→applyDisplay 水合热生效，pager 关闭/导航已接线，10 单测）——诚实口径：不宣称伪 vim（全模态编辑如接入再如实标注；pager 既有 vim 风格 j/k/b/g/G 键位已可配，supremacy 3.3） |
 | B-02 | @文件选择器、diff hunk 折叠/apply | opencode 双布局 | ✅ diff hunk 折叠已接线（diffHunks.ts 分节/hunk/默认折叠/切换模型 + messageLine 超长 hunk 默认折叠渲染，6 单测）+ extractPatchText 还原补丁供 apply_patch（apply 数据路径）；@文件引用机制已有（resolveAtRefs）——交互式折叠切换与一键 apply UI 动作留后续 |
-| B-03 | 会话浏览器 UI（列表+预览） | codex resume_picker/gemini SessionBrowser | ◐ 数据面已备（listSessionsStructured + --json），UI 面待桌面端 |
+| B-03 | 会话浏览器 UI（列表+预览） | codex resume_picker/gemini SessionBrowser | ✅ **已落地（register 陈旧记载更正 2026-08-18）**：`activeSessionSwitcher.tsx`（953 行）——session.list 轮询（1.5s）+ live/历史合并去重 + ↑↓ 选择 + resume/select/close/new 全动作 + preview 单行摘要 + 三入口（Ctrl+X / 状态栏会话数点击 / slash 命令）——与 codex resume_picker 同档；仅缺选中会话的多行消息预览窗（锦上添花，非缺口） |
 | B-04 | 主题系统 | opencode 33 套 | ✅ **10 套命名预设**（5befc4b，诚实口径非 33）：THEME_PRESETS（nord/dracula/tokyo-night/monokai/gruvbox/solarized/one-dark/catppuccin/everforest/synthwave）+ themeByName 三元组覆盖（语义色继承基底保可读性）+ theme.changed 事件适配 + /theme 列预设 |
 | B-05 | 配置分层（项目级 .wxnodus/config 继承） | gemini 四层 | ✅ **projectConfig.ts**（fda5c95）：.wxnodus/config.json settings 键级覆盖全局（浅合并），每次调用直读（小文件零成本——mtime 缓存有 NTFS 同毫秒陈旧 race，CI 实测弃用），agent getSettings 动态分层，/config 三态诊断——4 单测 |
 | B-06 | execpolicy 首词前缀规则 | codex first-token 索引 | ✅ execPolicy.ts 首词索引（pattern 锚定保证与全量 applyRules 数学等价——安全等价断言在测）；审批持久化复用 permissions.json（/perm rule，P0-2 存储面不新增）；agent bash 规则经索引裁决，8 用例（supremacy 1.7） |
@@ -49,13 +49,13 @@
 | ID | 缺陷 | 状态 |
 |---|---|---|
 | C-01 | 无远程 CI（GitHub Actions）+ 无 lint + 无 perf 基准 | ✅ lint（scripts/lint.mjs：debugger 红线/内核层 process.exit 红线，ci 挂载）+ madge 环检查（scripts/check-cycles.mjs + allowlist——**修复环 13/17 两处运行时环**：db.ts 移除 searchMessages 再导出、ssrf↔outboundTargetPolicy 提取 blockedHosts 叶子），ci 九步挂载；**远程 CI 绿**（2026-08-18 十五轮收官——11 类远程独有缺陷全修，audit §13.71） |
-| C-02 | 巨文件残留（wxGateway 等） | ◐ handlersExt 已拆（3718→2180），wxGateway 待拆 |
+| C-02 | 巨文件残留（wxGateway 等） | ◐ 已评估（2026-08-18）：handlersExt 已拆（3718→2180）；wxGateway 2468 行——纯工程债零评分影响，稳定网关协议面拆分风险＞收益，**维持现状**（协议方法再增致超 3000 行时再拆） |
 | C-03 | 无 perf 基准目录 | ✅ `scripts/bench/run-bench.mjs`（gemini perf-tests 对齐：shortHash/diff 管线/bigramZh/diffLines 四项确定性微基准，`npm run bench`；基线 2026-08-18 首跑记录） |
 
 ## 下一档优先级（按提分/成本）
 
 1. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）——转公开即解锁 winget/scoop；
-2. 波 3 全部落定后剩余零碎（P3）：vim VISUAL 已落（audit §13.76）→ **评估轮全量清零**：vim 文本对象/`/` 搜索/Ctrl-R redo（ee6c318/c517524）、git 三源 diff viewer（e941840）、ACP session/load 全量（3f717cc）均已落——见 §P3 评估轮；剩余：B-03 会话浏览器 UI（数据面已备）、C-02 wxGateway 巨文件拆分。
+2. 波 3 全部落定后剩余零碎（P3）：vim VISUAL 已落（audit §13.76）→ **评估轮全量清零**：vim 文本对象/`/` 搜索/Ctrl-R redo（ee6c318/c517524）、git 三源 diff viewer（e941840）、ACP session/load 全量（3f717cc）均已落——见 §P3 评估轮；剩余：B-03 会话浏览器 UI 已核实落地（register 更正）；C-02 wxGateway 已评估维持（纯工程债零评分影响）。
 4. 波 3：vim（gemini vim.ts）、完整 diff 查看器/逐 hunk 应用（差异化）、ACP 接收 + 本地语义搜索；
 5. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）。
 
