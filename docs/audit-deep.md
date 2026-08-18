@@ -756,3 +756,8 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **缺陷寄存器（docs/defect-register-2026.md）**：S/A/B/C 四级 21 项——与评分维度、提分预估、阻塞项（无 remote/无服务器）一一联动；A-08 ✅、B-07/B-08 ✅（前轮）、其余状态如实。
 - **路线图（docs/ide-remote-share-roadmap-2026.md）**：三块空白原理对照（gemini ide-companion ACP stdio / codex app-server SSE / opencode Tauri+token / codex exec-server / opencode share POST）→ wxnodus 落地方案：IDE 插件走现成 `--wire`（零协议新增，~600-900 行，本地 vsix 不受 S-01 阻塞）；远程执行 ssh 通道先行（标注「远端未沙盒」诚实口径）+ 完整版 exec-server 安全面对齐 codex；桌面端与 IDE 插件共用协议层（serve SSE + /sessions --json）。
 - **验证**：tsc 零错误；share 4 用例全绿（篡改拒绝/错误口令拒绝/加密往返保真/血缘标记）；全量 + npm run ci 见下。
+
+### 13.52 超越计划定稿轮（2026-08-18：用户要求「真正实现超越」）
+
+- **交付**：`docs/supremacy-plan-2026.md`——上下文总结（3 轮评审 + 5 个落地轮全链路）、超越的可验收定义（总分 ≥870 超 codex + ≥3 维度第一 + 生态有真实消费者）、11 维逐维超越路径（理论上限 ≈9.4，全部带对标锚点）、三阶段执行计划（阶段 1 内核登顶 7 项零外部依赖 → 阶段 2 生态上车 5 项需 remote/桌面端决策 → 阶段 3 超越收官 6 项）、阻塞项（git remote/桌面端接入方式/密钥/mac-linux 环境）与每轮执行协议。
+- **口径**：超越不是口号——每阶段收尾跑评分复算 + audit 实录，分数证据先行；score 文档 §8 已挂接本计划入口。
