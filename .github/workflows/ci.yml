@@ -27,14 +27,26 @@ jobs:
       - name: Install root dependencies
         run: npm install
 
+      # Defender 实时扫描豁免工作区与 CI 临时目录：运行器文件/进程级扫描拖慢
+      # spawn-heavy 测试（多轮超时实测）——一次性系统级提速，不改变测试语义
+      - name: Exempt Defender scanning (runner perf)
+        shell: pwsh
+        run: |
+          try { Add-MpPreference -ExclusionPath 'D:\a' -ErrorAction SilentlyContinue } catch {}
+          try { Add-MpPreference -ExclusionPath (Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp') -ErrorAction SilentlyContinue } catch {}
+
       - name: Full local gate (npm run ci)
-        # TMP/TEMP 指到工作区真实目录：GitHub runner 的 D:\a\_temp 是 junction——
-        # 证据存储 validateTrustedRoot（realpath 与词法路径一致性）会把全部 tmpdir
-        # 夹具判 EVIDENCE_INTEGRITY_FAILED（2026-08-18 七轮实测，100+ 用例的根因）
-        env:
-          TMP: ${{ github.workspace }}\.tmp
-          TEMP: ${{ github.workspace }}\.tmp
-        run: New-Item -ItemType Directory -Force -Path .tmp | Out-Null; npm run ci
+        shell: pwsh
+        run: |
+          # TMP/TEMP 指到 LOCALAPPDATA 真实目录（非 runner 的 D:\a\_temp junction——证据存储
+          # realpath 校验与 vite 模块加载被 junction 坑过；也非工作区内目录——findRepoRoot/
+          # probeGit 的「非仓库」用例要求 temp 在仓库外）；WXNODUS_LANG 钉中文（CLI 帮助
+          # 文案契约与开发机 locale 一致——en-US runner 默认英文会误红）
+          $ciTmp = Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp'
+          New-Item -ItemType Directory -Force -Path $ciTmp | Out-Null
+          $env:TMP = $ciTmp; $env:TEMP = $ciTmp
+          $env:WXNODUS_LANG = 'zh-CN'
+          npm run ci
 
       - name: Install vscode-ext dependencies
         run: npm --prefix packages/vscode-ext install

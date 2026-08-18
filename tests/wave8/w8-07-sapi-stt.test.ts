@@ -23,6 +23,11 @@ describe('W8-07 SAPI STT 兜底（Windows 原生转写）', () => {
   it('真实 SAPI 转写：TTS 合成语音 → 识别回非空文本（本机识别器可用时）', async () => {
     if (!isWin) return; // 非 Windows 无 SAPI——诚实跳过（Windows-only 定位）
     const { spawnSync } = await import('node:child_process');
+    // 中文语音库缺失（如 en-US runner）时 SAPI 无法做中文往返——诚实跳过（非本机能力缺陷）
+    const voiceCheck = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; ($s.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Culture.Name }) -join ','"],
+      { stdio: 'pipe', timeout: 30000 });
+    if (voiceCheck.status !== 0 || !String(voiceCheck.stdout).toLowerCase().includes('zh')) return;
     const dir = mkdtempSync(join(tmpdir(), 'w8-07-'));
     const wav = join(dir, 'tts.wav');
     const ps = [
