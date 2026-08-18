@@ -27,6 +27,23 @@ jobs:
       - name: Install root dependencies
         run: npm install
 
+      # ── TEMP DIAG（CI 四轮红根因取证，定位后删除）─────────────────────
+      - name: TEMP-DIAG powershell unknown-command timing
+        shell: pwsh
+        run: |
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          powershell.exe -NoProfile -EncodedCommand ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes('不存在的命令xyz'))) 2>&1 | Out-Null
+          $sw.Stop(); Write-Output "DIAG_UNKNOWN_CJK_MS=$($sw.ElapsedMilliseconds)"
+          $sw.Restart()
+          powershell.exe -NoProfile -EncodedCommand ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes('no-such-cmd-xyz'))) 2>&1 | Out-Null
+          $sw.Stop(); Write-Output "DIAG_UNKNOWN_ASCII_MS=$($sw.ElapsedMilliseconds)"
+          Write-Output "DIAG_PSMODULEPATH=$env:PSModulePath"
+          Write-Output "DIAG_PSVER=$($PSVersionTable.PSVersion)"
+
+      - name: TEMP-DIAG plugin dynamic import
+        run: node -e "const f=require('fs'),p=require('path'),o=require('os'),u=require('url');const d=f.mkdtempSync(p.join(o.tmpdir(),'wxdiag-'));f.mkdirSync(p.join(d,'alpha'),{recursive:true});f.writeFileSync(p.join(d,'alpha','index.js'),'export const tools={alpha_hello:async()=>1};');(async()=>{for(let i=0;i<3;i++){try{const m=await import(u.pathToFileURL(p.join(d,'alpha','index.js')).href+'?t='+i);console.log('DIAG_IMPORT_OK try='+i,Object.keys(m));return;}catch(e){console.log('DIAG_IMPORT_FAIL try='+i,e.code,e.message);}}})()"
+      # ── /TEMP DIAG ─────────────────────────────────────────────────────
+
       - name: Full local gate (npm run ci)
         run: npm run ci
 
