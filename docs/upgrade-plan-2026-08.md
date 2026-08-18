@@ -78,6 +78,22 @@
 - **抄谁**：kimi `src/kimi_cli/acp/server.py`（ACP 服务端——「被 IDE 接收」）+ opencode `packages/opencode/src/plugin/install.ts`（jsonc 配置注入零摩擦）+ codex `sdk/`（语言 SDK）。
 - **独占点**：**本地跨会话语义检索——六家无一在本地做向量语义召回**（gemini 只产出 patch 文件；codex 记忆在服务端）。wxnodus 已有 embedding + memory search 基建，做成跨会话语义召回即六家独有。
 
+### 3.x 波 3 取证结论（2026-08-18 双代理源码取证，全附 file:line——设计随证修正）
+
+**3.1 vim（② 8→9）**：
+- gemini `hooks/vim.ts`（精确 1536 行）仅 NORMAL/INSERT（无 VISUAL，:16）、初始 INSERT（:119）；CMD_TYPES 表 :25-74；状态机（count/pendingOperator/pendingFindOp/lastCommand/lastFind）:88-170；count ×10 累积 :136-137；双击 Esc 清空 500ms（:686-700）；NORMAL 大 switch :758-1507（hjkl/wbe/0$^/ggG/xX~/r/fFtT/ioaOIA/ddccyyD C Y/dw cw 经 operator 状态机 :618-657/pP/u/`.` :1410）；**无 / 搜索、无 Ctrl-R redo**——诚实边界同 gemini。
+- 核心直搬（框架无关）：`vim-buffer-actions.ts` 纯 reducer（1849 行，入口 :164 `handleVimAction`，天然可 undo）；`vim.ts` 按键解释状态机。
+- 胶水重写：TextBuffer（undo 栈/yank 寄存器/光标，text-buffer.ts:1573/2876/3088-3300）→ 我们 textInput 的 refs；VimModeContext（:22-59）→ settings.vimMode + /vim 命令（vimCommand.ts:9-19 对标）；InputPrompt 先消费按键（InputPrompt.tsx:898）→ ink useInput 前置。
+- codex 括号栈文本对象（textarea/vim.rs:229-298）→ 第二阶段（di(/ci( 等），首轮落地移动+操作符+计数+`.`+u。
+
+**3.2 完整 diff viewer / per-hunk 应用（③ 7→8）**：
+- opencode `diff-viewer.tsx`（1077 行）：`DiffFile{file,patch,additions,deletions,status}` :51-58；`SelectedHunk{fileIndex,hunkIndex,scrollTop}` :49 仅跳转定位；next/prev_hunk :564-573；三源 git/branch/last-turn；split/unified；帮助表 :945-1010 **无 apply/discard——逐 hunk 应用六家皆无（取证确认）**→ 差异化保留。
+- 落地：/diff 命令开完整查看器（pager 内 hunk 跳转已有）+ per-hunk accept/discard（单 hunk 迷你 patch 走 apply_patch 或行级替换 + undoShadows 快照回滚）。
+
+**3.3 ACP 接收 + 本地跨会话语义检索（⑪ 9→10）**：
+- ACP 服务端三家有：opencode `cmd/acp.ts:11-58`（HTTP Listen + stdio ndjson AgentSideConnection）；gemini `acp/acpStdioTransport.ts:15-26`（JSON-RPC 2.0 over stdio，`--acp` 启动）；kimi `acp/server.py`。codex/crush/aider 无。落地：`--acp` → stdio JSON-RPC 2.0 服务端（gemini 对标）。
+- 本地语义检索：六家**无一**做代码库级本地向量召回（aider `help.py:26,136` 仅本地 bge-small-en-v1.5 做 /help 文档 RAG；gemini 云端嵌入；其余纯 grep/LSP）。wxnodus 已有 all-MiniLM 384 维 + sqlite-vec（memory.ts:117）——扩展 `recallHybrid` 跨会话档（当前限定 sessionId）= **六家独有的本地跨会话语义召回**。
+
 ## 4. 诚实口径与规则
 
 1. **⑪ 论据修正（取证强制）**：旧口径「黑洞记忆六家唯一」❌（gemini Auto Memory 同赛道）；「Windows 沙盒六家唯一」❌（codex windows-sandbox-rs 更深）。**新论据 = UIA 桌面自动化（六家唯一）+ 离线四模态组合（六家唯一）**。score/register 同步改口。
