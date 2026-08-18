@@ -764,13 +764,20 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
   // /sandbox 双层语义（gap P0-4 落地，2026-08-18）：
   //   策略层 L0-L3 → 权限模式映射（plan/smart/auto/yolo——审批语义，非 OS 隔离）
   //   执行层 os L0-L3 → 真实 OS 内核沙盒（受限令牌 + Job Object + 断网限速，
-  //   settings.sandbox.profile 持久化；bash 执行时接入——探测失败诚实降级不假装）
+  //   settings.sandbox.profile 持久化；bash 执行时接入——探测失败 fail-closed 拒绝执行
+  //   （settings.sandbox.failOpen=true 显式降级，绝不静默裸跑））
   bus.register('/sandbox', async (args) => {
     const LAYERS: Record<string, string> = { L0: 'plan', L1: 'smart', L2: 'auto', L3: 'yolo' };
     const current = Object.entries(LAYERS).find(([, m]) => m === ctx.getMode())?.[0] ?? '?';
     const osProfile = ((ctx.config.getKey('settings', 'sandbox') as Record<string, any> | undefined | null) ?? {})?.profile ?? 'off';
     if (args[0] === 'os') {
       const sub = (args[1] ?? '').toUpperCase();
+      if (sub === 'FAILOPEN') {
+        const want = String(args[2] ?? '').toLowerCase() === 'on';
+        const curSbx = ((ctx.config.getKey('settings', 'sandbox') as Record<string, any> | undefined | null) ?? {});
+        ctx.config.setKey('settings', 'sandbox', { ...curSbx, failOpen: want });
+        return `sandbox.failOpen=${want ? 'true' : 'false'}——${want ? '沙盒不可用时显式降级裸跑（每次执行标注未沙盒）' : '沙盒不可用即拒绝执行（fail-closed，默认）'}（/sandbox os failopen on|off 切换）`;
+      }
       if (['L0', 'L1', 'L2', 'L3', 'OFF'].includes(sub)) {
         ctx.config.setKey('settings', 'sandbox', { profile: sub === 'OFF' ? 'off' : sub });
         if (sub === 'OFF') return 'OS 沙盒已关闭（settings.sandbox.profile=off）——bash 按普通方式执行（策略层审批链不变）';
@@ -792,9 +799,10 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
         ` 当前 profile：${String(osProfile ?? 'off').toUpperCase()}（${desc[String(osProfile).toLowerCase()] ?? desc['off']}）`,
         ` 能力探测：${probe.ok ? `✅ ${probe.detail}` : `❌ ${probe.detail}`}`,
         '',
-        ' 用法：/sandbox os L0|L1|L2|L3|off（开启/关闭，settings 持久化）',
+        ' 用法：/sandbox os L0|L1|L2|L3|off|failopen on|off（开启/关闭，settings 持久化）',
         '      /sandbox os status（读缓存探测）  /sandbox os probe（强制重探）',
-        ' 诚实口径：探测失败时 bash 自动按普通方式执行并提示——绝不假装沙盒',
+        ' 诚实口径（fail-closed）：沙盒开启但探测/启动失败时 bash 拒绝执行绝不静默裸跑；',
+        '   settings.sandbox.failOpen=true 为显式逃生门（降级执行且每次标注未沙盒）',
       ]);
     }
     const want = (args[0] ?? '').toUpperCase();

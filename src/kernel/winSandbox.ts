@@ -29,13 +29,20 @@ import { join } from 'node:path';
 
 export type SandboxProfile = 'L0' | 'L1' | 'L2' | 'L3';
 
-export interface SandboxSettings { profile?: string; enabled?: boolean }
+export interface SandboxSettings { profile?: string; enabled?: boolean; /** 探测/启动失败时显式降级裸跑（默认 fail-closed 拒绝执行） */ failOpen?: boolean }
 
 /** settings.sandbox 解析（纯函数可单测）：合法 profile 或 'off' */
 export function resolveSandboxProfile(settings: Record<string, any> | undefined): SandboxProfile | 'off' {
   const sb = settings?.sandbox as SandboxSettings | string | undefined;
   const p = typeof sb === 'string' ? sb : String(sb?.profile ?? 'off').trim().toUpperCase();
   return p === 'L0' || p === 'L1' || p === 'L2' || p === 'L3' ? p : 'off';
+}
+
+/** settings.sandbox.failOpen 解析（纯函数可单测）：默认 false = fail-closed——沙盒请求但不可用即拒绝，绝不静默裸跑 */
+export function resolveSandboxFailOpen(settings: Record<string, any> | undefined): boolean {
+  const sb = settings?.sandbox as SandboxSettings | string | undefined;
+  if (typeof sb === 'string' || !sb) return false;
+  return sb.failOpen === true;
 }
 
 /** profile → 原生参数映射（纯函数可单测；本机实测校准——见文件头注释） */

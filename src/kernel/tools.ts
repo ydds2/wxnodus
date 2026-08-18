@@ -291,8 +291,8 @@ export function coreTools(): Record<string, ToolDef> {
         }
         // gap P0-4/P0-1 落地（2026-08-18）：
         // ① OS 内核沙盒（winSandbox）：settings.sandbox.profile 开启时命令经
-        //    受限令牌 + Job Object + 断网限速执行；探测失败/非 Windows → 诚实提示后
-        //    按普通方式执行（绝不把未沙盒当沙盒）
+        //    受限令牌 + Job Object + 断网限速执行；探测失败/非 Windows → fail-closed
+        //    拒绝执行（failOpen=true 才显式降级——绝不静默裸跑、绝不把未沙盒当沙盒）
         // ② 流式落盘：完整输出写 truncations/tmp（内存封顶 20000 字防 OOM），
         //    超限时接管为正式 offload 文件——预览 + 续读路径（不再丢尾）
         const sSettings = ctx.getSettings?.() as Record<string, any> | undefined;
@@ -315,7 +315,7 @@ export function coreTools(): Record<string, ToolDef> {
           const full = `${r.stdout}${r.stderr ? `\n${r.stderr}` : ''}${r.error ? `\n${r.error}` : ''}`.trim();
           return wrapDanger(`${full || '(无输出)'}\n[远程 ${remoteTarget.user}@${remoteTarget.host}:${remoteTarget.port} · 退出码 ${r.code ?? '无'} · ${REMOTE_UNSANDBOXED_NOTE}]`);
         }
-        const { tryOsSandboxLaunch, resolveSandboxProfile } = await import('./osSandbox.js');
+        const { tryOsSandboxLaunch, resolveSandboxProfile, classifySandboxOutcome } = await import('./osSandbox.js');
         const sandboxProfile = resolveSandboxProfile(sSettings);
         const sandbox = await tryOsSandboxLaunch({
           settings: sSettings,
@@ -327,7 +327,15 @@ export function coreTools(): Record<string, ToolDef> {
           timeoutMs: 60_000,
           signal: ctx.signal,
         });
-        if (sandbox.note) ctx.bus?.emit?.('system.notice', { text: sandbox.note });
+        // fail-closed 门（2026-08-18 评估轮）：沙盒请求但不可用 → 默认拒绝执行，绝不静默降级裸跑；
+        // settings.sandbox.failOpen=true 显式逃生门（每次执行标注未沙盒）；用户中止透传原文不套沙盒框架
+        const gate = classifySandboxOutcome(sandbox, sSettings);
+        if (gate.action === 'refuse') {
+          if (/已中断/.test(gate.note ?? '')) return wrapDanger(gate.note!);
+          ctx.bus?.emit?.('system.notice', { text: `沙盒不可用——fail-closed 拒绝执行（${gate.note}）` });
+          return wrapDanger(`[沙盒不可用，命令被拒绝执行（fail-closed）]${gate.note ? `\n${gate.note}` : ''}\n逃生门：settings.sandbox.failOpen=true 显式降级裸跑（每次执行标注未沙盒），或 /sandbox os probe 强制重探。`);
+        }
+        if (gate.action === 'plain' && gate.note) ctx.bus?.emit?.('system.notice', { text: gate.note });
         let out = '';
         let truncated = false;
         let fullPath: string | null = null; // 完整输出落盘路径（接管为 offload 用）
