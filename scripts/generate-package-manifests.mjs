@@ -1,44 +1,21 @@
 #!/usr/bin/env node
 // scripts/generate-package-manifests.mjs — 分发闭环 S0：winget/scoop manifest 生成器
-// 用法：node scripts/generate-package-manifests.mjs [--zip <installer.zip>] [--url <baseURL>] [--out <dir>]
+// 用法：先 npm run build，再 node scripts/generate-package-manifests.mjs [--zip <installer.zip>] [--url <baseURL>] [--out <dir>]
 // 渲染：packaging/{winget,scoop} 模板 × package.json（version/description）→ 正式 manifest。
 // 诚实门禁：--zip 提供时计算真实 SHA-256；缺失时 InstallerUrl/InstallerSha256 输出
 //           __RELEASE_URL_REQUIRED__/__SHA256_REQUIRED__ 占位并警告「不可提交发布」——
 //           绝不生成假装可发布的 manifest。
-import { createHash } from 'node:crypto';
+// 纯函数已抽至 src/application/release/manifestGen.ts（2026-08-18：vitest 在 runner 上
+// inline 本 .mjs 的主入口块触发 [eval] SyntaxError——本文件只留 CLI 壳，依赖 dist 构建）。
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renderWingetManifest, renderScoopManifest, zipSha256 } from '../dist/application/release/manifestGen.js';
+
+// 兼容旧引用（tests/package-manifest-gen.test.ts 现直连 TS 模块；此再导出仅供脚本面导入）
+export { renderWingetManifest, renderScoopManifest, zipSha256 };
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-
-// ── 纯函数（可单测）────────────────────────────────────────
-
-/** 渲染 winget manifest（模板占位符替换）。url/sha256 缺省时输出占位符。 */
-export function renderWingetManifest(template, ctx) {
-  return template
-    .replaceAll('__VERSION__', ctx.version)
-    .replaceAll('__DESCRIPTION__', ctx.description)
-    .replaceAll('__INSTALLER_URL__', ctx.url ?? '__RELEASE_URL_REQUIRED__')
-    .replaceAll('__INSTALLER_SHA256__', ctx.sha256 ?? '__SHA256_REQUIRED__');
-}
-
-/** 渲染 scoop manifest（JSON 模板——用占位替换后仍为合法 JSON 文档）。 */
-export function renderScoopManifest(template, ctx) {
-  return template
-    .replaceAll('__VERSION__', ctx.version)
-    .replaceAll('__DESCRIPTION__', ctx.description)
-    .replaceAll('__HOMEPAGE__', ctx.homepage ?? 'https://github.com/yyds2/wxnodus')
-    .replaceAll('__INSTALLER_URL__', ctx.url ?? '__RELEASE_URL_REQUIRED__')
-    .replaceAll('__INSTALLER_SHA256__', ctx.sha256 ?? '__SHA256_REQUIRED__');
-}
-
-/** zip 文件 SHA-256（纯函数可单测）；文件缺失返回 null。 */
-export function zipSha256(zipPath, readFile = p => { try { return readFileSync(p); } catch { return null; } }) {
-  const buf = readFile(zipPath);
-  if (!buf) return null;
-  return createHash('sha256').update(buf).digest('hex');
-}
 
 // ── CLI 入口 ────────────────────────────────────────────────
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);

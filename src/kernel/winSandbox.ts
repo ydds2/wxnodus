@@ -457,7 +457,7 @@ export async function probeWinSandbox(dataDir: string, force = false): Promise<{
         windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
       });
       let out = '';
-      const timer = setTimeout(() => { try { child.kill(); } catch { /* 忽略 */ } finish({ ok: false, detail: '探测超时（20s）——PowerShell Add-Type 编译失败或不可用' }); }, 20_000);
+      const timer = setTimeout(() => { try { child.kill(); } catch { /* 忽略 */ } finish({ ok: false, detail: '探测超时（30s）——PowerShell Add-Type 编译失败或不可用' }); }, 30_000);
       child.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
       child.stderr?.on('data', () => { /* stderr 忽略 */ });
       child.on('error', (e) => { clearTimeout(timer); finish({ ok: false, detail: `无法启动 powershell.exe：${e.message}` }); });

@@ -126,7 +126,7 @@ describe('工具调用循环', () => {
     });
     const r = await agent.run('跑命令');
     expect(calls).toBeLessThanOrEqual(5 + 1); // 连续失败后终止
-  }, 30_000); // 全量并行下工具执行与记忆初始化较慢——放宽默认 15s 超时
+  }, 120_000); // 全量并行 + CI runner（Defender 进程扫描）下 5 轮真实 bash 执行较慢——放宽超时
 });
 
 describe('中断', () => {

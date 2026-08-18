@@ -20,6 +20,10 @@ export interface UndoShadow {
 const SHADOW_MAX = 50;
 const shadowDir = (dataDir: string) => join(dataDir, 'undo-shadows');
 
+// 单调时间戳：同毫秒连续快照必须严格有序（CI 快盘实测同 ms 三快照等 ts → 倒序不稳）
+let lastSnapshotTs = 0;
+const nextSnapshotTs = () => { const ts = Math.max(Date.now(), lastSnapshotTs + 1); lastSnapshotTs = ts; return ts; };
+
 function shadowFile(dataDir: string, id: string): string {
   return join(shadowDir(dataDir), `${id}.json`);
 }
@@ -27,10 +31,11 @@ function shadowFile(dataDir: string, id: string): string {
 /** 记录编辑前快照：仅当文件存在且内容确实不同才备份；返回快照或 null */
 export function snapshotFile(dataDir: string, absPath: string, oldContent: string): UndoShadow | null {
   try {
-    // 内容摘要入 id：同毫秒连续快照（且同长度）此前会碰撞互相覆盖——CI 快盘实测
-    // 3 版本坍缩为 2（undo 数据丢失级缺陷）；内容进哈希后彻底免疫
-    const id = createHash('sha1').update(`${absPath}:${Date.now()}:${createHash('sha256').update(oldContent).digest('hex').slice(0, 16)}`).digest('hex').slice(0, 12);
-    const shadow: UndoShadow = { id, path: absPath, content: oldContent, ts: Date.now() };
+    // 内容摘要入 id + 单调 ts：同毫秒连续快照（且同长度）此前会碰撞互相覆盖——CI 快盘实测
+    // 3 版本坍缩为 2（undo 数据丢失级缺陷）；内容进哈希 + ts 严格递增后彻底免疫
+    const ts = nextSnapshotTs();
+    const id = createHash('sha1').update(`${absPath}:${ts}:${createHash('sha256').update(oldContent).digest('hex').slice(0, 16)}`).digest('hex').slice(0, 12);
+    const shadow: UndoShadow = { id, path: absPath, content: oldContent, ts };
     mkdirSync(shadowDir(dataDir), { recursive: true });
     writeFileSync(shadowFile(dataDir, id), JSON.stringify(shadow), 'utf8');
     // FIFO 淘汰：超出上限删最旧（按文件名 mtime 序不可靠——用 ts 字段排序）

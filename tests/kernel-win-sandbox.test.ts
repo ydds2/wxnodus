@@ -67,17 +67,20 @@ describe('能力探测（诚实契约）', () => {
   it('探测返回 { ok, detail } 且失败时 detail 给出具体原因（绝不假装）', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'wxn-sbx-probe-'));
     try {
-      const r = await probeWinSandbox(dir, true);
-      expect(typeof r.ok).toBe('boolean');
-      expect(typeof r.detail).toBe('string');
-      expect(r.detail.length).toBeGreaterThan(0);
-      if (!r.ok) {
+      // 缓存语义：两次非 force 探测读同一进程级缓存，结果必须一致
+      const r0 = await probeWinSandbox(dir);
+      const r1 = await probeWinSandbox(dir);
+      expect(r1.ok).toBe(r0.ok);
+      expect(r1.detail).toBe(r0.detail);
+      // force 强制重探：只查形状与诚实文案（结果可能因环境负载瞬时不同——缓存语义不涉及）
+      const forced = await probeWinSandbox(dir, true);
+      expect(typeof forced.ok).toBe('boolean');
+      expect(typeof forced.detail).toBe('string');
+      expect(forced.detail.length).toBeGreaterThan(0);
+      if (!forced.ok) {
         // 失败必须可解释：三类诚实原因之一（非 Windows / 无 powershell / 编译或 API 错误 / 超时）
-        expect(r.detail).toMatch(/非 Windows|powershell|ERR:|探测超时|无输出/);
+        expect(forced.detail).toMatch(/非 Windows|powershell|ERR:|探测超时|无输出/);
       }
-      // 缓存生效：第二次探测（非 force）返回同一缓存结果
-      const r2 = await probeWinSandbox(dir);
-      expect(r2.ok).toBe(r.ok);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

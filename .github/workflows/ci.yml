@@ -34,6 +34,10 @@ jobs:
         run: |
           try { Add-MpPreference -ExclusionPath 'D:\a' -ErrorAction SilentlyContinue } catch {}
           try { Add-MpPreference -ExclusionPath (Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp') -ErrorAction SilentlyContinue } catch {}
+          # 进程级豁免才是 spawn-heavy 测试的关键（路径豁免不覆盖进程执行扫描）
+          foreach ($p in 'powershell.exe','pwsh.exe','node.exe','cmd.exe','conhost.exe') {
+            try { Add-MpPreference -ExclusionProcess $p -ErrorAction SilentlyContinue } catch {}
+          }
 
       - name: Full local gate (npm run ci)
         shell: pwsh

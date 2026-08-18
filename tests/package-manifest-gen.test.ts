@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { renderWingetManifest, renderScoopManifest, zipSha256 } from '../scripts/generate-package-manifests.mjs';
+import { renderWingetManifest, renderScoopManifest, zipSha256 } from '../src/application/release/manifestGen.js';
 
 const WINGET_TPL = 'PackageVersion: __VERSION__\nShortDescription: __DESCRIPTION__\nInstallerUrl: __INSTALLER_URL__\nInstallerSha256: __INSTALLER_SHA256__\n';
 const SCOOP_TPL = JSON.stringify({ version: '__VERSION__', description: '__DESCRIPTION__', homepage: '__HOMEPAGE__', url: '__INSTALLER_URL__', hash: '__INSTALLER_SHA256__' });
