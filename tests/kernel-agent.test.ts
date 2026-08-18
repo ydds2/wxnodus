@@ -113,14 +113,17 @@ describe('工具调用循环', () => {
     expect(r.text).toContain('拒绝');
   });
 
-  it('同工具连续失败 5 次终止', async () => {    let calls = 0;
+  it('同工具连续失败 5 次终止', async () => {
+    let calls = 0;
     const agent = createAgent({
       db, bus, mem, sessionId: 't4',
       config: { settings: {} } as any,
       mode: 'yolo',
       callModel: async () => {
         calls++;
-        return calls <= 6 ? { type: 'tool_call', name: 'bash', args: { command: 'nonexistent-cmd-xyz' } } as ToolCallMsg
+        // cmd /c exit 3：环境无关的确定性毫秒级失败（本用例断言「连续失败终止」语义，
+        // 不绑定 PS 未知命令发现性能——runner 无 PSModulePath 下该发现可达 10s+，CI 实测）
+        return calls <= 6 ? { type: 'tool_call', name: 'bash', args: { command: 'cmd /c exit 3' } } as ToolCallMsg
           : { type: 'text', content: 'done' } as ModelCall;
       },
     });
