@@ -27,6 +27,8 @@ export interface VimCoreState {
   visualKind: 'char' | 'line' | null
   /** 文本对象前缀挂起（di(/da"/ciw/yi{ 的 i/a——codex vim.rs:229-264 括号栈对标，P3 评估轮） */
   pendingIo: null | 'i' | 'a'
+  /** / 或 ? 增量搜索挂起（query 累积；anchor=进入搜索时的光标——Esc 取消还原，Enter 确认） */
+  search: { query: string; dir: 1 | -1; anchor: number } | null
 }
 
 /** 文档模型：输入框文本 + 光标（char offset，0..text.length；\n 合法——多行输入） */
@@ -44,6 +46,8 @@ export interface VimOutcome {
   undoable: boolean
   /** 请求撤销（u——undo 栈由 hook 管理，核心只发信号） */
   undo: boolean
+  /** 请求重做（Ctrl-R——redo 栈由 hook 管理，核心只发信号） */
+  redo: boolean
   /** 进入 insert 模式（i/a/o/O/I/A/c 类命令） */
   enteredInsert: boolean
   /** 双击 Esc 清空（正常模式连按两次） */
@@ -61,6 +65,7 @@ export const initialVimState = (): VimCoreState => ({
   visualAnchor: -1,
   visualKind: null,
   pendingIo: null,
+  search: null,
 })
 
 const DOUBLE_ESC_MS = 500
@@ -296,6 +301,37 @@ export const textObjectRange = (text: string, cursor: number, io: 'i' | 'a', ch:
   return null
 }
 
+/** / 增量搜索下一匹配（dir=1 向后 / -1 向前；回绕；无匹配 -1）——六家对标（codex history_search 同源语义） */
+export const findNextMatch = (text: string, from: number, query: string, dir: 1 | -1): number => {
+  if (!query) return -1
+  if (dir === 1) {
+    const after = text.indexOf(query, from + 1)
+    if (after >= 0) return after
+    return text.indexOf(query, 0)
+  }
+  const before = from - 1 >= 0 ? text.lastIndexOf(query, from - 1) : -1
+  if (before >= 0) return before
+  return text.lastIndexOf(query)
+}
+
+/** vim undo/redo 历史纯函数（栈上限 200；新编辑清 redo——vim 语义）——hook 层持有 */
+export interface VimHistory { undo: VimDoc[]; redo: VimDoc[] }
+export const initialVimHistory = (): VimHistory => ({ undo: [], redo: [] })
+export const vimHistoryPush = (h: VimHistory, doc: VimDoc): VimHistory => ({
+  undo: [...h.undo, doc].slice(-200),
+  redo: [], // 新编辑清空 redo 分支（vim 语义）
+})
+export const vimHistoryUndo = (h: VimHistory, cur: VimDoc): { h: VimHistory; doc: VimDoc } | null => {
+  const prev = h.undo[h.undo.length - 1]
+  if (!prev) return null
+  return { h: { undo: h.undo.slice(0, -1), redo: [...h.redo, cur].slice(-200) }, doc: prev }
+}
+export const vimHistoryRedo = (h: VimHistory, cur: VimDoc): { h: VimHistory; doc: VimDoc } | null => {
+  const next = h.redo[h.redo.length - 1]
+  if (!next) return null
+  return { h: { undo: [...h.undo, cur].slice(-200), redo: h.redo.slice(0, -1) }, doc: next }
+}
+
 // ── 编辑（纯变换；yank 寄存器经 outcome 传出）──────────────────
 interface Edit {
   text: string
@@ -405,6 +441,7 @@ export function vimHandleKey(
     yanked: null,
     undoable: false,
     undo: false,
+    redo: false,
     enteredInsert: false,
     cleared: false,
     consumed: true,
@@ -418,6 +455,36 @@ export function vimHandleKey(
       return base({ state: { ...prev, mode: 'normal', count: 0, lastEscTs: now } })
     }
     return base({ consumed: false })
+  }
+
+  // ── / 搜索挂起（六家对标：in-buffer 增量搜索；Esc 取消还原锚点、Enter 确认、Backspace 退格）──
+  if (prev.search) {
+    if (key === 'Escape' || key === '<esc>') {
+      return base({ state: { ...prev, search: null, count: 0 }, doc: { text: docIn.text, cursor: prev.search.anchor } })
+    }
+    if (key === 'Enter') return base({ state: { ...prev, search: null, count: 0 } })
+    if (key === 'Backspace') {
+      const q = prev.search.query.slice(0, -1)
+      const hit = q ? findNextMatch(docIn.text, prev.search.anchor, q, prev.search.dir) : -1
+      return base({
+        state: { ...prev, search: { ...prev.search, query: q } },
+        doc: { text: docIn.text, cursor: hit >= 0 ? hit : prev.search.anchor },
+      })
+    }
+    if (key.length === 1) {
+      const q = prev.search.query + key
+      const hit = findNextMatch(docIn.text, prev.search.anchor, q, prev.search.dir)
+      return base({
+        state: { ...prev, search: { ...prev.search, query: q } },
+        doc: { text: docIn.text, cursor: hit >= 0 ? hit : docIn.cursor },
+      })
+    }
+    return base({ state: { ...prev } }) // 其他键忽略（搜索挂起期只吃字符/退格/回车/Esc）
+  }
+  if (key === '/' || key === '?') {
+    return base({
+      state: { ...prev, search: { query: '', dir: key === '/' ? 1 : -1, anchor: docIn.cursor }, pendingOp: null, pendingIo: null, count: 0 },
+    })
   }
 
   // ── NORMAL：数字前缀（0 不单独计——count=0 即 1；gemini :136-137 ×10 累积）──
@@ -644,6 +711,7 @@ export function vimHandleKey(
     case 'p': return applyEdit(pasteAfter(docIn, register), false, ['p'])
     case 'P': return applyEdit(pasteBefore(docIn, register), false, ['P'])
     case 'u': return base({ state: { ...prev, count: 0, pendingOp: null }, undo: true })
+    case '<redo>': return base({ state: { ...prev, count: 0, pendingOp: null }, redo: true })
     case 'v': return base({ state: { ...prev, mode: 'visual', count: 0, pendingOp: null, visualAnchor: docIn.cursor, visualKind: 'char' } })
     case 'V': return base({ state: { ...prev, mode: 'visual', count: 0, pendingOp: null, visualAnchor: docIn.cursor, visualKind: 'line' } })
     case 'i': return base({ state: { ...prev, mode: 'insert', count: 0, pendingOp: null }, enteredInsert: true })

@@ -6,7 +6,7 @@ import { setInputSelection } from '../runtime/selectionStore.js'
 import { readClipboardText, writeClipboardText } from '../lib/clipboard.js'
 import { highlightInputAnsi } from '../lib/inputHighlight.js'
 import { resolveEditorCommand, runExternalEditor } from '../lib/editorLaunch.js'
-import { initialVimState, vimHandleKey, type VimMode } from '../lib/vimCore.js'
+import { initialVimState, initialVimHistory, vimHandleKey, vimHistoryPush, vimHistoryUndo, vimHistoryRedo, type VimHistory, type VimMode } from '../lib/vimCore.js'
 import { cursorLayout, offsetFromPosition } from '../lib/inputMetrics.js'
 import {
   DEFAULT_VOICE_RECORD_KEY,
@@ -522,9 +522,10 @@ export function TextInput({
   // 波 3 ②：vim 模态状态（纯 reducer 解释器 + 寄存器 + 独立 undo 栈 + r/fFtT 预读）
   const vimRef = useRef(initialVimState())
   const vimRegRef = useRef('')
-  const vimUndoRef = useRef<{ text: string; cursor: number }[]>([])
+  const vimUndoRef = useRef<VimHistory>(initialVimHistory())
   const vimPendingReadRef = useRef<null | 'replace' | 'find'>(null)
   const [vimModeUi, setVimModeUi] = useState<VimMode>('insert')
+  const [vimSearchUi, setVimSearchUi] = useState<string | null>(null)
 
   const cbChange = useRef(onChange)
   const cbSubmit = useRef(onSubmit)
@@ -594,7 +595,10 @@ export function TextInput({
     // 内联 ANSI 着色；仅无光标装饰的路径应用（选区/合成光标路径保持既有视觉契约）
     const displayHi = highlightInputAnsi(display)
     // 波 3 ②：NORMAL 徽标（gemini Composer.tsx:158-165 对标——normal 模式前缀暗色标记）
-    const normalPrefix = vimEnabled && vimModeUi !== 'insert' ? dim(vimModeUi === 'visual' ? '-- VISUAL -- ' : '-- NORMAL -- ') : ''
+    // P3 评估轮：/ 搜索挂起时徽标显示实时查询（/query），退出搜索恢复模式徽标
+    const normalPrefix = vimEnabled && vimModeUi !== 'insert'
+      ? dim(vimSearchUi !== null ? `/${vimSearchUi}` : (vimModeUi === 'visual' ? '-- VISUAL -- ' : '-- NORMAL -- '))
+      : ''
     if (!focus) {
       return displayHi || dim(placeholder)
     }
@@ -609,7 +613,7 @@ export function TextInput({
     }
 
     return nativeCursor ? normalPrefix + (displayHi || ' ') : normalPrefix + renderWithCursor(display, cur)
-  }, [cur, display, focus, nativeCursor, placeholder, selected, vimEnabled, vimModeUi])
+  }, [cur, display, focus, nativeCursor, placeholder, selected, vimEnabled, vimModeUi, vimSearchUi])
 
   useEffect(() => {
     if (self.current) {
@@ -1016,13 +1020,15 @@ export function TextInput({
         }
 
         // 键名映射：Esc/Enter/Backspace + 无修饰单字符；其余（Ctrl 组合等）不属 vim
+        // Ctrl-R = redo（P3 评估轮——/ 搜索外另一六家题）
         let token: string | null = null
         if (k.escape) token = 'Escape'
         else if (k.return) token = 'Enter'
         else if (k.backspace) token = 'Backspace'
+        else if (k.ctrl && inp === 'r' && !k.shift && !k.meta && !k.alt) token = '<redo>'
         else if (inp && inp.length === 1 && !k.ctrl && !k.meta && !k.alt) token = inp
 
-        // r/fFtT 预读下一字符（gemini pendingFindOp 同构——两键命令）
+        // r/fFtT 预读下一字符（gemini pendingFindOp 同构——两键命令；搜索挂起期不截胡）
         if (vimPendingReadRef.current) {
           if (token && token.length === 1) {
             token = vimPendingReadRef.current === 'replace' ? `<replace:${token}>` : `<find:${token}>`
@@ -1032,11 +1038,11 @@ export function TextInput({
 
             return
           }
-        } else if (token === 'r') {
+        } else if (!vimRef.current.search && token === 'r') {
           vimPendingReadRef.current = 'replace'
 
           return
-        } else if (token === 'f' || token === 'F' || token === 't' || token === 'T') {
+        } else if (!vimRef.current.search && (token === 'f' || token === 'F' || token === 't' || token === 'T')) {
           // f/F/t/T 两键命令：先把操作符送进核心置 pendingOp（<find:ch> 到达时按其执行），
           // 再挂起预读下一字符
           vimRef.current = vimHandleKey(vimRef.current, { text: vRef.current, cursor: curRef.current }, token, Date.now(), vimRegRef.current).state
@@ -1050,15 +1056,19 @@ export function TextInput({
         const doc = { text: vRef.current, cursor: curRef.current }
         const out = vimHandleKey(vimRef.current, doc, token, Date.now(), vimRegRef.current)
         vimRef.current = out.state
+        setVimSearchUi(out.state.search ? out.state.search.query : null)
         if (out.yanked) vimRegRef.current = out.yanked
         if (out.cleared) {
-          if (vimUndoRef.current.length < 200) vimUndoRef.current.push(doc)
+          vimUndoRef.current = vimHistoryPush(vimUndoRef.current, doc)
           commit('', 0)
         } else if (out.undo) {
-          const prevDoc = vimUndoRef.current.pop()
-          if (prevDoc) commit(prevDoc.text, prevDoc.cursor)
+          const r = vimHistoryUndo(vimUndoRef.current, doc)
+          if (r) { vimUndoRef.current = r.h; commit(r.doc.text, r.doc.cursor) }
+        } else if (out.redo) {
+          const r = vimHistoryRedo(vimUndoRef.current, doc)
+          if (r) { vimUndoRef.current = r.h; commit(r.doc.text, r.doc.cursor) }
         } else if (out.doc.text !== vRef.current) {
-          if (out.undoable && vimUndoRef.current.length < 200) vimUndoRef.current.push(doc)
+          if (out.undoable) vimUndoRef.current = vimHistoryPush(vimUndoRef.current, doc)
           commit(out.doc.text, out.doc.cursor)
         } else if (out.doc.cursor !== curRef.current) {
           commit(out.doc.text, out.doc.cursor)
