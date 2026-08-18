@@ -117,6 +117,10 @@ export interface ModelCapabilities {
   imageIn?: boolean;   // 支持图片输入（视觉）
   thinking?: boolean;  // 支持推理链（reasoning）
   maxContext?: number; // 上下文窗口（token）
+  /** 端点支持 Anthropic 式 cache_control 断点（system + 尾部消息打 ephemeral）。
+   *  当前目录条目全部为 OpenAI 兼容端点（DeepSeek 系走字节稳定自动前缀缓存，无需断点标注），
+   *  故默认全关——能力位为 Anthropic 兼容自定义端点预留（crush agent.go:839-855 对标）。 */
+  cacheControl?: boolean;
 }
 
 export interface ModelEntry {
@@ -200,20 +204,59 @@ export interface ChatMessage {
   tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
 }
 
+// ── 前缀缓存工程（supremacy 波 1 ⑩）─────────────────────────
+// DeepSeek 系自动前缀缓存靠「请求前缀字节稳定」命中：同一会话内两条请求的前缀必须逐字节一致。
+// 消息字段序列化序不稳定（对象构造顺序漂移）会从第一段起永久 miss——本函数把每条消息按
+// 固定键序重建（role→content→tool_calls→tool_call_id→已知续写字段→其余键字典序），
+// 内容相同 ⇒ JSON 字节相同。
+const MESSAGE_KEY_ORDER = ['role', 'content', 'tool_calls', 'tool_call_id', 'reasoning_content', 'thinking_content', 'reasoning', 'name'];
+
+export function normalizeMessageFieldOrder(m: ChatMessage & Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const k of MESSAGE_KEY_ORDER) {
+    if (m[k] !== undefined) out[k] = m[k];
+  }
+  for (const k of Object.keys(m).sort()) {
+    if (out[k] === undefined && m[k] !== undefined) out[k] = m[k];
+  }
+  return out;
+}
+
+// Anthropic 式缓存断点（crush agent.go:839-855 对标：system 首消息 + 末尾 tail 条打 ephemeral——
+// 下一轮请求前缀恰停在倒数第 tail 条处，缓存命中最大化；OpenAI 兼容端点不可带此字段）。
+export function applyCacheBreakpoints(messages: Array<Record<string, any>>, tail = 2): Array<Record<string, any>> {
+  if (!messages.length) return messages;
+  const out = messages.map(m => ({ ...m }));
+  const mark = (idx: number) => {
+    if (out[idx] && out[idx].cache_control === undefined) out[idx] = { ...out[idx], cache_control: { type: 'ephemeral' } };
+  };
+  mark(0); // system 首消息
+  for (let i = Math.max(0, messages.length - tail); i < messages.length; i++) mark(i);
+  return out;
+}
+
 export function buildChatRequest(opts: {
   baseURL: string; model: string; key: string;
   messages: ChatMessage[]; stream: boolean;
   tools?: unknown[]; temperature?: number;
   /** supremacy ④：结构化输出（response_format json_object——端点支持时约束输出为 JSON；不支持端点由调用方宽容解析兜底） */
   responseFormat?: 'json_object';
+  /** 缺省按 MODEL_CATALOG 能力自动判定；显式传参可覆盖（测试/自定义端点） */
+  cacheControl?: boolean;
 }) {
   const base = opts.baseURL.replace(/\/+$/, '');
   // image_url 终极闸门（纵深防御第四层）：上游已有能力门注入/历史 contentToText/描述通道
   // 三层防御，本闸门兜底任何漏网路径（未来 MCP 图像内容、工具结果 parts、DB 残留）——
   // 纯文本模型最终序列化前一律文本化，dataUrl 绝不进入请求体（deepseek-v4-pro 400 同款事故）。
+  // 前缀缓存工程：消息按固定键序重建（字节稳定前缀，DeepSeek 自动缓存命中前提）。
+  const useCacheControl = opts.cacheControl ?? (MODEL_CATALOG.find(x => x.modelId === opts.model)?.capabilities?.cacheControl ?? false);
+  let messages: Array<Record<string, any>> = opts.messages.map(m =>
+    normalizeMessageFieldOrder({ ...m, content: textifyForModel(m.content, opts.model) } as ChatMessage & Record<string, any>),
+  );
+  if (useCacheControl) messages = applyCacheBreakpoints(messages);
   const body: Record<string, any> = {
     model: opts.model,
-    messages: opts.messages.map(m => ({ ...m, content: textifyForModel(m.content, opts.model) })),
+    messages,
     stream: opts.stream,
     temperature: opts.temperature ?? 0.7,
   };

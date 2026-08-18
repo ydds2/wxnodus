@@ -51,6 +51,13 @@ export function compactKeepHeadTail(msgs: MemMsg[], opts: { head: number; tail: 
   return [...msgs.slice(0, opts.head), ...msgs.slice(-opts.tail)];
 }
 
+// ── 压缩器系统提示（自动压缩 / /compact 共用单一事实源）───────────────────
+// 前缀缓存工程（supremacy 波 1 ⑩，gemini chatCompressionService.ts:361-379 / kimi
+// compaction.py:126-131 对标）：摘要走**独立单轮请求**（全新 [system,user] 消息对，
+// 只把结果写回主对话）——绝不把压缩原文塞进主对话历史，保住主前缀缓存不被中断。
+// 波 1 ⑤ 升级时本常量换结构化 7 块快照 prompt（单点编辑，两调用点自动生效）。
+export const COMPRESSOR_SYSTEM_PROMPT = '你是对话压缩器：把一段对话浓缩为摘要（中文，≤400 字），保留关键信息（结论、决策、未完成任务、重要数据），去掉寒暄与重复。只输出摘要本身。';
+
 // ── 消息序列 token 估算（自动压缩触发阈值用）────────────────
 // 消息内容文本化：字符串原样；数组（OpenAI 多模态 parts）→ 文本段拼接 + 图片占位
 // （图片 dataUrl 基编码体量巨大，进摘要/估算会撑爆上下文——占位符计数即可）

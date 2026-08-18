@@ -25,20 +25,23 @@ export interface CostDims {
   reasoning?: number;
 }
 
-/** 价格档（USD / 1M token）；cacheRead 为前缀缓存读价（未收录 → 按输入价保守计，见注释） */
+/** 价格档（USD / 1M token）；cacheRead 为前缀缓存读价、cacheWrite 为前缀缓存写（未命中）价。
+ *  未收录的维度按 aider 行业估算口径兜底（base_coder.py:2077-2096）：写 ×1.25 输入价、读按输入价保守估。 */
 export interface PriceEntry {
   in: number;
   out: number;
-  /** 缓存读价（USD/1M）；DeepSeek 官方公布快照收录，其余未收录 */
+  /** 缓存读价（USD/1M）；未收录 → 按输入价保守计（高估不低估） */
   cacheRead?: number;
+  /** 缓存写价（USD/1M）；未收录 → 按输入价 ×1.25 估算（aider 口径） */
+  cacheWrite?: number;
 }
 
 // 参考价目（USD / 1M token）——公开牌价快照，非实时账单
-// cacheRead：仅收录官方公布价（DeepSeek chat 0.07 / reasoner 0.14）；未收录的模型
-// 缓存读按输入价保守估算（高估不低估——costText 已带「估算」标注）
+// cacheRead/cacheWrite：仅收录官方公布价（DeepSeek 官方：未命中按输入价计 0.28/0.55，
+// 命中读价 0.07/0.14）；未收录的模型缓存读按输入价保守估算（高估不低估——costText 已带「估算」标注）
 export const MODEL_PRICES: Record<string, PriceEntry | 'free'> = {
-  'deepseek-chat': { in: 0.28, out: 0.42, cacheRead: 0.07 },
-  'deepseek-reasoner': { in: 0.55, out: 2.19, cacheRead: 0.14 },
+  'deepseek-chat': { in: 0.28, out: 0.42, cacheRead: 0.07, cacheWrite: 0.28 },
+  'deepseek-reasoner': { in: 0.55, out: 2.19, cacheRead: 0.14, cacheWrite: 0.55 },
   'glm-4-flash': 'free',
   'glm-4v-flash': 'free',
   'glm-4.5': { in: 0.55, out: 2.2 },
@@ -68,7 +71,7 @@ export const priceForModel = (model: string, overrides?: Record<string, PriceEnt
 /** 五维成本估算 → 整数 µUSD；定价未知 → null（诚实不编）；免费 → 0。
  *  计价映射（行业标准口径）：
  *  - input × 输入价；output × 输出价；reasoning × 输出价（推理 token 按输出计费）
- *  - cacheMiss × 输入价（前缀缓存写按输入价计，行业一致）
+ *  - cacheMiss × 缓存写价（官方公布价优先；未收录按输入价 ×1.25 估算——aider 口径）
  *  - cacheHit × 缓存读价（未收录 → 输入价保守估） */
 export function estimateCostMicroUsd(model: string, dims: CostDims, overrides?: Record<string, PriceEntry | 'free'> | null): number | null {
   const p = priceForModel(model, overrides);
@@ -76,10 +79,11 @@ export function estimateCostMicroUsd(model: string, dims: CostDims, overrides?: 
   const inMicro = toMicro(p.in);
   const outMicro = toMicro(p.out);
   const cacheReadMicro = toMicro(p.cacheRead ?? p.in); // 未收录缓存读价 → 按输入价保守估算
+  const cacheWriteMicro = toMicro(p.cacheWrite ?? p.in * 1.25); // 未收录缓存写价 → 输入价 ×1.25（aider 行业口径）
   return microFor(dims.input, inMicro)
     + microFor(dims.output, outMicro)
     + microFor(dims.cacheHit ?? 0, cacheReadMicro)
-    + microFor(dims.cacheMiss ?? 0, inMicro)
+    + microFor(dims.cacheMiss ?? 0, cacheWriteMicro)
     + microFor(dims.reasoning ?? 0, outMicro);
 }
 
@@ -89,11 +93,13 @@ export function estimateCost(model: string, inputTokens: number, outputTokens: n
   return micro === null ? null : micro / 1_000_000;
 }
 
-/** 聚合行（按模型分组，五维）→ 成本行 + 总计（costPrices 自定义价目优先） */
+/** 聚合行（按模型分组，五维）→ 成本行 + 总计 + 缓存净节省（costPrices 自定义价目优先）
+ *  缓存净节省 = Σ 命中×(输入价−读价) − Σ 未命中×(写价−输入价)（相对「无前缀缓存」基准；
+ *  官方公布价才有正节省——未收录价目的模型保守计 0 节省、写价上浮照实计入） */
 export function costSummary(
   rows: Array<{ model: string; input: number; output: number; cacheHit?: number; cacheMiss?: number; reasoning?: number }>,
   overrides?: Record<string, PriceEntry | 'free'> | null,
-): { rows: CostRow[]; totalUsd: number; unknownCount: number } {
+): { rows: CostRow[]; totalUsd: number; unknownCount: number; cacheSavingsUsd: number } {
   const byModel = new Map<string, { input: number; output: number; cacheHit: number; cacheMiss: number; reasoning: number }>();
   for (const r of rows) {
     const cur = byModel.get(r.model) ?? { input: 0, output: 0, cacheHit: 0, cacheMiss: 0, reasoning: 0 };
@@ -105,10 +111,17 @@ export function costSummary(
     byModel.set(r.model, cur);
   }
   let totalMicro = 0; // 整数 µUSD 累加——零浮点漂移
+  let savingsMicro = 0; // 缓存净节省（可正可负；负=写价上浮超过读价折扣）
   let unknownCount = 0;
   const out: CostRow[] = [];
   for (const [model, v] of byModel) {
     const micro = estimateCostMicroUsd(model, v, overrides);
+    const p = priceForModel(model, overrides);
+    if (p) {
+      const readSaveMicro = toMicro(p.in) - toMicro(p.cacheRead ?? p.in); // 命中省下的部分（≥0）
+      const writeExtraMicro = toMicro(p.cacheWrite ?? p.in * 1.25) - toMicro(p.in); // 未命中的上浮（≥0）
+      savingsMicro += microFor(v.cacheHit ?? 0, readSaveMicro) - microFor(v.cacheMiss ?? 0, writeExtraMicro);
+    }
     if (micro === null) unknownCount += 1;
     else totalMicro += micro;
     out.push({
@@ -121,5 +134,5 @@ export function costSummary(
       usd: micro === null ? null : micro / 1_000_000, // 仅展示层换算
     });
   }
-  return { rows: out, totalUsd: totalMicro / 1_000_000, unknownCount };
+  return { rows: out, totalUsd: totalMicro / 1_000_000, unknownCount, cacheSavingsUsd: savingsMicro / 1_000_000 };
 }

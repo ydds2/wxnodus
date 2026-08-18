@@ -23,7 +23,7 @@ describe('estimateCost 成本估算', () => {
   });
 
   it('priceForModel 快照', () => {
-    expect(priceForModel('deepseek-chat')).toEqual({ in: 0.28, out: 0.42, cacheRead: 0.07 });
+    expect(priceForModel('deepseek-chat')).toEqual({ in: 0.28, out: 0.42, cacheRead: 0.07, cacheWrite: 0.28 });
     expect(priceForModel('glm-4-flash')).toEqual({ in: 0, out: 0 });
     expect(priceForModel('unknown')).toBeNull();
   });

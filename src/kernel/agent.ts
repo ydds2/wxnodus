@@ -15,7 +15,7 @@ import { appendAudit } from './audit.js';
 import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
 import { resolveDataDir } from './paths.js';
-import { estimateMessagesTokens, compactMessages, contentToText } from './memory.js';
+import { estimateMessagesTokens, compactMessages, contentToText, COMPRESSOR_SYSTEM_PROMPT } from './memory.js';
 import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx, type ToolDef } from './tools.js';
 import { labelTruncate } from './truncate.js';
 import { resolveModelForChat } from './profiles.js';
@@ -1110,9 +1110,11 @@ export function createAgent(opts: AgentOptions) {
         } else {
         bus.emit('system.notice', { text: `上下文已达 ${Math.round((used / ctxLimit) * 100)}%（${used} token）——自动压缩…` });
         const condensed = await compactMessages(msgs as any, async (text) => {
+          // 前缀缓存工程：摘要走独立单轮请求（全新 [system,user] 对，不写主 msgs——
+          // 只把结果以 system 摘要消息写回），主对话前缀缓存不被压缩原文打断
           const r = await callWithAbort({
             messages: [
-              { role: 'system', content: '你是对话压缩器：把一段对话浓缩为摘要（中文，≤300 字），保留关键信息（结论、决策、未完成任务、重要数据），去掉寒暄与重复。只输出摘要本身。' },
+              { role: 'system', content: COMPRESSOR_SYSTEM_PROMPT },
               { role: 'user', content: text },
             ],
             tools: [],

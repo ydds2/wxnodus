@@ -14,6 +14,8 @@ export interface CostQueryResult {
   tokens: { input: number; output: number; total: number };
   /** 成本五维扩展（supremacy 1.4）：缓存读/写、推理 token 总量 */
   dims: { cacheHit: number; cacheMiss: number; reasoning: number };
+  /** 前缀缓存净节省（USD，相对无缓存基准；官方公布价才有正节省，可负=写价上浮） */
+  cacheSavingsUsd: number;
   /** 参与统计的模型数 */
   models: number;
   /** 按模型明细（/cost 表格渲染同源） */
@@ -27,7 +29,7 @@ const summarize = (rows: Array<{ model: string; input: number; output: number; c
   const s = costSummary(rows, overrides);
   const tokens = rows.reduce((a, r) => ({ input: a.input + r.input, output: a.output + r.output, total: a.total + r.input + r.output }), { input: 0, output: 0, total: 0 });
   const dims = rows.reduce((a, r) => ({ cacheHit: a.cacheHit + r.cacheHit, cacheMiss: a.cacheMiss + r.cacheMiss, reasoning: a.reasoning + r.reasoning }), { cacheHit: 0, cacheMiss: 0, reasoning: 0 });
-  return { usd: s.totalUsd, unknown: s.unknownCount, tokens, dims, models: rows.length, rows: s.rows };
+  return { usd: s.totalUsd, unknown: s.unknownCount, tokens, dims, cacheSavingsUsd: s.cacheSavingsUsd, models: rows.length, rows: s.rows };
 };
 
 /** 会话成本（session_id；0 token 行=端点未上报用量——不计入明细，防误标「免费/离线」） */
@@ -56,8 +58,11 @@ export function rangeCost(db: CostDb, since: number, overrides?: CostOverrides):
   } catch { return null; }
 }
 
-/** 统一文案：`$1.2345` / `$1.2345 起（2 个模型未收录定价）` / ''（无数据） */
+/** 统一文案：`$1.2345` / `$1.2345 起（2 个模型未收录定价）` / `$1.2345（缓存节省 $0.0312）` / ''（无数据） */
 export function costText(q: CostQueryResult | null): string {
   if (!q) return '';
-  return q.unknown === 0 ? `$${q.usd.toFixed(4)}` : `$${q.usd.toFixed(4)} 起（${q.unknown} 个模型未收录定价）`;
+  const base = q.unknown === 0 ? `$${q.usd.toFixed(4)}` : `$${q.usd.toFixed(4)} 起（${q.unknown} 个模型未收录定价）`;
+  // 前缀缓存净节省（相对无缓存基准；只有官方公布缓存价目且净节省 >0 才展示——绝不虚报）
+  if (q.cacheSavingsUsd > 0) return `${base}（缓存节省 $${q.cacheSavingsUsd.toFixed(4)}）`;
+  return base;
 }

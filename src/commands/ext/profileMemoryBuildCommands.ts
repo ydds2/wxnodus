@@ -246,12 +246,14 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
         const keyRes = resolveApiKey(ctx.config.get('settings') as any);
         if (!keyRes.key) return `（规则压缩）${text.slice(0, 400)}${text.length > 400 ? '…' : ''}`;
         const { callModelOnce } = await import('../../kernel/llmOnce.js');
+        const { COMPRESSOR_SYSTEM_PROMPT } = await import('../../kernel/memory.js');
         const baseURL = resolveDefaultBaseURL(ctx.config.get('settings') as any);
         const model = resolveDefaultModel(ctx.config.get('settings') as any);
+        // 独立单轮请求（全新 [system,user] 对）——结果只写回记忆库，不污染主对话前缀缓存
         const r = await callModelOnce({
           baseURL, model, key: keyRes.key,
           messages: [
-            { role: 'system', content: '你是上下文压缩器。把对话片段压缩为保留关键信息的摘要（中文，≤400 字），只输出摘要。' },
+            { role: 'system', content: COMPRESSOR_SYSTEM_PROMPT },
             { role: 'user', content: text },
           ],
         });
