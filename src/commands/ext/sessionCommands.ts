@@ -702,6 +702,61 @@ ${d}
     return '未知子命令——/market search <词> 或 /market install <包> --type mcp|skill';
   });
 
+  // /bundle：场景整合包（Modpack 对标——skill/MCP/插件/配置规整为一个资源包：
+  // create/add/remove 规整清单 → install 一键装（复用 market 安装器）→ export tar.gz 离线分发
+  // （vendoring 已安装技能）→ use 应用场景（settings 并入项目配置——B-05 分层即场景生产会话）
+  bus.register('/bundle', async (args) => {
+    const sub = args[0];
+    if (!sub || sub === 'list') {
+      const { listBundles } = await import('../../kernel/bundle.js');
+      const bs = listBundles(ctx.dataDir);
+      if (!bs.length) return '暂无整合包——/bundle create <名称> [描述] 创建（Modpack 语义：skill/MCP/插件/配置规整打包）';
+      return lines(' 整合包 ', bs.map(b =>
+        ` ${b.name} v${b.version}  ${b.description || ''}  [skill ${b.skills.length} · mcp ${b.mcps.length} · plugin ${b.plugins.length}${b.config?.settings ? ' · 带场景配置' : ''}]`));
+    }
+    if (sub === 'create') {
+      const name = args[1];
+      if (!name) return '用法：/bundle create <名称> [描述]';
+      const { createBundle } = await import('../../kernel/bundle.js');
+      const r = createBundle(ctx.dataDir, name, args.slice(2).join(' '));
+      return r.message;
+    }
+    if (sub === 'add' || sub === 'remove') {
+      const [name, kind, ref] = [args[1], args[2], args[3] ?? ''];
+      if (!name || !['skill', 'mcp', 'plugin'].includes(kind)) return '用法：/bundle add|remove <名称> skill|mcp|plugin <引用>（skill：npm:<包> 或 github:<owner>/<repo>；mcp：npm:<包>）';
+      const { editBundle } = await import('../../kernel/bundle.js');
+      const r = editBundle(ctx.dataDir, name, `${kind}s` as 'skills' | 'mcps' | 'plugins', ref, sub);
+      return r.message;
+    }
+    if (sub === 'install') {
+      const name = args[1];
+      if (!name) return '用法：/bundle install <名称>（一键安装全部 skill+MCP 资源）';
+      const { loadBundle, installBundle } = await import('../../kernel/bundle.js');
+      const r = loadBundle(ctx.dataDir, name);
+      if (!r.ok || !r.manifest) return r.message;
+      const reports = await installBundle(r.manifest, ctx.dataDir, ctx.cwd);
+      const ok = reports.filter(x => x.ok).length;
+      return lines(` 整合包安装：${name}（${ok}/${reports.length}） `, reports.map(x => ` ${x.ok ? '✅' : '❌'} ${x.item}\n   ${x.message}`));
+    }
+    if (sub === 'export') {
+      const name = args[1];
+      if (!name) return '用法：/bundle export <名称> [输出目录]（tar.gz：清单 + vendored 技能——离线分发）';
+      const { exportBundle } = await import('../../kernel/bundle.js');
+      const r = exportBundle(ctx.dataDir, name, args[2] || undefined);
+      return r.message;
+    }
+    if (sub === 'use') {
+      const name = args[1];
+      if (!name) return '用法：/bundle use <名称>（应用场景：settings 并入项目配置 + MCP 落 .mcp.json——该 cwd 后续会话即场景生产会话）';
+      const { loadBundle, useBundle } = await import('../../kernel/bundle.js');
+      const r = loadBundle(ctx.dataDir, name);
+      if (!r.ok || !r.manifest) return r.message;
+      const u = await useBundle(r.manifest, ctx.dataDir, ctx.cwd);
+      return u.message;
+    }
+    return '未知子命令——/bundle list|create|add|remove|install|export|use（无参数 = list）';
+  });
+
   // /reload-skills：重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini），汇报统计
   bus.register('/reload-skills', () => {
     const list = discoverSkills(ctx.dataDir, ctx.cwd);

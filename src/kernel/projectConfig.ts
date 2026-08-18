@@ -2,8 +2,8 @@
 // 项目文件：<cwd>/.wxnodus/config.json 的 settings 段——键级覆盖全局 settings（浅合并，不深合并）。
 // 读取策略：每次调用直接读+解析（文件极小，成本可忽略；不做 mtime 缓存——CI 实测 Windows NTFS
 // 同毫秒内两次写入 mtimeMs 不变会返回陈旧内容，缓存正确性不可证故弃用）。
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 export interface ProjectConfig { settings?: Record<string, any>; [k: string]: any }
 
@@ -34,4 +34,18 @@ export function layeredSettings(global: Record<string, any> | undefined, cwd: st
 export function settingsLayers(cwd: string): { projectPath: string; projectLoaded: boolean; error?: string } {
   const { cfg, error } = readProjectConfig(cwd);
   return { projectPath: projectConfigPath(cwd), projectLoaded: !!cfg, error };
+}
+
+/** 写项目配置（整份覆盖；目录自动创建）——/bundle use 场景配置落位 */
+export function writeProjectConfig(cwd: string, cfg: ProjectConfig): void {
+  const p = projectConfigPath(cwd);
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, JSON.stringify(cfg, null, 2), 'utf8');
+}
+
+/** 项目 settings 键级合并写入（保留既有非 settings 段与既有 settings 键）——场景整合包应用 */
+export function mergeProjectSettings(cwd: string, settings: Record<string, any>): void {
+  const cur = readProjectConfig(cwd).cfg ?? {};
+  const next: ProjectConfig = { ...cur, settings: { ...(cur.settings ?? {}), ...settings } };
+  writeProjectConfig(cwd, next);
 }
