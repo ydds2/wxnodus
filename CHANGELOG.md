@@ -30,6 +30,7 @@
 - **长驻 exec-server（S-04 完整版）**：`/remote server`（HMAC 派生 token + 远端 OS 沙盒 profile 复用，不可用即拒绝绝不降级）+ `/remote connect` 接入——bash 工具与 `/remote run` 优先走 exec-server（远端可沙盒），回退 ssh 通道（未沙盒诚实标注）。复算 814 → **825**（⑦ 满格）。
 - **双态沙盒提权分支真机实测修复（两轮）**：管理员终端实测暴露 v3 报 87（SidsToDisable 裸 SID 指针 + LocalSystem 不在令牌组）→ v4（TokenGroups 只禁用存在 SID、Attributes=0）；v4 探测 OK 但启动报 1314（受限令牌经令牌复制失去「调用方令牌受限版」豁免）→ v5（从本进程令牌直接构建 + SeIncreaseQuotaPrivilege + 探测加真实进程启动冒烟——OK-ELEVATED=全链路实测）；`scripts/probe-elevated.cmd` 重写为 CRLF + 纯 ASCII（修复双击即退）+ 失败路径可见化。
 - **双态沙盒提权分支实测收官（⑥ 9→10）**：管理员终端第三轮全绿——OK-ELEVATED（含进程启动冒烟）+ L0 拒写 + L1 可写，Windows 双态沙盒全链路真机验证；复算 825 → **835**（第 3/7，⑥=10 七家第一，第一维度增至四项）。
+- **第三方插件接收（S-02 接收侧）**：`/plugin install <目录|本地 zip|https URL>`——SSRF 防护下载（复用 /download 逐跳授权）、包结构校验、`--sha256` 完整性校验（未提供时诚实提示）、staging 原子落位、启用失败自动回滚；装后自动走 modern 生命周期 enable（沙箱门/owned scope）。
 - **git remote 配置（发布通道解锁）**：origin → github.com/ydds2/wxnodus（私人仓库），master 全史推送；公开前清理 drill 空库与夹具构建产物出库（.gitignore 补 `.wxnodus/*.db`）。winget/scoop 上架仍需公开下载 URL（私人仓库资产不可公开拉取）。
 - **内部测试分发（B 方案）**：W6 发布管线首跑——wxnodus-3.1.0.zip（自校验安装包：manifest 全量 sha256 + 安装前校验 install.ps1，可卸载）上传私有 GitHub Release **v3.1.0-rc.1**（仅授权成员可下载）；顺带修复生产 dist 泄漏 test.tsx（vitest/ink-testing-library 混入安装闭包，被打包门禁拦截）。
 
