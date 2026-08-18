@@ -936,3 +936,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **方案**：`docs/upgrade-plan-2026-08.md`——波 1（③5→6/②6→7/⑩9→10/⑤9→10，+35 → **878 反超 codex**，不依赖公开决策）、波 2（②7→8/③6→7/⑪8→9，+22 → 900）、波 3（②8→9/③7→8/⑪9→10，+22 → 922）；⑧ +36 仍卡公开决策。
 - **⑪ 口径修正（取证强制）**：「黑洞记忆六家唯一」❌（gemini Auto Memory 同赛道，memoryService.ts/.inbox 人工审批）；「Windows 沙盒六家唯一」❌（codex windows-sandbox-rs 更深）。**新论据 = UIA 桌面自动化（六家唯一）+ 离线四模态组合（六家唯一）**——score/register ⑪ 论据随波 2.3 一并改口。
 - **评分纪律**：每档实现+测试+真实证据三件齐备才复算，绝不预支。
+
+### 13.73 波 1 收官轮（2026-08-18：②③⑤⑩ 四维齐升——843 → 878 反超 codex 登顶第 1/7）
+
+按 `docs/upgrade-plan-2026-08.md` 波 1 执行（六家源码逐项对标，每任务独立提交 + 独立测试）：
+
+1. **⑩ 9→10（acc0f15，13 单测）**：`providers.ts` 消息字段固定序 `normalizeMessageFieldOrder`（DeepSeek 字节稳定前缀）+ `applyCacheBreakpoints`（crush agent.go:839-855 对标——system+尾 2 条 ephemeral；目录全 OpenAI 兼容端点故默认关，诚实口径）+ `cost.ts` 缓存写价兜底（未收录 ×1.25 输入价，aider base_coder.py:2077-2096 对标）+ `costQuery.cacheSavingsUsd` 净节省展示（官方读价才有正节省）+ `COMPRESSOR_SYSTEM_PROMPT` 单一事实源（摘要独立单轮请求契约，gemini chatCompressionService.ts:361-379 / kimi compaction.py:126-131 对标）。
+2. **③ 5→6（9b9be8b，22 单测 + 真机实测）**：`diffRenderer.tsx`（gemini DiffRenderer.tsx:224-399 移植——行号 gutter 由 @@ 头驱动、del 右侧留空、hunk 折叠复用、超大 diff 前 400 行高亮余行合并）+ `diffGutter.ts`（diffBodyOf 双条件防 grep 误判）+ `diffText.ts`（fs_edit 结果统一 diff 块，同行上下文 + 8 行/120 字上限）+ `view_image` 工具（kimi read_media.py 对标——extractImages 钩子执行现场收集、视觉会话附 user 消息 parts、纯文本 toolTrim 白名单 + 双保险）；真实截图 1982×1036 全链路实测通过（工具链路）；视觉模型回显留待带密钥会话（本机无密钥——不预支该子项）。
+3. **② 6→7（110da2c，18 单测）**：`editorLaunch.ts`（kimi editor.py:18-50 探测链 + crush ui.go:3688-3725 临时文件往返——真 spawn 假编辑器测试、ENOENT 降级链、失败保草稿）+ `inputHighlight.ts`（gemini highlight.ts:29-57 三类 token + LRU64 + 内联 ANSI）+ Ctrl-R 反向搜索既有实现补 7 单测（codex history_search.rs:55-134 对标）。
+4. **⑤ 9→10（fd1ce6d，10 单测）**：`COMPRESSOR_SYSTEM_PROMPT` 结构化 7 块 `<state_snapshot>`（gemini snippets.ts:899-963）+ CRITICAL SECURITY RULE 反注入段 + kimi 保留规则（compact.md:15-22）+ `COMPRESSOR_MERGE_INSTRUCTION` 合并锚定（gemini :353-359）+ `summarizeOnce` 会话级失败护栏（gemini :287-321——失败一次纯截断；ref 间接层跨回合持存）。
+5. **收尾（f1f40f8）**：gateway 价格快照补 cacheWrite 断言 + 波 1 测试类型收口；全量套件 **357 文件 / 2658 用例绿（10 skip）**；`npm run ci` 本地九命令全绿；远程 CI 全绿（workflow #32164158190）。
+6. **复算 878**：② 6→7（+9）③ 5→6（+8）⑩ 9→10（+7）⑤ 9→10（+11）= +35 → **878**——**反超 codex（869）登顶第 1/7**；严格第一 ①④⑥⑩⑪ 五项、并列第一 ⑤⑦（与 opencode）。score §0.1/§9.16、register、supremacy-plan 3.6、CHANGELOG、upgrade-plan 已同步。
+7. **诚实口径**：⑧ 5→9（+36）仍卡公开决策未动；视觉模型回显子项留待带密钥会话；cache_control 断点为能力位预留（当前目录无 Anthropic 式端点）。

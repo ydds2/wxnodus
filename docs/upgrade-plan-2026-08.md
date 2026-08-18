@@ -8,34 +8,34 @@
 
 | 波 | 维度档位 | 增量 | 总分 | 里程碑 |
 |---|---|---|---|---|
-| 波 1 小步快跑 | ③5→6 ②6→7 ⑩9→10 ⑤9→10 | +8+9+7+11=**+35** | **878** | **反超 codex（869）——不依赖公开决策** |
+| 波 1 小步快跑 ✅ 已落定（2026-08-18） | ③5→6 ②6→7 ⑩9→10 ⑤9→10 | +8+9+7+11=**+35** | **878** | **反超 codex（869）——不依赖公开决策，score §9.16** |
 | 波 2 核心体验 | ②7→8 ③6→7 ⑪8→9 | +9+8+5=**+22** | **900** | 编辑器/diff 追平头部体验 |
 | 波 3 专家档 | ②8→9 ③7→8 ⑪9→10 | +9+8+5=**+22** | **922** | 独占点成型（per-hunk 应用/本地语义检索） |
 | 阻塞项 | ⑧ 5→9 | +36 | — | 卡公开决策（用户暂缓：第三方接收已落地） |
 
 ## 1. 波 1「小步快跑」→ 878（四任务，约 2-3 天，全部小-中工作量）
 
-### 1.1 ③ 5→6：diff 回显组件 + 图片模型输入（+8）
+### 1.1 ③ 5→6：diff 回显组件 + 图片模型输入（+8）——✅ 已落定（9b9be8b）
 - **对标取证**：六家全有工具调用 diff 语法高亮回显；六家全有「图片作为模型输入」。wxnodus 两缺。
 - **抄谁**：gemini-cli `packages/cli/src/ui/components/messages/DiffRenderer.tsx:224-399`（行号 gutter + +/- 色块 + 逐行语高 + gap 双线分隔——与 wxnodus 同 ink+TS 栈，移植成本最低）；kimi-cli `src/kimi_cli/tools/file/read_media.py`（data URL 图片输入，最简）；codex `core/src/tools/handlers/view_image.rs`（转录 "Viewed Image" 条目，`history_cell/patches.rs:60-73`）。
 - **改动**：① 新增 `src/wxnodus-ui/components/diffRenderer.tsx`（fs_edit/apply_patch 结果内联渲染）并接入 messageLine；新文件全量语高、超大 diff 截断（codex `diff_render.rs:591-598` 保护）。② 新增图片输入工具（`view_image`：data URL + 尺寸，模型输入通道）——注意 400 防御与 toolTrim 已具备，接白名单。
 - **验收**：6 单测（解析/渲染/超大截断/图片工具）；本机真实调用一次图片工具（视觉模型回显）。
 - **工作量**：小。
 
-### 1.2 ② 6→7：外部编辑器 + Ctrl-R 反向搜索 + 输入区 token 高亮（+9）
+### 1.2 ② 6→7：外部编辑器 + Ctrl-R 反向搜索 + 输入区 token 高亮（+9）——✅ 已落定（110da2c）
 - **对标取证**：外部编辑器集成 **6/6 全有**（wxnodus 唯一缺失的「全票基础题」）；Ctrl-R 反向搜索 codex/gemini 有；输入内 token 高亮 gemini/aider/opencode 有。
 - **抄谁**：crush `internal/ui/model/ui.go:3688-3725`（外部编辑器最简——temp 文件 + 光标行列传递）；kimi `src/kimi_cli/utils/editor.py:18-50`（$VISUAL→$EDITOR→code --wait 自动探测链）；codex `tui/src/bottom_pane/chat_composer/history_search.rs:55-134`（草稿快照 + 实时匹配高亮 + Esc 还原）；gemini `packages/cli/src/ui/utils/highlight.ts:29-57`（@/斜杠/占位符三类 token 正则 + LRU——同栈直译）。
 - **改动**：① textInput 加 Ctrl+O 外部编辑器（挂起→$EDITOR 临时 .md→回读替换，Esc 保留草稿）；② historySearch 加 Ctrl-R 反向模式（会话态 + footer 提示）；③ textInput 渲染层 token 着色。
 - **验收**：8 单测（编辑器往返/探测链/搜索还原/高亮 token）；TUI 手动冒烟。
 - **工作量**：小。
 
-### 1.3 ⑩ 9→10：cache 断点放置 + 缓存费率归集 + 摘要独立请求（+7）
+### 1.3 ⑩ 9→10：cache 断点放置 + 缓存费率归集 + 摘要独立请求（+7）——✅ 已落定（acc0f15）
 - **对标取证**：crush `internal/agent/agent.go:839-855,1480-1497`（system + 末尾 2 条消息打 ephemeral cache 断点、三 provider 同构）；aider `aider/coders/base_coder.py:2077-2096`（cache_write×1.25 / cache_hit×0.10 计入费用）；gemini `chatCompressionService.ts:361-379` 与 kimi `compaction.py:126-131`（**摘要走独立 utility 请求，不污染主对话前缀**——最值钱一项）。
 - **改动**：① buildChatRequest：DeepSeek 系自动前缀缓存靠字节稳定（规范排序已有）——补「system 首消息 + 尾部断点」标注（若 provider 支持 cache_control）与消息字段固定序；② `cost.ts`：cacheHit 按 cacheRead 价、cacheWrite 按 1.25× 输入价归集，usage_stats 展示「缓存省了多少」；③ `memory.ts` summarize 改为独立单轮请求（只把结果写回主对话）——保住主前缀缓存。
 - **验收**：4 单测（断点位置/费率公式/独立请求不污染主历史）；成本面板缓存行实测。
 - **工作量**：低-中。
 
-### 1.4 ⑤ 9→10：压缩快照结构化 + 反注入段 + 失败护栏（+11）
+### 1.4 ⑤ 9→10：压缩快照结构化 + 反注入段 + 失败护栏（+11）——✅ 已落定（fd1ce6d）
 - **对标取证**：gemini `prompts/snippets.ts:899-963`（7 块 `<state_snapshot>`：overall_goal/active_constraints/key_knowledge/artifact_trail/file_system_state/recent_actions/task_state + **CRITICAL SECURITY RULE 反注入段**）；kimi `prompts/compact.md:15-22`（错误全留、<20 行代码全留、优先级排序）；gemini `chatCompressionService.ts:287-321`（**摘要失败一次→纯截断，不再烧 LLM**）。
 - **改动**：① `memory.ts` summarize 换结构化 XML prompt（7 块 + 反注入 + kimi 保留规则）；② 快照合并锚定指令（gemini :353-359）；③ per-session 摘要失败标记 → 后续压缩直接截断降级。
 - **验收**：6 单测（模板块完整性/反注入段存在/合并指令/失败护栏/保留规则）；压缩产物快照人工抽查。

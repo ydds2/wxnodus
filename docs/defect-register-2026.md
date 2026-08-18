@@ -53,8 +53,18 @@
 
 ## 下一档优先级（按提分/成本）
 
-1. A-02+A-03（⑤ 6→7→8，+11~22）——提示词分族与小模型任务档，纯内核改动零外部依赖；
-2. S-03 IDE 插件（⑦ 8→9，+11）——协议已备，工程量中；
-3. A-01 命令面瘦身（原始诉求，不直接加分但消臃肿）;
-4. A-06 成本五维（⑩，中）；
-5. S-04 远程执行 ssh 通道（⑦，中）；S-01 发布（有 remote 即解锁）。
+1. 波 2 ②7→8（@补全——6/6 全有，wxnodus 唯一缺的最后一题）；
+2. 波 2 ③6→7（word-level diff，kimi 独有 + hunk 跳转，opencode）；
+3. 波 2 ⑪8→9（离线拉取进度 + 记忆收件箱）；
+4. 波 3：vim（gemini vim.ts）、完整 diff 查看器/逐 hunk 应用（差异化）、ACP 接收 + 本地语义搜索；
+5. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）。
+
+## 波 1 落定（2026-08-18：②③⑤⑩ 四维齐升——843 → 878，反超 codex 登顶第 1/7，证据 score §9.16 / audit §13.73）
+
+| 维度 | 波 1 前 | 波 1 后 | 落定内容（对标锚点） |
+|---|---|---|---|
+| ③ diff/媒体 | 5 | 6 | diff 回显组件（gemini DiffRenderer 移植）+ fs_edit diff 块（codex RespondToModel）+ view_image 图片输入（kimi read_media） |
+| ② 输入/编辑器 | 6 | 7 | Ctrl+O 外部编辑器（kimi editor.py 探测链 + crush 临时文件往返）+ token 高亮（gemini highlight.ts）+ Ctrl-R 补测试（codex） |
+| ⑩ 性能/token | 9 | 10 | 字段固定序 + cache_control 断点（crush）+ 缓存写价/节省展示（aider）+ 摘要独立请求（gemini/kimi） |
+| ⑤ 提示词/适配 | 9 | 10 | 7 块结构化快照 + 反注入段（gemini snippets.ts）+ 保留规则（kimi compact.md）+ 合并锚定 + 失败护栏（gemini） |
+

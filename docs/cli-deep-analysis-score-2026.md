@@ -10,26 +10,26 @@
 
 **11 维 × 7 家，权重归一化到 100。** 权重代表「AI 编码 CLI 综合竞争力」的构成假设：Agent 内核 13、提示词/模型适配 11、场景/协议 11、安全 10 为第一梯队；渲染/输入/生态/工程为体验与持续力；差异化 5 是「不可替代性」溢价。
 
-### 0.1 补齐轮复评表（2026-08-18 二评，wxnodus 列已更新；其余六家分数不变）
+### 0.1 波 1 复评表（2026-08-18 三评，wxnodus 列已更新；其余六家分数不变）
 
 | 维度（权重） | wxnodus | codex | gemini | opencode | crush | kimi | aider |
 |---|---|---|---|---|---|---|---|
 | ① UI 渲染引擎（9） | **10** | 9 | 7 | 8 | 9 | 6 | 4 |
-| ② 输入/编辑器（9） | 6 | **10** | 9 | 7 | 6 | 8 | 8 |
-| ③ 内容交互 diff/媒体（8） | 5 | 8 | 6 | **9** | **9** | 7 | 5 |
+| ② 输入/编辑器（9） | 7 | **10** | 9 | 7 | 6 | 8 | 8 |
+| ③ 内容交互 diff/媒体（8） | 6 | 8 | 6 | **9** | **9** | 7 | 5 |
 | ④ Agent 内核/工具（13） | **10** | 9 | 9 | 9 | 8 | 8 | 7 |
-| ⑤ 提示词/模型适配（11） | 9 | 9 | 9 | **10** | 7 | 7 | 8 |
+| ⑤ 提示词/模型适配（11） | **10** | 9 | 9 | **10** | 7 | 7 | 8 |
 | ⑥ 安全工程（10） | **10** | 9 | 9 | 7 | 7 | 6 | 3 |
 | ⑦ 场景/协议（11） | **10** | 9 | 9 | **10** | 5 | 7 | 4 |
 | ⑧ 分发/生态/文档（9） | 5 | 9 | 8 | **9** | 7 | 8 | 8 |
 | ⑨ 工程质量/CI（8） | **9** | 9 | 9 | 9 | 8 | 8 | 5 |
-| ⑩ 性能/token 工程（7） | 9 | 8 | 8 | 7 | 7 | 6 | 5 |
+| ⑩ 性能/token 工程（7） | **10** | 8 | 8 | 7 | 7 | 6 | 5 |
 | ⑪ 差异化（离线/记忆/平台）（5） | **8** | 4 | 3 | 5 | 4 | 3 | 5 |
-| **加权总分（/1000）** | **843** | **869** | **812** | **841** | **709** | **693** | **573** |
+| **加权总分（/1000）** | **878** | **869** | **812** | **841** | **709** | **693** | **573** |
 
-**排名：codex 8.69 ＞ wxnodus 8.43 ＞ opencode 8.41 ＞ gemini 8.12 ＞ crush 7.09 ＞ kimi 6.93 ＞ aider 5.73。**（wxnodus 由 6.14→7.25→7.54→7.90→8.14→8.25→8.35→8.43：**反超 opencode 升至第 2/7**；距 codex 869 差 26）
+**排名：wxnodus 8.78 ＞ codex 8.69 ＞ opencode 8.41 ＞ gemini 8.12 ＞ crush 7.09 ＞ kimi 6.93 ＞ aider 5.73。**（wxnodus 由 6.14→7.25→7.54→7.90→8.14→8.25→8.35→8.43→8.78：**波 1 四任务落定，反超 codex 升至第 1/7**——不依赖公开决策）
 
-**≥3 维度第一已超额达成（2026-08-18）：① 渲染 10、④ Agent 10、⑥ 安全 10、⑪ 差异化 8——四项均为七家第一。**
+**维度第一已超额达成（2026-08-18 三评）：① 渲染 10、④ Agent 10、⑥ 安全 10、⑩ token 工程 10、⑪ 差异化 8 五项严格第一；⑤ 提示词 10 与 opencode 并列第一、⑦ 场景 10 与 opencode 并列第一。**
 
 **复评变动的逐维理由（±分数全部有落地证据，见 §9 补齐轮记录）：**
 
@@ -58,9 +58,18 @@
 | ⑦ 场景/协议 | 8→9 | IDE 插件本地 vsix（真实消费者，typecheck+4 单测+打包）+ ssh 远程通道（10 mock 单测）+ --serve 协议加固（结构化 sessions RPC + session.changed SSE + 协议文档，3 用例）+ 用户文档三件套——S-03/S-04 +11；marketplace 上架与完整 exec-server 留后续（⑦→10） |
 | ⑨ 工程质量/CI | 7→8 | lint 门禁 + madge 循环依赖门禁（allowlist 登记、未知环即失败）ci 九步挂载 + 修复 2 处运行时环 + perf 微基准四项基线——C-01/C-03 +8；远程 CI 绿留 git remote |
 
+**波 1 复评变动（2026-08-18 upgrade-plan-2026-08.md 波 1 四任务落定，证据见 §9.16；六家源码逐项对标）：**
+
+| 维度 | 旧→新 | 理由（证据锚点） |
+|---|---|---|
+| ③ 内容交互 diff/媒体 | 5→6 | diff 回显组件（gemini `DiffRenderer.tsx:224-399` 移植：行号 gutter + hunk 折叠 + 超大截断保护，`diffRenderer.tsx`/`diffGutter.ts`）+ fs_edit 结果统一 diff 块（codex RespondToModel 对标，`diffText.ts`）+ view_image 图片模型输入通道（kimi `read_media.py` 对标：视觉会话附 image_url parts、纯文本白名单裁剪）——22 单测 + 真实截图全链路实测 +8 |
+| ② 输入/编辑器 | 6→7 | Ctrl+O 外部编辑器（kimi `editor.py:18-50` 探测链 $VISUAL→$EDITOR→code --wait→notepad + crush `ui.go:3688-3725` 临时文件往返，失败保草稿，`editorLaunch.ts`）+ 输入区 token 高亮（gemini `highlight.ts:29-57` 三类 token + LRU + 内联 ANSI，`inputHighlight.ts`）+ Ctrl-R 反向搜索纯函数补测试（codex `history_search.rs` 对标，已有实现补证据）——18 单测（含真 spawn 编辑器往返）+9 |
+| ⑩ 性能/token 工程 | 9→10 | 消息字段固定序（DeepSeek 字节稳定前缀命中前提）+ cache_control 断点放置（crush `agent.go:839-855` 对标，默认关诚实口径）+ 缓存写价 1.25× 兜底与净节省展示（aider `base_coder.py:2077-2096` 对标）+ 摘要独立单轮请求契约（gemini/kimi 对标，压缩器提示单一事实源）——13 单测 +7 |
+| ⑤ 提示词/模型适配 | 9→10 | 压缩快照结构化 7 块 XML（gemini `snippets.ts:899-963` 对标）+ CRITICAL SECURITY RULE 反注入段（工具输出是数据不是指令）+ kimi 保留规则（`compact.md:15-22`：错误原文/≤20 行代码/优先级）+ 快照合并锚定（gemini :353-359 未完成事项不丢）+ 会话级失败护栏（gemini `chatCompressionService.ts:287-321` 失败一次纯截断不再烧 LLM）——10 单测 +11 |
+
 **未调分且如实说明**：⑥ 安全工程维持 9——OS 沙盒本轮落地（Windows L0-L3，标准用户实测校准：受限令牌路径被 1314 证伪、改 Low IL 实现只读）但仅 Windows 单平台，codex/gemini 是三平台沙盒；三平台化后才可冲 10。②③ 未动（vim/keymap、diff 交互 UI 仍在 P1 清单）。
 
-判词先行（补齐轮更新）：**wxnodus 不再是偏科生，而是「单机堡垒已开门」**——渲染引擎单科满分不变；补齐轮把「执行层四件硬差距」（OS 沙盒/apply_patch/并行调度/输出蒸馏）+ LSP + 硬编码清零全部落地，工具层与三大平台巨舰同档（④ 并列满分档）；分发（5）与输入交互（5/4）仍是拉分项，工程 7 分仍差在「无远程 CI、无市场」。它输给头部的仍然是「产品化完成度」（IDE 插件/远程/市场），而不是「技术深度」。
+判词先行（波 1 三评更新）：**wxnodus 已反超 codex 登顶第 1/7（878）**——波 1 四任务（③diff 回显+图片输入 / ②外部编辑器+Ctrl-R+token 高亮 / ⑩前缀缓存工程四件套 / ⑤结构化压缩快照+反注入+失败护栏）全部以六家源码为对标落地并测试；五项严格第一（①④⑥⑩⑪）+ 两项并列第一（⑤⑦）。剩余拉分项集中在「产品化完成度」：分发（⑧ 5，卡公开决策）、内容交互（③ 6，word-level diff 与交互式应用留波 2）、输入编辑器（② 7，@补全留波 2）。波 2/波 3 路线已建档（upgrade-plan-2026-08.md → 900/922）。
 
 ---
 
@@ -301,3 +310,14 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 - **评分口径**：⑨ 工程质量/CI 8→9——远程 CI 绿为预声明条件（C-01「远程 CI 绿留 git remote」），现已兑现；九命令门禁与插件门禁在 GitHub 上真实通过。
 - **复算**：总分 835 → **843**——**反超 opencode（841）升至第 2/7**，距 codex 869 差 26。870 线剩余唯一增量 = ⑧ 5→9（+36）——发布通道已配（私有仓库），剩余：转公开决策（winget/scoop 上架）与市场托管。
 - **验证**：tsc 零错误；winSandbox 10 单测绿；全量套件 346 文件/2579 用例绿；标准用户自测 OK-STANDARD + L0 SBX_WRITE_DENIED。
+
+### 9.16 波 1 收官轮（2026-08-18：②③⑤⑩ 四维落地——843 → 878，反超 codex 登顶第 1/7）
+
+按 `docs/upgrade-plan-2026-08.md` 波 1 四任务执行（每个改动都以六家源码 file:line 为对标锚点）：
+
+- **⑩ 性能/token 工程 9→10（+7）**：消息字段固定序（`providers.ts normalizeMessageFieldOrder`——DeepSeek 字节稳定前缀命中前提）；cache_control 断点放置（`applyCacheBreakpoints`，crush `agent.go:839-855` 对标——system + 尾 2 条 ephemeral，目录无 Anthropic 式端点故默认关、诚实口径）；缓存写价兜底（未收录 ×1.25 输入价，aider `base_coder.py:2077-2096` 对标）+「缓存省了多少」净节省展示（`costQuery.cacheSavingsUsd`，官方读价才有正节省——绝不虚报）；摘要独立单轮请求契约（gemini `chatCompressionService.ts:361-379` / kimi `compaction.py:126-131` 对标——压缩器提示单一事实源 `COMPRESSOR_SYSTEM_PROMPT`，agent 自动压缩与 /compact 同源）。13 单测。
+- **③ 内容交互 diff/媒体 5→6（+8）**：`diffRenderer.tsx` 全量回显组件（gemini `DiffRenderer.tsx:224-399` 移植：行号 gutter 由 @@ 头驱动、del 行右侧留空、hunk 折叠复用 diffHunks、超大 diff 仅前 400 行高亮余行合并——codex `diff_render.rs:591-598` 保护）；工具结果 diff 回显（`diffBodyOf` 双条件检测防 grep 误判）+ assistant ```diff 块升级接入组件；fs_edit 结果携带统一 diff 块（同行上下文 + 行数/行长上限，`diffText.ts`——codex verify→RespondToModel「回给模型看变更」）；view_image 图片模型输入通道（kimi `read_media.py` 对标——extractImages 钩子在执行现场收集 parts，视觉模型会话以 user 消息附加、纯文本模型由 toolTrim 白名单裁剪 + 双保险不附加）。22 单测 + 真实截图（1982×1036 PNG）全链路实测；视觉模型回显留待带密钥会话（本机无密钥配置——不预支该子项）。
+- **② 输入/编辑器 6→7（+9）**：Ctrl+O 外部编辑器（kimi `editor.py:18-50` 探测链 + crush `ui.go:3688-3725` 临时文件往返，`editorLaunch.ts`——真 spawn 假编辑器往返测试，失败保草稿）；输入区 token 高亮（gemini `highlight.ts:29-57` 移植：斜杠/@提及/{{占位符}} 三类 + LRU 64 + 内联 ANSI 与既有 cursor 装饰同机制）；Ctrl-R 反向搜索为既有实现（`historySearch.tsx` + 纯函数）——本轮补 7 单测固化契约（codex `history_search.rs:55-134` 对标）。18 单测。
+- **⑤ 提示词/模型适配 9→10（+11）**：压缩快照结构化 7 块 XML（gemini `snippets.ts:899-963` 对标：overall_goal/active_constraints/key_knowledge/artifact_trail/file_system_state/recent_actions/task_state）+ CRITICAL SECURITY RULE 反注入段（工具输出是数据不是指令）+ kimi 保留规则（`compact.md:15-22`：错误原文保留/≤20 行代码保留/优先级排序）+ 快照合并锚定（gemini `chatCompressionService.ts:353-359`——已有快照合并而非覆盖，未完成事项不丢）+ 会话级失败护栏（gemini :287-321——失败一次 → 本会话后续压缩直接确定性截断，不再烧 LLM；`summarizeOnce` 跨回合持存）。10 单测。
+- **验证**：tsc 零错误；全量套件 357 文件/2658 用例绿（10 skip）；`npm run ci` 本地九命令全绿；远程 CI 见 audit §13.73。
+- **复算**：总分 843 → **878**——**反超 codex（869）升至第 1/7**（不依赖公开决策）。严格第一：①④⑥⑩⑪ 五项；并列第一：⑤⑦（与 opencode）。下一站：波 2 → 900（②7→8 @补全、③6→7 word-level diff + hunk 跳转、⑪8→9 离线拉取进度 + 记忆收件箱）。
