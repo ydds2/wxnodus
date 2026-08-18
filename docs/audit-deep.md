@@ -776,3 +776,8 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **处置**：POSIX 沙盒实现（591cebf）**保留休眠态**（零维护：纯函数测试仍跑、探测在非 POSIX 平台诚实返回不适用、bash 门面分派不受影响）；从路线图优先级移除；寄存器 S-06 标记 ❌ 已移除并新增 S-07（Windows 双态沙盒：提权→受限令牌 / 标准用户→Low IL，⑥ 冲 10 的 Windows 深度论据，提权分支待实现+实测）。
 - **口径**：⑥ 评分表维持 9（跨平台客观口径不变）；Windows-only 产品的 10 分论据 = 「目标平台深度第一」（双态沙盒+纵深防御清单），评分时注明口径——诚实原则：提权分支未经实测前不宣称。
 - **差异化升级**：超越叙事定为「Windows 最强 agent CLI」（渲染/ConPTY/UIA/沙盒双态唯一深度组合），而非跨平台跟随者。
+
+### 13.55 计划重写轮（2026-08-18：supremacy-plan Windows-only 完整重写）
+
+- 用户「请你重写计划」——将打补丁式修订（13.54）升级为**干净完整版**：`docs/supremacy-plan-2026.md` 整体重写为 Windows-only 定稿（定位「Windows 最强 agent CLI」、六轮落地表、Windows-only 天花板 ≈940、⑥ Windows 深度口径、三阶段 18 项任务表、休眠资产声明、四前置项、执行协议）。
+- 无代码改动；文档一致性核验：register S-07 与 plan 3.2 对齐、score §8 挂接不变。
