@@ -1037,6 +1037,9 @@ export function TextInput({
 
           return
         } else if (token === 'f' || token === 'F' || token === 't' || token === 'T') {
+          // f/F/t/T 两键命令：先把操作符送进核心置 pendingOp（<find:ch> 到达时按其执行），
+          // 再挂起预读下一字符
+          vimRef.current = vimHandleKey(vimRef.current, { text: vRef.current, cursor: curRef.current }, token, Date.now(), vimRegRef.current).state
           vimPendingReadRef.current = 'find'
 
           return
