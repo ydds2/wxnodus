@@ -16,9 +16,19 @@ const registry = validateKnownFailureRegistry(KNOWN_FAILURES);
 if (!registry.ok) throw new Error(registry.issues.join('\n'));
 const entries = registry.entries;
 
+// 空目录不被 git 跟踪——CI 干净克隆无 cases/ 目录时按「零活动 case」处理（语义等价，2026-08-18 十三轮实测）
+const readCasesDir = (): string[] => {
+  try {
+    return readdirSync(resolve(repoRoot, 'tests/known-failures/cases'));
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw e;
+  }
+};
+
 describe('known V3 failure registry', () => {
   it('has exact disk closure: every active case belongs to exactly one open ID', () => {
-    const diskCases = readdirSync(resolve(repoRoot, 'tests/known-failures/cases'))
+    const diskCases = readCasesDir()
       .filter(name => name.endsWith('.case.ts'))
       .map(name => `tests/known-failures/cases/${name}`)
       .sort();
@@ -51,7 +61,7 @@ describe('known V3 failure registry', () => {
         ], { cwd: repoRoot, encoding: 'utf8', timeout: failure.timeoutMs });
         expect(fixture.status, fixture.stderr || fixture.stdout).toBe(0);
         const retiredCasePrefix = `${failure.id.toLowerCase()}-`;
-        expect(readdirSync(resolve(repoRoot, 'tests/known-failures/cases'))
+        expect(readCasesDir()
           .some(name => name.startsWith(retiredCasePrefix) && name.endsWith('.case.ts'))).toBe(false);
       });
     }
