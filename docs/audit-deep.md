@@ -872,3 +872,27 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **复算**：⑦ 9→10（+11）——ssh 通道（未沙盒诚实）+ 完整 exec-server（codex 对齐安全面）双通道；总分 814→**825**（第 3/7，距 opencode 841 差 16）。跨机部署验证留用户环境（如实标注）。
 - **剩余**：⑥ +10（管理员实测脚本已交付，等待回报）；⑧ +36（git remote——用户已决策跳过）。两前置完成即 871 超 codex。
 - **验证**：tsc 零错误；exec-server 8 + ssh 10 用例全绿；全量 ci 九步见下。
+
+### 13.66 提权实测首轮缺陷修复轮（2026-08-18：CreateRestrictedToken 87 → runner v4）
+
+- **首轮真机实测（管理员终端回报）**：elevated-probe-result.txt——`PROBE: FAIL · ERR:EX:CreateRestrictedToken:The parameter is incorrect (87)`——v3 提权分支从未真机验证的纸面缺陷首次暴露（诚实口径兑现：此前一直标注「提权分支未实测」）。
+- **根因（三合一）**：① `SidsToDisable` 参数须为 `SID_AND_ATTRIBUTES` 数组（Sid 指针 + uint Attributes），v3 写入裸 SID 指针数组——API 把相邻指针高位字节当 Attributes → 非法参数；② LocalSystem（S-1-5-18）不在用户令牌组中——SidsToDisable 列出的 SID 必须存在于令牌否则必 87；③ Attributes 必须为 0。
+- **修复（runner v4）**：新增 `TokenHasGroup`（GetTokenInformation(TokenGroups) 遍历 + EqualSid）只把令牌中真实存在的 Administrators/LocalSystem 放入禁用列表；按 SIDATTR 尺寸分配 + StructureToPtr 写 Attributes=0；DMP 单独即可产生合法受限令牌（无匹配 SID 的兜底）。SANDBOX_RUNNER_VERSION 3→4（版本戳自动重写陈旧 runner）。
+- **附带修复**：probe-elevated.cmd 双击即退根因——LF 换行 + UTF-8 中文（cmd 批处理必须 CRLF 且按 GBK 解析字节）→ 重写纯 ASCII + CRLF + 失败路径可见化（绝不静默关闭）+ elevated-probe-status.txt 进度标记（od 十六进制复核 0d 0a）。
+- **验证**：tsc 零错误；winSandbox 10 单测绿（含 L3 真实沙盒执行冒烟——新 C# 经 Add-Type 编译通过）；npm run build 绿；标准用户自测 PROBE OK-STANDARD（无回归）+ runner 落盘 v4（TokenHasGroup/Attributes=0 在脚本内）。
+- **待办**：管理员终端重跑 → 预期 PROBE=OK-ELEVATED + L0 SBX_WRITE_DENIED + L1 SBX_WRITE_OK → ⑥ 9→10（+10 → 835）。
+
+### 13.67 提权实测第二轮缺陷修复轮（2026-08-18：CreateProcessAsUser 1314 → runner v5）
+
+- **第二轮真机实测（管理员终端回报）**：v4 探测 OK（受限令牌构建成功——87 已修复），但 L0/L1 写测试 launch-failed：`CreateProcess: A required privilege is not held by the client (1314)`——CreateProcessAsUser 拒绝使用该受限令牌。
+- **根因**：CreateProcessAsUser 需要 SeAssignPrimaryToken（管理员默认没有），唯一豁免=「新令牌是调用方主令牌的受限版本」（内核比对 ParentTokenId）。v4 先用 DuplicateTokenEx 复制（新令牌对象）再 CreateRestrictedToken——受限令牌的 ParentTokenId 指向复制品而非调用方令牌 → 豁免失效 → 1314。标准用户路径不受影响（非受限令牌同用户放行，本机已实测可用）。
+- **修复（runner v5）**：提权路径直接从本进程主令牌（OpenProcessToken 句柄）构建受限令牌（不再复制——父子链保持，豁免成立）；OpenProcessToken 访问掩码补 TOKEN_ADJUST_DEFAULT / TOKEN_ADJUST_PRIVILEGES；`EnsureQuotaPrivilege`（AdjustTokenPrivileges 尽力开启 SeIncreaseQuotaPrivilege——双保险）；**探测升级**：OK-ELEVATED 现在包含真实进程启动冒烟（`cmd /d /c exit /b 0` 经 CreateProcessAsUser + 受限令牌，exit 0 才报 OK；失败报 ERR-ELEVATED-LAUNCH）——杜绝「探测 OK 但启动不可用」的过度宣称。标准用户路径逐字节未动（复制 + Low IL，本机实测校准保持）。
+- **验证**：tsc 零错误；winSandbox 10 单测绿；构建绿；标准用户自测 PROBE OK-STANDARD + L0-WRITE SBX_WRITE_DENIED（lowIlOnly 重构后路径无回归）。
+- **待办**：管理员终端第三轮重跑 → 预期 PROBE=OK-ELEVATED（含启动冒烟）+ L0 SBX_WRITE_DENIED + L1 SBX_WRITE_OK → ⑥ 9→10（+10 → 835）。
+
+### 13.68 提权实测收官轮（2026-08-18：第三轮全绿——⑥ 9→10 = 835）
+
+- **第三轮真机实测（管理员终端回报，elevated-probe-result.txt 取证）**：`PROBE: OK`（受限令牌 + 真实进程启动冒烟）· `L0-WRITE: exit=0 · SBX_WRITE_DENIED` · `L1-WRITE: exit=0 · SBX_WRITE_OK`——三项验收全部达标。
+- **三测三修回顾**：87（SidsToDisable 布局）→ 1314（DuplicateTokenEx 断父子链失豁免）→ 全绿（v5：直接构建 + quota + 启动冒烟）。每轮失败都如实入档，未在证据前宣称可用——诚实口径最终兑现。
+- **复算**：⑥ 9→10（+10）——双态沙盒提权分支真机全链路验证（Windows-only 为既定决策，S-06 移除在案）；总分 825 → **835**，⑥=10 七家第一（第一维度增至四项：①④⑥⑪）。870 线剩余唯一增量 = ⑧ +36（git remote，用户已决策跳过）。
+- **验证**：tsc 零错误；winSandbox 10 单测绿；全量套件 346 文件/2579 用例绿；标准用户自测 OK-STANDARD + L0 SBX_WRITE_DENIED（v5 重构无回归）。
