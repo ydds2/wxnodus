@@ -519,6 +519,42 @@ export const DEFAULT_THEME: Theme = normalizeThemeForAnsiLightTerminal(
   DEFAULT_LIGHT_MODE
 )
 
+// ── 主题预设（B-04，opencode 33 套对标——诚实口径：10 套命名预设，非 33）──
+// 预设 = 基底（dark/light）品牌三元组覆盖（primary/accent/border——吸积盘/边框/brandBar 视觉面）；
+// 语义色（ok/error/warn/diff 等）沿用基底保证可读性契约不破。
+export interface ThemePreset { name: string; base: 'dark' | 'light'; trio: { primary: string; accent: string; border: string } }
+
+export const THEME_PRESETS: Record<string, ThemePreset> = {
+  nord: { name: 'nord', base: 'dark', trio: { primary: '#88C0D0', accent: '#81A1C1', border: '#5E81AC' } },
+  dracula: { name: 'dracula', base: 'dark', trio: { primary: '#BD93F9', accent: '#FF79C6', border: '#6272A4' } },
+  'tokyo-night': { name: 'tokyo-night', base: 'dark', trio: { primary: '#7DCFFF', accent: '#BB9AF7', border: '#565F89' } },
+  monokai: { name: 'monokai', base: 'dark', trio: { primary: '#A6E22E', accent: '#F92672', border: '#75715E' } },
+  gruvbox: { name: 'gruvbox', base: 'dark', trio: { primary: '#B8BB26', accent: '#FE8019', border: '#665C54' } },
+  solarized: { name: 'solarized', base: 'dark', trio: { primary: '#268BD2', accent: '#B58900', border: '#586E75' } },
+  'one-dark': { name: 'one-dark', base: 'dark', trio: { primary: '#61AFEF', accent: '#E06C75', border: '#3E4452' } },
+  catppuccin: { name: 'catppuccin', base: 'dark', trio: { primary: '#89B4FA', accent: '#F38BA8', border: '#585B70' } },
+  everforest: { name: 'everforest', base: 'dark', trio: { primary: '#A7C080', accent: '#E69875', border: '#4B565C' } },
+  synthwave: { name: 'synthwave', base: 'dark', trio: { primary: '#F92AAD', accent: '#00F9FF', border: '#262335' } },
+}
+
+/** 预设名列表（/theme 命令与帮助展示） */
+export const themePresetNames = (): string[] => ['dark', 'light', ...Object.keys(THEME_PRESETS)]
+
+/** 按名解析主题：dark/light → 基底；预设名 → 三元组覆盖；未知 → null（调用方回退 DEFAULT_THEME） */
+export function themeByName(name: string, env: NodeJS.ProcessEnv = process.env): Theme | null {
+  const n = String(name ?? '').trim().toLowerCase()
+  if (n === 'dark') return DARK_THEME
+  if (n === 'light') return LIGHT_THEME
+  const p = THEME_PRESETS[n]
+  if (!p) return null
+  const base = p.base === 'light' ? LIGHT_THEME : DARK_THEME
+  const derived: Theme = {
+    ...base,
+    color: { ...base.color, primary: p.trio.primary, accent: p.trio.accent, border: p.trio.border },
+  }
+  return normalizeThemeForAnsiLightTerminal(derived, env)
+}
+
 // ── Skin → Theme ─────────────────────────────────────────────────────
 
 export function fromSkin(

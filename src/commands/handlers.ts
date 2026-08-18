@@ -16,6 +16,7 @@ import { priceForModel } from '../kernel/cost.js';
 import { sessionCost, costText } from '../kernel/costQuery.js';
 import { snippet } from '../kernel/truncate.js';
 import { WXNODUS_VERSION } from '../kernel/version.js';
+import { themePresetNames } from '../wxnodus-ui/theme.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { topoSort } from '../build/plan.js';
 import { instantiate } from '../build/scaffold.js';
@@ -466,11 +467,12 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const name = args[0];
     if (name) {
       ctx.setTheme(name);
-      // 开放兼容：广播 theme.changed——UI 监听真实切换（dark/light/wxnodus）
+      // 开放兼容：广播 theme.changed——UI 监听真实切换（dark/light/wxnodus/命名预设）
       ctx.bus.emit('theme.changed', { name });
       return `主题已切换：${name}`;
     }
-    return `当前主题：${ctx.getThemeName()}（可选：wxnodus 黑洞/dark/light）`;
+    return `当前主题：${ctx.getThemeName()}
+可选预设：dark / light / ${themePresetNames().filter(n => n !== 'dark' && n !== 'light').join(' / ')}`;
   });
 
   // W7-00：主工作区（用户动态指定）——查看/设置/重置；持久化 settings.workspace

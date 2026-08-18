@@ -12,7 +12,7 @@ import { rpcErrorMessage } from '../lib/rpc.js'
 import { topLevelSubagents } from '../lib/subagentTree.js'
 import { formatAbandonedClarify, formatToolCall, stripAnsi } from '../lib/text.js'
 import { CONFIRM_WORDS, REJECT_WORDS, voiceConfirmChoice } from '../lib/voiceIntent.js'
-import { fromSkin, DARK_THEME, LIGHT_THEME, DEFAULT_THEME } from '../theme.js'
+import { fromSkin, themeByName, DEFAULT_THEME } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
 import { patchBgState } from '../runtime/backgroundStore.js'
@@ -431,11 +431,9 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
       case 'theme.changed': {
-        // 开放兼容：/theme dark|light|wxnodus 真实生效（此前仅存字符串无 UI 效果）
+        // /theme dark|light|<预设名> 真实生效（B-04：命名预设集 themeByName 解析，未知回退默认）
         const name = (ev.payload as { name?: string } | undefined)?.name
-        if (name === 'dark') patchUiState({ theme: DARK_THEME })
-        else if (name === 'light') patchUiState({ theme: LIGHT_THEME })
-        else patchUiState({ theme: DEFAULT_THEME })
+        patchUiState({ theme: themeByName(String(name ?? '')) ?? DEFAULT_THEME })
 
         return
       }
