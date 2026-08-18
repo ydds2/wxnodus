@@ -88,7 +88,10 @@ describe('runHook 边界', () => {
   // P0-06：命令失败结构化返回（不抛、不静默）；崩溃/未知命令均归类为非零退出
   it('命令崩溃返回结构化非零退出（不抛、不静默）', () => {
     expect(runHook('node -e "process.exit(3)"', 'preToolUse', {})).toMatchObject({ kind: 'exited-nonzero' });
-    expect(runHook('不存在的命令xyz', 'preToolUse', {})).toMatchObject({ kind: 'exited-nonzero' });
+    // 未知命令走外部 cmd 解析：环境无关的确定性毫秒级失败——PS 层未知命令发现
+    // 在部分 runner 上受 PSModulePath 垃圾路径/AMSI 拖慢（CI 实测 3.5s~10s+），
+    // 本用例断言的是「结构化非零退出」语义，不绑定 PS 命令发现性能
+    expect(runHook('cmd /c no-such-cmd-xyz', 'preToolUse', {})).toMatchObject({ kind: 'exited-nonzero' });
   });
   it('HOOK_EVENTS 枚举 12 类', () => {
     expect(HOOK_EVENTS).toEqual(['userPromptSubmit', 'preToolUse', 'postToolUse', 'stop', 'sessionStart', 'sessionEnd', 'preCompact', 'postCompact', 'subagentStart', 'subagentStop', 'postToolUseFailure', 'notification']);
