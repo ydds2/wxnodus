@@ -24,6 +24,8 @@
 - **键位配置层（supremacy 3.3）**：`/config set keymap '{"pagerClose":"ctrl+x"}'` 式 JSON 覆盖键位（pager 关闭/导航热生效；非法配置自动回退默认，绝不崩 UI）——诚实口径：不宣称伪 vim。
 - **diff hunk 折叠（supremacy 3.3）**：超长 diff hunk 默认折叠（只显 @@ 头 + 「…N 行已折叠」），补丁完整保留可经 apply_patch 应用。
 - **工程门禁扩展（supremacy 3.5）**：`npm run ci` 七步 → 九步——新增结构性 lint（debugger/内核层 exit 红线）与循环依赖门禁（madge + allowlist，未知新环即失败）；修复 2 处运行时循环依赖（db→memory 再导出环、ssrf↔outbound 互指环）。`npm run bench` 微基准（四项基线）。
+- **Windows 双态沙盒提权分支（supremacy 3.2）**：管理员环境运行时自动切换受限令牌（禁用 Administrators/LocalSystem + Medium IL，L0 只读）——标准用户仍走已实测校准的 Low IL 路径；探测如实报告双态（提权分支实测待管理员环境）。
+- **阶段 3 收尾复评（supremacy 3.6）**：加权总分 754 → 790（② 输入 5→6、③ diff 4→5、⑦ 场景 8→9、⑨ 工程 7→8）——距 gemini 812 差 22；超越 codex（≥870）仍待 git remote（发布/市场/CI 绿）与管理员环境实测。
 
 ## [3.1.0] - 2026-08-18
 

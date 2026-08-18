@@ -15,19 +15,19 @@
 | 维度（权重） | wxnodus | codex | gemini | opencode | crush | kimi | aider |
 |---|---|---|---|---|---|---|---|
 | ① UI 渲染引擎（9） | **10** | 9 | 7 | 8 | 9 | 6 | 4 |
-| ② 输入/编辑器（9） | 5 | **10** | 9 | 7 | 6 | 8 | 8 |
-| ③ 内容交互 diff/媒体（8） | 4 | 8 | 6 | **9** | **9** | 7 | 5 |
+| ② 输入/编辑器（9） | 6 | **10** | 9 | 7 | 6 | 8 | 8 |
+| ③ 内容交互 diff/媒体（8） | 5 | 8 | 6 | **9** | **9** | 7 | 5 |
 | ④ Agent 内核/工具（13） | **9** | **9** | **9** | **9** | 8 | 8 | 7 |
 | ⑤ 提示词/模型适配（11） | 8 | 9 | 9 | **10** | 7 | 7 | 8 |
 | ⑥ 安全工程（10） | **9** | **9** | **9** | 7 | 7 | 6 | 3 |
-| ⑦ 场景/协议（11） | 8 | 9 | 9 | **10** | 5 | 7 | 4 |
+| ⑦ 场景/协议（11） | 9 | 9 | 9 | **10** | 5 | 7 | 4 |
 | ⑧ 分发/生态/文档（9） | 5 | 9 | 8 | **9** | 7 | 8 | 8 |
-| ⑨ 工程质量/CI（8） | 7 | 9 | 9 | 9 | 8 | 8 | 5 |
+| ⑨ 工程质量/CI（8） | 8 | 9 | 9 | 9 | 8 | 8 | 5 |
 | ⑩ 性能/token 工程（7） | 9 | 8 | 8 | 7 | 7 | 6 | 5 |
 | ⑪ 差异化（离线/记忆/平台）（5） | **8** | 4 | 3 | 5 | 4 | 3 | 5 |
-| **加权总分（/1000）** | **754** | **869** | **812** | **841** | **709** | **693** | **573** |
+| **加权总分（/1000）** | **790** | **869** | **812** | **841** | **709** | **693** | **573** |
 
-**排名：codex 8.69 ＞ opencode 8.41 ＞ gemini 8.12 ＞ wxnodus 7.54 ＞ crush 7.09 ＞ kimi 6.93 ＞ aider 5.73。**（wxnodus 由 6.14→7.25→7.54：补齐轮升至第 4/7 名，阶段 1 收尾 ⑤+2/⑩+1 复算再 +29）
+**排名：codex 8.69 ＞ opencode 8.41 ＞ gemini 8.12 ＞ wxnodus 7.90 ＞ crush 7.09 ＞ kimi 6.93 ＞ aider 5.73。**（wxnodus 由 6.14→7.25→7.54→7.90：补齐轮升第 4，阶段 1 复算 754，阶段 3 复算 790——距 gemini 812 差 22）
 
 **复评变动的逐维理由（±分数全部有落地证据，见 §9 补齐轮记录）：**
 
@@ -46,6 +46,15 @@
 |---|---|---|
 | ⑤ 提示词/模型适配 | 6→8 | 分族提示词（`providerPrompts.ts` 三族专属段零 CJK 注入，7 用例）；小模型任务档（`taskModels.ts` + titleModel 标题路由 + 诚实回退，9 用例）——A-02 +11、A-03 +11；「API 级 caching 深化」留阶段 3（⑤ 到 9 的最后一步） |
 | ⑩ 性能/token 工程 | 8→9 | 成本五维 + 整数 µUSD BigInt 定点计价（usage v10 + `cost.ts` 五维计价，14 用例）+ 小模型任务档路由 + 按模型工具裁剪（token 工程面）——A-06 +7 |
+
+**阶段 3 复评变动（2026-08-18 超越计划阶段 3 收尾，证据见 §9.11）：**
+
+| 维度 | 旧→新 | 理由（证据锚点） |
+|---|---|---|
+| ② 输入/编辑器 | 5→6 | 键位配置层（`keymap.ts` 解析/匹配/覆盖合并 + pager 六动作真实接线 + 热生效水合，10 用例）+ vim 摘除诚实口径——B-01 +9；「全模态 vim/@选择器 UI」留后续 |
+| ③ 内容交互 diff/媒体 | 4→5 | diff hunk 折叠（`diffHunks.ts` 模型 + messageLine 超长 hunk 默认折叠渲染 + extractPatchText 供 apply_patch，6 用例）——B-02 +8；交互式折叠切换/图片渲染/which-key 留后续 |
+| ⑦ 场景/协议 | 8→9 | IDE 插件本地 vsix（真实消费者，typecheck+4 单测+打包）+ ssh 远程通道（10 mock 单测）+ --serve 协议加固（结构化 sessions RPC + session.changed SSE + 协议文档，3 用例）+ 用户文档三件套——S-03/S-04 +11；marketplace 上架与完整 exec-server 留后续（⑦→10） |
+| ⑨ 工程质量/CI | 7→8 | lint 门禁 + madge 循环依赖门禁（allowlist 登记、未知环即失败）ci 九步挂载 + 修复 2 处运行时环 + perf 微基准四项基线——C-01/C-03 +8；远程 CI 绿留 git remote |
 
 **未调分且如实说明**：⑥ 安全工程维持 9——OS 沙盒本轮落地（Windows L0-L3，标准用户实测校准：受限令牌路径被 1314 证伪、改 Low IL 实现只读）但仅 Windows 单平台，codex/gemini 是三平台沙盒；三平台化后才可冲 10。②③ 未动（vim/keymap、diff 交互 UI 仍在 P1 清单）。
 
@@ -238,3 +247,28 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 - **2.5 桌面端协议加固（--serve 路径，路线图既定推荐）**：`serve.ts`——① 结构化 `sessions` RPC（与 `/sessions --json`、桌面端共用 `listSessionsStructured` 单一事实源：首问摘要/消息数/分支数/血缘；窄端口回退裸 SQL 诚实降级）② **`session.changed` SSE 广播**（SSE 订阅者注册表 + chat/command RPC 完成后推送——面板事件驱动刷新会话列表，无轮询）；`docs/serve-protocol.md` v1（路由/RPC/SSE/安全/桌面端施工图，诚实边界：serve 模式审批暂缺省 deny，交互审批走 --wire 宿主模式）。3 协议用例（真实 db 结构化断言 + SSE 双 reason 广播）+ 8 既有 serve 用例全绿。
 - **2.4 CI workflow 备件（remote 待用户）**：`.github/workflows/ci.yml`——八步（checkout/setup-node 22/npm install/`npm run ci` 全门禁/vscode-ext install+typecheck+test/vsce 打包/上传 vsix 工件），本地 YAML 语法+结构校验通过；**推送与首次 workflow 绿待 git remote**（阻塞如实标注）。
 - **评分口径**：⑨ 工程 CI 仍是「本地门禁 + 备件」——workflow 未在真实 runner 上绿过，⑨ 不加分；⑦ 复算仍计入阶段 2 收尾（2.4 推送绿后）。分数保持 754 不变。
+
+### 9.8 超越计划阶段 3 首批（2026-08-18：3.3 键位配置层 + diff hunk 折叠）
+
+- **3.3 键位配置层（B-01）**：`src/wxnodus-ui/config/keymap.ts`——命名动作→KeySpec（parseKeySpec 修饰组合/大小写敏感/space 归一；matchesKey 单字符要求修饰一致；resolveKeymap settings.keymap 覆盖合并、非法回退默认）；settings 白名单 + config.get full 透出 + useConfigWatcher.applyDisplay 水合（last-good 守卫）→ useKeyBindings pager 六动作真实接线（默认键位逐项=原硬编码，零漂移）。10 单测。诚实口径：不做伪 vim（模态编辑如接入再标注）。
+- **diff hunk 折叠/apply（B-02）**：`diffHunks.ts`（分节/hunk 分组/默认折叠/切换/extractPatchText 还原补丁）+ messageLine 渲染接线（超长 hunk 默认折叠只显 @@ 头+折叠提示）。6 单测。@文件引用机制已有（resolveAtRefs）。
+- **评分口径**：本批为 ②③ 输入/交互层——复算计入阶段 3 收尾（3.6）；分数保持 754。
+
+### 9.9 超越计划阶段 3 第二批（2026-08-18：3.5 perf/lint/madge）
+
+- **lint**：`scripts/lint.mjs`（debugger 红线/内核层 process.exit 分层红线/TODO 报告）598 源文件首跑全绿。
+- **madge 环门禁**：`scripts/check-cycles.mjs` + allowlist（首跑 17 环→修 2 处运行时环：db→memory 再导出环、ssrf↔outbound 互指环下沉 blockedHosts 叶子；剩 4 环 type-only 登记理由；ink fork 11 环排除注明）——ci 九步挂载，未知新环即失败。
+- **perf 基准**：`scripts/bench/run-bench.mjs` 四项确定性微基准（基线 2026-08-18 首跑；shortHash 下沉 hash.ts 叶子避免原生依赖图）。
+- **评分口径**：⑨ 工程质量实质提升——复算计入 3.6；分数保持 754。
+
+### 9.10 超越计划阶段 3 第三批（2026-08-18：3.2 双态沙盒提权分支）
+
+- **双态沙盒（S-07 提权分支落地）**：runner v3——IsElevated 运行时分流；提权 → CreateRestrictedToken（DISABLE_MAX_PRIVILEGE + 禁用 Administrators/LocalSystem + Medium IL，L0 再加 Low IL 只读）；标准用户 → Low IL（本机实测校准不变）。探测 OK-ELEVATED/OK-STANDARD 双态诚实口径（parseProbeBody 纯函数 4 单测 + runner 源锚点 6 断言 + 本机真实探测/L3 冒烟绿）。
+- **诚实留白（核心）**：提权分支**实现完成、实测未做**（本机标准用户）——⑥ 不宣称 10；管理员环境实测后按 ⑥ 9→10（Windows 深度口径）复算。
+- **评分口径**：⑥ 保持 9；其余计入 3.6 收尾复算。
+
+### 9.11 超越计划阶段 3 收尾复算（2026-08-18：3.6 超越复评）
+
+- **复算结果**：② 5→6（键位配置层+9）、③ 4→5（hunk 折叠+8）、⑦ 8→9（IDE 插件/ssh/serve 协议/文档+11）、⑨ 7→8（lint+环门禁+bench+8）——**总分 754 → 790**（第 4 名稳固，距 gemini 812 差 22，距 codex 869 差 79）。
+- **诚实口径（为什么未到 ≥870 验收线）**：870 依赖的增量全部卡在**外部前置**：① git remote（2.4 推送绿、3.1 winget/scoop 发布、3.4 市场——⑧ +36 与 ⑦ 满格的前提）；② 管理员环境（3.2 提权分支实测——⑥ 9→10 的最后一公里）；③ ④ 满格还差子代理分型+结构化输出（阶段内未排入无前置项）；⑤→9 差 API 级 caching 深化。以上任一落地即可再进一步。
+- **未达标判定**：≥870（超越 codex）**未达成**——790/1000 如实记录；超越目标仍以计划三阶段全量为条件，阻塞项清单同步 register（S-01/S-02/S-07 实测、④/⑤ 残留项）。

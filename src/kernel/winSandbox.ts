@@ -1,13 +1,15 @@
-// src/kernel/winSandbox.ts — Windows OS 内核沙盒（gap P0-4 落地，2026-08-18）
+// src/kernel/winSandbox.ts — Windows OS 内核沙盒（gap P0-4 落地，2026-08-18；supremacy 3.2 双态化）
 // 实测校准（本机标准用户 Windows 实测，非纸面设计）：
-//   ① CreateRestrictedToken + CreateProcessAsUser → 1314（ERROR_PRIVILEGE_NOT_HELD，
-//      标准用户无 SeTcbPrivilege，受限令牌不可用于进程创建）——已实测证伪该路径。
+//   ① CreateRestrictedToken + CreateProcessAsUser 在**标准用户** → 1314（ERROR_PRIVILEGE_NOT_HELD，
+//      无 SeTcbPrivilege）——已实测证伪；但**提权（管理员）进程可建受限令牌**——supremacy 3.2 起
+//      双态分流：提权 → CreateRestrictedToken（DISABLE_MAX_PRIVILEGE + 禁用 Administrators/LocalSystem
+//      + Medium IL，L0 再加 Low IL 只读）；标准用户 → Low IL（提权分支探测如实报告未实测）。
 //   ② SetTokenInformation(Low IL S-1-16-4096) + CreateProcessAsUser → 可用！
 //      Low IL 子进程写 Medium IL 对象被拒（实测「拒绝访问」）——这就是 L0 只读语义。
 //   ③ Job Object（KILL_ON_JOB_CLOSE 防孤儿）+ JobObjectNetRateControlInformation
 //      （1B/s=断网级 / 10KB/s 限速）——普通 CreateProcess 即可施加，实测可用。
 // 因此 profile 定义（gemini GeminiSandbox 同族、按本机能力诚实落位）：
-//   L0 只读+断网：Low IL + Job + 1B/s     L1 可写+断网：Job + 1B/s
+//   L0 只读+断网：Low IL/受限令牌+Low IL + Job + 1B/s     L1 可写+断网：Job（提权受限令牌）+ 1B/s
 //   L2 可写+限速：Job + 10KB/s            L3 遏制：Job（KILL_ON_CLOSE）
 // 诚实工程红线：
 //   - 能力探测（probe）实测 Low IL + Job 创建；失败 → 明确降级 + 提示，绝不假装沙盒
@@ -41,7 +43,7 @@ export function sandboxSpec(profile: SandboxProfile): { lowIl: boolean; netLimit
 }
 
 // ── 助手脚本（PS + 内联 C#，版本戳防陈旧缓存）────────────────
-export const SANDBOX_RUNNER_VERSION = 2;
+export const SANDBOX_RUNNER_VERSION = 3; // v3：双态沙盒（supremacy 3.2）——提权→受限令牌（禁用 Administrators/LocalSystem + Medium IL）+ 标准用户→Low IL
 
 const PS_LINES: string[] = [
   'param([string]$Mode="",[string]$Profile="",[string]$Exe="",[string]$ArgsJson="[]",[string]$Cwd="",[string]$OutPath="",[string]$ErrPath="",[string]$StdinPath="")',
@@ -84,6 +86,17 @@ const PS_LINES: string[] = [
   '  [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetExitCodeProcess(IntPtr h, out uint code);',
   '  [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr h);',
   '  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr CreateFile(string name, uint access, uint share, ref SA sa, uint mode, uint flags, IntPtr tmpl);',
+  '  // supremacy 3.2 dual-mode sandbox: elevated -> restricted token (disable Administrators + LocalSystem,',
+  '  // Medium integrity); standard user -> Low IL (verified). CreateRestrictedToken needs SeTcbPrivilege',
+  '  // which standard users lack (1314) - hence the dual path.',
+  '  [DllImport("advapi32.dll", SetLastError = true)] static extern bool CreateRestrictedToken(IntPtr e, uint flags, uint dsc, IntPtr sda, uint dpc, IntPtr pda, uint rsc, IntPtr sra, out IntPtr nt);',
+  '  [DllImport("advapi32.dll", SetLastError = true)] static extern bool GetTokenInformation(IntPtr t, int cls, IntPtr info, uint len, out uint rlen);',
+  '  [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr LocalFree(IntPtr m);',
+  '  const uint DMP = 0x1; // DISABLE_MAX_PRIVILEGE',
+  '  const int TELEV_CLASS = 20; // TokenElevation',
+  '  const string ADMIN_SID = "S-1-5-32-544"; // BUILTIN\\Administrators',
+  '  const string SYSTEM_SID = "S-1-5-18"; // LocalSystem',
+  '  const string MEDIUM_IL_SID = "S-1-16-8192"; // SECURITY_MANDATORY_MEDIUM_RID',
   '  // stdout/stderr/stdin redirect file handles MUST be inheritable (CreateProcess bInheritHandles):',
   '  // CreateFile with lpSecurityAttributes=NULL yields non-inheritable handles, child std handles',
   '  // become invalid and all output is silently lost. Keep this embedded C# block ASCII-only:',
@@ -112,6 +125,50 @@ const PS_LINES: string[] = [
   '    Marshal.FreeHGlobal(tbuf);',
   '    if (!ok) throw new Exception("SetTokenInformation(LowIL):" + Err());',
   '  }',
+  '  // Medium IL on a restricted token: drops the elevated high-integrity marker (defense in depth).',
+  '  static void SetMediumIL(IntPtr token) {',
+  '    IntPtr sid;',
+  '    if (!ConvertStringSidToSid(MEDIUM_IL_SID, out sid)) throw new Exception("MediumIL-SID:" + Err());',
+  '    SIDATTR tml = new SIDATTR();',
+  '    tml.Sid = sid;',
+  '    tml.Attributes = 0x20 | 0x40;',
+  '    int tsize = Marshal.SizeOf(typeof(SIDATTR));',
+  '    IntPtr tbuf = Marshal.AllocHGlobal(tsize);',
+  '    Marshal.StructureToPtr(tml, tbuf, false);',
+  '    bool ok = SetTokenInformation(token, TIL_CLASS, tbuf, (uint)tsize);',
+  '    Marshal.FreeHGlobal(tbuf);',
+  '    if (!ok) throw new Exception("SetTokenInformation(MediumIL):" + Err());',
+  '  }',
+  '  // Elevated? (TokenElevation) - decides the dual-mode path at runtime.',
+  '  static bool IsElevated() {',
+  '    IntPtr cur;',
+  '    if (!OpenProcessToken(System.Diagnostics.Process.GetCurrentProcess().Handle, TQ, out cur)) return false;',
+  '    int size = Marshal.SizeOf(typeof(uint));',
+  '    IntPtr buf = Marshal.AllocHGlobal(size);',
+  '    uint rlen;',
+  '    bool ok = GetTokenInformation(cur, TELEV_CLASS, buf, (uint)size, out rlen);',
+  '    uint elevated = ok ? (uint)Marshal.ReadInt32(buf) : 0;',
+  '    Marshal.FreeHGlobal(buf);',
+  '    CloseHandle(cur);',
+  '    return elevated != 0;',
+  '  }',
+  '  // Restricted token: DISABLE_MAX_PRIVILEGE + disable Administrators/LocalSystem + Medium IL.',
+  '  static IntPtr BuildRestrictedToken(IntPtr existing) {',
+  '    IntPtr adm; IntPtr sys;',
+  '    if (!ConvertStringSidToSid(ADMIN_SID, out adm)) throw new Exception("AdminSID:" + Err());',
+  '    if (!ConvertStringSidToSid(SYSTEM_SID, out sys)) throw new Exception("SysSID:" + Err());',
+  '    IntPtr[] sids = new IntPtr[] { adm, sys };',
+  '    int n = sids.Length;',
+  '    IntPtr buf = Marshal.AllocHGlobal(n * IntPtr.Size);',
+  '    for (int i = 0; i < n; i++) Marshal.WriteIntPtr(buf, i * IntPtr.Size, sids[i]);',
+  '    IntPtr rest;',
+  '    bool ok = CreateRestrictedToken(existing, DMP, 0, IntPtr.Zero, 0, IntPtr.Zero, (uint)n, buf, out rest);',
+  '    Marshal.FreeHGlobal(buf);',
+  '    LocalFree(adm); LocalFree(sys);',
+  '    if (!ok) throw new Exception("CreateRestrictedToken:" + Err());',
+  '    SetMediumIL(rest);',
+  '    return rest;',
+  '  }',
   '  public static string Probe() {',
   '    try {',
   '      IntPtr cur;',
@@ -119,11 +176,17 @@ const PS_LINES: string[] = [
   '      SA sa = new SA();',
   '      IntPtr prim;',
   '      if (!DuplicateTokenEx(cur, TAP | TQ | TDUP | TAD, ref sa, 2, 1, out prim)) return "ERR:DuplicateTokenEx:" + Err();',
+  '      // Dual mode: elevated -> restricted token is the verifiable capability; standard -> Low IL.',
+  '      if (IsElevated()) {',
+  '        IntPtr rest = BuildRestrictedToken(prim);',
+  '        CloseHandle(rest); CloseHandle(prim); CloseHandle(cur);',
+  '        return "OK-ELEVATED";',
+  '      }',
   '      SetLowIL(prim);',
   '      IntPtr job = CreateJobObject(IntPtr.Zero, null);',
   '      if (job == IntPtr.Zero) return "ERR:CreateJobObject:" + Err();',
   '      CloseHandle(job); CloseHandle(prim); CloseHandle(cur);',
-  '      return "OK";',
+  '      return "OK-STANDARD";',
   '    } catch (Exception ex) { return "ERR:EX:" + ex.Message; }',
   '  }',
   '  // Minimal JSON string-array parser (escape subset of JSON.stringify: quote, backslash, n, r, t, uXXXX).',
@@ -165,8 +228,19 @@ const PS_LINES: string[] = [
   '    SA sa = new SA();',
   '    IntPtr prim = IntPtr.Zero;',
   '    bool useToken = profile == "L0";',
-  '    if (useToken) {',
+  '    // supremacy 3.2 dual mode: elevated -> restricted token for L0/L1 (L0 + Low IL for read-only);',
+  '    // standard user -> L0 Low IL only (verified on this machine).',
+  '    bool elevated = IsElevated();',
+  '    bool restricted = elevated && (profile == "L0" || profile == "L1");',
+  '    if (restricted || useToken) {',
   '      if (!DuplicateTokenEx(cur, TAP | TQ | TDUP | TAD, ref sa, 2, 1, out prim)) throw new Exception("DuplicateTokenEx:" + Err());',
+  '    }',
+  '    if (restricted) {',
+  '      IntPtr rest = BuildRestrictedToken(prim);',
+  '      CloseHandle(prim);',
+  '      prim = rest;',
+  '      if (profile == "L0") SetLowIL(prim);',
+  '    } else if (useToken) {',
   '      SetLowIL(prim);',
   '    }',
   '    IntPtr job = CreateJobObject(IntPtr.Zero, null);',
@@ -201,9 +275,9 @@ const PS_LINES: string[] = [
   '    cmdline.Append(Quote(exe));',
   '    foreach (var a in args) { cmdline.Append(" "); cmdline.Append(Quote(a)); }',
   '    PI pi;',
-  '    bool ok = useToken',
-  '      ? CreateProcessAsUser(prim, null, cmdline.ToString(), IntPtr.Zero, IntPtr.Zero, true, CSUS | CUE, IntPtr.Zero, cwd.Length > 0 ? cwd : null, ref si, out pi)',
-  '      : CreateProcess(null, cmdline.ToString(), IntPtr.Zero, IntPtr.Zero, true, CSUS | CUE, IntPtr.Zero, cwd.Length > 0 ? cwd : null, ref si, out pi);',
+    '    bool ok = (restricted || useToken)',
+    '      ? CreateProcessAsUser(prim, null, cmdline.ToString(), IntPtr.Zero, IntPtr.Zero, true, CSUS | CUE, IntPtr.Zero, cwd.Length > 0 ? cwd : null, ref si, out pi)',
+    '      : CreateProcess(null, cmdline.ToString(), IntPtr.Zero, IntPtr.Zero, true, CSUS | CUE, IntPtr.Zero, cwd.Length > 0 ? cwd : null, ref si, out pi);',
   '    if (!ok) throw new Exception("CreateProcess:" + Err());',
   '    if (!AssignProcessToJobObject(job, pi.hProcess)) throw new Exception("AssignProcessToJobObject:" + Err());',
   '    ResumeThread(pi.hThread);',
@@ -212,7 +286,7 @@ const PS_LINES: string[] = [
   '    uint code;',
   '    if (!GetExitCodeProcess(pi.hProcess, out code)) throw new Exception("GetExitCodeProcess:" + Err());',
   '    CloseHandle(pi.hProcess); CloseHandle(job);',
-  '    if (useToken) CloseHandle(prim);',
+    '    if (restricted || useToken) CloseHandle(prim);',
   '    CloseHandle(cur);',
   '    return (int)code;',
   '  }',
@@ -259,6 +333,22 @@ export function ensureSandboxRunnerForTest(dataDir: string): { script: string; p
   return { script: readFileSync(p, 'utf8'), path: p, version: SANDBOX_RUNNER_VERSION };
 }
 
+/** 探测输出解析（纯函数可单测——双态口径：OK-ELEVATED 提权受限令牌 / OK-STANDARD 标准用户 Low IL） */
+export function parseProbeBody(body: string): { ok: boolean; detail: string } {
+  const b = String(body ?? '').trim();
+  if (b === 'OK-ELEVATED') {
+    return { ok: true, detail: '提权→受限令牌路径可用（CreateRestrictedToken 禁用 Administrators/LocalSystem + Medium IL，本机实测——L0 另加 Low IL 只读）' };
+  }
+  if (b === 'OK-STANDARD') {
+    return { ok: true, detail: '标准用户 Low IL 路径可用（本机实测——L0 只读经 Low IL）；提权分支（受限令牌）需管理员环境，本机未提权未实测' };
+  }
+  if (b === 'OK') {
+    // 旧 runner 缓存兼容（v2 只回 OK——语义=标准用户路径）
+    return { ok: true, detail: '标准用户 Low IL 路径可用（旧 runner 缓存；/sandbox os probe 强制重探升级口径）' };
+  }
+  return { ok: false, detail: b };
+}
+
 /** 能力探测（默认用缓存；force=true 强制重探——/sandbox os probe） */
 export async function probeWinSandbox(dataDir: string, force = false): Promise<{ ok: boolean; detail: string }> {
   if (!force && probeCache) return probeCache;
@@ -282,9 +372,7 @@ export async function probeWinSandbox(dataDir: string, force = false): Promise<{
         clearTimeout(timer);
         const m = out.match(/WX_SANDBOX_PROBE:(.+)/);
         const body = m ? m[1]!.trim() : `无输出（exit ${code}）`;
-        finish(body === 'OK'
-          ? { ok: true, detail: 'Low IL 令牌 + Job Object + 断网限速可用（L0 只读经 Low IL 实现，标准用户可用）' }
-          : { ok: false, detail: body });
+        finish(parseProbeBody(body));
       });
     } catch (e: any) {
       finish({ ok: false, detail: String(e?.message ?? e) });

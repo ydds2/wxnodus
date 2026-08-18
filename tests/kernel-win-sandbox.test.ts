@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  resolveSandboxProfile, sandboxSpec, sandboxEnabled, probeWinSandbox,
+  resolveSandboxProfile, sandboxSpec, sandboxEnabled, probeWinSandbox, parseProbeBody,
   ensureSandboxRunnerForTest,
 } from '../src/kernel/winSandbox.js';
 
@@ -35,7 +35,7 @@ describe('resolveSandboxProfile / sandboxEnabled（纯函数）', () => {
 });
 
 describe('助手脚本生成（可落盘、版本戳、纯 ASCII 红线）', () => {
-  it('runner 脚本含版本戳 + C# 核心 API（Low IL/Job/断网限速/进程创建），且无受限令牌路径', () => {
+  it('runner 脚本含版本戳 + C# 核心 API（双态沙盒 supremacy 3.2：标准用户 Low IL + 提权受限令牌）', () => {
     const dir = mkdtempSync(join(tmpdir(), 'wxn-sbx-'));
     try {
       const { script, path, version } = ensureSandboxRunnerForTest(dir);
@@ -46,7 +46,14 @@ describe('助手脚本生成（可落盘、版本戳、纯 ASCII 红线）', () 
       expect(script).toContain('S-1-16-4096'); // Low IL SID
       expect(script).toContain('AssignProcessToJobObject');
       expect(script).toContain('CreateProcessAsUser');
-      expect(script).not.toContain('CreateRestrictedToken'); // 1314 实测证伪路径（见 winSandbox.ts 头注释）
+      // supremacy 3.2 双态：提权分支走受限令牌（1314 是标准用户路径的证伪——双态分流绕开）；
+      // 标准用户分支仍是 Low IL（本机实测校准）
+      expect(script).toContain('CreateRestrictedToken');
+      expect(script).toContain('S-1-5-32-544'); // 禁用 Administrators
+      expect(script).toContain('S-1-16-8192'); // Medium IL（提权分支降完整性）
+      expect(script).toContain('IsElevated'); // 运行时分流
+      expect(script).toContain('OK-ELEVATED');
+      expect(script).toContain('OK-STANDARD');
       expect(path).toBe(join(dir, 'sandbox', 'sandbox-runner.ps1'));
       rmSync(dir, { recursive: true, force: true });
     } catch (e) {
@@ -100,4 +107,30 @@ describe('能力探测（诚实契约）', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 120_000);
+});
+
+describe('parseProbeBody（双态探测口径——supremacy 3.2，纯函数）', () => {
+  it('OK-ELEVATED：提权受限令牌路径（本机实测口径）', () => {
+    const r = parseProbeBody('OK-ELEVATED');
+    expect(r.ok).toBe(true);
+    expect(r.detail).toContain('受限令牌');
+    expect(r.detail).toContain('Administrators');
+  });
+  it('OK-STANDARD：标准用户 Low IL 路径（提权分支诚实标注未实测）', () => {
+    const r = parseProbeBody('OK-STANDARD');
+    expect(r.ok).toBe(true);
+    expect(r.detail).toContain('Low IL');
+    expect(r.detail).toContain('未实测'); // 诚实：标准用户机器上提权分支不宣称
+  });
+  it('旧 runner 缓存 OK → 标准路径口径（诚实降级）', () => {
+    const r = parseProbeBody('OK');
+    expect(r.ok).toBe(true);
+    expect(r.detail).toContain('旧 runner');
+  });
+  it('失败输出原样透传（绝不伪装）', () => {
+    const r = parseProbeBody('ERR:EX:Add-Type boom');
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe('ERR:EX:Add-Type boom');
+    expect(parseProbeBody('无输出（exit 1）').ok).toBe(false);
+  });
 });

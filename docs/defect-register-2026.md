@@ -14,7 +14,7 @@
 | S-03 | IDE 插件 | gemini companion/codex vscode | 无（协议已备） | ⑦ 8→9（+11） | ◐ **落地**：`packages/vscode-ext`（--wire 桥接 + webview 面板 + 审批/澄清/密码原生模态），typecheck+4 单测+esbuild+vsce 本地 vsix 全绿（supremacy 2.1）；marketplace 上架仍受 S-01 |
 | S-04 | 远程执行环境 | codex exec-server | 无（ssh 方案无阻塞） | ⑦ 9→10（+11） | ◐ **ssh 通道阶段 1 落地**：`sshRemote.ts` + `/remote` + bash 工具远程分支（远端未沙盒诚实标注），10 mock 单测（supremacy 2.2）；完整版 exec-server（远端沙盒复用）留后续 |
 | S-06 | 沙盒 macOS/Linux 化 | codex/gemini 三平台 | — | — | ❌ **已移除（Windows-only 决策）**——POSIX 实现（bwrap/Seatbelt）保留休眠态，探测诚实返回不适用；⑥ 冲 10 改走 S-07 Windows 双态沙盒 |
-| S-07 | Windows 双态沙盒（⑥ 冲 10：提权→受限令牌 / 标准用户→Low IL） | codex windows-sandbox-rs（提权路径） | 管理员环境（提权分支实测） | ⑥ 9→10（+10，Windows 深度口径） | ⏳ 标准用户分支已实测校准（1ec26e1）；提权分支待实现+实测 |
+| S-07 | Windows 双态沙盒（⑥ 冲 10：提权→受限令牌 / 标准用户→Low IL） | codex windows-sandbox-rs（提权路径） | 管理员环境（提权分支实测） | ⑥ 9→10（+10，Windows 深度口径） | ◐ **提权分支已实现**（runner v3：IsElevated 运行时分流 + CreateRestrictedToken 禁用 Administrators/LocalSystem + Medium IL，L0 再加 Low IL；探测 OK-ELEVATED/OK-STANDARD 双态诚实口径，4 单测 + 本机真实探测/L3 冒烟绿）；**实测待管理员环境**（本机标准用户——提权分支如实标注未实测，⑥ 不宣称 10，supremacy 3.2） |
 | S-05 | share 云端分享 | opencode/kimi | 需中心服务器 | ⑦ +1 | 🚫 离线变体已落地（/share 打包加密，见 A-08） |
 
 ## A 级
