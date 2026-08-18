@@ -34,9 +34,14 @@ export function hooksFromConfig(settings: Record<string, any> | undefined): Hook
 
 // 执行单条 hook 命令（execFileSync 精确 shell 参数，10s 超时，stdout 截断）
 // P0-06：返回结构化结果（成功/非零退出/超时/缺失/错误），不再用空输出吞噬失败。
+// 编码加固（2026-08-18 CI 实测）：-Command 直传 CJK 命令受 argv 编码影响（Node 22.23.x
+// 下 PowerShell 可能收到空/损坏命令并等待 stdin → 误判超时）；改 -EncodedCommand
+// （UTF-16LE base64）——命令字节零歧义，任意 Node 版本/任意字符同语义。
 export function runHook(cmd: string, event: HookEvent, data: unknown): HookExecutionOutcome {
   const isWin = platform() === 'win32';
-  const args = isWin ? ['-NoProfile', '-Command', cmd] : ['-c', cmd];
+  const args = isWin
+    ? ['-NoProfile', '-EncodedCommand', Buffer.from(cmd, 'utf16le').toString('base64')]
+    : ['-c', cmd];
   const env = {
     // P0-3 环境净化：hook 子进程不继承密钥类变量（env.ts 统一策略），
     // WXNODUS_HOOK_* 为显式白名单传入（配置在 settings.hooks，非密钥）
