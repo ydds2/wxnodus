@@ -58,6 +58,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/cron': 'confirm', '/cron add': 'confirm', '/cron del': 'confirm', '/timer': 'confirm',
   '/delegate': 'confirm', '/goal': 'confirm', '/btw': 'confirm',
   '/rewind': 'confirm', '/reload-skills': 'confirm', '/script': 'confirm',
+  '/market search': 'safe', '/market install': 'confirm', '/market': 'safe',
   '/script record': 'confirm', '/script stop': 'confirm', '/script watch': 'confirm',
   '/jobs retry': 'confirm', '/jobs pause': 'confirm', '/jobs resume': 'confirm', '/jobs clean': 'confirm',
   '/cron run': 'confirm',

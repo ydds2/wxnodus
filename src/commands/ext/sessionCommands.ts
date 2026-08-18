@@ -640,6 +640,68 @@ ${d}
   });
 
 
+  // /market：开放生态目录聚合（P3 评估轮——S-02 市场消费侧：不建自托管中央目录，
+  // 直接兼容全网开放资源：npm registry + GitHub topic 搜索；skill → data/skills、
+  // mcp → 项目 .mcp.json（Claude Code 生态标准）；plugin 走既有 /plugin install 管线）
+  bus.register('/market', async (args) => {
+    const sub = args[0];
+    if (!sub) {
+      return lines(' 市场（开放生态目录聚合） ', [
+        ' 搜索：/market search <关键词> [--type skill|mcp|plugin]（npm + GitHub 双源）',
+        ' 安装：/market install <npm包名> [--type mcp|skill]  或  /market install github:<owner>/<repo> --type skill',
+        '       MCP → 项目 .mcp.json（npx 命令形式，Claude Code 生态兼容）',
+        '       技能 → data/skills/<name>/SKILL.md（/reload-skills 后即刻可用）',
+        '       插件 → 请走 /plugin install（既有管线：SSRF 防护 + 校验 + staging）',
+      ]);
+    }
+    const typeIdx = args.indexOf('--type');
+    const type = typeIdx >= 0 ? String(args[typeIdx + 1] ?? '').toLowerCase() : '';
+    const cleanArgs = (a: string[]) => a.filter((_, i) => a[i] !== '--type' && (typeIdx < 0 || i !== typeIdx + 1));
+    const t = type === 'skill' || type === 'mcp' || type === 'plugin' ? type : undefined;
+    if (sub === 'search') {
+      const q = cleanArgs(args).slice(1).join(' ').trim();
+      if (!q) return '用法：/market search <关键词> [--type skill|mcp|plugin]';
+      try {
+        const { searchNpm, searchGithub } = await import('../../kernel/market.js');
+        const results = await Promise.allSettled([
+          searchNpm(q, t),
+          t ? searchGithub(q, t) : Promise.resolve([] as import('../../kernel/market.js').MarketItem[]),
+        ]);
+        const npmItems = results[0]!.status === 'fulfilled' ? results[0]!.value : [];
+        const ghItems = results[1]!.status === 'fulfilled' ? results[1]!.value : [];
+        const errs = [results[0], results[1]].filter(r => r.status === 'rejected').map((r: any) => String(r.reason?.message ?? r.reason).slice(0, 80));
+        const fmt = (it: import('../../kernel/market.js').MarketItem) =>
+          ` [${it.source === 'npm' ? 'npm' : 'git'}] ${it.name}${it.version ? `@${it.version}` : ''}${it.stars !== undefined ? ` ★${it.stars}` : ''}  ${it.description}`;
+        const rows: string[] = [];
+        if (npmItems.length) rows.push(`— npm（${npmItems.length}）—`, ...npmItems.slice(0, 10).map(fmt));
+        if (ghItems.length) rows.push(`— GitHub（${ghItems.length}）—`, ...ghItems.slice(0, 10).map(fmt));
+        if (errs.length) rows.push('', `⚠ 部分源失败（离线/限流）：${errs.join('；')}`);
+        if (!rows.length) return '无结果（或全部源不可达）——检查网络后重试';
+        return lines(` 市场搜索：${q}${t ? `（${t}）` : ''} `, [...rows, '', ' 安装：/market install <名称> --type mcp|skill']);
+      } catch (e: any) { return `搜索失败：${String(e?.message ?? e).slice(0, 160)}`; }
+    }
+    if (sub === 'install') {
+      const target = cleanArgs(args)[1] ?? '';
+      if (!target) return '用法：/market install <npm包名|github:owner/repo> --type mcp|skill';
+      const { installMcpFromNpm, installSkillFromNpm, installSkillFromGithub } = await import('../../kernel/market.js');
+      if (target.startsWith('github:')) {
+        if (t && t !== 'skill') return 'GitHub 仓库安装当前仅支持技能（--type skill）';
+        const r = await installSkillFromGithub(target, ctx.dataDir);
+        return r.message;
+      }
+      if (t === 'mcp') {
+        const r = await installMcpFromNpm(target, ctx.cwd);
+        return r.message;
+      }
+      if (t === 'skill') {
+        const r = await installSkillFromNpm(target, ctx.dataDir);
+        return r.message;
+      }
+      return '需指定类型：--type mcp（写入 .mcp.json）或 --type skill（落位 data/skills）；插件请走 /plugin install';
+    }
+    return '未知子命令——/market search <词> 或 /market install <包> --type mcp|skill';
+  });
+
   // /reload-skills：重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini），汇报统计
   bus.register('/reload-skills', () => {
     const list = discoverSkills(ctx.dataDir, ctx.cwd);

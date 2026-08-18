@@ -24,7 +24,7 @@ export const SLASH: string[] = [
   // 工具（确定性）
   '/calc', '/hash', '/base64', '/uuid', '/rand', '/json', '/timer', '/sql', '/fs', '/units', '/csv',
   // 上下文工程（P3：repo map / 快照回滚 / 技能热重载）
-  '/map', '/rewind', '/reload-skills',
+  '/map', '/rewind', '/reload-skills', '/market',
 ];
 
 export const COMMAND_CAT: Record<string, string> = {
@@ -40,7 +40,8 @@ export const COMMAND_CAT: Record<string, string> = {
   '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/download': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭', '/remote': '⛭',
   '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/arena': '◍', '/review': '◍', '/understand': '◍', '/session-stream': '◍', '/goal': '◍', '/btw': '◍', '/share': '◍',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
-  '/map': '⬡', '/rewind': '⬡', '/reload-skills': '⬡',
+  '/map': '⬡', '/rewind': '⬡', '/market': '⬡',
+  '/reload-skills': '⬡',
 };
 
 export const COMMAND_DESC: Record<string, string> = {
@@ -111,6 +112,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/bench': '基准测试',
   '/map': '仓库地图（aider repo-map 自研版——符号索引注入上下文，/map <预算>）',
   '/rewind': '回滚到最近快照（Claude Code /rewind 同款，等价 /checkpoint restore）',
+  '/market': '开放生态目录（npm/GitHub 搜索 + 安装 MCP/技能）',
   '/reload-skills': '重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini）并汇报',
   '/init': '分析项目生成 AGENTS.md（本地扫描，--overwrite 覆盖）',
   '/voice': '语音模式（TUI 内 Ctrl+B/麦克风钮；status 查看组件）',
