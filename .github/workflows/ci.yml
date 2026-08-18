@@ -72,6 +72,13 @@ jobs:
           path: dist
           if-no-files-found: error
 
+      - name: Upload ink dist artifact (ui 测试解析 packages/wxnodus-ink/dist/entry-exports.js)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ink-dist
+          path: packages/wxnodus-ink/dist
+          if-no-files-found: error
+
   test:
     needs: gate
     runs-on: windows-latest
@@ -95,6 +102,12 @@ jobs:
         with:
           name: dist
           path: dist
+
+      - name: Download ink dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ink-dist
+          path: packages/wxnodus-ink/dist
 
       - name: Exempt Defender scanning (runner perf)
         shell: pwsh
