@@ -318,9 +318,15 @@ export function FloatingOverlays({
               </Box>
               <Text>{'   '}</Text>
               <OverlayHint t={theme}>
-                {overlay.pager.offset + pagerPageSize < overlay.pager.lines.length
-                  ? `↑↓/jk 行 · Enter/Space/PgDn 页 · b/PgUp 返回 · g/G 顶/底 · Esc/q 关闭（${Math.min(overlay.pager.offset + pagerPageSize, overlay.pager.lines.length)}/${overlay.pager.lines.length} 行）`
-                  : `已到末尾 · ↑↓/jk · b/PgUp 返回 · g 顶部 · Esc/q 关闭（共 ${overlay.pager.lines.length} 行）`}
+                {(() => {
+                  // 波 2 ③：[/] hunk 跳转提示（opencode diff-viewer.tsx:282-315 对标——
+                  // 回滚 diff 等含 @@ hunk 的 pager 内容才显示，避免普通文本噪音）
+                  const hasHunks = overlay.pager.lines.some(l => /^@@ -\d/.test(l.trim()))
+                  const jump = hasHunks ? ' · [/] hunk 跳转' : ''
+                  return overlay.pager.offset + pagerPageSize < overlay.pager.lines.length
+                    ? `↑↓/jk 行 · Enter/Space/PgDn 页 · b/PgUp 返回 · g/G 顶/底${jump} · Esc/q 关闭（${Math.min(overlay.pager.offset + pagerPageSize, overlay.pager.lines.length)}/${overlay.pager.lines.length} 行）`
+                    : `已到末尾 · ↑↓/jk · b/PgUp 返回 · g 顶部${jump} · Esc/q 关闭（共 ${overlay.pager.lines.length} 行）`
+                })()}
               </OverlayHint>
             </Box>
           </Box>

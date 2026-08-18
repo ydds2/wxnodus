@@ -3,10 +3,12 @@
 // hunk 折叠（opencode 语义，diffHunks 复用）；超大 diff 保护（codex diff_render.rs:591-598
 // 对标）：仅前 maxLines 行高亮着色，余行合并单块（内容完整保留，仅着色降级——防节点爆炸）。
 import { Box, Text } from '@wxnodus/ink'
+import type { ReactNode } from 'react'
 
 import { DIFF_HILITE_MAX, diffLines, stripDiffFence, type DiffLineKind } from '../lib/diffHighlight.js'
 import { buildFoldSegments, withDefaultFolds } from '../lib/diffHunks.js'
 import { lineNumbersFor } from '../lib/diffGutter.js'
+import { pairHunkBody, type WordToken } from '../lib/wordDiff.js'
 import type { Theme } from '../theme.js'
 
 export interface DiffRendererProps {
@@ -54,6 +56,25 @@ export function DiffRenderer({ body, maxLines = DIFF_HILITE_MAX, t }: DiffRender
     </Box>
   )
 
+  // 波 2 ③：词级 inline diff 行（kimi diff_render.py:184-218 对标）——
+  // same 正文色 / del 红 / add 绿，逐 token 着色
+  const tokenRow = (tokens: WordToken[], num: number | null, key: number) => (
+    <Box key={key} flexDirection="row">
+      {gutterWidth > 0 ? (
+        <Text width={gutterWidth + 2} color={t.color.muted} dimColor>
+          {num === null ? '' : String(num)}
+        </Text>
+      ) : null}
+      <Text>
+        {tokens.map((tk, i2) => (
+          <Text key={i2} color={tk.kind === 'same' ? t.color.text : tk.kind === 'del' ? t.color.error : t.color.statusGood}>
+            {tk.text}
+          </Text>
+        ))}
+      </Text>
+    </Box>
+  )
+
   // 无 meta/hunk 结构的纯文本（防御路径）：直接按行渲染——绝不静默丢内容
   if (!segs.length && bounded.length) {
     return (
@@ -81,10 +102,25 @@ export function DiffRenderer({ body, maxLines = DIFF_HILITE_MAX, t }: DiffRender
         }
         const headerRow = row(seg.header, null, cursor)
         cursor += 1
-        let bodyRows = null
+        let bodyRows: ReactNode[] | null = null
         if (!seg.folded) {
           const bodyNums = numbers.slice(cursor, cursor + seg.body.length)
-          bodyRows = seg.body.map((l, i) => row(l, bodyNums[i] ?? null, cursor + i))
+          // 波 2 ③：hunk 体按 kimi 配对规则渲染（连续 -/+ 块逐对词级高亮，多出单侧行原样）
+          const items = pairHunkBody(seg.body)
+          const rows: ReactNode[] = []
+          let li = 0
+          for (const it of items) {
+            if (it.kind === 'pair') {
+              rows.push(tokenRow(it.old, bodyNums[li] ?? null, cursor + li))
+              li += 1
+              rows.push(tokenRow(it.new, bodyNums[li] ?? null, cursor + li))
+              li += 1
+            } else {
+              rows.push(row(it.line, bodyNums[li] ?? null, cursor + li))
+              li += 1
+            }
+          }
+          bodyRows = rows
         }
         cursor += seg.body.length
         return (

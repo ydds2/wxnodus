@@ -12,6 +12,7 @@ import type {
   VoiceRecordResponse
 } from '../gatewayTypes.js'
 import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platform.js'
+import { hunkJump } from '../lib/wordDiff.js'
 import { computePrecisionWheelStep, initPrecisionWheel } from '../lib/precisionWheel.js'
 import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
 import { nextPermMode } from '../lib/permCycle.js'
@@ -347,6 +348,25 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
         if (matchesAny(key, ch, km.pagerBottom)) {
           return move('bottom')
+        }
+
+        // 波 2 ③：[/] hunk 跳转（opencode diff-viewer.tsx:282-315 对标——回滚 diff 等
+        // 含 @@ hunk 的 pager 内容；无更多 hunk 保持原位）
+        if (ch === '[' || ch === ']') {
+          patchOverlayState(prev => {
+            if (!prev.pager) {
+              return prev
+            }
+
+            const dir: 1 | -1 = ch === ']' ? 1 : -1
+            const next = hunkJump(prev.pager.lines, prev.pager.offset, dir, pagerPageSize)
+
+            return next === null || next === prev.pager.offset
+              ? prev
+              : { ...prev, pager: { ...prev.pager, offset: next } }
+          })
+
+          return
         }
 
         if (matchesAny(key, ch, km.pagerHalfDown) || key.return) {
