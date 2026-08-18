@@ -536,9 +536,27 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         return ` [${h.source === 'plugin' ? '插件' : 'MCP'}] ${h.id} · ${h.title}`;
       }));
     }
+    // 波 3 ⑪：跨会话语义召回（六家独有的本地实现——FTS5 中文 bigram + 本地向量 KNN 全会话检索，
+    // 数据不出机；aider 仅本地嵌入做 /help 文档 RAG、gemini 云端嵌入、其余纯正则——取证确认）
+    if (args[0] === '--all') {
+      const rest = args.slice(1);
+      const limit = (() => {
+        const i = rest.indexOf('--limit');
+        const n = Number(rest[i + 1]);
+        return Number.isInteger(n) && n > 0 ? Math.min(n, 30) : 10;
+      })();
+      const q = rest.filter((a, i, arr) => !a.startsWith('--') && arr[i - 1] !== '--limit').join(' ').trim();
+      if (!q) return '用法：/hole --all <关键词> [--limit N]（本地跨会话语义召回——FTS bigram + 本地向量 KNN，全会话检索，数据不出机）';
+      const hits = await ctx.mem.recallHybrid(q, { limit }); // sessionId 缺省 = 全局召回（跨会话）
+      if (!hits.length) return `跨会话召回未命中与「${q}」相关的记忆（本地检索，无云端依赖）`;
+      return lines(` 跨会话语义召回「${q}」(${hits.length} 条 · 本地) `, hits.map(h => {
+        const sid = h.session_id ? `会话 ${String(h.session_id).slice(0, 12)}` : '未知会话';
+        return ` [${sid}] ${snippet(h.content, 56)}（score ${h.score.toFixed(2)}）`;
+      }));
+    }
     // 默认：记忆检索（与 /memory search 同一权威层）
     const q = args.filter((a, i, arr) => !a.startsWith('--') && arr[i - 1] !== '--limit').join(' ').trim();
-    if (!q) return '用法：/hole <关键词>（记忆检索）｜ /hole --code <关键词>（代码/插件/MCP 同化语料）';
+    if (!q) return '用法：/hole <关键词>（记忆检索）｜ /hole --all <关键词>（跨会话语义召回）｜ /hole --code <关键词>（代码/插件/MCP 同化语料）';
     const limit = (() => {
       const i = args.indexOf('--limit');
       const n = Number(args[i + 1]);
