@@ -23,8 +23,17 @@ const srcCycles = circular.filter(cycle => cycle.every(inSrc));
 const inkCycles = circular.filter(cycle => !cycle.every(inSrc));
 
 const allowlist = JSON.parse(readFileSync(allowlistPath, 'utf8')).cycles ?? [];
-const allowed = new Set(allowlist.map(c => c.chain));
-const unknown = srcCycles.map(cycle => cycle.join(' > ')).filter(chain => !allowed.has(chain));
+// 旋转归一：环是无向集合——madge 遍历顺序随入口集变化（新增文件会改变报告方向，
+// 2026-08-18 十四轮实测同一良性环被反方向报告）——按字典序最小节点起旋后比较
+const normalizeCycle = (nodes) => {
+  if (nodes.length <= 1) return nodes;
+  let minIdx = 0;
+  for (let i = 1; i < nodes.length; i++) if (nodes[i] < nodes[minIdx]) minIdx = i;
+  return [...nodes.slice(minIdx), ...nodes.slice(0, minIdx)];
+};
+const chainOf = (nodes) => normalizeCycle(nodes).join(' > ');
+const allowed = new Set(allowlist.map(c => chainOf(c.chain.split(' > '))));
+const unknown = srcCycles.filter(cycle => !allowed.has(chainOf(cycle))).map(cycle => cycle.join(' > '));
 
 if (unknown.length) {
   console.error(`CYCLE_GATE_FAIL: ${unknown.length} 个未登记循环依赖（新增环或修复后未更新 allowlist）：`);
