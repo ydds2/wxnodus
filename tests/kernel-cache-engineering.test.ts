@@ -15,7 +15,7 @@ describe('前缀缓存工程：消息字段固定序', () => {
     const a: any = {};
     a.content = 'x';
     a.role = 'user';
-    const b = { role: 'user', content: 'x' };
+    const b = { role: 'user' as const, content: 'x' };
     const ra = body(buildChatRequest({ baseURL: 'u', model: 'm', key: 'k', messages: [a], stream: false })).messages[0];
     const rb = body(buildChatRequest({ baseURL: 'u', model: 'm', key: 'k', messages: [b], stream: false })).messages[0];
     expect(JSON.stringify(ra)).toBe(JSON.stringify(rb));
@@ -126,13 +126,13 @@ describe('摘要独立请求契约（gemini chatCompressionService.ts:361-379 �
 
   it('compactMessages：summarize 只收到中部文本（不含头尾），结果以 system 摘要写回，主数组不增不减', async () => {
     const msgs = [
-      { role: 'system', content: 'HEAD-0' },
-      { role: 'user', content: 'HEAD-1' },
-      { role: 'user', content: 'MID-A' },
-      { role: 'assistant', content: 'MID-B' },
-      { role: 'user', content: 'MID-C' },
-      { role: 'user', content: 'TAIL-1' },
-      { role: 'assistant', content: 'TAIL-2' },
+      { role: 'system' as const, content: 'HEAD-0' },
+      { role: 'user' as const, content: 'HEAD-1' },
+      { role: 'user' as const, content: 'MID-A' },
+      { role: 'assistant' as const, content: 'MID-B' },
+      { role: 'user' as const, content: 'MID-C' },
+      { role: 'user' as const, content: 'TAIL-1' },
+      { role: 'assistant' as const, content: 'TAIL-2' },
     ];
     let received = '';
     const out = await compactMessages(msgs, async (text) => { received = text; return '摘要结果X'; }, { head: 2, tail: 2 });
