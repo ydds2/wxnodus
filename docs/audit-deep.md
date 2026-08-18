@@ -979,3 +979,5 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 2. **vim VISUAL 模式（afa7f73，6 测试）**：codex `textarea/vim.rs` 对标（gemini vim.ts 无此模式——六家对标仍成立）。v/V 进入字符/行选区（visualAnchor + visualKind），hjkl/wbe/0$^/G 等移动经 applyMotion 扩展选区（state 展开保 anchor/kind），d/x/y/c/p/P 直作用选区（y 复制不动文本、c 进 insert、p/P 寄存器替换选区、行选区整行含换行），Esc 回 normal 保光标。**三个 bug 实测逐一取证修复**：① d/c/y 被操作符挂起段截胡（VISUAL 块前移至操作符段之前）；② 行选区 selRange 把光标索引当行号传给 rowStart（`cursorRow` 修正——跨行删除曾全删文本）；③ NORMAL 双击 Esc 清空处理器无 mode 守卫截胡 visual Esc（加 `mode === 'normal'` 守卫——测试循环毫秒级连按触发清空全文）。
 3. **测试期望校准**：v,l,x 删 [0,2)→'cd'、Esc 保光标 2 后 x 删 'c'→'abde'——按真实 vim 语义重写两处初版错误期望（vim 行为实测核对的黄金标准）。
 4. **收尾**：本地九命令门禁全绿（tsc ×2 + 全量 368 文件 / 2709 用例 + known-failures + 发现/覆盖 + lint + 环 + build）；远程 CI 见尾注。
+
+**尾注（2026-08-18）**：远程 CI **workflow #32179602007 全绿**——vscode-ext 58s / gate 2m21s / test 三分片 4m36s+5m3s+5m41s 全 success，单轮 wall ~8.5 分钟（提速后 ~14→~9 达标实测）；同轮覆盖波 3 HEAD（226b3c6，被 concurrency 取消的原轮由本轮代验）+ CI ink-dist 修复 + P3 vim VISUAL。push 验证：`git ls-remote` 远端 master = afa7f73 = 本地 HEAD（`$?` 双查防 tail 假成功）。
