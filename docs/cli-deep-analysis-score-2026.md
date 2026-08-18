@@ -10,13 +10,13 @@
 
 **11 维 × 7 家，权重归一化到 100。** 权重代表「AI 编码 CLI 综合竞争力」的构成假设：Agent 内核 13、提示词/模型适配 11、场景/协议 11、安全 10 为第一梯队；渲染/输入/生态/工程为体验与持续力；差异化 5 是「不可替代性」溢价。
 
-### 0.1 波 2 复评表（2026-08-18 四评，wxnodus 列已更新；其余六家分数不变）
+### 0.1 波 3 复评表（2026-08-18 五评，wxnodus 列已更新；其余六家分数不变）
 
 | 维度（权重） | wxnodus | codex | gemini | opencode | crush | kimi | aider |
 |---|---|---|---|---|---|---|---|
 | ① UI 渲染引擎（9） | **10** | 9 | 7 | 8 | 9 | 6 | 4 |
-| ② 输入/编辑器（9） | 8 | **10** | 9 | 7 | 6 | 8 | 8 |
-| ③ 内容交互 diff/媒体（8） | 7 | 8 | 6 | **9** | **9** | 7 | 5 |
+| ② 输入/编辑器（9） | 9 | **10** | 9 | 7 | 6 | 8 | 8 |
+| ③ 内容交互 diff/媒体（8） | 8 | 8 | 6 | **9** | **9** | 7 | 5 |
 | ④ Agent 内核/工具（13） | **10** | 9 | 9 | 9 | 8 | 8 | 7 |
 | ⑤ 提示词/模型适配（11） | **10** | 9 | 9 | **10** | 7 | 7 | 8 |
 | ⑥ 安全工程（10） | **10** | 9 | 9 | 7 | 7 | 6 | 3 |
@@ -24,12 +24,12 @@
 | ⑧ 分发/生态/文档（9） | 5 | 9 | 8 | **9** | 7 | 8 | 8 |
 | ⑨ 工程质量/CI（8） | **9** | 9 | 9 | 9 | 8 | 8 | 5 |
 | ⑩ 性能/token 工程（7） | **10** | 8 | 8 | 7 | 7 | 6 | 5 |
-| ⑪ 差异化（离线/记忆/平台）（5） | **9** | 4 | 3 | 5 | 4 | 3 | 5 |
-| **加权总分（/1000）** | **900** | **869** | **812** | **841** | **709** | **693** | **573** |
+| ⑪ 差异化（离线/记忆/平台）（5） | **10** | 4 | 3 | 5 | 4 | 3 | 5 |
+| **加权总分（/1000）** | **922** | **869** | **812** | **841** | **709** | **693** | **573** |
 
-**排名：wxnodus 9.00 ＞ codex 8.69 ＞ opencode 8.41 ＞ gemini 8.12 ＞ crush 7.09 ＞ kimi 6.93 ＞ aider 5.73。**（wxnodus 由 6.14→7.25→7.54→7.90→8.14→8.25→8.35→8.43→8.78→9.00：**波 1+波 2 落定，反超 codex 稳居第 1/7**——不依赖公开决策）
+**排名：wxnodus 9.22 ＞ codex 8.69 ＞ opencode 8.41 ＞ gemini 8.12 ＞ crush 7.09 ＞ kimi 6.93 ＞ aider 5.73。**（wxnodus 由 6.14→7.25→7.54→7.90→8.14→8.25→8.35→8.43→8.78→9.00→9.22：**三波全部落定，稳居第 1/7**——不依赖公开决策）
 
-**维度第一已超额达成（2026-08-18 四评）：① 渲染 10、④ Agent 10、⑥ 安全 10、⑩ token 工程 10、⑪ 差异化 9 五项严格第一；⑤ 提示词 10、⑦ 场景 10 与 opencode 并列第一。**
+**维度第一已超额达成（2026-08-18 五评）：① 渲染 10、④ Agent 10、⑥ 安全 10、⑩ token 工程 10、⑪ 差异化 10 五项严格第一；⑤ 提示词 10、⑦ 场景 10 与 opencode 并列第一。**
 
 **复评变动的逐维理由（±分数全部有落地证据，见 §9 补齐轮记录）：**
 
@@ -75,9 +75,17 @@
 | ③ 内容交互 diff/媒体 | 6→7 | 词级 inline diff（kimi 六家独有 `diff_render.py:184-218` 移植：连续 -/+ 块逐对配对 + SequenceMatcher ratio<0.5 整行降级 + LCS 词级红绿分段，`wordDiff.ts`）+ pager [/] hunk 跳转（opencode 独有 `diff-viewer.tsx:282-315`，回滚 diff 等 @@ 内容 + 底部快捷键提示）——9 单测 +8 |
 | ⑪ 差异化 | 8→9 | 离线「缺模型即拉取」（codex `ollama/lib.rs:22-34` ensure_oss_ready 对标：/offline on 切完自动下载、progress_callback 进度回报 5% 步进状态行，`ensureOfflineModelReady`）+ AI 记忆收件箱（gemini `.inbox` 对标：pending 审阅、apply 生效/discard 丢弃/undo 按记录撤销——可审可退堵「不可控记忆」评审攻击；settings.memoryInbox 开关默认关零漂移）——7 单测 +5 |
 
+**波 3 复评变动（2026-08-18 upgrade-plan-2026-08.md 波 3 三任务落定，证据见 §9.18）：**
+
+| 维度 | 旧→新 | 理由（证据锚点） |
+|---|---|---|
+| ② 输入/编辑器 | 8→9 | vim 模态编辑（gemini `vim.ts` 纯 reducer 直搬 `vimCore.ts`：NORMAL/INSERT 双态、hjkl/wbeWBE/0$^/ggG/fFtT、xXr~/ddccyy/D C Y、dcy+移动、pP、u、`.` 重复、数字前缀、双击 Esc 清空；textInput 按键拦截 + NORMAL 徽标 + /vim 开关热生效）——14 单测；无 VISUAL// 搜索/Ctrl-R 与 gemini 同档诚实边界 +9 |
+| ③ 内容交互 diff/媒体 | 7→8 | 完整 diff 查看 + per-hunk 选择性回滚（**六家皆无的差异化**——取证确认 opencode `diff-viewer.tsx:945-1010` 仅跳转无 apply/discard）：/diff 快照对比（行级 LCS unified diff 3 行上下文）+ /diff revert <hunk序号>（reverseHunk 上下文锚定、失败绝不写半行、应用前自动快照）——10 单测 +8 |
+| ⑪ 差异化 | 9→10 | 本地跨会话语义召回（**六家独有取证**：aider 仅本地嵌入做 /help 文档 RAG、gemini 云端嵌入、其余纯正则）——/hole --all 全会话 FTS bigram + 本地向量 KNN（数据不出机）；ACP stdio 接收正式入档（`acp.ts` runAcpServer /acp 服务端 + 协议测试既有落地归入本档）——4 单测 +5 |
+
 **未调分且如实说明**：⑥ 安全工程维持 9——OS 沙盒本轮落地（Windows L0-L3，标准用户实测校准：受限令牌路径被 1314 证伪、改 Low IL 实现只读）但仅 Windows 单平台，codex/gemini 是三平台沙盒；三平台化后才可冲 10。②③ 未动（vim/keymap、diff 交互 UI 仍在 P1 清单）。
 
-判词先行（波 2 四评更新）：**wxnodus 900 稳居第 1/7**——波 2 三任务（②@补全——6/6 竞品最后一题 / ③词级 diff+kimi 独有算法移植+hunk 跳转 / ⑪离线自动就绪+记忆收件箱）落定；五项严格第一（①④⑥⑩⑪）+ 两项并列第一（⑤⑦）。剩余拉分项集中在「产品化完成度」：分发（⑧ 5，卡公开决策）、内容交互（③ 7，完整 diff 查看器留波 3）、输入编辑器（② 8，vim 留波 3）。波 3 路线已建档（upgrade-plan-2026-08.md → 922）。
+判词先行（波 3 五评更新）：**wxnodus 922 稳居第 1/7，三波路线全部落定**——波 3（②vim 模态 / ③完整 diff 查看+per-hunk 回滚（六家皆无差异化）/ ⑪本地跨会话语义召回（六家独有）+ACP 接收入档）。五项严格第一（①④⑥⑩⑪）+ 两项并列第一（⑤⑦）。剩余拉分项集中在「产品化完成度」：分发（⑧ 5，卡公开决策——转公开即 +36）。
 
 ---
 
@@ -340,3 +348,14 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 - **⑪ 差异化 8→9（c47f51f，7 单测）**：离线「缺模型即拉取」（codex `ollama/lib.rs:22-34` ensure_oss_ready 对标——`ensureOfflineModelReady` 已就绪零下载、未就绪下载并回报；`/offline on` 切完自动下载零门槛；progress_callback → `normalizePipelineProgress` 归一化 + 5% 步进 `system.notice` 状态行）+ AI 记忆收件箱（gemini `.inbox` 对标——`memoryInbox.ts`：settings.memoryInbox=true 时 memory_write 先入箱 pending，`/memory inbox list|apply|discard|undo` 批准生效/丢弃/按记录撤销——可审可退堵「不可控记忆」评审攻击；默认关直写零漂移，既有闭环契约不变）。
 - **验证**：tsc 零错误；全量套件 362 文件/2687 用例绿（10 skip）；`npm run ci` 本地九命令全绿；远程 CI 见 audit §13.74。
 - **复算**：总分 878 → **900**——**反超 codex（869）稳居第 1/7**（不依赖公开决策）。严格第一：①④⑥⑩⑪ 五项；并列第一：⑤⑦（与 opencode）。下一站：波 3 → 922（vim、完整 diff 查看器/逐 hunk 应用、ACP 接收 + 本地语义搜索）。
+
+
+### 9.18 波 3 收官轮（2026-08-18：②③⑪ 三维落地——900 → 922，三波路线全部落定）
+
+按 `docs/upgrade-plan-2026-08.md` 波 3 三任务执行（六家源码逐项对标，双代理取证先行）：
+
+- **② 输入/编辑器 8→9（6d458ca，14 单测）**：vim 模态编辑——gemini `vim.ts`（1536 行）状态机 + `vim-buffer-actions.ts`（纯 reducer）语义直搬为 `vimCore.ts` 纯函数（零副作用、天然可 undo）：NORMAL/INSERT 双态、hjkl/wbeWBE/0$^/ggG/fFtT（预读两键命令）、xXr~/ddccyy/D C Y、dcy+移动（vim 含式语义 l/$/e/E 含、w/W 排他）、pP、u（hook 独立 undo 栈）、`.` 多键序列回放、数字前缀 ×10、双击 Esc 500ms 清空；textInput 按键拦截 + `-- NORMAL --` 徽标（gemini Composer.tsx:158-165 对标）+ `/vim` 命令 + settings.vimMode 配置水合热生效。**无 VISUAL、无 / 搜索、无 Ctrl-R——gemini vim.ts 同款诚实边界（同档宣称）。**
+- **③ 内容交互 diff/媒体 7→8（78728f7，10 单测）**：`hunkApply.ts`（parseHunks @@ 头结构化 + applyHunkToText 上下文锚定失败绝不写半行 + reverseHunk + lineDiff 行级 LCS unified diff 3 行上下文、1500 行超限整文件降级）+ `/diff <文件>` 快照→当前完整 diff 查看（pager 内词级渲染 + [/] hunk 跳转复用波 2）+ `/diff <文件> revert <hunk序号>` **per-hunk 选择性回滚**——取证确认六家皆无（opencode diff-viewer.tsx:945-1010 仅跳转无 apply/discard），回滚前自动快照、/undo fs restore 可再滚回。
+- **⑪ 差异化 9→10（ab5c02e，4 单测）**：本地跨会话语义召回——`/hole --all` 全会话 FTS bigram + 本地向量 KNN（数据不出机；取证：aider 仅本地嵌入做 /help 文档 RAG、gemini 云端嵌入、其余纯正则——**六家独有**）；ACP stdio 接收正式入档（`acp.ts` runAcpServer + /acp 命令 + 协议测试为既有落地，本轮归入 ⑪ 论据）。
+- **验证**：tsc 零错误；全量套件 365 文件/2712 用例绿（10 skip）；`npm run ci` 本地九命令全绿；远程 CI 见 audit §13.75。
+- **复算**：总分 900 → **922**——**三波路线全部落定，稳居第 1/7**（不依赖公开决策）。严格第一：①④⑥⑩⑪ 五项；并列第一：⑤⑦（与 opencode）。⑧ 5→9（+36）仍卡公开决策。

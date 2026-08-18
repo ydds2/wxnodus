@@ -53,8 +53,8 @@
 
 ## 下一档优先级（按提分/成本）
 
-1. 波 3：vim（gemini vim.ts 1536 行）、完整 diff 查看器/逐 hunk 应用（差异化）、ACP 接收 + 本地语义搜索（unique）；
-2. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）；
+1. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）——转公开即解锁 winget/scoop；
+2. 波 3 全部落定后剩余零碎（P3）：vim VISUAL/搜索模式、git 三源 diff viewer、ACP session/load 全量实现。
 4. 波 3：vim（gemini vim.ts）、完整 diff 查看器/逐 hunk 应用（差异化）、ACP 接收 + 本地语义搜索；
 5. ⑧ 5→9（+36）仍卡公开决策（私有仓库已备，rc.1/rc.2 内测包已发）。
 
@@ -75,3 +75,11 @@
 | ② 输入/编辑器 | 7 | 8 | @补全（crush 分层排序 + opencode frecency + kimi enter 双语义 + #L 行区间） |
 | ③ diff/媒体 | 6 | 7 | 词级 inline diff（kimi 六家独有移植）+ pager hunk 跳转（opencode 独有） |
 | ⑪ 差异化 | 8 | 9 | 离线缺模型即拉取（codex ollama）+ AI 记忆收件箱（gemini .inbox） |
+
+## 波 3 落定（2026-08-18：②③⑪ 三维齐升——900 → 922，三波路线全部落定，证据 score §9.18 / audit §13.75）
+
+| 维度 | 波 3 前 | 波 3 后 | 落定内容（对标锚点） |
+|---|---|---|---|
+| ② 输入/编辑器 | 8 | 9 | vim 模态（gemini vim.ts 纯 reducer 直搬 + /vim 开关热生效） |
+| ③ diff/媒体 | 7 | 8 | 完整 diff 查看 + per-hunk 选择性回滚（六家皆无差异化，取证确认） |
+| ⑪ 差异化 | 9 | 10 | 本地跨会话语义召回（六家独有）+ ACP stdio 接收入档 |

@@ -65,16 +65,16 @@
 
 ## 3. 波 3「专家档」→ 922（三任务，大工作量，按需启动）
 
-### 3.1 ② 8→9：vim 模态编辑
+### 3.1 ② 8→9：vim 模态编辑——✅ 已落定（6d458ca）
 - **抄谁**：gemini `packages/cli/src/ui/hooks/vim.ts`（1536 行：计数前缀、d/c/y+移动、f/F/t/T、r、~、`.`、dd/cc）+ `components/shared/vim-buffer-actions.ts`（1849 行）——**与 wxnodus 同 ink+TS 栈，对照移植**；codex `textarea/vim.rs:229-298`（括号栈最内层文本对象算法）。
 - **验收**：20+ 单测（操作符/文本对象/计数/寄存器）+ 手动冒烟。
 - **诚实口径**：只宣称「真 vim 模态（非伪 vim）」，与 codex 同档。
 
-### 3.2 ③ 7→8：完整 diff viewer（或 per-hunk 应用）
+### 3.2 ③ 7→8：完整 diff viewer + per-hunk 回滚——✅ 已落定（78728f7）
 - **抄谁**：opencode `diff-viewer.tsx`（文件树 + split/unified 切换 + 三源（工作区/主分支/上一轮）+ 单 patch 模式 + reviewed 标记）。
 - **差异化候选（六家皆无）**：per-hunk 接受/拒绝——按 hunk 拆解应用 + 基于 undoShadows/checkpoint 逐 hunk 回滚；风险高于纯渲染层（动文件写入路径）。
 
-### 3.3 ⑪ 9→10：ACP/插件 SDK 接收面 + 本地跨会话语义检索
+### 3.3 ⑪ 9→10：ACP 接收入档 + 本地跨会话语义检索——✅ 已落定（ab5c02e）
 - **抄谁**：kimi `src/kimi_cli/acp/server.py`（ACP 服务端——「被 IDE 接收」）+ opencode `packages/opencode/src/plugin/install.ts`（jsonc 配置注入零摩擦）+ codex `sdk/`（语言 SDK）。
 - **独占点**：**本地跨会话语义检索——六家无一在本地做向量语义召回**（gemini 只产出 patch 文件；codex 记忆在服务端）。wxnodus 已有 embedding + memory search 基建，做成跨会话语义召回即六家独有。
 

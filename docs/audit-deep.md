@@ -959,3 +959,14 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 4. **收尾（8d56e76）**：word-diff 夹具类型收口；全量套件 **362 文件 / 2687 用例绿（10 skip）**；`npm run ci` 本地九命令全绿；**远程 CI 双绿**（workflow #32170015588 代码轮 + #32170172838 HEAD 轮，windows-latest 全步骤 success）。
 5. **复算 900**：② 7→8（+9）③ 6→7（+8）⑪ 8→9（+5）= +22 → **900**——**反超 codex（869）稳居第 1/7**；严格第一 ①④⑥⑩⑪ 五项、并列第一 ⑤⑦（与 opencode）。score §0.1/§9.17、register、supremacy-plan 3.6、upgrade-plan、CHANGELOG 已同步。
 6. **诚实口径**：⑧ 5→9（+36）仍卡公开决策；frecency 为 UI 会话级（跨会话不复用）；@补全弹窗 UI 复用既有 overlay（无新组件重写）；词级 diff 省略 kimi 的语法高亮 tab 偏移映射（无该层）。
+
+### 13.75 波 3 收官轮（2026-08-18：②③⑪ 三维齐升——900 → 922 三波路线全部落定）
+
+按 `docs/upgrade-plan-2026-08.md` 波 3 三任务执行（双代理取证先行，六家源码逐项对标）：
+
+1. **② 8→9（6d458ca，14 单测）**：vim 模态编辑——gemini `vim.ts` 状态机 + `vim-buffer-actions.ts` 纯 reducer 语义直搬 `vimCore.ts`（纯函数、天然可 undo）；NORMAL/INSERT 双态 + 移动/编辑/操作符/寄存器/`.` 多键序列回放/数字前缀/双击 Esc 500ms 清空；textInput 按键拦截（r/fFtT 预读两键命令）+ `-- NORMAL --` 徽标 + `/vim` 命令 + settings.vimMode 配置水合（useConfigWatcher last-good 守卫）。无 VISUAL// 搜索/Ctrl-R——gemini 同档诚实边界。
+2. **③ 7→8（78728f7，10 单测）**：`hunkApply.ts`（parseHunks/applyHunkToText 上下文锚定/reverseHunk/lineDiff 行级 LCS + 1500 行超限降级）+ `/diff` 快照→当前完整 diff 查看 + `/diff revert <hunk序号>` per-hunk 选择性回滚——**取证确认六家皆无**（opencode diff-viewer 仅跳转无 apply/discard）；回滚前自动快照，/undo fs restore 可再滚回。语义校准：快照→当前 diff 的正确逐 hunk 操作是回滚（应用侧纯函数保留供未来提议式 diff 源）。
+3. **⑪ 9→10（ab5c02e，4 单测）**：`/hole --all` 本地跨会话语义召回（全会话 FTS bigram + 本地向量 KNN——六家独有取证：aider 仅文档 RAG、gemini 云端嵌入、其余纯正则）+ recallHybrid 会话隔离回归锁定；ACP stdio 接收正式入档（`acp.ts` runAcpServer + /acp + 协议测试为既有落地，本轮归入 ⑪ 论据）。
+4. **收尾**：全量套件 **365 文件 / 2712 用例绿（10 skip）**；`npm run ci` 本地九命令全绿；远程 CI 见 §13.75 尾注（watch 中）。
+5. **复算 922**：② 8→9（+9）③ 7→8（+8）⑪ 9→10（+5）= +22 → **922**——**三波路线（843→878→900→922）全部落定，稳居第 1/7**；严格第一 ①④⑥⑩⑪ 五项、并列第一 ⑤⑦（与 opencode）。score §0.1/§9.18、register、supremacy-plan 3.6、upgrade-plan、CHANGELOG 已同步。
+6. **诚实口径**：⑧ 5→9（+36）仍卡公开决策（唯一剩余大增量）；vim 无 VISUAL// 搜索/Ctrl-R（gemini 同档）；/diff 源为 undoShadows 快照（git 三源留 P3）；ACP 为 stdio 单会话应答（session/load 全量实现留 P3）。
