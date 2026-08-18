@@ -857,3 +857,9 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **⑤ 到 9**：API 级 caching 深化——toolsToOpenAI 按工具名规范排序（不同装配/合并顺序产出字节一致 → 首消息前缀含 tools schema 跨重启稳定，DeepSeek 前缀缓存持续命中；1 用例字节级断言 + 升序契约）。
 - **复算**：总分 790→**814**，**反超 gemini（812）升至第 3/7**；**≥3 维度第一达成**（① 渲染 10 / ④ Agent 10 / ⑪ 差异化 8）。剩余 56 分：⑥+10（管理员实测待用户回报）、⑦+11 与 ⑧+36（git remote——用户已决策跳过发布类）。**870 线在「暂无 remote」决策下不可达，如实记录。**
 - **验证**：tsc 零错误；supremacy-45 5 用例 + agent-gap/llmSpec/tools 24 回归全绿；全量 ci 九步见下。
+
+### 13.64 提权实测交付轮（2026-08-18：3.2 实测脚本 + 复算口径）
+
+- **实测脚本交付**：`scripts/elevated-probe.mjs` + `scripts/probe-elevated.cmd`（管理员终端一键：build → 双态探测 force → L0 写测试（预期拒绝=只读实测）→ L1 写测试（预期成功=可写+Job 实测）→ 落盘 `elevated-probe-result.txt`）。
+- **本机（标准用户）预演验证**：脚本机制端到端跑通——PROBE OK-STANDARD（诚实）、L0-WRITE SBX_WRITE_DENIED（Low IL 只读实测）、L1-WRITE SBX_WRITE_OK（Job 可写实测）——同一脚本在管理员终端运行即产出提权分支证据。
+- **复算口径（预先声明，防事后争议）**：用户回报 PROBE=OK-ELEVATED 且 L0 拒绝/L1 成功 → ⑥ 9→10（+10，总分 824，score/register/audit 同步）；回报 OK-STANDARD（终端未提权）→ ⑥ 保持 9，如实记录。870 线在「暂无 remote」决策下不可达（⑦⑧ 依赖发布通道），保持如实标注。
