@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSy
 import { appendAudit, restoreCheckpoint } from '../../store/db.js';
 import { parseSinceArg } from '../../kernel/memory.js';
 import { estimateTokens } from '../../kernel/memory.js';
+import { settingsLayers } from '../../kernel/projectConfig.js';
 import { runGate } from '../../build/gate.js';
 import { writeEvidence } from '../../build/evidence.js';
 import { forgeMcpServer, forgeSkillDir } from '../../forge/forge.js';
@@ -1062,6 +1063,10 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
     const safe = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, k === 'apiKeyEnc' ? (v ? 'enc:****' : '') : v]));
     const rows = Object.entries(safe).map(([k, v]) => ` ${k}: ${JSON.stringify(v)}`);
     if (unknown.length) rows.push('', ` ⚠ 未知键（可能拼写错误，不生效）：${unknown.join('、')}`);
+    // B-05 配置分层（gemini 四层对标）：项目级 .wxnodus/config.json settings 键级覆盖全局
+    rows.push('', ' 分层：全局 settings.json ← 项目 .wxnodus/config.json（settings 键级覆盖，/config set 仍写全局）');
+    const layers = settingsLayers(ctx.cwd);
+    rows.push(`   项目配置：${layers.projectLoaded ? `✅ 已加载 ${layers.projectPath}` : layers.error ? `⚠ 解析失败（${layers.error}）` : `未配置（${layers.projectPath}）`}`);
     return lines(' 配置 ', rows);
   });
 

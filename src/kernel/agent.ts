@@ -29,6 +29,7 @@ import { isCompletionClaim, GOAL_DONE_MARK } from './completionClaim.js';
 import type { HookRunner } from './hooks.js';
 import { join, resolve, relative, isAbsolute } from 'node:path';
 import { loadProjectRules } from './projectRules.js';
+import { layeredSettings } from './projectConfig.js';
 
 export interface ModelCall { type: 'text'; content: string; reasoning?: string; reasoningField?: string }
 export interface ToolCallMsg { type: 'tool_call'; name: string; args: Record<string, any>; id?: string; reasoning?: string; reasoningField?: string; calls?: Array<{ id: string; name: string; args: Record<string, any>; reasoning?: string; reasoningField?: string }> }
@@ -591,7 +592,8 @@ export function createAgent(opts: AgentOptions) {
     runCommand: opts.onCommand,
     hookFailure: (name, err) => hooks?.postToolUseFailure?.(name, err),
     // 开放通道 settings（computer_observe 视觉等）：agent 配置直读
-    getSettings: () => (opts.config?.settings as Record<string, any> | undefined) ?? undefined,
+    // B-05 配置分层：项目级 .wxnodus/config.json settings 键级覆盖全局（每次调用动态合并）
+    getSettings: () => layeredSettings(opts.config?.settings as Record<string, any> | undefined, ctxCwd),
   };
 
   // KF-010：默认审批 fail-closed——未装配 onApproval 时一律拒绝（绝不静默放行副作用）
