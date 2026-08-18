@@ -929,3 +929,10 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **第三方插件接收（S-02 接收侧——用户口径：暂缓公开市场托管，能接收即可）**：`/plugin install <目录|本地 zip|https URL>`——downloadService（checkUrlSafety 逐跳 SSRF 授权）复用 + readZip 解包（根级/单层目录布局归一）+ parsePluginManifest 校验 + `--sha256` 完整性（未提供诚实提示）+ staging 原子落位 + enable 失败回滚——10 单测 + 命令面回归绿。
 - **第十三~十五轮追加**：⑫ known-failures 闭包用例对空 `cases/` 目录 ENOENT（git 不跟踪空目录——干净克隆无该目录，31 用例全挂；ENOENT 容忍 + .gitkeep 双保险）；⑬ 环门禁报告方向随入口集变化（新增插件安装器入口后同一良性环被反方向报告——按字典序最小节点起旋归一化比较，不硬编码方向）。
 - **复算**：⑨ 8→9（+8）——远程 CI 绿为预声明条件，已兑现。总分 835 → **843**——**反超 opencode（841）升至第 2/7**，距 codex 869 差 26（score §9.15）。rc.2 安装包重建同随（v3.1.0-rc.2）。
+
+### 13.72 多维升级方案建档轮（2026-08-19：六家源码取证 + 三波路线）
+
+- **取证**：四路专案代理逐文件读本地克隆 `Desktop\cli-compare\{codex,gemini-cli,opencode,kimi-cli,crush,aider}`，②③⑤⑩⑪ 五维全部 file:line 锚点。
+- **方案**：`docs/upgrade-plan-2026-08.md`——波 1（③5→6/②6→7/⑩9→10/⑤9→10，+35 → **878 反超 codex**，不依赖公开决策）、波 2（②7→8/③6→7/⑪8→9，+22 → 900）、波 3（②8→9/③7→8/⑪9→10，+22 → 922）；⑧ +36 仍卡公开决策。
+- **⑪ 口径修正（取证强制）**：「黑洞记忆六家唯一」❌（gemini Auto Memory 同赛道，memoryService.ts/.inbox 人工审批）；「Windows 沙盒六家唯一」❌（codex windows-sandbox-rs 更深）。**新论据 = UIA 桌面自动化（六家唯一）+ 离线四模态组合（六家唯一）**——score/register ⑪ 论据随波 2.3 一并改口。
+- **评分纪律**：每档实现+测试+真实证据三件齐备才复算，绝不预支。
