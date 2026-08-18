@@ -1,8 +1,10 @@
 name: CI
 
 # supremacy 2.4：GitHub Actions CI（本地已生成 + 语法校验；推送待仓库 remote 配置后自动生效）
-# 门禁与本地 `npm run ci` 同源（七步：typecheck×2 + 全量测试 + known-failures + 发现/覆盖检查 + 构建），
+# 门禁与本地 `npm run ci` 同源（九命令：typecheck×2 + 全量测试 + known-failures + 发现/覆盖检查 + lint + 环检查 + 构建），
 # 另加 packages/vscode-ext 独立门禁（typecheck + node:test + esbuild + vsce 打包）与 vsix 工件上传。
+# 注意：vscode-ext 由本工作流第 5-7 步独立门禁覆盖，根 tsconfig.tests.json 不扫 packages/vscode-ext（其
+# 'vscode' 模块类型仅在自身 node_modules 中——根门禁扫描会因安装顺序而红，2026-08-18 首轮实测修复）。
 
 on:
   push:

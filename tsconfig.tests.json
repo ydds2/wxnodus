@@ -15,8 +15,8 @@
     "tests/**/*.tsx",
     "src/**/*.ts",
     "src/**/*.tsx",
-    "packages/**/*.ts",
-    "packages/**/*.tsx"
+    "packages/wxnodus-ink/**/*.ts",
+    "packages/wxnodus-ink/**/*.tsx"
   ],
   "exclude": [
     "node_modules",
