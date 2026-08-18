@@ -1,0 +1,523 @@
+// src/wxnodus-ui/lib/vimCore.ts — vim 模态编辑纯核心（波 3 ② 8→9）
+// gemini hooks/vim.ts:88-170（状态机）+ vim-buffer-actions.ts:164（纯 reducer）对标直搬语义：
+// 按键解释 = 纯函数（state, doc, key）→ (state, doc, 效果)——零副作用、天然可 undo。
+// 范围（与 gemini 同档子集，诚实边界）：NORMAL/INSERT 两态；hjkl / w b e W B E / 0 $ ^ /
+// gg G / f F t T / x X r ~ / dd cc yy D C Y / d c y+移动 / p P / u / `.` 重复 / 数字前缀；
+// 无 VISUAL、无 / 搜索、无 Ctrl-R redo（gemini vim.ts 同样没有——同档宣称）。
+
+export type VimMode = 'normal' | 'insert'
+
+export interface VimCoreState {
+  mode: VimMode
+  /** 数字前缀（×10 累积，gemini :136-137） */
+  count: number
+  /** 待执行操作符（d/c/y+移动 gemini :618-657；f/F/t/T 预读挂起同槽复用） */
+  pendingOp: null | 'd' | 'c' | 'y' | 'f' | 'F' | 't' | 'T'
+  /** 上一次可重复命令（`.` 重复，gemini :1410）——多键序列（含 count 位） */
+  lastCommand: { keys: string[]; count: number } | null
+  /** 上次 Esc 时间（双击 Esc 清空检测 500ms，gemini :686-700） */
+  lastEscTs: number
+}
+
+/** 文档模型：输入框文本 + 光标（char offset，0..text.length；\n 合法——多行输入） */
+export interface VimDoc {
+  text: string
+  cursor: number
+}
+
+export interface VimOutcome {
+  state: VimCoreState
+  doc: VimDoc
+  /** 本次进寄存器的文本（p/P 数据源）；null=无 */
+  yanked: string | null
+  /** 产生可撤销编辑（hook 据此压 undo 栈） */
+  undoable: boolean
+  /** 请求撤销（u——undo 栈由 hook 管理，核心只发信号） */
+  undo: boolean
+  /** 进入 insert 模式（i/a/o/O/I/A/c 类命令） */
+  enteredInsert: boolean
+  /** 双击 Esc 清空（正常模式连按两次） */
+  cleared: boolean
+  /** false=本键不属 vim（insert 模式普通字符——放行给正常输入路径） */
+  consumed: boolean
+}
+
+export const initialVimState = (): VimCoreState => ({
+  mode: 'insert',
+  count: 0,
+  pendingOp: null,
+  lastCommand: null,
+  lastEscTs: 0,
+})
+
+const DOUBLE_ESC_MS = 500
+
+// ── 行/列换算（多行输入；\n 分行）────────────────────────────
+const lineStarts = (text: string): number[] => {
+  const out = [0]
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) out.push(i + 1)
+  }
+  return out
+}
+
+export const cursorRow = (text: string, cursor: number): number => {
+  let row = 0
+  for (let i = 0; i < cursor; i++) {
+    if (text.charCodeAt(i) === 10) row++
+  }
+  return row
+}
+
+const rowStart = (text: string, row: number): number => {
+  let r = 0
+  for (let i = 0; i < text.length; i++) {
+    if (r === row) return i
+    if (text.charCodeAt(i) === 10) r++
+  }
+  return text.length
+}
+
+const lineLength = (text: string, rowStartIdx: number): number => {
+  const nl = text.indexOf('\n', rowStartIdx)
+  return nl < 0 ? text.length - rowStartIdx : nl - rowStartIdx
+}
+
+const colOf = (text: string, cursor: number): number => {
+  const rs = rowStart(text, cursorRow(text, cursor))
+  return cursor - rs
+}
+
+const clampCursor = (text: string, cursor: number): number =>
+  Math.max(0, Math.min(text.length, cursor))
+
+// ── 移动（返回新 cursor；count 语义：h/l 步进 count，j/k 行内 clamp）──
+const isWordChar = (ch: string): boolean => /[A-Za-z0-9_]/.test(ch)
+const isBigWordChar = (ch: string): boolean => !/\s/.test(ch)
+
+/** 向前跳过同词字符（w/b/e 用 isWordChar；W/B/E 用 isBigWordChar） */
+const skipForward = (text: string, from: number, wordFn: (ch: string) => boolean): number => {
+  let i = clampCursor(text, from)
+  const n = text.length
+  // 跳过空白（w 语义：先跨当前词内，再空白，再到下词首）
+  while (i < n && !wordFn(text[i]!)) i++
+  while (i < n && wordFn(text[i]!)) i++
+  while (i < n && !wordFn(text[i]!)) i++
+  return i
+}
+
+const skipBack = (text: string, from: number, wordFn: (ch: string) => boolean): number => {
+  let i = clampCursor(text, from)
+  while (i > 0 && !wordFn(text[i - 1]!)) i--
+  while (i > 0 && wordFn(text[i - 1]!)) i--
+  return i
+}
+
+/** e：词尾（含光标处词） */
+const wordEnd = (text: string, from: number, wordFn: (ch: string) => boolean): number => {
+  let i = clampCursor(text, from)
+  const n = text.length
+  while (i < n && !wordFn(text[i]!)) i++
+  while (i < n && wordFn(text[i]!)) i++
+  return Math.max(from, i - 1)
+}
+
+const motionWordForward = (text: string, cursor: number, big: boolean, count: number): number => {
+  const fn = big ? isBigWordChar : isWordChar
+  let c = cursor
+  for (let k = 0; k < count; k++) c = skipForward(text, c, fn)
+  return clampCursor(text, c)
+}
+
+const motionWordBack = (text: string, cursor: number, big: boolean, count: number): number => {
+  const fn = big ? isBigWordChar : isWordChar
+  let c = cursor
+  for (let k = 0; k < count; k++) c = skipBack(text, c, fn)
+  return clampCursor(text, c)
+}
+
+const motionWordEnd = (text: string, cursor: number, big: boolean, count: number): number => {
+  const fn = big ? isBigWordChar : isWordChar
+  let c = cursor
+  for (let k = 0; k < count; k++) c = wordEnd(text, c, fn)
+  return clampCursor(text, c)
+}
+
+const motionLineDown = (text: string, cursor: number, count: number): number => {
+  const row = Math.min(cursorRow(text, cursor) + count, lineStarts(text).length - 1)
+  const rs = rowStart(text, row)
+  return clampCursor(text, rs + Math.min(colOf(text, cursor), lineLength(text, rs)))
+}
+
+const motionLineUp = (text: string, cursor: number, count: number): number => {
+  const row = Math.max(cursorRow(text, cursor) - count, 0)
+  const rs = rowStart(text, row)
+  return clampCursor(text, rs + Math.min(colOf(text, cursor), lineLength(text, rs)))
+}
+
+/** f/F/t/T：行内查找字符（不含自身；找不到原地不动——vim 同款） */
+const motionFind = (text: string, cursor: number, ch: string, kind: 'f' | 'F' | 't' | 'T', count: number): number => {
+  const row = cursorRow(text, cursor)
+  const rs = rowStart(text, row)
+  const line = text.slice(rs, rs + lineLength(text, rs))
+  const base = cursor - rs
+  let pos = kind === 'f' || kind === 't' ? base + 1 : base - 1
+  let found = -1
+  for (let k = 0; k < count; k++) {
+    found = -1
+    if (kind === 'f' || kind === 't') {
+      for (let i = pos; i < line.length; i++) {
+        if (line[i] === ch) { found = i; break }
+      }
+    } else {
+      for (let i = pos; i >= 0; i--) {
+        if (line[i] === ch) { found = i; break }
+      }
+    }
+    if (found < 0) break
+    pos = kind === 'f' || kind === 't' ? found + 1 : found - 1
+  }
+  if (found < 0) return cursor
+  const landed = kind === 't' ? found - 1 : kind === 'T' ? found + 1 : found
+  return clampCursor(text, rs + Math.max(0, landed))
+}
+
+// ── 编辑（纯变换；yank 寄存器经 outcome 传出）──────────────────
+interface Edit {
+  text: string
+  cursor: number
+  yank: string | null
+}
+
+const replaceRange = (doc: VimDoc, from: number, to: number, replacement: string, cursorAfter?: number): Edit => {
+  const a = Math.min(from, to)
+  const b = Math.max(from, to)
+  const text = doc.text.slice(0, a) + replacement + doc.text.slice(b)
+  return { text, cursor: clampCursor(text, cursorAfter ?? a), yank: doc.text.slice(a, b) }
+}
+
+/** 删除范围并压寄存器（d 操作符与 dd/D/x 共用） */
+const deleteRange = (doc: VimDoc, from: number, to: number): Edit => replaceRange(doc, from, to, '')
+
+const editDeleteChar = (doc: VimDoc, count: number): Edit => {
+  const to = Math.min(doc.text.length, doc.cursor + count)
+  if (to <= doc.cursor) return { text: doc.text, cursor: doc.cursor, yank: null }
+  return deleteRange(doc, doc.cursor, to)
+}
+
+const editBackspaceChar = (doc: VimDoc, count: number): Edit => {
+  const from = Math.max(0, doc.cursor - count)
+  if (from >= doc.cursor) return { text: doc.text, cursor: doc.cursor, yank: null }
+  const e = deleteRange(doc, from, doc.cursor)
+  return { text: e.text, cursor: from, yank: e.yank }
+}
+
+const editReplaceChar = (doc: VimDoc, ch: string, count: number): Edit => {
+  const to = Math.min(doc.text.length, doc.cursor + count)
+  const rep = ch.repeat(Math.max(1, to - doc.cursor))
+  return { text: doc.text.slice(0, doc.cursor) + rep + doc.text.slice(to), cursor: doc.cursor, yank: null }
+}
+
+const editToggleCase = (doc: VimDoc, count: number): Edit => {
+  const to = Math.min(doc.text.length, doc.cursor + count)
+  let changed = ''
+  for (let i = doc.cursor; i < to; i++) {
+    const ch = doc.text[i]!
+    const lo = ch.toLowerCase()
+    changed += ch === lo ? ch.toUpperCase() : lo
+  }
+  return { text: doc.text.slice(0, doc.cursor) + changed + doc.text.slice(to), cursor: Math.min(doc.text.length, to), yank: null }
+}
+
+/** 行操作区间（dd/cc/yy/D/C/Y——gemini :1290-1399） */
+const lineRange = (doc: VimDoc, count: number): { from: number; to: number } => {
+  const row = cursorRow(doc.text, doc.cursor)
+  const rows = lineStarts(doc.text).length
+  const endRow = Math.min(rows - 1, row + count - 1)
+  const from = rowStart(doc.text, row)
+  const toRs = rowStart(doc.text, endRow)
+  const to = toRs + lineLength(doc.text, toRs) + (endRow < rows - 1 ? 1 : 0) // 含行尾 \n
+  return { from, to }
+}
+
+const editDeleteLine = (doc: VimDoc, count: number): Edit => {
+  const { from, to } = lineRange(doc, count)
+  const e = deleteRange(doc, from, to)
+  return { text: e.text, cursor: Math.min(from, e.text.length), yank: e.yank }
+}
+
+const editYankLine = (doc: VimDoc, count: number): Edit => {
+  const { from, to } = lineRange(doc, count)
+  return { text: doc.text, cursor: doc.cursor, yank: doc.text.slice(from, to) }
+}
+
+const editChangeLine = (doc: VimDoc): Edit => {
+  // cc：清行内容但保留换行（vim 语义——行结构不塌缩，进入 insert 于空行）
+  const row = cursorRow(doc.text, doc.cursor)
+  const rs = rowStart(doc.text, row)
+  const end = rs + lineLength(doc.text, rs)
+  const e = deleteRange(doc, rs, end)
+  return { text: e.text, cursor: rs, yank: e.yank }
+}
+
+const editChangeToEol = (doc: VimDoc): Edit => {
+  const row = cursorRow(doc.text, doc.cursor)
+  const rs = rowStart(doc.text, row)
+  const end = rs + lineLength(doc.text, rs)
+  return deleteRange(doc, doc.cursor, end)
+}
+
+const editDeleteToEol = (doc: VimDoc): Edit => editChangeToEol(doc)
+
+const pasteAfter = (doc: VimDoc, register: string): Edit => {
+  if (!register) return { text: doc.text, cursor: doc.cursor, yank: null }
+  return { text: doc.text.slice(0, doc.cursor + 1) + register + doc.text.slice(doc.cursor + 1), cursor: doc.cursor + 1, yank: null }
+}
+
+const pasteBefore = (doc: VimDoc, register: string): Edit => {
+  if (!register) return { text: doc.text, cursor: doc.cursor, yank: null }
+  return { text: doc.text.slice(0, doc.cursor) + register + doc.text.slice(doc.cursor), cursor: doc.cursor, yank: null }
+}
+
+// ── 主解释器 ─────────────────────────────────────────────────
+export function vimHandleKey(
+  prev: VimCoreState,
+  docIn: VimDoc,
+  key: string,
+  now: number,
+  register: string,
+): VimOutcome {
+  const base = (over: Partial<VimOutcome> = {}): VimOutcome => ({
+    state: prev,
+    doc: docIn,
+    yanked: null,
+    undoable: false,
+    undo: false,
+    enteredInsert: false,
+    cleared: false,
+    consumed: true,
+    ...over,
+  })
+  const count = prev.count === 0 ? 1 : prev.count
+
+  // ── INSERT 模式：Esc 回 normal（gemini :474-481），其余全放行 ──
+  if (prev.mode === 'insert') {
+    if (key === 'Escape' || key === '<esc>') {
+      return base({ state: { ...prev, mode: 'normal', count: 0, lastEscTs: now } })
+    }
+    return base({ consumed: false })
+  }
+
+  // ── NORMAL：数字前缀（0 不单独计——count=0 即 1；gemini :136-137 ×10 累积）──
+  if (/^[1-9]$/.test(key)) {
+    return base({ state: { ...prev, count: prev.count * 10 + Number(key) } })
+  }
+  if (key === '0' && prev.count > 0) {
+    return base({ state: { ...prev, count: prev.count * 10 } })
+  }
+
+  // Esc：双击 500ms 内清空（gemini :686-700）
+  if (key === 'Escape' || key === '<esc>') {
+    if (prev.lastEscTs > 0 && now - prev.lastEscTs <= DOUBLE_ESC_MS) {
+      return base({
+        state: { ...prev, count: 0, pendingOp: null, lastEscTs: 0 },
+        doc: { text: '', cursor: 0 },
+        cleared: true,
+        undoable: true,
+      })
+    }
+    return base({ state: { ...prev, count: 0, pendingOp: null, lastEscTs: now } })
+  }
+
+  const countKeys = count > 1 ? [String(count)] : []
+  const applyEdit = (e: Edit, enterInsert = false, repeatable: string[] | null = null): VimOutcome =>
+    base({
+      state: {
+        ...prev,
+        count: 0,
+        pendingOp: null,
+        mode: enterInsert ? 'insert' : 'normal',
+        lastCommand: repeatable ? { keys: [...countKeys, ...repeatable], count } : prev.lastCommand,
+      },
+      doc: { text: e.text, cursor: e.cursor },
+      yanked: e.yank,
+      undoable: e.text !== docIn.text || e.cursor !== docIn.cursor,
+      enteredInsert: enterInsert,
+    })
+
+  const applyMotion = (newCursor: number): VimOutcome =>
+    base({
+      state: { ...prev, count: 0, pendingOp: null },
+      doc: { text: docIn.text, cursor: newCursor },
+      undoable: false,
+    })
+
+  // ── 移动（无操作符）──
+  const motionKeys: Record<string, () => number> = {
+    h: () => Math.max(0, docIn.cursor - count),
+    l: () => Math.min(docIn.text.length, docIn.cursor + count),
+    j: () => motionLineDown(docIn.text, docIn.cursor, count),
+    k: () => motionLineUp(docIn.text, docIn.cursor, count),
+    w: () => motionWordForward(docIn.text, docIn.cursor, false, count),
+    b: () => motionWordBack(docIn.text, docIn.cursor, false, count),
+    e: () => motionWordEnd(docIn.text, docIn.cursor, false, count),
+    W: () => motionWordForward(docIn.text, docIn.cursor, true, count),
+    B: () => motionWordBack(docIn.text, docIn.cursor, true, count),
+    E: () => motionWordEnd(docIn.text, docIn.cursor, true, count),
+    '0': () => rowStart(docIn.text, cursorRow(docIn.text, docIn.cursor)),
+    $: () => {
+      const row = cursorRow(docIn.text, docIn.cursor)
+      const rs = rowStart(docIn.text, row)
+      const len = lineLength(docIn.text, rs)
+      return rs + Math.max(0, len - 1)
+    },
+    '^': () => {
+      const rs = rowStart(docIn.text, cursorRow(docIn.text, docIn.cursor))
+      const len = lineLength(docIn.text, rs)
+      let off = 0
+      while (off < len && /[ \t]/.test(docIn.text[rs + off]!)) off++
+      return rs + (off < len ? off : Math.max(0, len - 1))
+    },
+    gg: () => 0,
+    G: () => Math.max(0, docIn.text.length - 1),
+    Enter: () => motionLineDown(docIn.text, docIn.cursor, count),
+    Backspace: () => motionLineUp(docIn.text, docIn.cursor, count),
+  }
+
+  // f/F/t/T + 下一键字符：核心无法预读下一键——由 hook 分两步（pendingFind 状态）
+  // gemini 同构（pendingFindOp :88-170）——这里以 `<find:ch>` 编码键接收
+  if (/^<find:[^>]>$/.test(key)) {
+    const ch = key.slice(6, -1)!
+    const kind = prev.pendingOp as 'f' | 'F' | 't' | 'T' | null
+    return kind === 'f' || kind === 'F' || kind === 't' || kind === 'T'
+      ? applyMotion(motionFind(docIn.text, docIn.cursor, ch, kind, count))
+      : base()
+  }
+
+  // ── 操作符挂起/行内双写（d/c/y；dd/cc/yy——双写判定必须先于挂起）──
+  if (key === 'd' || key === 'c' || key === 'y') {
+    if (prev.pendingOp === key) {
+      if (key === 'd') return applyEdit(editDeleteLine(docIn, count), false, ['d', 'd'])
+      if (key === 'c') return applyEdit(editChangeLine(docIn), true, ['c', 'c'])
+      return applyEdit(editYankLine(docIn, count), false, ['y', 'y'])
+    }
+    return base({ state: { ...prev, pendingOp: key } })
+  }
+
+  // 操作符 + 移动（dw/cw/yw/d$/d0/dG…）：移动键复用 motionKeys 计算端点
+  if (prev.pendingOp && motionKeys[key]) {
+    const to = motionKeys[key]!()
+    const from = docIn.cursor
+    const a = Math.min(from, to)
+    const b = Math.max(from, to)
+    // vim 含式语义：l/$ 含目标字符、e/E 含词尾字符；w/W 排他（到下一词首，不含）
+    const inclRight = key === 'l' || key === '$' || key === 'e' || key === 'E'
+    const end = inclRight && b < docIn.text.length ? b + 1 : b
+    if (prev.pendingOp === 'd') return applyEdit(deleteRange(docIn, a, end), false, ['d', key])
+    if (prev.pendingOp === 'c') return applyEdit(deleteRange(docIn, a, end), true, ['c', key])
+    return applyEdit({ text: docIn.text, cursor: docIn.cursor, yank: docIn.text.slice(a, end) }, false, ['y', key])
+  }
+  if (prev.pendingOp) {
+    // 操作符 + 未知键：取消操作符（gemini 同款——不悬挂）
+    return base({ state: { ...prev, pendingOp: null, count: 0 } })
+  }
+
+  // ── 纯移动 ──
+  if (motionKeys[key]) return applyMotion(motionKeys[key]!())
+
+  // r 预读（hook 编 <replace:ch>）：替换 count 字符，光标不动
+  const rm = /^<replace:(.)>$/.exec(key)
+  if (rm) return applyEdit(editReplaceChar(docIn, rm[1]!, count), false, ['<replace:' + rm[1] + '>'])
+
+  // ── 单键编辑 ──
+  switch (key) {
+    case 'x': return applyEdit(editDeleteChar(docIn, count), false, ['x'])
+    case 'X': return applyEdit(editBackspaceChar(docIn, count), false, ['X'])
+    case '~': return applyEdit(editToggleCase(docIn, count), false, ['~'])
+    case 'D': return applyEdit(editDeleteToEol(docIn), false, ['D'])
+    case 'C': return applyEdit(editChangeToEol(docIn), true, ['C'])
+    case 'Y': return applyEdit(editYankLine(docIn, count), false, ['Y'])
+    case 'p': return applyEdit(pasteAfter(docIn, register), false, ['p'])
+    case 'P': return applyEdit(pasteBefore(docIn, register), false, ['P'])
+    case 'u': return base({ state: { ...prev, count: 0, pendingOp: null }, undo: true })
+    case 'i': return base({ state: { ...prev, mode: 'insert', count: 0, pendingOp: null }, enteredInsert: true })
+    case 'a': return base({
+      state: { ...prev, mode: 'insert', count: 0, pendingOp: null },
+      doc: { text: docIn.text, cursor: Math.min(docIn.text.length, docIn.cursor + 1) },
+      enteredInsert: true,
+    })
+    case 'I': {
+      // vim I = 行首非空字符处插入（同 ^ 语义）
+      const rs = rowStart(docIn.text, cursorRow(docIn.text, docIn.cursor))
+      const len = lineLength(docIn.text, rs)
+      let off = 0
+      while (off < len && /[ \t]/.test(docIn.text[rs + off]!)) off++
+      return base({
+        state: { ...prev, mode: 'insert', count: 0, pendingOp: null },
+        doc: { text: docIn.text, cursor: rs + (off < len ? off : Math.max(0, len - 1)) },
+        enteredInsert: true,
+      })
+    }
+    case 'A': return base({
+      state: { ...prev, mode: 'insert', count: 0, pendingOp: null },
+      doc: {
+        text: docIn.text,
+        cursor: (() => {
+          const rs = rowStart(docIn.text, cursorRow(docIn.text, docIn.cursor))
+          return rs + lineLength(docIn.text, rs)
+        })(),
+      },
+      enteredInsert: true,
+    })
+    case 'o': {
+      const rs = rowStart(docIn.text, cursorRow(docIn.text, docIn.cursor))
+      const at = rs + lineLength(docIn.text, rs)
+      const text = docIn.text.slice(0, at) + '\n' + docIn.text.slice(at)
+      return base({
+        state: { ...prev, mode: 'insert', count: 0, pendingOp: null },
+        doc: { text, cursor: Math.min(text.length, at + 1) },
+        undoable: true,
+        enteredInsert: true,
+      })
+    }
+    case 'O': {
+      const at = rowStart(docIn.text, cursorRow(docIn.text, docIn.cursor))
+      const text = docIn.text.slice(0, at) + '\n' + docIn.text.slice(at)
+      return base({
+        state: { ...prev, mode: 'insert', count: 0, pendingOp: null },
+        doc: { text, cursor: at },
+        undoable: true,
+        enteredInsert: true,
+      })
+    }
+    case '.': {
+      // 重复上次命令（多键序列逐个回放；不递归记录——lastCommand 置 null 回放后再恢复）
+      if (!prev.lastCommand) return base({ state: { ...prev, count: 0 } })
+      let st: VimCoreState = { ...prev, count: 0, pendingOp: null, lastCommand: null }
+      let doc = docIn
+      let reg = register
+      let yanked: string | null = null
+      for (const k of prev.lastCommand.keys) {
+        const r = vimHandleKey(st, doc, k, now, reg)
+        st = r.state
+        doc = r.doc
+        if (r.yanked) { yanked = r.yanked; reg = r.yanked }
+        if (r.cleared) break
+      }
+      return base({
+        state: { ...st, count: 0, pendingOp: null, lastCommand: prev.lastCommand },
+        doc,
+        yanked: yanked ?? null,
+        undoable: doc.text !== docIn.text || doc.cursor !== docIn.cursor,
+      })
+    }
+    default: {
+      // f/F/t/T 挂起预读（下一键由 hook 编 <find:ch> 传入）
+      if (key === 'f' || key === 'F' || key === 't' || key === 'T') {
+        return base({ state: { ...prev, pendingOp: key } })
+      }
+      // 未识别键：保留状态（vim 同款——normal 模式未知键无动作）
+      return base({ state: { ...prev } })
+    }
+  }
+}

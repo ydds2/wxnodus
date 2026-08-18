@@ -6,6 +6,7 @@ import { setInputSelection } from '../runtime/selectionStore.js'
 import { readClipboardText, writeClipboardText } from '../lib/clipboard.js'
 import { highlightInputAnsi } from '../lib/inputHighlight.js'
 import { resolveEditorCommand, runExternalEditor } from '../lib/editorLaunch.js'
+import { initialVimState, vimHandleKey } from '../lib/vimCore.js'
 import { cursorLayout, offsetFromPosition } from '../lib/inputMetrics.js'
 import {
   DEFAULT_VOICE_RECORD_KEY,
@@ -491,7 +492,8 @@ export function TextInput({
   mouseApiRef,
   voiceRecordKey = DEFAULT_VOICE_RECORD_KEY,
   placeholder = '',
-  focus = true
+  focus = true,
+  vimEnabled = false
 }: TextInputProps) {
   const [cur, setCur] = useState(value.length)
   const [sel, setSel] = useState<null | { end: number; start: number }>(null)
@@ -517,6 +519,12 @@ export function TextInput({
   const lastMultiClickRef = useRef(false)
   const undo = useRef<{ cursor: number; value: string }[]>([])
   const redo = useRef<{ cursor: number; value: string }[]>([])
+  // 波 3 ②：vim 模态状态（纯 reducer 解释器 + 寄存器 + 独立 undo 栈 + r/fFtT 预读）
+  const vimRef = useRef(initialVimState())
+  const vimRegRef = useRef('')
+  const vimUndoRef = useRef<{ text: string; cursor: number }[]>([])
+  const vimPendingReadRef = useRef<null | 'replace' | 'find'>(null)
+  const [vimModeUi, setVimModeUi] = useState<'normal' | 'insert'>('insert')
 
   const cbChange = useRef(onChange)
   const cbSubmit = useRef(onSubmit)
@@ -585,6 +593,8 @@ export function TextInput({
     // ② 波 1：token 高亮（gemini highlight.ts:29-57 对标）——斜杠命令/@提及/占位符
     // 内联 ANSI 着色；仅无光标装饰的路径应用（选区/合成光标路径保持既有视觉契约）
     const displayHi = highlightInputAnsi(display)
+    // 波 3 ②：NORMAL 徽标（gemini Composer.tsx:158-165 对标——normal 模式前缀暗色标记）
+    const normalPrefix = vimEnabled && vimModeUi === 'normal' ? dim('-- NORMAL -- ') : ''
     if (!focus) {
       return displayHi || dim(placeholder)
     }
@@ -598,8 +608,8 @@ export function TextInput({
       return renderWithSelection(display, selected.start, selected.end)
     }
 
-    return nativeCursor ? displayHi || ' ' : renderWithCursor(display, cur)
-  }, [cur, display, focus, nativeCursor, placeholder, selected])
+    return nativeCursor ? normalPrefix + (displayHi || ' ') : normalPrefix + renderWithCursor(display, cur)
+  }, [cur, display, focus, nativeCursor, placeholder, selected, vimEnabled, vimModeUi])
 
   useEffect(() => {
     if (self.current) {
@@ -989,6 +999,68 @@ export function TextInput({
       // ordinary typing and plain paste when voice is unbound to 'v'.
       if (shouldPassThroughToGlobalHandler(inp, k, voiceRecordKey)) {
         flushKeyBurst()
+
+        return
+      }
+
+      // 波 3 ②：vim 模态按键拦截（vimEnabled 且 normal 模式全拦截；insert 模式仅截 Esc 回 normal）
+      if (vimEnabled && (vimRef.current.mode === 'normal' || k.escape)) {
+        flushKeyBurst()
+
+        if (vimRef.current.mode === 'insert') {
+          const esc = vimHandleKey(vimRef.current, { text: vRef.current, cursor: curRef.current }, 'Escape', Date.now(), vimRegRef.current)
+          vimRef.current = esc.state
+          setVimModeUi(esc.state.mode)
+
+          return
+        }
+
+        // 键名映射：Esc/Enter/Backspace + 无修饰单字符；其余（Ctrl 组合等）不属 vim
+        let token: string | null = null
+        if (k.escape) token = 'Escape'
+        else if (k.return) token = 'Enter'
+        else if (k.backspace) token = 'Backspace'
+        else if (inp && inp.length === 1 && !k.ctrl && !k.meta && !k.alt) token = inp
+
+        // r/fFtT 预读下一字符（gemini pendingFindOp 同构——两键命令）
+        if (vimPendingReadRef.current) {
+          if (token && token.length === 1) {
+            token = vimPendingReadRef.current === 'replace' ? `<replace:${token}>` : `<find:${token}>`
+            vimPendingReadRef.current = null
+          } else {
+            vimPendingReadRef.current = null // Esc/其他键取消预读
+
+            return
+          }
+        } else if (token === 'r') {
+          vimPendingReadRef.current = 'replace'
+
+          return
+        } else if (token === 'f' || token === 'F' || token === 't' || token === 'T') {
+          vimPendingReadRef.current = 'find'
+
+          return
+        }
+
+        if (!token) return
+
+        const doc = { text: vRef.current, cursor: curRef.current }
+        const out = vimHandleKey(vimRef.current, doc, token, Date.now(), vimRegRef.current)
+        vimRef.current = out.state
+        if (out.yanked) vimRegRef.current = out.yanked
+        if (out.cleared) {
+          if (vimUndoRef.current.length < 200) vimUndoRef.current.push(doc)
+          commit('', 0)
+        } else if (out.undo) {
+          const prevDoc = vimUndoRef.current.pop()
+          if (prevDoc) commit(prevDoc.text, prevDoc.cursor)
+        } else if (out.doc.text !== vRef.current) {
+          if (out.undoable && vimUndoRef.current.length < 200) vimUndoRef.current.push(doc)
+          commit(out.doc.text, out.doc.cursor)
+        } else if (out.doc.cursor !== curRef.current) {
+          commit(out.doc.text, out.doc.cursor)
+        }
+        setVimModeUi(out.state.mode)
 
         return
       }
@@ -1414,6 +1486,8 @@ interface TextInputProps {
   placeholder?: string
   value: string
   voiceRecordKey?: ParsedVoiceRecordKey
+  /** 波 3 ②：vim 模态编辑开关（settings.vimMode 经 /vim 切换、配置水合传入） */
+  vimEnabled?: boolean
 }
 
 export type RightClickDecision =

@@ -114,6 +114,10 @@ export const SETTINGS_KEYS = new Set([
   'keymap',
   // 视觉开放通道（settings.vision* 与 visionLocal/visionOcr）
   'visionBaseURL', 'visionModel', 'visionKey', 'visionLocal', 'visionOcr',
+  // 波 2 ⑪：记忆收件箱审阅开关（true=memory_write 先入箱待审；默认关直写）
+  'memoryInbox',
+  // 波 3 ②：vim 模态编辑开关（/vim 切换；true=输入框 NORMAL/INSERT 双态）
+  'vimMode',
   // 代理（/proxy 命令消费 settings.proxy）
   'proxy',
 ]);

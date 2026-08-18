@@ -23,6 +23,7 @@ import {
   type StatusBarMode
 } from '../bridge/interfaces.js'
 import { resolveKeymap, setActiveKeymap } from '../config/keymap.js'
+import { setVimModeEnabled } from '../config/vimMode.js'
 import { turnController } from '../runtime/flowController.js'
 import { patchUiState } from '../runtime/viewStore.js'
 
@@ -206,6 +207,15 @@ export const applyDisplay = (
   // supremacy 3.3：键位配置层水合（cfg 为 null 保持上次有效值——同 voice 的 last-good 守卫）
   if (cfg?.config?.keymap) {
     setActiveKeymap(resolveKeymap(cfg.config.keymap))
+  }
+
+  // 波 3 ②：vim 模态开关水合（settings.vimMode——/vim 切换后热生效；last-good 守卫同款；
+  // config.get key='full' 返回扁平 settings 快照，vimMode 在 config 顶层）
+  {
+    const vimMode = (cfg?.config as unknown as Record<string, unknown> | undefined)?.vimMode
+    if (typeof vimMode === 'boolean') {
+      setVimModeEnabled(vimMode)
+    }
   }
 
   patchUiState({

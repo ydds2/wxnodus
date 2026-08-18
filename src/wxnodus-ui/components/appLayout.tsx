@@ -34,6 +34,7 @@ import { MessageLine } from './messageLine.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
+import { getVimModeEnabled } from '../config/vimMode.js'
 import { TurnSections } from './turnSections.js'
 import { icon } from '../glyphs.js'
 
@@ -381,6 +382,7 @@ const ComposerPane = memo(function ComposerPane({
                   onSubmit={composer.submit}
                   placeholder={composer.empty ? PLACEHOLDER : ui.busy ? 'Ctrl+C to interrupt…' : ''}
                   value={composer.input}
+                  vimEnabled={getVimModeEnabled()}
                   voiceRecordKey={composer.voiceRecordKey}
                 />
               </Box>

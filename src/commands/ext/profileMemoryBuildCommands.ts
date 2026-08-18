@@ -1025,6 +1025,17 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
     return `当前语言：${ctx.config.getKey('settings', 'lang') ?? 'zh'}（zh/en）`;
   });
 
+  // 波 3 ②：/vim 切换 vim 模态编辑（settings.vimMode；gemini vimCommand.ts:9-19 对标——
+  // 配置落盘 → useConfigWatcher 水合 → 输入框热生效）
+  bus.register('/vim', () => {
+    const cur = (ctx.config.get('settings') as Record<string, unknown> | undefined)?.vimMode === true;
+    const next = !cur;
+    ctx.config.setKey('settings', 'vimMode', next);
+    return next
+      ? '已开启 vim 模态编辑（NORMAL/INSERT 双态）：Esc 进 normal；h/j/k/l、w/b/e、0/$/^ 移动；i/a/o 插入；x/dd/dw 删除；y/p 复制粘贴；u 撤销；`.` 重复；双击 Esc 清空——/vim 再按关闭'
+      : '已关闭 vim 模态编辑（回到普通输入）';
+  });
+
   bus.register('/config', (args) => {
     const s = ctx.config.get('settings') as Record<string, any>;
     // P2 配置校验：未知键警告（防拼写错误静默无效）
