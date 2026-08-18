@@ -976,7 +976,7 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 波 3 定档后、等待远程 CI 期间并行落地的两项增量（不牵动 922 复算——② 已 9 分封顶，VISUAL 仅加固论据）：
 
 1. **CI 分片首轮红 → 修复（e7d5019）**：三 job 并行（a1c4a72）首轮 shard 2/3 红——根因 `packages/wxnodus-ink/dist/entry-exports.js` 未随工件传递（旧单 job 同工作区天然存在；拆分后 test job 只拿到根 dist，ui 测试解析 `index.js → ./dist/entry-exports.js` 8 个文件加载失败 + npm pack 清单断言 2 项）。修复：gate 增传 `ink-dist` 工件（path `packages/wxnodus-ink/dist`），test 分片显式下载到原路径（两个独立工件避开 v4 多路径合并语义歧义）。本地 YAML 校验 + 复跑全绿后推送。
-2. **vim VISUAL 模式（afa7f73，6 测试）**：codex `textarea/vim.rs` 对标（gemini vim.ts 无此模式——六家对标仍成立）。v/V 进入字符/行选区（visualAnchor + visualKind），hjkl/wbe/0$^/G 等移动经 applyMotion 扩展选区（state 展开保 anchor/kind），d/x/y/c/p/P 直作用选区（y 复制不动文本、c 进 insert、p/P 寄存器替换选区、行选区整行含换行），Esc 回 normal 保光标。**三个 bug 实测逐一取证修复**：① d/c/y 被操作符挂起段截胡（VISUAL 块前移至操作符段之前）；② 行选区 selRange 把光标索引当行号传给 rowStart（`cursorRow` 修正——跨行删除曾全删文本）；③ NORMAL 双击 Esc 清空处理器无 mode 守卫截胡 visual Esc（加 `mode === 'normal'` 守卫——测试循环毫秒级连按触发清空全文）。
+2. **vim VISUAL 模式（afa7f73，6 测试）**：**六家皆无的独有差异化**（取证修正 2026-08-18：codex `vim.rs` VimMode 仅 Normal/Insert :7-13、其 :229-298 是括号栈文本对象非 VISUAL；gemini vim.ts 1536 行 grep 零命中）——初版 audit 误把对标锚到 codex，已更正。v/V 进入字符/行选区（visualAnchor + visualKind），hjkl/wbe/0$^/G 等移动经 applyMotion 扩展选区（state 展开保 anchor/kind），d/x/y/c/p/P 直作用选区（y 复制不动文本、c 进 insert、p/P 寄存器替换选区、行选区整行含换行），Esc 回 normal 保光标。**三个 bug 实测逐一取证修复**：① d/c/y 被操作符挂起段截胡（VISUAL 块前移至操作符段之前）；② 行选区 selRange 把光标索引当行号传给 rowStart（`cursorRow` 修正——跨行删除曾全删文本）；③ NORMAL 双击 Esc 清空处理器无 mode 守卫截胡 visual Esc（加 `mode === 'normal'` 守卫——测试循环毫秒级连按触发清空全文）。
 3. **测试期望校准**：v,l,x 删 [0,2)→'cd'、Esc 保光标 2 后 x 删 'c'→'abde'——按真实 vim 语义重写两处初版错误期望（vim 行为实测核对的黄金标准）。
 4. **收尾**：本地九命令门禁全绿（tsc ×2 + 全量 368 文件 / 2709 用例 + known-failures + 发现/覆盖 + lint + 环 + build）；远程 CI 见尾注。
 

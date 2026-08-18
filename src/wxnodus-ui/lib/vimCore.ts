@@ -2,8 +2,11 @@
 // gemini hooks/vim.ts:88-170（状态机）+ vim-buffer-actions.ts:164（纯 reducer）对标直搬语义：
 // 按键解释 = 纯函数（state, doc, key）→ (state, doc, 效果)——零副作用、天然可 undo。
 // 范围（与 gemini 同档子集，诚实边界）：NORMAL/INSERT 两态；hjkl / w b e W B E / 0 $ ^ /
-// gg G / f F t T / x X r ~ / dd cc yy D C Y / d c y+移动 / p P / u / `.` 重复 / 数字前缀；
-// 无 VISUAL、无 / 搜索、无 Ctrl-R redo（gemini vim.ts 同样没有——同档宣称）。
+// gg G / f F t T / x X r ~ / dd cc yy D C Y / d c y+移动 / p P / u / `.` 重复 / 数字前缀。
+// P3 增量（2026-08-18，audit §13.76）：VISUAL 字符/行选区（v/V + d/x/y/c/p/P 作用选区）——
+// **六家皆无**（gemini vim.ts 1536 行 grep 零命中；codex vim.rs VimMode 仅 Normal/Insert :7-13，
+// 有括号栈文本对象 :229-264 但无 VISUAL）——wxnodus 独有。
+// 仍无：/ 搜索、Ctrl-R redo、文本对象 di(/ci(（codex 独有，P3 清单）。
 
 export type VimMode = 'normal' | 'insert' | 'visual'
 

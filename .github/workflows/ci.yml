@@ -6,8 +6,8 @@ name: CI
 # 类型仅在自身 node_modules 中——根门禁扫描会因安装顺序而红，2026-08-18 首轮实测修复）。
 #
 # 效率演进（2026-08-18）：concurrency cancel-in-progress（只验最新 HEAD）+ paths-ignore（纯文档不跑）+
-# workflow_dispatch（手动兜底）+ 三 job 并行化（gate 静态门禁/build → test 3 分片 → vscode-ext 并行）——
-# 单轮 wall 由 ~14 分钟压到 ~9 分钟（测试分片并行 + 独立门禁解耦）。
+# workflow_dispatch（手动兜底）+ 并行化拆分（vscode-ext ∥ gate 并行；test 三分片 needs gate 复用 dist/ink-dist
+# 工件——三片互并、串在 gate 后）——单轮 wall 由 ~14 分钟压到 ~8.5 分钟（实测 #32179602007）。
 
 on:
   push:

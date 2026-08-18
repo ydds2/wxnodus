@@ -83,7 +83,7 @@
 | ③ 内容交互 diff/媒体 | 7→8 | 完整 diff 查看 + per-hunk 选择性回滚（**六家皆无的差异化**——取证确认 opencode `diff-viewer.tsx:945-1010` 仅跳转无 apply/discard）：/diff 快照对比（行级 LCS unified diff 3 行上下文）+ /diff revert <hunk序号>（reverseHunk 上下文锚定、失败绝不写半行、应用前自动快照）——10 单测 +8 |
 | ⑪ 差异化 | 9→10 | 本地跨会话语义召回（**六家独有取证**：aider 仅本地嵌入做 /help 文档 RAG、gemini 云端嵌入、其余纯正则）——/hole --all 全会话 FTS bigram + 本地向量 KNN（数据不出机）；ACP stdio 接收正式入档（`acp.ts` runAcpServer /acp 服务端 + 协议测试既有落地归入本档）——4 单测 +5 |
 
-**未调分且如实说明**：⑥ 安全工程维持 9——OS 沙盒本轮落地（Windows L0-L3，标准用户实测校准：受限令牌路径被 1314 证伪、改 Low IL 实现只读）但仅 Windows 单平台，codex/gemini 是三平台沙盒；三平台化后才可冲 10。②③ 未动（vim/keymap、diff 交互 UI 仍在 P1 清单）。
+**未调分且如实说明（波 3 五评口径）**：⑥ 安全工程 =10 判分见 §9.14（Windows 双态沙盒提权分支三测三修真机全绿；仅 Windows 单平台不扣本档——Windows-only 已为明确决策、S-06 移除在案）。**P3 增量不调分（2026-08-18 取证复评）**：② vim VISUAL 落地但维持 9——VISUAL 六家皆无（codex VimMode 仅 Normal/Insert，gemini 零命中）属差异化加固，然 codex 仍有括号栈文本对象（vim.rs:229-264，六家唯一）与真实 Ctrl-R 草稿快照面板，② 冲 10 缺文本对象；⑨ CI 提速（~14→~8.5 分钟实测）加固 9 不上调——gemini 多 Node 版本×分片 matrix、codex 30 workflow+blocking 门禁同档；③ 维持 8——opencode 有 git/branch/last-turn 三源 diff（diff-viewer.tsx:46），我方 /diff 为快照源（per-hunk 回滚仍是六家皆无独有）。
 
 判词先行（波 3 五评更新）：**wxnodus 922 稳居第 1/7，三波路线全部落定**——波 3（②vim 模态 / ③完整 diff 查看+per-hunk 回滚（六家皆无差异化）/ ⑪本地跨会话语义召回（六家独有）+ACP 接收入档）。五项严格第一（①④⑥⑩⑪）+ 两项并列第一（⑤⑦）。剩余拉分项集中在「产品化完成度」：分发（⑧ 5，卡公开决策——转公开即 +36）。
 
@@ -354,8 +354,18 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 
 按 `docs/upgrade-plan-2026-08.md` 波 3 三任务执行（六家源码逐项对标，双代理取证先行）：
 
-- **② 输入/编辑器 8→9（6d458ca，14 单测）**：vim 模态编辑——gemini `vim.ts`（1536 行）状态机 + `vim-buffer-actions.ts`（纯 reducer）语义直搬为 `vimCore.ts` 纯函数（零副作用、天然可 undo）：NORMAL/INSERT 双态、hjkl/wbeWBE/0$^/ggG/fFtT（预读两键命令）、xXr~/ddccyy/D C Y、dcy+移动（vim 含式语义 l/$/e/E 含、w/W 排他）、pP、u（hook 独立 undo 栈）、`.` 多键序列回放、数字前缀 ×10、双击 Esc 500ms 清空；textInput 按键拦截 + `-- NORMAL --` 徽标（gemini Composer.tsx:158-165 对标）+ `/vim` 命令 + settings.vimMode 配置水合热生效。**无 VISUAL、无 / 搜索、无 Ctrl-R——gemini vim.ts 同款诚实边界（同档宣称）。**
+- **② 输入/编辑器 8→9（6d458ca，14 单测）**：vim 模态编辑——gemini `vim.ts`（1536 行）状态机 + `vim-buffer-actions.ts`（纯 reducer）语义直搬为 `vimCore.ts` 纯函数（零副作用、天然可 undo）：NORMAL/INSERT 双态、hjkl/wbeWBE/0$^/ggG/fFtT（预读两键命令）、xXr~/ddccyy/D C Y、dcy+移动（vim 含式语义 l/$/e/E 含、w/W 排他）、pP、u（hook 独立 undo 栈）、`.` 多键序列回放、数字前缀 ×10、双击 Esc 500ms 清空；textInput 按键拦截 + `-- NORMAL --` 徽标（gemini Composer.tsx:158-165 对标）+ `/vim` 命令 + settings.vimMode 配置水合热生效。**无 VISUAL、无 / 搜索、无 Ctrl-R——gemini vim.ts 同款诚实边界（同档宣称）**。（VISUAL 已由 P3 增量补上且六家皆无——见 §9.19 / audit §13.76；/ 搜索、Ctrl-R、文本对象仍缺。）
 - **③ 内容交互 diff/媒体 7→8（78728f7，10 单测）**：`hunkApply.ts`（parseHunks @@ 头结构化 + applyHunkToText 上下文锚定失败绝不写半行 + reverseHunk + lineDiff 行级 LCS unified diff 3 行上下文、1500 行超限整文件降级）+ `/diff <文件>` 快照→当前完整 diff 查看（pager 内词级渲染 + [/] hunk 跳转复用波 2）+ `/diff <文件> revert <hunk序号>` **per-hunk 选择性回滚**——取证确认六家皆无（opencode diff-viewer.tsx:945-1010 仅跳转无 apply/discard），回滚前自动快照、/undo fs restore 可再滚回。
 - **⑪ 差异化 9→10（ab5c02e，4 单测）**：本地跨会话语义召回——`/hole --all` 全会话 FTS bigram + 本地向量 KNN（数据不出机；取证：aider 仅本地嵌入做 /help 文档 RAG、gemini 云端嵌入、其余纯正则——**六家独有**）；ACP stdio 接收正式入档（`acp.ts` runAcpServer + /acp 命令 + 协议测试为既有落地，本轮归入 ⑪ 论据）。
 - **验证**：tsc 零错误；全量套件 365 文件/2712 用例绿（10 skip）；`npm run ci` 本地九命令全绿；远程 CI 见 audit §13.75。
 - **复算**：总分 900 → **922**——**三波路线全部落定，稳居第 1/7**（不依赖公开决策）。严格第一：①④⑥⑩⑪ 五项；并列第一：⑤⑦（与 opencode）。⑧ 5→9（+36）仍卡公开决策。
+
+### 9.19 全量复评轮（2026-08-18 六评：双代理取证核实 12 项主张 + 六家锚点——922 复评维持，修 4 处诚实性缺陷）
+
+用户要求「对现在的 WxNodus CLI 重新评估/评分/列缺陷差异」——按评分方法 §0 执行独立复评（不预支分数）：
+
+1. **取证方式**：双 Explore 代理并行——甲核 wxnodus 12 项评分主张存在性（全部存在，3 处表述修正）；乙核六家仓库源码锚点（16 项锚点 15 项属实，1 项路径修正 + 2 项重大事实修正）。
+2. **重大事实修正（乙取证）**：**codex vim.rs 无 VISUAL 模式**（VimMode 仅 Normal/Insert :7-13，其 :229-298 为括号栈文本对象）——初版 §13.76「codex 对标」锚点错误，已更正为「六家皆无、wxnodus 独有」；opencode frecency 真实文件为 `src/prompt/frecency.tsx`（component 下是 re-export shim）。
+3. **表述修正（甲取证）**：本地 bash 沙盒探测失败为 fail-open（降级裸跑 + 诚实警告标注）——fail-closed 仅远端 exec-server 通道，口径已对齐；vimCore.ts 头注释「无 VISUAL」与实现矛盾已修；ci.yml「三 job 并行化」改为「vscode-ext ∥ gate 并行、test 三片串 gate」；§0.1 第 86 行陈旧文本（⑥ 维持 9）与表 ⑥=10 矛盾已修（判分见 §9.14）。
+4. **复评结论：922 维持，第 1/7 不变**。逐维：② VISUAL 落地（六家皆无差异化）但维持 9——codex 仍有文本对象（六家唯一）+ 真实 Ctrl-R 面板，冲 10 缺文本对象；③ 维持 8——opencode 有 git/branch/last-turn 三源（diff-viewer.tsx:46/655）我方 /diff 为快照源（per-hunk 回滚六家皆无独有）；⑨ 维持 9——CI 提速 ~14→~8.5 分钟实测（#32179602007）加固不升档（gemini 多版本×分片 matrix、codex 30 workflow+blocking 门禁同档）；⑧ 5 卡公开决策不变（S-01/S-02 上架面）；⑥=10 维持（§9.14 判分在案）。
+5. **缺陷与差异清单**：见 defect-register-2026.md（S/A/B/C 全表，本轮无新增 S/A 级——3 处为文档诚实性缺陷已即修）与 §6 差距清单；差异哲学见 §7。
