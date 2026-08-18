@@ -662,6 +662,14 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       })
     }
 
+    // 波 2 ②：补全弹窗打开时 Enter 接受当前高亮（kimi prompt.py:1276-1290 双语义——
+    // slash 接受即提交、path/agent 只替换；acceptCompletion 内部按 kind 区分）
+    if (key.return && cState.completions.length && cState.historyIdx === null) {
+      cActions.acceptCompletion(cState.compIdx)
+
+      return
+    }
+
     if (key.tab && cState.completions.length) {
       const row = cState.completions[cState.compIdx]
 

@@ -124,7 +124,7 @@ export function useComposerState({
   } = useQueue()
 
   const { historyRef, historyIdx, setHistoryIdx, historyDraftRef, pushHistory } = useInputHistory()
-  const { completions, compIdx, setCompIdx, compReplace } = useCompletion(input, isBlocked, gw)
+  const { completions, compIdx, setCompIdx, compReplace, recordAccept } = useCompletion(input, isBlocked, gw)
 
   const clearIn = useCallback(() => {
     setInput('')
@@ -311,11 +311,22 @@ export function useComposerState({
 
   const actions = useMemo(
     () => ({
-      /** A22 鼠标化：补全行点击接受（与 Tab 接受同语义——含 / 前缀剥离） */
+      /** A22 鼠标化：补全行点击接受（与 Tab 接受同语义——含 / 前缀剥离）；
+       *  波 2 ②：enter 双语义（kimi prompt.py:1276-1290 对标）——slash 接受即提交，
+       *  path/agent 只替换 token；接受统一记 frecency */
       acceptCompletion: (index: number) => {
         const row = completions[index]
 
         if (!row?.text) {
+          return
+        }
+
+        recordAccept(row.text)
+
+        if (row.kind === 'slash') {
+          setInput('')
+          submitRef.current(row.text)
+
           return
         }
 
@@ -362,6 +373,7 @@ export function useComposerState({
       openEditor,
       pushHistory,
       queuedDisplay,
+      recordAccept,
       removeQ,
       replaceQ,
       setCompIdx,

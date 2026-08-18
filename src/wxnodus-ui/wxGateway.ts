@@ -2047,7 +2047,7 @@ export class GatewayClient extends EventEmitter {
       const catalogIds = MODEL_CATALOG.map(m => m.modelId).filter(id => id.toLowerCase().startsWith(prefix))
       const profileIds = providers.flatMap(p => (Array.isArray(p.models) ? p.models : [])).filter((id: string) => String(id).toLowerCase().startsWith(prefix))
       const items = [...new Set([...catalogIds, ...profileIds])].slice(0, 12)
-      return { items: items.map(id => ({ display: id, meta: '模型', text: id })), replace_from: 7 }
+      return { items: items.map(id => ({ display: id, meta: '模型', text: id, kind: 'slash' })), replace_from: 7 }
     }
 
     // /profile use <前缀> → 档案 id 补全
@@ -2056,7 +2056,7 @@ export class GatewayClient extends EventEmitter {
       const prefix = profileMatch[1]!.toLowerCase()
       const providers = (Array.isArray((this.kernel.settings as any).providers) ? (this.kernel.settings as any).providers : []) as Array<Record<string, any>>
       const items = providers.map(p => String(p.id)).filter(id => id.toLowerCase().startsWith(prefix)).slice(0, 12)
-      return { items: items.map(id => ({ display: id, meta: '档案', text: id })), replace_from: 13 }
+      return { items: items.map(id => ({ display: id, meta: '档案', text: id, kind: 'slash' })), replace_from: 13 }
     }
 
     // A8：行内 /skill:<前缀> → 技能名补全（skillsOnly；参考 inlineSlashTrigger 同款）
@@ -2069,7 +2069,7 @@ export class GatewayClient extends EventEmitter {
         .slice(0, 12)
       // 补全为 /skill:<名>（replace_from=1：从斜杠后替换）
       return {
-        items: skills.map((n) => ({ display: `/skill:${n}`, meta: '技能', text: `/skill:${n}` })),
+        items: skills.map((n) => ({ display: `/skill:${n}`, meta: '技能', text: `/skill:${n}`, kind: 'slash' })),
         replace_from: 1,
       }
     }
@@ -2079,12 +2079,12 @@ export class GatewayClient extends EventEmitter {
     const desc = (c: string) => COMMAND_DESC[c] ?? ''
 
     return {
-      items: items.map((c) => ({ display: c, meta: desc(c), text: c })),
+      items: items.map((c) => ({ display: c, meta: desc(c), text: c, kind: 'slash' })),
       replace_from: 1,
     }
   }
 
-  private completePath(params: Record<string, unknown>): unknown {
+  private async completePath(params: Record<string, unknown>): Promise<unknown> {
     const word = String(params.word ?? '')
     // @提及补全（Claude Code @mention 同款）：剥掉前导 @ 在 cwd 查文件，
     // 显示/回填保留 @ 前缀（接受补全后 token 仍为 @path，提交时展开内容）
@@ -2103,8 +2103,22 @@ export class GatewayClient extends EventEmitter {
       entries = []
     }
 
+    // 波 2 ②：@ 双源——纯名字前缀（无路径分隔符）时合入子代理类型（agent 源），
+    // 与文件同榜分层排序（crush completions.go:205-260 对标：basename 精确>前缀>路径段）
+    const agentItems = isMention && !raw.includes('/') && !raw.includes('\\')
+      ? (await import('../kernel/subagentTypes.js')).SUBAGENT_KINDS
+          .map((k) => ({ display: `@${k}`, meta: 'agent', text: `@${k}`, kind: 'agent' as const }))
+          .filter((a) => a.display.toLowerCase().startsWith(`@${prefix}`))
+      : []
+    const fileItems = entries.map((n) => ({
+      display: (isMention ? '@' : '') + dir + n,
+      text: (isMention ? '@' : '') + dir + n,
+      kind: 'path' as const,
+    }))
+    const ranked = (await import('../wxnodus-ui/lib/completionRank.js')).rankCompletions([...agentItems, ...fileItems], prefix)
+
     return {
-      items: entries.map((n) => ({ display: (isMention ? '@' : '') + dir + n, text: (isMention ? '@' : '') + dir + n })),
+      items: ranked.slice(0, 12),
       replace_from: params.replaceFrom ?? 0,
     }
   }

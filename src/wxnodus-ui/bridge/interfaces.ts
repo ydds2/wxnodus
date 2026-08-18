@@ -72,6 +72,8 @@ export interface CompletionItem {
   display: string
   meta?: string
   text: string
+  /** 波 2 ②：补全类别（slash=接受即提交 / path / agent——enter 双语义数据源） */
+  kind?: 'slash' | 'path' | 'agent'
 }
 
 export interface GatewayRpc {

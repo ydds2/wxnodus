@@ -817,6 +817,25 @@ describe('complete.slash 接入层补全（档案模型/档案 id）', () => {
     const r = await gre(g, 'complete.slash', { text: '/hel' });
     expect(r.items.map((i: any) => i.text)).toContain('/help');
     expect(r.replace_from).toBe(1);
+    // 波 2 ②：slash 补全统一带 kind 标注（enter 双语义数据源）
+    expect(r.items.every((i: any) => i.kind === 'slash')).toBe(true);
+  });
+});
+
+describe('波 2 ②：complete.path @ 双源与分层排序', () => {
+  it('@ 纯名字前缀 → agent 候选合入（kind=agent）', async () => {
+    const g = makeGateway({ model: 'glm-4v-flash' });
+    const r = await gre(g, 'complete.path', { word: '@ex', replaceFrom: 0 });
+    const texts = r.items.map((i: any) => i.text);
+    expect(texts).toContain('@explore');
+    expect(r.items.find((i: any) => i.text === '@explore')?.kind).toBe('agent');
+  });
+
+  it('普通路径前缀 → kind=path 且 basename 前缀命中（分层排序生效）', async () => {
+    const g = makeGateway({ model: 'glm-4v-flash' });
+    const r = await gre(g, 'complete.path', { word: 'packa', replaceFrom: 0 });
+    expect(r.items.some((i: any) => i.text === 'package.json')).toBe(true);
+    expect(r.items.every((i: any) => i.kind === 'path')).toBe(true);
   });
 });
 
