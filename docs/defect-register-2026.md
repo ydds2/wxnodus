@@ -13,6 +13,7 @@
 | S-02 | 插件市场/远端技能安装 | codex/opencode 市场 | 同 S-01（需托管） | ⑧ 6→7（+9） | ⏳ |
 | S-03 | IDE 插件 | gemini companion/codex vscode | 无（协议已备） | ⑦ 8→9（+11） | ⏳ 路线图 docs/ide-remote-share-roadmap-2026.md |
 | S-04 | 远程执行环境 | codex exec-server | 无（ssh 方案无阻塞） | ⑦ 9→10（+11） | ⏳ 同路线图 |
+| S-06 | 沙盒 macOS/Linux 化（⑥ 冲 10 前提） | codex/gemini 三平台 | 实机校准环境（mac/Linux） | ⑥ 9→10（+10） | ◐ 实现已落地（bwrap 构建器 + Seatbelt profile + 三平台门面 + 诚实探测），**实机校准前 ⑥ 不升 10** |
 | S-05 | share 云端分享 | opencode/kimi | 需中心服务器 | ⑦ +1 | 🚫 离线变体已落地（/share 打包加密，见 A-08） |
 
 ## A 级

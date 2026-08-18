@@ -761,3 +761,11 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 - **交付**：`docs/supremacy-plan-2026.md`——上下文总结（3 轮评审 + 5 个落地轮全链路）、超越的可验收定义（总分 ≥870 超 codex + ≥3 维度第一 + 生态有真实消费者）、11 维逐维超越路径（理论上限 ≈9.4，全部带对标锚点）、三阶段执行计划（阶段 1 内核登顶 7 项零外部依赖 → 阶段 2 生态上车 5 项需 remote/桌面端决策 → 阶段 3 超越收官 6 项）、阻塞项（git remote/桌面端接入方式/密钥/mac-linux 环境）与每轮执行协议。
 - **口径**：超越不是口号——每阶段收尾跑评分复算 + audit 实录，分数证据先行；score 文档 §8 已挂接本计划入口。
+
+### 13.53 沙盒三平台化轮（2026-08-18：POSIX 沙盒实现 + 三平台门面，实机校准诚实留白）
+
+- **需求**：「沙盒 macOS/Linux 化怎么办」——supremacy 阶段 3.2（⑥ 冲 10 前提）。
+- **实现（参考机制、原创代码）**：`posixSandbox.ts`——bwrap 参数构建器（L0=--ro-bind 工作区+--unshare-net；L1=--bind+断网；L2=可写+联网；L3=--die-with-parent 遏制；dataDir 恒 ro-bind）+ Seatbelt profile 文本（L0 deny file-write/network、L1 allow write+deny network、L2 allow network）+ 探测（bwrap --version / sandbox-exec 内联试跑，15s 超时，ENOENT 给安装指引）+ 启动（输出流式落盘 outPath/errPath，与 winSandbox 同构供 bash offload 接管）；`osSandbox.ts` 门面（platform 分派，bash 与 /sandbox os status 唯一入口）。
+- **诚实口径（核心）**：① L2 限速在 Linux 需 root（tc）/ Seatbelt 无原语——本平台 L2 降级为「可写+联网」，常量 POSIX_L2_RATE_LIMIT_NOTE 如实标注；② **本模块 Linux/macOS 实机验证未完成（本机 Windows）**——测试仅覆盖构建器纯函数 + 非本平台诚实不适用 + 门面 off 路径；**⑥ 评分在实机校准前不升 10**（审计与寄存器同步注明）。
+- **测试**：新套件 7 用例（bwrap 四层映射/seatbelt 三档文本/降级口径断言/Windows 探测诚实/门面 off）。
+- **验证**：tsc 零错误；posix+win 沙盒套件全绿；全量 + npm run ci 见下。

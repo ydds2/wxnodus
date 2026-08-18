@@ -24,6 +24,7 @@
 - **会话血缘与结构化会话列表**（桌面端数据面）：`/fork` 记录 `forked_from_id` 血缘 + `/fork lineage` 祖先链；`/sessions --json` 结构化列表（首问摘要/消息数/分支数/血缘），与 serve 网关共用单一数据出口。
 - **approve_for_session 会话授权**：`settings.approveForSession=true` 后批准一次，本会话内同键自动放行（持久化，跨重启生效）；`/perm session-allow|deny|revoke|list` 管理；deny 级联直拒、红线永远优先。
 - **/share 离线加密打包分享**：`/share export|import`——单文件 `.wxnshare`（会话全量 + sha256 防篡改；`--encrypt` AES-256-GCM 口令加密，数据不出机）。另新增 `docs/defect-register-2026.md`（缺陷寄存器全表）与 `docs/ide-remote-share-roadmap-2026.md`（IDE 插件/远程执行路线图）。
+- **OS 沙盒三平台门面**：Linux（bubblewrap：L0 只读+断网/L1 断网/L3 遏制）与 macOS（Seatbelt profile）实现 + `/sandbox os status` 按平台探测——诚实口径：L2 限速需 root/无 Seatbelt 原语故降级；mac/Linux 实机校准完成前不宣称三平台满分（Windows 路径已实测校准）。
 
 ### Changed
 - **/build 单通道化**：AI 规格化成为唯一编译通道（规则脑删除后）；无 key 明确报错引导 `/model set-key`，绝不假装编译。

@@ -276,9 +276,9 @@ export function coreTools(): Record<string, ToolDef> {
         // ② 流式落盘：完整输出写 truncations/tmp（内存封顶 20000 字防 OOM），
         //    超限时接管为正式 offload 文件——预览 + 续读路径（不再丢尾）
         const sSettings = ctx.getSettings?.() as Record<string, any> | undefined;
-        const { trySandboxLaunch, resolveSandboxProfile } = await import('./winSandbox.js');
+        const { tryOsSandboxLaunch, resolveSandboxProfile } = await import('./osSandbox.js');
         const sandboxProfile = resolveSandboxProfile(sSettings);
-        const sandbox = await trySandboxLaunch({
+        const sandbox = await tryOsSandboxLaunch({
           settings: sSettings,
           dataDir: ctx.dataDir,
           cmd: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',

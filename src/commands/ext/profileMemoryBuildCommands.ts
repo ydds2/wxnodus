@@ -777,8 +777,8 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
         const caps = [spec.lowIl ? 'Low IL 只读' : '', 'Job 遏制', spec.netLimitBps === 1 ? '断网' : spec.netLimitBps ? '限速 10KB/s' : '无网络限制'].filter(Boolean);
         return `OS 沙盒已开启：${sub}（${caps.join(' + ')}）——bash 命令此后经沙盒执行（持久化，/sandbox os status 验证能力）`;
       }
-      const { probeWinSandbox } = await import('../../kernel/winSandbox.js');
-      const probe = await probeWinSandbox(ctx.dataDir, sub === 'PROBE');
+      const { probeOsSandbox } = await import('../../kernel/osSandbox.js');
+      const probe = await probeOsSandbox(ctx.dataDir, sub === 'PROBE');
       const desc: Record<string, string> = {
         L0: '只读 + 断网（Low IL + Job + 1B/s 限速——标准用户可用，实测校准）',
         L1: '可写 + 断网（Job 遏制 + 1B/s 限速）',
