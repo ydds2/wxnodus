@@ -7,7 +7,7 @@ export function FloatBox({
   children,
   color,
   display,
-  borderStyle = 'double',
+  borderStyle = 'single',
   noBorder = false
 }: {
   children: ReactNode

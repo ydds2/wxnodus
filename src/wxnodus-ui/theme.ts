@@ -262,48 +262,48 @@ const cleanPromptSymbol = (s: string | undefined, fallback: string) => {
 
 export const DARK_THEME: Theme = {
   color: {
-    // 黑洞引擎：电光青（吸积盘辉光）× 紫罗兰（事件视界）× 深空冷白
-    primary: '#00E5FF',
-    accent: '#B388FF',
-    border: '#26A69A',
-    text: '#E0F7FA',
-    muted: '#80CBC4',
-    completionBg: '#0B0F19',
-    completionCurrentBg: '#1E2A4A',
-    completionMetaBg: '#0B0F19',
-    completionMetaCurrentBg: '#1E2A4A',
+    // 极简现代（2026-08-20 用户选定——docs/ui-mockup-2026.html v3 同款）：
+    // VS Code 风——深色底 + 单一蓝强调 + 细分割线；扁平面板，语义色沿用基底不破可读性契约
+    primary: '#3794ff',
+    accent: '#4fc1ff',
+    border: '#3c3c3c',
+    text: '#cccccc',
+    muted: '#8a8a8a',
+    completionBg: '#252526',
+    completionCurrentBg: '#094771',
+    completionMetaBg: '#252526',
+    completionMetaCurrentBg: '#094771',
 
-    label: '#4DD0E1',
-    ok: '#66BB6A',
-    error: '#EF5350',
-    warn: '#FFB74D',
+    label: '#4fc1ff',
+    ok: '#89d185',
+    error: '#f48771',
+    warn: '#cca700',
 
-    prompt: '#E0F7FA',
+    prompt: '#cccccc',
     // sessionLabel/sessionBorder intentionally track the `dim` value — they
     // are "same role, same colour" by design.  fromSkin's banner_dim fallback
     // relies on this pairing (#11300).
-    sessionLabel: '#80CBC4',
-    sessionBorder: '#80CBC4',
+    sessionLabel: '#8a8a8a',
+    sessionBorder: '#8a8a8a',
 
-    // 状态栏底条：深空背景向事件视界紫轻微倾斜（赛博深空——比纯背景亮一档，
+    // 状态栏底条：扁平面板底色（VS Code panel——比终端底色亮一档，
     // 底条与消息区有层次，但远低于 selectionBg 的选中亮度）
-    statusBg: mix('#0B0F19', '#B388FF', 0.14),
-    statusFg: '#9EA7B3',
-    statusGood: '#4DD0E1',
-    statusWarn: '#FFD54F',
-    statusBad: '#FF8A65',
-    statusCritical: '#FF6B6B',
-    selectionBg: '#1E2A4A',
+    statusBg: '#252526',
+    statusFg: '#9ea7b3',
+    statusGood: '#89d185',
+    statusWarn: '#cca700',
+    statusBad: '#f48771',
+    statusCritical: '#ff6b6b',
+    selectionBg: '#094771',
 
     diffAdded: 'rgb(220,255,220)',
     diffRemoved: 'rgb(255,220,220)',
     diffAddedWord: 'rgb(36,138,61)',
     diffRemovedWord: 'rgb(207,34,46)',
-    shellDollar: '#4DD0E1',
+    shellDollar: '#4fc1ff',
 
-    // 用户消息块底色：深空背景向事件视界紫轻微倾斜（吸积盘辉光意象），
-    // 亮度足够低，长会话里不刺眼，仅把「用户提问」从正文中托出来
-    userBg: mix('#0B0F19', '#B388FF', 0.16)
+    // 用户消息块底色：中性面板色（扁平浅灰蓝——亮度足够低，长会话里不刺眼）
+    userBg: '#2d2d30'
   },
 
   brand: BRAND,
@@ -317,41 +317,42 @@ export const DARK_THEME: Theme = {
 // cleanly (#11300).
 export const LIGHT_THEME: Theme = {
   color: {
-    primary: '#00838F',
-    accent: '#5E35B1',
-    border: '#00695C',
-    text: '#1C2B33',
-    muted: '#4A6B74',
-    completionBg: '#F0F6F7',
-    completionCurrentBg: mix('#F0F6F7', '#00838F', 0.2),
-    completionMetaBg: '#F0F6F7',
-    completionMetaCurrentBg: mix('#F0F6F7', '#00838F', 0.2),
+    // 极简现代浅色（2026-08-20）：白底 + 单一蓝强调 + 细分割线（VS Code Light 同族）
+    primary: '#005fb8',
+    accent: '#0090d9',
+    border: '#d4d4d4',
+    text: '#1f1f1f',
+    muted: '#616161',
+    completionBg: '#f8f8f8',
+    completionCurrentBg: '#cce4f7',
+    completionMetaBg: '#f8f8f8',
+    completionMetaCurrentBg: '#cce4f7',
 
-    label: '#00695C',
-    ok: '#2E7D32',
-    error: '#C62828',
-    warn: '#E65100',
+    label: '#005fb8',
+    ok: '#107c10',
+    error: '#c42b1c',
+    warn: '#927100',
 
-    prompt: '#142A33',
-    sessionLabel: '#4A6B74',
-    sessionBorder: '#4A6B74',
+    prompt: '#1f1f1f',
+    sessionLabel: '#616161',
+    sessionBorder: '#616161',
 
-    statusBg: '#F0F6F7',
-    statusFg: '#333F45',
-    statusGood: '#00796B',
-    statusWarn: '#8B6914',
-    statusBad: '#D84315',
-    statusCritical: '#B71C1C',
-    selectionBg: '#D4E4F7',
+    statusBg: '#f3f3f3',
+    statusFg: '#333f45',
+    statusGood: '#107c10',
+    statusWarn: '#927100',
+    statusBad: '#c42b1c',
+    statusCritical: '#b71c1c',
+    selectionBg: '#cce4f7',
 
     diffAdded: 'rgb(200,240,200)',
     diffRemoved: 'rgb(240,200,200)',
     diffAddedWord: 'rgb(27,94,32)',
     diffRemovedWord: 'rgb(183,28,28)',
-    shellDollar: '#00695C',
+    shellDollar: '#005fb8',
 
-    // 浅色终端：浅紫灰（lavender tint），白底上依然能看出用户块
-    userBg: mix('#F0F6F7', '#5E35B1', 0.1)
+    // 浅色终端：中性浅灰面板，白底上依然能看出用户块
+    userBg: '#ebebeb'
   },
 
   brand: BRAND,
