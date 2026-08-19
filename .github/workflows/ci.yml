@@ -92,17 +92,18 @@ jobs:
     runs-on: windows-latest
     strategy:
       fail-fast: false
-      # 多版本矩阵重开（2026-08-19 N-01：better-sqlite3 13.0.3 + sqlite-vec 0.1.9 升版后）——
-      # 此前 24.x 行实测原生 ABI 崩溃（#32245589517）；本轮升级预编译依赖后重试
+      # 单版本（2026-08-19 N-01 终审）：Node 24.x 两次矩阵实验（#32245589517 / #32252786649）均全片
+      # 原生 teardown 崩溃（node::RemoveEnvironmentCleanupHook assertion——better-sqlite3/sqlite-vec
+      # 上游预编译的 Node 24 ABI teardown bug，依赖 11.10.0+vec 0.1.9 仍复现）——非我方层面可修；
+      # engines 维持 >=22 <24；解锁路径：上游原生栈 Node 24 预编译成熟后重开矩阵。
       matrix:
         shard: [1, 2, 3]
-        node-version: ['22.18.0', '24.x']
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22.18.0
           cache: npm
 
       - name: Install root dependencies
