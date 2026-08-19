@@ -1052,3 +1052,27 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 8. **验证**：`npm run ci` 本地九步全绿（CI_GATE_EXIT=0；全量 378 文件 / 0 失败）；远程 CI **workflow #32204666784 全绿**——gate / vscode-ext / test×3 / **install-smoke（zip → install → run → uninstall）** 六 job 全 success；push 经全局代理，`git ls-remote` 验证远端 = 本地 HEAD c6e3db7。
 
 **评分口径（诚实，不预支）**：⑧ 5→9 的 +36 仍卡「转公开」决策；本轮交付的是私有渠道真实可用的安装体验 + 转公开即可一键兑现的全部前置——931 维持，如实记录。
+
+### 13.82 生产级阶段 2 收官轮（2026-08-19：缺陷清零——F1-F4 + 死代码 10 删 + /bundle 闭环 N-1~N-8 + 文档回写）
+
+按总体规划 §2 执行（4335258/ce0aab9/b3abd8b/5855c51/6f0cb34/ed88bd7）：
+
+1. **F1 /config 遮蔽合并（4335258）**：`profileMemoryBuildCommands.ts` 双注册（149 版 export/import 被 1048 版 set/view 遮蔽，功能不可达）→ 合并为单注册单分发；分级表 `/config export=safe`、`/config import=confirm` 恢复真实语义；面板增导出/导入提示行——3 契约用例（export JSON/--redact 剥离密钥且不改内存态/import 合并/文件缺失诚实）。
+2. **F2 分级键对齐（4335258）**：`/webhook del`→`remove`、`/acp serve`→`server`（danger 语义不变）；移除无分发的 `/skill install` 键（安装实际走 /market install；落基准 `/skill` confirm）——classifyCommand 断言 3 用例。
+3. **F4 openDB 根因透出（ce0aab9）**：组合层 `composeFailureCause` 纯函数（THREW 阶段真实 cause 优先于错误码）+ PHASE_FAILED cause 传播；`openDB` 外层统一包装（构造/旧版检测/pragma/schema 任何一步失败 → 「数据库不可用：<真因>——恢复指引」）——4 用例（含损坏文件直测 + Windows EBUSY 清理容错）。
+4. **F3 审计脚本全隔离（b3abd8b）**：`scripts/audit-features.mjs` 弃 ROOT/data 备份恢复（db/wal/shm 分离拷贝对活库即损坏——本机事故根因）；每用例独立临时 `--data-dir`；`/gateway` 阻塞用例 spawn 4s 后 `taskkill /F /T` 强杀整树（execSync 超时杀不死 node 子进程树——孤儿进程 29924 持库实证）。**71/71 命令真实落地实证**（隔离环境下 /backup 等此前"未落地"全部通过——证伪纸面缺陷）。
+5. **死代码 10 删（5855c51）**：全仓零引用 10 文件删除（terminalModes/externalCli/gracefulExit/memoryMonitor/extensionLifecycleService/securityHookAdapter/toolExecutionService/selectors/budgetLedger/effectJournal）——删前逐一复核零导入，f7ecabd 删 vimKeys 先例；-391 行。
+6. **/bundle 闭环 N-1~N-8（6f0cb34）**：importBundle（tgz 先拷 tmp 规避冒号路径坑 → 树校验 ≤4 层/≤1000 条目/realpath 逃逸 → 清单 name 正则 → 同名拒绝 → vendored 经 installSkillDir 原子落位）；loadBundle name 校验保护全部写路径；export rm+rename+cpSync 回退不抛异常 + vendoring cpSync 去 shell；install 本地已存在跳过（离线导入流不误报失败）+ plugin deferred 三段汇总（✅⏭❌ 不虚报）；use 全量安装——10 新用例（kernel-bundle 20/20；market 回归绿）。
+7. **文档回写（ed88bd7）**：命令面扩展 63→70（实测 SLASH 117=47+70）；apply_patch 13→14 用例；vimCore 头注释「仍无 / 搜索 Ctrl-R」与实现对齐（实现已超前）。
+8. **验证**：`npx tsc --noEmit` + `tsconfig.tests` 双绿；bundle/market/commands/commandLevels/docs-links 定向回归全绿；全量门禁与远程 CI 见尾注。
+
+**31 个「仅测试引用」模块决策表（合规审计 agent C 产出，逐项处置）**：
+- **已接入生产（此前误判为死代码，实测有 scripts/动态 import 引用）**：installerPackager/installerCandidate/dependencyClosure（`scripts/package-installer.ts:10-12`）、manifestGen（`scripts/generate-package-manifests.mjs:13`）、memoryCurator（`scripts/memory-curator.ts`）、skillLifecycleService（`wxGateway.ts:689` 动态 import）——**不删不降级**。
+- **保留为 contract-locked 备选层（有契约测试锁定、删除即丢 wave 2/3 契约面，零评分影响）**：autonomy（budgetService/progressDetector/recoveryService）、computer（compatNegotiatorService/computerFrontendHandler/visionCaptureService）、forge（exemplarPool/marketClient/marketServer）、quality/buildVerifiers、release（installerPathPolicy/zipArchive 等经打包器引用者除外）、sessions/sessionLifecycleService、voice/audioDeviceService、mcp/mcpServerGenerator、hooks/hookRegistry、models/modelRouter、config/configService、compliance/platformAuthRegistry、extensions/extensionScopeManager 等约 22 个——**维持现状**（与 C-02 wxGateway 同口径：纯工程债零评分影响）。
+- **build 侧验证层接入生产 /build 路径**（buildVerifiers/adversarialProbe/buildVerificationCoordinator——「有验证器没人调用」）：**留阶段 3 排期**（行为变更需真机全链路回归，不并入本轮机械清债）。
+
+**F3b 本机环境修复（诚实留白）**：data/nodus.db-wal/-shm 删除需用户确认——探测已完成（孤儿持库进程 29924 定位；主库副本验证完好），用户未答复，**文件保持不动**；精确处置指引已写入 F4 恢复文案（openDB 失败时可见）。
+
+**评分口径（诚实）**：931 维持——本批为缺陷清零与工程债处置（④⑦⑨ 加固不升档）；⑧ +36 仍卡公开决策。
+
+**尾注（2026-08-19）**：全量九步门禁与远程 CI 结果见下轮尾注回填（推送后）。
