@@ -43,8 +43,9 @@ describe('用户文档三件套（docs/getting-started|troubleshooting|examples�
       // ——排除 ssh://user@host、data/nodus.db 等非命令斜杠词
       const text = textRaw.replace(/docs\/[a-z0-9-]+\.md/gi, '');
       // 负向后顾排除包名/文件名/CJK 粘连片段（better-sqlite3/sqlite-vec、桌面端/IDE、examples/wire-events.mjs），
+      // 同时排除 URL 上下文（https://raw.githubusercontent.com/… 的 //raw、协议后的路径段——前导 / 或 : 即视为 URL），
       // 前瞻限定命令形态（后跟空格/标点/行尾）
-      for (const m of text.matchAll(/(?<![a-z0-9-.\u4e00-\u9fff])\/[a-z][a-z0-9-]*(?=[\s"'`.,;:)|)])/gi)) {
+      for (const m of text.matchAll(/(?<![a-z0-9-.\u4e00-\u9fff/:])\/[a-z][a-z0-9-]*(?=[\s"'`.,;:)|)])/gi)) {
         const cmd = '/' + m[0].slice(1).toLowerCase();
         if (cmd.startsWith('/<')) continue;
         mentioned.add(cmd);
