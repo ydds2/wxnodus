@@ -1277,3 +1277,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **P2 全阶段验收对照**（`ui-redesign-plan-2026.md` P2 项）：Ctrl+P 命令面板 ✅（P0-4 前移落地）；状态栏固定入口 ✅（本轮全覆盖）；`/help keys` 分组帮助 ✅（P0-4）；「切会话→改模型→查状态」零记忆三连 ✅（会话计数可点 + 模型段可点 + `/status` 工作台 + ⚙ 配置）。**至此 P0/P1/P2 三阶段全部收口**（Ctrl+P 聚合面板为既有 commandPalette 的别名入口，无「聚合最近动作」扩展项——诚实：原计划的「聚合 slash/键位/最近动作」中 slash/键位已聚合，最近动作未做，登记为可选增强不冒充完成）。
 
 **尾注（2026-08-20）**：两项各自全量单测绿 + tsc 干净后提交；本地九步门禁全绿后本段定稿（远程 CI 号见门禁实录）。
+
+### 13.99 UI 增强批执行实录（2026-08-20：最近动作 + 工作台三标签 + 密度档）
+
+用户「按顺序继续」——三项可选增强（`95d102a` + `be148a1` + `abde127`）：
+
+1. **命令面板「最近动作」**：斜杠提交（slashHandler 记录）与面板执行（onPaletteSubmit 记录）自动入队——`runtime/recentActions.ts` 模块级内存（上限 8/最近在前/重复去重提顶）；面板列表置顶 ↺ 最近区（查询态与其他条目同源 fuzzy 评分，Enter 直接重放）。4 契约测试。诚实口径：只记录动作文本不记录普通对话。
+2. **工作台 w 键统一三标签**：`WorkspaceKind` 扩展 sessions——w 循环 status → doctor → sessions；sessions 标签渲染 ActiveSessionSwitcher（裸 `/sessions` 打开工作台标签，Ctrl+X 快切浮层不变——同组件双挂载互不干扰）；Esc 门控兼容 workspace-sessions 上下文（栈顶 kind=workspace 且 ws=sessions 时同权消费）；nextWorkspaceKind 三循环契约测试更新。
+3. **密度档 compact/cozy**：`config/density.ts`（模块级 last-good，与 vimMode 同模式）；settings.tuiDensity 经 useConfigWatcher 水合热生效；cozy 消息间加行距（默认 compact 观感零漂移）；非法值忽略（误配绝不崩 UI）。2 契约测试。
+
+**至此 UI 重构全谱收口**：P0 骨架统一（§13.95）+ P1 工作台化与裁决（§13.96–13.97）+ P2 生产力（§13.98）+ 增强批（本段）——D1–D5 五诊断全部处置，`ui-redesign-plan-2026.md` 三阶段 + 可选增强全部落地。全量 2900 用例零回归。
+
+**尾注（2026-08-20）**：三项各自全量单测绿 + tsc 干净后提交；本地九步门禁全绿后本段定稿（远程 CI 号见门禁实录）。
