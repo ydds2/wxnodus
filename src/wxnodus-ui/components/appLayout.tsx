@@ -1,7 +1,7 @@
 // src/wxnodus-ui/components/appLayout.tsx — 四层布局装配（状态栏/转录流/输入区/浮层 + P2 面板右分栏）
 import { AlternateScreen, Box, NoSelect, ScrollBox, Text } from '@wxnodus/ink'
 import { useAtom as useStore } from '../../app/stores/engine.js'
-import { Fragment, memo, useMemo, useRef } from 'react'
+import { Fragment, memo, useRef } from 'react'
 
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { AppLayoutProps } from '../bridge/interfaces.js'
@@ -30,7 +30,6 @@ import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { RightPanelPane } from './rightPanel.js'
 import { Banner, Panel, SessionPanel } from './branding.js'
 import { BrandBar } from './brandBar.js'
-import { accretionRule } from '../lib/brandRule.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
 import { MessageLine } from './messageLine.js'
@@ -38,7 +37,6 @@ import { QueuedMessages } from './queuedMessages.js'
 import { StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
 import { getVimModeEnabled } from '../config/vimMode.js'
-import { TurnSections } from './turnSections.js'
 import { icon } from '../glyphs.js'
 
 const PromptPrefix = memo(function PromptPrefix({
@@ -106,15 +104,6 @@ const TranscriptPane = memo(function TranscriptPane({
   // 单栏布局（双栏已取消）：消息渲染宽度恒等于终端宽度。
   const msgCols = composer.cols
 
-  // Index of the first user-role message; every later user message gets a
-  // small dash above it so multi-turn transcripts visually segment by
-  // turn. -1 when no user message has been sent yet → no separator ever
-  // renders.
-  const firstUserIdx = useMemo(
-    () => transcript.historyItems.findIndex(m => m.role === 'user'),
-    [transcript.historyItems]
-  )
-
   return (
     <>
       {/* 品牌差异化：常驻品牌顶栏——不随消息滚动消失（黑洞引擎视觉锚点） */}
@@ -145,21 +134,6 @@ const TranscriptPane = memo(function TranscriptPane({
 
           {transcript.virtualRows.slice(transcript.virtualHistory.start, transcript.virtualHistory.end).map(row => (
             <Box flexDirection="column" key={row.key} ref={transcript.virtualHistory.measureRef(row.key)}>
-              {row.msg.role === 'user' && firstUserIdx >= 0 && row.index > firstUserIdx && (
-                // 品牌差异化：轮次分隔 = 吸积盘渐变规则线（border 外缘 → accent 内环 → 事件视界核心 ◉）
-                <Box flexDirection="row" marginTop={1}>
-                  {accretionRule(Math.max(6, msgCols - 2), {
-                    border: ui.theme.color.border,
-                    accent: ui.theme.color.accent,
-                    primary: ui.theme.color.primary
-                  }).map((segment, i) => (
-                    <Text color={segment.color} key={i}>
-                      {segment.text}
-                    </Text>
-                  ))}
-                </Box>
-              )}
-
               {row.msg.kind === 'intro' ? (
                 <Box flexDirection="column" paddingTop={1}>
                   <Banner maxWidth={Math.max(1, msgCols - 2)} t={ui.theme} />
@@ -209,9 +183,6 @@ const TranscriptPane = memo(function TranscriptPane({
             progress={progress}
             sections={ui.sections}
           />
-
-          {/* 阶段 6：回合分区展示（计划/活动/修改/验证/证据——单栏内纵向排列） */}
-          <TurnSections cols={msgCols} />
         </Box>
       </ScrollBox>
 

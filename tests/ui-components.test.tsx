@@ -39,22 +39,25 @@ describe('消息行渲染（V3 MessageLine）', () => {
   });
 });
 
-describe('消息轮次边界（V3 分隔线）', () => {
+describe('消息轮次边界（2026-08-19 全面替换：Response 徽标已移除——对标 Claude Code 无装饰轮次）', () => {
   const t = DEFAULT_THEME;
-  it('回复直接跟在用户提问后显示 └─ Response 分隔', () => {
+  it('回复直接跟在用户提问后不再显示 Response 徽标', () => {
     const { lastFrame } = render(
       <MessageLine cols={80} msg={{ role: 'assistant', text: '收到' }} t={t} prev={{ role: 'user', text: '你好' }} />
     );
-    expect(lastFrame()).toContain('Response');
-  });
-  it('首条助手消息（无前驱）不显示分隔', () => {
-    const { lastFrame } = render(<MessageLine cols={80} msg={{ role: 'assistant', text: '收到' }} t={t} />);
+    expect(lastFrame()).toContain('收到');
     expect(lastFrame()).not.toContain('Response');
   });
-  it('助手消息跟在助手消息后不重复分隔（段内不打断）', () => {
+  it('首条助手消息（无前驱）正常渲染', () => {
+    const { lastFrame } = render(<MessageLine cols={80} msg={{ role: 'assistant', text: '收到' }} t={t} />);
+    expect(lastFrame()).toContain('收到');
+    expect(lastFrame()).not.toContain('Response');
+  });
+  it('助手消息跟在助手消息后连续渲染（段内不打断）', () => {
     const { lastFrame } = render(
       <MessageLine cols={80} msg={{ role: 'assistant', text: '收到' }} t={t} prev={{ role: 'assistant', text: '上一段' }} />
     );
+    expect(lastFrame()).toContain('收到');
     expect(lastFrame()).not.toContain('Response');
   });
 });

@@ -1,4 +1,8 @@
-// src/wxnodus-ui/components/messageLine.tsx — 消息行渲染（用户/助手/系统/工具轨迹 + 密度档行距）
+// src/wxnodus-ui/components/messageLine.tsx — 消息行渲染（2026-08-19 全面替换：
+// 对标 Claude Code / Codex / Gemini CLI 同族输出格式）
+// 规则：用户 = dim「❯ 文本」（无底色块）；助手 = 纯 markdown（无 Response 徽标、
+// 无 └─ 标记）；系统/命令输出 = dim 文本；工具调用 = 单行 dim + dim 缩进结果；
+// 无边框卡片、无 Todo 面板、无 ✓/✗ 装饰、无时长。
 import { Ansi, Box, NoSelect, Text } from '@wxnodus/ink'
 import { memo, useState, type ReactNode } from 'react'
 
@@ -32,12 +36,11 @@ import {
 } from '../runtime/viewStore.js'
 import type { Theme } from '../theme.js'
 import { getTuiDensity } from '../config/density.js'
-import type { ActiveTool, ActivityItem, DetailsMode, Msg, Role, SectionVisibility, SubagentProgress } from '../types.js'
+import type { ActiveTool, DetailsMode, Msg, Role, SectionVisibility } from '../types.js'
 
 import { Md } from './markdown.js'
 import { StreamingMd } from './streamingMarkdown.js'
-import { ToolTrail } from './thinking.js'
-import { TodoPanel } from './todoPanel.js'
+import { PeerToolTrail } from './peerTrail.js'
 import { DiffRenderer } from './diffRenderer.js'
 import { icon } from '../glyphs.js'
 
@@ -114,8 +117,6 @@ function renderSkillRefs(text: string, t: Theme, onCommand?: (text: string) => v
 }
 
 export const MessageLine = memo(function MessageLine({
-  activity = [],
-  busy = false,
   cols,
   compact,
   detailsMode = 'collapsed',
@@ -124,33 +125,19 @@ export const MessageLine = memo(function MessageLine({
   msg,
   msgKey,
   onCommand,
-  outcome = '',
   prev,
-  reasoningActive = false,
-  reasoningStreaming = false,
   sections,
-  subagents = [],
   t,
   tools = []
 }: MessageLineProps) {
-  // Per-section overrides win over the global mode, so resolve each section
-  // we might consume here once and gate visibility on the *content-bearing*
-  // sections only — never on the global mode.  A `trail` message feeds Tool
-  // calls + Activity; an assistant message with thinking/tools metadata
-  // feeds Thinking + Tool calls.  Gating on every section would let
-  // `thinking` (expanded by default) keep an empty wrapper alive when only
-  // `tools` is hidden — exactly the empty-Box bug Copilot caught.
-  const thinkingMode = sectionMode('thinking', detailsMode, sections, detailsModeCommandOverride)
+  // 工具显示开关（/details tools hidden 仍可隐藏——其余区段随全面替换移除）
   const toolsMode = sectionMode('tools', detailsMode, sections, detailsModeCommandOverride)
-  const activityMode = sectionMode('activity', detailsMode, sections, detailsModeCommandOverride)
-  const thinking = msg.thinking?.trim() ?? ''
 
   // One blank line above this block iff it opens a new visual group relative
   // to the block directly above it (`prev`) — the flex-grouping rule. Applied
   // intrinsically on each *rendered* element (not via an outer wrapper) so a
   // block that renders nothing — e.g. a tool trail hidden by /details — emits
-  // no floating gap. Streaming-safe: the gap is derived from the stable
-  // predecessor, never this block's own live content. See domain/blockLayout.
+  // no floating gap.
   const leadGap = hasLeadGap(prev, msg)
 
   // Collapse toggle for long system messages
@@ -213,8 +200,7 @@ export const MessageLine = memo(function MessageLine({
     }
   }
 
-  // A12：timeline 事件消息（◈ 会话切换/委派完成等——参考 kind==='event' 同款）
-  // 输出状态按情况区分颜色：失败/异常 → 红，完成/成功 → 绿，进行中/切换 → 紫，其余灰
+  // A12：timeline 事件消息（◈ 会话切换/委派完成等）——dim 单行
   if (msg.kind === 'event') {
     const evColor = /失败|错误|异常|拒绝|无法|未成功|中断/.test(msg.text)
       ? t.color.error
@@ -233,92 +219,59 @@ export const MessageLine = memo(function MessageLine({
     )
   }
 
+  // 全面替换：Todo 面板不再渲染（对标 Claude Code——清单不占对话流）
   if (msg.kind === 'trail' && msg.todos?.length) {
-    return (
-      <TodoPanel
-        defaultCollapsed={msg.todoCollapsedByDefault}
-        incomplete={msg.todoIncomplete}
-        t={t}
-        todos={msg.todos}
-      />
-    )
+    return null
   }
 
-  if (msg.kind === 'trail' && (msg.tools?.length || tools.length || thinking)) {
-    return thinkingMode !== 'hidden' || toolsMode !== 'hidden' || activityMode !== 'hidden' ? (
+  if (msg.kind === 'trail' && (msg.tools?.length || tools.length)) {
+    return toolsMode !== 'hidden' ? (
       <Box flexDirection="column" marginTop={leadGap ? 1 : 0}>
-        <ToolTrail
-          activity={activity}
-          busy={busy}
-          commandOverride={detailsModeCommandOverride}
-          detailsMode={detailsMode}
-          outcome={outcome}
-          reasoning={thinking}
-          reasoningActive={reasoningActive}
-          reasoningStreaming={reasoningStreaming}
-          reasoningTokens={msg.thinkingTokens}
-          sections={sections}
-          subagents={subagents}
-          t={t}
-          tools={tools}
-          toolTokens={msg.toolTokens}
-          trail={msg.tools ?? []}
-        />
+        <PeerToolTrail t={t} tools={tools} trail={msg.tools ?? []} />
       </Box>
     ) : null
   }
 
-  // A trail with no reasoning, tools, or todos to show (e.g. the finalDetails
-  // segment message.complete appends carrying only a token tally) has nothing
-  // to draw — render nothing instead of an empty gutter row. blockRenders()
-  // agrees, so it also stays transparent to grouping and never opens a gap.
+  // A trail with nothing to draw (finalDetails token tally 等) —— 不渲染
   if (msg.kind === 'trail') {
     return null
   }
 
   if (msg.role === 'tool') {
-    const maxChars = Math.max(24, cols - 14)
     const stripped = hasAnsi(msg.text) ? stripAnsi(msg.text) : msg.text
-    const safeAnsi = hasAnsi(msg.text) ? sanitizeAnsiForRender(msg.text) : msg.text
-    // ③ 波 1：工具结果 diff 回显（fs_edit 等结果含 @@ hunk → 行号 gutter 全量渲染，
-    // gemini DiffRenderer 对标）——摘要头 + diff 组件，替代截断预览
+    // 工具结果 diff 回显（fs_edit 等结果含 @@ hunk）——行内 +/- 着色，无边框卡片
     const diffTail = diffBodyOf(stripped)
     if (diffTail) {
       const head = stripped.slice(0, stripped.indexOf(diffTail)).trim()
       return (
-        <Box alignSelf="flex-start" borderColor={t.color.border} borderStyle="round" marginLeft={3} paddingX={1} flexDirection="column">
-          {head ? <Text color={t.color.muted}>{head}</Text> : null}
+        <Box flexDirection="column" marginLeft={2}>
+          {head ? (
+            <Text color={t.color.muted} dimColor>
+              {head}
+            </Text>
+          ) : null}
           <DiffRenderer t={t} body={diffTail} />
         </Box>
       )
     }
-    const preview = compactPreview(stripped, maxChars) || '(empty tool result)'
-    // 工具结果卡片按结果着色：输出含失败信号 → error 边框（一眼定位失败工具）
+    const preview = compactPreview(stripped, Math.max(24, cols - 10)) || '(empty tool result)'
+    // 结果按失败信号着色（失败红色一眼定位；其余 dim）
     const failed = /失败|错误|异常|不存在|无权限|error|failed|exception/i.test(stripped.slice(0, 200))
-    const cardColor = failed ? t.color.error : t.color.border
 
     return (
-      <Box alignSelf="flex-start" borderColor={cardColor} borderStyle="round" marginLeft={3} paddingX={1}>
-        {hasAnsi(msg.text) ? (
-          <Text wrap="truncate-end">
-            <Ansi>{safeAnsi}</Ansi>
-          </Text>
-        ) : (
-          <Text color={failed ? t.color.error : t.color.muted} wrap="truncate-end">
-            {preview}
-          </Text>
-        )}
+      <Box marginLeft={2}>
+        <Text color={failed ? t.color.error : t.color.muted} dimColor wrap="truncate-end">
+          {preview}
+        </Text>
       </Box>
     )
   }
 
   const { body, glyph, prefix } = ROLE[msg.role](t)
+  const isUser = msg.role === 'user'
   const gutterWidth = transcriptGutterWidth(msg.role, t.brand.prompt)
 
-  const showDetails =
-    (toolsMode !== 'hidden' && Boolean(msg.tools?.length)) || (thinkingMode !== 'hidden' && Boolean(thinking))
-
-  const showResponseSeparator = shouldShowResponseSeparator(msg, showDetails, prev)
+  const showDetails = toolsMode !== 'hidden' && Boolean(msg.tools?.length)
 
   const content = (() => {
     if (msg.kind === 'slash') {
@@ -332,8 +285,6 @@ export const MessageLine = memo(function MessageLine({
     }
 
     // ── Collapsible long system message (system prompt, AGENTS.md, etc.) ──
-    // MUST come before the hasAnsi check — system messages from the backend
-    // contain Rich markup escape codes that would otherwise hit <Ansi> full render.
     if (systemIsLong) {
       const firstLine = (msg.text.split('\n')[0] ?? '').trim().slice(0, 120) || '(system message)'
 
@@ -356,10 +307,7 @@ export const MessageLine = memo(function MessageLine({
       return <Ansi>{sanitizeAnsiForRender(msg.text)}</Ansi>
     }
 
-    // ── diff 语法高亮（#7 UX 债：Aider/Claude Code 同款 +/-/@@ 着色）──
-    // kind:'diff' 段（pushInlineDiffSegment 产出的 ```diff 块）走 DiffRenderer 全量回显：
-    // 行号 gutter + add 绿 / del 红 / hunk 青 / meta 灰 + hunk 折叠（opencode 语义）+
-    // 超大 diff 保护（前 DIFF_HILITE_MAX 行高亮，余行合并单块——内容完整保留，仅着色降级）。
+    // ── diff 语法高亮（Aider/Claude Code 同款 +/-/@@ 着色）──
     if (msg.kind === 'diff') {
       const bodyText = stripDiffFence(msg.text)
       if (bodyText) return <DiffRenderer t={t} body={bodyText} />
@@ -369,9 +317,6 @@ export const MessageLine = memo(function MessageLine({
       const bodyWidth = transcriptBodyWidth(cols, msg.role, t.brand.prompt, TERMUX_TUI_MODE)
 
       return isStreaming ? (
-        // Incremental markdown: split at the last stable block boundary so
-        // only the in-flight tail re-tokenizes per delta. See
-        // streamingMarkdown.tsx for the cost model.
         <StreamingMd cols={bodyWidth} compact={compact} t={t} text={boundedLiveRenderText(msg.text)} />
       ) : (
         <Md cols={bodyWidth} compact={compact} t={t} text={msg.text} />
@@ -393,7 +338,6 @@ export const MessageLine = memo(function MessageLine({
     }
 
     // A8：user 消息中的 /skill:名 引用以 accent 高亮（技能直达提示）
-    // A24：含引用时用 flexWrap Box 渲染（引用可点击执行——外层消息选中被阻断）
     const skill = renderSkillRefs(msg.text, t, onCommand)
 
     if (skill.hasRefs) {
@@ -407,9 +351,7 @@ export const MessageLine = memo(function MessageLine({
     return <Text {...(body ? { color: body } : {})}>{msg.text}</Text>
   })()
 
-  // Diff segments (emitted by pushInlineDiffSegment between narration
-  // segments) keep a blank line on both sides so the patch doesn't butt up
-  // against the prose around it.
+  // Diff segments（pushInlineDiffSegment 产出的叙述间 diff 段）保留两侧空行
   const isDiffSegment = msg.kind === 'diff'
 
   return (
@@ -424,49 +366,21 @@ export const MessageLine = memo(function MessageLine({
     >
       {showDetails && (
         <Box flexDirection="column" marginBottom={1}>
-          <ToolTrail
-            commandOverride={detailsModeCommandOverride}
-            detailsMode={detailsMode}
-            reasoning={thinking}
-            reasoningTokens={msg.thinkingTokens}
-            sections={sections}
-            t={t}
-            toolTokens={msg.toolTokens}
-            trail={msg.tools}
-          />
-        </Box>
-      )}
-
-      {showResponseSeparator && (
-        // Response 徽标：accent 背景色块 + 深色粗体字——轮次回复起点一眼可辨
-        <Box marginBottom={1}>
-          <NoSelect flexShrink={0} fromLeftEdge width={gutterWidth}>
-            <Text color={t.color.accent}>└─ </Text>
-          </NoSelect>
-          <Box backgroundColor={t.color.accent} paddingX={1}>
-            <Text color={t.color.statusBg} bold>
-              Response
-            </Text>
-          </Box>
+          <PeerToolTrail t={t} trail={msg.tools} />
         </Box>
       )}
 
       <Box>
         <NoSelect flexShrink={0} fromLeftEdge width={gutterWidth}>
-          <Text bold={msg.role === 'user'} color={isSelected || (hovered && !isSelected) ? t.color.accent : prefix}>
-            {glyph}{' '}
+          {/* 用户 = dim「❯ 」；其余角色无字形（保持列对齐的空白 gutter——对标 Claude Code） */}
+          <Text bold={isUser} color={isSelected || (hovered && !isSelected) ? t.color.accent : isUser ? prefix : t.color.text}>
+            {isUser ? `${glyph} ` : '  '}
           </Text>
         </NoSelect>
 
-        {/* user 消息带底色块：长会话里每轮提问一眼可定位（glyph 保留在块外）。
-            选中时整块换 selectionBg 高亮；assistant 不加 paddingX（避免换行跳动）。 */}
         <Box
           width={transcriptBodyWidth(cols, msg.role, t.brand.prompt, TERMUX_TUI_MODE)}
-          {...(isSelected
-            ? { backgroundColor: t.color.selectionBg, ...(msg.role === 'user' ? { paddingX: 1 } : {}) }
-            : msg.role === 'user'
-              ? { backgroundColor: t.color.userBg, paddingX: 1 }
-              : {})}
+          {...(isSelected ? { backgroundColor: t.color.selectionBg, ...(isUser ? { paddingX: 1 } : {}) } : {})}
         >
           {content}
         </Box>
@@ -475,21 +389,7 @@ export const MessageLine = memo(function MessageLine({
   )
 })
 
-// 回复起始标记（└─ Response）：
-//  1. 回复带思考/工具明细（showDetails）——原有行为
-//  2. 回复直接跟在一轮用户提问之后（prev 为 user）——纯文本回复也标记轮次边界，
-//     与 user 底色块配合，多轮消息间的起止一目了然
-export const shouldShowResponseSeparator = (
-  msg: Msg,
-  showDetails: boolean,
-  prev?: Pick<Msg, 'kind' | 'role'>
-): boolean =>
-  msg.role === 'assistant' && /\S/.test(msg.text) && (showDetails || prev?.role === 'user')
-
 interface MessageLineProps {
-  /** A24：live 轮次活动流（tool started/approval/delegate 等）——ToolTrail meta 面板数据源 */
-  activity?: ActivityItem[]
-  /** A24：live 轮次结果（approve/deny 等）——ToolTrail 底部结果行 */
   busy?: boolean
   cols: number
   compact?: boolean
@@ -501,18 +401,10 @@ interface MessageLineProps {
   msgKey?: string
   /** A24：/skill: 引用点击执行（composer.submit 链路） */
   onCommand?: (text: string) => void
-  /** A24：live 轮次结果（approve/deny 等）——ToolTrail 底部结果行 */
-  outcome?: string
   // The block rendered directly above this one. Drives the group-boundary
-  // lead gap (see domain/blockLayout.ts::hasLeadGap). Undefined at the top of
-  // the transcript or when spacing is irrelevant.
+  // lead gap (see domain/blockLayout.ts::hasLeadGap).
   prev?: Msg
-  /** A24：live 思考中标记（flowController 置位）——ToolTrail thinking 面板活跃态 */
-  reasoningActive?: boolean
-  reasoningStreaming?: boolean
   sections?: SectionVisibility
-  /** A24：live 委派树（子代理进度）——ToolTrail spawn tree 面板数据源 */
-  subagents?: SubagentProgress[]
   t: Theme
   tools?: ActiveTool[]
 }
