@@ -204,6 +204,24 @@ const motionFind = (text: string, cursor: number, ch: string, kind: 'f' | 'F' | 
 const BRACKET_PAIRS: Record<string, string> = { '(': ')', '[': ']', '{': '}', '<': '>' }
 const CLOSERS = new Set(Object.values(BRACKET_PAIRS))
 
+/** codex vim.rs:300-304 is_inside_element 对标（轻量版，2026-08-19）：字符处于行内引号串中则视为
+ * 「语法元素内部」——括号对象扫描时跳过（代码字符串里的 ( 不算括号）。纯文本输入框不建 AST，
+ * 引号配对（转义感知）即语法边界；`<`/`>` 对象不受限（泛型/比较符场景依赖原始括号语义）。 */
+const isInsideString = (text: string, i: number): boolean => {
+  const rs = rowStart(text, cursorRow(text, i))
+  let open = ''
+  for (let j = rs; j < i; j++) {
+    const ch = text[j]!
+    if (ch !== "'" && ch !== '"' && ch !== '`') continue
+    let bs = 0
+    for (let k = j - 1; k >= rs && text[k] === '\\'; k--) bs++
+    if (bs % 2 === 1) continue
+    if (open === '') open = ch
+    else if (open === ch) open = ''
+  }
+  return open !== ''
+}
+
 /** 文本对象区间（i=内 / a=含定界符）——codex vim.rs:229-264 括号栈对标（配对深度计数）
  *  括号 ()[]{ }<>（开/闭括号皆可作对象字符）、引号 '"、词 w/W。找不到 → null */
 export const textObjectRange = (text: string, cursor: number, io: 'i' | 'a', ch: string): [number, number] | null => {
@@ -266,11 +284,13 @@ export const textObjectRange = (text: string, cursor: number, io: 'i' | 'a', ch:
   }
   if (ch in BRACKET_PAIRS) {
     // 开括号对象：先看光标正下方，再向左扫找最近未闭合的开括号（深度=右侧已见闭括号数）
-    let openIdx = text[c] === ch ? c : -1
+    // ——字符串内的括号不算（isInsideString 跳过）
+    let openIdx = text[c] === ch && !isInsideString(text, c) ? c : -1
     if (openIdx < 0) {
       let depth = 0
       for (let i = c - 1; i >= 0; i--) {
         const t = text[i]!
+        if (isInsideString(text, i)) continue
         if (t === BRACKET_PAIRS[ch]) depth++
         else if (t === ch) {
           if (depth === 0) { openIdx = i; break }
@@ -282,6 +302,7 @@ export const textObjectRange = (text: string, cursor: number, io: 'i' | 'a', ch:
     let d = 0
     for (let i = openIdx + 1; i < n; i++) {
       const t = text[i]!
+      if (isInsideString(text, i)) continue
       if (t === ch) d++
       else if (t === BRACKET_PAIRS[ch]) {
         if (d === 0) return io === 'i' ? [openIdx + 1, i] : [openIdx, i + 1]
@@ -291,11 +312,12 @@ export const textObjectRange = (text: string, cursor: number, io: 'i' | 'a', ch:
     return null
   }
   if (CLOSERS.has(ch)) {
-    // 闭括号对象：向左找对应开括号（深度计数）
+    // 闭括号对象：向左找对应开括号（深度计数）——字符串内的括号不算
     let d = 0
     let openIdx = -1
     for (let i = c - 1; i >= 0; i--) {
       const t = text[i]!
+      if (isInsideString(text, i)) continue
       if (t === ch) d++
       else if (t in BRACKET_PAIRS && BRACKET_PAIRS[t] === ch) {
         if (d === 0) { openIdx = i; break }
@@ -306,6 +328,7 @@ export const textObjectRange = (text: string, cursor: number, io: 'i' | 'a', ch:
     let depth = 0
     for (let i = openIdx + 1; i < n; i++) {
       const t = text[i]!
+      if (isInsideString(text, i)) continue
       if (t in BRACKET_PAIRS && BRACKET_PAIRS[t] === ch) depth++
       else if (t === ch) {
         if (depth === 0) return io === 'i' ? [openIdx + 1, i] : [openIdx, i + 1]

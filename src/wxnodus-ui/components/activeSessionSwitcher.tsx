@@ -1,5 +1,5 @@
 import { Box, Text, useInput, useStdout } from '@wxnodus/ink'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 
 import { TUI_SESSION_MODEL_FLAG } from '../domain/slash.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -122,6 +122,8 @@ export const orchestratorContextHintSegments = (newSelected: boolean): Orchestra
         { role: 'text', text: ' ' },
         { role: 'hotkey', text: 'Enter' },
         { role: 'text', text: ' 切换 · ' },
+        { role: 'hotkey', text: '→' },
+        { role: 'text', text: ' 预览 · ' },
         { role: 'hotkey', text: 'Ctrl+D' },
         { role: 'text', text: ' 关闭' }
       ]
@@ -318,6 +320,10 @@ export function ActiveSessionSwitcher({
   // different session. Any other key cancels the prompt.
   const [confirmDelete, setConfirmDelete] = useState<null | string>(null)
   const [deleting, setDeleting] = useState(false)
+  // 惰性展开预览（2026-08-19，codex resume_picker.rs:1854 对标）：→ 展开选中历史行的尾部消息
+  // （session.tail 按需取——不阻塞列表滚动）；← 或移动选择即收起
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [preview, setPreview] = useState<{ id: string; loading: boolean; lines: Array<{ role: string; text: string }> } | null>(null)
   const initialSelectionAppliedRef = useRef(false)
   // Holds the RAW `session.list` results (pre-dedupe). The quiet 1.5s poll
   // re-derives the resumable list from this against the latest live set, so a
@@ -550,6 +556,36 @@ export function ActiveSessionSwitcher({
     [deleting, gw, history, items.length]
   )
 
+  // → 展开/收起选中历史行尾部消息预览（session.tail 惰性加载——不阻塞列表滚动）
+  const togglePreview = useCallback(
+    (id: string) => {
+      setExpandedId(prev => {
+        if (prev === id) {
+          setPreview(null)
+
+          return null
+        }
+
+        setPreview({ id, loading: true, lines: [] })
+        void gw
+          .request<{ messages?: Array<{ role: string; text: string }> }>('session.tail', { session_id: id, limit: 6 })
+          .then(r =>
+            setPreview(p => (p?.id === id
+              ? {
+                  id,
+                  loading: false,
+                  lines: (r?.messages ?? []).map(m => ({ role: m.role, text: String(m.text).replace(/\s+/g, ' ').trim().slice(0, Math.max(24, width - 8)) })),
+                }
+              : p))
+          )
+          .catch(() => setPreview(p => (p?.id === id ? { id, loading: false, lines: [] } : p)))
+
+        return id
+      })
+    },
+    [gw, width]
+  )
+
   const handleRowClick = useCallback(
     (index: number) => (event: { stopImmediatePropagation?: () => void }) => {
       event.stopImmediatePropagation?.()
@@ -644,11 +680,33 @@ export function ActiveSessionSwitcher({
     }
 
     if (key.upArrow && sel > 0) {
+      setExpandedId(null)
+      setPreview(null)
+
       return setSel(s => Math.max(0, s - 1))
     }
 
     if (key.downArrow && sel < total - 1) {
+      setExpandedId(null)
+      setPreview(null)
+
       return setSel(s => Math.min(total - 1, s + 1))
+    }
+
+    // →/←：展开/收起选中历史行尾部消息预览（codex 惰性展开对标）
+    if (key.rightArrow && selectedKind === 'history') {
+      const id = history[sel - 1 - items.length]?.id
+
+      if (id) togglePreview(id)
+
+      return
+    }
+
+    if (key.leftArrow && expandedId) {
+      setExpandedId(null)
+      setPreview(null)
+
+      return
     }
 
     if (key.return) {
@@ -772,13 +830,13 @@ export function ActiveSessionSwitcher({
               : h.title || h.preview || '(untitled)'
 
           return (
-            <Box
-              backgroundColor={selectedStyle?.backgroundColor}
-              flexDirection="row"
-              key={h.id}
-              onClick={handleRowClick(i)}
-              width="100%"
-            >
+            <Fragment key={h.id}>
+              <Box
+                backgroundColor={selectedStyle?.backgroundColor}
+                flexDirection="row"
+                onClick={handleRowClick(i)}
+                width="100%"
+              >
               <Text bold={selected} color={rowTextColor ?? t.color.muted}>
                 {selected ? '▸ ' : '  '}
               </Text>
@@ -816,7 +874,22 @@ export function ActiveSessionSwitcher({
                   {title}
                 </Text>
               </Box>
-            </Box>
+              </Box>
+
+              {expandedId === h.id && preview?.id === h.id && (
+                <Box flexDirection="column" paddingLeft={3}>
+                  {preview.loading
+                    ? <Text color={t.color.muted}>…</Text>
+                    : preview.lines.length
+                      ? preview.lines.map((m, k) => (
+                          <Text key={k} color={t.color.muted} wrap="truncate-end">
+                            {m.role === 'user' ? '▸ ' : '  '}{m.text || '(empty)'}
+                          </Text>
+                        ))
+                      : <Text color={t.color.muted}>（无消息）</Text>}
+                </Box>
+              )}
+            </Fragment>
           )
         }
 

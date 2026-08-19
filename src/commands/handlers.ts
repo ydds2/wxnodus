@@ -16,7 +16,7 @@ import { priceForModel } from '../kernel/cost.js';
 import { sessionCost, costText } from '../kernel/costQuery.js';
 import { snippet } from '../kernel/truncate.js';
 import { WXNODUS_VERSION } from '../kernel/version.js';
-import { themePresetNames } from '../wxnodus-ui/theme.js';
+import { themePresetNames, themeByName, loadUserThemes } from '../wxnodus-ui/theme.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { topoSort } from '../build/plan.js';
 import { instantiate } from '../build/scaffold.js';
@@ -472,13 +472,23 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/theme', (args) => {
     const name = args[0];
     if (name) {
+      // 2026-08-19 用户主题（opencode themeSource.discover 对标）：解析含 dataDir/themes/*.json；
+      // 未知主题诚实拒绝——绝不「已切换」假反馈（此前未知名也报切换成功）
+      const user = loadUserThemes(ctx.dataDir);
+      const resolved = themeByName(name, process.env, user.presets);
+      if (!resolved) {
+        const userNames = Object.keys(user.presets).join(' / ');
+        return `未知主题：${name}（内置 dark/light/${themePresetNames().filter(n => n !== 'dark' && n !== 'light').join('/')}${userNames ? `；用户 ${userNames}` : ''}）——未切换`;
+      }
       ctx.setTheme(name);
-      // 开放兼容：广播 theme.changed——UI 监听真实切换（dark/light/wxnodus/命名预设）
-      ctx.bus.emit('theme.changed', { name });
+      // 事件携带已解析主题对象——UI 侧直接应用（用户主题三元组随事件到达），不再二次解析
+      ctx.bus.emit('theme.changed', { name, theme: resolved });
       return `主题已切换：${name}`;
     }
+    const user = loadUserThemes(ctx.dataDir);
+    const extras = Object.keys(user.presets);
     return `当前主题：${ctx.getThemeName()}
-可选预设：dark / light / ${themePresetNames().filter(n => n !== 'dark' && n !== 'light').join(' / ')}`;
+可选预设：dark / light / ${themePresetNames().filter(n => n !== 'dark' && n !== 'light').join(' / ')}${extras.length ? `\n用户主题：${extras.join(' / ')}` : ''}${user.warnings.length ? `\n主题加载警告：${user.warnings.slice(0, 3).join('；')}${user.warnings.length > 3 ? ' …' : ''}` : ''}`;
   });
 
   // W7-00：主工作区（用户动态指定）——查看/设置/重置；持久化 settings.workspace

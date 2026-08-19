@@ -1139,3 +1139,13 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **评分口径（诚实）**：931 维持——本轮为 ②③⑨ 加固不升档（② 冲 10 仍需真文本对象语法感知；③ 冲 9 需 turn 全文件集 + 交互查看器；⑨ 冲 10 需多版本矩阵）。
 
 **尾注（2026-08-19）**：本地九步门禁全绿（CI_GATE_EXIT=0）；远程 CI #32219348848 全绿（9m34s，`3e1a90a`——同轮验证 v5 SHA ratchet 后四个 actions 全部可用、Node 20 弃用告警消除）。
+
+### 13.88 完善轮三（2026-08-19：用户选中五项全量落地——vim 语法感知/turn 全文件集/Node 矩阵/用户主题/会话预览窗）
+
+1. **vim 语法感知**（② 收口）：`isInsideString`（codex `vim.rs:300-304` is_inside_element 轻量对标——引号配对即语法边界，不建 AST）接入四个括号扫描循环——字符串里的 `(`/`]` 不再误判为对象定界符（如 `say("a (b")` 选外层调用括号）；`<>` 对象不受限（泛型/比较符依赖原始语义，如实注明）；`tests/vim-textobject.test.ts` +1 用例（17/17）。
+2. **/diff turn 全文件集**（③ 语义补全）：`/diff turn`（无文件参数）聚合 undoShadows 影子库中 cwd 内全部编辑文件的最新快照 vs 当前（opencode `summary.ts:98` last-turn 全文件集语义对标——我方基线=编辑影子库而非 step 快照对，如实记录差异）；无快照诚实报错、已删除文件跳过；`/diff ./turn` 保留单文件路径（真名冲突逃逸）；`tests/diff-command.test.ts` +1 用例（6/6）。
+3. **Node 版本矩阵**（⑨ 对齐）：test job `node-version: ['22.18.0', '24.x']` × 3 shard（engines >=22 支持面 × 前向兼容验证，gemini `ci.yml:142` 矩阵对标；仍单 OS——Windows 专属产品多 OS 收益低，如实记录）。
+4. **用户主题**（主题机制第一步）：`theme.ts` + `loadUserThemes`（`dataDir/themes/*.json` 磁盘发现，opencode `themeSource.discover()` 对标）+ `themeByName` 第三参用户预设；校验（名/色/base 枚举）非法文件诚实跳过并收集警告、内置同名内置优先；`/theme` 未知主题诚实拒绝（此前「已切换」假反馈）、事件携带已解析主题对象（eventAdapter 直接应用）；`tests/ui-theme-presets.test.ts` +3 用例。token 双变体/system 终端取色留后续。
+5. **会话浏览器惰性展开预览窗**（B-03 收口）：`wxGateway.session.tail` RPC（尾部 ≤20 条非系统消息）+ `activeSessionSwitcher.tsx` → 展开/← 收起选中历史行多行预览（codex `resume_picker.rs:1854` 惰性加载对标——按需取、不阻塞 1.5s 轮询；↑↓ 移动自动收起）+ 快捷键提示段更新。
+
+**评分口径（诚实）**：931 维持——②③ 为冲档加固（② 到 10 的括号栈文本对象/真实 Ctrl-R 快照面板、③ 到 9 的交互式查看器仍未落地，不预支）；⑨ 矩阵为 10 的组成部分之一。

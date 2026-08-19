@@ -44,6 +44,34 @@ describe('/diff 快照对比 + per-hunk 应用', () => {
     const bad = await (bus as any).execute('/diff f.txt revert 9')
     expect(bad.output).toContain('不存在')
   })
+
+  it('/diff turn 全文件集聚合（opencode last-turn 对标）：多文件整体 diff、无快照诚实报错', async () => {
+    const tdir = mkdtempSync(join(tmpdir(), 'wxn-diffturn-'))
+    const tdata = join(tdir, 'data')
+    mkdirSync(tdata, { recursive: true })
+    const a = join(tdir, 'a.txt')
+    const b = join(tdir, 'b.txt')
+    writeFileSync(a, 'a1\na2\n', 'utf8')
+    writeFileSync(b, 'b1\nb2\n', 'utf8')
+    snapshotFile(tdata, a, readFileSync(a, 'utf8'))
+    snapshotFile(tdata, b, readFileSync(b, 'utf8'))
+    writeFileSync(a, 'a1\na2X\n', 'utf8') // 仅 a.txt 变更
+    const tbus = createCommandBus()
+    registerSessionCommands(tbus as any, { cwd: tdir, dataDir: tdata, config: { get: () => ({}), getKey: () => undefined, setKey: () => undefined }, db: undefined, bus: tbus as any, agent: { getSessionId: () => 's' } } as any)
+    const agg = await (tbus as any).execute('/diff turn')
+    expect(agg.output).toContain('a.txt')
+    expect(agg.output).toContain('+a2X')
+    expect(agg.output).not.toContain('b.txt') // 无变更文件不出现
+    // 无快照目录诚实报错
+    const empty = mkdtempSync(join(tmpdir(), 'wxn-diffturn0-'))
+    mkdirSync(join(empty, 'data'), { recursive: true })
+    const ebus = createCommandBus()
+    registerSessionCommands(ebus as any, { cwd: empty, dataDir: join(empty, 'data'), config: { get: () => ({}), getKey: () => undefined, setKey: () => undefined }, db: undefined, bus: ebus as any, agent: { getSessionId: () => 's' } } as any)
+    const none = await (ebus as any).execute('/diff turn')
+    expect(none.output).toContain('无会话编辑快照')
+    rmSync(tdir, { recursive: true, force: true })
+    rmSync(empty, { recursive: true, force: true })
+  })
 })
 
 // P3 评估轮：git/branch 三源（真实 git 仓库；git 不可用则整块跳过）

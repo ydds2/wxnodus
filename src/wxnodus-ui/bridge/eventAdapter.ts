@@ -431,9 +431,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
       case 'theme.changed': {
-        // /theme dark|light|<预设名> 真实生效（B-04：命名预设集 themeByName 解析，未知回退默认）
-        const name = (ev.payload as { name?: string } | undefined)?.name
-        patchUiState({ theme: themeByName(String(name ?? '')) ?? DEFAULT_THEME })
+        // /theme dark|light|<预设名> 真实生效（B-04：命名预设集 themeByName 解析，未知回退默认）；
+        // 2026-08-19：/theme 事件已携带解析后的主题对象（含用户主题三元组）——优先直接应用
+        const payload = ev.payload as { name?: string; theme?: { color?: Record<string, string> } } | undefined
+        const fromEvent = payload?.theme
+        patchUiState({ theme: (fromEvent?.color ? (fromEvent as never) : themeByName(String(payload?.name ?? ''))) ?? DEFAULT_THEME })
 
         return
       }

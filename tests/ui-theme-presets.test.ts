@@ -1,6 +1,9 @@
 // tests/ui-theme-presets.test.ts — B-04 主题预设集（opencode 33 套对标——诚实口径：10 套命名预设）
-import { describe, expect, it } from 'vitest'
-import { themeByName, themePresetNames, THEME_PRESETS, DARK_THEME, LIGHT_THEME } from '../src/wxnodus-ui/theme.js'
+import { describe, expect, it, afterEach } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { themeByName, themePresetNames, loadUserThemes, THEME_PRESETS, DARK_THEME, LIGHT_THEME } from '../src/wxnodus-ui/theme.js'
 
 describe('主题预设（themeByName）', () => {
   it('预设名列表：dark/light + 10 命名预设', () => {
@@ -35,5 +38,48 @@ describe('主题预设（themeByName）', () => {
   it('未知名 → null（调用方回退 DEFAULT_THEME）', () => {
     expect(themeByName('not-a-theme', {})).toBeNull()
     expect(themeByName('', {})).toBeNull()
+  })
+})
+
+describe('用户主题（dataDir/themes/*.json，opencode themeSource.discover 对标）', () => {
+  const dirs: string[] = []
+  const tmp = () => { const d = mkdtempSync(join(tmpdir(), 'wx-theme-')); dirs.push(d); return d }
+  afterEach(() => { for (const d of dirs.splice(0)) { try { rmSync(d, { recursive: true, force: true }); } catch {} } })
+
+  it('合法文件加载；themeByName 第三参解析用户主题（语义色继承基底）', () => {
+    const d = tmp()
+    mkdirSync(join(d, 'themes'), { recursive: true })
+    writeFileSync(join(d, 'themes', 'ocean.json'), JSON.stringify({ name: 'ocean', base: 'dark', trio: { primary: '#00FFAA', accent: '#00AAFF', border: '#006688' } }), 'utf8')
+    const { presets, warnings } = loadUserThemes(d)
+    expect(warnings).toEqual([])
+    expect(Object.keys(presets)).toEqual(['ocean'])
+    const t = themeByName('ocean', {}, presets)!
+    expect(t.color.primary).toBe('#00FFAA')
+    expect(t.color.accent).toBe('#00AAFF')
+    expect(t.color.border).toBe('#006688')
+    expect(t.color.ok).toBe(DARK_THEME.color.ok) // 语义色继承
+  })
+
+  it('非法文件诚实跳过并收集警告；与内置同名内置优先', () => {
+    const d = tmp()
+    mkdirSync(join(d, 'themes'), { recursive: true })
+    writeFileSync(join(d, 'themes', 'bad-base.json'), JSON.stringify({ name: 'x1', base: 'blue', trio: { primary: '#111111', accent: '#222222', border: '#333333' } }), 'utf8')
+    writeFileSync(join(d, 'themes', 'bad-color.json'), JSON.stringify({ name: 'x2', base: 'dark', trio: { primary: 'red', accent: '#222222', border: '#333333' } }), 'utf8')
+    writeFileSync(join(d, 'themes', 'bad-json.json'), '{ not json', 'utf8')
+    writeFileSync(join(d, 'themes', 'dup-nord.json'), JSON.stringify({ name: 'nord', base: 'dark', trio: { primary: '#111111', accent: '#222222', border: '#333333' } }), 'utf8')
+    const { presets, warnings } = loadUserThemes(d)
+    expect(Object.keys(presets)).toEqual([]) // 全部非法——零载入
+    expect(warnings.length).toBe(4)
+    expect(warnings.join(' ')).toContain('base 必须是')
+    expect(warnings.join(' ')).toContain('trio 三色')
+    expect(warnings.join(' ')).toContain('JSON 解析失败')
+    expect(warnings.join(' ')).toContain('内置预设同名')
+  })
+
+  it('themes 目录不存在 → 空载入零警告', () => {
+    const d = tmp()
+    const { presets, warnings } = loadUserThemes(d)
+    expect(presets).toEqual({})
+    expect(warnings).toEqual([])
   })
 })

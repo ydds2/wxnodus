@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+
 export interface ThemeColors {
   primary: string
   accent: string
@@ -540,12 +542,46 @@ export const THEME_PRESETS: Record<string, ThemePreset> = {
 /** 预设名列表（/theme 命令与帮助展示） */
 export const themePresetNames = (): string[] => ['dark', 'light', ...Object.keys(THEME_PRESETS)]
 
-/** 按名解析主题：dark/light → 基底；预设名 → 三元组覆盖；未知 → null（调用方回退 DEFAULT_THEME） */
-export function themeByName(name: string, env: NodeJS.ProcessEnv = process.env): Theme | null {
+// ── 用户主题（2026-08-19 主题机制补齐，opencode themeSource.discover() 磁盘发现对标）──
+// dataDir/themes/*.json：{ name, base: 'dark'|'light', trio: {primary, accent, border} }——与内置预设同构。
+// 非法文件诚实跳过并收集警告（绝不半载入）；与内置预设同名 → 内置优先。
+export interface UserThemeLoad { presets: Record<string, ThemePreset>; warnings: string[] }
+
+const THEME_HEX = /^#[0-9a-fA-F]{6}$/
+
+export function loadUserThemes(dataDir: string): UserThemeLoad {
+  const presets: Record<string, ThemePreset> = {}
+  const warnings: string[] = []
+  const dir = `${String(dataDir).replace(/[\\/]$/, '')}/themes`
+  try {
+    if (!existsSync(dir)) return { presets, warnings }
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith('.json')) continue
+      try {
+        const raw = JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')) as { name?: unknown; base?: unknown; trio?: unknown }
+        const name = String(raw?.name ?? '').trim().toLowerCase()
+        const base = raw?.base
+        const trio = raw?.trio as Record<string, unknown> | undefined
+        if (!/^[a-z0-9-]{1,40}$/.test(name)) { warnings.push(`${f}: 主题名非法（仅小写字母/数字/-，≤40）`); continue }
+        if (THEME_PRESETS[name]) { warnings.push(`${f}: 与内置预设同名（${name}）——内置优先，跳过`); continue }
+        if (base !== 'dark' && base !== 'light') { warnings.push(`${f}: base 必须是 dark|light`); continue }
+        const primary = String(trio?.primary ?? '')
+        const accent = String(trio?.accent ?? '')
+        const border = String(trio?.border ?? '')
+        if (!THEME_HEX.test(primary) || !THEME_HEX.test(accent) || !THEME_HEX.test(border)) { warnings.push(`${f}: trio 三色必须是 #RRGGBB`); continue }
+        presets[name] = { name, base, trio: { primary, accent, border } }
+      } catch { warnings.push(`${f}: JSON 解析失败`) }
+    }
+  } catch { warnings.push('themes 目录读取失败') }
+  return { presets, warnings }
+}
+
+/** 按名解析主题：dark/light → 基底；预设名 → 三元组覆盖；用户主题（第三参）次之；未知 → null（调用方回退 DEFAULT_THEME） */
+export function themeByName(name: string, env: NodeJS.ProcessEnv = process.env, user?: Record<string, ThemePreset>): Theme | null {
   const n = String(name ?? '').trim().toLowerCase()
   if (n === 'dark') return DARK_THEME
   if (n === 'light') return LIGHT_THEME
-  const p = THEME_PRESETS[n]
+  const p = THEME_PRESETS[n] ?? user?.[n]
   if (!p) return null
   const base = p.base === 'light' ? LIGHT_THEME : DARK_THEME
   const derived: Theme = {

@@ -232,9 +232,41 @@ export function registerSessionCommands(bus: CommandBus, ctx: HandlerCtx): void 
   // revert 仅 turn 源可用（git 源改动在 git 侧管理，诚实边界）
   bus.register('/diff', async (args) => {
     const rel = String(args[0] ?? '').trim();
-    if (!rel) return '用法：/diff <文件> [turn|git|branch [分支名]|revert <hunk序号>]——turn（默认）快照 vs 当前；git 工作区 vs HEAD；branch 工作区 vs 分支共同祖先（相对主干变更，缺省探测默认主干）；revert 按 hunk 序号选择性回滚（仅 turn 源）';
-    const abs = resolve(ctx.cwd, rel);
     const source = String(args[1] ?? '').toLowerCase();
+    // /diff turn（'turn' 为源关键词而非文件名——文件真名 turn 用 /diff ./turn）：
+    // 会话编辑全文件集聚合——opencode last-turn 对标
+    // （summary.ts:98 step-start/finish 全快照对：一轮变更的文件集合整体 diff；
+    // 我方以 undoShadows 编辑影子库为基线集合——会话内 fs_edit/fs_write 编辑过的全部文件 vs 当前）
+    if ((!rel || rel.toLowerCase() === 'turn') && source === '') {
+      try {
+        const { listShadows } = await import('../../kernel/undoShadows.js');
+        const { lineDiff } = await import('../../kernel/hunkApply.js');
+        const norm = (p: string) => p.replace(/\\/g, '/');
+        const cwdNorm = norm(resolve(ctx.cwd));
+        const latest = new Map<string, { content: string; ts: number }>();
+        for (const s of listShadows(ctx.dataDir)) {
+          if (!norm(s.path).startsWith(cwdNorm + '/')) continue;
+          const prev = latest.get(s.path);
+          if (!prev || s.ts > prev.ts) latest.set(s.path, { content: s.content, ts: s.ts });
+        }
+        if (!latest.size) return '无会话编辑快照——turn 源需要先经 fs_edit/fs_write 编辑过文件（git 源可用 /diff <文件> git）';
+        const rows: string[] = [];
+        let changed = 0;
+        for (const [path, base] of [...latest.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+          let cur: string;
+          try { cur = readFileSync(path, 'utf8'); } catch { continue; } // 已删除文件跳过（恢复用 /undo fs）
+          const d = lineDiff(base.content, cur);
+          if (!d) continue;
+          changed++;
+          const relPath = norm(path).startsWith(cwdNorm + '/') ? norm(path).slice(cwdNorm.length + 1) : path;
+          rows.push(`${relPath}\n${d}`);
+        }
+        if (!changed) return '会话内编辑过的文件与当前无差异（或已被还原）';
+        return lines(' turn 全文件集（编辑快照 → 当前） ', rows);
+      } catch (e: any) { return `diff 失败：${String(e?.message ?? e).slice(0, 120)}`; }
+    }
+    if (!rel) return '用法：/diff <文件> [turn|git|branch [分支名]|revert <hunk序号>]｜/diff turn（无文件=全文件集）——turn（默认）快照 vs 当前；git 工作区 vs HEAD；branch 工作区 vs 分支共同祖先（相对主干变更，缺省探测默认主干）；revert 按 hunk 序号选择性回滚（仅 turn 源）';
+    const abs = resolve(ctx.cwd, rel);
     if (source === 'git' || source === 'branch') {
       try {
         const { gitDiffWorkingVsHead, gitDiffVsBranchMergeBase, gitDefaultBranch } = await import('../../kernel/gitDiff.js');

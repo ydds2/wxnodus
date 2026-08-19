@@ -356,6 +356,7 @@ export class GatewayClient extends EventEmitter {
       case 'session.delete': return this.sessionDelete(params) as T
       case 'session.active_list': return this.sessionActiveList(params) as T
       case 'session.list': return this.sessionList(params) as T
+      case 'session.tail': return this.sessionTail(params) as T
       case 'session.most_recent': return this.sessionMostRecent() as T
       case 'session.title': return this.sessionTitle(params) as T
       case 'session.steer': return this.sessionSteer(params) as T
@@ -1375,6 +1376,23 @@ export class GatewayClient extends EventEmitter {
       ...(typeof r.cost_usd === 'number' ? { cost_usd: r.cost_usd } : {}),
     }))
     return { sessions }
+  }
+
+  private async sessionTail(params: Record<string, unknown>): Promise<unknown> {
+    // 会话尾部消息（2026-08-19 会话浏览器惰性展开预览，codex resume_picker 惰性加载对标）
+    const id = String(params.session_id ?? '')
+    const limit = Math.min(Math.max(Number(params.limit ?? 6) || 6, 1), 20)
+    let rows: any[] = []
+    try {
+      rows = this.kernel.adapter.data.messages.rows(id)
+    } catch {
+      rows = []
+    }
+    const tail = rows
+      .filter((r: any) => !r.archived && (r.role === 'user' || r.role === 'assistant'))
+      .slice(-limit)
+      .map((r: any) => ({ role: String(r.role), text: String(r.content ?? '') }))
+    return { messages: tail }
   }
 
   private async sessionMostRecent(): Promise<unknown> {

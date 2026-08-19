@@ -65,6 +65,13 @@ describe('textObjectRange 纯函数', () => {
     expect(textObjectRange('foo bar', 0, 'a', 'w')).toEqual([0, 4])
     expect(textObjectRange('foo bar', 3, 'i', 'w')).toEqual([3, 4]) // 光标在空白→空白串本身（vim 语义）
   })
+  it('语法感知：字符串里的括号不算括号（codex is_inside_element 对标）', () => {
+    // 光标在 say 后：括号对象应跳过 "a (b" 里的 ( 而选外层调用括号
+    expect(textObjectRange('say("a (b")', 3, 'i', '(')).toEqual([4, 10])
+    expect(textObjectRange('x = f("]") + g', 8, 'i', ']')).toBeNull() // 字符串里的 ] 不是真闭括号
+    // 字符串外正常语义不受影响
+    expect(textObjectRange('foo(bar)', 5, 'i', '(')).toEqual([4, 7])
+  })
   it('无效对象 → null', () => {
     expect(textObjectRange('abc', 1, 'i', '(')).toBeNull()
     expect(textObjectRange('abc', 1, 'i', 'q')).toBeNull()

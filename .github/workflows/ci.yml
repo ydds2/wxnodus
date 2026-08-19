@@ -92,14 +92,16 @@ jobs:
     runs-on: windows-latest
     strategy:
       fail-fast: false
+      # 多版本矩阵（2026-08-19 ⑨ 对齐）：engines >=22 支持面 × 3 分片——22 主版本 + 24 前向兼容验证
       matrix:
         shard: [1, 2, 3]
+        node-version: ['22.18.0', '24.x']
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
         with:
-          node-version: 22.18.0
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install root dependencies
