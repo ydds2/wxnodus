@@ -1075,4 +1075,4 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 **评分口径（诚实）**：931 维持——本批为缺陷清零与工程债处置（④⑦⑨ 加固不升档）；⑧ +36 仍卡公开决策。
 
-**尾注（2026-08-19）**：全量九步门禁与远程 CI 结果见下轮尾注回填（推送后）。
+**尾注（2026-08-19）**：`npm run ci` 本地九步全绿（CI_GATE_EXIT=0，全量 380 文件/0 失败）；远程 CI **workflow #32207330195 全绿**——gate / vscode-ext / test×3 / install-smoke 六 job 全 success；`git ls-remote` 验证远端 = 本地 HEAD 94e3663。
