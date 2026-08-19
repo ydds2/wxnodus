@@ -198,7 +198,10 @@ export const toolTrailLabel = (name: string) =>
 
 export const formatToolCall = (name: string, context = '') => {
   const label = toolTrailLabel(name)
-  const preview = compactPreview(context, 64)
+  // 2026-08-19 降噪：长命令（PowerShell 单行/长 URL 拼装）不再整串入行——
+  // 头尾截取（命令开头 + 结尾）保持信息量且行宽有界，超长单行不再撑爆
+  // 工具卡片（此前 64 字符全文截断仍是一整行噪声）
+  const preview = edgePreview(context, 24, 20)
 
   return preview ? `${label}("${preview}")` : label
 }

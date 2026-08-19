@@ -16,7 +16,9 @@ const buildTurnState = (): TurnState => ({
   streamSegments: [],
   streaming: '',
   subagents: [],
-  todoCollapsed: false,
+  // 2026-08-19 降噪：Todo 默认折叠为单行摘要「▸ Todo (N/M)」（点击展开逐条）——
+  // 长任务几十条 todo 不再刷屏；对标同类 CLI 紧凑输出
+  todoCollapsed: true,
   todos: [],
   toolTokens: 0,
   tools: [],
@@ -60,7 +62,7 @@ export const archiveTodosAtTurnEnd = () => {
     ...(done ? { todoCollapsedByDefault: true } : { todoIncomplete: true })
   }
 
-  patchTurnState({ todoCollapsed: false, todos: [] })
+  patchTurnState({ todoCollapsed: true, todos: [] })
 
   return [msg]
 }

@@ -42,7 +42,8 @@ describe('flowStore todo archive contract', () => {
     })
     expect(message).not.toHaveProperty('todoIncomplete')
     expect(getTurnState().todos).toEqual([])
-    expect(getTurnState().todoCollapsed).toBe(false)
+    // 2026-08-19 降噪：回合结束重置为折叠——下一回合 Todo 以单行摘要起步（点击展开）
+    expect(getTurnState().todoCollapsed).toBe(true)
   })
 
   it.each([
