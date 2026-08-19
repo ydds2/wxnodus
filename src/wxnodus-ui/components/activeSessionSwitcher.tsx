@@ -19,6 +19,8 @@ import { windowOffset } from './overlayControls.js'
 import { TextInput } from './textInput.js'
 import { icon } from '../glyphs.js'
 import { filterSessionRows } from '../lib/sessionFilter.js'
+import { topEntry } from '../runtime/overlayStack.js'
+import { getOverlayState } from '../runtime/promptStore.js'
 
 const VISIBLE = 12
 const MIN_WIDTH = 64
@@ -644,6 +646,11 @@ export function ActiveSessionSwitcher({
 
     const lower = ch?.toLowerCase() ?? ''
     const isCtrl = (letter: string) => key.ctrl && (lower === letter || ch === ctrlChar(letter))
+
+    // P1 收尾：Esc 仅当本选择器为栈顶时消费——pager/工作台盖在上方时 Esc 归顶层
+    if (key.escape && topEntry(getOverlayState())?.kind !== 'sessions') {
+      return
+    }
 
     // P1 收尾：/ 进入过滤态（键入即筛可恢复会话；选中归位 +new 行——索引安全优先）
     if (ch === '/' && !key.ctrl && !key.meta && !key.alt) {

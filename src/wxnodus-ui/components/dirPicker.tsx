@@ -7,7 +7,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { DirListResponse } from '../gatewayTypes.js'
-import { closeOverlay } from '../runtime/promptStore.js'
+import { closeOverlay, getOverlayState } from '../runtime/promptStore.js'
+import { topEntry } from '../runtime/overlayStack.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayHint } from './overlayControls.js'
@@ -97,6 +98,11 @@ export function DirPicker({ t }: { t: Theme }) {
   const close = () => closeOverlay('dirPicker')
 
   useInput((ch, key) => {
+    // P1 收尾：Esc 仅当本选择器为栈顶时消费——pager/工作台盖在上方时 Esc 归顶层
+    // （防一次 Esc 弹两层 / 静默改内部目录状态）
+    if (key.escape && topEntry(getOverlayState())?.kind !== 'dirPicker') {
+      return
+    }
     if (key.escape) {
       const parent = parentOf(path)
       if (parent && parent !== path) {

@@ -4,6 +4,8 @@
 // ↑/↓ 选择、Enter 执行（命令/技能 → 提交输入；会话 → 激活切换）、Esc 关闭。
 // 面板打开时主输入区随 isBlocked 卸载，按键只进本组件 useInput——无冲突。
 import { Box, Text, useInput } from '@wxnodus/ink'
+import { topEntry } from '../runtime/overlayStack.js'
+import { getOverlayState } from '../runtime/promptStore.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { fuzzyScoreMulti } from '../lib/fuzzy.js'
@@ -92,6 +94,10 @@ export function CommandPalette({
   const shown = filtered.slice(0, MAX_ROWS)
 
   useInput((ch, key) => {
+    // P1 收尾：Esc/Ctrl+C 仅当本面板为栈顶时消费（防一次 Esc 弹两层）
+    if ((key.escape || (key.ctrl && ch.toLowerCase() === 'c')) && topEntry(getOverlayState())?.kind !== 'commandPalette') {
+      return
+    }
     if (key.escape || (key.ctrl && ch.toLowerCase() === 'c')) {
       onClose()
       return

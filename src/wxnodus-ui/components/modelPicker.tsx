@@ -1,4 +1,6 @@
 import { Box, Text, useInput, useStdout } from '@wxnodus/ink'
+import { topEntry } from '../runtime/overlayStack.js'
+import { getOverlayState } from '../runtime/promptStore.js'
 import { useEffect, useMemo, useState } from 'react'
 
 import { providerDisplayNames } from '../domain/providers.js'
@@ -364,6 +366,11 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
   }
 
   useInput((ch, key) => {
+    // P1 收尾：Esc 仅当本面板为栈顶时消费——pager/工作台盖在上方时 Esc 归顶层
+    // （防一次 Esc 弹两层 / 静默改内部 stage 状态）
+    if (key.escape && topEntry(getOverlayState())?.kind !== 'modelPicker') {
+      return
+    }
     // Add-custom-interface form stage handles its own input
     if (stage === 'add') {
       if (addSaving) {

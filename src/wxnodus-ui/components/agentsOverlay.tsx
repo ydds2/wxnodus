@@ -8,7 +8,8 @@ import {
   applyDelegationStatus,
   toggleOverlaySection
 } from '../runtime/delegationStatus.js'
-import { closeOverlay, pushOverlay } from '../runtime/promptStore.js'
+import { closeOverlay, getOverlayState, pushOverlay } from '../runtime/promptStore.js'
+import { topEntry } from '../runtime/overlayStack.js'
 import { $spawnDiff, $spawnHistory, clearDiffPair, type SpawnSnapshot } from '../runtime/delegationArchive.js'
 import { useTurnSelector } from '../runtime/flowStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -649,6 +650,10 @@ function DiffView({
   const paneWidth = Math.floor((cols - 4) / 2)
 
   useInput((ch, key) => {
+    // P1 收尾：Esc/q 仅当本浮层为栈顶时消费（防一次 Esc 弹两层）
+    if ((key.escape || ch === 'q') && topEntry(getOverlayState())?.kind !== 'agents') {
+      return
+    }
     if (key.escape || ch === 'q') {
       onClose()
     }
@@ -859,6 +864,10 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
   const scrollDetail = (dy: number) => detailScrollRef.current?.scrollBy(dy)
 
   useInput((ch, key) => {
+    // P1 收尾：Esc/q 仅当本浮层为栈顶时消费（防一次 Esc 弹两层 / 静默改内部 mode）
+    if ((key.escape || ch === 'q') && topEntry(getOverlayState())?.kind !== 'agents') {
+      return
+    }
     if (ch === 'q') {
       return closeWithCleanup()
     }

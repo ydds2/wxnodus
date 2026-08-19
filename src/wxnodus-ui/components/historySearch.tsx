@@ -3,6 +3,8 @@
 //   任意字符 → 追加 query 实时搜索；Ctrl+R → 更旧匹配（环绕）；Backspace → 删 query；
 //   Enter → 接受当前匹配替换输入框；Esc / Ctrl+C → 取消（输入框原值不动）。
 import { Box, Text, useInput } from '@wxnodus/ink'
+import { topEntry } from '../runtime/overlayStack.js'
+import { getOverlayState } from '../runtime/promptStore.js'
 import { useState } from 'react'
 
 import type { Theme } from '../theme.js'
@@ -22,6 +24,10 @@ export function HistorySearch({ onAccept, onCancel, t }: { onAccept: (text: stri
   }
 
   useInput((ch, key) => {
+    // P1 收尾：Esc/Ctrl+C 仅当本面板为栈顶时消费（防一次 Esc 弹两层）
+    if ((key.escape || (key.ctrl && ch === 'c')) && topEntry(getOverlayState())?.kind !== 'histSearch') {
+      return
+    }
     if (key.return) {
       if (match) {
         onAccept(match.text)

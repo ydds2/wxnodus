@@ -1,6 +1,8 @@
 // src/wxnodus-ui/components/configPanel.tsx — 配置面板（真实 settings 清单 + 布尔一键切换）
 // 纯逻辑在 lib/configPanel.ts（可单测）；本组件只做数据装载与渲染（modelPicker 同款分层）
 import { Box, Text, useInput } from '@wxnodus/ink'
+import { topEntry } from '../runtime/overlayStack.js'
+import { getOverlayState } from '../runtime/promptStore.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { GatewayClient } from '../gatewayClient.js'
@@ -33,6 +35,10 @@ export function ConfigPanel({ gw, onClose, t }: ConfigPanelProps) {
   const visible = useMemo(() => rows.slice(start, start + WINDOW), [rows, start])
 
   useInput((_input, key) => {
+    // P1 收尾：Esc 仅当本面板为栈顶时消费（防一次 Esc 弹两层）
+    if (key.escape && topEntry(getOverlayState())?.kind !== 'configPanel') {
+      return
+    }
     const r = handleConfigPanelKey(state, { upArrow: key.upArrow, downArrow: key.downArrow, return: key.return, escape: key.escape }, rows.length)
     if (r.action === 'cancel') { onClose(); return }
     if (r.action === 'edit') {
