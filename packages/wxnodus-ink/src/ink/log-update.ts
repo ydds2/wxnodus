@@ -25,6 +25,7 @@ import {
   setScrollRegion
 } from './termio/csi.js'
 import { link as oscLink } from './termio/osc.js'
+import { isClassicConhost } from './terminal.js'
 
 type State = {
   previousOutput: string
@@ -312,10 +313,17 @@ export class LogUpdate {
     let currentStyleId = stylePool.none
     let currentHyperlink: Hyperlink = undefined
 
+    // 2026-08-19 conhost 批量行渲染：经典 conhost 上逐 cell 光标定位 + 单字符
+    // 写入每帧产生数百次 CSI+write 系统调用（现代终端快、conhost 慢一个数量级）
+    // ——流式输出积压到「cmd 卡死」。批量化后每行一次 CUP + 一次整行写入
+    // （帧写入数从 ~宽×高 降到 ~高），正确性等价：整行重写天然覆盖删除/清屏/新行。
+    const conhostBatch = isClassicConhost()
+
     // First pass: render changes to existing rows (rows < prev.screen.height)
     let needsFullReset = false
     let resetTriggerY = -1
-    diffEach(prev.screen, next.screen, (x, y, removed, added) => {
+    if (!conhostBatch) {
+      diffEach(prev.screen, next.screen, (x, y, removed, added) => {
       // Skip new rows - we'll render them directly after
       if (growing && y >= prev.screen.height) {
         return
@@ -405,6 +413,10 @@ export class LogUpdate {
     // Handle growth: render new rows directly (they naturally scroll the terminal)
     if (growing) {
       renderFrameSlice(screen, next, prev.screen.height, next.screen.height, stylePool, viewportY)
+    }
+    } else {
+      // conhost 批量：全屏行重写——max(prev,next) 行覆盖，新增行与收缩清行一并处理
+      renderFrameRowsBatched(screen, next, stylePool, Math.max(prev.screen.height, next.screen.height))
     }
 
     // Restore cursor. Skipped in alt-screen: the cursor is hidden, its
@@ -606,6 +618,54 @@ function renderFrameSlice(
   transitionHyperlink(screen.diff, currentHyperlink, undefined)
 
   return screen
+}
+
+/**
+ * 2026-08-19 conhost 批量行渲染：每行一次 CUP 绝对定位 + 整行单次写入（CR/LF
+ * 换行）——替代逐 cell 光标定位+单字符写入（经典 conhost 上每帧数百次
+ * CSI+write 系统调用是「cmd 卡死」的结构性根因）。整行重写天然覆盖删除/
+ * 清屏/新增行（rowCount 取 max(prev,next) 高度；超出 next 高度的行写空格清屏）。
+ */
+function renderFrameRowsBatched(
+  screen: VirtualScreen,
+  frame: Frame,
+  stylePool: StylePool,
+  rowCount: number
+): void {
+  const { width: screenWidth, cells, charPool, hyperlinkPool } = frame.screen
+
+  for (let y = 0; y < rowCount; y += 1) {
+    moveCursorTo(screen, 0, y, 0)
+
+    let currentStyleId = stylePool.none
+    let row = ''
+    let lastRenderedStyleId = -1
+    let index = y * screenWidth
+
+    for (let x = 0; x < screenWidth; x += 1, index += 1) {
+      const cell = visibleCellAtIndex(cells, charPool, hyperlinkPool, index, lastRenderedStyleId)
+      const styleId = cell ? cell.styleId : currentStyleId
+
+      if (styleId !== currentStyleId) {
+        row += stylePool.transition(currentStyleId, styleId)
+        currentStyleId = styleId
+      }
+
+      // 超出 frame 高度的行（收缩清屏）写空格；其余按 cell 内容取字符
+      row += y < frame.screen.height ? (charInCellAt(frame.screen, x, y) ?? ' ') : ' '
+
+      if (cell) {
+        lastRenderedStyleId = cell.styleId
+      }
+    }
+
+    // 行尾复位样式，防背景色渗入下一行（与 renderFrameSlice 同策略）
+    if (currentStyleId !== stylePool.none) {
+      row += stylePool.transition(currentStyleId, stylePool.none)
+    }
+
+    screen.txn(prev => [[{ type: 'stdout', content: row + '\r\n' }], { dx: -prev.x, dy: 1 }])
+  }
 }
 
 type Delta = { dx: number; dy: number }

@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { setRendererCapabilities } from './capabilities.js'
 import type { Frame } from './frame.js'
@@ -51,6 +51,22 @@ afterEach(() => {
 })
 
 describe('LogUpdate.render diff contract', () => {
+  // 2026-08-19：diff 契约测试模拟现代终端（WT_SESSION）——conhost 批量行渲染
+  // （isClassicConhost）在 win32 测试环境默认命中（无 WT_SESSION/TERM_PROGRAM），
+  // 会整行重绘破坏逐 cell 最小 diff 断言；批量路径单独见下方 describe。
+  const prevWT = process.env.WT_SESSION
+  const prevTERM = process.env.TERM_PROGRAM
+  beforeAll(() => {
+    process.env.WT_SESSION = '1'
+    delete process.env.TERM_PROGRAM
+  })
+  afterAll(() => {
+    if (prevWT === undefined) delete process.env.WT_SESSION
+    else process.env.WT_SESSION = prevWT
+    if (prevTERM === undefined) delete process.env.TERM_PROGRAM
+    else process.env.TERM_PROGRAM = prevTERM
+  })
+
   it('emits only changed cells when most rows match', () => {
     const w = 20
     const h = 4
@@ -245,5 +261,44 @@ describe('LogUpdate.render diff contract', () => {
     const diff = log.render(prevFrame, nextFrame, true, true)
 
     expect(hasDecstbm(stdoutOnly(diff))).toBe(false)
+  })
+})
+
+describe('LogUpdate.render conhost batch path (2026-08-19)', () => {
+  // 无 WT_SESSION/TERM_PROGRAM（win32 测试环境天然满足）→ isClassicConhost=true：
+  // 整行批量重绘——每行一次 CUP + 一次写入（\r\n 换行），无逐 cell 光标定位
+  const prevWT = process.env.WT_SESSION
+  const prevTERM = process.env.TERM_PROGRAM
+  beforeAll(() => {
+    delete process.env.WT_SESSION
+    delete process.env.TERM_PROGRAM
+  })
+  afterAll(() => {
+    if (prevWT !== undefined) process.env.WT_SESSION = prevWT
+    if (prevTERM !== undefined) process.env.TERM_PROGRAM = prevTERM
+  })
+
+  it('changed frame emits row-batched writes with CR/LF', () => {
+    const w = 20
+    const h = 3
+    const prev = mkScreen(w, h)
+    paint(prev, 0, 'AAAA')
+    const next = mkScreen(w, h)
+    paint(next, 0, 'BBBB')
+
+    const log = new LogUpdate({ isTTY: true, stylePool })
+    const diff = log.render(mkFrame(prev, w, h), mkFrame(next, w, h), true, false)
+    const out = stdoutOnly(diff)
+
+    // 整行重写：变更行内容 + 行尾 CR/LF 全部出现
+    expect(out).toContain('BBBB')
+    expect(out).toContain('\r\n')
+    // 行批量：每行至多一次行定位（cursorTo/CUP 合计 ≤ h 次），远小于逐 cell 的 w×h 次
+    const moves =
+      diff.filter(
+        p => p.type === 'cursorTo' || (p.type === 'stdout' && new RegExp(ESC + '\\[\\d+;\\d+H').test((p as { content: string }).content))
+      ).length
+    expect(moves).toBeGreaterThanOrEqual(h - 1)
+    expect(moves).toBeLessThan(w * h)
   })
 })

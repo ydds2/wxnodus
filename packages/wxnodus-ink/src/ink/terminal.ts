@@ -169,6 +169,19 @@ export function isXtermJs(): boolean {
   return xtversionName?.startsWith('xterm.js') ?? false
 }
 
+/** 经典 conhost（cmd.exe 默认控制台）——WT_SESSION/TERM_PROGRAM 均未设置的
+ *  Windows 原生控制台。逐 cell 光标定位 + 单字符写入在该终端上每帧产生数百次
+ *  CSI+write 系统调用（现代终端快、conhost 慢一个数量级）——渲染器据此切换
+ *  批量行渲染路径（log-update.ts conhostBatch）。 */
+export function isClassicConhost(): boolean {
+  return (
+    process.platform === 'win32' &&
+    !process.env.WT_SESSION &&
+    (process.env.TERM_PROGRAM ?? '').trim() === '' &&
+    !isXtermJs()
+  )
+}
+
 export function needsAltScreenResizeScrollbackClear(env: NodeJS.ProcessEnv = process.env): boolean {
   return (env.TERM_PROGRAM ?? '').trim() === 'Apple_Terminal'
 }

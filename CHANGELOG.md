@@ -25,6 +25,8 @@
 
 - **报错可见性（2026-08-19）**：① 心跳诊断探针——`WXNODUS_HEARTBEAT=1` 启动时每 2s 向 `logs/heartbeat-<日期>.log` 写心跳（默认关闭；cmd 冻结类卡死不产生 JS 异常，error-*.log 看不到——心跳断档点即卡死发生点）；② 新增 `scripts/watch-wxnodus.mjs` 实时监听器（每 3s 扫描 error-*.log / heartbeat-*.log 并打印增量）。
 
+- **cmd 卡死结构性根因修复（2026-08-19）**：定位到渲染器在经典 conhost 上**逐 cell 光标定位 + 单字符写入**——每帧数百次 CSI+write 系统调用（现代终端快、conhost 慢一个数量级），流式输出必然积压到「卡死」。修复：新增 `isClassicConhost()` 检测（win32 且无 WT_SESSION/TERM_PROGRAM）→ **批量行渲染路径**（每行一次定位 + 整行单次写入 + CR/LF 换行，帧写入数从 ~宽×高 降到 ~高；整行重写天然覆盖删除/清屏/新增行）。diff 契约测试模拟现代终端隔离，新增 conhost 批量路径契约测试。2889 全绿。
+
 ## [3.2.0] - 2026-08-20
 
 （自 3.1.0 起：UI 重构 P0-P2 全谱 + 增强批 + 默认皮肤极简现代 + 代码卫生）
