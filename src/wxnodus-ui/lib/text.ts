@@ -196,12 +196,34 @@ export const toolTrailLabel = (name: string) =>
     .map(p => p[0]!.toUpperCase() + p.slice(1))
     .join(' ') || name
 
+/** 2026-08-19 修复：参数为原始 JSON 时提取关键字段人类化（此前整串 JSON 直显，
+ * 如 Args:{"query":"...","max_results":8}——一行噪声且超宽）；非 JSON 走头尾截取。 */
+const humanizeToolContext = (context: string): string => {
+  const one = context.trim()
+  if (!one) return ''
+  if (one.startsWith('{') || one.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(one) as unknown
+      const obj = (Array.isArray(parsed) ? (parsed[0] as Record<string, unknown> | undefined) ?? {} : parsed) as Record<string, unknown>
+      const parts: string[] = []
+      for (const k of ['query', 'q', 'url', 'path', 'name', 'file', 'command', 'cmd', 'prompt', 'max_results', 'limit']) {
+        const v = obj?.[k]
+        if (v === undefined || v === null) continue
+        const s = typeof v === 'string' ? v : JSON.stringify(v)
+        parts.push(`${k}: ${s.length > 40 ? `${s.slice(0, 39)}…` : s}`)
+      }
+      if (parts.length) return parts.join(', ')
+    } catch { /* 非 JSON——走通用截取 */ }
+  }
+  return edgePreview(context, 24, 20)
+}
+
 export const formatToolCall = (name: string, context = '') => {
   const label = toolTrailLabel(name)
   // 2026-08-19 降噪：长命令（PowerShell 单行/长 URL 拼装）不再整串入行——
   // 头尾截取（命令开头 + 结尾）保持信息量且行宽有界，超长单行不再撑爆
   // 工具卡片（此前 64 字符全文截断仍是一整行噪声）
-  const preview = edgePreview(context, 24, 20)
+  const preview = humanizeToolContext(context)
 
   return preview ? `${label}("${preview}")` : label
 }
@@ -221,17 +243,33 @@ export const buildToolTrailLine = (
 
 const verboseToolBlock = (label: string, text?: string) => {
   const body = (text ?? '').trim()
+  if (!body) return ''
 
-  // Persisted trail blocks are kept all session and rendered expanded by
-  // default — cap to a small readable preview (NOT the 16KB live-render
-  // budget) so a large tool output can't balloon the Ink render tree and
-  // silently OOM-kill the TUI. See VERBOSE_TRAIL_MAX_CHARS (#34095).
-  return body
-    ? `${label}:\n${boundedLiveRenderText(body, {
-        maxChars: VERBOSE_TRAIL_MAX_CHARS,
-        maxLines: VERBOSE_TRAIL_MAX_LINES
-      })}`
+  // 2026-08-19 修复：参数/结果块不再整串 JSON 直显（Args:{"query":"..."} 一行噪声且
+  // 超宽）——JSON 提取关键字段人类化单行；其余内容维持有界预览（防撑爆渲染树）
+  const one = body.startsWith('{') || body.startsWith('[')
+    ? (() => {
+        try {
+          const parsed = JSON.parse(body) as unknown
+          const obj = (Array.isArray(parsed) ? (parsed[0] as Record<string, unknown> | undefined) ?? {} : parsed) as Record<string, unknown>
+          const parts: string[] = []
+          for (const k of ['query', 'q', 'url', 'path', 'name', 'file', 'command', 'cmd', 'prompt', 'max_results', 'limit']) {
+            const v = obj?.[k]
+            if (v === undefined || v === null) continue
+            const s = typeof v === 'string' ? v : JSON.stringify(v)
+            parts.push(`${k}: ${s.length > 40 ? `${s.slice(0, 39)}…` : s}`)
+          }
+          return parts.length ? parts.join(', ') : ''
+        } catch { return '' }
+      })()
     : ''
+
+  const rendered = one || boundedLiveRenderText(body, {
+    maxChars: VERBOSE_TRAIL_MAX_CHARS,
+    maxLines: VERBOSE_TRAIL_MAX_LINES
+  })
+
+  return `${label}: ${rendered}`
 }
 
 export const buildVerboseToolTrailLine = (

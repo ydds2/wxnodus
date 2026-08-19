@@ -85,8 +85,10 @@ describe('SessionStart 显式生成', () => {
     expect(validateSessionStart(null)).toMatchObject({ ok: false, error: { code: 'SESSION_START_INVALID' } });
     expect(validateSessionStart({ schemaVersion: 1, sessionId: 'x', createdAt: 't', locale: 'fr', model: 'm', dataDir: 'd', hooks: [], capabilities: ['c'], sha256: 'a'.repeat(64) }))
       .toMatchObject({ ok: false, error: { code: 'SESSION_START_INVALID' } });
+    // 2026-08-19：capabilities 空数组转为合法（历史工件兼容——空快照是合法状态），
+    // 结构通过后由哈希绑定兜底（'a'*64 与重算不符 → HASH_MISMATCH）
     expect(validateSessionStart({ schemaVersion: 1, sessionId: 'x', createdAt: 't', locale: 'en', model: 'm', dataDir: 'd', hooks: [], capabilities: [], sha256: 'a'.repeat(64) }))
-      .toMatchObject({ ok: false, error: { code: 'SESSION_START_INVALID' } });
+      .toMatchObject({ ok: false, error: { code: 'SESSION_START_HASH_MISMATCH' } });
   });
 });
 

@@ -45,7 +45,10 @@ export function validateSessionStart(value: unknown): OperationResult<SessionSta
     typeof hook === 'object' && hook !== null &&
     typeof (hook as SessionStartHook).id === 'string' && SAFE_ID.test((hook as SessionStartHook).id) &&
     (hook as SessionStartHook).kind === 'on-session-start' && typeof (hook as SessionStartHook).enabled === 'boolean');
-  const capabilitiesValid = Array.isArray(raw.capabilities) && raw.capabilities.length > 0 &&
+  // 2026-08-19 修复：capabilities 允许空数组——空快照是合法状态（早期构建/能力清单
+  // 未注册时会落盘空清单），此前 length>0 的强校验让这类历史工件读回即 SESSION_START_INVALID，
+  // 会话切换被闸门拒绝。完整性仍由 sha256 绑定（任何漂移都会被哈希比对抓住）。
+  const capabilitiesValid = Array.isArray(raw.capabilities) &&
     raw.capabilities.every(item => typeof item === 'string' && item.length > 0);
   if (raw.schemaVersion !== 1 || typeof raw.sessionId !== 'string' || !SAFE_ID.test(raw.sessionId) ||
       typeof raw.createdAt !== 'string' || !localeValid || typeof raw.model !== 'string' || !raw.model ||

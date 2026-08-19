@@ -455,8 +455,21 @@ export function useMainApp(gw: GatewayClient) {
     [selection]
   )
 
+  // 2026-08-19 降噪：连续相同错误只显示一条——模型端点故障时内核 3 次退避重试 +
+  // 每回合终稿会把「模型调用失败：fetch failed」刷屏 N 次（sys 消息与终稿消息
+  // 双通道都会经过这里）；非错误消息重置去重（不误伤正常重复内容）。
+  const lastErrTextRef = useRef('')
   const appendMessage = useCallback(
-    (msg: Msg) => setHistoryItems(prev => capHistory(appendTranscriptMessage(prev, msg))),
+    (msg: Msg) => {
+      const text = msg.text ?? ''
+      if (/^(error|模型调用失败|会话工件校验失败)/.test(text)) {
+        if (lastErrTextRef.current === text) return
+        lastErrTextRef.current = text
+      } else if (text) {
+        lastErrTextRef.current = ''
+      }
+      setHistoryItems(prev => capHistory(appendTranscriptMessage(prev, msg)))
+    },
     []
   )
 
