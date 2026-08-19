@@ -1191,12 +1191,20 @@ export const commands = {
       const port = parseInt(rest[0] ?? '8787', 10);
       if (!ctx.agent) return 'a2a serve 不可用：当前环境未提供 agent';
       const { a2aServe } = await import('../kernel/a2a.js');
+      const { discoverSkills } = await import('../kernel/skills.js');
       try {
         a2aServer = await a2aServe(port, async (text) => {
           const r = await ctx.agent!.run(text);
           return { ok: r.ok, text: r.text };
+        }, {
+          // 完整版：agent card 携带真实技能声明（对端可发现本机能力面）
+          card: {
+            name: 'wxnodus',
+            description: 'Windows 本地 AI 编码 CLI（数据不出机）',
+            skills: discoverSkills(ctx.dataDir, ctx.cwd).slice(0, 50).map(s => ({ name: s.name, description: s.description })),
+          },
         });
-        return `__KEEPALIVE__\nA2A 端点已启动：${a2aServer.url}（POST messages/send，仅本机监听，SIGINT 停止；/a2a stop 停止）`;
+        return `__KEEPALIVE__\nA2A 端点已启动：${a2aServer.url}（messages/send 快捷通道 + tasks/* 任务流 + /.well-known/agent.json 卡片，仅本机监听，SIGINT 停止；/a2a stop 停止）`;
       } catch (e: any) {
         return `启动失败：端口 ${port} 可能被占用（/a2a serve <其他端口>）——${e?.message?.slice(0, 80)}`;
       }
