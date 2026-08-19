@@ -266,6 +266,13 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       return
     }
 
+    // P0-4：Ctrl+P 命令面板别名（VS Code 肌肉记忆）——与 Ctrl+K 同动作；
+    // Ctrl+Shift+P 保留截图即问（下方 isBlocked 分支），此处 shift 排除
+    if (isCtrl(key, ch, 'p') && !key.shift) {
+      toggleOverlay({ kind: 'commandPalette' })
+      return
+    }
+
     if (isBlocked) {
       // When approval/clarify/confirm overlays are active, their own useInput
       // handlers must receive keystrokes (arrow keys, numbers, Enter).  Only

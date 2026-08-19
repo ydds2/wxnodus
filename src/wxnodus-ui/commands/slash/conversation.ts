@@ -13,6 +13,7 @@ import { formatVoiceRecordKey, parseVoiceRecordKey } from '../../lib/platform.js
 import { fmtK } from '../../lib/text.js'
 import { DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES, type IndicatorStyle } from '../../bridge/interfaces.js'
 import { patchInline, pushOverlay } from '../../runtime/promptStore.js'
+import { keymapDocs } from '../../keymap/registry.js'
 import { patchUiState } from '../../runtime/viewStore.js'
 import type { SlashCommand } from '../slashTypes.js'
 
@@ -188,6 +189,30 @@ export const sessionCommands: SlashCommand[] = [
             }
           })
         )
+    }
+  },
+
+  {
+    help: 'command catalog; /help keys = 键位总览（注册表生成）',
+    name: 'help',
+    run: (arg, ctx) => {
+      // P0-4：/help keys 由键位注册表生成总览（TUI 本地 pager——单一事实源；
+      // -p 无 TUI 时内核 /help keys 维持「TUI 本地命令」诚实提示，不跨层 import）；
+      // 其余参数照常走内核命令面（/help <命令> / /help all，既有行为不变）
+      const sub = (arg ?? '').trim().toLowerCase()
+      if (sub === 'keys' || sub === 'keymap') {
+        pushOverlay({
+          kind: 'pager',
+          pager: { title: '键位总览（keymap registry 单一事实源）', lines: keymapDocs(), offset: 0 }
+        })
+        return
+      }
+
+      return ctx.gateway.rpc('command.dispatch', { name: 'help', arg: arg.trim(), session_id: ctx.sid }).then(
+        ctx.guarded<{ output?: string; ok?: boolean }>(r => {
+          if (r && typeof r.output === 'string') ctx.transcript.sys(r.output)
+        })
+      )
     }
   },
 

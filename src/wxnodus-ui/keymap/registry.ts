@@ -30,7 +30,7 @@ export interface KeyBinding {
  */
 export const BUILTIN_BINDINGS: KeyBinding[] = [
   // ── 全局（转录流 + 空闲态；浮层阻断时挂起） ──────────────────────────
-  { id: 'global.palette', keys: ['ctrl+k'], scope: 'global', action: 'palette.toggle', help: '命令面板（再按关闭）' },
+  { id: 'global.palette', keys: ['ctrl+k', 'ctrl+p'], scope: 'global', action: 'palette.toggle', help: '命令面板（再按关闭；Ctrl+P 为 VS Code 同款别名）' },
   { id: 'global.model-picker', keys: ['ctrl+o'], scope: 'global', action: 'modelPicker.open', help: '模型选择器（保留草稿）' },
   { id: 'global.sessions', keys: ['ctrl+x'], scope: 'global', action: 'sessions.open', help: '会话浏览器（恢复/切换/删除）' },
   { id: 'global.history', keys: ['ctrl+r'], scope: 'global', action: 'histSearch.open', help: '历史反向搜索（bash readline 同款）' },
