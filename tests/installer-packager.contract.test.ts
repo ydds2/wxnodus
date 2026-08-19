@@ -27,9 +27,9 @@ const extract = (zip: Buffer, dir: string): void => {
   }
 };
 
-const runInstaller = (scriptPath: string, targetDir: string): Promise<{ code: number | null; stdout: string; stderr: string }> =>
+const runInstaller = (scriptPath: string, targetDir: string, extraArgs: string[] = []): Promise<{ code: number | null; stdout: string; stderr: string }> =>
   new Promise(resolve => {
-    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-TargetDir', targetDir],
+    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-TargetDir', targetDir, ...extraArgs],
       { timeout: 60_000 }, (error, stdout, stderr) => {
         resolve({ code: error && typeof (error as { code?: unknown }).code === 'number' ? ((error as { code: number }).code) : (error ? 1 : 0), stdout, stderr });
       });
@@ -49,7 +49,7 @@ describe('安装器打包器（完整集成）', () => {
     const entries = readZip(zip);
     expect(entries.ok).toBe(true);
     if (!entries.ok) return;
-    expect(entries.value.size).toBe(5); // manifest.json + install.ps1 + 3 文件
+    expect(entries.value.size).toBe(6); // manifest.json + install.ps1 + install.bat + 3 文件
     for (const [path, content] of fixtureFiles()) {
       expect(entries.value.get(path)?.equals(content)).toBe(true);
     }
@@ -80,7 +80,7 @@ describe('安装器打包器（完整集成）', () => {
 });
 
 describe.skipIf(process.platform !== 'win32')('install.ps1 真实安装（Windows PowerShell）', () => {
-  it('解包目录中执行 install.ps1：全量校验通过 → 安装到目标目录 + start.cmd', async () => {
+  it('解包目录中执行 install.ps1：全量校验通过 → 安装到目标目录 + <appName>.cmd + install-meta', async () => {
     const packed = await buildInstallerPackage({
       appName: 'WxNodusArt', version: '1.2.3', icon: '🛠️', entryPath: 'bin/wxnodus.js', files: fixtureFiles(), outDir: root,
     });
@@ -90,13 +90,43 @@ describe.skipIf(process.platform !== 'win32')('install.ps1 真实安装（Window
     mkdirSync(unpackDir, { recursive: true });
     extract(readFileSync(packed.value.zipPath), unpackDir);
     const target = join(root, 'installed');
-    const result = await runInstaller(join(unpackDir, 'install.ps1'), target);
+    // -SkipPath：CI/测试不污染用户 PATH（PATH 注册为交互安装默认行为）
+    const result = await runInstaller(join(unpackDir, 'install.ps1'), target, ['-SkipPath']);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain(`INSTALLED: ${target}`);
     expect(existsSync(join(target, 'bin', 'wxnodus.js'))).toBe(true);
     expect(readFileSync(join(target, 'bin', 'wxnodus.js'), 'utf8')).toBe(fixtureFiles().get('bin/wxnodus.js')!.toString('utf8'));
-    expect(readFileSync(join(target, 'start.cmd'), 'utf8')).toContain('node "%~dp0bin\\wxnodus.js"');
+    // 命令名 = 清洗后 appName（大小写保留）；内容注入数据目录并转发参数
+    const cmd = readFileSync(join(target, 'WxNodusArt.cmd'), 'utf8');
+    expect(cmd).toContain('node "%~dp0bin\\wxnodus.js"');
+    expect(cmd).toContain('WXNODUS_DATA_DIR=%LOCALAPPDATA%\\wxnodus');
+    expect(existsSync(join(target, 'start.cmd'))).toBe(false);
+    // install-meta：供 /update 识别 zip 渠道
+    const meta = JSON.parse(readFileSync(join(target, 'install-meta.json'), 'utf8'));
+    expect(meta).toMatchObject({ app: 'WxNodusArt', version: '1.2.3' });
   }, 60_000);
+
+  it('生成脚本含 Node 预检 / PATH 注册 / install.bat 双击向导', async () => {
+    const packed = await buildInstallerPackage({
+      appName: 'WxNodusArt', version: '1.2.3', icon: null, entryPath: 'bin/wxnodus.js', files: fixtureFiles(), outDir: root,
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const unpackDir = join(root, 'unpacked');
+    mkdirSync(unpackDir, { recursive: true });
+    extract(readFileSync(packed.value.zipPath), unpackDir);
+    const script = readFileSync(join(unpackDir, 'install.ps1'), 'utf8');
+    expect(script).toContain('INSTALLER_NODE_MISSING');
+    expect(script).toContain('https://nodejs.org/');
+    expect(script).toContain('https://npmmirror.com/mirrors/node/');
+    expect(script).toContain('PATH_UPDATED');
+    expect(script).toContain('SkipPath');
+    expect(script).toContain('REINSTALL_SAME_VERSION');
+    expect(script).toContain('install-meta.json');
+    const bat = readFileSync(join(unpackDir, 'install.bat'), 'utf8');
+    expect(bat).toContain('powershell -NoProfile -ExecutionPolicy Bypass -File');
+    expect(bat).toContain('pause');
+  });
 
   it('入口字节漂移（传输中篡改）→ install.ps1 校验失败 exit 1，拒绝带病安装', async () => {
     const packed = await buildInstallerPackage({

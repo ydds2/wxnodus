@@ -58,9 +58,26 @@ const installScript = (manifest: InstallerPackageManifest): Buffer => {
 param(
   [string]$TargetDir = (Join-Path "$env:LOCALAPPDATA\\Programs" ${appNameLiteral}),
   [switch]$DryRun,
-  [switch]$Uninstall
+  [switch]$Uninstall,
+  [switch]$SkipPath,
+  [string]$Source = ''
 )
 $ErrorActionPreference = 'Stop'
+$NodeOk = $false
+try {
+  $NodeVer = & node -v 2>$null
+  if ($NodeVer -match '^v(\\d+)\\.') {
+    $major = [int]$Matches[1]
+    if ($major -ge 18) {
+      $NodeOk = $true
+      if ($major -lt 22) { Write-Output "WARN: Node $NodeVer below recommended 22 (install continues)" }
+    }
+  }
+} catch { }
+if (-not $NodeOk) {
+  Write-Error "INSTALLER_NODE_MISSING: Node.js 18+ required (22 recommended). Install: https://nodejs.org/ (CN mirror: https://npmmirror.com/mirrors/node/) then re-run this script."
+  exit 1
+}
 # Pure .NET sha256: Get-FileHash is not resolvable on some hosts (verified: GitHub
 # windows-latest Windows PowerShell 5.1 spawned from pwsh-inherited env -> CommandNotFound).
 function Get-WxSha256([string]$Path) {
@@ -109,26 +126,34 @@ if ($actualEntry -ne $Manifest.entrySha256) {
   exit 1
 }
 if ($DryRun) { Write-Output "DRY-RUN OK: $TargetDir"; exit 0 }
+$OldVersion = ''
+$OldMetaPath = Join-Path $TargetDir 'install-meta.json'
+if (Test-Path $OldMetaPath) {
+  try {
+    $OldMeta = [System.IO.File]::ReadAllText($OldMetaPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+    $OldVersion = [string]$OldMeta.version
+  } catch { }
+}
 $Parent = Split-Path -Parent $TargetDir
 New-Item -ItemType Directory -Force -Path $Parent | Out-Null
 $Staging = Join-Path $Parent ('.wxnodus-staging-' + [System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Force -Path $Staging | Out-Null
-# robocopy：字面路径 + 长路径（>260）安全（Copy-Item 在深路径下失败）；/XF install.ps1 保持其不属安装物
-& robocopy $Root $Staging /E /NFL /NDL /NJH /NJS /NP /XF install.ps1 | Out-Null
+# robocopy：字面路径 + 长路径（>260）安全（Copy-Item 在深路径下失败）；/XF 排除安装器工具本身（不属安装物）
+& robocopy $Root $Staging /E /NFL /NDL /NJH /NJS /NP /XF install.ps1 install.bat | Out-Null
 if ($LASTEXITCODE -ge 8) {
   Remove-Item $Staging -Recurse -Force -ErrorAction SilentlyContinue
   Write-Error "INSTALLER_STAGING_FAILED: robocopy exit $LASTEXITCODE"
   exit 1
 }
-Set-Content -Path (Join-Path $Staging 'start.cmd') -Encoding ASCII -Value "@echo off\`r\`nnode \`"%~dp0$entryRelative\`" %*"
+Set-Content -Path (Join-Path $Staging (${appNameLiteral} + '.cmd')) -Encoding ASCII -Value "@echo off\`r\`nset \`"WXNODUS_DATA_DIR=%LOCALAPPDATA%\\wxnodus\`"\`r\`nnode \`"%~dp0$entryRelative\`" %*"
 if (-not (Test-Path (Join-Path $Staging $entryRelative))) {
   Write-Error "INSTALLER_POSTCONDITION_FAILED: $entryRelative"
   Remove-Item $Staging -Recurse -Force -ErrorAction SilentlyContinue
   exit 1
 }
-# journal 由 manifest 确定性推导（绝不递归深路径）：manifest 全量文件 + start.cmd + manifest.json；
+# journal 由 manifest 确定性推导（绝不递归深路径）：manifest 全量文件 + <appName>.cmd + manifest.json + install-meta.json；
 # 目录 = 文件祖先集，长度降序（先删子目录再删父目录，只删空目录）
-$OwnedFiles = @($Manifest.files | ForEach-Object { $_.path }) + @('start.cmd', 'manifest.json')
+$OwnedFiles = @($Manifest.files | ForEach-Object { $_.path }) + @((${appNameLiteral} + '.cmd'), 'manifest.json', 'install-meta.json')
 $DirSet = @{}
 foreach ($f in $OwnedFiles) {
   $parts = ($f -replace '/', '\\').Split('\\')
@@ -155,10 +180,56 @@ if (Test-Path $TargetDir) {
   Rename-Item $Staging $TargetDir
 }
 Set-Content -Path (Join-Path $TargetDir $JournalName) -Encoding UTF8 -Value $JournalContent
+$Meta = @{ app = $Manifest.appName; version = $Manifest.version; installedAt = (Get-Date -Format 'o') }
+if ($Source) { $Meta['source'] = $Source }
+# 无 BOM UTF-8（PS 5.1 Set-Content -Encoding UTF8 带 BOM，JSON.parse 会炸——.NET 显式关闭标识符）
+[System.IO.File]::WriteAllText((Join-Path $TargetDir 'install-meta.json'), ($Meta | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+if ($OldVersion -and $OldVersion -eq $Manifest.version) {
+  Write-Output "REINSTALL_SAME_VERSION: $($Manifest.version) (reinstalled over same version - data at %LOCALAPPDATA%\\wxnodus untouched)"
+}
+if (-not $SkipPath) {
+  try {
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if ($userPath -and (($userPath -split ';') -contains $TargetDir)) {
+      Write-Output "PATH_ALREADY_PRESENT: $TargetDir"
+    } else {
+      $newPath = if ($userPath) { $userPath.TrimEnd(';') + ';' + $TargetDir } else { $TargetDir }
+      [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+      Write-Output "PATH_UPDATED: $TargetDir"
+    }
+  } catch {
+    Write-Output "WARN: PATH registration failed (add manually): $TargetDir"
+  }
+}
 Write-Output "INSTALLED: $TargetDir"
 `;
   return Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(body, 'utf8')]);
 };
+
+/** install.bat 双击向导（静态、纯 ASCII）：零命令行安装入口——解压后双击即装（Node 预检 + 调 install.ps1）。 */
+const installBat = Buffer.from(
+  '@echo off\r\n' +
+  'rem wxnodus one-click installer (double-click, no command line needed)\r\n' +
+  'setlocal\r\n' +
+  'set "DIR=%~dp0"\r\n' +
+  'where node >nul 2>nul\r\n' +
+  'if errorlevel 1 (\r\n' +
+  '  echo [x] Node.js not found. Install Node 18+ (recommended 22):\r\n' +
+  '  echo     https://nodejs.org/  (CN mirror: https://npmmirror.com/mirrors/node/)\r\n' +
+  '  pause\r\n' +
+  '  exit /b 1\r\n' +
+  ')\r\n' +
+  'powershell -NoProfile -ExecutionPolicy Bypass -File "%DIR%install.ps1"\r\n' +
+  'if errorlevel 1 (\r\n' +
+  '  echo [!] Install failed - see messages above.\r\n' +
+  '  pause\r\n' +
+  '  exit /b 1\r\n' +
+  ')\r\n' +
+  'echo.\r\n' +
+  'echo [OK] Installed. Open a NEW cmd window and run: wxnodus\r\n' +
+  'pause\r\n',
+  'utf8',
+);
 
 export async function buildInstallerPackage(input: InstallerPackageInput): Promise<OperationResult<InstallerPackageResult>> {
   const name = sanitizeAppName(input.appName);
@@ -188,6 +259,7 @@ export async function buildInstallerPackage(input: InstallerPackageInput): Promi
   const entries: ZipEntryInput[] = [
     { path: 'manifest.json', content: manifestBytes },
     { path: 'install.ps1', content: installerBytes },
+    { path: 'install.bat', content: installBat },
     ...fileList.map(file => ({ path: file.path, content: input.files.get(file.path)! })),
   ];
   const zip = buildZip(entries);
