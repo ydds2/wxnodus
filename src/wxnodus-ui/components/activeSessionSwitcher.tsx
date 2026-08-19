@@ -18,6 +18,7 @@ import { ModelPicker } from './modelPicker.js'
 import { windowOffset } from './overlayControls.js'
 import { TextInput } from './textInput.js'
 import { icon } from '../glyphs.js'
+import { filterSessionRows } from '../lib/sessionFilter.js'
 
 const VISIBLE = 12
 const MIN_WIDTH = 64
@@ -131,6 +132,8 @@ export const orchestratorContextHintSegments = (newSelected: boolean): Orchestra
 export const orchestratorGlobalHotkeyHintSegments: OrchestratorHintSegment[] = [
   { role: 'hotkey', text: '↑↓' },
   { role: 'text', text: ' 移动 · ' },
+  { role: 'hotkey', text: '/' },
+  { role: 'text', text: ' 搜索 · ' },
   { role: 'hotkey', text: 'Ctrl+N' },
   { role: 'text', text: ' 新建 · ' },
   { role: 'hotkey', text: 'Ctrl+R' },
@@ -323,6 +326,9 @@ export function ActiveSessionSwitcher({
   // 惰性展开预览（2026-08-19，codex resume_picker.rs:1854 对标）：→ 展开选中历史行的尾部消息
   // （session.tail 按需取——不阻塞列表滚动）；← 或移动选择即收起
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  // P1 收尾：搜索过滤（/ 进入过滤态，键入即筛可恢复会话；过滤态吞键防误触发导航/删除）
+  const [filter, setFilter] = useState('')
+  const [filtering, setFiltering] = useState(false)
   const [preview, setPreview] = useState<{ id: string; loading: boolean; lines: Array<{ role: string; text: string }> } | null>(null)
   const initialSelectionAppliedRef = useRef(false)
   // Holds the RAW `session.list` results (pre-dedupe). The quiet 1.5s poll
@@ -343,7 +349,9 @@ export function ActiveSessionSwitcher({
   // always rendered) and the live+history list is windowed below it. `total`
   // is the count of selectable rows (incl. the new row).
   const liveCount = items.length
-  const histCount = history.length
+  // P1 收尾：过滤后列表（搜索只作用于可恢复会话——live 会话常驻显示；索引计算一律走此表）
+  const activeHistory = filter.trim() ? filterSessionRows(history, filter) : history
+  const histCount = activeHistory.length
   const listLen = liveCount + histCount
   const total = listLen + 1
   const rowKind = useCallback((index: number) => sessionRowKindAt(index, liveCount), [liveCount])
@@ -601,14 +609,14 @@ export function ActiveSessionSwitcher({
 
       if (kind === 'history') {
         setSel(clamped)
-        onResume(history[index - 1 - items.length]!.id)
+        onResume(activeHistory[index - 1 - items.length]!.id)
 
         return
       }
 
       setSel(0)
     },
-    [history, items, onResume, onSelect, rowKind, total]
+    [activeHistory, items, onResume, onSelect, rowKind, total]
   )
 
   const selectedKind = rowKind(sel)
@@ -636,6 +644,51 @@ export function ActiveSessionSwitcher({
 
     const lower = ch?.toLowerCase() ?? ''
     const isCtrl = (letter: string) => key.ctrl && (lower === letter || ch === ctrlChar(letter))
+
+    // P1 收尾：/ 进入过滤态（键入即筛可恢复会话；选中归位 +new 行——索引安全优先）
+    if (ch === '/' && !key.ctrl && !key.meta && !key.alt) {
+      setFiltering(true)
+      setFilter('')
+      setSel(0)
+      setExpandedId(null)
+      setPreview(null)
+
+      return
+    }
+
+    // 过滤态：只消费过滤键（字符追加/退格删除/Enter 退出/Esc 清空再退）
+    if (filtering) {
+      if (key.escape) {
+        setFilter('')
+        setFiltering(false)
+        setSel(0)
+
+        return
+      }
+
+      if (key.return) {
+        setFiltering(false)
+
+        return
+      }
+
+      if (key.backspace) {
+        setFilter(f => f.slice(0, -1))
+        setSel(0)
+
+        return
+      }
+
+      if (ch && ch.length === 1 && !key.ctrl && !key.meta && !key.alt) {
+        setFilter(f => (f + ch).slice(0, 64))
+        setSel(0)
+
+        return
+      }
+
+      // 其余键（导航/删除/切换等）在过滤态吞掉——防止选中索引被静默改坏
+      return
+    }
 
     if (key.escape) {
       return onCancel()
@@ -670,7 +723,7 @@ export function ActiveSessionSwitcher({
     // `d` arms deletion on a resumable history row. (On the New row `d` is
     // captured by the prompt's TextInput, so it never reaches here.)
     if (lower === 'd' && !key.ctrl && selectedKind === 'history') {
-      setConfirmDelete(history[sel - 1 - items.length]?.id ?? null)
+      setConfirmDelete(activeHistory[sel - 1 - items.length]?.id ?? null)
 
       return
     }
@@ -695,7 +748,7 @@ export function ActiveSessionSwitcher({
 
     // →/←：展开/收起选中历史行尾部消息预览（codex 惰性展开对标）
     if (key.rightArrow && selectedKind === 'history') {
-      const id = history[sel - 1 - items.length]?.id
+      const id = activeHistory[sel - 1 - items.length]?.id
 
       if (id) togglePreview(id)
 
@@ -722,8 +775,8 @@ export function ActiveSessionSwitcher({
         return onSelect(items[sel - 1]!.id)
       }
 
-      if (selectedKind === 'history' && history[sel - 1 - items.length]) {
-        return onResume(history[sel - 1 - items.length]!.id)
+      if (selectedKind === 'history' && activeHistory[sel - 1 - items.length]) {
+        return onResume(activeHistory[sel - 1 - items.length]!.id)
       }
     }
   })
@@ -767,6 +820,11 @@ export function ActiveSessionSwitcher({
         Sessions
       </Text>
       <Text color={t.color.muted}>{sessionsCountLabel(items.length, history.length)}</Text>
+      {filtering && (
+        <Text color={t.color.accent}>
+          搜索：{filter || '（输入过滤词）'} · 命中 {activeHistory.length} · Esc 清空 / Enter 退出
+        </Text>
+      )}
 
       {err && <Text color={t.color.label}>error: {err}</Text>}
 
@@ -821,7 +879,7 @@ export function ActiveSessionSwitcher({
         const kind = rowKind(i)
 
         if (kind === 'history') {
-          const h = history[i - 1 - items.length]!
+          const h = activeHistory[i - 1 - items.length]!
           const pendingDelete = confirmDelete === h.id
           const title = pendingDelete
             ? 'press d again to delete'

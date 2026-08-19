@@ -83,6 +83,7 @@ export const BUILTIN_BINDINGS: KeyBinding[] = [
   { id: 'panel.navigate', keys: ['up', 'down'], scope: 'panel', action: 'panel.navigate', help: '面板/选择器内 ↑↓ 导航' },
   { id: 'panel.select', keys: ['enter'], scope: 'panel', action: 'panel.select', help: '面板/选择器内 Enter 选择' },
   { id: 'panel.esc', keys: ['escape'], scope: 'panel', action: 'panel.close', help: 'Esc 关闭面板/选择器（组件级处理）' },
+  { id: 'panel.filter', keys: ['/'], scope: 'panel', action: 'panel.filter', help: '会话浏览器内 / 过滤搜索（键入即筛可恢复会话）' },
 ]
 
 /** 注册表初始化结果（空 = 通过；同 scope 同键冲突 → throw，绝不静默） */
