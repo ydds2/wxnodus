@@ -1093,3 +1093,13 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **评分口径（诚实）**：931 维持——A2A 为 ⑦ 加固（已满格不计分）、build 验证层为 ⑨ 加固（9 判词在案）；⑧ +36 仍卡转公开决策；转公开后按 release-checklist 一键兑现。
 
 **尾注（2026-08-19）**：`npm run ci` 本地九步全绿（CI_GATE_EXIT=0）；远程 CI **workflow #32208938460 全绿**——gate / vscode-ext / test×3 / install-smoke 六 job 全 success；`git ls-remote` 验证远端 = 本地 HEAD 3c1546b。
+
+### 13.85 Kimi 式一行命令 + TUI 交互补强轮（2026-08-19：irm/gh 一行装 + 风险确认 + 配置面板）
+
+用户对标 Kimi Code（irm … | iex）后补强：
+
+1. **一行命令安装（ae7e65e→becb6c7）**：`packaging/install.ps1`（Kimi 机制参考不抄代码：无 param 块 env 配置、TLS 1.2、latest 解析双源、公开资产直连 + gh 私有回退 Token 不落盘、PK 签名校验快速失败、**GODEBUG=http2client=0 代理 HTTP/2 兼容——本机实测 PROTOCOL_ERROR 修复**）；契约 6 用例 + 本地 HTTP 托管端到端 1 用例（下载→解包→安装→双命令→-Source 记录全链路）；`scripts/publish-release.mjs` 一键发布。**v3.1.0 已发布私有 Release**（5680 文件 zip + install.ps1 入口）；私有一行装 `gh api …/packaging/install.ps1 -H "Accept: application/vnd.github.raw" | iex`，公开后同脚本切 irm。真实 GitHub 下载实测：公开 URL 404→gh 回退→HTTP/2 协议错误→GODEBUG 修复后 20s/0.7MB 代理限速推进（本机代理带宽限制，完整 140MB 未在本机走完——机制与修复均有实证）。
+2. **TUI 风险确认**：`wxGateway.slashExec` danger 级命令强制 `requestApproval` 审批桥（同工具审批面板 + redactSecrets 脱敏）；deny 即取消不执行；-p 直输（用户亲手键入）与 AI 通道（agent.ts wx_cmd 分级裁决在案）不经过本桥——三层通道各有明确裁决面。
+3. **配置面板**：`config.listSettings`/`config.setSetting` RPC（白名单校验 + 密钥掩码 + 类型强转）+ `lib/configPanel.ts` 纯逻辑（行模型/导航/布尔切换 3 用例）+ `components/configPanel.tsx`（↑↓ 导航、布尔键 Enter 切换、非布尔键 /config set 指引）+ `/config` TUI 打开面板（ops.ts 接线、overlayStore/configPanel 位）。
+
+**尾注（2026-08-19）**：本地九步门禁与远程 CI 见下轮尾注回填（推送后）。
