@@ -32,9 +32,10 @@ describe('db 基础', () => {
   });
 
   it('幂等：重复 openDB 不报错', () => {
-    const extra = openDB(dir);
-    closeDB(extra); // 立即关闭，防 WAL 文件锁导致清理失败
-    expect(true).toBe(true);
+    expect(() => {
+      const extra = openDB(dir);
+      closeDB(extra); // 立即关闭，防 WAL 文件锁导致清理失败
+    }).not.toThrow();
   });
 });
 

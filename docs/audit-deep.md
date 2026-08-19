@@ -1103,3 +1103,25 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 3. **配置面板**：`config.listSettings`/`config.setSetting` RPC（白名单校验 + 密钥掩码 + 类型强转）+ `lib/configPanel.ts` 纯逻辑（行模型/导航/布尔切换 3 用例）+ `components/configPanel.tsx`（↑↓ 导航、布尔键 Enter 切换、非布尔键 /config set 指引）+ `/config` TUI 打开面板（ops.ts 接线、overlayStore/configPanel 位）。
 
 **尾注（2026-08-19）**：本地九步门禁全绿（typecheck→typecheck:tests→build→test:all→test:known-failures→check:test-discovery→check:requirement-coverage→lint→check:cycles，REQUIREMENT_COVERAGE_OK:20 需求/13 子项，LINT_OK 610 源文件）。本轮门禁首跑失败 1 项：docs-links 命令抽取正则把一行装命令中的 `https://raw.githubusercontent.com/…` 误抽为 `/raw` 假命令——修复为负向后顾追加排除 URL 上下文（前导 `/` 或 `:` 即视为 URL，`tests/docs-links.test.ts:47`），复跑全绿。远程 CI #32214538001 全绿（9m35s，`c0b902c`）；上一轮远程 CI #32210301592 失败根因同为 `/raw` 假命令（与本地首跑失败同源），本轮修复后闭环。
+
+### 13.86 反虚假全量审计轮（2026-08-19：四路审计 + 运行时冒烟 + 11 项修复）
+
+用户要求「100% 确认系统无虚假」——四路并行审计（生产代码/测试质量/门禁诚实性/竞品对标）+ 全命令运行时冒烟，共修复 11 项：
+
+**A. 生产代码扫描（src/ 全量）**：0 处故意假成功运行时路径（fail-closed 纪律贯彻良好）。修复 6 项：
+1. `cli/index.ts:378` `clearHistory` no-op（CLI `/clear` 报「已清空」实未清）→ 真实归档实现（当前会话非系统消息 `archived=1`，同 TUI 语义）；
+2. `handlers.ts:461` `/model` 无参空输出 → 诚实文本用法回退（TUI 由本地 slash 拦截，不达此处）；
+3. `handlers.ts:153` `/sessions` isTTY 假「打开选择器」分支 → 删除，恒文本列表；
+4. `handlersExt.ts:168` PDP `decide` 无条件放行 + 注释与实现不符 → 如实标记 `requiresApproval`（与 authorize 的 isHighImpactKind 同源）；
+5. `mcpServerGenerator.ts:46` 生成物 `ok:true declared` 回显（与 forge.ts 诚实口径矛盾）→ 生成物默认 handler 如实报错「尚未实现」；
+6. `wxGateway.ts:1546` display 7 键写死 → 每键读 settings、缺省走文档默认值；另 `/fortune` 双注册去重（handlers.ts 为单一事实源）、`src/app/` legacy zustand 层（有测试维护、运行时不接线）文件头诚实标注。
+
+**B. 测试质量扫描（377 文件 / 2511 用例）**：修复 4 处——`kernel-mcp.test.ts:127` 无断言（幂等用例零 expect）→ 真断言；`store-db.test.ts:37`、`p0-http-serve-security.test.ts:141` 恒真 `expect(true).toBe(true)` → 真断言；`kernel-providers.test.ts:112` 条件恒真 → `context.skip()`。0 mock 倒置、0 假异步、0 todo/only 泄漏。5 个 KF 回归文件 11 用例为纯源码锚点（结构守卫，弱但不恒真——既定风格如实记录）。
+
+**C. 门禁诚实性**：修复 2 处 P1 恒绿——`ci.yml` gate job 7 命令同 step（仅末条退出码生效，typecheck/lint 失败可被吞）→ 每命令后显式 `if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`；test job shard 1 的 vitest 失败被随后 known-failures 吞 → 同修复。加固 `check-cycles.mjs` 陈旧条目检测（allowlist 与实际环双向闭合，修复环必须同步清理登记）。如实记录：`check:requirement-coverage` 为结构 lint（证据真实性由 release:finalize 的 resolver 强校验 `REQUIREMENT_EVIDENCE_MISSING`，发布必经、无恒绿通道）；lint 红线为可见模式正则（改写形态可绕过，方向 fail-closed）。
+
+**D. 竞品对标（不公开约束下重分析）**：三源 diff 缺「turn 全文件集 + branch merge-base」语义（中）；会话浏览器缺 codex 式惰性展开预览窗（中，gemini 也无）；主题 10 vs 33 且缺 token 双变体/用户主题加载/system 主题（小→中）；vim 文本对象 9 种超 codex 8 种，缺引号转义/多对最小包围/语法感知三边界（小）；**逐 hunk 回滚为六家皆无的独有机制**（crush 仅整 edit allow/deny）；CI 单 workflow 单 OS 单 Node 22.18 + 浮动 tag（中，对齐成本低）。声明抽查 6/6 属实（install.bat 已在 zip——契约测试断言 6 项含 install.bat，仅 package-installer 日志行过时已修；`/offline`、`/market`、A2A push、`/memory inbox`、`/config` 均有真实实现锚点）。
+
+**E. 运行时冒烟（新增常驻测试 `tests/command-runtime-smoke.test.ts`）**：SLASH 117 条全部经别名解析有真实 handler、无参数执行不抛异常不假失败、单命令 5s 上界无挂起（2 用例）。`/snapshot` 对仓库根 178s 为真实工作量（SKIP_DIRS 含 node_modules/.git/dist，超大目录哈希耗时），非假挂起。
+
+**结论**：故意假成功 = 0；「看起来能用实则没做」项 11 处全部修复；恒绿门禁 2 处修复 + 1 处加固。评分 931 维持（本轮为诚实性加固，不升档——⑧ +36 仍卡公开决策）。

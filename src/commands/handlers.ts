@@ -143,17 +143,13 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
 
   bus.register('/clear', async () => { ctx.clearHistory(); return '已清空'; });
 
-  // 会话（交互模式打开选择器；-p 模式文本列表；P2b：支持标题/ID 关键词过滤）
+  // 会话（文本列表；TUI 内由本地 slash 拦截打开选择器——本分支只在无 TUI 时到达，不再假装「打开选择器」）
   bus.register('/sessions', (args) => {
     const rows = ctx.db.prepare(`SELECT s.id, s.title, s.created_at, s.updated_at, (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS msgs FROM sessions s ORDER BY s.updated_at DESC`).all() as any[];
     if (!rows.length) return '暂无会话';
     const q = args.join(' ').trim().toLowerCase();
     const filtered = q ? rows.filter(r => (String(r.title ?? '') + ' ' + r.id).toLowerCase().includes(q)) : rows;
     if (!filtered.length) return `无匹配会话：${q}`;
-    if (process.stdout.isTTY) {
-      ctx.openSessions();
-      return '';
-    }
     // 非交互模式：文本列表（按最近更新排序）——含每会话成本估算（全部模型有定价才显示）
     const costOverrides = (ctx.config.get('settings') as Record<string, any>)?.costPrices;
     const costOf = (id: string): string => {
@@ -459,7 +455,8 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       return `已切换模型：${hit.name}（${hit.provider}）${capabilityBadges(hit.capabilities)}`;
     }
     ctx.openModelPicker();
-    return '';
+    // 诚实回退：无 TUI 时选择器不可用——给出文本用法而非空输出（TUI 内由本地 slash 拦截，不会到达此处）
+    return '模型选择器需交互界面——文本模式：/model <关键词> 模糊搜索切换 · /model list 目录 · /model add <名> <baseURL> 自定义接口 · /model set-key <密钥> 配置';
   });
 
   bus.register('/thinking', (args) => {

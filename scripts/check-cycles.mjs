@@ -42,4 +42,15 @@ if (unknown.length) {
   process.exit(1);
 }
 
+// 反恒绿（2026-08-19 审计加固）：陈旧条目检测——修复掉的环仍留在 allowlist 即失败。
+// 此前陈旧条目永不报警（把一切环塞进表即可消音）；现在修复环必须同步移除条目，allowlist 与实际环双向闭合。
+const actual = new Set(srcCycles.map(cycle => chainOf(cycle)));
+const stale = [...allowed].filter(entry => !actual.has(entry));
+if (stale.length) {
+  console.error(`CYCLE_GATE_FAIL: ${stale.length} 条 allowlist 陈旧条目（环已修复但未从登记表移除）：`);
+  for (const c of stale) console.error(`  - ${c}`);
+  console.error('处置：从 scripts/cycle-allowlist.json 删除对应 cycles 条目（修复环必须同步清理登记，防「登记即消音」）。');
+  process.exit(1);
+}
+
 console.log(`CYCLE_GATE_OK: src 内部环 ${srcCycles.length} 个全部已登记（allowlist）；ink fork 环 ${inkCycles.length} 个（渲染器 fork 排除）`);

@@ -125,11 +125,10 @@ describe('MCP 工具链路', () => {
     expect(await connectAllMcp(dir)).toEqual([]);
   });
   it('closeAllMcp 幂等', async () => {
-    closeAllMcp([]);
+    expect(() => closeAllMcp([])).not.toThrow();
     const cfg: any = { name: 'mock', command: 'node', args: mockServerArgs() };
     const client = await connectMcp(cfg);
-    closeAllMcp([client]);
-    closeAllMcp([client]);
+    expect(() => { closeAllMcp([client]); closeAllMcp([client]); }).not.toThrow();
   });
   it('连接超时快速失败（15s 内）', async () => {
     const t0 = Date.now();

@@ -375,7 +375,14 @@ if (pre.mode === 'error') {
     setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },
     getThemeName: () => themeName,
     requestExit: () => { exitRequested = true; void shutdown('request-exit').finally(() => process.exit(0)); },
-    clearHistory: () => { /* UI 历史清理由 App 层处理 */ },
+    clearHistory: () => {
+      // CLI 模式真实清空：当前会话非系统消息全部归档（archive 软清空——同 TUI /clear 语义，不物理删除）
+      const sid = agent.getSessionId?.() ?? 'default';
+      const ids = (db.prepare(`SELECT id FROM messages WHERE session_id = ? AND role != 'system' AND archived = 0`).all(sid) as Array<{ id: number }>).map(r => r.id);
+      if (ids.length) {
+        db.prepare(`UPDATE messages SET archived = 1 WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+      }
+    },
     setModel: applyModel,
     openModelPicker: () => { /* WxNodus UI: /model 打开选择器 */ },
     openSessions: () => { /* WxNodus UI: /sessions 打开列表 */ },

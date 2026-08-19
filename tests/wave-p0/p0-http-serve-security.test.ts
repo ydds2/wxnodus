@@ -137,8 +137,7 @@ describe('serve http security', () => {
   });
 
   it('closes cleanly', async () => {
-    await srv.close();
-    expect(true).toBe(true);
+    await expect(srv.close()).resolves.toBeUndefined();
   });
 });
 

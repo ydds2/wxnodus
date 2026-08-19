@@ -1,3 +1,4 @@
+// ⚠ 2026-08-19 反虚假审计：本文件属 legacy zustand 编排层——当前运行时不接线（真实状态在 src/wxnodus-ui/runtime/promptStore.ts + flowController.ts），保留为已测测试面与迁移锚点，勿误认为生产路径
 // src/app/Bridge.ts — L5 桥接层（kernel 事件 → zustand；UI 动作 → kernel）
 // 设计：agent 事件总线（agent.token/tool/stage/error/end）→ TurnController/stores
 //       参考业界 gateway 事件映射思想（自有实现）

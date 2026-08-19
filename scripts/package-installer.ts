@@ -73,5 +73,5 @@ if (!packed.ok) {
 console.log(`PACKAGED: ${packed.value.zipPath}`);
 console.log(`  candidate: ${candidate.candidateId} @ ${candidate.commit}`);
 console.log(`  zipSha256: ${packed.value.zipSha256}`);
-console.log(`  entries: ${packed.value.entryCount} files + manifest.json + install.ps1`);
-console.log(`  安装：解压后 powershell -ExecutionPolicy Bypass -File install.ps1 [-TargetDir <目录>]（-Uninstall 只删 journal 内文件）`);
+console.log(`  entries: ${packed.value.entryCount} files + manifest.json + install.ps1 + install.bat（双击向导）`);
+console.log(`  安装：解压后双击 install.bat（零命令行）；或 powershell -ExecutionPolicy Bypass -File install.ps1 [-TargetDir <目录>]（-Uninstall 只删 journal 内文件）`);

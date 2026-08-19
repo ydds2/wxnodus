@@ -146,11 +146,8 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
   });
 
   // ── 彩蛋（趣味拉满：纯文本无副作用）──
+  // /fortune 已在 registerCoreHandlers 注册（单一事实源）——此处不再重复注册（重复注册后被覆盖的死实现，2026-08-19 审计去重）
   bus.register('/warp', () => ['✦ 曲率引擎预热', '✦ ✦ 折叠空间', '✦ ✦ ✦ 穿越虫洞', '· ✦ · 已到达目标星系 ✦'].join('\n'));
-  bus.register('/fortune', () => {
-    const pool = ['今日宜：写代码，忌：手动格式化磁盘。', '黑洞说：你今天省下的 token，明天都会变成余额。', '星尘占卜：/help 里藏着一个你还没用过的命令。', '超新星预报：你的下一个想法会发光。'];
-    return '🔮 ' + (pool[Math.floor(Math.random() * pool.length)] ?? pool[0]);
-  });
 
   // /context：上下文占用可视化（P2b 增强——工作窗口真实 token 分布 + 预算占用条）
   bus.register('/context', () => {

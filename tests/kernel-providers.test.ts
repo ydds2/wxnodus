@@ -101,7 +101,7 @@ import { detectScenes, localSceneTimeline } from '../src/kernel/video.js';
 import { existsSync } from 'node:fs';
 
 describe('视频本地场景分析降级', () => {
-  it('detectScenes 返回切换时间点（真实 ffmpeg）', () => {
+  it('detectScenes 返回切换时间点（真实 ffmpeg）', (context) => {
     const mp4 = 'data/wxnodus-scene.mp4';
     if (existsSync(mp4)) {
       const scenes = detectScenes(mp4);
@@ -109,7 +109,7 @@ describe('视频本地场景分析降级', () => {
       expect(scenes.length).toBeGreaterThan(0);
       expect(scenes[0]).toBeGreaterThan(0);
     } else {
-      expect(true).toBe(true); // 视频不存在时跳过（CI 无录制产物）
+      context.skip(); // 视频不存在（CI 无录制产物）——诚实跳过而非恒真断言
     }
   });
   it('localSceneTimeline 输出确定性场景段', () => {

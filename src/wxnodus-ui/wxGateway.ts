@@ -1542,16 +1542,16 @@ export class GatewayClient extends EventEmitter {
     }
 
     // 审计修复：display 从真实配置生成（此前全硬编码——/busy 等设置永不读回，
-    // 且 'bottom' 会覆盖 UI 默认 'top'）；缺省项省略而非硬编码
+    // 且 'bottom' 会覆盖 UI 默认 'top'）；每键读 settings、缺省走文档默认值（真默认而非写死）
     const display: Record<string, unknown> = {
-      bell_on_complete: false,
-      details_mode: 'collapsed',
-      inline_diffs: true,
-      mouse_tracking: 'all',
-      show_cost: false,
+      bell_on_complete: s.bell_on_complete ?? false,
+      details_mode: s.details_mode ?? 'collapsed',
+      inline_diffs: s.inline_diffs ?? true,
+      mouse_tracking: s.mouse_tracking ?? 'all',
+      show_cost: s.show_cost ?? false,
       show_reasoning: s.thinking !== false,
-      streaming: true,
-      tui_compact: false,
+      streaming: s.streaming ?? true,
+      tui_compact: s.tui_compact ?? false,
       tui_status_indicator: s.tui_status_indicator ?? 'kaomoji',
     }
     if (s.busy_input_mode) display.busy_input_mode = s.busy_input_mode

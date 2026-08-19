@@ -52,17 +52,25 @@ jobs:
 
       - name: Static gate + build (no tests)
         shell: pwsh
+        # 反恒绿：7 条命令拆独立 step——pwsh 单 step 多命令只有末条退出码生效，
+        # 曾存在 typecheck/lint 失败被 check:cycles 吞掉的恒绿漏洞（2026-08-19 审计修复）
         run: |
           $ciTmp = Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp'
           New-Item -ItemType Directory -Force -Path $ciTmp | Out-Null
           $env:TMP = $ciTmp; $env:TEMP = $ciTmp
           $env:WXNODUS_LANG = 'zh-CN'
           npm run typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run typecheck:tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run check:test-discovery
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run check:requirement-coverage
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run lint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run check:cycles
 
       - name: Upload dist artifact (test shards reuse)
@@ -125,6 +133,8 @@ jobs:
           $env:TMP = $ciTmp; $env:TEMP = $ciTmp
           $env:WXNODUS_LANG = 'zh-CN'
           npx vitest run --config vitest.config.ts --shard=${{ matrix.shard }}/3
+          # 反恒绿：vitest 失败必须立刻传播——曾被随后的 known-failures 绿退出码吞掉（2026-08-19 审计修复）
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (${{ matrix.shard }} -eq 1) { npm run test:known-failures }
 
   vscode-ext:

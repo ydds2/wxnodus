@@ -43,9 +43,9 @@ export function generateMcpServer(input: { serverName: string; protocolVersion?:
   }
   const protocolVersion = input.protocolVersion ?? '2026-07-28';
   const toolLines = input.tools.map(tool => `    '${tool.name}',`).join('\n');
-  const toolDeclarations = input.tools.map(tool => `  server.registerTool('${tool.name}', { description: ${JSON.stringify(tool.description)}, inputSchema: fromJsonSchema(${JSON.stringify(tool.inputSchema)} as any) }, async () => ({ content: [{ type: 'text' as const, text: JSON.stringify({ ok: true, declared: '${tool.name}' }) }] }));`).join('\n');
-  const source = `// ${input.serverName} — generated MCP server（stdio 零依赖，签名面声明 + 回显）
-// 生成物只声明工具签名面；业务 handler 由运行时注入（不伪造未实现的业务逻辑）
+  const toolDeclarations = input.tools.map(tool => `  server.registerTool('${tool.name}', { description: ${JSON.stringify(tool.description)}, inputSchema: fromJsonSchema(${JSON.stringify(tool.inputSchema)} as any) }, async () => ({ content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, error: '占位工具：${tool.name} 尚未实现——运行时注入业务 handler 前调用即失败（严禁伪造成功）' }) }] }));`).join('\n');
+  const source = `// ${input.serverName} — generated MCP server（stdio 零依赖，签名面声明 + 诚实失败）
+// 生成物只声明工具签名面；业务 handler 由运行时注入（不伪造未实现的业务逻辑——默认 handler 如实报错）
 import { McpServer, fromJsonSchema } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 

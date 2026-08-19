@@ -1,3 +1,4 @@
+// ⚠ 2026-08-19 反虚假审计：本文件属 legacy zustand 编排层——当前运行时不接线（真实状态在 src/wxnodus-ui/runtime/promptStore.ts + flowController.ts），保留为已测测试面与迁移锚点，勿误认为生产路径
 // src/app/TurnController.ts — L5 回合状态机（流式分片/工具生命周期/中断/错误）
 // 设计（参考业界 turn 控制器思想，自有实现）：token 累积 → 段边界 flush → 工具生命周期 → 回合归档
 import { patchTurn, pushSegment, upsertTool, pushTrail } from './stores/turnStore.js';

@@ -167,9 +167,10 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         emergencyStop: { active: () => emergency.active },
         pdp: {
           decide: async (effect, _cctx) => {
-            // 非高影响动作 policy 放行；高影响需审批桥授权（policy 标记 requiresApproval）
-            void effect;
-            return { ok: true as const, value: { allow: true } };
+            // policy 决策如实标记：高影响动作 requiresApproval=true（真正的授权门在 approvals.authorize
+            // ——审批桥缺失即 fail-closed；此处标记与 authorize 的 isHighImpactKind 裁决同源）
+            const requiresApproval = isHighImpactKind((effect as { kind?: string } | null)?.kind ?? '');
+            return { ok: true as const, value: { allow: true, requiresApproval } };
           },
         },
         approvals: {
