@@ -1149,3 +1149,5 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 5. **会话浏览器惰性展开预览窗**（B-03 收口）：`wxGateway.session.tail` RPC（尾部 ≤20 条非系统消息）+ `activeSessionSwitcher.tsx` → 展开/← 收起选中历史行多行预览（codex `resume_picker.rs:1854` 惰性加载对标——按需取、不阻塞 1.5s 轮询；↑↓ 移动自动收起）+ 快捷键提示段更新。
 
 **评分口径（诚实）**：931 维持——②③ 为冲档加固（② 到 10 的括号栈文本对象/真实 Ctrl-R 快照面板、③ 到 9 的交互式查看器仍未落地，不预支）；⑨ 矩阵为 10 的组成部分之一。
+
+**尾注（2026-08-19，矩阵实验实录——诚实口径）**：Node 24.x 矩阵行远程实测**失败**（运行 #32245589517：test(1, 24.x) 原生模块崩溃——`node::RemoveEnvironmentCleanupHook` `Assertion failed: (env) != nullptr`，better-sqlite3/sqlite-vec 预编译 ABI 与 Node 24 不兼容）→ 矩阵撤销回单版本 22.18.0、`engines` 收紧 `>=22.0.0 <24`（本地九步门禁 Node 22 全绿不受影响）。工程债登记：升级 better-sqlite3/sqlite-vec 至 Node 24 预编译版本后重开矩阵（⑨ 冲 10 的多版本矩阵维持待办，不预支）。本项为矩阵实验发现的**真实边界**，不是假绿——与「无虚假」纪律一致：测出来不兼容就如实收紧声明。

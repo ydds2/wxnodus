@@ -92,16 +92,17 @@ jobs:
     runs-on: windows-latest
     strategy:
       fail-fast: false
-      # 多版本矩阵（2026-08-19 ⑨ 对齐）：engines >=22 支持面 × 3 分片——22 主版本 + 24 前向兼容验证
+      # 单版本（2026-08-19 矩阵实验后诚实收紧）：Node 24.x 实测原生模块崩溃
+      # （better-sqlite3/sqlite-vec 预编译 ABI 不兼容——RemoveEnvironmentCleanupHook assertion，
+      #  运行 #32245589517）→ engines 收紧 >=22 <24；升原生依赖后重开矩阵。
       matrix:
         shard: [1, 2, 3]
-        node-version: ['22.18.0', '24.x']
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22.18.0
           cache: npm
 
       - name: Install root dependencies
