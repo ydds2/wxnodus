@@ -1092,4 +1092,4 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 **评分口径（诚实）**：931 维持——A2A 为 ⑦ 加固（已满格不计分）、build 验证层为 ⑨ 加固（9 判词在案）；⑧ +36 仍卡转公开决策；转公开后按 release-checklist 一键兑现。
 
-**尾注（2026-08-19）**：本地九步门禁与远程 CI 见下轮尾注回填（推送后）。
+**尾注（2026-08-19）**：`npm run ci` 本地九步全绿（CI_GATE_EXIT=0）；远程 CI **workflow #32208938460 全绿**——gate / vscode-ext / test×3 / install-smoke 六 job 全 success；`git ls-remote` 验证远端 = 本地 HEAD 3c1546b。
