@@ -1218,3 +1218,5 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 4. **③ 树面板形态补齐（缺）**：diff pager `t` 键切换文件树索引视图（opencode 树面板的对等形态——滚动分节流 + 树索引跳转）：树视图内 ↑↓ 选文件（▸ 标记随选重建）、Enter 跳到该文件分节、t 返回 diff；r/m 键树视图豁免；提示文案区分两态。`PagerState.diff` 扩展 view/diffLines/returnOffset/treeSel。
 
 **评分口径（诚实）**：939 维持——四项为「不真实修/缺失补齐」的质量加固，③ 树面板形态落地使「冲 10 唯一缺口」从形态差异收窄为交互细节差异（仍不升档，评审认可才调）。
+
+**尾注（2026-08-19）**：本地九步门禁全绿（file-crypto-render 9 用例入闸）；远程 CI #32265125150 全绿（`b571462`）。
