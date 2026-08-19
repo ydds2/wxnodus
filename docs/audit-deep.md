@@ -1076,3 +1076,20 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **评分口径（诚实）**：931 维持——本批为缺陷清零与工程债处置（④⑦⑨ 加固不升档）；⑧ +36 仍卡公开决策。
 
 **尾注（2026-08-19）**：`npm run ci` 本地九步全绿（CI_GATE_EXIT=0，全量 380 文件/0 失败）；远程 CI **workflow #32207330195 全绿**——gate / vscode-ext / test×3 / install-smoke 六 job 全 success；`git ls-remote` 验证远端 = 本地 HEAD 94e3663。
+
+### 13.83 生产级阶段 3 收官轮（2026-08-19：A2A 完整版 + build 验证层接入）
+
+1. **③ 图片渲染调研与决策**：`docs/terminal-image-rendering-research.md`——Windows 终端协议碎片化（conhost 无协议 / ConPTY 透传受阻 microsoft/terminal#448 / WT 1.24+ sixel 实验性含安全修复）；竞品 crush 走 kitty+半块降级+能力探测（image.go/capabilities.go:91-142 取证）。**决策：不硬做协议渲染**（覆盖不可控），输出侧诚实降级通道为候选增强（③ 8 判词维持在案）。
+2. **A2A 完整版（a49fe09）**：`src/kernel/a2a.ts` 91 行子集 → agent card（`/.well-known/agent.json` 能力/skills 声明，serve 注入真实技能清单 discoverSkills ≤50 + 客户端 fetchAgentCard）、任务流（tasks/send → tasks/get 轮询 → tasks/cancel，a2aTaskSend 客户端超时诚实）、pushNotificationConfig 状态推送（fire-and-forget 3s 不阻断任务）、stdio 行协议（a2aStdioServe NDJSON 一行一帧、按序不混行）。诚实边界：任务注册表内存态（不持久化——本地单机无跨重启任务语义）。/a2a serve 接线真实技能卡片。7 新用例（kernel-protocols 11/11，含真实子进程 stdio）。
+3. **build 验证层接入生产（a467cbb）**：`buildServiceWiring.projectCompletionOutcome`——buildVerifiers.classify/buildVerifierDecision 成为完成判定**单一事实源**（替换 completionInput 临时三目；passed/failed/skipped 全组合行为等价契约 4 用例）；BuildVerificationCoordinator/buildProcessAdapter 维持为已测试基础设施（与 verify.ts 内联重启读回同语义，重构无行为增益——诚实归档）；adversarialProbe 归 release-gate 工具面（release-checklist §1 打包校验链路）。
+
+### 13.84 生产级阶段 4 收官轮（2026-08-19：转公开就绪包）
+
+1. **winget/scoop manifest 终审（0626220）**：抓出真实缺陷——两份 manifest 声明 `wxn` 命令但安装器只产出 `wxnodus.cmd`（声明了不存在的命令）→ install.ps1 真实产出 `wxn.cmd` 别名（数据目录注入同源 + journal 覆盖卸载 + 契约断言）。
+2. **winget 合规性如实记录**：`InstallerType: portable` 语义要求单一便携 exe——zip+ps1 形态非 winget-portable 合规，不能原样上架（模板保留 + 三路径选择：便携 exe 启动器 / 自建 source / 暂缓）；**不假合规**。
+3. **`docs/release-checklist.md`**：转公开当日一键兑现手册（打包校验链路 → scoop 上架步骤 → winget blocker 与路径 → 发布后每渠道干净机验证）。
+4. **全量验收**：见尾注。
+
+**评分口径（诚实）**：931 维持——A2A 为 ⑦ 加固（已满格不计分）、build 验证层为 ⑨ 加固（9 判词在案）；⑧ +36 仍卡转公开决策；转公开后按 release-checklist 一键兑现。
+
+**尾注（2026-08-19）**：本地九步门禁与远程 CI 见下轮尾注回填（推送后）。
