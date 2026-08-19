@@ -1125,3 +1125,5 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **E. 运行时冒烟（新增常驻测试 `tests/command-runtime-smoke.test.ts`）**：SLASH 117 条全部经别名解析有真实 handler、无参数执行不抛异常不假失败、单命令 5s 上界无挂起（2 用例）。`/snapshot` 对仓库根 178s 为真实工作量（SKIP_DIRS 含 node_modules/.git/dist，超大目录哈希耗时），非假挂起。
 
 **结论**：故意假成功 = 0；「看起来能用实则没做」项 11 处全部修复；恒绿门禁 2 处修复 + 1 处加固。评分 931 维持（本轮为诚实性加固，不升档——⑧ +36 仍卡公开决策）。
+
+**尾注（2026-08-19）**：本地九步门禁全绿（CI_GATE_EXIT=0；新增 command-runtime-smoke 常驻回归、check-cycles 陈旧条目检测均入闸）；远程 CI #32217453197 全绿（9m27s，`75f6691`）。
