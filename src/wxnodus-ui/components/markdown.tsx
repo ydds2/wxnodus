@@ -791,15 +791,11 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
         const isDiff = lang === 'diff'
         const highlighted = !isDiff && isHighlightable(lang)
 
-        // 闭合边框：宽度取块内最长行的显示宽度（钳制到可用宽度），
-        // 顶边内嵌语言标签（┌─ ts ──┐），diff 无标签（行着色已表达语义）。
-        // 前缀 `│ ` 取代原 paddingLeft 缩进，行内容与边框左对齐。
+        // 2026-08-19 输出格式体系：代码块无边框（对标 Claude Code——纯行内
+        // 语法着色；语言标签/复制为 dim 一行，diff 行着色表达语义）
         const langLabel = lang && !isDiff ? ` ${lang} ` : ''
-        const rawWidth = block.reduce((w, l) => Math.max(w, stringWidth(l)), 0)
-        const contentWidth = Math.max(1, cols ? Math.min(rawWidth, Math.max(4, cols - 6)) : rawWidth)
-        // A24：顶边尾缀「⧉ 复制」——点击整块复制（此前代码块只能整条消息复制）
+        // A24：尾缀「⧉ 复制」——点击整块复制（此前代码块只能整条消息复制）
         const copyTag = ` ${icon('copy')}`
-        const topPad = Math.max(1, contentWidth - 1 - langLabel.length - stringWidth(copyTag))
 
         nodes.push(
           <Box flexDirection="column" key={key}>
@@ -809,11 +805,9 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
                 writeClipboardText(block.join('\n'))
               }}
             >
-              <Text color={t.color.muted}>
-                {'┌─' + langLabel + '─'.repeat(topPad) + '┐'}
-                <Text dim color={t.color.statusFg}>
-                  {copyTag}
-                </Text>
+              <Text color={t.color.muted} dimColor>
+                {langLabel.trim()}
+                {copyTag}
               </Text>
             </Box>
 
@@ -821,7 +815,6 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
               if (highlighted) {
                 return (
                   <Box flexDirection="row" key={j}>
-                    <Text color={t.color.muted}>│ </Text>
                     <Text>
                       {highlightLine(l, lang, t).map(([color, text], kk) =>
                         color ? (
@@ -843,7 +836,6 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
 
               return (
                 <Box flexDirection="row" key={j}>
-                  <Text color={t.color.muted}>│ </Text>
                   <Text
                     backgroundColor={add ? t.color.diffAdded : del ? t.color.diffRemoved : undefined}
                     color={add ? t.color.diffAddedWord : del ? t.color.diffRemovedWord : hunk ? t.color.muted : undefined}
@@ -854,10 +846,6 @@ function MdImpl({ cols, compact, t, text }: MdProps) {
                 </Box>
               )
             })}
-
-            {block.length > 0 && (
-              <Text color={t.color.muted}>{'└' + '─'.repeat(Math.max(1, contentWidth)) + '┘'}</Text>
-            )}
           </Box>
         )
 

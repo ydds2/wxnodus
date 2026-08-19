@@ -93,12 +93,14 @@ describe('Markdown 渲染（V3 Md）', () => {
     const { lastFrame } = render(<Md text={'\`\`\`ts\nconst a = 1;\n\`\`\`'} t={t} />);
     expect(lastFrame()).toContain('const a');
   });
-  it('代码块带 ┌─ lang ┐ / └─┘ 闭合边框', () => {
+  it('代码块无边框（2026-08-19 输出格式体系——dim 语言标签行 + 行内着色）', () => {
     const { lastFrame } = render(<Md text={'\`\`\`ts\nconst a = 1;\n\`\`\`'} t={t} />);
     const frame = lastFrame() ?? '';
-    expect(frame).toContain('┌─ ts');
-    expect(frame).toContain('│');
-    expect(frame).toContain('└');
+    expect(frame).toContain('ts');
+    expect(frame).toContain('const a');
+    expect(frame).not.toContain('┌');
+    expect(frame).not.toContain('└');
+    expect(frame).not.toContain('│');
   });
   it('标题层级前缀 # / ## / ### 分级', () => {
     const { lastFrame } = render(<Md text={'# 一级\n\n## 二级\n\n### 三级'} t={t} />);

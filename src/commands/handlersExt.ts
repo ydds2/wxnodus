@@ -1,11 +1,11 @@
 // src/commands/handlersExt.ts — 扩展命令处理器（registry 实测 108 条——此计数与 SLASH 长度同步，勿回写旧值）
 // 设计：与 handlers.ts 分离，按类补齐——工具（确定性）/会话/记忆/构建/安全/
 //       系统/视觉/连接/协作。每个命令真实可用（查询现有数据或执行确定性操作），
-//       输出统一 lines() 面板或单行。红线：只读工具不写库；路径操作限制在 dataDir。
-const lines = (title: string, body: string[]): string => {
-  const w = Math.max(...body.map(l => l.length), title.length) + 4;
-  return [`┌${'─'.repeat(w)}┐`, `│ ${title}${' '.repeat(w - title.length - 2)} │`, ...body.map(l => `│ ${l}${' '.repeat(Math.max(0, w - l.length - 2))} │`), `└${'─'.repeat(w)}┘`].join('\n');
-};
+//       输出统一 lines()（标题+缩进条目，纯文本）或单行。红线：只读工具不写库；路径操作限制在 dataDir。
+// 2026-08-19 输出格式体系（docs/output-format-spec-2026.md）：命令输出 = 标题行
+// + 两格缩进条目（纯文本、无边框——与 handlers.ts 同构）
+const lines = (title: string, body: string[]): string =>
+  [title, ...body.map(l => `  ${l}`)].join('\n');
 import { join, resolve, relative, normalize, sep } from 'node:path';
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { appendAudit } from '../store/db.js';

@@ -449,13 +449,13 @@ export function SessionPanel({ info, maxWidth, onCommand, sid, t }: SessionPanel
 }
 
 export function Panel({ sections, t, title }: PanelProps) {
+  // 2026-08-19 输出格式体系：对话流内面板无边框（对标 Claude Code
+  // /status 的 plain 格式）——标题行 + 分区标题 + kv 条目
   return (
-    <Box borderColor={t.color.border} borderStyle="round" flexDirection="column" paddingX={2} paddingY={1}>
-      <Box justifyContent="center" marginBottom={1}>
-        <Text bold color={t.color.primary}>
-          {title}
-        </Text>
-      </Box>
+    <Box flexDirection="column" marginTop={1} marginBottom={1}>
+      <Text bold color={t.color.primary}>
+        {title}
+      </Text>
 
       {sections.map((sec, si) => (
         <Box flexDirection="column" key={si} marginTop={si > 0 ? 1 : 0}>
