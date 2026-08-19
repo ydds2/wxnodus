@@ -1225,3 +1225,16 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 
 用户要求「重新制订 UI，规划一个适合当前 wxnodus 的 CLI UI」——产出 `docs/ui-redesign-plan-2026.md`：
 现状诊断（5 真问题：浮层 15 布尔位各自为政 / 内容全靠 pager / 键位三处分散 / appChrome 1031 行 / 高频入口一次性弹出）+ 六设计原则 + 四层布局模型 + 栈式浮层归类（15 位 → stack+inline，Esc 统一出栈）+ 集中键位注册表（分层 scope + 冲突注册期报错）+ token 最小扩展 + 三阶段路线（P0 骨架统一 / P1 工作台化 / P2 命令面板，各带验收）+ 诚实边界（不引 WebView、不碰 conhost 协议、不推翻 ink fork）。收编而非推翻——已落地资产全保留。评分不升（① 已满格，本规划为维持满格的工程化保障）。
+
+### 13.95 UI 重构 P0 执行实录（2026-08-19：键位注册表 + 栈式浮层 + appChrome 拆分 + /help keys）
+
+用户批准「制订完整实施计划方案，并自行开始重构」——产出 `docs/ui-refactor-exec-2026.md`（逐文件改动/顺序/风险门/测试/验收）并执行 P0 全量，四次提交：
+
+1. **P0-1 键位注册表**（`d2112ed`）：`src/wxnodus-ui/keymap/registry.ts`——单一事实源（global/prompt/vim/pager/panel 五层 scope，清单=useKeyBindings/textInput/keymap.ts 代码实测，无「计划中」条目）；同层同键冲突**注册期 throw**；跨层双触发诊断 `diagnoseKeymap`（只报空闲态同时生效的 global×prompt×vim 对，pager/panel 属 scope 门控不报）——**实测发现真实缺陷证据**：Ctrl+O 双触发（global 模型选择器 × prompt 外部编辑器）、Ctrl+R 双触发（历史搜索 × vim redo）、Esc 全局×vim 低危重叠（P1 收编，本阶段如实登记不掩盖）；`keymapDocs()` 生成 `/help keys`；`settings.keymap` 覆盖层语义不变（注册表管文档与冲突、覆盖层管运行时匹配，动作名对齐不双写）。11 契约测试。
+2. **P0-2 栈式浮层**（`bc97655`）：`OverlayState` 17 布尔位 → `{ stack: OverlayEntry[]; inline }`（`bridge/interfaces.ts` 联合类型 + `runtime/overlayStack.ts` 纯函数：LIFO z 序、panel/picker **互斥组替换**、同 kind 替换、`updateKind` 函数式更新、`flowReset` 保留用户态五 kind）；`promptStore` 重写为栈绑定（pushOverlay/closeOverlay/popOverlay/toggleOverlay/updateOverlay/patchInline）；**13 文件 93 调用点全迁移**（useKeyBindings 内 8 处 pager 函数式更新逐个改写）；appOverlays 改 `findEntry` 驱动并保留 React 19 常驻 FloatBox 防错位约束；Esc 语义收编：删除全局 `escape&&sessions` 双关分支（组件自带 Esc 的 kind 由组件关），新增统一出栈兜底（实测仅 skillsHub/pluginsHub 无组件级 Esc——全局只弹这两个，防一次 Esc 弹两层）。12 契约测试 + 既有测试改 patchInline。**行为变化点如实记录**：① 面板/选择器互斥替换（此前可同时开两个）；② skillsHub/pluginsHub 新增 Esc 关闭；③ Ctrl+C 由固定优先级链改为出栈顶（pager 仍由 pagerClose 先消费）；④ 新增浮层仅改 2 处（OverlayEntry 加 kind + appOverlays 加 case）。参考：opencode/inc 栈式 overlay 机制（LIFO + 互斥组）——实现原创。
+3. **P0-3 appChrome 拆分**（`88f4bd7`）：1031 → 119 行——`statusBar.tsx`（状态栏核心 907 行纯搬运：指示器族/宽度预算/热力条/HUD/StatusRule）+ `floating.tsx`（FloatBox 共享容器）；appChrome 保留转录 chrome（TranscriptScrollbar/StickyPromptTracker）+ 全量 re-export（外部引用零改动，P1 清）。
+4. **P0-4 /help keys + Ctrl+P**（`3a98fef`）：TUI 本地拦截 `/help keys|keymap` → 注册表生成 pager 总览（-p 模式内核维持「TUI 本地命令」诚实提示，不跨层 import——架构方向不变）；`/help <其他>` 委托内核命令面零变化；Ctrl+P 命令面板别名（与 Ctrl+K 同动作，`!key.shift` 排除保 Ctrl+Shift+P 截图即问——本项由 P2 前移，注册表同步登记）。5 测试。
+
+**验收对照**（`ui-redesign-plan-2026.md` P0 四项）：① 新增浮层仅改 2 处 ✅；② `/help keys` 列出全键位 ✅（TUI 内，注册表生成）；③ appChrome ≤200 行 ✅（119）；④ 34 组件回归全绿 ✅（全量 2877 用例、11 skip 为既有 skip，零新增失败）。诚实边界保持：legacy `app/stores/overlayStore.ts`（未接线）不触碰；组件自带 Esc → 统一协议收编留 P1；Ctrl+O/Ctrl+R 双触发缺陷登记待 P1 裁决不擅改行为。
+
+**尾注（2026-08-19）**：P0 四步各自全量单测绿 + tsc 干净后提交；本地九步门禁全绿后本段定稿（远程 CI 号见门禁实录）。
