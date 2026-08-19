@@ -634,29 +634,52 @@ function renderFrameRowsBatched(
 ): void {
   const { width: screenWidth, cells, charPool, hyperlinkPool } = frame.screen
 
+  // 2026-08-19 修复（样式错乱/闪屏）：上一版把空格一直写到最后一列——写满末列
+  // 会触发 conhost pending-wrap 行漂移（后续行整体错位），且全宽刷屏造成闪屏。
+  // 本版：末列永不写（右缘 1 列留空）；行尾无样式纯空格修剪（有背景色的行如
+  // 状态栏仍完整保留）；清屏行（收缩）例外——必须整行写空格覆盖旧内容。
+  const limit = Math.max(1, screenWidth - 1)
+
   for (let y = 0; y < rowCount; y += 1) {
     moveCursorTo(screen, 0, y, 0)
 
+    const clearing = y >= frame.screen.height
+
+    if (clearing) {
+      screen.txn(prev => [[{ type: 'stdout', content: ' '.repeat(limit) + '\r\n' }], { dx: -prev.x, dy: 1 }])
+      continue
+    }
+
     let currentStyleId = stylePool.none
-    let row = ''
     let lastRenderedStyleId = -1
     let index = y * screenWidth
+    const seg: Array<{ ch: string; sid: number }> = []
 
-    for (let x = 0; x < screenWidth; x += 1, index += 1) {
+    for (let x = 0; x < limit; x += 1, index += 1) {
       const cell = visibleCellAtIndex(cells, charPool, hyperlinkPool, index, lastRenderedStyleId)
-      const styleId = cell ? cell.styleId : currentStyleId
-
-      if (styleId !== currentStyleId) {
-        row += stylePool.transition(currentStyleId, styleId)
-        currentStyleId = styleId
-      }
-
-      // 超出 frame 高度的行（收缩清屏）写空格；其余按 cell 内容取字符
-      row += y < frame.screen.height ? (charInCellAt(frame.screen, x, y) ?? ' ') : ' '
+      const sid = cell ? cell.styleId : currentStyleId
+      const ch = charInCellAt(frame.screen, x, y) ?? ' '
 
       if (cell) {
         lastRenderedStyleId = cell.styleId
       }
+
+      seg.push({ ch, sid })
+    }
+
+    // 尾修剪：去掉无样式纯空格（有背景色/前景色的尾部保留）
+    let end = seg.length
+    while (end > 0 && seg[end - 1]!.ch === ' ' && seg[end - 1]!.sid === stylePool.none) {
+      end -= 1
+    }
+
+    let row = ''
+    for (let i = 0; i < end; i += 1) {
+      if (seg[i]!.sid !== currentStyleId) {
+        row += stylePool.transition(currentStyleId, seg[i]!.sid)
+        currentStyleId = seg[i]!.sid
+      }
+      row += seg[i]!.ch
     }
 
     // 行尾复位样式，防背景色渗入下一行（与 renderFrameSlice 同策略）
