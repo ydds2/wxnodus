@@ -239,15 +239,30 @@ export const textObjectRange = (text: string, cursor: number, io: 'i' | 'a', ch:
     return [s, e]
   }
   if (ch === "'" || ch === '"' || ch === '`') {
+    // codex vim.rs:266-299 quoted_text_object_range 对标（2026-08-19 三边界补齐）：
+    // 行内多对引号逐一配对（转义感知——奇数反斜杠前缀不算定界符，codex is_escaped :306-316），
+    // 取最小包围候选——嵌套/多对引号正确性靠「最小候选」而非「首开首闭」。
+    // （此前实现：indexOf 首开首闭——`\"` 转义会误判闭合、光标在第二对引号时直接 null）
     const row = cursorRow(text, c)
     const rs = rowStart(text, row)
     const lineEnd = rs + lineLength(text, rs)
-    const open = text.indexOf(ch, rs)
-    if (open < 0 || open > lineEnd) return null
-    const close = text.indexOf(ch, open + 1)
-    if (close < 0 || close > lineEnd) return null
-    if (c < open || c > close) return null
-    return io === 'i' ? [open + 1, close] : [open, close + 1]
+    let best: [number, number] | null = null
+    let open = -1
+    for (let i = rs; i < lineEnd; i++) {
+      if (text[i] !== ch) continue
+      // 转义判定：前导反斜杠数为奇数 → 本字符是转义字面，不算定界符
+      let bs = 0
+      for (let j = i - 1; j >= rs && text[j] === '\\'; j--) bs++
+      if (bs % 2 === 1) continue
+      if (open < 0) { open = i; continue }
+      if (c > open && c < i) {
+        if (!best || (i - open) < (best[1] - best[0])) best = [open, i]
+      }
+      open = -1
+    }
+    if (!best) return null
+    const [o, cl] = best
+    return io === 'i' ? [o + 1, cl] : [o, cl + 1]
   }
   if (ch in BRACKET_PAIRS) {
     // 开括号对象：先看光标正下方，再向左扫找最近未闭合的开括号（深度=右侧已见闭括号数）

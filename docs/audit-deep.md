@@ -1127,3 +1127,13 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **结论**：故意假成功 = 0；「看起来能用实则没做」项 11 处全部修复；恒绿门禁 2 处修复 + 1 处加固。评分 931 维持（本轮为诚实性加固，不升档——⑧ +36 仍卡公开决策）。
 
 **尾注（2026-08-19）**：本地九步门禁全绿（CI_GATE_EXIT=0；新增 command-runtime-smoke 常驻回归、check-cycles 陈旧条目检测均入闸）；远程 CI #32217453197 全绿（9m27s，`75f6691`）。
+
+### 13.87 完善轮二（2026-08-19：vim 引号边界 + diff merge-base 语义 + CI SHA ratchet）
+
+不公开约束下按「性价比排序」推进剩余未完善项（对标报告 §13.86-D）：
+
+1. **vim 引号对象三边界补齐（② 维度加固）**：`vimCore.ts` 引号对象从「indexOf 首开首闭」重写为 codex `vim.rs:266-299` 式「行内多对引号逐一配对（转义感知）+ 最小包围候选」——修复 `\"` 转义误判闭合、光标在第二对引号时直接 null 两个真实编辑缺陷（转义判定 = codex `is_escaped` :306-316 奇数反斜杠语义）；`tests/vim-textobject.test.ts` +4 用例（16/16）。语法感知 `is_inside_element` 按对标报告延后（纯文本输入框收益小）。
+2. **/diff branch merge-base 语义（③ 维度对齐）**：`gitDiff.ts` 补 `gitDiffVsBranchMergeBase`（`git merge-base HEAD <branch>` 后 diff——只看本分支相对主干变更，主干自身新提交不再混入，opencode `vcs.ts:373-386` 对标）+ `gitDefaultBranch`（origin/HEAD 符号引用探测，无 remote 诚实报用法不臆测 main/master）；`/diff <f> branch` 缺省分支名自动探测默认主干；`tests/diff-command.test.ts` +1 merge-base 语义用例（5/5）。
+3. **CI actions v5 + SHA ratchet（⑨ 维度加固，gemini `ci.yml:160-168` 风格）**：checkout/setup-node/upload-artifact/download-artifact 全部从浮动 v4 tag 固定到 v5 精确 SHA（`# ratchet:` 注释标注源 tag，防供应链漂移）；v5 行动作运行于 Node 24 runtime——消除 Node 20 弃用告警。Node 版本矩阵（20/22/24 × shard）留后续（engines >=22 单版本为明确支持口径）。
+
+**评分口径（诚实）**：931 维持——本轮为 ②③⑨ 加固不升档（② 冲 10 仍需真文本对象语法感知；③ 冲 9 需 turn 全文件集 + 交互查看器；⑨ 冲 10 需多版本矩阵）。

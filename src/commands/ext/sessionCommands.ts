@@ -232,19 +232,25 @@ export function registerSessionCommands(bus: CommandBus, ctx: HandlerCtx): void 
   // revert 仅 turn 源可用（git 源改动在 git 侧管理，诚实边界）
   bus.register('/diff', async (args) => {
     const rel = String(args[0] ?? '').trim();
-    if (!rel) return '用法：/diff <文件> [turn|git|branch <分支名>|revert <hunk序号>]——turn（默认）快照 vs 当前；git 工作区 vs HEAD；branch 工作区 vs 指定分支；revert 按 hunk 序号选择性回滚（仅 turn 源）';
+    if (!rel) return '用法：/diff <文件> [turn|git|branch [分支名]|revert <hunk序号>]——turn（默认）快照 vs 当前；git 工作区 vs HEAD；branch 工作区 vs 分支共同祖先（相对主干变更，缺省探测默认主干）；revert 按 hunk 序号选择性回滚（仅 turn 源）';
     const abs = resolve(ctx.cwd, rel);
     const source = String(args[1] ?? '').toLowerCase();
     if (source === 'git' || source === 'branch') {
       try {
-        const { gitDiffWorkingVsHead, gitDiffVsBranch } = await import('../../kernel/gitDiff.js');
+        const { gitDiffWorkingVsHead, gitDiffVsBranchMergeBase, gitDefaultBranch } = await import('../../kernel/gitDiff.js');
         if (source === 'branch') {
           const b = String(args[2] ?? '').trim();
-          if (!b) return '用法：/diff <文件> branch <分支名>（工作区 vs 该分支同名文件）';
-          const r = gitDiffVsBranch(ctx.cwd, abs, b);
+          let target = b;
+          if (!b) {
+            // 缺省分支名 → 探测 origin/HEAD 默认主干（诚实：无 remote 时报用法而非臆测 main/master）
+            const def = gitDefaultBranch(ctx.cwd);
+            if (!def) return '用法：/diff <文件> branch <分支名>（工作区 vs 该分支 merge-base——相对主干变更）；当前仓库无 origin/HEAD 默认主干，请显式指定分支名';
+            target = def;
+          }
+          const r = gitDiffVsBranchMergeBase(ctx.cwd, abs, target);
           if (!r.ok) return `diff 失败：${r.error}`;
-          if (!r.diff) return `${rel} 与分支 ${b} 无差异`;
-          return `工作区 → 分支 ${b}（${rel}）
+          if (!r.diff) return `${rel} 与分支 ${target} 共同祖先无差异`;
+          return `工作区 → 分支 ${target} 共同祖先（${rel}）
 ${r.diff}`;
         }
         const r = gitDiffWorkingVsHead(ctx.cwd, abs);

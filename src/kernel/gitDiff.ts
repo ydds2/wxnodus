@@ -27,9 +27,21 @@ const runGitDiff = (cwd: string, argv: string[]): GitDiffResult => {
 export const gitDiffWorkingVsHead = (cwd: string, file: string): GitDiffResult =>
   runGitDiff(cwd, ['--', file]);
 
-/** 源② branch：工作区 vs 指定分支同名文件 */
-export const gitDiffVsBranch = (cwd: string, file: string, branch: string): GitDiffResult => {
+/** 源② branch（opencode vcs.ts:373-386 对标，2026-08-19 merge-base 语义补齐）：
+ * 工作区 vs 与目标分支的 merge-base——只看本分支相对主干的整体变更
+ * （不含主干自身新提交；此前 vs 分支 tip 会把主干新提交混入）。 */
+export const gitDiffVsBranchMergeBase = (cwd: string, file: string, branch: string): GitDiffResult => {
   const safe = String(branch).trim();
   if (!safe || /[\s'"]/.test(safe)) return { ok: false, diff: '', error: '分支名非法（不得含空白/引号）' };
-  return runGitDiff(cwd, [safe, '--', file]);
+  const mb = spawnSync('git', ['--no-pager', 'merge-base', 'HEAD', safe], { cwd, encoding: 'utf8', timeout: 15_000, windowsHide: true });
+  const base = String(mb.stdout ?? '').trim();
+  if (mb.status !== 0 || !base) return { ok: false, diff: '', error: `与分支 ${safe} 无共同祖先（merge-base 失败）` };
+  return runGitDiff(cwd, [base, '--', file]);
+};
+
+/** 默认主干探测：origin/HEAD 符号引用（无 remote 返回 null——诚实，不臆测 main/master） */
+export const gitDefaultBranch = (cwd: string): string | null => {
+  const r = spawnSync('git', ['--no-pager', 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { cwd, encoding: 'utf8', timeout: 15_000, windowsHide: true });
+  const v = String(r.stdout ?? '').trim();
+  return r.status === 0 && v ? v : null;
 };

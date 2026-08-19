@@ -31,9 +31,9 @@ jobs:
     # 构建 + 静态门禁（typecheck×2/build/发现/覆盖/lint/环）——产出 dist 供测试分片复用
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
         with:
           node-version: 22.18.0
           cache: npm
@@ -74,14 +74,14 @@ jobs:
           npm run check:cycles
 
       - name: Upload dist artifact (test shards reuse)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # ratchet:actions/upload-artifact@v5
         with:
           name: dist
           path: dist
           if-no-files-found: error
 
       - name: Upload ink dist artifact (ui 测试解析 packages/wxnodus-ink/dist/entry-exports.js)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # ratchet:actions/upload-artifact@v5
         with:
           name: ink-dist
           path: packages/wxnodus-ink/dist
@@ -95,9 +95,9 @@ jobs:
       matrix:
         shard: [1, 2, 3]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
         with:
           node-version: 22.18.0
           cache: npm
@@ -106,13 +106,13 @@ jobs:
         run: npm install
 
       - name: Download dist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
         with:
           name: dist
           path: dist
 
       - name: Download ink dist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
         with:
           name: ink-dist
           path: packages/wxnodus-ink/dist
@@ -140,9 +140,9 @@ jobs:
   vscode-ext:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
         with:
           node-version: 22.18.0
           cache: npm
@@ -157,7 +157,7 @@ jobs:
         run: npm --prefix packages/vscode-ext run package
 
       - name: Upload vsix artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # ratchet:actions/upload-artifact@v5
         with:
           name: wxnodus-vscode-vsix
           path: packages/vscode-ext/wxnodus-vscode.vsix
@@ -170,9 +170,9 @@ jobs:
     runs-on: windows-latest
     needs: gate
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
         with:
           node-version: 22.18.0
           cache: npm
@@ -181,7 +181,7 @@ jobs:
         run: npm install
 
       - name: Download dist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
         with:
           name: dist
           path: dist

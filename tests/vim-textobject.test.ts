@@ -36,6 +36,23 @@ describe('textObjectRange 纯函数', () => {
     expect(textObjectRange('say "hi" now', 5, 'i', '"')).toEqual([5, 7])
     expect(textObjectRange('say "hi" now', 5, 'a', '"')).toEqual([4, 8])
   })
+  it('行内多对引号：取最小包围候选（codex 最小包围对标）', () => {
+    // 光标在第二对 → 选第二对（此前实现 c<open||c>close 直接 null）
+    expect(textObjectRange('a "one" b "two" c', 12, 'i', '"')).toEqual([11, 14])
+    expect(textObjectRange('a "one" b "two" c', 12, 'a', '"')).toEqual([10, 15])
+    // 光标在第一对 → 仍第一对
+    expect(textObjectRange('a "one" b "two" c', 4, 'i', '"')).toEqual([3, 6])
+  })
+  it('转义引号不算定界符（codex is_escaped 对标）', () => {
+    // \" 为转义字面——光标在外层引号内容中 → 外层整段
+    expect(textObjectRange('say "a \\"b\\" c" now', 6, 'i', '"')).toEqual([5, 14])
+    // 光标在转义引号本体上：仍属外层引号内容 → 同样选外层（vim 语义）
+    expect(textObjectRange('say "a \\"b\\" c" now', 8, 'i', '"')).toEqual([5, 14])
+    // 光标在引号对外（y 上）→ null（诚实失败）
+    expect(textObjectRange('say "a \\"b\\" c" now', 2, 'i', '"')).toBeNull()
+    // 单引号同样转义感知
+    expect(textObjectRange("x 'a \\'b\\' c' y", 7, 'i', "'")).toEqual([3, 12])
+  })
   it('反引号对象（codex 八种之八——七评补全后 8/8 全覆盖）', () => {
     expect(textObjectRange('x`hi`y', 3, 'i', '`')).toEqual([2, 4])
     expect(textObjectRange('x`hi`y', 3, 'a', '`')).toEqual([1, 5])

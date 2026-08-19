@@ -77,7 +77,7 @@ describe.skipIf(!gitOk)('/diff git 三源（opencode DiffMode 对标）', () => 
     expect(none.output).toContain('无差异')
   })
 
-  it('branch 源：工作区 vs 指定分支；缺分支名/非法分支名诚实报错', async () => {
+  it('branch 源：工作区 vs 指定分支 merge-base；缺分支名/非法分支名诚实报错', async () => {
     spawnSync('git', ['checkout', '-b', 'other'], { cwd: gdir, encoding: 'utf8' })
     writeFileSync(file, 'v1\nv2-other\n', 'utf8')
     spawnSync('git', ['commit', '-am', 'other'], { cwd: gdir, encoding: 'utf8' })
@@ -90,6 +90,23 @@ describe.skipIf(!gitOk)('/diff git 三源（opencode DiffMode 对标）', () => 
     expect(missing.output).toContain('用法')
     const bad = await (bus as any).execute('/diff g.txt branch "x y"')
     expect(bad.output).toContain('分支名非法')
+  })
+
+  it('branch 源 merge-base 语义：目标分支自身新提交不混入（opencode vcs.ts:373 对标）', async () => {
+    // 状态自包含：丢弃前一用例遗留的未提交改动
+    spawnSync('git', ['checkout', '--', 'g.txt'], { cwd: gdir, encoding: 'utf8' })
+    // other 分支再前进一个提交；master 工作区相对 merge-base 的 diff 不受 other 新提交影响
+    spawnSync('git', ['checkout', 'other'], { cwd: gdir, encoding: 'utf8' })
+    writeFileSync(file, 'v1\nv2-other2\n', 'utf8')
+    spawnSync('git', ['commit', '-am', 'other2'], { cwd: gdir, encoding: 'utf8' })
+    spawnSync('git', ['checkout', 'master'], { cwd: gdir, encoding: 'utf8' })
+    writeFileSync(file, 'v1\nv2-master\n', 'utf8')
+    const d = await (bus as any).execute('/diff g.txt branch other')
+    expect(d.output).toContain('共同祖先')
+    expect(d.output).toContain('v2-master')
+    expect(d.output).not.toContain('v2-other2')
+    // 恢复干净工作区（后续用例不继承）
+    spawnSync('git', ['checkout', '--', 'g.txt'], { cwd: gdir, encoding: 'utf8' })
   })
 
   it('非 git 仓库诚实报错', async () => {

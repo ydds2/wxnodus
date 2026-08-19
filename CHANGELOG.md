@@ -6,6 +6,9 @@
 ## [Unreleased]
 
 ### Added
+- **vim 引号对象边界补齐（2026-08-19）**：引号文本对象（`di"`/`vi'` 等）重写为「行内多对引号逐一配对 + 转义感知 + 最小包围候选」——`\"` 转义不再误判闭合、光标在第二对引号时正确选第二对（此前直接失效）。
+- **`/diff` branch merge-base 语义（2026-08-19）**：`/diff <文件> branch [分支名]` 改为与目标分支**共同祖先**对比（只看本分支相对主干变更，主干自身新提交不再混入）；分支名缺省时自动探测默认主干（origin/HEAD，无 remote 诚实报用法）。
+- **CI actions v5 + SHA 固定（2026-08-19）**：checkout/setup-node/upload/download-artifact 从浮动 v4 tag 固定到 v5 精确 SHA（防供应链漂移），并消除 Node 20 弃用告警。
 - **反虚假全量审计（2026-08-19）**：四路审计（生产代码/测试质量/门禁诚实性/竞品对标）+ 全命令运行时冒烟（新增常驻测试 `tests/command-runtime-smoke.test.ts`——117 条命令全部经别名解析真实可执行、无假失败、无挂起）。修复 11 项「看似能用实则没做」：CLI `/clear` 真实归档清空（此前假「已清空」）、`/model` 无参诚实回退文案（此前空输出）、`/sessions` 删除假「打开选择器」分支、MCP 生成物占位工具诚实报错（此前 `ok:true` 回显）、配置面板 display 读真实 settings（此前 7 键写死）、PDP 决策如实标记 requiresApproval、`/fortune` 双注册去重；4 处虚假测试（无断言/恒真断言）改为真断言或诚实跳过。
 - **门禁反恒绿加固（2026-08-19）**：CI gate 步骤 7 条命令逐条退出码传播（此前仅末条生效——typecheck/lint 失败可被吞）；test 分片 vitest 失败不再被 known-failures 覆盖；`check-cycles` 新增陈旧条目检测（修复环必须同步清理登记，防「登记即消音」）。
 - **Kimi 式一行命令安装（2026-08-19）**：`packaging/install.ps1`（iex 兼容无参数、env 配置、TLS 1.2 兜底、GitHub API/gh CLI 双版本解析、公开资产直连 + gh 私有回退、PK 签名校验、代理 HTTP/2 兼容）；`scripts/publish-release.mjs` 一键发布；v3.1.0 已发布私有 Release——授权成员 `gh api repos/ydds2/wxnodus/contents/packaging/install.ps1 -H "Accept: application/vnd.github.raw" | iex` 一行装，转公开后同脚本切 `irm … | iex`。
