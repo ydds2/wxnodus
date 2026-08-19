@@ -524,7 +524,7 @@ export const DEFAULT_THEME: Theme = normalizeThemeForAnsiLightTerminal(
 // ── 主题预设（B-04，opencode 33 套对标——诚实口径：10 套命名预设，非 33）──
 // 预设 = 基底（dark/light）品牌三元组覆盖（primary/accent/border——吸积盘/边框/brandBar 视觉面）；
 // 语义色（ok/error/warn/diff 等）沿用基底保证可读性契约不破。
-export interface ThemePreset { name: string; base: 'dark' | 'light'; trio: { primary: string; accent: string; border: string } }
+export interface ThemePreset { name: string; base: 'dark' | 'light'; trio: { primary: string; accent: string; border: string }; /** 2026-08-19 token 双变体（opencode dark/light 变体对标）：可选浅色三色组——终端浅色模式（detectLightMode）时替换 trio 并切 LIGHT 基底；缺省=深色唯一（诚实：非全部预设都带双变体） */ light?: { primary: string; accent: string; border: string } }
 
 export const THEME_PRESETS: Record<string, ThemePreset> = {
   nord: { name: 'nord', base: 'dark', trio: { primary: '#88C0D0', accent: '#81A1C1', border: '#5E81AC' } },
@@ -532,7 +532,7 @@ export const THEME_PRESETS: Record<string, ThemePreset> = {
   'tokyo-night': { name: 'tokyo-night', base: 'dark', trio: { primary: '#7DCFFF', accent: '#BB9AF7', border: '#565F89' } },
   monokai: { name: 'monokai', base: 'dark', trio: { primary: '#A6E22E', accent: '#F92672', border: '#75715E' } },
   gruvbox: { name: 'gruvbox', base: 'dark', trio: { primary: '#B8BB26', accent: '#FE8019', border: '#665C54' } },
-  solarized: { name: 'solarized', base: 'dark', trio: { primary: '#268BD2', accent: '#B58900', border: '#586E75' } },
+  solarized: { name: 'solarized', base: 'dark', trio: { primary: '#268BD2', accent: '#B58900', border: '#586E75' }, light: { primary: '#268BD2', accent: '#CB4B16', border: '#93A1A1' } },
   'one-dark': { name: 'one-dark', base: 'dark', trio: { primary: '#61AFEF', accent: '#E06C75', border: '#3E4452' } },
   catppuccin: { name: 'catppuccin', base: 'dark', trio: { primary: '#89B4FA', accent: '#F38BA8', border: '#585B70' } },
   everforest: { name: 'everforest', base: 'dark', trio: { primary: '#A7C080', accent: '#E69875', border: '#4B565C' } },
@@ -569,24 +569,36 @@ export function loadUserThemes(dataDir: string): UserThemeLoad {
         const accent = String(trio?.accent ?? '')
         const border = String(trio?.border ?? '')
         if (!THEME_HEX.test(primary) || !THEME_HEX.test(accent) || !THEME_HEX.test(border)) { warnings.push(`${f}: trio 三色必须是 #RRGGBB`); continue }
-        presets[name] = { name, base, trio: { primary, accent, border } }
+        // 可选 token 双变体：light 字段存在则同规则校验
+        let lightVariant: { primary: string; accent: string; border: string } | undefined
+        const light = (raw as { light?: unknown }).light as Record<string, unknown> | null | undefined
+        if (light !== undefined && light !== null) {
+          const lp = String(light?.primary ?? '')
+          const la = String(light?.accent ?? '')
+          const lb = String(light?.border ?? '')
+          if (!THEME_HEX.test(lp) || !THEME_HEX.test(la) || !THEME_HEX.test(lb)) { warnings.push(`${f}: light 三色必须是 #RRGGBB`); continue }
+          lightVariant = { primary: lp, accent: la, border: lb }
+        }
+        presets[name] = { name, base, trio: { primary, accent, border }, ...(lightVariant ? { light: lightVariant } : {}) }
       } catch { warnings.push(`${f}: JSON 解析失败`) }
     }
   } catch { warnings.push('themes 目录读取失败') }
   return { presets, warnings }
 }
 
-/** 按名解析主题：dark/light → 基底；预设名 → 三元组覆盖；用户主题（第三参）次之；未知 → null（调用方回退 DEFAULT_THEME） */
+/** 按名解析主题：dark/light → 基底；预设名 → 三元组覆盖（token 双变体：终端浅色模式 + 预设带 light 变体 → 切 LIGHT 基底 + light 三色）；用户主题（第三参）次之；未知 → null（调用方回退 DEFAULT_THEME） */
 export function themeByName(name: string, env: NodeJS.ProcessEnv = process.env, user?: Record<string, ThemePreset>): Theme | null {
   const n = String(name ?? '').trim().toLowerCase()
   if (n === 'dark') return DARK_THEME
   if (n === 'light') return LIGHT_THEME
   const p = THEME_PRESETS[n] ?? user?.[n]
   if (!p) return null
-  const base = p.base === 'light' ? LIGHT_THEME : DARK_THEME
+  const lightVariant = p.light && detectLightMode(env)
+  const base = lightVariant ? LIGHT_THEME : p.base === 'light' ? LIGHT_THEME : DARK_THEME
+  const trio = lightVariant ? p.light! : p.trio
   const derived: Theme = {
     ...base,
-    color: { ...base.color, primary: p.trio.primary, accent: p.trio.accent, border: p.trio.border },
+    color: { ...base.color, primary: trio.primary, accent: trio.accent, border: trio.border },
   }
   return normalizeThemeForAnsiLightTerminal(derived, env)
 }

@@ -35,6 +35,23 @@ describe('主题预设（themeByName）', () => {
     }
   })
 
+  it('token 双变体：终端浅色模式 + 预设 light 变体 → LIGHT 基底 + light 三色（opencode dark/light 变体对标）', () => {
+    // 深色环境（默认）：solarized 走深色 trio
+    const dark = themeByName('solarized', {})!
+    expect(dark.color.primary).toBe('#268BD2')
+    expect(dark.color.border).toBe('#586E75')
+    expect(dark.brand).toBe(DARK_THEME.brand)
+    // 浅色环境（WXNODUS_TUI_LIGHT=true）：切 LIGHT 基底 + light 变体三色，语义色继承 LIGHT
+    const light = themeByName('solarized', { WXNODUS_TUI_LIGHT: 'true' })!
+    expect(light.color.primary).toBe('#268BD2')
+    expect(light.color.border).toBe('#93A1A1')
+    expect(light.brand).toBe(LIGHT_THEME.brand)
+    expect(light.color.ok).toBe(LIGHT_THEME.color.ok)
+    // 无 light 变体的预设：浅色环境仍深色基底（诚实——不臆造浅色）
+    const nord = themeByName('nord', { WXNODUS_TUI_LIGHT: 'true' })!
+    expect(nord.brand).toBe(DARK_THEME.brand)
+  })
+
   it('未知名 → null（调用方回退 DEFAULT_THEME）', () => {
     expect(themeByName('not-a-theme', {})).toBeNull()
     expect(themeByName('', {})).toBeNull()

@@ -357,6 +357,8 @@ export class GatewayClient extends EventEmitter {
       case 'session.active_list': return this.sessionActiveList(params) as T
       case 'session.list': return this.sessionList(params) as T
       case 'session.tail': return this.sessionTail(params) as T
+      case 'diff.view': return this.diffView(params) as T
+      case 'diff.revert': return this.diffRevert(params) as T
       case 'session.most_recent': return this.sessionMostRecent() as T
       case 'session.title': return this.sessionTitle(params) as T
       case 'session.steer': return this.sessionSteer(params) as T
@@ -1376,6 +1378,44 @@ export class GatewayClient extends EventEmitter {
       ...(typeof r.cost_usd === 'number' ? { cost_usd: r.cost_usd } : {}),
     }))
     return { sessions }
+  }
+
+  /** 交互式 diff 查看（2026-08-19 A/B 收口）：turn 源结构化视图——快照基线 + 当前 + 渲染行 + hunk 数 */
+  private async diffView(params: Record<string, unknown>): Promise<unknown> {
+    const file = String(params.file ?? '').trim()
+    const { existsSync, readFileSync } = await import('node:fs')
+    if (!file || !existsSync(file)) return { ok: false, error: `文件不存在：${file}` }
+    const { lineDiff, parseHunks } = await import('../kernel/hunkApply.js')
+    const { versionsOfFile } = await import('../kernel/undoShadows.js')
+    const versions = versionsOfFile(this.kernel.dataDir, file)
+    if (!versions.length) return { ok: false, error: '该文件无编辑快照（turn 源需先经 fs_edit/fs_write 编辑过；git 源请用 /diff <文件> git）' }
+    const cur = readFileSync(file, 'utf8')
+    const d = lineDiff(versions[0]!.content, cur)
+    if (!d) return { ok: false, error: '与快照无差异' }
+    const hunks = parseHunks(d)
+    return { ok: true, file, hunks: hunks.length, lines: [`快照 → 当前（${file}）`, '', ...d.split('\n')] }
+  }
+
+  /** 交互式逐 hunk 回滚（无状态：基线=最新快照、当前=磁盘——每次重算，序号即序数） */
+  private async diffRevert(params: Record<string, unknown>): Promise<unknown> {
+    const file = String(params.file ?? '').trim()
+    const hunkIndex = Number(params.hunk_index ?? NaN)
+    if (!Number.isInteger(hunkIndex) || hunkIndex < 1) return { ok: false, error: 'hunk 序号非法' }
+    const { existsSync, readFileSync, writeFileSync } = await import('node:fs')
+    if (!file || !existsSync(file)) return { ok: false, error: `文件不存在：${file}` }
+    const { lineDiff, parseHunks, applyHunkToText, reverseHunk } = await import('../kernel/hunkApply.js')
+    const { versionsOfFile, snapshotFile } = await import('../kernel/undoShadows.js')
+    const versions = versionsOfFile(this.kernel.dataDir, file)
+    if (!versions.length) return { ok: false, error: '无快照可回滚' }
+    const cur = readFileSync(file, 'utf8')
+    const hunks = parseHunks(lineDiff(versions[0]!.content, cur))
+    const h = hunks[hunkIndex - 1]
+    if (!h) return { ok: false, error: `hunk ${hunkIndex} 不存在（共 ${hunks.length} 个）` }
+    const r = applyHunkToText(cur, reverseHunk(h))
+    if (!r.ok) return { ok: false, error: `回滚失败：${r.error}` }
+    snapshotFile(this.kernel.dataDir, file, cur)
+    writeFileSync(file, r.text, 'utf8')
+    return { ok: true, output: `已回滚 hunk ${hunkIndex}/${hunks.length}（快照已留存，/undo fs restore 可再滚回）` }
   }
 
   private async sessionTail(params: Record<string, unknown>): Promise<unknown> {

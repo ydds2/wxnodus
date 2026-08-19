@@ -369,6 +369,61 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
           return
         }
 
+        // 2026-08-19 交互式 hunk 回滚：r 键回滚「当前 hunk」（视口首行之前的最近 @@ 序号；
+        // 首 hunk 之上则取第 1 个）——确认后经 diff.revert 无状态重算并刷新查看器
+        if (ch === 'r' && overlay.pager.diff) {
+          const { lines, offset, diff } = overlay.pager
+          let current = 0
+          for (let i = 0; i < Math.min(offset, lines.length); i++) {
+            if (/^@@ -\d/.test(lines[i]!.trim())) current++
+          }
+
+          const target = current === 0 ? 1 : current
+
+          if (target > diff.hunks) {
+            return
+          }
+
+          const refresh = () => {
+            void gateway
+              .rpc<{ ok?: boolean; error?: string; hunks?: number; lines?: string[] }>('diff.view', { file: diff.file, session_id: getUiState().sid })
+              .then(r => {
+                patchOverlayState(prev => {
+                  if (!prev.pager?.diff) {
+                    return prev
+                  }
+
+                  if (r?.ok && r.lines?.length) {
+                    return { ...prev, pager: { title: prev.pager.title, lines: r.lines, offset: Math.min(prev.pager.offset, Math.max(0, r.lines.length - pagerPageSize)), diff: { file: diff.file, hunks: r.hunks ?? 0 } } }
+                  }
+
+                  return { ...prev, pager: { ...prev.pager, diff: { file: diff.file, hunks: 0 } } }
+                })
+              })
+          }
+
+          patchOverlayState({
+            confirm: {
+              title: `回滚 hunk ${target}/${diff.hunks}？`,
+              detail: `${diff.file}——该 hunk 恢复为快照内容（快照留存，/undo fs restore 可再滚回）`,
+              confirmLabel: '回滚',
+              cancelLabel: '取消',
+              danger: true,
+              onConfirm: () => {
+                void gateway
+                  .rpc<{ ok?: boolean; error?: string; output?: string }>('diff.revert', { file: diff.file, hunk_index: target, session_id: getUiState().sid })
+                  .then(r => {
+                    if (r?.ok) {
+                      refresh()
+                    }
+                  })
+              },
+            },
+          })
+
+          return
+        }
+
         if (matchesAny(key, ch, km.pagerHalfDown) || key.return) {
           patchOverlayState(prev => {
             if (!prev.pager) {

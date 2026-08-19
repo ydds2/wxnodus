@@ -430,11 +430,16 @@ ${d}
       return `已恢复 ${r.ok} 个文件${r.failed.length ? `，失败 ${r.failed.length} 个：${r.failed.slice(0, 3).join('; ')}` : ''}`;
     }
     const dir = args[0] ? resolve(ctx.cwd, args[0]) : ctx.cwd;
+    // N-02（2026-08-19）：大目录真实耗时——快照前真实前馈 + 快照后耗时回显（不假装即时）
+    ctx.bus.emit('system.notice', { text: `快照中：${dir}（大目录可能耗时，跳过的目录：node_modules/.git/dist 等）` });
+    const t0 = Date.now();
     const r = snapshotDir(ctx.dataDir, dir);
-    if (!r.count) return `「${dir}」无可快照文本文件（${r.skipped.length} 个跳过：二进制/超大/空）`;
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    if (!r.count) return `「${dir}」无可快照文本文件（${r.skipped.length} 个跳过：二进制/超大/空，${secs}s）`;
     return lines(' 目录快照 ', [
       ` 已建档：${r.count} 个文本文件`,
       ` 跳过：${r.skipped.length} 个（二进制/超大/空/忽略目录）`,
+      ` 耗时：${secs}s`,
       ` 回滚：/snapshot restore ${args[0] ?? '.'}（整体恢复到建档时刻）`,
     ]);
   });

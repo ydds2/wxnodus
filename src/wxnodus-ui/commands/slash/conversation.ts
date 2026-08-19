@@ -121,6 +121,37 @@ export const sessionCommands: SlashCommand[] = [
   },
 
   {
+    help: 'interactive snapshot diff viewer with per-hunk revert',
+    name: 'diff',
+    run: (arg, ctx) => {
+      const tokens = arg.trim().split(/\s+/).filter(Boolean)
+      const file = tokens[0]
+      const sub = (tokens[1] ?? '').toLowerCase()
+      // 2026-08-19 交互式 diff：单文件 turn 源走结构化查看器（pager 内 r 键逐 hunk 回滚）；
+      // git/branch/revert 子命令与用法提示走内核命令面（既有行为不变）
+      if (!file || (sub && sub !== 'turn')) {
+        return ctx.gateway.rpc('command.dispatch', { name: 'diff', arg: arg.trim(), session_id: ctx.sid }).then(
+          ctx.guarded<{ output?: string; ok?: boolean }>(r => {
+            if (r && typeof r.output === 'string') ctx.transcript.sys(r.output)
+          })
+        )
+      }
+
+      void ctx.gateway
+        .rpc<{ ok?: boolean; error?: string; hunks?: number; lines?: string[] }>('diff.view', { file, session_id: ctx.sid })
+        .then(
+          ctx.guarded(r => {
+            if (r?.ok && r.lines?.length) {
+              patchOverlayState({ pager: { title: `diff ${file}`, lines: r.lines, offset: 0, diff: { file, hunks: r.hunks ?? 0 } } })
+            } else {
+              ctx.transcript.sys(r?.error ?? 'diff.view 失败')
+            }
+          })
+        )
+    }
+  },
+
+  {
     aliases: ['switch', 'session', 'resume'],
     help: 'browse, switch, or resume sessions',
     name: 'sessions',

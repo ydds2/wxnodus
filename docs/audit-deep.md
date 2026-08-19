@@ -1153,3 +1153,12 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **尾注（2026-08-19，矩阵实验实录——诚实口径）**：Node 24.x 矩阵行远程实测**失败**（运行 #32245589517：test(1, 24.x) 原生模块崩溃——`node::RemoveEnvironmentCleanupHook` `Assertion failed: (env) != nullptr`，better-sqlite3/sqlite-vec 预编译 ABI 与 Node 24 不兼容）→ 矩阵撤销回单版本 22.18.0、`engines` 收紧 `>=22.0.0 <24`（本地九步门禁 Node 22 全绿不受影响）。工程债登记：升级 better-sqlite3/sqlite-vec 至 Node 24 预编译版本后重开矩阵（⑨ 冲 10 的多版本矩阵维持待办，不预支）。本项为矩阵实验发现的**真实边界**，不是假绿——与「无虚假」纪律一致：测出来不兼容就如实收紧声明。
 
 **尾注二（2026-08-19）**：矩阵撤销后远程 CI #32246859243 全绿（`3bd726c`，单版本 22.18 × 3 分片）。
+
+### 13.89 A/B 级与工程债处置轮（2026-08-19：交互式 diff 查看器/主题双变体/快照反馈/原生依赖升版）
+
+1. **交互式 diff 查看器（③ 冲 9 的最后一里）**：`wxGateway.diff.view`/`diff.revert` RPC（turn 源结构化视图：快照基线+当前+hunk 数；回滚无状态——基线=最新快照、当前=磁盘、每次重算）+ TUI 本地 `/diff <文件>` 拦截（单文件 turn 源走结构化 pager；git/branch/revert 子命令走内核面行为不变）+ pager `r` 键回滚「当前 hunk」（视口首行之前的最近 @@ 序号；确认面板 onConfirm 真实执行）+ 提示文案——crush permissions.go 按键流语义对标（per-hunk 取舍仍是六家皆无的独有机制，交互形态补齐）。
+2. **主题 token 双变体（B-04 第一步）**：`ThemePreset.light?` 可选浅色三色组——`detectLightMode` 为真且预设带 light 变体 → LIGHT 基底 + light 三色（solarized 内置演示双变体；用户主题 JSON 支持 light 字段同规则校验）；无 light 变体的预设浅色环境保持深色基底（诚实不臆造）。system 终端取色如实延后（conhost 无 OSC 协议——与 §13.85 ③ 输出侧图片渲染调查同一结论）。
+3. **/snapshot 进度反馈（N-02）**：快照前 system.notice 真实前馈（注明跳过目录）+ 快照后耗时回显——大目录 178s 不再是无声等待（同步实现未改，诚实反馈而非假进度条）。
+4. **原生依赖升版 + 矩阵重开（N-01）**：better-sqlite3 11.3.0→13.0.3、sqlite-vec 0.1.6→0.1.9（Node 22 本地 db/记忆/恢复/召回 61 用例全绿）；ci.yml 重开 `node-version: ['22.18.0', '24.x']` × 3 shard 矩阵——24.x 行成败由远程 CI 实证（此前 #32245589517 ABI 崩溃即由此轮升级解决或证伪）。engines 待 CI 实证后放宽。
+
+**评分口径（诚实）**：931 维持——③ 交互查看器落地为 8→9 的候选证据（评审认可才升档）；⑨ 矩阵重开待 CI 实证；均不预支。
