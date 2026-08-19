@@ -41,11 +41,11 @@ describe('F1：/config export|import 真实可达（遮蔽合并修复契约）'
     const { bus, settings } = makeBus();
     const r = await bus.execute('/config export');
     expect(r.ok).toBe(true);
-    const j = JSON.parse(r.output);
+    const j = JSON.parse(String(r.output ?? ''));
     expect(j.settings.model).toBe('deepseek-chat');
     expect(j.settings.apiKeyEnc).toBe('enc:secret123');
     const r2 = await bus.execute('/config export --redact');
-    const j2 = JSON.parse(r2.output);
+    const j2 = JSON.parse(String(r2.output ?? ''));
     expect(j2.settings.apiKeyEnc).toBeUndefined();
     expect(settings.apiKeyEnc).toBe('enc:secret123');
   });
