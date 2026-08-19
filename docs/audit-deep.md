@@ -1255,3 +1255,14 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **P1 剩余（如实登记）**：① sessions 工作台搜索过滤——列表/惰性预览/恢复已具备，搜索需重算 activeSessionSwitcher（953 行）选中索引（导航/删除/预览全链路），风险>收益暂缓至 P1 收尾批；② 面板右分栏（config/model/skills/plugins 不遮转录流）——最大布局变更同批；③ 组件自带 Esc 收编统一协议（ESC_GLOBAL_KINDS 之外 kind 仍组件级处理）。评分联动：⑨ 工程化随键位注册表裁决标注与工作台端口分层获加固（不升分口径不变）。
 
 **尾注（2026-08-20）**：P1 两步各自全量单测绿 + tsc 干净后提交；本地九步门禁全绿后本段定稿（远程 CI 号见门禁实录）。
+
+### 13.97 UI 重构 P1 收尾批执行实录（2026-08-20：sessions 搜索 + Esc 栈顶门控）
+
+用户「继续」——P1 收尾批两项（`780b2dd` + `6c972fe`）：
+
+1. **sessions 工作台搜索**（`780b2dd`）：`/` 进入过滤态、键入即筛可恢复会话——`lib/sessionFilter.ts` 纯函数（泛型保留行类型；空 query 零拷贝返回原数组）可单测；activeSessionSwitcher 索引计算全走过滤表（导航/删除/预览/Enter/渲染 6 处读取收编），过滤态吞键防误触发（选中归位 +new 行——索引安全优先，如实取舍）；标题下命中计数行 + 提示段登记 `/ 搜索`；registry panel.filter 条目。4 测试。live 会话常驻不参与过滤（诚实口径）。
+2. **Esc 栈顶门控**（`6c972fe`）——P0-2 遗留「一次 Esc 弹两层」的真实修复：pager/工作台盖在面板上时，Esc 会同时被全局（关 pager）与面板组件自身（关面板/静默改内部状态）消费。修复：7 组件 Esc/q/Ctrl+C 消费前先查栈顶（`topEntry(getOverlayState())?.kind !== 本 kind → return`）——dirPicker（Esc=上级目录导航）、modelPicker（stage 回退）、agentsOverlay（mode 回退 + q 关闭）、sessions（过滤态 Esc 清空）的分层语义全部保留，只让位非栈顶场景。无新测试（行为门控属组件布线；全量回归兜底）。
+
+**P1 全阶段验收对照**（`ui-redesign-plan-2026.md` P1 项）：status/doctor 结构化工作台 ✅（`320debe`）；sessions 工作台列表+惰性预览+搜索 ✅（预览既有 + 搜索本轮）；面板右分栏（config/model/skills/plugins 不遮转录流）——**仍开放**：最大布局变更（appLayout 转录流收窄 + FloatBox 迁右栏），本轮评估后判定为 P2 批首项，与「小窗 <80 列自动全屏降级」同批；组件 Esc 收编——本轮以**栈顶门控**达成等价收编（数据驱动防双关，分层语义保留）。评分联动：⑨ 工程化加固（不升分口径不变）。
+
+**尾注（2026-08-20）**：两项各自全量单测绿 + tsc 干净后提交；本地九步门禁全绿后本段定稿（远程 CI 号见门禁实录）。

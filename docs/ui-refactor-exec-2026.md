@@ -1,7 +1,7 @@
 # WxNodus CLI UI 重构执行计划（2026-08-19 · P0 全量）
 
 > **执行状态（2026-08-19 当日收口）**：P0 四步全部落地并推送——P0-1 键位注册表 `d2112ed`、P0-2 栈式浮层 `bc97655`、P0-3 appChrome 拆分 `88f4bd7`、P0-4 /help keys + Ctrl+P `3a98fef`；全量 2877 用例零回归、tsc 干净；行为变化点与缺陷证据如实入 audit §13.95。
-> **P1 进展（2026-08-20）**：P1-1 双触发裁决完成 `6d31401`（Ctrl+O 唯一化模型选择器、Ctrl+R vim NORMAL 门控、RESOLVED_OVERLAPS 裁决标注）；P1-2 status/doctor 结构化工作台完成 `320debe`（workspace overlay kind + adapter.doctor 真实体检端口 + workspace.status/.doctor RPC + w 键切换 + Esc 统一出栈收编 workspace）。**P1 剩余（如实）**：① sessions 工作台搜索过滤——列表/惰性预览/恢复已具备，搜索需重算 953 行组件选中索引（导航/删除/预览全链路），风险>收益暂缓；② 面板右分栏（不遮转录流）——最大布局变更，P1 收尾批；③ 组件自带 Esc 收编统一协议（ESC_GLOBAL_KINDS 之外 kind）。
+> **P1 进展（2026-08-20）**：P1-1 双触发裁决完成 `6d31401`（Ctrl+O 唯一化模型选择器、Ctrl+R vim NORMAL 门控、RESOLVED_OVERLAPS 裁决标注）；P1-2 status/doctor 结构化工作台完成 `320debe`（workspace overlay kind + adapter.doctor 真实体检端口 + workspace.status/.doctor RPC + w 键切换 + Esc 统一出栈收编 workspace）。**P1 收尾批（2026-08-20）**：sessions 搜索过滤完成 `780b2dd`（/ 过滤态 + 纯函数 lib/sessionFilter + 索引全走过滤表）；Esc 栈顶门控完成 `6c972fe`（7 组件消费前查栈顶——「一次 Esc 弹两层」真实修复，分层语义保留，等价收编）。**P1 全部收口，仅剩面板右分栏**（config/model/skills/plugins 不遮转录流——最大布局变更 + 小窗 <80 列全屏降级），转入 P2 批首项。
 
 > 上级规划：`docs/ui-redesign-plan-2026.md`（诊断 D1–D5 / 四层布局 / 栈式浮层 / 键位注册表）。
 > 本文件是**可直接施工的执行计划**：逐文件改动、实施顺序、风险门、测试与验收。
