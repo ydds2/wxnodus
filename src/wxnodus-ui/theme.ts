@@ -603,6 +603,36 @@ export function themeByName(name: string, env: NodeJS.ProcessEnv = process.env, 
   return normalizeThemeForAnsiLightTerminal(derived, env)
 }
 
+// ── system 主题（2026-08-19 B-04 收口，opencode generateSystem 对标——终端取色生成）──
+
+const sysParseTriple = (hex: string): [number, number, number] => [
+  parseInt(hex.slice(1, 3), 16),
+  parseInt(hex.slice(3, 5), 16),
+  parseInt(hex.slice(5, 7), 16),
+];
+const sysToHex = (r: number, g: number, b: number) =>
+  `#${[r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')}`;
+const sysLuminance = (hex: string) => {
+  const [r, g, b] = sysParseTriple(hex);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+};
+
+/** 终端前景/背景色 → 主题（纯函数）：背景亮度定基底（>0.5 → LIGHT），前景色作 primary，
+ * accent = 前景背景中点色、border = 背景亮度偏置灰——语义色沿用基底（可读性契约不破）。 */
+export function themeFromTerminalColors(colors: { fg: string; bg: string }): Theme {
+  const base = sysLuminance(colors.bg) > 0.5 ? LIGHT_THEME : DARK_THEME;
+  const [fr, fg, fb] = sysParseTriple(colors.fg);
+  const [br, bg2, bb] = sysParseTriple(colors.bg);
+  const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+  const accent = sysToHex(mix(fr, br, 0.5), mix(fg, bg2, 0.5), mix(fb, bb, 0.5));
+  const border = base === DARK_THEME ? sysToHex(mix(br, 255, 0.18), mix(bg2, 255, 0.18), mix(bb, 255, 0.18)) : sysToHex(mix(br, 0, 0.18), mix(bg2, 0, 0.18), mix(bb, 0, 0.18));
+  const derived: Theme = {
+    ...base,
+    color: { ...base.color, primary: colors.fg, accent, border },
+  };
+  return normalizeThemeForAnsiLightTerminal(derived, process.env);
+}
+
 // ── Skin → Theme ─────────────────────────────────────────────────────
 
 export function fromSkin(

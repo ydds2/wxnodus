@@ -329,7 +329,7 @@ export function FloatingOverlays({
                   // 2026-08-19：结构化 diff 查看器再叠加 r 键逐 hunk 回滚提示
                   const hasHunks = overlay.pager.lines.some(l => /^@@ -\d/.test(l.trim()))
                   const jump = hasHunks ? ' · [/] hunk 跳转' : ''
-                  const revert = overlay.pager.diff ? ' · r 回滚当前 hunk' : ''
+                  const revert = overlay.pager.diff ? ' · r 回滚 · m 标记已审' : ''
                   return overlay.pager.offset + pagerPageSize < overlay.pager.lines.length
                     ? `↑↓/jk 行 · Enter/Space/PgDn 页 · b/PgUp 返回 · g/G 顶/底${jump}${revert} · Esc/q 关闭（${Math.min(overlay.pager.offset + pagerPageSize, overlay.pager.lines.length)}/${overlay.pager.lines.length} 行）`
                     : `已到末尾 · ↑↓/jk · b/PgUp 返回 · g 顶部${jump}${revert} · Esc/q 关闭（共 ${overlay.pager.lines.length} 行）`

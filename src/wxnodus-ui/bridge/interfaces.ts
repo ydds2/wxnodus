@@ -123,8 +123,13 @@ export interface PagerState {
   lines: string[]
   offset: number
   title?: string
-  /** 2026-08-19 交互式 diff：结构化回滚元数据（文件 + hunk 数）——pager 内 `r` 键逐 hunk 回滚 */
-  diff?: { file: string; hunks: number }
+  /** 2026-08-19 交互式 diff v2：结构化回滚元数据——文件分节（多文件聚合）或单文件；
+   * pager 内 `r` 回滚当前文件当前 hunk、`m` 标记已审 */
+  diff?: {
+    aggregate: boolean
+    arg: string
+    files: Array<{ abs: string; rel: string; hunks: number; start: number; end: number }>
+  }
 }
 
 export interface TranscriptRow {

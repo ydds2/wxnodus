@@ -369,49 +369,83 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
           return
         }
 
-        // 2026-08-19 交互式 hunk 回滚：r 键回滚「当前 hunk」（视口首行之前的最近 @@ 序号；
-        // 首 hunk 之上则取第 1 个）——确认后经 diff.revert 无状态重算并刷新查看器
-        if (ch === 'r' && overlay.pager.diff) {
+        // 2026-08-19 交互式 diff v2：r 回滚当前文件当前 hunk（分节元数据精确定位）；
+        // m 标记已审（内容指纹持久化——变更即失效）。确认面板 onConfirm 真实执行。
+        if ((ch === 'r' || ch === 'm') && overlay.pager.diff) {
           const { lines, offset, diff } = overlay.pager
+          let section = diff.files[0]
+          for (const s of diff.files) {
+            if (s.start <= offset && offset < s.end) { section = s; break }
+            if (s.start <= offset) section = s
+          }
+
+          if (!section) {
+            return
+          }
+
           let current = 0
-          for (let i = 0; i < Math.min(offset, lines.length); i++) {
+          for (let i = section.start; i < Math.min(offset, section.end); i++) {
             if (/^@@ -\d/.test(lines[i]!.trim())) current++
           }
 
           const target = current === 0 ? 1 : current
 
-          if (target > diff.hunks) {
+          if (target > section.hunks) {
             return
           }
 
           const refresh = () => {
             void gateway
-              .rpc<{ ok?: boolean; error?: string; hunks?: number; lines?: string[] }>('diff.view', { file: diff.file, session_id: getUiState().sid })
+              .rpc<{ ok?: boolean; error?: string; sections?: Array<{ abs: string; rel: string; hunks: number; start: number; end: number }>; lines?: string[]; aggregate?: boolean }>(
+                'diff.view',
+                { ...(diff.arg ? { file: diff.arg } : {}), session_id: getUiState().sid }
+              )
               .then(r => {
                 patchOverlayState(prev => {
                   if (!prev.pager?.diff) {
                     return prev
                   }
 
-                  if (r?.ok && r.lines?.length) {
-                    return { ...prev, pager: { title: prev.pager.title, lines: r.lines, offset: Math.min(prev.pager.offset, Math.max(0, r.lines.length - pagerPageSize)), diff: { file: diff.file, hunks: r.hunks ?? 0 } } }
+                  if (r?.ok && r.lines?.length && r.sections?.length) {
+                    return {
+                      ...prev,
+                      pager: {
+                        title: prev.pager.title,
+                        lines: r.lines,
+                        offset: Math.min(prev.pager.offset, Math.max(0, r.lines.length - pagerPageSize)),
+                        diff: { aggregate: Boolean(r.aggregate), arg: diff.arg, files: r.sections },
+                      },
+                    }
                   }
 
-                  return { ...prev, pager: { ...prev.pager, diff: { file: diff.file, hunks: 0 } } }
+                  return prev
                 })
               })
           }
 
+          if (ch === 'm') {
+            void gateway
+              .rpc<{ ok?: boolean; output?: string; error?: string }>('diff.mark', { file: section.abs, hunk_index: target, session_id: getUiState().sid })
+              .then(r => {
+                if (r?.ok) {
+                  if (r.output) actions.sys(r.output)
+                  refresh()
+                }
+              })
+
+            return
+          }
+
           patchOverlayState({
             confirm: {
-              title: `回滚 hunk ${target}/${diff.hunks}？`,
-              detail: `${diff.file}——该 hunk 恢复为快照内容（快照留存，/undo fs restore 可再滚回）`,
+              title: `回滚 hunk ${target}/${section.hunks}？`,
+              detail: `${section.rel}——该 hunk 恢复为快照内容（快照留存，/undo fs restore 可再滚回）`,
               confirmLabel: '回滚',
               cancelLabel: '取消',
               danger: true,
               onConfirm: () => {
                 void gateway
-                  .rpc<{ ok?: boolean; error?: string; output?: string }>('diff.revert', { file: diff.file, hunk_index: target, session_id: getUiState().sid })
+                  .rpc<{ ok?: boolean; error?: string }>('diff.revert', { file: section.abs, hunk_index: target, session_id: getUiState().sid })
                   .then(r => {
                     if (r?.ok) {
                       refresh()

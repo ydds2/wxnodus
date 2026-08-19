@@ -1181,3 +1181,15 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **评分口径（诚实）**：931 维持——本轮为 ④ 构造能力加固（④ 已 10 满格不计分）；真实超大型项目端到端证据（数十模块生成成功率）待用户实际使用验证后如实记录。
 
 **尾注（2026-08-19）**：本地九步门禁全绿（新增 build-generate 8 用例入闸）；远程 CI #32256097126 全绿（`a441a2c`）。
+
+### 13.91 A/B 级与工程债收口轮二（2026-08-19：diff 多文件树形视图 + mark-reviewed + system 主题）
+
+上轮评估遗留项收口：
+
+1. **③ 残留——多文件结构化 diff 视图**：`diff.view` 升级为聚合视图（无 file 参数 = cwd 内全部编辑文件分节输出：`▶ 文件（N hunks）` 节头 + diff 行 + 分节元数据 `{abs, rel, hunks, start, end}`）；`/diff` 与 `/diff turn` 在 TUI 均走结构化 pager；`r` 键按「当前文件分节 + 分节内 @@ 序数」精确定位回滚（多文件视图不再退化为单文件）。opencode 树形文件列表以分节流等效实现（诚实注明形态差异：滚动流 vs 树面板）。
+2. **mark-reviewed 工作流**：`src/kernel/diffReviewed.ts`（hunk 内容指纹 sha256 持久化到 dataDir/diff-reviewed.json——内容变更即失效，审阅状态不跟随漂移）+ `diff.mark` RPC + pager `m` 键标记 + 已审 hunk 头部 `✓` 后缀（不破坏 `@@` 检测正则）；3 用例（指纹确定性/跨会话持久化/损坏文件诚实降级）。
+3. **B-04 system 主题**：`src/wxnodus-ui/lib/terminalColors.ts`（OSC 10/11 查询 + 响应解析——注入流可测；400ms 无响应 → null 诚实不可用，conhost 无此协议不伪造）+ `themeFromTerminalColors` 纯函数（背景亮度定基底、前景作 primary、中点色 accent）+ TUI 本地 `/theme system`（探测成功应用并如实标注「本次会话生效」；其余主题名走内核原路径不变）；7 用例。
+
+**复核（不重复劳动）**：N-01（Node 24 原生 teardown）两次矩阵实验真红 + 终审撤销——上游阻塞维持开放债，解锁=上游预编译成熟；C-02（wxGateway）维持拆分决策（协议面拆分风险>收益，>3000 行再拆）——两者均已在 §13.89 实录，本轮无新增动作。
+
+**评分口径（诚实）**：939 维持——③ 残留项为「冲 10 候选」不升档（opencode 仍有树面板交互形态差异）；B-04 为 ② 已满格的体验加固。

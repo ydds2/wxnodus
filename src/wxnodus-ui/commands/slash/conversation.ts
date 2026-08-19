@@ -121,15 +121,43 @@ export const sessionCommands: SlashCommand[] = [
   },
 
   {
+    help: 'change theme (system = terminal colors)',
+    name: 'theme',
+    run: (arg, ctx) => {
+      const name = arg.trim().toLowerCase()
+      // 2026-08-19 B-04 收口：system 主题需查询终端配色（内核命令面无 TTY 查询通道）——
+      // TUI 本地处理；其余主题名走内核（持久化 + theme.changed 广播，既有行为不变）
+      if (name !== 'system') {
+        return ctx.gateway.rpc('command.dispatch', { name: 'theme', arg: arg.trim(), session_id: ctx.sid }).then(
+          ctx.guarded<{ output?: string; ok?: boolean }>(r => {
+            if (r && typeof r.output === 'string') ctx.transcript.sys(r.output)
+          })
+        )
+      }
+
+      void import('../../lib/terminalColors.js').then(async ({ queryTerminalColors }) => {
+        const colors = await queryTerminalColors()
+        if (!colors) {
+          ctx.transcript.sys('system 主题不可用——终端不支持 OSC 颜色查询（conhost 无此协议；Windows Terminal/xterm/kitty 可用）')
+          return
+        }
+        const { themeFromTerminalColors } = await import('../../theme.js')
+        patchUiState({ theme: themeFromTerminalColors(colors) })
+        ctx.transcript.sys(`已应用 system 主题（终端配色：前景 ${colors.fg} / 背景 ${colors.bg}——本次会话生效）`)
+      })
+    }
+  },
+
+  {
     help: 'interactive snapshot diff viewer with per-hunk revert',
     name: 'diff',
     run: (arg, ctx) => {
       const tokens = arg.trim().split(/\s+/).filter(Boolean)
       const file = tokens[0]
       const sub = (tokens[1] ?? '').toLowerCase()
-      // 2026-08-19 交互式 diff：单文件 turn 源走结构化查看器（pager 内 r 键逐 hunk 回滚）；
-      // git/branch/revert 子命令与用法提示走内核命令面（既有行为不变）
-      if (!file || (sub && sub !== 'turn')) {
+      // 2026-08-19 交互式 diff v2：单文件与无文件聚合（/diff 或 /diff turn）均走结构化查看器；
+      // git/branch/revert 与未知源走内核命令面（既有行为不变，含诚实报错）
+      if (sub && sub !== 'turn') {
         return ctx.gateway.rpc('command.dispatch', { name: 'diff', arg: arg.trim(), session_id: ctx.sid }).then(
           ctx.guarded<{ output?: string; ok?: boolean }>(r => {
             if (r && typeof r.output === 'string') ctx.transcript.sys(r.output)
@@ -137,12 +165,23 @@ export const sessionCommands: SlashCommand[] = [
         )
       }
 
+      const target = file && file.toLowerCase() !== 'turn' ? file : ''
       void ctx.gateway
-        .rpc<{ ok?: boolean; error?: string; hunks?: number; lines?: string[] }>('diff.view', { file, session_id: ctx.sid })
+        .rpc<{ ok?: boolean; error?: string; sections?: Array<{ abs: string; rel: string; hunks: number; start: number; end: number }>; lines?: string[]; aggregate?: boolean }>(
+          'diff.view',
+          { ...(target ? { file: target } : {}), session_id: ctx.sid }
+        )
         .then(
           ctx.guarded(r => {
-            if (r?.ok && r.lines?.length) {
-              patchOverlayState({ pager: { title: `diff ${file}`, lines: r.lines, offset: 0, diff: { file, hunks: r.hunks ?? 0 } } })
+            if (r?.ok && r.lines?.length && r.sections?.length) {
+              patchOverlayState({
+                pager: {
+                  title: r.aggregate ? 'diff 全文件集' : `diff ${target}`,
+                  lines: r.lines,
+                  offset: 0,
+                  diff: { aggregate: Boolean(r.aggregate), arg: target, files: r.sections },
+                },
+              })
             } else {
               ctx.transcript.sys(r?.error ?? 'diff.view 失败')
             }
