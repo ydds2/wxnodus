@@ -625,7 +625,7 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - **/build 单通道化**：无 key → 立即报错「AI 规格化是唯一编译通道，需要模型密钥」；有 key → aiMakeSpec 唯一入口；AI 失败 → 明确报错不假装编译；计划由调用方固定构造（单模块 app）；scaffold_build 工具同语义（非法模具/空验收 fail-closed 报错，不再回退规则脑）。
 - **文案面**：README/AGENTS 标语「无 key 也有离线能力（规则脑 + …）」→「（本地离线模型 + …）」；/build 描述、useConversationLifecycle 无 key 提示、wxGateway/llmStream/handlersExt 注释共 8 处同步；knownFailures KF-022 resolvedBy 更新。
 - **测试面**：删 ruleBrain 4 用例、RULE_PATTERNS 域覆盖契约、makeSpec/makePlan 用例、kf-022「未传 plan 兜底」用例（源码级断言改为 plan 必传）；instantiate 调用点全部显式传固定 plan；kf-018 改字面 Spec；kernel-tools 回退用例改 fail-closed 断言；kf-004/kf-029 夹具 `'unconfigured'`。
-- **口径失效记录**：competitive-analysis.md 的「免 key 可用：规则脑兜底」对外对比口径随本删除失效（离线模型路径仍在，该口径应按「本地离线模型」重述）。
+- **口径失效记录**：docs/competitive-analysis.md 的「免 key 可用：规则脑兜底」对外对比口径随本删除失效（离线模型路径仍在，该口径应按「本地离线模型」重述）。
 - **保留不动**：离线四模态模型、语音、本地嵌入/向量、黑洞记忆、/offline、/voice、Windows OCR、云端视觉、/build 的脚手架执行/验证/证据/质量门全链路。
 
 ### 13.38 image_url 终极闸门 + /key 残留清零轮（2026-08-18 用户报 ZCode deepseek-v4-pro hydrate 400）
