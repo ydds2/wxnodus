@@ -2,11 +2,27 @@
 // 设计：AI 规格化唯一通道（llmSpec.ts 产出 Spec，本文件只管契约校验）；
 //       规则脑（关键词→模具）已移除（2026-08-18），确定性部分仅剩模具白名单与校验。
 // A21：分级诊断（error/warning/info）——编译器的语义分析阶段输出
+// 2026-08-19 Spec v2（复杂需求构造能力）：可选 modules 分解——AI 把跨域/多子系统需求
+// 拆为模块 DAG（每模块文件清单）；缺失 = 简单需求走模具模板（向后兼容）。
+import { topoSort } from './plan.js';
+export interface SpecModule {
+  /** 模块名：小写字母/数字/连字符（≤30）——同时是生成目录名（路径安全白名单） */
+  name: string;
+  /** 依赖模块名（必须指向本分解内其他模块；拓扑排序保证依赖先生成） */
+  deps: string[];
+  /** 模块职责（生成提示词上下文） */
+  desc: string;
+  /** 该模块产出文件清单（相对项目根的相对路径 + 职责说明） */
+  files: Array<{ path: string; desc: string }>;
+}
+
 export interface Spec {
   title: string;
   summary: string;
   scaffold: string;
   acceptance: string[];
+  /** Spec v2：复杂需求模块分解（≤8 模块 × ≤12 文件）；缺失 = 简单需求（模具模板路径） */
+  modules?: SpecModule[];
 }
 
 export interface SpecDiagnostic {
@@ -49,6 +65,35 @@ export function diagnoseSpec(s: Spec): SpecDiagnostic[] {
 export function validateSpec(s: Spec): { ok: boolean; reason?: string } {
   const errors = diagnoseSpec(s).filter(d => d.level === 'error');
   if (errors.length) return { ok: false, reason: errors.map(e => e.message).join('；') };
+  // Spec v2：modules 结构校验（存在即校验——不静默降级）
+  if (s.modules) {
+    const names = new Set<string>();
+    const MOD_NAME = /^[a-z][a-z0-9-]{0,29}$/;
+    const FILE_PATH = /^[a-z0-9][a-z0-9-_]*(\/[a-z0-9][a-z0-9-_]*)*\.[a-z0-9]{1,10}$/;
+    if (s.modules.length === 0) return { ok: false, reason: 'modules 为空数组——要么给出有效分解，要么省略该字段' };
+    if (s.modules.length > 8) return { ok: false, reason: `模块数 ${s.modules.length} 超上限 8` };
+    for (const m of s.modules) {
+      if (!MOD_NAME.test(m.name)) return { ok: false, reason: `模块名非法：${m.name}（小写字母/数字/-，≤30）` };
+      if (names.has(m.name)) return { ok: false, reason: `模块名重复：${m.name}` };
+      names.add(m.name);
+      if (!m.desc?.trim()) return { ok: false, reason: `模块 ${m.name} 缺职责描述` };
+      if (!Array.isArray(m.files) || !m.files.length) return { ok: false, reason: `模块 ${m.name} 缺文件清单` };
+      if (m.files.length > 12) return { ok: false, reason: `模块 ${m.name} 文件数 ${m.files.length} 超上限 12` };
+      for (const f of m.files) {
+        if (!FILE_PATH.test(f.path)) return { ok: false, reason: `文件路径非法：${f.path}（相对路径，小写字母/数字/-/_，禁止 .. 与绝对路径）` };
+      }
+      for (const d of m.deps) {
+        if (d === m.name) return { ok: false, reason: `模块 ${m.name} 自依赖` };
+        if (!names.has(d)) return { ok: false, reason: `模块 ${m.name} 依赖未知模块：${d}` };
+      }
+    }
+    // 依赖环检测（topoSort 抛错 → 规格拒绝）
+    try {
+      topoSort(s.modules.map(m => ({ name: m.name, deps: m.deps })));
+    } catch {
+      return { ok: false, reason: '模块依赖存在循环' };
+    }
+  }
   return { ok: true };
 }
 

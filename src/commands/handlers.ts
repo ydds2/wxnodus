@@ -18,7 +18,6 @@ import { snippet } from '../kernel/truncate.js';
 import { WXNODUS_VERSION } from '../kernel/version.js';
 import { themePresetNames, themeByName, loadUserThemes } from '../wxnodus-ui/theme.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
-import { topoSort } from '../build/plan.js';
 import { instantiate } from '../build/scaffold.js';
 import { writeEvidence, fingerprint } from '../build/evidence.js';
 import { runGate } from '../build/gate.js';
@@ -792,12 +791,20 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (!spec) {
       return `需求无法编译（${input.slice(0, 30)}…）——AI 规格化失败（检查模型配置或重试）`;
     }
-    // 计划构造：规则脑分解已移除——固定单模块计划（AI 规格化输出驱动模具）
-    const plan = {
-      modules: [{ name: 'app', deps: [], desc: '单模块应用' }],
-      order: ['app'],
-      milestones: ['M1 应用构建', 'M2 验证与交付'],
-    };
+    // 计划构造（Spec v2，2026-08-19）：AI 分解（spec.modules）→ 真实模块 DAG 计划；
+    // 缺失 = 简单需求——单模块计划 + 模具模板（向后兼容，规则脑已移除）
+    const { topoSort } = await import('../build/plan.js');
+    const plan = spec.modules?.length
+      ? {
+          modules: spec.modules.map(m => ({ name: m.name, deps: m.deps, desc: m.desc })),
+          order: topoSort(spec.modules.map(m => ({ name: m.name, deps: m.deps }))),
+          milestones: spec.modules.map((m, i) => `M${i + 1} ${m.name}`),
+        }
+      : {
+          modules: [{ name: 'app', deps: [], desc: '单模块应用' }],
+          order: ['app'],
+          milestones: ['M1 应用构建', 'M2 验证与交付'],
+        };
     // W3 Build facade：modern 路由走 BuildService.compileAndRun（staging→scaffold→staticEntry→verifier→evidence→reviewer→owned receipt）。
     // spec→结构化验收（模具锚点；未知模具 fail-closed）；快照真实来源（env/capability/hooks 确定性哈希）；
     // reviewer 密钥 AES 持久化（明文绝不落盘）。
@@ -832,8 +839,26 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         dataDir: ctx.dataDir,
         runId,
         sessionId: ctx.agent?.getSessionId?.() ?? 'default',
-        // AI 规格化 spec 驱动脚手架（criteria 仅验收断言）；legacy instantiate/verify 作为节点真实执行
-        instantiate: (_criteria, stagingDir) => instantiate(spec, stagingDir, plan) as never,
+        // AI 规格化 spec 驱动脚手架（criteria 仅验收断言）；
+        // Spec v2：复杂需求（spec.modules）→ 逐模块生成引擎；简单需求 → 模具模板（原路径不变）
+        instantiate: (async (_criteria: unknown, stagingDir: string) => {
+          if (spec.modules?.length) {
+            const { generateProject } = await import('../build/generate.js');
+            const r = await generateProject({
+              spec,
+              plan,
+              projectDir: stagingDir,
+              deps: { baseURL: resolveDefaultBaseURL(settings), model, key: keyRes.key! },
+              progress: (stage) => {
+                try { ctx.bus.emit('system.notice', { text: `⛏ /build「${spec.title}」：${stage}` }); } catch { /* 静默 */ }
+              },
+            });
+            return r.ok
+              ? { ok: true as const }
+              : { ok: false as const, error: { code: 'BUILD_GENERATE_FAILED', message: r.reason ?? '生成失败', messageKey: 'BUILD_GENERATE_FAILED', retryable: false } };
+          }
+          return instantiate(spec, stagingDir, plan) as never;
+        }) as unknown as import('../application/build/buildServiceWiring.js').InstantiateLike,
         verifyProject: async (dir) => {
           const { verifyProject: legacyVerify } = await import('../build/verify.js');
           return legacyVerify(dir);
@@ -867,26 +892,34 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
           policySnapshotId: 'policy-hooks',
           policyHash: sha256(policyBody),
         },
-      }, AbortSignal.timeout(300_000));
+      }, AbortSignal.timeout(Math.min(300_000 + (spec.modules?.length ?? 0) * 120_000, 900_000)));
       if (!result.ok) throw new Error(`[${result.error.code}] ${result.error.message}`);
       const decision = result.value.decision;
       if (decision.status !== 'succeeded') {
         throw new Error(`[BUILD_DECISION_${decision.status.toUpperCase()}] ${decision.reasons.join('；') || '未通过完成判定'}`);
       }
+      const modSummary = spec.modules?.length
+        ? ` 模块：${plan.order.join(' → ')}（${spec.modules.length} 模块逐模块生成）`
+        : ' 模具：' + spec.scaffold + '（AI 规格化）· 现代路由（BuildService 权威闭环）';
       return lines(` 构建完成「${spec.title}」 `, [
-        ` 模具：${spec.scaffold}（AI 规格化）· 现代路由（BuildService 权威闭环）`,
+        ` ${spec.modules?.length ? '模块分解' : '模具'}：${spec.scaffold}${spec.modules?.length ? '（AI 分解 DAG）' : '（AI 规格化）'}· 现代路由（BuildService 权威闭环）`,
         ` 位置：${projDir}`,
         ` 判定：${decision.status}（owned receipt）· 验收 ${decision.criteria.map(c => c.status).join('/')}`,
+        ` ${modSummary}`,
         ` 启动：cd ${projDir} && node server/index.js`,
       ]);
     }
     const { diagnoseSpec } = await import('../build/spec.js');
     const diags = diagnoseSpec(spec);
     if (dryRun) {
+      const modRows = spec.modules?.length
+        ? spec.modules.flatMap((m, i) => [` M${i + 1} ${m.name}${m.deps.length ? `（依赖 ${m.deps.join('/')}）` : ''}：${m.desc}`, ...m.files.map(f => `    · ${f.path} — ${f.desc}`)])
+        : [];
       return lines(` 规格诊断「${spec.title}」 `, [
         ...diags.map(d => ` ${d.level === 'error' ? '✗' : d.level === 'warning' ? '!' : '·'} [${d.code}] ${d.message}`),
-        ` 模具：${spec.scaffold}（AI 规格化）`,
+        ` 模具：${spec.scaffold}（AI 规格化）${spec.modules?.length ? `· 模块分解 ${spec.modules.length} 个（逐模块生成）` : '· 简单需求（模板路径）'}`,
         ` 计划：${topoSort(plan.modules).join(' → ')}（dry-run 未落盘）`,
+        ...modRows,
         ` 验收：${spec.acceptance.map(a => '✓ ' + a).join('\n       ')}`,
       ]);
     }
