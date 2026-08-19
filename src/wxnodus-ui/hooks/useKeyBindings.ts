@@ -1,4 +1,5 @@
 import { getActiveKeymap, matchesAny } from '../config/keymap.js'
+import { getVimNormalActive } from '../config/vimMode.js'
 import { forceRedraw, useInput } from '@wxnodus/ink'
 import { useAtom as useStore } from '../../app/stores/engine.js'
 import { useEffect, useRef } from 'react'
@@ -519,8 +520,9 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       }
 
       // Ctrl+R：历史反向搜索（bash readline 同款）——overlay 阻断 composer 输入，
-      // 搜索组件自身 useInput 消费字符/Ctrl+R/Enter/Esc；此处只负责打开
-      if (isCtrl(key, ch, 'r') && !findEntry(overlay, 'histSearch') && !cState.historyIdx) {
+      // 搜索组件自身 useInput 消费字符/Ctrl+R/Enter/Esc；此处只负责打开。
+      // P1 裁决：vim NORMAL 下 Ctrl+R 是 redo（vimHandleKey 消费）——门控让位，消除双触发
+      if (isCtrl(key, ch, 'r') && !getVimNormalActive() && !findEntry(overlay, 'histSearch') && !cState.historyIdx) {
         return pushOverlay({ kind: 'histSearch' })
       }
 

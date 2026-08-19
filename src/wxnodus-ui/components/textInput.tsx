@@ -5,8 +5,8 @@ import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'rea
 import { setInputSelection } from '../runtime/selectionStore.js'
 import { readClipboardText, writeClipboardText } from '../lib/clipboard.js'
 import { highlightInputAnsi } from '../lib/inputHighlight.js'
-import { resolveEditorCommand, runExternalEditor } from '../lib/editorLaunch.js'
 import { initialVimState, initialVimHistory, vimHandleKey, vimHistoryPush, vimHistoryUndo, vimHistoryRedo, type VimHistory, type VimMode } from '../lib/vimCore.js'
+import { setVimNormalActive } from '../config/vimMode.js'
 import { cursorLayout, offsetFromPosition } from '../lib/inputMetrics.js'
 import {
   DEFAULT_VOICE_RECORD_KEY,
@@ -1015,6 +1015,7 @@ export function TextInput({
           const esc = vimHandleKey(vimRef.current, { text: vRef.current, cursor: curRef.current }, 'Escape', Date.now(), vimRegRef.current)
           vimRef.current = esc.state
           setVimModeUi(esc.state.mode)
+          setVimNormalActive(esc.state.mode !== 'insert')
 
           return
         }
@@ -1074,31 +1075,14 @@ export function TextInput({
           commit(out.doc.text, out.doc.cursor)
         }
         setVimModeUi(out.state.mode)
+        setVimNormalActive(out.state.mode !== 'insert')
 
         return
       }
 
-      // ② 波 1：Ctrl+O 外部编辑器（kimi editor.py:18-50 探测链 + crush ui.go:3688-3725
-      // 临时文件往返）——当前草稿写临时文件 → 阻塞等编辑器退出 → 读回替换。
-      // 失败（编辑器缺失/超时）诚实保留草稿——输入不丢。
-      if (k.ctrl && inp === 'o' && !k.shift && !k.meta && !k.alt) {
-        flushKeyBurst()
-
-        const res = runExternalEditor({
-          command: resolveEditorCommand(),
-          fallback: process.platform === 'win32' ? [['notepad']] : [['vi']],
-          text: vRef.current,
-        })
-        if (res.ok) {
-          const next = res.text.replace(/\n+$/, '')
-          if (next !== vRef.current) {
-            commit(next, next.length)
-          }
-        }
-        // 失败静默保留草稿（无通知通道——避免打断输入；error 详情在返回结构中可审计）
-
-        return
-      }
+      // P1 裁决（2026-08-20）：移除 Ctrl+O 外部编辑器分支——该键与全局「模型选择器」
+      // 双触发（keymap registry diagnoseKeymap 实测证据：global.model-picker × prompt.editor）；
+      // 外部编辑器保留唯一键位 Ctrl+G / Alt+G（全局登记 + /help keys 可见）——能力不丢、冲突消除。
 
       if (
         eventRaw === '\x1bv' ||

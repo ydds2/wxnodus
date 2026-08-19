@@ -61,20 +61,20 @@ describe('registerBindings（注册期冲突检测）', () => {
 })
 
 describe('diagnoseKeymap（跨层双触发诊断——D3 缺陷证据化）', () => {
-  it('ctrl+o 双触发（global 模型选择器 × prompt 外部编辑器）如实报告', () => {
+  it('ctrl+o 双触发已裁决修复：prompt.editor 绑定移除后重叠消失（消失即证据）', () => {
     const overlaps = diagnoseKeymap(BUILTIN_BINDINGS)
-    const o = overlaps.find(r => r.chord === 'ctrl+o')
-    expect(o).toBeDefined()
-    expect(o!.ids).toContain('global.model-picker')
-    expect(o!.ids).toContain('prompt.editor')
+    expect(overlaps.find(r => r.chord === 'ctrl+o')).toBeUndefined()
+    // 键位仍存在（全局模型选择器），但不再有第二层同时响应
+    expect(BUILTIN_BINDINGS.some(b => b.id === 'prompt.editor')).toBe(false)
   })
 
-  it('ctrl+r 双触发（global 历史搜索 × vim redo）如实报告', () => {
+  it('ctrl+r 双触发（global 历史搜索 × vim redo）如实报告并附裁决标注', () => {
     const overlaps = diagnoseKeymap(BUILTIN_BINDINGS)
     const r = overlaps.find(x => x.chord === 'ctrl+r')
     expect(r).toBeDefined()
     expect(r!.ids).toContain('global.history')
     expect(r!.ids).toContain('vim.redo')
+    expect(r!.resolved).toContain('vim NORMAL 下 Ctrl+R 让位 redo')
   })
 
   it('pager/panel 与 global 的重叠不报（打开时独占输入，scope 门控）', () => {
@@ -102,5 +102,16 @@ describe('keymapDocs（/help keys 文本生成）', () => {
   it('configurable 动作标注 settings.keymap 覆盖提示', () => {
     const docs = keymapDocs().join('\n')
     expect(docs).toContain('settings.keymap 可覆盖')
+  })
+})
+
+describe('vim NORMAL 激活标志（P1 裁决配套）', () => {
+  it('set/get 默认 false；置位后 true（textInput 模态同步 → useKeyBindings 门控）', async () => {
+    const { getVimNormalActive, setVimNormalActive } = await import('../src/wxnodus-ui/config/vimMode.js')
+    expect(getVimNormalActive()).toBe(false)
+    setVimNormalActive(true)
+    expect(getVimNormalActive()).toBe(true)
+    setVimNormalActive(false)
+    expect(getVimNormalActive()).toBe(false)
   })
 })

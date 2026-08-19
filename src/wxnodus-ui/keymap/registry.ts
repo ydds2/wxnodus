@@ -23,7 +23,7 @@ export interface KeyBinding {
 /**
  * 全量键位清单——依据（均为 2026-08-19 代码实测）：
  * - useKeyBindings.ts：全局键（Ctrl+K/O/X/R/Shift+P/G/L/D/B/C、Shift+Tab、Esc 族、滚动族）
- * - textInput.tsx：prompt 键（Tab/Enter/@//、Ctrl+O 外部编辑器）
+ * - textInput.tsx：prompt 键（Tab/Enter/@//；Ctrl+O 外部编辑器已于 P1 裁决移除——见下注）
  * - config/keymap.ts DEFAULT_KEYMAP：pager 7 动作
  * - useKeyBindings pager 分支：[/] hunk、t/r/m diff、Enter 页尾关闭
  * - textInput vim 边界键：Esc / /搜索 / Ctrl+R redo（NORMAL 全语义键由 vimHandleKey 解释，不逐键登记）
@@ -51,7 +51,8 @@ export const BUILTIN_BINDINGS: KeyBinding[] = [
   { id: 'prompt.tab-accept', keys: ['tab'], scope: 'prompt', action: 'completion.insert', help: '补全接受（文本并入输入区）' },
   { id: 'prompt.enter-accept', keys: ['enter'], scope: 'prompt', action: 'completion.submit', help: 'Enter 双语义：slash 接受即提交 / path·agent 仅替换' },
   { id: 'prompt.comp-nav', keys: ['up', 'down', 'pageup', 'pagedown'], scope: 'prompt', action: 'completion.navigate', help: '补全弹窗导航（PgUp/PgDn 整页）' },
-  { id: 'prompt.editor', keys: ['ctrl+o'], scope: 'prompt', action: 'input.external-editor', help: '草稿写临时文件→编辑器往返读回（失败保留草稿）' },
+  // 注：prompt.editor（Ctrl+O 外部编辑器）已于 P1 裁决移除（与全局模型选择器双触发）——
+  // 编辑器唯一键位 Ctrl+G/Alt+G（global.editor），本表如实不含已删除绑定。
   { id: 'prompt.at-completion', keys: ['@'], scope: 'prompt', action: 'completion.at', help: '@ 双源补全（文件 / 子代理）触发' },
   { id: 'prompt.slash-completion', keys: ['/'], scope: 'prompt', action: 'completion.slash', help: '斜杠命令补全触发' },
 
@@ -93,6 +94,18 @@ export interface OverlapReport {
   /** 同时生效的两层（同一时刻都会响应该键）——跨层重叠是「双触发候选缺陷」，不是误报 */
   ids: [string, string]
   scopes: [BindingScope, BindingScope]
+  /** 已裁决处置说明（运行时门控类裁决保留条目 + 标注；键位移除类裁决条目直接消失——消失即证据） */
+  resolved?: string
+}
+
+/**
+ * 已裁决重叠（P1 2026-08-20）：键 = `chord@id1×id2`（id 字典序），值 = 处置说明。
+ * 诊断不掩盖——未裁决候选零标注、已裁决候选带 resolved；被移除的绑定（Ctrl+O prompt.editor）
+ * 直接离开本表，其重叠随之消失。
+ */
+export const RESOLVED_OVERLAPS: Record<string, string> = {
+  'ctrl+r@global.history×vim.redo':
+    '已裁决：vim NORMAL 下 Ctrl+R 让位 redo（getVimNormalActive 门控，textInput 模态同步）；非 vim 态照常开历史搜索'
 }
 
 export interface RegistryDiagnosis {
@@ -185,7 +198,10 @@ export function diagnoseKeymap(bindings: KeyBinding[]): OverlapReport[] {
           continue
         }
 
-        overlaps.push({ chord, ids: [a.id, b.id], scopes: [a.scope, b.scope] })
+        const ids: [string, string] = [a.id, b.id].sort() as [string, string]
+        const resolved = RESOLVED_OVERLAPS[`${chord}@${ids[0]}×${ids[1]}`]
+
+        overlaps.push({ chord, ids, scopes: [a.scope, b.scope], ...(resolved ? { resolved } : {}) })
       }
     }
   }
