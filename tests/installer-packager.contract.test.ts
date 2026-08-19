@@ -101,6 +101,8 @@ describe.skipIf(process.platform !== 'win32')('install.ps1 真实安装（Window
     expect(cmd).toContain('node "%~dp0bin\\wxnodus.js"');
     expect(cmd).toContain('WXNODUS_DATA_DIR=%LOCALAPPDATA%\\wxnodus');
     expect(existsSync(join(target, 'start.cmd'))).toBe(false);
+    // wxn 别名：winget/scoop manifest 声明的双命令契约（终审修复——安装器必须真实产出）
+    expect(readFileSync(join(target, 'wxn.cmd'), 'utf8')).toContain('node "%~dp0bin\\wxnodus.js"');
     // install-meta：供 /update 识别 zip 渠道
     const meta = JSON.parse(readFileSync(join(target, 'install-meta.json'), 'utf8'));
     expect(meta).toMatchObject({ app: 'WxNodusArt', version: '1.2.3' });

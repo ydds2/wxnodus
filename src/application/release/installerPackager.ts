@@ -146,6 +146,8 @@ if ($LASTEXITCODE -ge 8) {
   exit 1
 }
 Set-Content -Path (Join-Path $Staging (${appNameLiteral} + '.cmd')) -Encoding ASCII -Value "@echo off\`r\`nset \`"WXNODUS_DATA_DIR=%LOCALAPPDATA%\\wxnodus\`"\`r\`nnode \`"%~dp0$entryRelative\`" %*"
+# wxn 别名（npm bin 双命令契约对齐——winget/scoop manifest 均声明 wxn，安装器必须真实产出）
+Set-Content -Path (Join-Path $Staging 'wxn.cmd') -Encoding ASCII -Value "@echo off\`r\`nset \`"WXNODUS_DATA_DIR=%LOCALAPPDATA%\\wxnodus\`"\`r\`nnode \`"%~dp0$entryRelative\`" %*"
 if (-not (Test-Path (Join-Path $Staging $entryRelative))) {
   Write-Error "INSTALLER_POSTCONDITION_FAILED: $entryRelative"
   Remove-Item $Staging -Recurse -Force -ErrorAction SilentlyContinue
@@ -153,7 +155,7 @@ if (-not (Test-Path (Join-Path $Staging $entryRelative))) {
 }
 # journal 由 manifest 确定性推导（绝不递归深路径）：manifest 全量文件 + <appName>.cmd + manifest.json + install-meta.json；
 # 目录 = 文件祖先集，长度降序（先删子目录再删父目录，只删空目录）
-$OwnedFiles = @($Manifest.files | ForEach-Object { $_.path }) + @((${appNameLiteral} + '.cmd'), 'manifest.json', 'install-meta.json')
+$OwnedFiles = @($Manifest.files | ForEach-Object { $_.path }) + @((${appNameLiteral} + '.cmd'), 'wxn.cmd', 'manifest.json', 'install-meta.json')
 $DirSet = @{}
 foreach ($f in $OwnedFiles) {
   $parts = ($f -replace '/', '\\').Split('\\')
