@@ -69,4 +69,24 @@ describe('PeerToolTrail（Claude Code 同族格式）', () => {
     const { lastFrame } = render(<PeerToolTrail t={DEFAULT_THEME} trail={[]} />)
     expect(lastFrame()?.trim() ?? '').toBe('')
   })
+
+  it('回合结果 outcome 渲染为 dim 底行', () => {
+    const { lastFrame } = render(
+      <PeerToolTrail outcome="approved (auto)" t={DEFAULT_THEME} trail={[]} />
+    )
+    expect(lastFrame()).toContain('approved (auto)')
+  })
+
+  it('多行结果保留行结构（非整行塌成单行）', () => {
+    const { lastFrame } = render(
+      <PeerToolTrail
+        t={DEFAULT_THEME}
+        trail={['Ls(".") (0.1s) :: a.txt\nb.txt\nc.txt ✓']}
+      />
+    )
+    const frame = lastFrame()
+    expect(frame).toContain('a.txt')
+    expect(frame).toContain('b.txt')
+    expect(frame).toContain('c.txt')
+  })
 })

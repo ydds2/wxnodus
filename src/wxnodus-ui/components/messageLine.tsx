@@ -21,6 +21,8 @@ import { transcriptBodyWidth, transcriptGutterWidth } from '../lib/inputMetrics.
 import {
   boundedLiveRenderText,
   compactPreview,
+  estimateTokensRough,
+  fmtK,
   hasAnsi,
   isPasteBackedText,
   sanitizeAnsiForRender,
@@ -125,6 +127,7 @@ export const MessageLine = memo(function MessageLine({
   msg,
   msgKey,
   onCommand,
+  outcome = '',
   prev,
   sections,
   t,
@@ -143,6 +146,8 @@ export const MessageLine = memo(function MessageLine({
   // Collapse toggle for long system messages
   const systemIsLong = msg.role === 'system' && msg.text.length > SYSTEM_COLLAPSE_CHARS
   const [systemOpen, setSystemOpen] = useState(false)
+  // finalDetails 推理折叠态（默认折叠——对标 Claude Code 推理不可见、按需展开）
+  const [reasoningOpen, setReasoningOpen] = useState(false)
 
   // ── A19：鼠标点选辅助 ────────────────────────────────────────────────
   // 消息行只订阅 $selectedMessage（hint 变化不重渲染全部消息行）。
@@ -227,15 +232,56 @@ export const MessageLine = memo(function MessageLine({
   if (msg.kind === 'trail' && (msg.tools?.length || tools.length)) {
     return toolsMode !== 'hidden' ? (
       <Box flexDirection="column" marginTop={leadGap ? 1 : 0}>
-        <PeerToolTrail t={t} tools={tools} trail={msg.tools ?? []} />
+        <PeerToolTrail outcome={outcome} t={t} tools={tools} trail={msg.tools ?? []} />
       </Box>
     ) : null
   }
 
-  // A trail with nothing to draw (finalDetails token tally 等) —— 不渲染
+  // finalDetails 轨迹（无工具/清单——推理 + token 摘要）：
+  // 推理默认折叠为一行「▸ 推理 (N tokens)」（点击展开 dim 全文，≤4000 字符）；
+  // token 摘要 dim 一行——对标 Claude Code 回合尾部用量行
   if (msg.kind === 'trail') {
-    return null
+    const thinking = (msg.thinking ?? '').trim()
+    const tokens = (msg.toolTokens ?? 0) + (msg.thinkingTokens ?? 0)
+
+    if (!thinking && !tokens) {
+      return null
+    }
+
+    return (
+      <Box flexDirection="column" marginTop={leadGap ? 1 : 0}>
+        {thinking ? (
+          <Box flexDirection="column">
+            <Box onClick={() => setReasoningOpen(v => !v)}>
+              <Text color={t.color.muted}>
+                {reasoningOpen ? '▾ ' : '▸ '}
+                推理
+              </Text>
+              <Text color={t.color.muted} dimColor>
+                {' '}
+                ({fmtK(msg.thinkingTokens ?? estimateTokensRough(thinking))} tokens)
+              </Text>
+            </Box>
+            {reasoningOpen && (
+              <Box marginLeft={2}>
+                <Text color={t.color.muted} dimColor wrap="truncate-end">
+                  {boundedLiveRenderText(thinking, { maxChars: 4000, maxLines: 12 })}
+                </Text>
+              </Box>
+            )}
+          </Box>
+        ) : null}
+        {tokens > 0 ? (
+          <Text color={t.color.muted} dimColor>
+            {icon('toolCall')} {fmtK(tokens)} tokens
+          </Text>
+        ) : null}
+      </Box>
+    )
   }
+
+  // trail 三分支（todos 不渲染 / tools 轨迹 / finalDetails 摘要）已覆盖全部
+  // trail 消息——此处无需兜底分支
 
   if (msg.role === 'tool') {
     const stripped = hasAnsi(msg.text) ? stripAnsi(msg.text) : msg.text
@@ -254,7 +300,7 @@ export const MessageLine = memo(function MessageLine({
         </Box>
       )
     }
-    const preview = compactPreview(stripped, Math.max(24, cols - 10)) || '(empty tool result)'
+    const preview = compactPreview(stripped, Math.max(24, cols - 10)) || '(no output)'
     // 结果按失败信号着色（失败红色一眼定位；其余 dim）
     const failed = /失败|错误|异常|不存在|无权限|error|failed|exception/i.test(stripped.slice(0, 200))
 
@@ -366,7 +412,7 @@ export const MessageLine = memo(function MessageLine({
     >
       {showDetails && (
         <Box flexDirection="column" marginBottom={1}>
-          <PeerToolTrail t={t} trail={msg.tools} />
+          <PeerToolTrail outcome={outcome} t={t} trail={msg.tools} />
         </Box>
       )}
 
@@ -390,7 +436,6 @@ export const MessageLine = memo(function MessageLine({
 })
 
 interface MessageLineProps {
-  busy?: boolean
   cols: number
   compact?: boolean
   detailsMode?: DetailsMode
@@ -401,6 +446,8 @@ interface MessageLineProps {
   msgKey?: string
   /** A24：/skill: 引用点击执行（composer.submit 链路） */
   onCommand?: (text: string) => void
+  /** live 轮次结果（approved (auto)/denied 等）——PeerToolTrail 底行 */
+  outcome?: string
   // The block rendered directly above this one. Drives the group-boundary
   // lead gap (see domain/blockLayout.ts::hasLeadGap).
   prev?: Msg

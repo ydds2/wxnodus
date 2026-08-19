@@ -15,6 +15,8 @@
 
 - **输出格式全面替换（2026-08-19，对标 Claude Code / Codex / Gemini CLI 同族）**：消息与工具渲染彻底改版——① 用户消息 = dim「❯ 文本」（去底色块/label 着色）；助手 = 纯 markdown（去 Response 徽标与 └─ 标记）；系统/命令输出 = dim 文本。② 工具调用 = 单行 dim「• Name(短参)」（进行中旋转帧）＋ dim 缩进结果（≤6 行截断），失败红色；去边框卡片、✓/✗ 装饰、时长、chevron 折叠（新组件 `peerTrail.tsx`，旧 ToolTrail 停用）。③ Todo 面板不再渲染（清单不占对话流）。④ 移除回合分区展示（TurnSections 模块删除）与吸积盘轮次分隔线。⑤ 工具结果 diff 行内 +/- 着色（无边框）。测试同步改写（ui-tooltrail 全量重写为 PeerToolTrail 契约；Response 徽标断言移除），2884 全绿。
 
+- **输出格式更完善（2026-08-19，同族格式收口）**：① 工具结果由单行塌缩改为**多行 dim 展示**（≤6 行、行宽有界、超行省略提示）；② 工具调用行前缀换 **⏺**（Claude Code 同款，cmd 档自动降级 `•`）；③ **回合结果底行**（approved (auto)/denied 等——拒绝类红色）；④ **finalDetails 推理折叠行 + token 摘要行**（`▸ 推理 (N tokens)` 点击展开 dim 全文 ≤4000 字符、`⏺ 2.5k tokens` 尾行——对标 Claude Code 回合尾部用量）；⑤ 空工具结果文案 `(no output)`。测试 +4（outcome 底行/多行结果结构/推理折叠/token 摘要/空轨迹），2888 全绿。
+
 ## [3.2.0] - 2026-08-20
 
 （自 3.1.0 起：UI 重构 P0-P2 全谱 + 增强批 + 默认皮肤极简现代 + 代码卫生）

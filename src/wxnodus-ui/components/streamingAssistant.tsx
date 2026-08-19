@@ -38,6 +38,7 @@ export const StreamingAssistant = memo(function StreamingAssistant({
   const streamPendingTools = useTurnSelector(state => state.streamPendingTools)
   const streaming = useTurnSelector(state => state.streaming)
   const activeTools = useTurnSelector(state => state.tools)
+  const turnOutcome = useTurnSelector(state => state.outcome)
   const showStreamingArea = Boolean(streaming)
 
   if (!progress.showProgressArea && !showStreamingArea && !activeTools.length) {
@@ -95,6 +96,7 @@ export const StreamingAssistant = memo(function StreamingAssistant({
             isStreaming={block.isStreaming}
             key={block.key}
             msg={block.msg}
+            outcome={turnOutcome}
             prev={prev}
             sections={sections}
             t={ui.theme}

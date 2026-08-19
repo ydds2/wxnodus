@@ -14,6 +14,8 @@ export const GLYPHS = {
   brand: { modern: '◉', cmd: '◆', ascii: 'O' },
   prompt: { modern: '❯', cmd: '>', ascii: '>' },
   tool: { modern: '┊', cmd: '│', ascii: '|' },
+  // 2026-08-19 工具调用行前缀（对标 Claude Code ⏺ / Codex 同族）
+  toolCall: { modern: '⏺', cmd: '•', ascii: '*' },
   mic: { modern: '🎤', cmd: '●', ascii: '[R]' },
   rec: { modern: '●REC', cmd: '●REC', ascii: '[REC]' },
   battery: { modern: '⚡', cmd: '⚡', ascii: '!' },
