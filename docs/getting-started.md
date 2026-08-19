@@ -13,7 +13,23 @@
 - **源 B（URL）**：`powershell -ExecutionPolicy Bypass -File install-bootstrap.ps1 -Url <https://…/wxnodus-<版本>.zip>`
 - **源 C（私有 GitHub Release）**：`powershell -ExecutionPolicy Bypass -File install-bootstrap.ps1 -GitHub <owner>/<repo> -Tag <版本>`（需先 `gh auth login`）。
 
-安装后：数据目录 `%LOCALAPPDATA%\wxnodus`（密钥 AES-256-GCM 本机加密，明文不落盘）；升级 = 下载新 zip 重跑安装（数据保留，`/update` 可探测远程版本）；卸载 = `install.ps1 -Uninstall`（只删安装文件，不删数据）。
+#### 一行命令安装（Kimi Code 式——发布到私有 GitHub Release 后可用）
+
+**当前私有仓库**（授权成员，先 `gh auth login`）：
+
+```powershell
+gh api repos/ydds2/wxnodus/contents/packaging/install.ps1 -H "Accept: application/vnd.github.raw" | iex
+```
+
+**仓库转公开后**（同一脚本零改动）：
+
+```powershell
+irm https://raw.githubusercontent.com/ydds2/wxnodus/master/packaging/install.ps1 | iex
+```
+
+脚本行为（无参数，全部走环境变量，PowerShell 5.1+）：自动解析最新版本（GitHub API → gh CLI 私有回退）→ 下载 zip（公开资产直连 / gh 私有回退，Token 不落盘）→ 解包 → sha256 全量校验安装。可配置：`$env:WXNODUS_VERSION`（指定版本）、`$env:WXNODUS_BASE_URL`（镜像源）、`$env:WXNODUS_INSTALL_DIR`（安装目录）、`$env:WXNODUS_NO_PATH`（不写 PATH）。发布入口：`node scripts/publish-release.mjs --version <x.y.z>`。
+
+安装后：数据目录 `%LOCALAPPDATA%\wxnodus`（密钥 AES-256-GCM 本机加密，明文不落盘）；升级 = 重跑同一行命令（数据保留，`/update` 可探测远程版本）；卸载 = `install.ps1 -Uninstall`（只删安装文件，不删数据）。
 
 ### 1.2 开发者安装（源码开发用）
 
