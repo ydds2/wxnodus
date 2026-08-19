@@ -14,6 +14,7 @@ import type { BuildVerificationSnapshot } from '../../domain/build/buildRun.js';
 import type { PlanNode } from '../../domain/build/planDag.js';
 import { BUILTIN_VERIFIER_DESCRIPTORS, type BuiltinProbePort, type ProbeOutcome, type VerificationRequest } from '../../domain/quality/verifier.js';
 import { createBuiltinVerifierRegistry } from '../quality/verifierRegistry.js';
+import { buildVerifierDecision, type BuildVerifierOutcome } from '../quality/buildVerifiers.js';
 import { EvidenceService, type EvidenceStorePort } from '../quality/evidenceService.js';
 import { CompletionCoordinator } from '../quality/completionCoordinator.js';
 import { CompletionGate, type CompletionGateInput } from '../../domain/quality/completionGate.js';
@@ -142,6 +143,14 @@ export interface ProductionBuildWiring {
   coordinator: CompletionCoordinator;
 }
 
+/** verifier 状态集 → 完成判定投影（buildVerifiers 单一事实源——生产接入点；与旧三目全称量词行为等价）。 */
+export function projectCompletionOutcome(statuses: Array<'passed' | 'failed' | 'skipped'>): { outcome: 'passed' | 'failed' | 'inconclusive'; code: string } {
+  const outcomes: BuildVerifierOutcome[] = statuses.map(s =>
+    s === 'passed' ? { status: 'passed' } : s === 'failed' ? { status: 'failed', kind: 'assertion' } : { status: 'inconclusive' });
+  const decision = buildVerifierDecision(outcomes);
+  return { outcome: decision.status === 'succeeded' ? 'passed' : decision.status === 'failed' ? 'failed' : 'inconclusive', code: decision.code };
+}
+
 export function createProductionBuildWiring(input: ProductionBuildWiringInput): OperationResult<ProductionBuildWiring> {
   const clock = input.clock ?? (() => new Date().toISOString());
 
@@ -262,11 +271,11 @@ export function createProductionBuildWiring(input: ProductionBuildWiringInput): 
       completedAt: new Date(new Date(clock()).getTime() - 30_000).toISOString(),
       nonce: randomUUID(),
     };
-    const outcome: 'passed' | 'failed' | 'inconclusive' = evidenceReceipts.every(e => e.record.criteria.every(c => c.status === 'passed'))
-      ? 'passed'
-      : evidenceReceipts.some(e => e.record.criteria.some(c => c.status === 'failed'))
-        ? 'failed'
-        : 'inconclusive';
+    // 完成判定投影：buildVerifiers.classify 单一事实源（阶段 3 接入——「有验证器没人调用」闭环）
+    const projection = projectCompletionOutcome(
+      evidenceReceipts.flatMap(e => e.record.criteria.map(c => c.status as 'passed' | 'failed' | 'skipped')),
+    );
+    const outcome: 'passed' | 'failed' | 'inconclusive' = projection.outcome;
     const attestation = await createReviewerAttestation(reviewRun, outcome, input.reviewerSigner, {
       issuedAt: clock(),
       expiresAt: new Date(new Date(clock()).getTime() + 600_000).toISOString(),
