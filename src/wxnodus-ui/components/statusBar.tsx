@@ -232,8 +232,15 @@ function ctxBar(pct: number | undefined, w = 10) {
 
 // 渐变上下文条（赛博深空）：已填充格沿「青 → 黄 → 红」热力色带按位置插值，
 // 未填充格用 muted 暗点——占用即热、趋满即警，一眼读出水位
+// S3 优化：热力格预计算缓存（StatusRule 随 FaceTicker 100ms tick 重渲染——按
+// w+pct+主题色四元组缓存；有界（w 固定小值 × pct 0..100 × 主题数），无泄漏风险）
+const ctxGradientCache = new Map<string, Array<{ ch: string; color: string }>>()
+
 function ctxGradientCells(pct: number | undefined, t: Theme, w = 10): Array<{ ch: string; color: string }> {
   const p = Math.max(0, Math.min(100, pct ?? 0))
+  const key = `${w}:${p}:${t.color.statusGood}:${t.color.statusWarn}:${t.color.statusCritical}:${t.color.muted}`
+  const hit = ctxGradientCache.get(key)
+  if (hit) return hit
   const filled = Math.round((p / 100) * w)
   const cells: Array<{ ch: string; color: string }> = []
   for (let i = 0; i < w; i++) {
@@ -249,6 +256,7 @@ function ctxGradientCells(pct: number | undefined, t: Theme, w = 10): Array<{ ch
         : mix(t.color.statusWarn, t.color.statusCritical, (frac - 0.5) * 2)
     cells.push({ ch: '█', color })
   }
+  ctxGradientCache.set(key, cells)
   return cells
 }
 

@@ -20,7 +20,24 @@ export const $isBlocked = computed(
 
 export const getOverlayState = () => $overlayState.get()
 
-/** 统一提交：flushSync 应用函数式更新 + 双帧强制重绘（沿用旧 patch 的桥接保障） */
+// 桥接保障：强制重绘（S3 优化——模块级尾沿合并：高频 overlay 变更只挂 1 个定时器而非
+// 每次 2 个；双帧语义保留：尾沿触发首帧 + 120ms 二帧兜底，覆盖 markDirty 链断的 blit 短路）
+let redrawTimer: null | ReturnType<typeof setTimeout> = null
+
+const scheduleForceRedraw = () => {
+  if (redrawTimer !== null) {
+    return
+  }
+
+  redrawTimer = setTimeout(() => {
+    redrawTimer = null
+    forceRedraw()
+    // 第二帧兜底：个别 blit 短路场景需下一帧再刷一次（原 0ms+120ms 双帧语义）
+    setTimeout(() => forceRedraw(), 120)
+  }, 0)
+}
+
+/** 统一提交：flushSync 应用函数式更新 + 尾沿强制重绘 */
 const commit = (fn: (state: OverlayState) => OverlayState) => {
   const before = $overlayState.get()
   try {
@@ -32,9 +49,7 @@ const commit = (fn: (state: OverlayState) => OverlayState) => {
     $overlayState.set(fn(before))
   }
 
-  // 桥接保障：强制下一帧完整重绘（覆盖 markDirty 链断的 blit 短路）
-  setTimeout(() => forceRedraw(), 0)
-  setTimeout(() => forceRedraw(), 120)
+  scheduleForceRedraw()
 }
 
 /** 入栈（同 kind 替换 + 互斥组替换——语义见 overlayStack.pushInto） */
