@@ -991,9 +991,48 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
     }));
   });
 
-  bus.register('/encrypt', () => {
+  // 2026-08-19「不真实修」：/encrypt 此前仅状态展示却挂「加密工具」描述——现真实文件加解密
+  // （AES-256-GCM + scrypt；口令 --key 参数或 WXNODUS_ENC_KEY 环境变量，不落盘不回显）
+  bus.register('/encrypt', async (args) => {
+    const sub = args[0];
+    if (sub === 'file') {
+      const { existsSync, readFileSync, writeFileSync } = await import('node:fs');
+      const { resolve } = await import('node:path');
+      const { encryptBytes } = await import('../../kernel/fileCrypto.js');
+      const fileArg = args[1];
+      if (!fileArg) return '用法：/encrypt file <文件路径> --key <口令>（加密为 <文件>.enc）｜/encrypt decrypt <文件.enc> --key <口令>';
+      const keyIdx = args.indexOf('--key');
+      const pass = keyIdx >= 0 ? args[keyIdx + 1] : process.env.WXNODUS_ENC_KEY;
+      if (!pass) return '需要口令：--key <口令> 参数或 WXNODUS_ENC_KEY 环境变量（不落盘、不回显）';
+      const target = resolve(ctx.cwd, fileArg);
+      if (!existsSync(target)) return `文件不存在：${fileArg}`;
+      const r = encryptBytes(readFileSync(target), pass);
+      if (!r.ok) return r.error!;
+      const outPath = target + '.enc';
+      writeFileSync(outPath, r.data!);
+      return `已加密：${outPath}（AES-256-GCM，解密：/encrypt decrypt ${fileArg}.enc --key <口令>）`;
+    }
+    if (sub === 'decrypt') {
+      const { existsSync, readFileSync, writeFileSync } = await import('node:fs');
+      const { resolve } = await import('node:path');
+      const { decryptBytes } = await import('../../kernel/fileCrypto.js');
+      const fileArg = args[1];
+      if (!fileArg) return '用法：/encrypt decrypt <文件.enc> --key <口令>';
+      const keyIdx = args.indexOf('--key');
+      const pass = keyIdx >= 0 ? args[keyIdx + 1] : process.env.WXNODUS_ENC_KEY;
+      if (!pass) return '需要口令：--key <口令> 参数或 WXNODUS_ENC_KEY 环境变量';
+      const target = resolve(ctx.cwd, fileArg);
+      if (!existsSync(target)) return `文件不存在：${fileArg}`;
+      const r = decryptBytes(readFileSync(target), pass);
+      if (!r.ok) return r.error!;
+      const outPath = target.endsWith('.enc') ? target.slice(0, -4) : target + '.dec';
+      writeFileSync(outPath, r.data!);
+      return `已解密：${outPath}`;
+    }
     const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;
-    return enc ? `凭证：AES-256-GCM 加密存储（${enc.slice(0, 12)}…，机器指纹绑定）` : '凭证：未配置（/model set-key <密钥>）';
+    return enc
+      ? `凭证：AES-256-GCM 加密存储（${enc.slice(0, 12)}…，机器指纹绑定）\n文件加解密：/encrypt file <路径> --key <口令>｜/encrypt decrypt <文件.enc> --key <口令>`
+      : `凭证：未配置（/model set-key <密钥>）\n文件加解密：/encrypt file <路径> --key <口令>｜/encrypt decrypt <文件.enc> --key <口令>`;
   });
 
   // ── 系统类 ──────────────────────────────────

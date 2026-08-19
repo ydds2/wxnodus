@@ -124,11 +124,16 @@ export interface PagerState {
   offset: number
   title?: string
   /** 2026-08-19 交互式 diff v2：结构化回滚元数据——文件分节（多文件聚合）或单文件；
-   * pager 内 `r` 回滚当前文件当前 hunk、`m` 标记已审 */
+   * pager 内 `r` 回滚当前文件当前 hunk、`m` 标记已审、`t` 切换文件树索引视图 */
   diff?: {
     aggregate: boolean
     arg: string
     files: Array<{ abs: string; rel: string; hunks: number; start: number; end: number }>
+    /** 文件树索引视图（t 键切换）：view='tree' 时 lines 为树列表，diffLines 保存原 diff 行待返回 */
+    view?: 'diff' | 'tree'
+    diffLines?: string[]
+    returnOffset?: number
+    treeSel?: number
   }
 }
 

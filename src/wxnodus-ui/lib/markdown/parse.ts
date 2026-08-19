@@ -13,9 +13,10 @@ export type { MdBlock };
 
 export function parseMd(text: string): MdBlock[] {
   if (!text.trim()) return [];
-  // 流式容错：未闭合围栏补全
-  const fence = text.match(/```[^\n]*$/);
-  const safe = fence ? text + '\n```' : text;
+  // 流式容错：围栏数为奇数（未闭合）才补全——偶数已闭合（结尾恰好是围栏行）不补，
+  // 否则完整输入会产生多余空代码块（2026-08-19 /render 实测修复）
+  const fences = (text.match(/^```/gm) ?? []).length;
+  const safe = fences % 2 === 1 ? text + '\n```' : text;
   const tree = fromMarkdown(safe, {
     extensions: [gfm() as any, math() as any],
     mdastExtensions: [gfmFromMarkdown() as any, mathFromMarkdown() as any],

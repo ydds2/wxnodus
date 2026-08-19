@@ -316,6 +316,54 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
           return patchOverlayState({ pager: null })
         }
 
+        // 2026-08-19 树面板形态：t 切换文件树索引视图（opencode 树面板的对等形态——
+        // 滚动分节流 + 树索引跳转）；树视图内 ↑↓ 选文件、Enter 跳转、t 返回 diff
+        if (overlay.pager.diff) {
+          const d = overlay.pager.diff
+          if (ch === 't') {
+            patchOverlayState(prev => {
+              if (!prev.pager?.diff) return prev
+              const dd = prev.pager.diff
+              if (dd.view === 'tree') {
+                return { ...prev, pager: { title: prev.pager.title, lines: dd.diffLines ?? prev.pager.lines, offset: dd.returnOffset ?? 0, diff: { ...dd, view: 'diff', diffLines: undefined, returnOffset: undefined, treeSel: undefined } } }
+              }
+              const treeLines = ['文件树（↑↓ 选择 · Enter 跳转 · t 返回 diff）', '', ...dd.files.map((f, i) => `${i === 0 ? '▸ ' : '  '}${f.rel}（${f.hunks} hunk${f.hunks > 1 ? 's' : ''}）`)]
+              return { ...prev, pager: { title: prev.pager.title, lines: treeLines, offset: 0, diff: { ...dd, view: 'tree', diffLines: prev.pager.lines, returnOffset: prev.pager.offset, treeSel: 0 } } }
+            })
+            return
+          }
+          if (d.view === 'tree') {
+            const treeLinesFor = (dd: NonNullable<typeof d>, sel: number) => ['文件树（↑↓ 选择 · Enter 跳转 · t 返回 diff）', '', ...dd.files.map((f, i) => `${i === sel ? '▸ ' : '  '}${f.rel}（${f.hunks} hunk${f.hunks > 1 ? 's' : ''}）`)]
+            const maxSel = Math.max(0, d.files.length - 1)
+            if (key.upArrow) {
+              return patchOverlayState(prev => {
+                if (!prev.pager?.diff) return prev
+                const dd = prev.pager.diff
+                const sel = Math.max(0, (dd.treeSel ?? 0) - 1)
+                return { ...prev, pager: { ...prev.pager, lines: treeLinesFor(dd, sel), diff: { ...dd, treeSel: sel } } }
+              })
+            }
+            if (key.downArrow) {
+              return patchOverlayState(prev => {
+                if (!prev.pager?.diff) return prev
+                const dd = prev.pager.diff
+                const sel = Math.min(maxSel, (dd.treeSel ?? 0) + 1)
+                return { ...prev, pager: { ...prev.pager, lines: treeLinesFor(dd, sel), diff: { ...dd, treeSel: sel } } }
+              })
+            }
+            if (key.return) {
+              patchOverlayState(prev => {
+                if (!prev.pager?.diff) return prev
+                const dd = prev.pager.diff
+                const sel = dd.files[dd.treeSel ?? 0]
+                if (!sel) return prev
+                return { ...prev, pager: { title: prev.pager.title, lines: dd.diffLines ?? prev.pager.lines, offset: sel.start, diff: { ...dd, view: 'diff', diffLines: undefined, returnOffset: undefined, treeSel: undefined } } }
+              })
+              return
+            }
+          }
+        }
+
         const move = (delta: number | 'top' | 'bottom') =>
           patchOverlayState(prev => {
             if (!prev.pager) {
@@ -371,7 +419,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
         // 2026-08-19 交互式 diff v2：r 回滚当前文件当前 hunk（分节元数据精确定位）；
         // m 标记已审（内容指纹持久化——变更即失效）。确认面板 onConfirm 真实执行。
-        if ((ch === 'r' || ch === 'm') && overlay.pager.diff) {
+        if ((ch === 'r' || ch === 'm') && overlay.pager.diff && overlay.pager.diff.view !== 'tree') {
           const { lines, offset, diff } = overlay.pager
           let section = diff.files[0]
           for (const s of diff.files) {

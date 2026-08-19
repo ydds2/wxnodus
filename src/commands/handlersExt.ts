@@ -308,20 +308,14 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     ]);
   });
 
-  bus.register('/render', (args) => {
+  bus.register('/render', async (args) => {
     const target = args.join(' ');
-    if (!target) return '用法：/render <文本>（Markdown 排版预览：标题/代码块/列表/分隔线）';
-    // 审计修复：真实 Markdown 基础排版（此前仅包盒子冒充渲染）
-    const out = target.split('\n').map(l => {
-      const t = l.trim();
-      if (/^#{1,6}\s/.test(t)) return t; // 标题保留 # 前缀
-      if (/^```/.test(t)) return '┌ ' + t.slice(3);
-      if (/^```$/.test(t)) return '└──'; // 代码块闭合
-      if (/^[-*]\s/.test(t)) return ' • ' + t.slice(2);
-      if (/^\d+[.)]\s/.test(t)) return t;
-      if (/^[-_*]{3,}$/.test(t)) return '─'.repeat(24);
-      return t;
-    });
+    if (!target) return '用法：/render <Markdown 文本>（真实渲染：标题/列表/代码块/表格/引用/公式——与 TUI 同源解析器）';
+    // 2026-08-19「不真实修」：此前仅行级前缀变换却挂「Markdown 排版预览」——现复用
+    // 成熟解析器（micromark+GFM+math，与 TUI 渲染同源）真实渲染为文本
+    const { renderMarkdownText } = await import('../wxnodus-ui/lib/markdown/renderText.js');
+    const out = renderMarkdownText(target);
+    if (!out.length) return '（空输入或无内容）';
     return lines(' Markdown 预览 ', out);
   });
 

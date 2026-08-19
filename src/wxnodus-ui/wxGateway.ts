@@ -1226,7 +1226,10 @@ export class GatewayClient extends EventEmitter {
       const stat = `快照 ${msgs.length} 条消息 · 当前 ${current.length} 条`
       const a = msgs.map(m => `${m.role}: ${String(m.content ?? '').slice(0, 80)}`).join('\n')
       const b = current.map(m => `${m.role}: ${String(m.text ?? '').slice(0, 80)}`).join('\n')
-      const rendered = a === b ? '（与当前一致）' : `快照：\n${a.slice(0, 2000)}\n\n当前：\n${b.slice(0, 2000)}`
+      // 2026-08-19「不真实修」：此前 a===b 全文等值才判一致、否则两端整段对贴——现 lineDiff 真 diff
+      const { lineDiff } = await import('../kernel/hunkApply.js')
+      const diff = lineDiff(a, b)
+      const rendered = diff ? `快照 → 当前：\n${diff.slice(0, 2000)}` : '（与当前一致）'
       return { rendered, stat }
     } catch (e: any) {
       return { error: String(e?.message ?? e).slice(0, 120) }
