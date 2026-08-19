@@ -145,34 +145,6 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
     return '用法：/balance set [url] [--path <jsonPath>] | on | off | threshold <数值> | auto-stop [on|off] | status | refresh';
   });
 
-  // ── 配置导出/导入（JSON；导出可选脱敏）──
-  bus.register('/config', async (args) => {
-    const sub = args[0] ?? '';
-    if (sub === 'export') {
-      const redact = args.includes('--redact');
-      const s: Record<string, any> = { ...((ctx.config.get('settings') ?? {}) as Record<string, any>) };
-      if (redact) {
-        delete s.apiKeyEnc;
-        if (Array.isArray(s.providers)) s.providers = s.providers.map((p: any) => ({ ...p, key: p.key ? '(redacted)' : '' }));
-        s.apiKeys = {};
-      }
-      return JSON.stringify({ settings: s }, null, 2);
-    }
-    if (sub === 'import') {
-      const file = String(args[1] ?? '').trim();
-      if (!file) return '用法：/config import <文件路径>（JSON：{ "settings": { ... } }）';
-      try {
-        const { readFileSync, existsSync } = await import('node:fs');
-        if (!existsSync(file)) return `文件不存在：${file}`;
-        const j = JSON.parse(readFileSync(file, 'utf8'));
-        const merged = { ...((ctx.config.get('settings') ?? {}) as Record<string, any>), ...(j.settings ?? {}) };
-        Object.entries(merged).forEach(([k, v]) => ctx.config.setKey('settings', k, v));
-        return '配置已导入（settings.json 热重载生效；若含 providers 请 /profile list 确认）';
-      } catch (e: any) { return `导入失败：${String(e?.message ?? e).slice(0, 120)}`; }
-    }
-    return '用法：/config export [--redact] | import <文件>';
-  });
-
   // ── 彩蛋（趣味拉满：纯文本无副作用）──
   bus.register('/warp', () => ['✦ 曲率引擎预热', '✦ ✦ 折叠空间', '✦ ✦ ✦ 穿越虫洞', '· ✦ · 已到达目标星系 ✦'].join('\n'));
   bus.register('/fortune', () => {
@@ -1045,7 +1017,31 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
       : '已关闭 vim 模态编辑（回到普通输入）';
   });
 
-  bus.register('/config', (args) => {
+  bus.register('/config', async (args) => {
+    // F1 修复（2026-08-19）：export/import 分支并入本 handler——原二次注册（149 版）被 set/view 版
+    // 遮蔽，功能不可达；现单注册单分发（分级表 /config export=safe、/config import=confirm 恢复真实语义）
+    if (args[0] === 'export') {
+      const redact = args.includes('--redact');
+      const s: Record<string, any> = { ...((ctx.config.get('settings') ?? {}) as Record<string, any>) };
+      if (redact) {
+        delete s.apiKeyEnc;
+        if (Array.isArray(s.providers)) s.providers = s.providers.map((p: any) => ({ ...p, key: p.key ? '(redacted)' : '' }));
+        s.apiKeys = {};
+      }
+      return JSON.stringify({ settings: s }, null, 2);
+    }
+    if (args[0] === 'import') {
+      const file = String(args[1] ?? '').trim();
+      if (!file) return '用法：/config import <文件路径>（JSON：{ "settings": { ... } }）';
+      try {
+        const { readFileSync, existsSync } = await import('node:fs');
+        if (!existsSync(file)) return `文件不存在：${file}`;
+        const j = JSON.parse(readFileSync(file, 'utf8'));
+        const merged = { ...((ctx.config.get('settings') ?? {}) as Record<string, any>), ...(j.settings ?? {}) };
+        Object.entries(merged).forEach(([k, v]) => ctx.config.setKey('settings', k, v));
+        return '配置已导入（settings.json 热重载生效；若含 providers 请 /profile list 确认）';
+      } catch (e: any) { return `导入失败：${String(e?.message ?? e).slice(0, 120)}`; }
+    }
     const s = ctx.config.get('settings') as Record<string, any>;
     // P2 配置校验：未知键警告（防拼写错误静默无效）
     const unknown = unknownSettingsKeys(s);
@@ -1067,6 +1063,7 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
     rows.push('', ' 分层：全局 settings.json ← 项目 .wxnodus/config.json（settings 键级覆盖，/config set 仍写全局）');
     const layers = settingsLayers(ctx.cwd);
     rows.push(`   项目配置：${layers.projectLoaded ? `✅ 已加载 ${layers.projectPath}` : layers.error ? `⚠ 解析失败（${layers.error}）` : `未配置（${layers.projectPath}）`}`);
+    rows.push('', ' 导出/导入：/config export [--redact] | import <文件>（JSON 迁移/备份）');
     return lines(' 配置 ', rows);
   });
 

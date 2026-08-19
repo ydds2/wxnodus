@@ -40,7 +40,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/model add': 'confirm', '/thinking': 'confirm', '/hooks': 'confirm',
   '/compact': 'confirm', '/digest': 'confirm', '/curator': 'confirm',
   '/build': 'confirm', '/forge': 'confirm', '/skill': 'confirm', '/skill new': 'confirm',
-  '/skill install': 'confirm', '/learn': 'confirm', '/assimilate': 'confirm', '/gate': 'confirm', '/fdr': 'confirm',
+  '/learn': 'confirm', '/assimilate': 'confirm', '/gate': 'confirm', '/fdr': 'confirm',
   '/flow': 'confirm', '/import': 'confirm', '/consent': 'confirm', '/encrypt': 'confirm',
   '/backup': 'confirm', '/export': 'confirm', '/workspace': 'safe', '/workspace set': 'confirm', '/workspace reset': 'confirm', '/vim': 'safe', '/diff': 'safe', '/diff revert': 'confirm',
   '/theme dark': 'confirm', '/theme light': 'confirm',
@@ -75,8 +75,8 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/understand': 'confirm',
   // ── danger：高危，强制人工确认（AI 预审不可放行）──
   '/deploy': 'danger', '/script run': 'danger',
-  '/webhook add': 'danger', '/webhook del': 'danger',
-  '/gateway': 'danger', '/gateway start': 'danger', '/a2a serve': 'danger', '/acp serve': 'danger',
+  '/webhook add': 'danger', '/webhook remove': 'danger',
+  '/gateway': 'danger', '/gateway start': 'danger', '/a2a serve': 'danger', '/acp server': 'danger',
   // 任务系统：AI 发起任意 shell 后台执行 / 取消 → 强制人工确认
   '/jobs run': 'danger', '/jobs kill': 'danger',
   // 后台终端：注入输入=执行命令，AI 发起必须人工确认
