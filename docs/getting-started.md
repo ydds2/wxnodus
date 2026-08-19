@@ -3,7 +3,19 @@
 > wxnodus 用户文档三件套之一（supremacy 2.3，2026-08-18）。另见 `docs/troubleshooting.md`（排障）与 `docs/examples.md`（场景示例）。
 > 契约：本文件列出的每个命令/开关都真实存在（链接契约测试 `tests/docs-links.test.ts` 校验文件与 README 引用）。
 
-## 1. 安装（Windows 10/11，Node 22+）
+## 1. 安装（Windows 10/11，Node 18+，推荐 22）
+
+### 1.1 一键安装（推荐——其他电脑装完即用）
+
+前置仅一个：Node.js 18+（推荐 22）——官网 <https://nodejs.org/>（国内镜像 <https://npmmirror.com/mirrors/node/>）。**无需构建工具链**（安装包自带全部原生二进制）。
+
+- **源 A（离线/局域网/U盘，最省事）**：拿到 `wxnodus-<版本>.zip` → 解压 → **双击 `install.bat`**（自动校验、安装、写 PATH）→ 新开 cmd 运行 `wxnodus`。
+- **源 B（URL）**：`powershell -ExecutionPolicy Bypass -File install-bootstrap.ps1 -Url <https://…/wxnodus-<版本>.zip>`
+- **源 C（私有 GitHub Release）**：`powershell -ExecutionPolicy Bypass -File install-bootstrap.ps1 -GitHub <owner>/<repo> -Tag <版本>`（需先 `gh auth login`）。
+
+安装后：数据目录 `%LOCALAPPDATA%\wxnodus`（密钥 AES-256-GCM 本机加密，明文不落盘）；升级 = 下载新 zip 重跑安装（数据保留，`/update` 可探测远程版本）；卸载 = `install.ps1 -Uninstall`（只删安装文件，不删数据）。
+
+### 1.2 开发者安装（源码开发用）
 
 ```bash
 git clone <仓库> && cd WxNodusV3CLI
@@ -11,7 +23,7 @@ npm install && npm run build
 npm link            # 全局可用 wxnodus / wxn 两个命令
 ```
 
-- 需要本机可用的构建工具链：Node 22（better-sqlite3/sqlite-vec 原生模块随 install 编译；失败见 `docs/troubleshooting.md` §1）。
+- 此路径需要本机可用的构建工具链：Node 22（better-sqlite3/sqlite-vec 原生模块随 install 编译；失败见 `docs/troubleshooting.md` §1）。分发安装（§1.1）不需要。
 - 无需注册、数据不出机；没有 API key 也可以使用离线模型与确定性工具（离线能力见 §4）。
 
 ## 2. 三步跑起来

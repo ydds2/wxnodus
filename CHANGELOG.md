@@ -6,6 +6,7 @@
 ## [Unreleased]
 
 ### Added
+- **一键安装（生产级阶段 1 分发闭环，2026-08-19）**：自包含 zip 安装包内置 `install.bat` 双击向导（解压即装：Node 18+ 预检含国内镜像指引、PATH 自动注册、`wxnodus.cmd` 命令、数据目录 `%LOCALAPPDATA%\wxnodus`、sha256 全量校验、原子切换 + journal 卸载）；`packaging/install-bootstrap.ps1` 三源下载（本地/URL https 强制/私有 GitHub Release 走 gh，Token 不落盘）；首启四步清单（模型/密钥/代理/离线）+ GitHub 连通探测；`/update` 识别 zip 渠道并可探测远程版本；CI 新增 install-smoke job（真实安装→运行→卸载闭环）。
 - **vim 模态编辑（波 3 ②，2026-08-18）**：`/vim` 开启输入框 NORMAL/INSERT 双态（h/j/k/l、w/b/e、0/$/^、dd/yy/cc、d/c/y+移动、p/P、u 撤销、`.` 重复、双击 Esc 清空）。
 - **完整 diff 查看 + 逐 hunk 回滚（波 3 ③，2026-08-18）**：`/diff <文件>` 查看快照与当前内容的完整差异；`/diff <文件> revert <hunk序号>` 只回滚选中的那处变更（自动留快照，`/undo fs restore` 可再滚回）——六家竞品均无的逐 hunk 操作。
 - **跨会话语义召回（波 3 ⑪，2026-08-18）**：`/hole --all <关键词>` 本地向量+全文检索所有会话的记忆（数据不出机——六家竞品均无本地跨会话向量召回）。

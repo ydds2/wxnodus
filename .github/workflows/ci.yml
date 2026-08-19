@@ -152,3 +152,65 @@ jobs:
           name: wxnodus-vscode-vsix
           path: packages/vscode-ext/wxnodus-vscode.vsix
           if-no-files-found: error
+
+  # 生产级阶段 1（分发闭环）：全新 runner 模拟「其他电脑」——zip 构建 → install.ps1 真实安装
+  # （-SkipPath 不污染 PATH）→ 运行安装产物 -p /status（完整组合根装配）→ journal 卸载。
+  install-smoke:
+    name: install-smoke (zip → install → run → uninstall)
+    runs-on: windows-latest
+    needs: gate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Exempt Defender scanning (runner perf)
+        shell: pwsh
+        run: |
+          try { Add-MpPreference -ExclusionPath 'D:\a' -ErrorAction SilentlyContinue } catch {}
+          foreach ($p in 'powershell.exe','pwsh.exe','node.exe','cmd.exe','conhost.exe') {
+            try { Add-MpPreference -ExclusionProcess $p -ErrorAction SilentlyContinue } catch {}
+          }
+
+      - name: Build installer zip (freeze candidate → package)
+        shell: pwsh
+        run: |
+          $ciTmp = Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp'
+          New-Item -ItemType Directory -Force -Path $ciTmp | Out-Null
+          $env:TMP = $ciTmp; $env:TEMP = $ciTmp
+          $env:WXNODUS_LANG = 'zh-CN'
+          node --import tsx scripts/freeze-candidate.ts --run install-smoke
+          npm exec -- tsx scripts/package-installer.ts --candidate artifacts/release-evidence/install-smoke/candidate.json --name wxnodus --version 0.0.1 --out dist-installer
+
+      - name: Real install (install.ps1, -SkipPath)
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist-installer -Filter '*.zip' | Select-Object -First 1
+          $unpack = Join-Path $env:RUNNER_TEMP 'wxsmoke-unpack'
+          Expand-Archive -Path $zip.FullName -DestinationPath $unpack -Force
+          $target = Join-Path $env:RUNNER_TEMP 'wxsmoke-installed'
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $unpack 'install.ps1') -TargetDir $target -SkipPath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run installed binary (full composition via -p /status)
+        shell: cmd
+        run: |
+          call "%RUNNER_TEMP%\wxsmoke-installed\wxnodus.cmd" --data-dir "%RUNNER_TEMP%\wxsmoke-data" -p "/status"
+
+      - name: Uninstall (journal-only)
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path (Join-Path $env:RUNNER_TEMP 'wxsmoke-unpack') 'install.ps1') -TargetDir (Join-Path $env:RUNNER_TEMP 'wxsmoke-installed') -Uninstall
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
