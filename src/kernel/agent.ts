@@ -158,6 +158,8 @@ function makeAbortSignal(): { promise: Promise<void>; resolve: () => void; abort
 export function createAgent(opts: AgentOptions) {
   // P1b：tools 可变——插件热重载（updateTools 增量合并，不重启进程、不覆盖先前注册）
   let extraTools = { ...(opts.extraTools ?? {}) };
+  // P2 修复：上一轮真实 prompt token（provider 响应 usage.promptTokens——状态栏上下文占用数据源）
+  let lastPromptTokens = 0;
   // 演示工具隐藏（真实 cmd 实测缺陷：/plugin new 脚手架 example_greet 对「hello」被
   // 廉价模型选中 → 审批面板阻塞会话）。demo:true 标记 + 遗留 example_ 前缀启发式
   // （旧 plugin.json 无标记）一律不进模型工具集；WXNODUS_INCLUDE_DEMO_TOOLS=1 逃生门
@@ -479,6 +481,8 @@ export function createAgent(opts: AgentOptions) {
       opts.db.prepare(`INSERT INTO usage_stats (session_id, model, input_tokens, output_tokens, cache_hit_tokens, cache_miss_tokens, reasoning_tokens, ts) VALUES (?,?,?,?,?,?,?,?)`)
         .run(sessionId, r.model, r.usage?.promptTokens ?? 0, r.usage?.completionTokens ?? 0, r.usage?.cacheHitTokens ?? 0, r.usage?.cacheMissTokens ?? 0, r.usage?.reasoningTokens ?? 0, Date.now());
     } catch { /* 统计失败不影响对话 */ }
+    // 状态栏上下文占用：上一轮真实 prompt token（端点未上报 → 0，UI 诚实隐藏）
+    lastPromptTokens = r.usage?.promptTokens ?? 0;
     if (r.usage && (r.usage.promptTokens || r.usage.completionTokens)) {
       // 会话 token 预算（Gemini general.budget 对齐）：settings.budgetTokens>0 时，
       // 会话累计用量（usage_stats 实时 SUM）超预算 → 通知一次（防刷屏），
@@ -1527,6 +1531,8 @@ export function createAgent(opts: AgentOptions) {
     abort() { const t = turn; if (t) { t.aborted = true; t.signal.abortController.abort(); t.signal.resolve(); } },
     setMode(m: Mode) { mode = m; },
     getMode(): Mode { return mode; },
+    // 状态栏上下文占用：上一轮真实 prompt token（P2 修复——此前 UI 只有累计 token 可显示）
+    getLastPromptTokens(): number { return lastPromptTokens; },
     // A24：运行时切换工作目录（工具 ctx.cwd 跟随；repo_map 等 process.cwd() 读取
     // 由 gateway 侧 process.chdir 同步覆盖；dataDir 保持启动值）
     setCwd(path: string) { ctxCwd = path; },

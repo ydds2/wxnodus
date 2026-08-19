@@ -458,6 +458,7 @@ const StatusRulePane = memo(function StatusRulePane({
         battery={ui.battery}
         balanceLabel={ui.balance?.label}
         balanceStale={ui.balance?.stale}
+        balanceNextRefreshAt={ui.balance?.nextRefreshAt}
         balanceLow={ui.balance?.low}
         busy={ui.busy}
         cols={composer.cols}
@@ -488,6 +489,7 @@ const StatusRulePane = memo(function StatusRulePane({
         turnStartedAt={status.turnStartedAt}
         usage={ui.usage}
         usageLabel={ui.usageRange ? usageSegmentLabel(ui.usageRange) : undefined}
+        usageNextRefreshAt={ui.usageRange?.nextRefreshAt}
         voiceLabel={status.voiceLabel}
       />
     </Box>

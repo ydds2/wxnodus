@@ -358,6 +358,26 @@ function SpawnHud({ t }: { t: Theme }) {
   )
 }
 
+function RefreshCountdown({ nextAt, t }: { nextAt?: number | null; t: Theme }) {
+  // P2 修复：余额/token 段刷新倒计时（· 4:59）——秒级 tick；到期隐藏
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    setNow(Date.now())
+    const id = setInterval(() => setNow(Date.now()), 1000)
+
+    return () => clearInterval(id)
+  }, [nextAt])
+
+  const left = (nextAt ?? 0) - now
+
+  if (!nextAt || left <= 0) {
+    return null
+  }
+
+  return <Text color={t.color.muted}>{` · ${fmtDuration(left)}`}</Text>
+}
+
 function SessionDuration({ startedAt }: { startedAt: number }) {
   const [now, setNow] = useState(() => Date.now())
 
@@ -450,6 +470,8 @@ export function StatusRule({
   balanceLabel,
   balanceStale,
   balanceLow,
+  balanceNextRefreshAt,
+  usageNextRefreshAt,
   usageLabel,
   lastTurnEndedAt,
   liveSessionCount,
@@ -481,7 +503,7 @@ export function StatusRule({
       ? `${fmtK(usage.context_used ?? 0)} tok`
       : `${fmtK(usage.context_used ?? 0)}/${fmtK(usage.context_max)}`
     : usage.total > 0
-      ? `${fmtK(usage.total)} tok`
+      ? `累计 ${fmtK(usage.total)} tok`
       : ''
 
   const bar = !segs.compactCtx && usage.context_max ? ctxBar(pct) : ''
@@ -578,8 +600,8 @@ export function StatusRule({
   const showBar = !!bar && fits(SEP + stringWidth(`[${bar}] ${pct != null ? `${pct}%` : ''}`))
   // 💰/📊：余额与 token 区间两个段独立出现。预算顺序紧跟 bar——尾段中最高
   // 优先级（钱最要紧），窄屏先砍 duration/cost 等低优先级段。
-  const showBalanceSeg = segs.balance && !!balanceLabel && fits(SEP + stringWidth(balanceLabel))
-  const showUsageSeg = segs.usage && !!usageLabel && fits(SEP + stringWidth(usageLabel))
+  const showBalanceSeg = segs.balance && !!balanceLabel && fits(SEP + stringWidth(balanceLabel) + (balanceNextRefreshAt ? 8 : 0))
+  const showUsageSeg = segs.usage && !!usageLabel && fits(SEP + stringWidth(usageLabel) + (usageNextRefreshAt ? 8 : 0))
   const showDuration = segs.duration && !!sessionStartedAt && fits(SEP + MAX_DURATION_WIDTH)
   // Idle clock — time since the last final agent response. Hidden while busy
   // (the FaceTicker's elapsed tail covers the live turn) and before the first
@@ -725,12 +747,14 @@ export function StatusRule({
               <Text color={balanceLow ? t.color.error : balanceStale ? t.color.warn : t.color.accent} wrap="truncate-end">
                 {' │ '}
                 {balanceLabel}
+                <RefreshCountdown nextAt={balanceNextRefreshAt} t={t} />
               </Text>
             </Box>
           ) : (
             <Text color={balanceLow ? t.color.error : balanceStale ? t.color.warn : t.color.accent} wrap="truncate-end">
               {' │ '}
               {balanceLabel}
+              <RefreshCountdown nextAt={balanceNextRefreshAt} t={t} />
             </Text>
           )
         ) : null}
@@ -747,12 +771,14 @@ export function StatusRule({
               <Text color={t.color.muted} wrap="truncate-end">
                 {' │ '}
                 {usageLabel}
+                <RefreshCountdown nextAt={usageNextRefreshAt} t={t} />
               </Text>
             </Box>
           ) : (
             <Text color={t.color.muted} wrap="truncate-end">
               {' │ '}
               {usageLabel}
+              <RefreshCountdown nextAt={usageNextRefreshAt} t={t} />
             </Text>
           )
         ) : null}
@@ -883,6 +909,10 @@ interface StatusRuleProps {
   battery?: BatteryInfo | null
   /** 余额段标签（💰 前缀已含；未配置 → undefined，段隐藏） */
   balanceLabel?: string
+  /** P2 修复：余额下次刷新时刻（· m:ss 倒计时数据源） */
+  balanceNextRefreshAt?: number
+  /** P2 修复：token 区间下次刷新时刻 */
+  usageNextRefreshAt?: number
   /** 余额最近一次拉取失败（⚠ 着色） */
   balanceStale?: boolean
   /** 余额低于预警阈值（红——一眼可见钱快没了） */

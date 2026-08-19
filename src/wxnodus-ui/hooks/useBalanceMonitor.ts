@@ -22,7 +22,7 @@ const RANGES: readonly UsageRangeKind[] = ['today', '7d', '30d']
 const asObj = (raw: unknown): Record<string, unknown> | null =>
   !raw || typeof raw !== 'object' || Array.isArray(raw) ? null : (raw as Record<string, unknown>)
 
-function toBalanceUi(raw: unknown, prev: BalanceUi | null): BalanceUi | null {
+function toBalanceUi(raw: unknown, prev: BalanceUi | null, nextRefreshAt: number): BalanceUi | null {
   const o = asObj(raw)
   if (!o || o.configured !== true) {
     // 未配置余额 URL（或 balance.monitor.enabled=false）→ 段自动隐藏
@@ -31,8 +31,8 @@ function toBalanceUi(raw: unknown, prev: BalanceUi | null): BalanceUi | null {
 
   if (o.ok === false || typeof o.balance !== 'string' || !o.balance.trim()) {
     return prev
-      ? { ...prev, stale: true, updatedAt: Date.now() }
-      : { label: '💰⚠ 拉取失败', configured: true, stale: true, updatedAt: Date.now() }
+      ? { ...prev, stale: true, updatedAt: Date.now(), nextRefreshAt }
+      : { label: '💰⚠ 拉取失败', configured: true, stale: true, updatedAt: Date.now(), nextRefreshAt }
   }
 
   return {
@@ -43,11 +43,12 @@ function toBalanceUi(raw: unknown, prev: BalanceUi | null): BalanceUi | null {
     configured: true,
     ...(o.low === true ? { low: true } : {}),
     stale: false,
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
+    nextRefreshAt
   }
 }
 
-function toUsageRangeUi(raw: unknown): UsageRangeUi | null {
+function toUsageRangeUi(raw: unknown, nextRefreshAt: number): UsageRangeUi | null {
   const o = asObj(raw)
   if (!o) {
     return null
@@ -57,14 +58,16 @@ function toUsageRangeUi(raw: unknown): UsageRangeUi | null {
     range: RANGES.includes(o.range as UsageRangeKind) ? (o.range as UsageRangeKind) : 'today',
     total: typeof o.total === 'number' ? Math.max(0, Math.round(o.total)) : 0,
     unmeasured: typeof o.unmeasured === 'number' ? Math.max(0, Math.round(o.unmeasured)) : 0,
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
+    nextRefreshAt
   }
 }
 
 /** 状态栏 💰 点击——强制刷新（绕过 60s 防抖与内核 TTL）。返回 RPC promise 供上层 sys 反馈。 */
 export function refreshBalance(gw: GatewayClient): Promise<unknown> {
   return gw.request<unknown>('balance.status', { force: true }).then(raw => {
-    patchUiState(state => ({ ...state, balance: toBalanceUi(raw, state.balance) }))
+    // 强制刷新后重置 5 分钟倒计时（P2 修复）
+    patchUiState(state => ({ ...state, balance: toBalanceUi(raw, state.balance, Date.now() + BALANCE_POLL_MS) }))
     return raw
   })
 }
@@ -75,7 +78,8 @@ export function cycleUsageRange(gw: GatewayClient): Promise<unknown> {
   const i = RANGES.indexOf(current)
   const next = RANGES[(i + 1) % RANGES.length]!
   return gw.request<unknown>('usage.range.set', { range: next }).then(raw => {
-    patchUiState({ usageRange: toUsageRangeUi(raw) })
+    // 手动轮换后重置 5 分钟倒计时（P2 修复）
+    patchUiState({ usageRange: toUsageRangeUi(raw, Date.now() + BALANCE_POLL_MS) })
     return raw
   })
 }
@@ -90,18 +94,21 @@ export function useBalanceMonitor(gw: GatewayClient | null) {
     let timer: NodeJS.Timeout | null = null
     let fails = 0
 
+    // P2 修复：nextRefreshAt 倒计时——常态 5 分钟、失败退避 1 分钟（与 loop 的定时一致）
+    const nextAt = () => Date.now() + (fails > 0 ? BALANCE_FAIL_RETRY_MS : BALANCE_POLL_MS)
+
     const fetchBalance = async (force = false) => {
       try {
         const raw = await gw.request<unknown>('balance.status', { force })
         if (!cancelled) {
           fails = 0
-          patchUiState(state => ({ ...state, balance: toBalanceUi(raw, state.balance) }))
+          patchUiState(state => ({ ...state, balance: toBalanceUi(raw, state.balance, nextAt()) }))
         }
       } catch {
         fails += 1
         if (!cancelled) {
           patchUiState(state =>
-            state.balance ? { ...state, balance: { ...state.balance, stale: true, updatedAt: Date.now() } } : state
+            state.balance ? { ...state, balance: { ...state.balance, stale: true, updatedAt: Date.now(), nextRefreshAt: nextAt() } } : state
           )
         }
       }
@@ -111,7 +118,7 @@ export function useBalanceMonitor(gw: GatewayClient | null) {
       try {
         const raw = await gw.request<unknown>('usage.range')
         if (!cancelled) {
-          patchUiState({ usageRange: toUsageRangeUi(raw) })
+          patchUiState({ usageRange: toUsageRangeUi(raw, nextAt()) })
         }
       } catch {
         // 静默——段自然隐藏，不打扰主流程
@@ -132,7 +139,9 @@ export function useBalanceMonitor(gw: GatewayClient | null) {
       }
 
       // 失败退避：连续失败 → 1 分钟重试；成功 → 5 分钟常态轮询
+      // （P2 修复：token 区间同循环轮询——此前只随 message.complete 刷新，无周期可见性）
       timer = setTimeout(() => {
+        void fetchUsageRange()
         void fetchBalance().finally(loop)
       }, fails > 0 ? BALANCE_FAIL_RETRY_MS : BALANCE_POLL_MS)
     }

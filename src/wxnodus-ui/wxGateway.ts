@@ -14,7 +14,7 @@ import { knownSettingsKeys } from '../store/config.js'
 import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
 import { seedTurnTodos, syncToolTodo } from './lib/turnTodos.js'
-import { MODEL_CATALOG } from '../kernel/providers.js'
+import { MODEL_CATALOG, maxContextFor } from '../kernel/providers.js'
 import { priceForModel } from '../kernel/cost.js'
 import { resolveDefaultModel } from '../kernel/defaults.js'
 import { addCustomModel, applyModelKey, type ModelRegistryPort } from '../kernel/modelRegistry.js'
@@ -288,10 +288,13 @@ export class GatewayClient extends EventEmitter {
         }
         // 状态栏 $ 成本段即时刷新（此前要等下次 session.info——回合结束后成本数字陈旧）：
         // 会话 usage 实时重查（含 cost_usd——全部模型有定价才给），回合结算后 UI 立即可见
-        let liveUsage: { calls: number; input: number; output: number; total: number; cost_usd?: number } | undefined
+        let liveUsage: { calls: number; input: number; output: number; total: number; cost_usd?: number; context_used?: number; context_max?: number } | undefined
         try {
           const row = this.kernel.adapter.data.usage.get(this.currentSessionId)
           if (row) liveUsage = { calls: row.calls ?? 0, input: row.input ?? 0, output: row.output ?? 0, total: (row.input ?? 0) + (row.output ?? 0), ...(typeof row.cost_usd === 'number' ? { cost_usd: row.cost_usd } : {}) }
+          const ctxUsed = this.kernel.adapter.agent.getLastPromptTokens()
+          const ctxMax = maxContextFor(this.kernel.settings.model ?? null)
+          if (liveUsage && ctxMax && ctxUsed > 0) liveUsage = { ...liveUsage, context_used: ctxUsed, context_max: ctxMax }
         } catch { /* 用量读取失败不阻断回合收尾 */ }
         this.publish({ type: 'message.complete', payload: { text: this.finalText, todos: this.turnTodos, ...(liveUsage ? { usage: liveUsage } : {}) } })
         this.finalText = ''
@@ -2437,6 +2440,13 @@ export class GatewayClient extends EventEmitter {
       } catch { /* 压缩计数失败按零 */ }
       // 状态栏 $ 成本段（#11 尾项）：usage.get 已按模型聚合估算（全部模型有定价才给 cost_usd）
       if (row) usage = { calls: row.calls ?? 0, input: row.input ?? 0, output: row.output ?? 0, total: (row.input ?? 0) + (row.output ?? 0), compressions, ...(typeof row.cost_usd === 'number' ? { cost_usd: row.cost_usd } : {}) }
+      // P2 修复：上下文占用真实数据——上一轮 prompt token（agent）与模型窗口（catalog）；
+      // 任一缺失则省略（UI 诚实降级为「累计 token」标签，不再冒充上下文）
+      try {
+        const ctxUsed = this.kernel.adapter.agent.getLastPromptTokens()
+        const ctxMax = maxContextFor(s.model ?? null)
+        if (ctxMax && ctxUsed > 0) usage = { ...usage, context_used: ctxUsed, context_max: ctxMax }
+      } catch { /* 端口缺失/失败 → 省略，UI 降级 */ }
     } catch { /* 用量统计失败按零 */ }
     // A24 第三类修复：MCP 服务器真实状态（kernel mcpStatus——连接/工具数/传输方式）
     let mcp_servers: SessionInfo['mcp_servers']

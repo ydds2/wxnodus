@@ -190,6 +190,8 @@ export interface BalanceUi {
   low?: boolean
   stale: boolean
   updatedAt: number
+  /** 下次自动刷新时刻（epoch ms——状态栏倒计时「· 4:59」数据源；失败退避按 60s） */
+  nextRefreshAt?: number
 }
 
 // 状态栏 token 区间段（📊）：跨会话聚合（today/7d/30d）。
@@ -201,6 +203,8 @@ export interface UsageRangeUi {
   /** 端点未上报用量的调用数（>0 时 token 数被低估——状态栏 ⚠N 标记） */
   unmeasured: number
   updatedAt: number
+  /** 下次自动刷新时刻（epoch ms——状态栏倒计时数据源；回合结算刷新后重置） */
+  nextRefreshAt?: number
 }
 
 export interface UiState {

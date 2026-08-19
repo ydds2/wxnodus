@@ -34,6 +34,8 @@ export interface TuiAgentPort {
   setDelegationPaused(paused: boolean): void;
   getDelegationPaused(): boolean;
   getMaxSpawnDepth(): number;
+  /** 上一轮真实 prompt token（状态栏上下文占用数据源；端点未上报 → 0） */
+  getLastPromptTokens(): number;
 }
 
 export interface TuiDataPort {
