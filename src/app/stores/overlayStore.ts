@@ -2,7 +2,7 @@
 import { createStore as create } from './engine.js';
 import type { OverlayState } from './types.js';
 
-const initial: OverlayState = { approval: null, clarify: null, confirm: null, sessions: false, modelPicker: false, pager: null };
+const initial: OverlayState = { approval: null, clarify: null, confirm: null, sessions: false, modelPicker: false, configPanel: false, pager: null };
 
 export const useOverlay = create<{ s: OverlayState }>(() => ({ s: initial }));
 export const getOverlay = () => useOverlay.getState().s;

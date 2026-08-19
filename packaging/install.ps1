@@ -62,7 +62,10 @@ try {
       Invoke-WebRequest -Uri $PublicUrl -OutFile $ZipPath -UseBasicParsing
     } catch {
       # Private repo fallback: gh CLI downloads with the user's own auth. No token is written or embedded.
+      # GODEBUG=http2client=0: gh (Go) over HTTP/2 fails through some proxies (PROTOCOL_ERROR observed);
+      # forcing HTTP/1.1 makes large asset downloads reliable behind local proxies.
       Write-Step "public URL unavailable - falling back to gh release download (private repo, gh auth)"
+      $env:GODEBUG = 'http2client=0'
       & gh release download $Tag --repo $Repo --pattern "*.zip" --dir $Temp
       if ($LASTEXITCODE -ne 0) { Die "download failed. Run 'gh auth login' then retry, or set `$env:WXNODUS_BASE_URL to a mirror" }
       $Downloaded = Get-ChildItem $Temp -Filter '*.zip' | Select-Object -First 1
@@ -70,6 +73,9 @@ try {
       $ZipPath = $Downloaded.FullName
     }
   }
+  # PK signature check: fail fast and honestly on HTML login pages / error pages masquerading as 200.
+  $Head = Get-Content -Path $ZipPath -Encoding Byte -TotalCount 2
+  if ($Head.Count -lt 2 -or $Head[0] -ne 80 -or $Head[1] -ne 75) { Die "downloaded file is not a zip (login/error page?) - check auth or set `$env:WXNODUS_BASE_URL to a mirror" }
   $Unpack = Join-Path $Temp 'unpacked'
   New-Item -ItemType Directory -Force -Path $Unpack | Out-Null
   Expand-Archive -Path $ZipPath -DestinationPath $Unpack -Force

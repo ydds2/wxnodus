@@ -54,5 +54,6 @@ export interface OverlayState {
   confirm: { text: string; danger: boolean } | null;
   sessions: boolean;
   modelPicker: boolean;
+  configPanel: boolean;
   pager: { title: string; lines: string[] } | null;
 }

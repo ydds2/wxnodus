@@ -97,6 +97,7 @@ export interface OverlayState {
   clarify: ClarifyReq | null
   commandPalette: boolean
   confirm: ConfirmReq | null
+  configPanel: boolean
   modelPicker: boolean
   pager: null | PagerState
   pluginsHub: boolean

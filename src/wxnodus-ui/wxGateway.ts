@@ -9,6 +9,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, copyFi
 import { join, resolve, basename, isAbsolute } from 'node:path'
 import { attachmentsDir, clearPending, readPending, writePending } from '../kernel/imagePending.js'
 import { WXNODUS_VERSION } from '../kernel/version.js'
+import { knownSettingsKeys } from '../store/config.js'
 
 import type { EventBus } from '../kernel/events.js'
 import type { CommandBus } from '../app/CommandBus.js'
@@ -373,6 +374,8 @@ export class GatewayClient extends EventEmitter {
       case 'process.stop': return this.processStop() as T
       case 'config.get': return this.configGet(params) as T
       case 'config.set': return this.configSet(params) as T
+      case 'config.listSettings': return this.configListSettings() as T
+      case 'config.setSetting': return this.configSetSetting(params) as T
       case 'setup.status': return this.setupStatus() as T
       // W2-02：个性化 profile（真实 ConfigRepository + PersonalizationService，非假成功）
       case 'personalization.get':
@@ -785,7 +788,16 @@ export class GatewayClient extends EventEmitter {
 
   private async slashExec(params: Record<string, unknown>): Promise<unknown> {
     const command = String(params.command ?? '').trim()
-    const r = await this.kernel.commandBus.execute(`/${command}`)
+    const full = `/${command}`
+    // 风险确认（2026-08-19）：danger 级命令在 TUI 直输通道强制走审批桥
+    // （与工具审批同面板、同脱敏）——用户交互通道的风险可见性；
+    // -p 直输（用户亲手键入）与 AI 通道（agent.ts wx_cmd 分级裁决）不经过本桥。
+    const { classifyCommand } = await import('../kernel/commandLevels.js')
+    if (classifyCommand(full) === 'danger' && params.confirm !== true) {
+      const choice = await this.requestApproval('wx_cmd', { command: full })
+      if (choice === 'deny') return { output: '', warning: `危险命令已取消（未执行）：${command}` }
+    }
+    const r = await this.kernel.commandBus.execute(full)
 
     if (r.dispatch) {
       return { type: 'skill', name: r.dispatch.name, message: r.dispatch.message }
@@ -1476,6 +1488,23 @@ export class GatewayClient extends EventEmitter {
     const handler = handlers[method]
     if (!handler) throw new Error(`unsupported rpc: ${method}`)
     return handler(params)
+  }
+
+  // ── 配置面板 RPC（2026-08-19）：真实 settings 清单（密钥掩码）+ 白名单校验设置 ──
+  private configListSettings(): unknown {
+    const s = (this.kernel.config.get('settings') ?? {}) as Record<string, any>;
+    const safe = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, k === 'apiKeyEnc' ? (v ? 'enc:****' : '') : v]));
+    return { settings: safe, known: knownSettingsKeys() };
+  }
+
+  private configSetSetting(params: Record<string, unknown>): unknown {
+    const key = String(params.key ?? '');
+    const raw = String(params.value ?? '');
+    if (!knownSettingsKeys().includes(key)) return { ok: false, error: `未知配置键「${key}」——/config set 仅接受白名单键` };
+    const value: any = raw === 'true' ? true : raw === 'false' ? false : raw === 'null' ? null : !Number.isNaN(Number(raw)) && raw !== '' ? Number(raw) : raw;
+    this.kernel.config.setKey('settings', key, value);
+    this.publish({ type: 'notification.show', payload: { text: `已设置 ${key} = ${JSON.stringify(value)}`, level: 'info' } });
+    return { ok: true, key, value };
   }
 
   private configGet(params: Record<string, unknown>): unknown {

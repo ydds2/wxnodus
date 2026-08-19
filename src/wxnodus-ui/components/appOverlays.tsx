@@ -14,6 +14,7 @@ import { DirPicker } from './dirPicker.js'
 import { FloatBox } from './appChrome.js'
 import { HistorySearch } from './historySearch.js'
 import { MaskedPrompt } from './maskedPrompt.js'
+import { ConfigPanel } from './configPanel.js'
 import { ModelPicker } from './modelPicker.js'
 import { OverlayHint } from './overlayControls.js'
 import { PluginsHub } from './pluginsHub.js'
@@ -205,6 +206,10 @@ export function FloatingOverlays({
             t={theme}
           />
         )}
+      </FloatBox>
+
+      <FloatBox color={theme.color.border} display={overlay.configPanel ? undefined : 'none'}>
+        {overlay.configPanel && <ConfigPanel gw={gw} onClose={() => patchOverlayState({ configPanel: false })} t={theme} />}
       </FloatBox>
 
       <FloatBox color={theme.color.border} display={overlay.modelPicker ? undefined : 'none'}>

@@ -10,6 +10,7 @@ const buildOverlayState = (): OverlayState => ({
   approval: null,
   clarify: null,
   commandPalette: false,
+  configPanel: false,
   confirm: null,
   dirPicker: false,
   form: null,
@@ -27,9 +28,9 @@ export const $overlayState = atom<OverlayState>(buildOverlayState())
 
 export const $isBlocked = computed(
   $overlayState,
-  ({ agents, approval, clarify, commandPalette, confirm, dirPicker, form, histSearch, modelPicker, pager, pluginsHub, secret, sessions, skillsHub, sudo }) =>
+  ({ agents, approval, clarify, commandPalette, configPanel, confirm, dirPicker, form, histSearch, modelPicker, pager, pluginsHub, secret, sessions, skillsHub, sudo }) =>
     Boolean(
-      agents || approval || clarify || commandPalette || confirm || dirPicker || form || histSearch || modelPicker || pager || pluginsHub || secret || sessions || skillsHub || sudo
+      agents || approval || clarify || commandPalette || configPanel || confirm || dirPicker || form || histSearch || modelPicker || pager || pluginsHub || secret || sessions || skillsHub || sudo
     )
 )
 

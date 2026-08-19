@@ -62,6 +62,15 @@ interface SkillsReloadResponse {
 
 export const opsCommands: SlashCommand[] = [
   {
+    // 配置面板（2026-08-19）：打开真实 settings 清单（布尔键 Enter 一键切换；其余键 /config set）
+    aliases: ['settings'],
+    help: 'open the interactive config panel (list real settings, toggle booleans)',
+    name: 'config',
+    run: (_arg, _ctx) => {
+      patchOverlayState({ configPanel: true })
+    }
+  },
+  {
     help: 'stop background processes',
     name: 'stop',
     run: (_arg, ctx) => {

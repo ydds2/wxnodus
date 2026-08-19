@@ -23,11 +23,17 @@ describe('packaging/install.ps1 一行命令契约', () => {
     expect(script).toContain('gh release list');
   });
 
-  it('双下载路径：公开资产直连 → gh release download 私有回退（Token 不落盘）', () => {
+  it('双下载路径：公开资产直连 → gh release download 私有回退（Token 不落盘 + 代理 HTTP/2 兼容）', () => {
     expect(script).toContain('gh release download');
     expect(script).toContain('gh auth login');
+    expect(script).toContain('http2client=0');
     expect(script).not.toContain('GITHUB_TOKEN=');
     expect(script).not.toContain('Authorization');
+  });
+
+  it('下载物 PK 签名校验（登录页/错误页伪装 200 快速失败）', () => {
+    expect(script).toContain('Encoding Byte');
+    expect(script).toContain('not a zip');
   });
 
   it('解包转调内层 install.ps1 并透传 -TargetDir/-SkipPath/-Source', () => {
