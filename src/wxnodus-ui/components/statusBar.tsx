@@ -452,6 +452,8 @@ export function StatusRule({
   permLabel,
   permTone,
   pet,
+  /** P2：配置面板固定入口（⚙ 尾段可点——面板右分栏直达，不靠记忆） */
+  onConfigClick,
   onSessionCountClick,
   onBalanceClick,
   onUsageClick,
@@ -590,6 +592,8 @@ export function StatusRule({
   // No segs flag / no showCost coupling — it's a server-gated dev readout, lowest priority,
   // so it consumes tail budget LAST and drops first on a narrow terminal.
   const showDevCredits = !!devCreditsText && fits(SEP + stringWidth(devCreditsText))
+  // P2：⚙ 配置入口——最低优先级尾段（窄屏最先让位），点击直达右分栏配置面板
+  const showConfigEntry = !!onConfigClick && fits(stringWidth(' ⚙'))
 
   const handleSessionCountClick = (event: { stopImmediatePropagation?: () => void }) => {
     event.stopImmediatePropagation?.()
@@ -826,6 +830,17 @@ export function StatusRule({
             {devCreditsText}
           </Text>
         ) : null}
+        {showConfigEntry ? (
+          <Box
+            flexShrink={0}
+            onClick={(e: { stopImmediatePropagation?: () => void }) => {
+              e.stopImmediatePropagation?.()
+              onConfigClick!()
+            }}
+          >
+            <Text color={t.color.accent}>{' ⚙'}</Text>
+          </Box>
+        ) : null}
         {/* SpawnHud isn't part of the tail budget (its width is dynamic), so it
             renders last — any overflow truncates the HUD itself rather than the
             budgeted segments before it. It self-hides when no delegation runs. */}
@@ -893,6 +908,8 @@ interface StatusRuleProps {
   permTone?: 'accent' | 'error' | 'good' | 'muted' | 'warn'
   /** 左缘情绪宠物节点（BlackHolePet——简约挂载点，5 列 + 1 空格保留） */
   pet?: ReactNode
+  /** P2：配置面板固定入口（⚙ 尾段可点——右分栏直达） */
+  onConfigClick?: () => void
   onSessionCountClick?: () => void
   /** 余额段点击（强制刷新） */
   onBalanceClick?: () => void
