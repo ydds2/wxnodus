@@ -3,26 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WxNodus CLI UI 完整设计效果 v3（极简现代 · 2026-08-19）</title>
+<title>WxNodus CLI UI 完整设计效果 v3（紫金黑 · 2026-08-19）</title>
 <style>
-  /* ── 极简现代：VS Code 风 · 深色底 + 单一蓝强调 + 细分割线 · 少卡片少边框 ── */
+  /* ── 紫金黑（2026-08-19 用户选定）：紫主色 × 金色点缀 × 纯黑基底 ── */
   :root, [data-theme="dark"] {
-    --bg:#1e1e1e; --panel:#252526; --panel2:#2d2d30; --border:#3c3c3c;
-    --text:#cccccc; --muted:#8a8a8a; --primary:#3794ff; --accent:#4fc1ff;
-    --ok:#89d185; --err:#f48771; --warn:#cca700;
-    --add:#26432c; --addfg:#89d185; --del:#4a2d2d; --delfg:#f48771;
-    --sel:#094771; --header:#252526; --chip:#333333;
+    --bg:#0d0c14; --panel:#191627; --panel2:#211d33; --border:#3a3055;
+    --text:#e5e1f2; --muted:#8f8aa8; --primary:#a78bfa; --accent:#f0c95a;
+    --ok:#7fd88f; --err:#ff7b6b; --warn:#e3b341;
+    --add:#17351f; --addfg:#7fd88f; --del:#4a2333; --delfg:#ff7b6b;
+    --sel:#332a54; --header:#191627; --chip:#262238;
   }
   [data-theme="light"] {
-    --bg:#ffffff; --panel:#f8f8f8; --panel2:#f3f3f3; --border:#d4d4d4;
-    --text:#1f1f1f; --muted:#616161; --primary:#005fb8; --accent:#0090d9;
-    --ok:#107c10; --err:#c42b1c; --warn:#927100;
-    --add:#dff6dd; --addfg:#107c10; --del:#fde7e9; --delfg:#c42b1c;
-    --sel:#cce4f7; --header:#f3f3f3; --chip:#ebebeb;
+    --bg:#ffffff; --panel:#f8f6fc; --panel2:#f1eefa; --border:#d8d3ea;
+    --text:#1f1a2e; --muted:#6b6480; --primary:#6d28d9; --accent:#b45309;
+    --ok:#107c10; --err:#c42b1c; --warn:#92600a;
+    --add:#e7f6ec; --addfg:#107c10; --del:#fde9e9; --delfg:#c42b1c;
+    --sel:#e9e2fa; --header:#f8f6fc; --chip:#efeaf8;
   }
   * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New",monospace; background:#181818; color:var(--text); font-size:13px; line-height:1.55; display:flex; align-items:center; justify-content:center; min-height:100vh; padding:16px; }
-  [data-theme="light"] body { background:#e8e8e8; }
+  body { font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New",monospace; background:#0b0a12; color:var(--text); font-size:13px; line-height:1.55; display:flex; align-items:center; justify-content:center; min-height:100vh; padding:16px; }
+  [data-theme="light"] body { background:#ece9f5; }
   .term { width:1060px; max-width:97vw; height:700px; max-height:95vh; background:var(--bg); border:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; position:relative; }
 
   .titlebar { display:flex; align-items:center; gap:8px; padding:5px 12px; background:var(--header); border-bottom:1px solid var(--border); font-size:12px; color:var(--muted); user-select:none; }
@@ -400,7 +400,7 @@
           <div class="opts"><span class="btn" onclick="toast('全部（演示）')">1 全部</span><span class="btn ghost" onclick="toast('orders（演示）')">2 orders</span></div></div></div>`;
     }
     if(scene==='theme'){
-      const presets=[['wxnodus','#3794ff','#4fc1ff','#3c3c3c'],['nord','#88C0D0','#81A1C1','#5E81AC'],['dracula','#BD93F9','#FF79C6','#6272A4'],['tokyo-night','#7DCFFF','#BB9AF7','#565F89'],['monokai','#A6E22E','#F92672','#75715E'],['gruvbox','#B8BB26','#FE8019','#665C54'],['solarized','#268BD2','#B58900','#586E75'],['one-dark','#61AFEF','#E06C75','#3E4452'],['catppuccin','#89B4FA','#F38BA8','#585B70'],['everforest','#A7C080','#E69875','#4B565C']];
+      const presets=[['wxnodus','#a78bfa','#f0c95a','#3a3055'],['nord','#88C0D0','#81A1C1','#5E81AC'],['dracula','#BD93F9','#FF79C6','#6272A4'],['tokyo-night','#7DCFFF','#BB9AF7','#565F89'],['monokai','#A6E22E','#F92672','#75715E'],['gruvbox','#B8BB26','#FE8019','#665C54'],['solarized','#268BD2','#B58900','#586E75'],['one-dark','#61AFEF','#E06C75','#3E4452'],['catppuccin','#89B4FA','#F38BA8','#585B70'],['everforest','#A7C080','#E69875','#4B565C']];
       const sw=presets.map(([n,p,a,b])=>`<div class="sw" onclick="applyPreset('${n}','${p}','${a}','${b}')"><div class="top" style="background:linear-gradient(120deg,${p} 0 55%,${a} 55% 78%,${b} 78%)"></div><div class="cap">${n}${n==='solarized'?'<span class="sub"> · 双变体</span>':''}</div></div>`).join('');
       return `<div class="workspace"><div class="ws-head"><span class="ws-tab act">主题画廊</span><span class="sp"></span><span style="color:var(--muted)">点击色块即时换肤</span></div>
         <div class="ws-body"><div class="filehdr">内置 10 套 · dataDir/themes/*.json 用户主题 · /theme system 终端取色 · dark/light 双变体</div>

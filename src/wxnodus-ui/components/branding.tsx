@@ -2,7 +2,7 @@ import { Box, Text, useStdout } from '@wxnodus/ink'
 import { useEffect, useState } from 'react'
 import unicodeSpinners from 'unicode-animations'
 
-import { artWidth, hero, HERO_WIDTH, logo, LOGO_WIDTH } from '../banner.js'
+import { artWidth, logo, pixelLogo, pixelWordmark, PIXEL_LOGO_WIDTH, PIXEL_WORDMARK_WIDTH, type PixelRow } from '../banner.js'
 import { FEATURE_SPOTLIGHTS } from '../content/features.js'
 import { flat } from '../lib/text.js'
 import { pushOverlay } from '../runtime/promptStore.js'
@@ -45,48 +45,37 @@ export function ArtLines({ lines }: { lines: [string, string][] }) {
   )
 }
 
-// Responsive Banner: full art → compact rule → text → hidden.
-//
-// Terminals can't scale glyphs, so "responsive" means picking a layout that
-// fits the available columns. Thresholds are picked so each tier reads
-// comfortably without forcing wrap or truncation drift on box-drawing edges.
-const TAG_FULL = '⚡ WxNodus ⚡'
-const TAG_MID = 'WxNodus'
-const TAG_TINY = 'WxNodus'
-const HIDE_BELOW = 34
-const COMPACT_FROM = 58
-
-const clip = (s: string, w: number) =>
-  w <= 0 ? '' : s.length > w ? `${s.slice(0, Math.max(0, w - 1))}…` : s
-
-const centerIn = (s: string, w: number) => {
-  const f = clip(s, w)
-  const slack = Math.max(0, w - f.length)
-  const left = slack >> 1
-
-  return `${' '.repeat(left)}${f}${' '.repeat(slack - left)}`
-}
-
-const ruleIn = (label: string, w: number) => {
-  const f = clip(label, Math.max(1, w - 4))
-  const slack = Math.max(0, w - f.length - 2)
-  const left = slack >> 1
-
-  return `${'─'.repeat(left)} ${f} ${'─'.repeat(slack - left)}`
-}
-
-function CompactBanner({ cols, t }: { cols: number; t: Theme }) {
-  // -4 keeps a margin so exact-edge rows don't trip terminal pending-wrap.
-  const w = Math.max(28, cols - 4)
+// 像素行渲染：每个字符格 = 一个背景色像素（空格 + backgroundColor），
+// 零字形依赖——ASCII 图在 cmd 经典字体下错位的问题就此根除；
+// 行内空格以 run 形式保留（bg 色包裹空格不裁剪）。
+function PixelArt({ cols, rows }: { cols: number; rows: PixelRow[] }) {
+  const w = rows.reduce((m, row) => Math.max(m, row.reduce((a, run) => a + run.n, 0)), 0)
 
   return (
-    <Box flexDirection="column" height={3} marginBottom={1} opaque width={w}>
-      <Text bold color={t.color.primary}>{ruleIn(t.brand.name, w)}</Text>
-      <Text color={t.color.muted}>{centerIn(TAG_FULL, w)}</Text>
-      <Text color={t.color.primary}>{'─'.repeat(w)}</Text>
+    <Box flexDirection="column">
+      {rows.map((row, i) => (
+        <Box key={i} width={cols} justifyContent="center">
+          <Box flexDirection="row" width={w}>
+            {row.map((run, j) =>
+              run.bg ? (
+                <Text backgroundColor={run.bg} key={j}>
+                  {' '.repeat(run.n)}
+                </Text>
+              ) : (
+                <Text key={j}>{' '.repeat(run.n)}</Text>
+              )
+            )}
+          </Box>
+        </Box>
+      ))}
     </Box>
   )
 }
+
+// Responsive Banner: 像素徽标（环+字标）→ 仅字标 → 文本 → 隐藏。
+// 终端无法缩放字形，响应式 = 选择适配当前列宽的布局档位。
+const TAG_FULL = '⚡ WxNodus ⚡'
+const HIDE_BELOW = 34
 
 export function Banner({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
   const term = useStdout().stdout?.columns ?? 80
@@ -96,13 +85,13 @@ export function Banner({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
     return null
   }
 
-  const logoLines = logo(t.color, t.bannerLogo || undefined)
-  const logoW = t.bannerLogo ? artWidth(logoLines) : LOGO_WIDTH
+  // 自定义皮肤 logo：沿用富文本行渲染（settings 皮肤注入，非默认路径）
+  if (t.bannerLogo) {
+    const lines = logo(t.color, t.bannerLogo)
 
-  if (cols >= logoW + 2) {
     return (
-      <Box flexDirection="column" marginBottom={1}>
-        <ArtLines lines={logoLines} />
+      <Box flexDirection="column" marginBottom={1} width={cols} justifyContent="center">
+        <ArtLines lines={lines} />
         <Text color={t.color.muted} wrap="truncate-end">
           {icon('brand')} {TAG_FULL}
         </Text>
@@ -110,17 +99,36 @@ export function Banner({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
     )
   }
 
-  if (cols >= COMPACT_FROM) {
-    return <CompactBanner cols={cols} t={t} />
+  if (cols >= PIXEL_LOGO_WIDTH + 2) {
+    return (
+      <Box flexDirection="column" marginBottom={1}>
+        <PixelArt cols={cols} rows={pixelLogo(t.color)} />
+        <Box width={cols} justifyContent="center" marginTop={1}>
+          <Text color={t.color.muted}>{t.brand.welcome}</Text>
+        </Box>
+      </Box>
+    )
   }
 
-  const name = cols >= 52 ? t.brand.name : (t.brand.name.split(' ')[0] ?? t.brand.name)
-  const tag = cols >= 64 ? TAG_FULL : cols >= 46 ? TAG_MID : TAG_TINY
+  if (cols >= PIXEL_WORDMARK_WIDTH + 2) {
+    return (
+      <Box flexDirection="column" marginBottom={1}>
+        <PixelArt cols={cols} rows={pixelWordmark(t.color)} />
+        <Box width={cols} justifyContent="center" marginTop={1}>
+          <Text color={t.color.muted}>{TAG_FULL}</Text>
+        </Box>
+      </Box>
+    )
+  }
 
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Text bold color={t.color.primary} wrap="truncate-end">{icon('brand')} {name}</Text>
-      <Text color={t.color.muted} wrap="truncate-end">{icon('brand')} {tag}</Text>
+      <Text bold color={t.color.primary} wrap="truncate-end">
+        {icon('brand')} {t.brand.name}
+      </Text>
+      <Text color={t.color.muted} wrap="truncate-end">
+        {t.brand.welcome}
+      </Text>
     </Box>
   )
 }
@@ -166,10 +174,9 @@ const TOOLSETS_MAX = 8
 export function SessionPanel({ info, maxWidth, onCommand, sid, t }: SessionPanelProps) {
   const term = useStdout().stdout?.columns ?? 100
   const cols = Math.max(20, Math.min(term, maxWidth ?? term))
-  const heroLines = hero(t.color, t.bannerHero || undefined)
-  const leftW = Math.min((artWidth(heroLines) || HERO_WIDTH) + 4, Math.floor(cols * 0.4))
-  const wide = cols >= 90 && leftW + 40 < cols
-  const w = Math.max(20, wide ? cols - leftW - 14 : cols - 12)
+  // 扁平无框（2026-08-19 mockup 极简对齐）：去掉英雄图 + 外框——像素徽标已由
+  // Banner 居中展示，这里只留信息行与可折叠分区；留白 4 列防贴边。
+  const w = Math.max(20, cols - 4)
   const lineBudget = Math.max(12, w - 2)
   const strip = (s: string) => (s.endsWith('_tools') ? s.slice(0, -6) : s)
 
@@ -294,69 +301,36 @@ export function SessionPanel({ info, maxWidth, onCommand, sid, t }: SessionPanel
   }
 
   return (
-    // 赛博深空：会话面板外框用 accent 提亮（与消息区的 border 边框形成层级）
-    <Box borderColor={t.color.accent} borderStyle="round" marginBottom={1} paddingX={2} paddingY={1}>
-      {wide && (
-        <Box flexDirection="column" marginRight={2} width={leftW}>
-          <ArtLines lines={heroLines} />
-          <Text />
-
-          {/* A24：会话面板模型/目录可点（开模型选择器/目录选择器） */}
+    // 极简扁平（2026-08-19 mockup 对齐）：无外框、无英雄图——徽标由 Banner 居中展示
+    <Box flexDirection="column" marginBottom={1}>
+      {/* 信息行居中：模型·版本（点开模型选择器） · 目录（点开目录选择器） */}
+      <Box justifyContent="center">
+        <Box flexDirection="row">
           <Box onClick={() => pushOverlay({ kind: 'modelPicker' })}>
-            <Text color={t.color.accent}>
+            <Text color={t.color.accent} wrap="truncate-end">
               {info.model.split('/').pop()}
-              <Text color={t.color.muted}> · WxNodus</Text>
+              {info.version ? ` v${info.version}` : ''}
             </Text>
           </Box>
-
           <Box onClick={() => pushOverlay({ kind: 'dirPicker' })}>
             <Text color={t.color.muted} wrap="truncate-end">
+              {' · '}
               {info.cwd || process.cwd()}
             </Text>
           </Box>
+        </Box>
+      </Box>
 
-          {sid && (
-            <Text>
-              <Text color={t.color.sessionLabel}>会话：</Text>
-              <Text color={t.color.sessionBorder}>{sid}</Text>
-            </Text>
-          )}
+      {sid && (
+        <Box justifyContent="center">
+          <Text wrap="truncate-end">
+            <Text color={t.color.sessionLabel}>会话：</Text>
+            <Text color={t.color.sessionBorder}>{sid}</Text>
+          </Text>
         </Box>
       )}
 
-      <Box flexDirection="column" width={w}>
-        {wide ? (
-          <Box justifyContent="center" marginBottom={1}>
-            <Text bold color={t.color.primary}>
-              {t.brand.name}
-              {info.version ? ` v${info.version}` : ''}
-              {info.release_date ? ` (${info.release_date})` : ''}
-            </Text>
-          </Box>
-        ) : (
-          // Narrow layout hides the hero column; surface model/cwd/session
-          // here so they aren't lost.
-          <Box flexDirection="column" marginBottom={1}>
-            {/* A24：模型/目录可点（开模型选择器/目录选择器） */}
-            <Box onClick={() => pushOverlay({ kind: 'modelPicker' })}>
-              <Text color={t.color.accent} wrap="truncate-end">
-                {info.model.split('/').pop()}
-                <Text color={t.color.muted}> · WxNodus</Text>
-              </Text>
-            </Box>
-            <Box onClick={() => pushOverlay({ kind: 'dirPicker' })}>
-              <Text color={t.color.muted} wrap="truncate-end">
-                {info.cwd || process.cwd()}
-              </Text>
-            </Box>
-            {sid && (
-              <Text wrap="truncate-end">
-                <Text color={t.color.sessionLabel}>Session: </Text>
-                <Text color={t.color.sessionBorder}>{sid}</Text>
-              </Text>
-            )}
-          </Box>
-        )}
+      <Box flexDirection="column" width={w} marginTop={1}>
 
         {/* ── Tools (expanded by default) ── */}
         <Box flexDirection="column" marginTop={1}>
@@ -443,13 +417,15 @@ export function SessionPanel({ info, maxWidth, onCommand, sid, t }: SessionPanel
 
         <Text />
 
-        <Text color={t.color.text}>
-          {toolsTotal} tools{' · '}
-          {skillsTotal} skills
-          {info.mcp_servers?.length ? ` · ${info.mcp_servers.length} MCP` : ''}
-          {' · '}
-          <Text color={t.color.muted}>/help 查看全部命令</Text>
-        </Text>
+        <Box justifyContent="center">
+          <Text color={t.color.text}>
+            {toolsTotal} tools{' · '}
+            {skillsTotal} skills
+            {info.mcp_servers?.length ? ` · ${info.mcp_servers.length} MCP` : ''}
+            {' · '}
+            <Text color={t.color.muted}>/help 查看全部命令</Text>
+          </Text>
+        </Box>
 
         {typeof info.update_behind === 'number' && info.update_behind > 0 && (
           <Text bold color={t.color.warn}>

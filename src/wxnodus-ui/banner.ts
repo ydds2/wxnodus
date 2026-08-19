@@ -1,6 +1,5 @@
-// src/wxnodus-ui/banner.ts — 横幅提示（错误/状态横幅渲染）
+// src/wxnodus-ui/banner.ts — 品牌横幅：高精度像素徽标（逐格背景色）+ 皮肤富文本兼容
 import { mix, type ThemeColors } from './theme.js'
-import { getTuiTerminalTier } from './lib/terminalTier.js'
 
 const RICH_RE = /\[(?:bold\s+)?(?:dim\s+)?(#(?:[0-9a-fA-F]{3,8}))\]([\s\S]*?)(\[\/\])/g
 
@@ -45,71 +44,135 @@ export function parseRichMarkup(markup: string): Line[] {
   return lines
 }
 
-const LOGO_ART = [
-  '██╗    ██╗ ██╗  ██╗ ███╗   ██╗  ██████╗  ██████╗  ██╗   ██╗ ███████╗',
-  '██╗  ██║ ╚██╗██╔╝ ████╗  ██║ ██╔═══██╗ ██╔══██╗ ██║   ██║ ██╔════╝',
-  '██╚██╔██║  ╚███╔╝  ██╔██╗ ██║ ██║   ██║ ██║  ██║ ██║   ██║ ███████╗',
-  '██║╚═╝██║  ██╔██╗  ██║╚██╗██║ ██║   ██║ ██║  ██║ ██║   ██║ ╚════██║',
-  '╚═╝  ╚═╝ ╚═╝ ╚═╝ ██║ ╚████║ ╚██████╔╝ ██████╔╝ ╚██████╔╝ ███████║',
-  '                    ╚═╝  ╚═══╝  ╚═════╝  ╚═════╝   ╚═════╝  ╚══════╝',
-]
+// ── 高精度像素徽标（逐格背景色渲染 · 2026-08-19 用户指定）────────────────
+// 设计：黑洞事件视界剖面——椭圆距离场着色器逐格计算（确定性、任意精度），
+// 每字符格 = 一个背景色像素，完全不依赖字形（历史 ASCII 图在 cmd 经典字体下
+// 因宽字符/缺字形错位的问题就此根除）；配色跟随主题 primary（紫）/accent（金）。
+//
+// 像素行协议：PixelRow = 若干 (bg 色, 格数) 游程；bg 为空串 = 透明（露出终端底色）。
+export interface PixelRun {
+  bg: string
+  n: number
+}
 
-// WxNodus 品牌徽标（差异化）：黑洞视界剖面——吸积盘同心环
-// 概念来源：黑洞引擎（black-hole memory：三层记忆 + 吸附 + 混合召回）
-const BLACKHOLE_ART = [
-  '      ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀',
-  '   ⣀⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⣀',
-  '  ⣀⠔⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠔⣀',
-  ' ⣀⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⣀',
-  ' ⣀⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⣀',
-  ' ⣀⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⣀',
-  '  ⣀⠔⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠔⣀',
-  '   ⣀⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⣀',
-  '      ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀',
-]
+export type PixelRow = PixelRun[]
 
-// cmd/ascii 档黑洞艺术：纯 ASCII 同心环（盲文在经典 conhost 字体无字形 → 豆腐块）
-const BLACKHOLE_ASCII_ART = [
-  '       ______       ',
-  '    .-"      "-.    ',
-  '   /  .------.  \   ',
-  '  |  /  ____  \  |   ',
-  '  | |  |    |  | |   ',
-  '  |  \  ----  /  |   ',
-  '   \  `------"  /    ',
-  '    `-._    _.-"     ',
-  '        `--"         ',
-]
+// 徽标全宽（黑洞环）；字标宽 = 7 字形 × (5 宽 + 1 间隔) − 1 尾间隔
+export const PIXEL_LOGO_WIDTH = 46
+export const PIXEL_WORDMARK_WIDTH = 41
+const RING_H = 12
 
-const LOGO_GRADIENT = [0, 0, 1, 1, 2, 2] as const
-// 吸积盘光照：上方亮弧（primary）→ 中部环（accent/border）→ 底部暗（muted）
-const HERO_GRADIENT = [0, 1, 1, 2, 2, 2, 1, 1, 0] as const
+const mergeRun = (runs: PixelRun[], bg: string, n: number) => {
+  if (n <= 0) return
+  const last = runs[runs.length - 1]
+  if (last && last.bg === bg) last.n += n
+  else runs.push({ bg, n })
+}
 
-const colorize = (art: string[], gradient: readonly number[], c: ThemeColors): Line[] => {
-  // 赛博深空提亮：primary/accent 向白方向提亮 12-15%（吸积盘辉光更通透），
-  // 索引结构不变——主题色值变化时渐变自动跟随
-  const p = [
-    mix(c.primary, '#FFFFFF', 0.15),
-    mix(c.accent, '#FFFFFF', 0.12),
-    c.border,
-    c.muted,
+// 黑洞环着色器：d = 椭圆距离；光照左上高光 → 右下暗部
+const ringRow = (y: number, c: ThemeColors): PixelRun[] => {
+  const cy = (RING_H - 1) / 2
+  const cx = (PIXEL_LOGO_WIDTH - 1) / 2
+  const ry = (RING_H - 1) / 2
+  const rx = (PIXEL_LOGO_WIDTH - 1) / 2
+
+  const photon = mix(c.accent, '#ffffff', 0.3)
+  const goldDeep = mix(c.accent, '#6b4a00', 0.45)
+  const purpleBright = mix(c.primary, '#ffffff', 0.22)
+  const purpleDeep = mix(c.primary, '#150a30', 0.5)
+  const shadow = mix(c.primary, '#000000', 0.72)
+  const glow = mix(c.primary, '#000000', 0.86)
+
+  const runs: PixelRun[] = []
+
+  for (let x = 0; x < PIXEL_LOGO_WIDTH; x++) {
+    const dx = (x - cx) / rx
+    const dy = (y - cy) / ry
+    const d = dx * dx + dy * dy
+    const l = Math.max(-1, Math.min(1, -(dx + dy) / Math.SQRT2))
+
+    // 环带分层：中心洞 → 内阴影 → 光子环（金）→ 环体（紫）→ 暗缘 → 外晕
+    let bg = ''
+    if (d < 0.44) bg = ''
+    else if (d < 0.48) bg = shadow
+    else if (d < 0.6) bg = mix(photon, goldDeep, (1 - l) * 0.7)
+    else if (d < 0.92) bg = mix(purpleBright, purpleDeep, (1 - l) * 0.8)
+    else if (d < 1.02) bg = mix(c.primary, purpleDeep, (1 - l) * 0.6 + 0.2)
+    else if (d < 1.24) bg = glow
+
+    mergeRun(runs, bg, 1)
+  }
+
+  return runs
+}
+
+// 像素字标：5×5 手写字形（'#' 点亮），WXNODUS 金紫交替，O 中心 = 金核奇点
+const FONT: Record<string, string[]> = {
+  W: ['#...#', '#...#', '#.#.#', '#.#.#', '#####'],
+  X: ['#...#', '.#.#.', '..#..', '.#.#.', '#...#'],
+  N: ['#...#', '##..#', '#.#.#', '#..##', '#...#'],
+  O: ['.###.', '#...#', '#.#.#', '#...#', '.###.'],
+  D: ['####.', '#...#', '#...#', '#...#', '####.'],
+  U: ['#...#', '#...#', '#...#', '#...#', '.###.'],
+  S: ['.####', '#....', '.###.', '....#', '####.'],
+}
+
+const WORDMARK = 'WXNODUS'
+
+export const pixelWordmark = (c: ThemeColors): PixelRow[] => {
+  const rows: PixelRow[] = []
+
+  for (let r = 0; r < 5; r++) {
+    const runs: PixelRow = []
+
+    WORDMARK.split('').forEach((ch, gi) => {
+      const glyph = FONT[ch]!
+
+      for (let x = 0; x < 5; x++) {
+        if (glyph[r]![x] !== '#') {
+          mergeRun(runs, '', 1)
+          continue
+        }
+
+        const isGold = gi % 2 === 0
+        const cell = ch === 'O' && r === 2 && x === 2 ? c.accent : isGold ? c.accent : c.primary
+        mergeRun(runs, cell, 1)
+      }
+
+      if (gi < WORDMARK.length - 1) mergeRun(runs, '', 1)
+    })
+
+    rows.push(runs)
+  }
+
+  return rows
+}
+
+// 完整徽标：黑洞环 + 空行 + 居中字标（同一宽度坐标系，逐行居中渲染即整图居中）
+export const pixelLogo = (c: ThemeColors): PixelRow[] => {
+  const ring: PixelRow[] = Array.from({ length: RING_H }, (_, y) => ringRow(y, c))
+  const mark = pixelWordmark(c)
+  const pad = Math.floor((PIXEL_LOGO_WIDTH - PIXEL_WORDMARK_WIDTH) / 2)
+
+  return [
+    ...ring,
+    [{ bg: '', n: PIXEL_LOGO_WIDTH }],
+    // 左右补齐到全宽——字标与环共享同一居中轴；pad 经 mergeRun 并入（字形边缘
+    // 透明格与间隔透明格相邻时不产生未合并游程）
+    ...mark.map(row => {
+      const full: PixelRow = []
+      mergeRun(full, '', pad)
+      for (const run of row) mergeRun(full, run.bg, run.n)
+      mergeRun(full, '', PIXEL_LOGO_WIDTH - PIXEL_WORDMARK_WIDTH - pad)
+      return full
+    }),
   ]
-
-  return art.map((text, i) => [p[gradient[i]!] ?? c.muted, text])
 }
 
-export const LOGO_WIDTH = Math.max(...LOGO_ART.map(line => line.length))
-export const HERO_WIDTH = Math.max(...BLACKHOLE_ART.map(line => line.length))
-
-export const logo = (c: ThemeColors, customLogo?: string): Line[] =>
-  customLogo ? parseRichMarkup(customLogo) : colorize(LOGO_ART, LOGO_GRADIENT, c)
-
-export const hero = (c: ThemeColors, customHero?: string): Line[] => {
-  if (customHero) return parseRichMarkup(customHero)
-  // W8-23：层级感知——cmd/ascii 档用 ASCII 同心环（绝不输出盲文豆腐块）
-  const glyphSet = getTuiTerminalTier()?.capabilities.glyphSet ?? 'full'
-  return colorize(glyphSet === 'full' ? BLACKHOLE_ART : BLACKHOLE_ASCII_ART, HERO_GRADIENT, c)
-}
+// 自定义皮肤 logo（settings 皮肤注入）：沿用富文本行渲染（[#hex]…[/] 标记）；
+// 默认路径由 pixelLogo 承担，此处仅作皮肤兼容出口。
+export const logo = (_c: ThemeColors, customLogo?: string): Line[] =>
+  customLogo ? parseRichMarkup(customLogo) : []
 
 export const artWidth = (lines: Line[]) => lines.reduce((m, [, t]) => Math.max(m, t.length), 0)
 
