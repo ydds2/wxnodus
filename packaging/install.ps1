@@ -43,8 +43,11 @@ if ($Version -eq 'latest') {
   }
 }
 Write-Step "resolved version: $Version"
+# Tag normalization: release tags look like v3.1.0 - accept explicit versions with or without the v
+# prefix (single source of truth for both download URL and gh CLI calls).
+$Tag = if ($Version -like 'v*') { $Version } else { "v$Version" }
 
-$ZipName = "wxnodus-$($Version -replace '^v', '').zip"
+$ZipName = "wxnodus-$($Tag -replace '^v', '').zip"
 $Temp = Join-Path ([System.IO.Path]::GetTempPath()) ('wxnodus-one-' + [System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Force -Path $Temp | Out-Null
 try {
@@ -53,14 +56,14 @@ try {
     Write-Step "downloading $ZipName from $BaseUrl"
     Invoke-WebRequest -Uri "$BaseUrl/$ZipName" -OutFile $ZipPath -UseBasicParsing
   } else {
-    $PublicUrl = "https://github.com/$Repo/releases/download/$Version/$ZipName"
+    $PublicUrl = "https://github.com/$Repo/releases/download/$Tag/$ZipName"
     try {
       Write-Step "downloading $ZipName (public release asset)"
       Invoke-WebRequest -Uri $PublicUrl -OutFile $ZipPath -UseBasicParsing
     } catch {
       # Private repo fallback: gh CLI downloads with the user's own auth. No token is written or embedded.
       Write-Step "public URL unavailable - falling back to gh release download (private repo, gh auth)"
-      & gh release download $Version --repo $Repo --pattern "*.zip" --dir $Temp
+      & gh release download $Tag --repo $Repo --pattern "*.zip" --dir $Temp
       if ($LASTEXITCODE -ne 0) { Die "download failed. Run 'gh auth login' then retry, or set `$env:WXNODUS_BASE_URL to a mirror" }
       $Downloaded = Get-ChildItem $Temp -Filter '*.zip' | Select-Object -First 1
       if (-not $Downloaded) { Die "no zip asset found for $Version" }
