@@ -83,9 +83,40 @@ export interface HandlerCtx {
   };
 }
 
+// 显示宽度（CJK/全角=2 列；ANSI 转义序列不计宽）——面板右边界 │ 对齐的唯一数据源
+// （此前 l.length 低估中文宽度，/help 等面板右侧 │ 错位）
+const dispWidth = (s: string): number => {
+  let w = 0;
+  for (let i = 0; i < s.length; i++) {
+    // 跳过 ANSI CSI 序列（着色码对显示宽度贡献 0）
+    if (s[i] === '\x1b' && s[i + 1] === '[') {
+      const end = s.indexOf('m', i);
+      if (end > i) { i = end; continue; }
+    }
+    const c = s.codePointAt(i)!;
+    if (c > 0xffff) i++; // 代理对只计一次
+    w +=
+      (c >= 0x1100 && (c <= 0x115f || c === 0x2329 || c === 0x232a || (c >= 0x2e80 && c <= 0xa4cf) ||
+        (c >= 0xac00 && c <= 0xd7a3) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xfe10 && c <= 0xfe19) ||
+        (c >= 0xfe30 && c <= 0xfe6f) || (c >= 0xff00 && c <= 0xff60) || (c >= 0xffe0 && c <= 0xffe6) ||
+        (c >= 0x1f300 && c <= 0x1faff) || (c >= 0x20000 && c <= 0x3fffd)))
+        ? 2
+        : c >= 0x0300 && c <= 0x036f
+          ? 0
+          : 1;
+  }
+  return w;
+};
+
 const lines = (title: string, body: string[]): string => {
-  const w = Math.max(...body.map(l => l.length), title.length) + 4;
-  return [`┌${'─'.repeat(w)}┐`, `│ ${title}${' '.repeat(w - title.length - 2)} │`, ...body.map(l => `│ ${l}${' '.repeat(Math.max(0, w - l.length - 2))} │`), `└${'─'.repeat(w)}┘`].join('\n');
+  const w = Math.max(...body.map(l => dispWidth(l)), dispWidth(title)) + 4;
+  const pad = (s: string, width: number) => s + ' '.repeat(Math.max(0, width - dispWidth(s)));
+  return [
+    `┌${'─'.repeat(w)}┐`,
+    `│ ${pad(title, w - 2)} │`,
+    ...body.map(l => `│ ${pad(l, w - 2)} │`),
+    `└${'─'.repeat(w)}┘`
+  ].join('\n');
 };
 
 // TTY 门控 ANSI 着色（面板级样式）：TUI 交互输出彩色（slash 消息已支持 Ansi 渲染），

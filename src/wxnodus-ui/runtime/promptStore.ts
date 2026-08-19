@@ -20,8 +20,9 @@ export const $isBlocked = computed(
 
 export const getOverlayState = () => $overlayState.get()
 
-// 桥接保障：强制重绘（S3 优化——模块级尾沿合并：高频 overlay 变更只挂 1 个定时器而非
-// 每次 2 个；双帧语义保留：尾沿触发首帧 + 120ms 二帧兜底，覆盖 markDirty 链断的 blit 短路）
+// 桥接保障：强制重绘（S3 优化——模块级尾沿合并：高频 overlay 变更只挂 1 个定时器；
+// P2 修复——单帧重绘：此前 0ms+120ms 双帧在 conhost 慢终端上每次按键双整屏重绘=闪屏；
+// flushSync 已同步提交 React 状态，尾沿单帧足够覆盖 markDirty 链断的 blit 短路）
 let redrawTimer: null | ReturnType<typeof setTimeout> = null
 
 const scheduleForceRedraw = () => {
@@ -32,8 +33,6 @@ const scheduleForceRedraw = () => {
   redrawTimer = setTimeout(() => {
     redrawTimer = null
     forceRedraw()
-    // 第二帧兜底：个别 blit 短路场景需下一帧再刷一次（原 0ms+120ms 双帧语义）
-    setTimeout(() => forceRedraw(), 120)
   }, 0)
 }
 
