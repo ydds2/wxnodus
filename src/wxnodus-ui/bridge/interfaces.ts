@@ -90,27 +90,46 @@ export interface GatewayProviderProps {
   value: GatewayServices
 }
 
-export interface OverlayState {
-  agents: boolean
-  agentsInitialHistoryIndex: number
-  approval: ApprovalReq | null
-  clarify: ClarifyReq | null
-  commandPalette: boolean
-  confirm: ConfirmReq | null
-  configPanel: boolean
-  modelPicker: boolean
-  pager: null | PagerState
-  pluginsHub: boolean
-  secret: null | SecretReq
-  sessions: boolean
-  skillsHub: boolean
-  sudo: null | SudoReq
+/**
+ * 栈式浮层条目（UI 重设计 P0-2：原 17 布尔位收编为联合类型）。
+ * - 互斥组（见 runtime/overlayStack.ts）：panel（configPanel/modelPicker/skillsHub/pluginsHub）、
+ *   picker（sessions/dirPicker/histSearch/commandPalette）——push 同组替换；
+ * - pager/agents 各自独立，可压栈叠加；z 序 = 栈序。
+ */
+export type OverlayEntry =
+  | { kind: 'pager'; pager: PagerState }
+  | { kind: 'sessions' }
+  | { kind: 'agents'; initialHistoryIndex: number }
+  | { kind: 'configPanel' }
+  | { kind: 'modelPicker' }
+  | { kind: 'skillsHub' }
+  | { kind: 'pluginsHub' }
+  | { kind: 'commandPalette' }
+  | { kind: 'dirPicker' }
+  | { kind: 'histSearch' }
+
+/** 行内提示（附着消息行，非栈；同屏至多 1 个） */
+export interface InlineState {
+  approval?: ApprovalReq | null
+  clarify?: ClarifyReq | null
+  confirm?: ConfirmReq | null
+  sudo?: SudoReq | null
+  secret?: SecretReq | null
   /** 动态内容表（多字段敏感输入） */
-  form: null | FormReq
-  /** A24：目录选择器（点击状态栏 cwd 打开——浏览/切换工作目录） */
-  dirPicker: boolean
-  /** Ctrl+R 历史反向搜索（bash readline 同款；查询/匹配态在组件内） */
-  histSearch: boolean
+  form?: FormReq | null
+}
+
+export interface OverlayStackState {
+  stack: OverlayEntry[]
+  inline: InlineState
+  /** agents 打开时的初始历史索引（随 agents 条目走栈，此处为流程重置保留值） */
+  agentsInitialHistoryIndex: number
+}
+
+export interface OverlayState {
+  stack: OverlayEntry[]
+  inline: InlineState
+  agentsInitialHistoryIndex: number
 }
 
 export interface FormReq {

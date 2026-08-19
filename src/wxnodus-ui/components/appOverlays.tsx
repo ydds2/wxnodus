@@ -4,7 +4,8 @@ import { useAtom as useStore } from '../../app/stores/engine.js'
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { AppOverlaysProps } from '../bridge/interfaces.js'
 import type { SecretRespondResponse, SudoRespondResponse } from '../gatewayTypes.js'
-import { $overlayState, patchOverlayState } from '../runtime/promptStore.js'
+import { $overlayState, closeOverlay, patchInline, updateOverlay } from '../runtime/promptStore.js'
+import { findEntry } from '../runtime/overlayStack.js'
 import { $uiSessionId, $uiTheme } from '../runtime/viewStore.js'
 import { hasAnsi, sanitizeAnsiForRender, stripAnsi } from '../lib/text.js'
 
@@ -40,30 +41,33 @@ export function PromptZone({
   const theme = useStore($uiTheme)
   const { gw } = useGateway()
 
+  // 行内提示（审批/澄清/确认/sudo/secret/form——附着消息行，非栈；栈式重构后读 inline）
+  const inline = overlay.inline
+
   // A24：sudo/secret 可点击取消（与 cancelOverlayFromCtrlC 同链路——空值 respond）
   const cancelSudo = () => {
-    if (!overlay.sudo) return
+    if (!inline.sudo) return
     void gw
-      .request<SudoRespondResponse>('sudo.respond', { password: '', request_id: overlay.sudo.requestId })
-      .then(r => r && patchOverlayState({ sudo: null }))
+      .request<SudoRespondResponse>('sudo.respond', { password: '', request_id: inline.sudo.requestId })
+      .then(r => r && patchInline({ sudo: null }))
   }
 
   const cancelSecret = () => {
-    if (!overlay.secret) return
+    if (!inline.secret) return
     void gw
-      .request<SecretRespondResponse>('secret.respond', { request_id: overlay.secret.requestId, value: '' })
-      .then(r => r && patchOverlayState({ secret: null }))
+      .request<SecretRespondResponse>('secret.respond', { request_id: inline.secret.requestId, value: '' })
+      .then(r => r && patchInline({ secret: null }))
   }
 
-  if (overlay.approval) {
+  if (inline.approval) {
     return (
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
-        <ApprovalPrompt cols={cols} onChoice={onApprovalChoice} req={overlay.approval} t={theme} />
+        <ApprovalPrompt cols={cols} onChoice={onApprovalChoice} req={inline.approval} t={theme} />
       </Box>
     )
   }
 
-  if (overlay.histSearch) {
+  if (findEntry(overlay, 'histSearch')) {
     return (
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
         <HistorySearch onAccept={onHistoryAccept} onCancel={onHistoryCancel} t={theme} />
@@ -71,15 +75,15 @@ export function PromptZone({
     )
   }
 
-  if (overlay.confirm) {
-    const req = overlay.confirm
+  if (inline.confirm) {
+    const req = inline.confirm
 
     const onConfirm = () => {
-      patchOverlayState({ confirm: null })
+      patchInline({ confirm: null })
       req.onConfirm()
     }
 
-    const onCancel = () => patchOverlayState({ confirm: null })
+    const onCancel = () => patchInline({ confirm: null })
 
     return (
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
@@ -88,21 +92,21 @@ export function PromptZone({
     )
   }
 
-  if (overlay.clarify) {
+  if (inline.clarify) {
     return (
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
         <ClarifyPrompt
           cols={cols}
           onAnswer={onClarifyAnswer}
           onCancel={() => onClarifyAnswer('')}
-          req={overlay.clarify}
+          req={inline.clarify}
           t={theme}
         />
       </Box>
     )
   }
 
-  if (overlay.sudo) {
+  if (inline.sudo) {
     return (
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
           <MaskedPrompt cols={cols} icon={icon('lock')} label="需要 sudo 密码" onCancel={cancelSudo} onSubmit={onSudoSubmit} t={theme} />
@@ -110,16 +114,16 @@ export function PromptZone({
     )
   }
 
-  if (overlay.secret) {
+  if (inline.secret) {
     return (
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
         <MaskedPrompt
           cols={cols}
           icon={icon('key')}
-          label={overlay.secret.prompt}
+          label={inline.secret.prompt}
           onCancel={cancelSecret}
           onSubmit={onSecretSubmit}
-          sub={`环境变量：${overlay.secret.envVar}`}
+          sub={`环境变量：${inline.secret.envVar}`}
           t={theme}
         />
       </Box>
@@ -127,13 +131,13 @@ export function PromptZone({
   }
 
   // 动态内容表（多字段敏感输入——/input 与 credential_form 工具）
-  if (overlay.form) {
+  if (inline.form) {
     return (
       <Box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
         <DynamicFormPrompt
           cols={cols}
-          fields={overlay.form.fields}
-          prompt={overlay.form.prompt}
+          fields={inline.form.fields}
+          prompt={inline.form.prompt}
           onSubmit={onFormSubmit}
           onCancel={onFormCancel}
           t={theme}
@@ -178,6 +182,18 @@ export function FloatingOverlays({
   const sid = useStore($uiSessionId)
   const theme = useStore($uiTheme)
 
+  // 栈式重构后：每个 kind 的存在性由 findEntry 判定（栈内至多 1 个）；
+  // 互斥组保证面板/选择器不同时出现。渲染结构保持「常驻 FloatBox + display 切换」
+  // 的既有约束（React 19 并发下条件挂载曾产生错位节点——见下方 PATCH 注释）。
+  const pagerEntry = findEntry(overlay, 'pager')
+  const sessionsOn = !!findEntry(overlay, 'sessions')
+  const configOn = !!findEntry(overlay, 'configPanel')
+  const modelOn = !!findEntry(overlay, 'modelPicker')
+  const skillsOn = !!findEntry(overlay, 'skillsHub')
+  const paletteOn = !!findEntry(overlay, 'commandPalette')
+  const pluginsOn = !!findEntry(overlay, 'pluginsHub')
+  const dirPickerOn = !!findEntry(overlay, 'dirPicker')
+
   // Fixed viewport centered on compIdx — previously the slice end was
   // compIdx + 8 so the dropdown grew from 8 rows to 16 as the user scrolled
   // down, bouncing the height on every keystroke.
@@ -192,12 +208,12 @@ export function FloatingOverlays({
   // useInput 随之注销，避免隐藏时拦截键盘输入）。
   return (
     <Box alignItems="flex-start" bottom="100%" flexDirection="column" left={0} position="absolute" right={0}>
-      <FloatBox color={theme.color.border} display={overlay.sessions ? undefined : 'none'}>
-        {overlay.sessions && (
+      <FloatBox color={theme.color.border} display={sessionsOn ? undefined : 'none'}>
+        {sessionsOn && (
           <ActiveSessionSwitcher
             currentSessionId={sid}
             gw={gw}
-            onCancel={() => patchOverlayState({ sessions: false })}
+            onCancel={() => closeOverlay('sessions')}
             onClose={onActiveSessionClose}
             onNew={onNewLiveSession}
             onNewPrompt={onNewPromptSession}
@@ -208,15 +224,15 @@ export function FloatingOverlays({
         )}
       </FloatBox>
 
-      <FloatBox color={theme.color.border} display={overlay.configPanel ? undefined : 'none'}>
-        {overlay.configPanel && <ConfigPanel gw={gw} onClose={() => patchOverlayState({ configPanel: false })} t={theme} />}
+      <FloatBox color={theme.color.border} display={configOn ? undefined : 'none'}>
+        {configOn && <ConfigPanel gw={gw} onClose={() => closeOverlay('configPanel')} t={theme} />}
       </FloatBox>
 
-      <FloatBox color={theme.color.border} display={overlay.modelPicker ? undefined : 'none'}>
-        {overlay.modelPicker && (
+      <FloatBox color={theme.color.border} display={modelOn ? undefined : 'none'}>
+        {modelOn && (
           <ModelPicker
             gw={gw}
-            onCancel={() => patchOverlayState({ modelPicker: false })}
+            onCancel={() => closeOverlay('modelPicker')}
             onSelect={onModelSelect}
             sessionId={sid}
             t={theme}
@@ -224,17 +240,17 @@ export function FloatingOverlays({
         )}
       </FloatBox>
 
-      <FloatBox color={theme.color.border} display={overlay.skillsHub ? undefined : 'none'}>
-        {overlay.skillsHub && <SkillsHub gw={gw} onClose={() => patchOverlayState({ skillsHub: false })} t={theme} />}
+      <FloatBox color={theme.color.border} display={skillsOn ? undefined : 'none'}>
+        {skillsOn && <SkillsHub gw={gw} onClose={() => closeOverlay('skillsHub')} t={theme} />}
       </FloatBox>
 
-      <FloatBox color={theme.color.border} display={overlay.commandPalette ? undefined : 'none'}>
-        {overlay.commandPalette && (
+      <FloatBox color={theme.color.border} display={paletteOn ? undefined : 'none'}>
+        {paletteOn && (
           <CommandPalette
             cols={cols}
             currentSessionId={sid}
             gw={gw}
-            onClose={() => patchOverlayState({ commandPalette: false })}
+            onClose={() => closeOverlay('commandPalette')}
             onSessionSelect={onActiveSessionSelect}
             onSubmit={onPaletteSubmit}
             t={theme}
@@ -242,32 +258,32 @@ export function FloatingOverlays({
         )}
       </FloatBox>
 
-      <FloatBox color={theme.color.border} display={overlay.pluginsHub ? undefined : 'none'}>
-        {overlay.pluginsHub && <PluginsHub gw={gw} onClose={() => patchOverlayState({ pluginsHub: false })} t={theme} />}
+      <FloatBox color={theme.color.border} display={pluginsOn ? undefined : 'none'}>
+        {pluginsOn && <PluginsHub gw={gw} onClose={() => closeOverlay('pluginsHub')} t={theme} />}
       </FloatBox>
 
       {/* A24：目录选择器（点击状态栏 cwd 打开——浏览/切换工作目录） */}
-      <FloatBox color={theme.color.border} display={overlay.dirPicker ? undefined : 'none'}>
-        {overlay.dirPicker && <DirPicker t={theme} />}
+      <FloatBox color={theme.color.border} display={dirPickerOn ? undefined : 'none'}>
+        {dirPickerOn && <DirPicker t={theme} />}
       </FloatBox>
 
       {/* pager：内容首行自带 box-drawing 边框（╔╭┌ lines() 面板）时外层去边框——
           避免双边框叠加（修复 /help 双层壁）；否则 double 边框兜底 */}
       <FloatBox
         color={theme.color.border}
-        display={overlay.pager ? undefined : 'none'}
-        noBorder={!!overlay.pager && /^[╔╭┌]/.test(overlay.pager.lines[0] ?? '')}
+        display={pagerEntry ? undefined : 'none'}
+        noBorder={!!pagerEntry && /^[╔╭┌]/.test(pagerEntry.pager.lines[0] ?? '')}
       >
-        {overlay.pager && (
+        {pagerEntry && (
           <Box flexDirection="column" paddingX={1} paddingY={1}>
-            {overlay.pager.title && (
+            {pagerEntry.pager.title && (
               <Box flexDirection="column" marginBottom={1}>
                 {/* A24：标题行右侧 ✕ 关闭（此前仅 Esc/q） */}
                 <Box flexDirection="row" justifyContent="space-between">
                   <Text bold color={theme.color.accent}>
-                    {icon('diamond')} {overlay.pager.title}
+                    {icon('diamond')} {pagerEntry.pager.title}
                   </Text>
-                  <Box onClick={() => patchOverlayState({ pager: null })}>
+                  <Box onClick={() => closeOverlay('pager')}>
                     <Text color={theme.color.muted}>{icon('close')}</Text>
                   </Box>
                 </Box>
@@ -276,8 +292,8 @@ export function FloatingOverlays({
                   {'─'.repeat(
                     Math.max(
                       8,
-                      ...overlay.pager.lines
-                        .slice(overlay.pager.offset, overlay.pager.offset + pagerPageSize)
+                      ...pagerEntry.pager.lines
+                        .slice(pagerEntry.pager.offset, pagerEntry.pager.offset + pagerPageSize)
                         .map(l => stringWidth(stripAnsi(l)) + 4)
                     )
                   )}
@@ -285,7 +301,7 @@ export function FloatingOverlays({
               </Box>
             )}
 
-            {overlay.pager.lines.slice(overlay.pager.offset, overlay.pager.offset + pagerPageSize).map((line, i) =>
+            {pagerEntry.pager.lines.slice(pagerEntry.pager.offset, pagerEntry.pager.offset + pagerPageSize).map((line, i) =>
               hasAnsi(line) ? (
                 <Ansi key={i}>{sanitizeAnsiForRender(line)}</Ansi>
               ) : (
@@ -297,9 +313,10 @@ export function FloatingOverlays({
               {/* A22 鼠标化：翻页按钮（与 PgDn/b 同语义） */}
               <Box
                 onClick={() =>
-                  patchOverlayState({
-                    pager: { ...overlay.pager!, offset: Math.max(0, overlay.pager!.offset - pagerPageSize) }
-                  })
+                  updateOverlay('pager', e => ({
+                    ...e,
+                    pager: { ...e.pager, offset: Math.max(0, e.pager.offset - pagerPageSize) }
+                  }))
                 }
               >
                 <Text bold color={theme.color.accent}>
@@ -309,12 +326,13 @@ export function FloatingOverlays({
               <Text color={theme.color.muted}>{'  '}</Text>
               <Box
                 onClick={() =>
-                  patchOverlayState({
+                  updateOverlay('pager', e => ({
+                    ...e,
                     pager: {
-                      ...overlay.pager!,
-                      offset: Math.min(overlay.pager!.offset + pagerPageSize, Math.max(0, overlay.pager!.lines.length - 1))
+                      ...e.pager,
+                      offset: Math.min(e.pager.offset + pagerPageSize, Math.max(0, e.pager.lines.length - 1))
                     }
-                  })
+                  }))
                 }
               >
                 <Text bold color={theme.color.accent}>
@@ -327,12 +345,12 @@ export function FloatingOverlays({
                   // 波 2 ③：[/] hunk 跳转提示（opencode diff-viewer.tsx:282-315 对标——
                   // 回滚 diff 等含 @@ hunk 的 pager 内容才显示，避免普通文本噪音）；
                   // 2026-08-19：结构化 diff 查看器再叠加 r 键逐 hunk 回滚提示
-                  const hasHunks = overlay.pager.lines.some(l => /^@@ -\d/.test(l.trim()))
+                  const hasHunks = pagerEntry.pager.lines.some(l => /^@@ -\d/.test(l.trim()))
                   const jump = hasHunks ? ' · [/] hunk 跳转' : ''
-                  const revert = overlay.pager.diff?.view === 'tree' ? '' : overlay.pager.diff ? ' · r 回滚 · m 标记已审 · t 文件树' : ''
-                  return overlay.pager.offset + pagerPageSize < overlay.pager.lines.length
-                    ? `↑↓/jk 行 · Enter/Space/PgDn 页 · b/PgUp 返回 · g/G 顶/底${jump}${revert} · Esc/q 关闭（${Math.min(overlay.pager.offset + pagerPageSize, overlay.pager.lines.length)}/${overlay.pager.lines.length} 行）`
-                    : `已到末尾 · ↑↓/jk · b/PgUp 返回 · g 顶部${jump}${revert} · Esc/q 关闭（共 ${overlay.pager.lines.length} 行）`
+                  const revert = pagerEntry.pager.diff?.view === 'tree' ? '' : pagerEntry.pager.diff ? ' · r 回滚 · m 标记已审 · t 文件树' : ''
+                  return pagerEntry.pager.offset + pagerPageSize < pagerEntry.pager.lines.length
+                    ? `↑↓/jk 行 · Enter/Space/PgDn 页 · b/PgUp 返回 · g/G 顶/底${jump}${revert} · Esc/q 关闭（${Math.min(pagerEntry.pager.offset + pagerPageSize, pagerEntry.pager.lines.length)}/${pagerEntry.pager.lines.length} 行）`
+                    : `已到末尾 · ↑↓/jk · b/PgUp 返回 · g 顶部${jump}${revert} · Esc/q 关闭（共 ${pagerEntry.pager.lines.length} 行）`
                 })()}
               </OverlayHint>
             </Box>

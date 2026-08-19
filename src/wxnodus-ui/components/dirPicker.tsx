@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { DirListResponse } from '../gatewayTypes.js'
-import { patchOverlayState } from '../runtime/promptStore.js'
+import { closeOverlay } from '../runtime/promptStore.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayHint } from './overlayControls.js'
@@ -94,7 +94,7 @@ export function DirPicker({ t }: { t: Theme }) {
     load('')
   }, [load])
 
-  const close = () => patchOverlayState({ dirPicker: false })
+  const close = () => closeOverlay('dirPicker')
 
   useInput((ch, key) => {
     if (key.escape) {

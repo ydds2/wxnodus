@@ -9,7 +9,7 @@ import { GatewayProvider } from '../src/wxnodus-ui/bridge/gatewayProvider.js'
 import { PromptZone } from '../src/wxnodus-ui/components/appOverlays.js'
 import { HelpHint } from '../src/wxnodus-ui/components/helpHint.js'
 import { DEFAULT_THEME } from '../src/wxnodus-ui/theme.js'
-import { patchOverlayState, resetOverlayState } from '../src/wxnodus-ui/runtime/promptStore.js'
+import { patchInline, resetOverlayState } from '../src/wxnodus-ui/runtime/promptStore.js'
 import { HOTKEYS } from '../src/wxnodus-ui/content/hotkeys.js'
 import {
   approvalAction,
@@ -114,7 +114,7 @@ describe('ApprovalPrompt action contract', () => {
 
 describe('PromptZone precedence contract', () => {
   it('renders only approval when every flow prompt is present', () => {
-    patchOverlayState({
+    patchInline({
       approval: { command: 'npm test', description: '需要批准', allowPermanent: false },
       confirm: { title: '确认操作', onConfirm: () => {} },
       clarify: { choices: ['选项'], question: '请选择', requestId: 'clarify-1' },
@@ -135,7 +135,7 @@ describe('PromptZone precedence contract', () => {
   })
 
   it('falls through in the documented order after higher-priority prompts clear', () => {
-    patchOverlayState({
+    patchInline({
       confirm: { title: '确认操作', onConfirm: () => {} },
       clarify: { choices: ['选项'], question: '请选择', requestId: 'clarify-1' },
       sudo: { requestId: 'sudo-1' },
@@ -146,19 +146,19 @@ describe('PromptZone precedence contract', () => {
     const { lastFrame, rerender } = render(withGateway(<PromptZone {...promptProps} />))
     expect(lastFrame()).toContain('确认操作')
 
-    patchOverlayState({ confirm: null })
+    patchInline({ confirm: null })
     rerender(withGateway(<PromptZone {...promptProps} />))
     expect(lastFrame()).toContain('请选择')
 
-    patchOverlayState({ clarify: null })
+    patchInline({ clarify: null })
     rerender(withGateway(<PromptZone {...promptProps} />))
     expect(lastFrame()).toContain('需要 sudo 密码')
 
-    patchOverlayState({ sudo: null })
+    patchInline({ sudo: null })
     rerender(withGateway(<PromptZone {...promptProps} />))
     expect(lastFrame()).toContain('输入令牌')
 
-    patchOverlayState({ secret: null })
+    patchInline({ secret: null })
     rerender(withGateway(<PromptZone {...promptProps} />))
     expect(lastFrame()).toContain('填写表单')
   })

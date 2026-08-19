@@ -8,7 +8,7 @@ import {
   applyDelegationStatus,
   toggleOverlaySection
 } from '../runtime/delegationStatus.js'
-import { patchOverlayState } from '../runtime/promptStore.js'
+import { closeOverlay, pushOverlay } from '../runtime/promptStore.js'
 import { $spawnDiff, $spawnHistory, clearDiffPair, type SpawnSnapshot } from '../runtime/delegationArchive.js'
 import { useTurnSelector } from '../runtime/flowStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -1143,5 +1143,5 @@ interface AgentsOverlayProps {
   t: Theme
 }
 
-export const closeAgentsOverlay = () => patchOverlayState({ agents: false })
-export const openAgentsOverlay = () => patchOverlayState({ agents: true })
+export const closeAgentsOverlay = () => closeOverlay('agents')
+export const openAgentsOverlay = () => pushOverlay({ kind: 'agents', initialHistoryIndex: 0 })

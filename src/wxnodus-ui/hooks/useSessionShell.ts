@@ -36,7 +36,7 @@ import { createSlashHandler } from '../commands/slashHandler.js'
 import { planGatewayRecovery } from '../bridge/recovery.js'
 import { getInputSelection } from '../runtime/selectionStore.js'
 import { type GatewayRpc, type TranscriptRow } from '../bridge/interfaces.js'
-import { $overlayState, patchOverlayState } from '../runtime/promptStore.js'
+import { $overlayState, closeOverlay, patchInline, pushOverlay } from '../runtime/promptStore.js'
 import { scrollWithSelectionBy } from '../runtime/scroll.js'
 import { turnController } from '../runtime/flowController.js'
 import { patchTurnState, useTurnSelector } from '../runtime/flowStore.js'
@@ -463,7 +463,7 @@ export function useMainApp(gw: GatewayClient) {
   const sys = useCallback((text: string) => appendMessage({ role: 'system', text }), [appendMessage])
 
   const page = useCallback(
-    (text: string, title?: string) => patchOverlayState({ pager: { lines: text.split('\n'), offset: 0, title } }),
+    (text: string, title?: string) => pushOverlay({ kind: 'pager', pager: { lines: text.split('\n'), offset: 0, title } }),
     []
   )
 
@@ -620,7 +620,7 @@ export function useMainApp(gw: GatewayClient) {
   // Format: `<marker> <session name> · <model> · <cwd>` — name/cwd omitted when absent.
   const model = ui.info?.model?.replace(/^.*\//, '') ?? ''
 
-  const marker = overlay.approval || overlay.sudo || overlay.secret || overlay.clarify ? '⚠' : ui.busy ? '⏳' : '✓'
+  const marker = overlay.inline.approval || overlay.inline.sudo || overlay.inline.secret || overlay.inline.clarify ? '⚠' : ui.busy ? '⏳' : '✓'
 
   const tabCwd = ui.info?.cwd
 
@@ -669,7 +669,7 @@ export function useMainApp(gw: GatewayClient) {
 
   const answerClarify = useCallback(
     (answer: string) => {
-      const clarify = overlay.clarify
+      const clarify = overlay.inline.clarify
 
       if (!clarify) {
         return
@@ -705,10 +705,10 @@ export function useMainApp(gw: GatewayClient) {
           })
         }
 
-        patchOverlayState({ clarify: null })
+        patchInline({ clarify: null })
       })
     },
-    [appendMessage, overlay.clarify, rpc]
+    [appendMessage, overlay.inline.clarify, rpc]
   )
 
   const paste = useCallback(
@@ -951,7 +951,7 @@ export function useMainApp(gw: GatewayClient) {
   const answerApproval = useCallback(
     (choice: string) =>
       respondWith('approval.respond', { choice, session_id: ui.sid }, () => {
-        patchOverlayState({ approval: null })
+        patchInline({ approval: null })
         patchTurnState({ outcome: choice === 'deny' ? 'denied' : `approved (${choice})` })
         patchUiState({ status: 'running…' })
       }),
@@ -960,54 +960,54 @@ export function useMainApp(gw: GatewayClient) {
 
   const answerSudo = useCallback(
     (pw: string) => {
-      if (!overlay.sudo) {
+      if (!overlay.inline.sudo) {
         return
       }
 
-      return respondWith('sudo.respond', { password: pw, request_id: overlay.sudo.requestId }, () => {
-        patchOverlayState({ sudo: null })
+      return respondWith('sudo.respond', { password: pw, request_id: overlay.inline.sudo.requestId }, () => {
+        patchInline({ sudo: null })
         patchUiState({ status: 'running…' })
       })
     },
-    [overlay.sudo, respondWith]
+    [overlay.inline.sudo, respondWith]
   )
 
   const answerSecret = useCallback(
     (value: string) => {
-      if (!overlay.secret) {
+      if (!overlay.inline.secret) {
         return
       }
 
-      return respondWith('secret.respond', { request_id: overlay.secret.requestId, value }, () => {
-        patchOverlayState({ secret: null })
+      return respondWith('secret.respond', { request_id: overlay.inline.secret.requestId, value }, () => {
+        patchInline({ secret: null })
         patchUiState({ status: 'running…' })
       })
     },
-    [overlay.secret, respondWith]
+    [overlay.inline.secret, respondWith]
   )
 
   // 动态内容表：提交（值仅内存回传 gateway——不落盘）与取消
   const answerForm = useCallback(
     (values: Record<string, string>) => {
-      if (!overlay.form) return
-      return respondWith('credential.respond', { request_id: overlay.form.requestId, values }, () => {
-        patchOverlayState({ form: null })
+      if (!overlay.inline.form) return
+      return respondWith('credential.respond', { request_id: overlay.inline.form.requestId, values }, () => {
+        patchInline({ form: null })
         patchUiState({ status: 'running…' })
       })
     },
-    [overlay.form, respondWith]
+    [overlay.inline.form, respondWith]
   )
 
   const cancelForm = useCallback(() => {
-    if (!overlay.form) return
-    return respondWith('credential.respond', { request_id: overlay.form.requestId, values: {} }, () => {
-      patchOverlayState({ form: null })
+    if (!overlay.inline.form) return
+    return respondWith('credential.respond', { request_id: overlay.inline.form.requestId, values: {} }, () => {
+      patchInline({ form: null })
       patchUiState({ status: 'running…' })
     })
-  }, [overlay.form, respondWith])
+  }, [overlay.inline.form, respondWith])
 
   const onModelSelect = useCallback((value: string) => {
-    patchOverlayState({ modelPicker: false })
+    closeOverlay('modelPicker')
     slashRef.current(`/model ${value}`)
   }, [])
 

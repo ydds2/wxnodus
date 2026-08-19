@@ -4,7 +4,8 @@ import { Fragment, memo, useMemo, useRef } from 'react'
 
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { AppLayoutProps } from '../bridge/interfaces.js'
-import { $isBlocked, $overlayState, patchOverlayState } from '../runtime/promptStore.js'
+import { $isBlocked, $overlayState, closeOverlay, pushOverlay } from '../runtime/promptStore.js'
+import { findEntry } from '../runtime/overlayStack.js'
 import { clearSelectedMessage, $uiState } from '../runtime/viewStore.js'
 import { useTurnSelector } from '../runtime/flowStore.js'
 import { bgActiveCount, useBgSelector } from '../runtime/backgroundStore.js'
@@ -426,8 +427,8 @@ const AgentsOverlayPane = memo(function AgentsOverlayPane() {
   return (
     <AgentsOverlay
       gw={gw}
-      initialHistoryIndex={overlay.agentsInitialHistoryIndex}
-      onClose={() => patchOverlayState({ agents: false, agentsInitialHistoryIndex: 0 })}
+      initialHistoryIndex={findEntry(overlay, 'agents')?.initialHistoryIndex ?? 0}
+      onClose={() => closeOverlay('agents')}
       t={ui.theme}
     />
   )
@@ -468,12 +469,12 @@ const StatusRulePane = memo(function StatusRulePane({
         modelFast={ui.info?.fast || ui.info?.service_tier === 'priority'}
         modelReasoningEffort={ui.info?.reasoning_effort}
         notice={ui.notice}
-        onSessionCountClick={() => patchOverlayState({ sessions: true })}
+        onSessionCountClick={() => pushOverlay({ kind: 'sessions' })}
         onBalanceClick={actions.refreshBalance}
         onUsageClick={actions.cycleUsageRange}
         onVoiceClick={actions.toggleVoiceMode}
-        onCwdClick={() => patchOverlayState({ dirPicker: true })}
-        onModelClick={() => patchOverlayState({ modelPicker: true })}
+        onCwdClick={() => pushOverlay({ kind: 'dirPicker' })}
+        onModelClick={() => pushOverlay({ kind: 'modelPicker' })}
         permLabel={perm.label}
         permTone={perm.tone}
         pet={<BlackHolePet mood={petMood} t={ui.theme} />}
@@ -519,7 +520,7 @@ export const AppLayout = memo(function AppLayout({
             （历史回归：row 包住整个 TranscriptPane 时 BrandBar 占满整行，
             ScrollBox 被挤成右缘 2 列窄条——即用户曾看到的「双栏」与
             full-scene 空 transcript 的同一根因。滚动条几何 row 在 TranscriptPane 内部。） */}
-        {overlay.agents ? (
+        {findEntry(overlay, 'agents') ? (
           <PerfPane id="agents">
             <AgentsOverlayPane />
           </PerfPane>
@@ -529,7 +530,7 @@ export const AppLayout = memo(function AppLayout({
           </PerfPane>
         )}
 
-        {!overlay.agents && (
+        {!findEntry(overlay, 'agents') && (
           <>
             <PerfPane id="prompt">
               <PromptZone
@@ -541,10 +542,10 @@ export const AppLayout = memo(function AppLayout({
                 onFormSubmit={actions.answerForm}
                 onFormCancel={actions.cancelForm}
                 onHistoryAccept={text => {
-                  patchOverlayState({ histSearch: false })
+                  closeOverlay('histSearch')
                   composer.updateInput(text)
                 }}
-                onHistoryCancel={() => patchOverlayState({ histSearch: false })}
+                onHistoryCancel={() => closeOverlay('histSearch')}
               />
             </PerfPane>
 

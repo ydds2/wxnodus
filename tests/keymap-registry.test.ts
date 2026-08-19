@@ -90,8 +90,8 @@ describe('keymapDocs（/help keys 文本生成）', () => {
     const docs = keymapDocs()
     const text = docs.join('\n')
 
-    for (const label of Object.values(SCOPE_LABEL)) {
-      expect(text).toContain(label)
+    for (const scope of ['global', 'prompt', 'vim', 'pager', 'panel'] as const) {
+      expect(text).toContain(SCOPE_LABEL[scope])
     }
 
     for (const b of BUILTIN_BINDINGS) {

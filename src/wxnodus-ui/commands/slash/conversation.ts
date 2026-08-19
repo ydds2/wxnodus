@@ -12,7 +12,7 @@ import type {
 import { formatVoiceRecordKey, parseVoiceRecordKey } from '../../lib/platform.js'
 import { fmtK } from '../../lib/text.js'
 import { DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES, type IndicatorStyle } from '../../bridge/interfaces.js'
-import { patchOverlayState } from '../../runtime/promptStore.js'
+import { patchInline, pushOverlay } from '../../runtime/promptStore.js'
 import { patchUiState } from '../../runtime/viewStore.js'
 import type { SlashCommand } from '../slashTypes.js'
 
@@ -69,7 +69,7 @@ export const sessionCommands: SlashCommand[] = [
       }
 
       if (!arg.trim()) {
-        return patchOverlayState({ modelPicker: true })
+        return pushOverlay({ kind: 'modelPicker' })
       }
 
       // /model add|set-key|key：密钥/接口管理子命令——走内核命令面（command.dispatch）
@@ -88,7 +88,7 @@ export const sessionCommands: SlashCommand[] = [
         .then(
           ctx.guarded<ConfigSetResponse>(r => {
             if (r.confirm_required) {
-              patchOverlayState({
+              patchInline({
                 confirm: {
                   cancelLabel: 'Cancel',
                   confirmLabel: 'Switch anyway',
@@ -174,7 +174,8 @@ export const sessionCommands: SlashCommand[] = [
         .then(
           ctx.guarded(r => {
             if (r?.ok && r.lines?.length && r.sections?.length) {
-              patchOverlayState({
+              pushOverlay({
+                kind: 'pager',
                 pager: {
                   title: r.aggregate ? 'diff 全文件集' : `diff ${target}`,
                   lines: r.lines,
@@ -215,7 +216,7 @@ export const sessionCommands: SlashCommand[] = [
         return ctx.session.resumeById(trimmed)
       }
 
-      patchOverlayState({ sessions: true })
+      pushOverlay({ kind: 'sessions' })
     }
   },
 

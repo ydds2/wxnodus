@@ -5,7 +5,7 @@ import unicodeSpinners from 'unicode-animations'
 import { artWidth, hero, HERO_WIDTH, logo, LOGO_WIDTH } from '../banner.js'
 import { FEATURE_SPOTLIGHTS } from '../content/features.js'
 import { flat } from '../lib/text.js'
-import { patchOverlayState } from '../runtime/promptStore.js'
+import { pushOverlay } from '../runtime/promptStore.js'
 import type { Theme } from '../theme.js'
 import type { PanelSection, SessionInfo } from '../types.js'
 import { getTuiTerminalTier } from '../lib/terminalTier.js'
@@ -302,14 +302,14 @@ export function SessionPanel({ info, maxWidth, onCommand, sid, t }: SessionPanel
           <Text />
 
           {/* A24：会话面板模型/目录可点（开模型选择器/目录选择器） */}
-          <Box onClick={() => patchOverlayState({ modelPicker: true })}>
+          <Box onClick={() => pushOverlay({ kind: 'modelPicker' })}>
             <Text color={t.color.accent}>
               {info.model.split('/').pop()}
               <Text color={t.color.muted}> · WxNodus</Text>
             </Text>
           </Box>
 
-          <Box onClick={() => patchOverlayState({ dirPicker: true })}>
+          <Box onClick={() => pushOverlay({ kind: 'dirPicker' })}>
             <Text color={t.color.muted} wrap="truncate-end">
               {info.cwd || process.cwd()}
             </Text>
@@ -338,13 +338,13 @@ export function SessionPanel({ info, maxWidth, onCommand, sid, t }: SessionPanel
           // here so they aren't lost.
           <Box flexDirection="column" marginBottom={1}>
             {/* A24：模型/目录可点（开模型选择器/目录选择器） */}
-            <Box onClick={() => patchOverlayState({ modelPicker: true })}>
+            <Box onClick={() => pushOverlay({ kind: 'modelPicker' })}>
               <Text color={t.color.accent} wrap="truncate-end">
                 {info.model.split('/').pop()}
                 <Text color={t.color.muted}> · WxNodus</Text>
               </Text>
             </Box>
-            <Box onClick={() => patchOverlayState({ dirPicker: true })}>
+            <Box onClick={() => pushOverlay({ kind: 'dirPicker' })}>
               <Text color={t.color.muted} wrap="truncate-end">
                 {info.cwd || process.cwd()}
               </Text>

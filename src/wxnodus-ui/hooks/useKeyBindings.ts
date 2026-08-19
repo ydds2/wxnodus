@@ -19,7 +19,8 @@ import { nextPermMode } from '../lib/permCycle.js'
 
 import { getInputSelection } from '../runtime/selectionStore.js'
 import type { InputHandlerContext, InputHandlerResult } from '../bridge/interfaces.js'
-import { $isBlocked, $overlayState, patchOverlayState } from '../runtime/promptStore.js'
+import { $isBlocked, $overlayState, closeOverlay, patchInline, popOverlay, pushOverlay, toggleOverlay, updateOverlay } from '../runtime/promptStore.js'
+import { findEntry, topEntry } from '../runtime/overlayStack.js'
 import { turnController } from '../runtime/flowController.js'
 import { clearSelectedMessage, showSelectionHint } from '../runtime/viewStore.js'
 import { writeClipboardText } from '../lib/clipboard.js'
@@ -130,51 +131,32 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   }
 
   const cancelOverlayFromCtrlC = () => {
-    if (overlay.clarify) {
+    // 栈式重构：行内提示按原优先级链逐个取消；浮层栈则出栈顶（Ctrl+C 取消
+    // 当前最上层阻断物——互斥组保证面板/选择器至多一层；pager 的 ctrl+c 已由
+    // 上方 km.pagerClose 先行消费，此处只处理其余栈项）
+    if (overlay.inline.clarify) {
       return actions.answerClarify('')
     }
 
-    if (overlay.approval) {
+    if (overlay.inline.approval) {
       return gateway
         .rpc<ApprovalRespondResponse>('approval.respond', { choice: 'deny', session_id: getUiState().sid })
-        .then(r => r && (patchOverlayState({ approval: null }), patchTurnState({ outcome: 'denied' })))
+        .then(r => r && (patchInline({ approval: null }), patchTurnState({ outcome: 'denied' })))
     }
 
-    if (overlay.sudo) {
+    if (overlay.inline.sudo) {
       return gateway
-        .rpc<SudoRespondResponse>('sudo.respond', { password: '', request_id: overlay.sudo.requestId })
-        .then(r => r && (patchOverlayState({ sudo: null }), actions.sys('sudo cancelled')))
+        .rpc<SudoRespondResponse>('sudo.respond', { password: '', request_id: overlay.inline.sudo.requestId })
+        .then(r => r && (patchInline({ sudo: null }), actions.sys('sudo cancelled')))
     }
 
-    if (overlay.secret) {
+    if (overlay.inline.secret) {
       return gateway
-        .rpc<SecretRespondResponse>('secret.respond', { request_id: overlay.secret.requestId, value: '' })
-        .then(r => r && (patchOverlayState({ secret: null }), actions.sys('secret entry cancelled')))
+        .rpc<SecretRespondResponse>('secret.respond', { request_id: overlay.inline.secret.requestId, value: '' })
+        .then(r => r && (patchInline({ secret: null }), actions.sys('secret entry cancelled')))
     }
 
-    if (overlay.modelPicker) {
-      return patchOverlayState({ modelPicker: false })
-    }
-
-    if (overlay.skillsHub) {
-      return patchOverlayState({ skillsHub: false })
-    }
-
-    if (overlay.commandPalette) {
-      return patchOverlayState({ commandPalette: false })
-    }
-
-    if (overlay.pluginsHub) {
-      return patchOverlayState({ pluginsHub: false })
-    }
-
-    if (overlay.sessions) {
-      return patchOverlayState({ sessions: false })
-    }
-
-    if (overlay.agents) {
-      return patchOverlayState({ agents: false })
-    }
+    return popOverlay()
   }
 
   const cycleQueue = (dir: 1 | -1) => {
@@ -280,7 +262,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
     // Ctrl+K 命令面板：全局最高优先级（面板开着时再按一次即关闭——toggle）
     if (isCtrl(key, ch, 'k')) {
-      patchOverlayState(prev => ({ ...prev, commandPalette: !prev.commandPalette }))
+      toggleOverlay({ kind: 'commandPalette' })
       return
     }
 
@@ -297,7 +279,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       // answering felt like the prompt had locked the entire UI.  Explicitly
       // skip the prompt-overlay early-return for scroll keys so they fall
       // through to the wheel / PageUp / Shift+arrow handlers below.
-      const promptOverlay = overlay.approval || overlay.clarify || overlay.confirm
+      const promptOverlay = overlay.inline.approval || overlay.inline.clarify || overlay.inline.confirm
       const fallThroughForScroll = promptOverlay && shouldFallThroughForScroll(key)
 
       if (promptOverlay && !fallThroughForScroll) {
@@ -308,27 +290,29 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         return
       }
 
-      if (overlay.pager) {
+      const pagerEntry = findEntry(overlay, 'pager')
+      if (pagerEntry) {
         // supremacy 3.3：pager 键位走 settings.keymap 配置层（默认=既有行为零漂移；
         // /config set keymap '{"pagerClose":"ctrl+x"}' 等热生效）
         const km = getActiveKeymap()
         if (matchesAny(key, ch, km.pagerClose)) {
-          return patchOverlayState({ pager: null })
+          return closeOverlay('pager')
         }
 
         // 2026-08-19 树面板形态：t 切换文件树索引视图（opencode 树面板的对等形态——
         // 滚动分节流 + 树索引跳转）；树视图内 ↑↓ 选文件、Enter 跳转、t 返回 diff
-        if (overlay.pager.diff) {
-          const d = overlay.pager.diff
+        if (pagerEntry.pager.diff) {
+          const d = pagerEntry.pager.diff
           if (ch === 't') {
-            patchOverlayState(prev => {
-              if (!prev.pager?.diff) return prev
-              const dd = prev.pager.diff
+            updateOverlay('pager', e => {
+              const p = e.pager
+              if (!p.diff) return e
+              const dd = p.diff
               if (dd.view === 'tree') {
-                return { ...prev, pager: { title: prev.pager.title, lines: dd.diffLines ?? prev.pager.lines, offset: dd.returnOffset ?? 0, diff: { ...dd, view: 'diff', diffLines: undefined, returnOffset: undefined, treeSel: undefined } } }
+                return { ...e, pager: { title: p.title, lines: dd.diffLines ?? p.lines, offset: dd.returnOffset ?? 0, diff: { ...dd, view: 'diff', diffLines: undefined, returnOffset: undefined, treeSel: undefined } } }
               }
               const treeLines = ['文件树（↑↓ 选择 · Enter 跳转 · t 返回 diff）', '', ...dd.files.map((f, i) => `${i === 0 ? '▸ ' : '  '}${f.rel}（${f.hunks} hunk${f.hunks > 1 ? 's' : ''}）`)]
-              return { ...prev, pager: { title: prev.pager.title, lines: treeLines, offset: 0, diff: { ...dd, view: 'tree', diffLines: prev.pager.lines, returnOffset: prev.pager.offset, treeSel: 0 } } }
+              return { ...e, pager: { title: p.title, lines: treeLines, offset: 0, diff: { ...dd, view: 'tree', diffLines: p.lines, returnOffset: p.offset, treeSel: 0 } } }
             })
             return
           }
@@ -336,28 +320,28 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
             const treeLinesFor = (dd: NonNullable<typeof d>, sel: number) => ['文件树（↑↓ 选择 · Enter 跳转 · t 返回 diff）', '', ...dd.files.map((f, i) => `${i === sel ? '▸ ' : '  '}${f.rel}（${f.hunks} hunk${f.hunks > 1 ? 's' : ''}）`)]
             const maxSel = Math.max(0, d.files.length - 1)
             if (key.upArrow) {
-              return patchOverlayState(prev => {
-                if (!prev.pager?.diff) return prev
-                const dd = prev.pager.diff
+              return updateOverlay('pager', e => {
+                if (!e.pager.diff) return e
+                const dd = e.pager.diff
                 const sel = Math.max(0, (dd.treeSel ?? 0) - 1)
-                return { ...prev, pager: { ...prev.pager, lines: treeLinesFor(dd, sel), diff: { ...dd, treeSel: sel } } }
+                return { ...e, pager: { ...e.pager, lines: treeLinesFor(dd, sel), diff: { ...dd, treeSel: sel } } }
               })
             }
             if (key.downArrow) {
-              return patchOverlayState(prev => {
-                if (!prev.pager?.diff) return prev
-                const dd = prev.pager.diff
+              return updateOverlay('pager', e => {
+                if (!e.pager.diff) return e
+                const dd = e.pager.diff
                 const sel = Math.min(maxSel, (dd.treeSel ?? 0) + 1)
-                return { ...prev, pager: { ...prev.pager, lines: treeLinesFor(dd, sel), diff: { ...dd, treeSel: sel } } }
+                return { ...e, pager: { ...e.pager, lines: treeLinesFor(dd, sel), diff: { ...dd, treeSel: sel } } }
               })
             }
             if (key.return) {
-              patchOverlayState(prev => {
-                if (!prev.pager?.diff) return prev
-                const dd = prev.pager.diff
+              updateOverlay('pager', e => {
+                if (!e.pager.diff) return e
+                const dd = e.pager.diff
                 const sel = dd.files[dd.treeSel ?? 0]
-                if (!sel) return prev
-                return { ...prev, pager: { title: prev.pager.title, lines: dd.diffLines ?? prev.pager.lines, offset: sel.start, diff: { ...dd, view: 'diff', diffLines: undefined, returnOffset: undefined, treeSel: undefined } } }
+                if (!sel) return e
+                return { ...e, pager: { title: e.pager.title, lines: dd.diffLines ?? e.pager.lines, offset: sel.start, diff: { ...dd, view: 'diff', diffLines: undefined, returnOffset: undefined, treeSel: undefined } } }
               })
               return
             }
@@ -365,17 +349,13 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         }
 
         const move = (delta: number | 'top' | 'bottom') =>
-          patchOverlayState(prev => {
-            if (!prev.pager) {
-              return prev
-            }
-
-            const { lines, offset } = prev.pager
+          updateOverlay('pager', e => {
+            const { lines, offset } = e.pager
             const max = Math.max(0, lines.length - pagerPageSize)
             const step = delta === 'top' ? -lines.length : delta === 'bottom' ? lines.length : delta
             const next = Math.max(0, Math.min(offset + step, max))
 
-            return next === offset ? prev : { ...prev, pager: { ...prev.pager, offset: next } }
+            return next === offset ? e : { ...e, pager: { ...e.pager, offset: next } }
           })
 
         if (matchesAny(key, ch, km.pagerUp)) {
@@ -401,17 +381,13 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         // 波 2 ③：[/] hunk 跳转（opencode diff-viewer.tsx:282-315 对标——回滚 diff 等
         // 含 @@ hunk 的 pager 内容；无更多 hunk 保持原位）
         if (ch === '[' || ch === ']') {
-          patchOverlayState(prev => {
-            if (!prev.pager) {
-              return prev
-            }
-
+          updateOverlay('pager', e => {
             const dir: 1 | -1 = ch === ']' ? 1 : -1
-            const next = hunkJump(prev.pager.lines, prev.pager.offset, dir, pagerPageSize)
+            const next = hunkJump(e.pager.lines, e.pager.offset, dir, pagerPageSize)
 
-            return next === null || next === prev.pager.offset
-              ? prev
-              : { ...prev, pager: { ...prev.pager, offset: next } }
+            return next === null || next === e.pager.offset
+              ? e
+              : { ...e, pager: { ...e.pager, offset: next } }
           })
 
           return
@@ -419,8 +395,8 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
         // 2026-08-19 交互式 diff v2：r 回滚当前文件当前 hunk（分节元数据精确定位）；
         // m 标记已审（内容指纹持久化——变更即失效）。确认面板 onConfirm 真实执行。
-        if ((ch === 'r' || ch === 'm') && overlay.pager.diff && overlay.pager.diff.view !== 'tree') {
-          const { lines, offset, diff } = overlay.pager
+        if ((ch === 'r' || ch === 'm') && pagerEntry.pager.diff && pagerEntry.pager.diff.view !== 'tree') {
+          const { lines, offset, diff } = pagerEntry.pager
           let section = diff.files[0]
           for (const s of diff.files) {
             if (s.start <= offset && offset < s.end) { section = s; break }
@@ -449,24 +425,24 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
                 { ...(diff.arg ? { file: diff.arg } : {}), session_id: getUiState().sid }
               )
               .then(r => {
-                patchOverlayState(prev => {
-                  if (!prev.pager?.diff) {
-                    return prev
+                updateOverlay('pager', e => {
+                  if (!e.pager.diff) {
+                    return e
                   }
 
                   if (r?.ok && r.lines?.length && r.sections?.length) {
                     return {
-                      ...prev,
+                      ...e,
                       pager: {
-                        title: prev.pager.title,
+                        title: e.pager.title,
                         lines: r.lines,
-                        offset: Math.min(prev.pager.offset, Math.max(0, r.lines.length - pagerPageSize)),
+                        offset: Math.min(e.pager.offset, Math.max(0, r.lines.length - pagerPageSize)),
                         diff: { aggregate: Boolean(r.aggregate), arg: diff.arg, files: r.sections },
                       },
                     }
                   }
 
-                  return prev
+                  return e
                 })
               })
           }
@@ -484,7 +460,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
             return
           }
 
-          patchOverlayState({
+          patchInline({
             confirm: {
               title: `回滚 hunk ${target}/${section.hunks}？`,
               detail: `${section.rel}——该 hunk 恢复为快照内容（快照留存，/undo fs restore 可再滚回）`,
@@ -507,20 +483,16 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         }
 
         if (matchesAny(key, ch, km.pagerHalfDown) || key.return) {
-          patchOverlayState(prev => {
-            if (!prev.pager) {
-              return prev
-            }
-
-            const { lines, offset } = prev.pager
+          updateOverlay('pager', e => {
+            const { lines, offset } = e.pager
             const max = Math.max(0, lines.length - pagerPageSize)
 
             // Auto-close only when already at the last page — otherwise clamp
             // to `max` so the offset matches what the line/page-back handlers
             // can reach (prevents a snap-back jump on the next ↑/↓/PgUp).
             return offset >= max
-              ? { ...prev, pager: null }
-              : { ...prev, pager: { ...prev.pager, offset: Math.min(offset + pagerPageSize, max) } }
+              ? null
+              : { ...e, pager: { ...e.pager, offset: Math.min(offset + pagerPageSize, max) } }
           })
         }
 
@@ -529,14 +501,20 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
       if (isCtrl(key, ch, 'c')) {
         cancelOverlayFromCtrlC()
-      } else if (key.escape && overlay.sessions) {
-        patchOverlayState({ sessions: false })
+      } else if (key.escape) {
+        // 栈式重构：Esc 统一出栈兜底——仅当栈顶 kind 的组件未自带 Esc 处理时由全局弹出
+        // （实测 skillsHub/pluginsHub 无组件级 Esc；其余 kind 组件自行 closeOverlay，
+        // 全局再弹会造成一次 Esc 弹两层）。pager 的 Esc 已由上方 km.pagerClose 消费。
+        const top = topEntry(overlay)
+        if (top && (top.kind === 'skillsHub' || top.kind === 'pluginsHub')) {
+          popOverlay()
+        }
       }
 
       // Ctrl+R：历史反向搜索（bash readline 同款）——overlay 阻断 composer 输入，
       // 搜索组件自身 useInput 消费字符/Ctrl+R/Enter/Esc；此处只负责打开
-      if (isCtrl(key, ch, 'r') && !overlay.histSearch && !cState.historyIdx) {
-        return patchOverlayState({ histSearch: true })
+      if (isCtrl(key, ch, 'r') && !findEntry(overlay, 'histSearch') && !cState.historyIdx) {
+        return pushOverlay({ kind: 'histSearch' })
       }
 
       // Ctrl+Shift+P：截图即问——一键全屏截图登记为待注入图片（下次提问经能力门：
@@ -566,7 +544,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
     // A3 修复：Ctrl+O 打开模型选择器（保留草稿；参考热键同款）
     if (isCtrl(key, ch, 'o')) {
-      patchOverlayState({ modelPicker: true })
+      pushOverlay({ kind: 'modelPicker' })
       return
     }
 
@@ -756,7 +734,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     if (isCtrl(key, ch, 'x')) {
-      return patchOverlayState({ sessions: true })
+      return pushOverlay({ kind: 'sessions' })
     }
 
     if (key.ctrl && ch.toLowerCase() === 'c') {

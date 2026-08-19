@@ -16,7 +16,7 @@ import { writeOsc52Clipboard } from '../../lib/osc52.js'
 import { configureDetectedTerminalKeybindings, configureTerminalKeybindings } from '../../lib/terminalSetup.js'
 import type { Msg } from '../../types.js'
 import type { StatusBarMode } from '../../bridge/interfaces.js'
-import { patchOverlayState } from '../../runtime/promptStore.js'
+import { patchInline } from '../../runtime/promptStore.js'
 import { patchUiState } from '../../runtime/viewStore.js'
 import type { SlashCommand } from '../slashTypes.js'
 import { translateText } from '../../glyphs.js'
@@ -112,7 +112,7 @@ export const coreCommands: SlashCommand[] = [
         return commit()
       }
 
-      patchOverlayState({
+      patchInline({
         confirm: {
           cancelLabel: 'No, keep going',
           confirmLabel: isNew ? 'Yes, start a new session' : 'Yes, clear the session',

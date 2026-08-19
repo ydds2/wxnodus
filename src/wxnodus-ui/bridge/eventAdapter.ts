@@ -17,7 +17,8 @@ import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
 import { patchBgState } from '../runtime/backgroundStore.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
-import { getOverlayState, patchOverlayState } from '../runtime/promptStore.js'
+import { getOverlayState, patchInline } from '../runtime/promptStore.js'
+import { findEntry } from '../runtime/overlayStack.js'
 import { turnController } from '../runtime/flowController.js'
 import { getUiState, patchUiState } from '../runtime/viewStore.js'
 // W3-02：事件流接入纯投影管线（run 生命周期 → presentation 纯层 reducer/projector）
@@ -142,7 +143,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   // answer (so this no-ops there).  Flush the question + options into the
   // transcript as a persistent system line, then clear the overlay.
   const flushAbandonedClarify = () => {
-    const { clarify } = getOverlayState()
+    const { clarify } = getOverlayState().inline
 
     if (!clarify || persistedAbandonedClarify.has(clarify.requestId)) {
       return
@@ -153,7 +154,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       role: 'system',
       text: formatAbandonedClarify(clarify.question, clarify.choices, 'timed out')
     })
-    patchOverlayState({ clarify: null })
+    patchInline({ clarify: null })
   }
 
   // Inject the disk-save callback into turnController so recordMessageComplete
@@ -243,7 +244,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     // turn's nudge credit here: if the user closes the overlay later in the
     // same turn while delegation is still ongoing, a subsequent event should
     // still be allowed to nudge.  The flag is only set once we actually push.
-    if (getOverlayState().agents) {
+    if (findEntry(getOverlayState(), 'agents')) {
       return
     }
 
@@ -589,7 +590,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         // 直接响应 RPC，不提交对话（免提模式：说"确认/取消"推进审批）。
         const overlay = getOverlayState()
 
-        if (overlay.approval || overlay.confirm) {
+        if (overlay.inline.approval || overlay.inline.confirm) {
           const choice = voiceConfirmChoice(text)
 
           if (choice !== null) {
@@ -597,7 +598,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
               choice,
               session_id: getUiState().sid,
             })
-            patchOverlayState({ approval: null, confirm: null })
+            patchInline({ approval: null, confirm: null })
             setStatus(choice === 'approve' ? '已确认（语音）' : '已取消（语音）')
 
             return
@@ -726,7 +727,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       }
 
       case 'clarify.request':
-        patchOverlayState({
+        patchInline({
           clarify: { choices: ev.payload.choices, question: ev.payload.question, requestId: ev.payload.request_id }
         })
         setStatus('waiting for input…')
@@ -738,7 +739,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         // Only an explicit false (tirith warning) drops the permanent-allow option.
         const allowPermanent = ev.payload.allow_permanent !== false
 
-        patchOverlayState({
+        patchInline({
           approval: {
             allowPermanent,
             command: String(ev.payload.command ?? ''),
@@ -755,14 +756,14 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       }
 
       case 'sudo.request':
-        patchOverlayState({ sudo: { requestId: ev.payload.request_id } })
+        patchInline({ sudo: { requestId: ev.payload.request_id } })
         setStatus('sudo password needed')
         feed({ type: 'prompt.opened', kind: 'sudo', id: ev.payload.request_id, summary: 'sudo' })
 
         return
 
       case 'secret.request':
-        patchOverlayState({
+        patchInline({
           secret: { envVar: ev.payload.env_var, prompt: ev.payload.prompt, requestId: ev.payload.request_id }
         })
         setStatus('secret input needed')
@@ -772,7 +773,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
 
       case 'credential.form':
-        patchOverlayState({
+        patchInline({
           form: {
             requestId: ev.payload.request_id,
             // kind 收窄为合法字面量（信任 gateway 契约）

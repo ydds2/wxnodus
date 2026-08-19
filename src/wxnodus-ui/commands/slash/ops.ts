@@ -14,7 +14,7 @@ import type {
 } from '../../gatewayTypes.js'
 import type { PanelSection } from '../../types.js'
 import { applyDelegationStatus, getDelegationState } from '../../runtime/delegationStatus.js'
-import { patchOverlayState } from '../../runtime/promptStore.js'
+import { pushOverlay } from '../../runtime/promptStore.js'
 import { getSpawnHistory, pushDiskSnapshot, setDiffPair, type SpawnSnapshot } from '../../runtime/delegationArchive.js'
 import type { SlashCommand } from '../slashTypes.js'
 
@@ -67,7 +67,7 @@ export const opsCommands: SlashCommand[] = [
     help: 'open the interactive config panel (list real settings, toggle booleans)',
     name: 'config',
     run: (_arg, _ctx) => {
-      patchOverlayState({ configPanel: true })
+      pushOverlay({ kind: 'configPanel' })
     }
   },
   {
@@ -270,7 +270,7 @@ export const opsCommands: SlashCommand[] = [
         return
       }
 
-      patchOverlayState({ agents: true, agentsInitialHistoryIndex: 0 })
+      pushOverlay({ kind: 'agents', initialHistoryIndex: 0 })
     }
   },
 
@@ -331,7 +331,7 @@ export const opsCommands: SlashCommand[] = [
               // Push onto the in-memory history so the overlay picks it up
               // by index 1 just like any other snapshot.
               pushDiskSnapshot(r, path)
-              patchOverlayState({ agents: true, agentsInitialHistoryIndex: 1 })
+              pushOverlay({ kind: 'agents', initialHistoryIndex: 1 })
             })
           )
           .catch(ctx.guardedErr)
@@ -356,7 +356,7 @@ export const opsCommands: SlashCommand[] = [
         index = parsed
       }
 
-      patchOverlayState({ agents: true, agentsInitialHistoryIndex: index })
+      pushOverlay({ kind: 'agents', initialHistoryIndex: index })
     }
   },
 
@@ -391,7 +391,7 @@ export const opsCommands: SlashCommand[] = [
       }
 
       setDiffPair({ baseline, candidate })
-      patchOverlayState({ agents: true, agentsInitialHistoryIndex: 0 })
+      pushOverlay({ kind: 'agents', initialHistoryIndex: 0 })
     }
   },
 
@@ -436,7 +436,7 @@ export const opsCommands: SlashCommand[] = [
       const text = arg.trim()
 
       if (!text) {
-        return patchOverlayState({ skillsHub: true })
+        return pushOverlay({ kind: 'skillsHub' })
       }
 
       const [sub, ...rest] = text.split(/\s+/)
@@ -615,7 +615,7 @@ export const opsCommands: SlashCommand[] = [
       // subcommand (enable/disable/list/install/…) falls through to the
       // text slash worker so it stays at parity with `wxnodus plugins`.
       if (!arg.trim()) {
-        return patchOverlayState({ pluginsHub: true })
+        return pushOverlay({ kind: 'pluginsHub' })
       }
 
       ctx.gateway.gw

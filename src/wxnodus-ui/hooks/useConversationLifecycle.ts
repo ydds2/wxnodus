@@ -20,7 +20,7 @@ import { asRpcResult } from '../lib/rpc.js'
 import type { Msg, PanelSection, SessionInfo, Usage } from '../types.js'
 
 import type { ComposerActions, GatewayRpc, StateSetter } from '../bridge/interfaces.js'
-import { patchOverlayState } from '../runtime/promptStore.js'
+import { closeOverlay } from '../runtime/promptStore.js'
 import { turnController } from '../runtime/flowController.js'
 import { patchTurnState } from '../runtime/flowStore.js'
 import { getUiState, patchUiState } from '../runtime/viewStore.js'
@@ -240,7 +240,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
   const newLiveSession = useCallback(
     (msg = 'new live session started', title?: string) => {
-      patchOverlayState({ sessions: false })
+      closeOverlay('sessions')
 
       return startNewSession(msg, title, true)
     },
@@ -249,7 +249,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
   const activateLiveSession = useCallback(
     (id: string) => {
-      patchOverlayState({ sessions: false })
+      closeOverlay('sessions')
       patchUiState({ status: 'switching session…' })
 
       gw.request<SessionActivateResponse>('session.activate', { session_id: id })
@@ -291,7 +291,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
   const resumeById = useCallback(
     (id: string) => {
-      patchOverlayState({ sessions: false })
+      closeOverlay('sessions')
       patchUiState({ status: 'resuming…' })
 
       rpc<SetupStatusResponse>('setup.status', {}).then(setup => {
