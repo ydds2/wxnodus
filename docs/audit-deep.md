@@ -1166,3 +1166,5 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **尾注（2026-08-19，N-01 处置实录——诚实口径）**：better-sqlite3 13.0.3 升版在远程与本地 `npm ci` 复现出幻影 `node-gyp rebuild`（13.0.3 tarball 无 install 脚本、`gypfile:false`、锁无 hasInstallScript——npm 仍执行了构建并在无 VS 环境失败；隔离最小项目安装同一版本则完全正常，触发机制未能归因）。工程决策：回退 better-sqlite3 至 `^11.3.0`（实际解析 11.10.0——prebuild-install 流程无需 VS，CI 已验证数月），保留 sqlite-vec 0.1.9（平台包直接携带 vec0.dll）；CI 改 `npm ci`（严格锁安装，确定性可复现）；锁 resolved 统一 npmjs 官方源（此前指向 npmmirror 镜像）。本地干净 `npm ci` + 九步门禁全绿。Node 24 矩阵行保留重试（11.10.0 预编译面更广）——远程 CI 实证成败后如实定档。
 
 **尾注二（2026-08-19，N-01 终审）**：npm ci 修复与 22.18 单版本在 #32252786649 全绿（gate/vscode-ext/install-smoke/3×22.18.0 success）；Node 24.x 三片同源崩溃（原生 teardown assertion，11.10.0+vec 0.1.9 仍复现）——矩阵终审撤销回单版本，engines 维持 `>=22 <24`，N-01 维持开放债（解锁=上游原生栈 Node 24 预编译成熟）。本项全程三次实验、两次真红，如实入档不假绿。
+
+**尾注三（2026-08-19）**：矩阵终审撤销后远程 CI #32253766740 全绿（`e261ddc`，gate/vscode-ext/3×test/install-smoke 全 success）。
