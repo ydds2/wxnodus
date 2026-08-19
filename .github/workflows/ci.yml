@@ -39,7 +39,7 @@ jobs:
           cache: npm
 
       - name: Install root dependencies
-        run: npm install
+        run: npm ci
 
       - name: Exempt Defender scanning (runner perf)
         shell: pwsh
@@ -106,7 +106,7 @@ jobs:
           cache: npm
 
       - name: Install root dependencies
-        run: npm install
+        run: npm ci
 
       - name: Download dist artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
@@ -181,7 +181,7 @@ jobs:
           cache: npm
 
       - name: Install root dependencies
-        run: npm install
+        run: npm ci
 
       - name: Download dist artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5

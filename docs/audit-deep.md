@@ -1162,3 +1162,5 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 4. **原生依赖升版 + 矩阵重开（N-01）**：better-sqlite3 11.3.0→13.0.3、sqlite-vec 0.1.6→0.1.9（Node 22 本地 db/记忆/恢复/召回 61 用例全绿）；ci.yml 重开 `node-version: ['22.18.0', '24.x']` × 3 shard 矩阵——24.x 行成败由远程 CI 实证（此前 #32245589517 ABI 崩溃即由此轮升级解决或证伪）。engines 待 CI 实证后放宽。
 
 **评分口径（诚实）**：931 维持——③ 交互查看器落地为 8→9 的候选证据（评审认可才升档）；⑨ 矩阵重开待 CI 实证；均不预支。
+
+**尾注（2026-08-19，N-01 处置实录——诚实口径）**：better-sqlite3 13.0.3 升版在远程与本地 `npm ci` 复现出幻影 `node-gyp rebuild`（13.0.3 tarball 无 install 脚本、`gypfile:false`、锁无 hasInstallScript——npm 仍执行了构建并在无 VS 环境失败；隔离最小项目安装同一版本则完全正常，触发机制未能归因）。工程决策：回退 better-sqlite3 至 `^11.3.0`（实际解析 11.10.0——prebuild-install 流程无需 VS，CI 已验证数月），保留 sqlite-vec 0.1.9（平台包直接携带 vec0.dll）；CI 改 `npm ci`（严格锁安装，确定性可复现）；锁 resolved 统一 npmjs 官方源（此前指向 npmmirror 镜像）。本地干净 `npm ci` + 九步门禁全绿。Node 24 矩阵行保留重试（11.10.0 预编译面更广）——远程 CI 实证成败后如实定档。
