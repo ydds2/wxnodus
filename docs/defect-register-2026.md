@@ -21,7 +21,7 @@
 
 | ID | 缺陷 | 对标 | 影响维度/提分 | 状态 |
 |---|---|---|---|---|
-| A-01 | 命令面臃肿（114 注册/~109 命令，竞品 2~3 倍） | gemini 47/opencode 动态 | 臃肿度原始诉求（不直接加分） | ✅ 两层命令面：主干 47 条 + 扩展 63 条（零删除，契约不变）——/help 默认主干、/help all 全目录、command_search 主干优先（supremacy 1.6） |
+| A-01 | 命令面臃肿（114 注册/~109 命令，竞品 2~3 倍） | gemini 47/opencode 动态 | 臃肿度原始诉求（不直接加分） | ✅ 两层命令面：主干 47 条 + 扩展 70 条（2026-08-19 实测 SLASH 117；零删除，契约不变）——/help 默认主干、/help all 全目录、command_search 主干优先（supremacy 1.6） |
 | A-02 | 模型分族提示词（deepseek/glm/kimi 定制段） | gemini 分族 | ⑤ 6→7（+11） | ✅ providerPrompts.ts 承载中文段（systemPrompt 零 CJK 红线不破），agent 按 model/端点解析注入，7 用例（supremacy 1.1） |
 | A-03 | 小模型任务档（标题/摘要走小模型） | crush large/small | ⑤ 7→8、⑩ +1 | ✅ settings.titleModel/summaryModel 白名单 + 标题小模型路由（10s 超时/无密钥/异常全部回退切片标题，已有标题零调用），9 用例（supremacy 1.2） |
 | A-04 | 按模型工具裁剪（48 schema 全量发给所有模型） | codex 按模型 | ⑤/⑩ | ✅ toolTrim.ts 能力驱动裁剪（文本模型裁图片输出工具、小窗口文本模型裁 GUI 套件、视觉模型全保留、未知模型不臆测）+ settings.toolTrim + updateTools 不绕过，11 用例（supremacy 1.3） |

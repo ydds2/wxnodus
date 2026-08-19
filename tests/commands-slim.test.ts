@@ -1,5 +1,5 @@
 // tests/commands-slim.test.ts — supremacy 1.6 命令面瘦身（A-01）：两层命令面契约
-// 覆盖：主干 47 条 / 扩展 63 条（并集 = SLASH 全集，零删除）；/help 默认只列主干 +
+// 覆盖：主干 47 条 / 扩展 70 条（2026-08-19 实测 SLASH 117，并集 = SLASH 全集，零删除）；/help 默认只列主干 +
 // 扩展计数提示；/help all 全目录；单命令详情标注扩展层；command_search 主干优先排序
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -22,7 +22,7 @@ const tmp = () => {
 afterEach(() => { for (const d of dirs.splice(0)) { try { rmSync(d, { recursive: true, force: true }); } catch {} } });
 
 describe('两层命令面（主干/扩展）', () => {
-  it('主干 47 条 + 扩展 63 条 = SLASH 全集（零删除契约）', () => {
+  it('主干 47 条 + 扩展层 = SLASH 全集（零删除契约，扩展数随命令增减漂移——断言恒等式）', () => {
     expect(CORE_COMMANDS.size).toBe(47);
     const ext = extendedCommands();
     expect(ext.length).toBe(SLASH.length - CORE_COMMANDS.size);

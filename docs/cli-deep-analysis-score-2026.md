@@ -217,7 +217,7 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 |---|---|---|
 | OS 内核沙盒（L0-L3） | `src/kernel/winSandbox.ts`（PS 内联 C# 助手：SetTokenInformation Low IL + Job Object + NetRateControl）+ `/sandbox os` 命令 | 本机标准用户实测：四层 profile 全部真实执行（L3/L2/L1/L0 均 PROFILE_OK，stdout 捕获）；L0 Low IL 写 Medium-IL 文件「拒绝访问」（只读语义实证）；探测诚实契约测试 60s 超时护栏 |
 | 沙盒机制校准（诚实记录） | 同上（文件头注释） | CreateRestrictedToken+CreateProcessAsUser → 1314 实测证伪（标准用户无 SeTcbPrivilege）；改 Low IL 路径通过——评分按 Windows 单平台给 9 不给 10 的依据 |
-| apply_patch | `src/kernel/applyPatch.ts` + tools.ts 注册 | 13 用例：四动作解析/三级容错/全量校验不写一半/多处匹配报错/did_you_mean/undoShadows 快照/CRLF 保留/退化 ctx==minus 折叠 |
+| apply_patch | `src/kernel/applyPatch.ts` + tools.ts 注册 | 14 用例（文档原 13，实测 14）：四动作解析/三级容错/全量校验不写一半/多处匹配报错/did_you_mean/undoShadows 快照/CRLF 保留/退化 ctx==minus 折叠 |
 | 并行工具调度 | `agent.ts` 批次循环（runOneCall 槽位保序） | 并发计数实证：纯只读批 maxRunning=2、含写批 maxRunning=1（gemini 同款语义） |
 | 输出 offload+掩码+蒸馏 | `src/kernel/toolOutput.ts` + bash 流式落盘 | 10 用例：50KB 阈值落盘/续读路径/promote 接管/保护窗 50k 掩码/幂等/阈值 settings 覆盖+夹取；bash 流式 sink 保留完整输出 |
 | LSP 集成 | `src/kernel/lspClient.ts` + 3 工具 | mock 服务器 Content-Length 同构测试：pull 诊断/publish 兜底/hover/definition/ENOENT 诚实报错/会话缓存 LRU |
@@ -256,7 +256,7 @@ wxnodus 独有：`--wire` 双向 RPC fail-closed（approval/clarify 帧，gatewa
 
 - **1.3 按模型工具裁剪（A-04）**：`toolTrim.ts` 能力驱动裁剪（文本模型裁 3 个图片输出工具；小窗口文本模型再裁 GUI 文本套件；视觉模型全保留；目录未收录不臆测）+ settings.toolTrim（auto/off）+ agent 唯一装配点（updateTools 热重载不绕过）+ getToolTrim 诊断面。11 用例。
 - **1.5 LLM 辅助循环检测（A-05）**：`loopJudge.ts` 语义判定（loop=提醒阈值即提前硬停，不等静态硬停阈值空烧 token；progress=复位签名计数，合法轮询穿过静态阈值；unknown/异常=回退静态提醒→硬停路径）；settings.loopJudge=true 开启（默认关，零额外调用）；CLI 注入主模型单轮判定（10s 超时）。7 用例（含默认关回归锚）。
-- **1.6 命令面瘦身（A-01）**：两层命令面——主干 47 条（日常驾驶，对标 gemini 47）+ 扩展 63 条（**零删除**：全命令照常注册与分发，契约不变）；/help 默认主干渲染 + `/help all` 全目录；command_search 主干优先排序（AI 目录检索心智模型）。7 用例 + 103 命令契约回归全绿。
+- **1.6 命令面瘦身（A-01）**：两层命令面——主干 47 条（日常驾驶，对标 gemini 47）+ 扩展 70 条（2026-08-19 实测；**零删除**：全命令照常注册与分发，契约不变）；/help 默认主干渲染 + `/help all` 全目录；command_search 主干优先排序（AI 目录检索心智模型）。7 用例 + 103 命令契约回归全绿。
 - **1.7 execpolicy 首词规则（B-06）**：`execPolicy.ts` 首词索引（first-token 分桶 + catch-all；pattern 锚定保证与全量 applyRules **数学等价**——测试含安全等价断言）；审批持久化复用 permissions.json（/perm rule，P0-2 已有存储面，不新增）；agent bash 规则经索引裁决。8 用例（含 agent 端到端 deny 直拒/allow 放行零弹窗）。
 - **阶段 1 复算**：⑤ 6→8（A-02 +11、A-03 +11）；⑩ 8→9（A-06 +7）。**总分 725 → 754**（第 4 名稳固，与 gemini 812 差距 58）。
 - **诚实留白**：④ 保持 9（计划 10 需「子代理分型 + 结构化输出」，留阶段 3）；⑥ 保持 9（execpolicy+审批持久化已落地，但双态沙盒提权分支 S-07 未经实测不宣称 10）；⑤ 到 9 还差「API 级 caching 深化」（阶段 3）。A-01 按口径不直接加分（原始诉求，消臃肿不计分）。

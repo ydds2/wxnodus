@@ -7,7 +7,8 @@
 // **六家皆无**（gemini vim.ts 1536 行 grep 零命中；codex vim.rs VimMode 仅 Normal/Insert :7-13，
 // 有括号栈文本对象 :229-264 但无 VISUAL）——wxnodus 独有。
 // P3 评估轮增量：文本对象 di(/da(/ciw/yi{/vi( 等（codex 括号栈深度计数对标，i/a 两键状态机）。
-// 仍无：/ 搜索、Ctrl-R redo（P3 清单）。
+// P3 评估轮增量二：/ ? 增量搜索（回绕/Backspace/Enter/Esc——findNextMatch）+ Ctrl-R redo
+// （<redo> 信号 + vimHistoryRedo）——均已实现（头注释旧「仍无」与实现矛盾，2026-08-19 修正）。
 
 export type VimMode = 'normal' | 'insert' | 'visual'
 
