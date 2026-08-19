@@ -605,27 +605,57 @@ if (pre.mode === 'error') {
           for (const m of r.missing) process.stderr.write(`wxnodus: 提及文件不存在（原文保留）：${m}\n`);
           for (const m of r.skipped) process.stderr.write(`wxnodus: 提及文件为二进制已跳过：${m}\n`);
         } catch { /* 展开失败按原文提交 */ }
-        // 2026-08-19 流式输出（对齐 claude -p / gemini -p / codex exec）：
+        // 2026-08-19 流式输出（对齐 claude -p / gemini -p / codex exec）+ 稳定性加固：
         // 此前 -p 只在 agent.run 结束后一次性 console.log 全文——长任务里用户
         // 看着空屏等分钟级无反馈。现订阅 agent.token 实时写 stdout（--json 除外，
         // JSON 需要完整对象）。[steer] 注入行是内部干预标记，不进 stdout。
+        // 加固 ①：win32+TTY 时关闭 QuickEdit（点击窗口即冻结 cmd 的经典根因——
+        // TUI 路径已有同款引导，-p 此前漏了）；失败静默（引导是加固不是必需）。
+        // 加固 ②：TTY 下超宽单行按终端宽度软换行——模型输出压缩代码等巨长单行
+        // 直写 conhost 会卡死；管道输出保持原始字节（脚本零污染）。
+        const streamable = !opts.json
         let streamedAny = false
-        let streamedEndsNewline = false
-        const offToken = opts.json
-          ? null
-          : bus.on('agent.token', (e: any) => {
+        if (streamable && process.stdout.isTTY === true && process.platform === 'win32') {
+          const { runConsoleModeScript, PS_ENABLE } = await import('../wxnodus-ui/lib/consoleBootstrap.js')
+          try { runConsoleModeScript(PS_ENABLE, process.env) } catch { /* 静默 */ }
+        }
+        const streamOut = (() => {
+          const isTty = process.stdout.isTTY === true
+          const cols = Math.max(60, process.stdout.columns ?? 80)
+          let pending = ''
+          const emitLine = (line: string) => {
+            if (isTty && line.length > cols) {
+              for (let i = 0; i < line.length; i += cols) process.stdout.write(line.slice(i, i + cols) + '\n')
+            } else {
+              process.stdout.write(line + '\n')
+            }
+          }
+          return {
+            push(t: string) {
+              const text = pending + t
+              const lines = text.split('\n')
+              pending = lines.pop() ?? ''
+              for (const line of lines) emitLine(line)
+            },
+            finish() {
+              if (pending) emitLine(pending)
+              pending = ''
+            }
+          }
+        })()
+        const offToken = streamable
+          ? bus.on('agent.token', (e: any) => {
               const t = String(e?.text ?? '')
-              if (!t) return
-              if (t.startsWith('\n[steer]')) return
+              if (!t || t.startsWith('\n[steer]')) return
               streamedAny = true
-              streamedEndsNewline = t.endsWith('\n')
-              process.stdout.write(t)
+              streamOut.push(t)
             })
+          : null
         const result = await agent.run(finalText)
         offToken?.()
+        // 流式已输出全部正文——只补挂起行收尾（避免与终稿打印重复）
         if (streamedAny) {
-          // 流式已输出全部正文——只补末尾换行（避免与 console.log 重复打印）
-          if (!streamedEndsNewline) process.stdout.write('\n')
+          streamOut.finish()
         }
         if (opts.json) {
           // Gemini --output-format json 的 stats 对齐：usage 为会话累计 token
@@ -656,7 +686,9 @@ if (pre.mode === 'error') {
           console.log(JSON.stringify({ ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted, usage }));
         } else if (!streamedAny) {
           // 无流式 token 到达（如纯工具任务/异常回退）——按旧路径打印终稿
-          console.log(result.text);
+          // （经同一输出通道——TTY 同样软换行防长行卡死；管道保持原始字节）
+          streamOut.push(result.text)
+          streamOut.finish()
         }
         // P1-2 退出码协议：0 成功｜1 失败（-p 分支）——W3-01 起走共享 completionTransport（interrupted → cancelled 130）
         cleanupEphemeral();

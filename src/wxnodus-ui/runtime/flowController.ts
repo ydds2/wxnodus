@@ -24,10 +24,18 @@ import { resetFlowOverlays } from './promptStore.js'
 import { pushSnapshot } from './delegationArchive.js'
 import { archiveDoneTodos, getTurnState, patchTurnState, resetTurnState } from './flowStore.js'
 import { getUiState, patchUiState } from './viewStore.js'
+import { getTuiTerminalTier } from '../lib/terminalTier.js'
 
 const INTERRUPT_COOLDOWN_MS = 1500
 const ACTIVITY_LIMIT = 8
 const TRAIL_LIMIT = 8
+
+// 2026-08-19 稳定性：cmd/conhost 档渲染节流——经典 conhost 逐格重绘极慢，
+// 16ms 全量帧在长输出时会让控制台积压到「卡死」观感。非 full 字形档
+// （cmd/ascii）把流式渲染批量间隔抬到 80ms，帧数降 5×；modern 终端不变。
+const TIER_GLYPHS = getTuiTerminalTier()?.capabilities.glyphSet ?? 'full'
+const TIER_STREAM_BATCH_MS = TIER_GLYPHS === 'full' ? STREAM_BATCH_MS : 80
+const TIER_IDLE_BATCH_MS = TIER_GLYPHS === 'full' ? STREAM_IDLE_BATCH_MS : 80
 // 通告缺省 TTL：toast 语义——8s 足够读完一行，之后动词槽归还就绪 + 空闲时钟
 const DEFAULT_NOTICE_TTL_MS = 8000
 
@@ -133,7 +141,7 @@ export class TurnController {
   private reasoningStreamingTimer: Timer = null
   private reasoningTimer: Timer = null
   private streamTimer: Timer = null
-  private streamDelay = STREAM_IDLE_BATCH_MS
+  private streamDelay = TIER_IDLE_BATCH_MS
   private toolProgressTimer: Timer = null
 
   // ── Credits notice machinery (Strategy B) ───────────────────────────
@@ -156,7 +164,7 @@ export class TurnController {
   }
 
   relaxStreaming() {
-    this.streamDelay = STREAM_IDLE_BATCH_MS
+    this.streamDelay = TIER_IDLE_BATCH_MS
   }
 
   clearReasoning() {
@@ -821,7 +829,7 @@ export class TurnController {
     this.toolProgressTimer = setTimeout(() => {
       this.toolProgressTimer = null
       patchTurnState({ tools: [...this.activeTools] })
-    }, STREAM_BATCH_MS)
+    }, TIER_STREAM_BATCH_MS)
   }
 
   recordToolStart(toolId: string, name: string, context: string, verboseArgs?: string) {
@@ -879,7 +887,7 @@ export class TurnController {
         reasoning: this.reasoningText,
         reasoningTokens: estimateTokensRough(this.reasoningText)
       })
-    }, STREAM_BATCH_MS)
+    }, TIER_STREAM_BATCH_MS)
   }
 
   scheduleStreaming() {
