@@ -15,6 +15,14 @@ export const PANEL_KINDS = ['configPanel', 'modelPicker', 'skillsHub', 'pluginsH
 /** 选择器互斥组（会话/目录/历史搜索/命令面板——同一时刻只开一个选择器） */
 export const PICKER_KINDS = ['sessions', 'dirPicker', 'histSearch', 'commandPalette'] as const
 
+/**
+ * 全局 Esc 兜底出栈的 kind 集合（P0-2 实测 + P1 扩展）：这些浮层的渲染组件没有
+ * 组件级 Esc 处理（skillsHub/pluginsHub 实测无；workspace 在 appOverlays 内渲染），
+ * 由 useKeyBindings 全局 Esc 统一 popTop；其余 kind 组件自行 closeOverlay——
+ * 全局再弹会造成一次 Esc 弹两层。
+ */
+export const ESC_GLOBAL_KINDS = ['skillsHub', 'pluginsHub', 'workspace'] as const
+
 export const KIND_GROUPS: ReadonlyArray<{ name: 'panel' | 'picker'; kinds: readonly string[] }> = [
   { name: 'panel', kinds: PANEL_KINDS },
   { name: 'picker', kinds: PICKER_KINDS },

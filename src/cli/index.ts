@@ -726,6 +726,7 @@ if (pre.mode === 'error') {
     adapter: createTuiPresentationAdapter({
       db, agent,
       settings,
+      dataDir,
       ensureSession: async (sid) => {
         const r = await sessionStartService.ensure(sid);
         return r.ok ? { ok: true as const } : { ok: false as const, code: r.error.code };

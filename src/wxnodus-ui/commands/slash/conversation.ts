@@ -14,8 +14,9 @@ import { fmtK } from '../../lib/text.js'
 import { DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES, type IndicatorStyle } from '../../bridge/interfaces.js'
 import { patchInline, pushOverlay } from '../../runtime/promptStore.js'
 import { keymapDocs } from '../../keymap/registry.js'
-import { patchUiState } from '../../runtime/viewStore.js'
-import type { SlashCommand } from '../slashTypes.js'
+import type { WorkspaceData, WorkspaceKind, WorkspaceRow } from '../../bridge/interfaces.js'
+import { getUiState, patchUiState } from '../../runtime/viewStore.js'
+import type { SlashCommand, SlashRunCtx } from '../slashTypes.js'
 
 const TUI_SESSION_MODEL_RE = new RegExp(`(?:^|\\s)${TUI_SESSION_MODEL_FLAG}(?:\\s|$)`)
 const TUI_SESSION_STRIP_RE = new RegExp(`\\s*${TUI_SESSION_MODEL_FLAG}\\b\\s*`, 'g')
@@ -34,6 +35,39 @@ const modelValueForConfigSet = (arg: string) => {
   }
 
   return trimmed
+}
+
+// P1 工作台：/status /doctor TUI 本地拦截——workspace RPC 取内核侧结构化数据，
+// status 再合并 TUI 状态行（成本/上下文/权限——与状态栏同源），压栈渲染工作台
+const openWorkspace = (ctx: SlashRunCtx, ws: WorkspaceKind) => {
+  return ctx.gateway.rpc<WorkspaceData>(ws === 'status' ? 'workspace.status' : 'workspace.doctor').then(r => {
+    if (!r || !r.sections?.length) {
+      ctx.transcript.sys(`${ws} 工作台数据不可用（gateway 端口未返回 sections）`)
+      return
+    }
+    let data = r
+    if (ws === 'status') {
+      const ui = getUiState()
+      const extra: WorkspaceRow[] = []
+      if (typeof ui.usage.cost_usd === 'number') {
+        extra.push({ k: '成本', v: `$${ui.usage.cost_usd.toFixed(4)}（估算，本会话）`, tone: 'ok' })
+      }
+      if (ui.usage.context_max) {
+        extra.push({
+          k: '上下文',
+          v: `${ui.usage.context_used ?? 0}/${ui.usage.context_max} tok`,
+          tone: (ui.usage.context_percent ?? 0) > 90 ? 'warn' : 'ok'
+        })
+      }
+      if (ui.info?.perm) {
+        extra.push({ k: '权限', v: String(ui.info.perm), tone: ui.info.perm === 'smart' ? 'ok' : 'warn' })
+      }
+      if (extra.length) {
+        data = { ...r, sections: [...r.sections, { label: '本会话（与状态栏同源）', rows: extra }] }
+      }
+    }
+    pushOverlay({ kind: 'workspace', ws, data })
+  })
 }
 
 export const sessionCommands: SlashCommand[] = [
@@ -189,6 +223,22 @@ export const sessionCommands: SlashCommand[] = [
             }
           })
         )
+    }
+  },
+
+  {
+    help: 'structured workspace: session/model/cwd/cost overview (w toggles doctor)',
+    name: 'status',
+    run: (_arg, ctx) => {
+      return openWorkspace(ctx, 'status')
+    }
+  },
+
+  {
+    help: 'structured workspace: real health checks (w toggles status)',
+    name: 'doctor',
+    run: (_arg, ctx) => {
+      return openWorkspace(ctx, 'doctor')
     }
   },
 

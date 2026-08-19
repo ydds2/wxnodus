@@ -2,10 +2,13 @@
 // 计划原文 W3-10：TUI 不直接访问 DB/agent/memory——GatewayClient/React 只经此窄端口读取数据、
 // 驱动 agent；原始 db/agent 句柄的持有权留在组合根（CLI），由本工厂在组合根处一次性包裹。
 // 语义与迁移前逐点对齐（失败降级行为原样保留：list→[]、get→undefined 等——不改变既有 UX 契约）。
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { saveCheckpoint, replaceSessionMessages } from '../../store/db.js';
 import { costSummary } from '../../kernel/cost.js';
 import { usageSummary } from '../../kernel/usage.js';
 import { sessionCost } from '../../kernel/costQuery.js';
+import { resolveApiKey } from '../../kernel/providers.js';
 
 export interface TuiMessageRow {
   id: number; role: string; content: string; tool_call_id: string | null; archived: number; ts: number;
@@ -17,6 +20,8 @@ export interface TuiSessionRow {
 }
 export interface TuiCheckpointRow { id: number; data: string; ts: number }
 export interface TuiCronRow { id: number; schedule: string; action: string; enabled: number; last_run: number | null }
+/** P1 工作台：体检行（label/value + 语义 tone——status/doctor 工作台结构化数据） */
+export interface TuiDoctorRow { label: string; value: string; tone: 'ok' | 'warn' | 'bad' | 'muted' }
 
 export interface TuiAgentPort {
   run(prompt: string, opts?: { images?: Array<{ dataUrl: string; mime: string }> }): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }>;
@@ -66,6 +71,8 @@ export interface TuiDataPort {
     hasRunningOrQueued(sessionId: string): boolean;
   };
   cron: { list(): TuiCronRow[] };
+  /** P1 工作台：体检项（真实检测——db 完整性/记忆层/FTS/密钥解密/当前模型） */
+  doctor(): TuiDoctorRow[];
   usage: {
     get(sessionId: string): { calls: number; input: number; output: number; cost_usd?: number } | undefined;
     compressions(sessionId: string): number;
@@ -84,6 +91,8 @@ export interface TuiAdapterKernel {
   agent: TuiAgentPort;
   /** 成本估算价目覆盖（settings.costPrices——自定义中转定价）；可选（缺省按公开参考价目） */
   settings?: Record<string, any>;
+  /** P1 工作台：dataDir（doctor 探测 settings.json 存在性）；可选（缺省诚实标注未探测） */
+  dataDir?: string;
   /** W3 Session：会话启动工件服务（组合根注入 sessionStartService.ensure——真实 session 生命周期） */
   ensureSession?(sessionId: string): Promise<{ ok: true } | { ok: false; code: string }>;
 }
@@ -240,6 +249,43 @@ export function createTuiPresentationAdapter(kernel: TuiAdapterKernel): TuiPrese
             return db.prepare(`SELECT id, schedule, action, enabled, last_run FROM cron_jobs ORDER BY id`).all() as TuiCronRow[];
           } catch { return []; }
         },
+      },
+      // P1 工作台：体检真实检测（与内核 /doctor 同源检查项——db 完整性/记忆层/FTS/密钥解密/当前模型）
+      doctor() {
+        const rows: TuiDoctorRow[] = []
+        try {
+          if (kernel.dataDir) {
+            const exists = existsSync(join(kernel.dataDir, 'settings.json'))
+            rows.push({ label: '配置中心', value: exists ? '正常' : '未初始化', tone: exists ? 'ok' : 'warn' })
+          } else {
+            rows.push({ label: '配置中心', value: '未探测（无 dataDir 端口）', tone: 'muted' })
+          }
+        } catch { rows.push({ label: '配置中心', value: '异常（路径不可读）', tone: 'bad' }) }
+        try {
+          const r = db.prepare(`PRAGMA integrity_check`).get() as { integrity_check: string } | undefined
+          const ok = r?.integrity_check === 'ok'
+          rows.push({ label: '数据库', value: ok ? '正常' : `异常（${r?.integrity_check ?? '未知'}）`, tone: ok ? 'ok' : 'bad' })
+        } catch { rows.push({ label: '数据库', value: '异常（无法执行完整性检查）', tone: 'bad' }) }
+        try {
+          const total = (db.prepare(`SELECT COUNT(*) c FROM messages`).get() as { c: number }).c
+          const archived = (db.prepare(`SELECT COUNT(*) c FROM messages WHERE archived=1`).get() as { c: number }).c
+          rows.push({ label: '黑洞记忆', value: `${total} 条（其中 ${archived} 条已归档压缩，仍可检索）`, tone: 'ok' })
+        } catch { rows.push({ label: '黑洞记忆', value: '异常（表不可读）', tone: 'bad' }) }
+        try {
+          const fts = (db.prepare(`SELECT COUNT(*) c FROM messages_fts`).get() as { c: number }).c
+          rows.push({ label: '全文索引', value: `${fts} 条可检索`, tone: fts > 0 ? 'ok' : 'muted' })
+        } catch { rows.push({ label: '全文索引', value: '未初始化', tone: 'muted' }) }
+        const settings = (kernel.settings ?? {}) as Record<string, any>
+        try {
+          const keyRes = resolveApiKey(settings)
+          if (keyRes.key) rows.push({ label: '模型密钥', value: `已配置且可解密（provider=${keyRes.provider}）`, tone: 'ok' })
+          else if (keyRes.error === 'provider-mismatch') rows.push({ label: '模型密钥', value: `provider 不符：${keyRes.hint}`, tone: 'bad' })
+          else if (keyRes.source === 'enc') rows.push({ label: '模型密钥', value: '已配置但无法解密（需 /model set-key 重配）', tone: 'bad' })
+          else rows.push({ label: '模型密钥', value: '未配置（/model set-key <密钥> 配置）', tone: 'muted' })
+        } catch { rows.push({ label: '模型密钥', value: '状态不可读', tone: 'muted' }) }
+        const model = String(settings.model ?? '')
+        rows.push({ label: '当前模型', value: model || '未选择', tone: model ? 'ok' : 'muted' })
+        return rows
       },
       usage: {
         get(sessionId) {

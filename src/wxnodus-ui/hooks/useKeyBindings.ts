@@ -1,5 +1,6 @@
 import { getActiveKeymap, matchesAny } from '../config/keymap.js'
 import { getVimNormalActive } from '../config/vimMode.js'
+import { nextWorkspaceKind } from '../rpc/workspaceRpc.js'
 import { forceRedraw, useInput } from '@wxnodus/ink'
 import { useAtom as useStore } from '../../app/stores/engine.js'
 import { useEffect, useRef } from 'react'
@@ -21,7 +22,7 @@ import { nextPermMode } from '../lib/permCycle.js'
 import { getInputSelection } from '../runtime/selectionStore.js'
 import type { InputHandlerContext, InputHandlerResult } from '../bridge/interfaces.js'
 import { $isBlocked, $overlayState, closeOverlay, patchInline, popOverlay, pushOverlay, toggleOverlay, updateOverlay } from '../runtime/promptStore.js'
-import { findEntry, topEntry } from '../runtime/overlayStack.js'
+import { ESC_GLOBAL_KINDS, findEntry, topEntry } from '../runtime/overlayStack.js'
 import { turnController } from '../runtime/flowController.js'
 import { clearSelectedMessage, showSelectionHint } from '../runtime/viewStore.js'
 import { writeClipboardText } from '../lib/clipboard.js'
@@ -507,14 +508,29 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         return
       }
 
+      // P1 工作台：w 切换标签（status ⇄ doctor）——仅栈顶为工作台时生效（RPC 刷新另一侧数据）
+      if (ch === 'w' && topEntry(overlay)?.kind === 'workspace') {
+        const cur = findEntry(overlay, 'workspace')!
+        const next = nextWorkspaceKind(cur.ws)
+        void gateway
+          .rpc<{ title?: string; sections?: unknown[] }>(next === 'status' ? 'workspace.status' : 'workspace.doctor')
+          .then(r => {
+            if (r?.sections?.length) {
+              updateOverlay('workspace', e => (e.kind === 'workspace' ? { ...e, ws: next, data: r as import('../bridge/interfaces.js').WorkspaceData } : e))
+            }
+          })
+        return
+      }
+
       if (isCtrl(key, ch, 'c')) {
         cancelOverlayFromCtrlC()
       } else if (key.escape) {
-        // 栈式重构：Esc 统一出栈兜底——仅当栈顶 kind 的组件未自带 Esc 处理时由全局弹出
-        // （实测 skillsHub/pluginsHub 无组件级 Esc；其余 kind 组件自行 closeOverlay，
+        // 栈式重构：Esc 统一出栈兜底——仅当栈顶 kind 的渲染组件未自带 Esc 处理时由全局弹出
+        // （ESC_GLOBAL_KINDS 数据驱动：skillsHub/pluginsHub 实测无组件级 Esc；P1 workspace
+        // 同属 appOverlays 内渲染无组件级 Esc；其余 kind 组件自行 closeOverlay，
         // 全局再弹会造成一次 Esc 弹两层）。pager 的 Esc 已由上方 km.pagerClose 消费。
         const top = topEntry(overlay)
-        if (top && (top.kind === 'skillsHub' || top.kind === 'pluginsHub')) {
+        if (top && (ESC_GLOBAL_KINDS as readonly string[]).includes(top.kind)) {
           popOverlay()
         }
       }

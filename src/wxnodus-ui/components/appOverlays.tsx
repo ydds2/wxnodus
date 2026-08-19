@@ -22,6 +22,7 @@ import { PluginsHub } from './pluginsHub.js'
 import { ApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
 import { DynamicFormPrompt } from './dynamicFormPrompt.js'
 import { SkillsHub } from './skillsHub.js'
+import { WorkspaceView } from './workspaceView.js'
 import { icon, translateText } from '../glyphs.js'
 
 const COMPLETION_WINDOW = 16
@@ -186,6 +187,7 @@ export function FloatingOverlays({
   // 互斥组保证面板/选择器不同时出现。渲染结构保持「常驻 FloatBox + display 切换」
   // 的既有约束（React 19 并发下条件挂载曾产生错位节点——见下方 PATCH 注释）。
   const pagerEntry = findEntry(overlay, 'pager')
+  const wsEntry = findEntry(overlay, 'workspace')
   const sessionsOn = !!findEntry(overlay, 'sessions')
   const configOn = !!findEntry(overlay, 'configPanel')
   const modelOn = !!findEntry(overlay, 'modelPicker')
@@ -265,6 +267,12 @@ export function FloatingOverlays({
       {/* A24：目录选择器（点击状态栏 cwd 打开——浏览/切换工作目录） */}
       <FloatBox color={theme.color.border} display={dirPickerOn ? undefined : 'none'}>
         {dirPickerOn && <DirPicker t={theme} />}
+      </FloatBox>
+
+      {/* P1 工作台：status/doctor 结构化（w 切换标签、Esc 全局统一出栈）——数据由 slash 拦截
+          经 workspace.status/.doctor RPC 注入，渲染纯展示 */}
+      <FloatBox color={theme.color.border} display={wsEntry ? undefined : 'none'}>
+        {wsEntry && <WorkspaceView data={wsEntry.data} onClose={() => closeOverlay('workspace')} t={theme} ws={wsEntry.ws} />}
       </FloatBox>
 
       {/* pager：内容首行自带 box-drawing 边框（╔╭┌ lines() 面板）时外层去边框——

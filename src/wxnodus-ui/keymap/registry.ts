@@ -75,6 +75,10 @@ export const BUILTIN_BINDINGS: KeyBinding[] = [
   { id: 'pager.diff-mark', keys: ['m'], scope: 'pager', action: 'diff.mark', help: '标记 hunk 已审（内容指纹持久化，变更即失效）' },
   { id: 'pager.enter', keys: ['enter'], scope: 'pager', action: 'pager.page', help: '翻页；已到末页时关闭' },
 
+  // ── 工作台（status/doctor 结构化；Esc 由全局统一出栈兜底——ESC_GLOBAL_KINDS） ──
+  { id: 'workspace.switch', keys: ['w'], scope: 'workspace', action: 'workspace.switch', help: '工作台标签切换（status ⇄ doctor）' },
+  { id: 'workspace.close', keys: ['escape'], scope: 'workspace', action: 'workspace.close', help: 'Esc 关闭工作台（全局统一出栈兜底）' },
+
   // ── 面板 / 选择器内（面板打开时独占输入；↑↓/Enter 为组件级通用语义） ──
   { id: 'panel.navigate', keys: ['up', 'down'], scope: 'panel', action: 'panel.navigate', help: '面板/选择器内 ↑↓ 导航' },
   { id: 'panel.select', keys: ['enter'], scope: 'panel', action: 'panel.select', help: '面板/选择器内 Enter 选择' },
@@ -221,14 +225,14 @@ export function registerBindings(bindings: KeyBinding[] = BUILTIN_BINDINGS): Reg
   return { issues: [], overlaps: diagnoseKeymap(bindings) }
 }
 
-const SCOPE_ORDER: BindingScope[] = ['global', 'prompt', 'vim', 'pager', 'panel']
+const SCOPE_ORDER: BindingScope[] = ['global', 'prompt', 'vim', 'pager', 'workspace', 'panel']
 export const SCOPE_LABEL: Record<BindingScope, string> = {
   global: '全局（空闲态）',
   prompt: '输入区',
   vim: 'vim 模态（/vim 开启）',
   pager: 'pager / diff 工作台',
   panel: '面板 / 选择器',
-  workspace: '工作台（P1 status/doctor/sessions 结构化——预留 scope，暂无绑定）',
+  workspace: '工作台（status/doctor 结构化）',
 }
 
 /**

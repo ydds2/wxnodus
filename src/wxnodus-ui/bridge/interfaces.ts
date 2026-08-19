@@ -107,6 +107,23 @@ export type OverlayEntry =
   | { kind: 'commandPalette' }
   | { kind: 'dirPicker' }
   | { kind: 'histSearch' }
+  /** P1 工作台（status/doctor 结构化——w 键切换标签） */
+  | { kind: 'workspace'; ws: WorkspaceKind; data: WorkspaceData }
+
+/** 工作台种类（status 会话/模型/成本一览；doctor 体检项） */
+export type WorkspaceKind = 'status' | 'doctor'
+
+/** 工作台行（k/v + 语义 tone 着色——真实数据源：gateway 内核端口 ∪ TUI 状态） */
+export interface WorkspaceRow {
+  k: string
+  v: string
+  tone?: 'ok' | 'warn' | 'bad' | 'muted'
+}
+
+export interface WorkspaceData {
+  title: string
+  sections: Array<{ label: string; rows: WorkspaceRow[] }>
+}
 
 /** 行内提示（附着消息行，非栈；同屏至多 1 个） */
 export interface InlineState {

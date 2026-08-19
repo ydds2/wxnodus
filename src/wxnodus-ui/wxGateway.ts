@@ -34,6 +34,7 @@ import { ZERO } from './domain/usage.js'
 import type { SessionInfo, TodoItem } from './types.js'
 // C-02 拆分（2026-08-19）：无状态 RPC 委托（diff×3 / session×4）
 import { diffViewRpc, diffRevertRpc, diffMarkRpc } from './rpc/diffRpc.js'
+import { buildWorkspaceDoctor, buildWorkspaceStatus, type WorkspaceRpcKernel } from './rpc/workspaceRpc.js'
 import { sessionListRpc, sessionTailRpc, sessionMostRecentRpc, sessionTitleRpc } from './rpc/sessionRpc.js'
 
 const LOG_LIMIT = 200
@@ -403,6 +404,8 @@ export class GatewayClient extends EventEmitter {
       case 'input.detect_drop': return this.detectDrop(params) as T
       case 'shell.exec': return this.shellExec(params) as T
       case 'commands.catalog': return this.commandsCatalog() as T
+      case 'workspace.status': return this.workspaceStatus() as T
+      case 'workspace.doctor': return this.workspaceDoctor() as T
       case 'complete.slash': return this.completeSlash(params) as T
       case 'complete.path': return this.completePath(params) as T
       case 'balance.status': return this.balanceStatus(params) as T
@@ -1990,6 +1993,20 @@ export class GatewayClient extends EventEmitter {
     }
 
     return { status: 'stopped', text: '' }
+  }
+
+  // P1 工作台：status 结构化行（内核端口侧）+ doctor 真实体检（adapter.data.doctor）
+  // 数据构建纯函数在 rpc/workspaceRpc.ts（可单测）；此处只做端口适配（C-02 同模式）
+  private workspaceStatus(): unknown {
+    const catalog = this.commandsCatalog() as { pairs: Array<[string, string]>; skill_count: number }
+    return buildWorkspaceStatus(this.kernel as unknown as WorkspaceRpcKernel, {
+      commandCount: catalog.pairs.length,
+      skillCount: catalog.skill_count
+    })
+  }
+
+  private workspaceDoctor(): unknown {
+    return buildWorkspaceDoctor(this.kernel as unknown as WorkspaceRpcKernel)
   }
 
   private commandsCatalog(): unknown {
