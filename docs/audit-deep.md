@@ -1311,8 +1311,8 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 - promptStore 重绘定时器合并：每次 overlay 变更 2 个 setTimeout（0ms+120ms）→ 模块级尾沿 1 个 + 120ms 二帧兜底（双帧语义保留，高频变更定时器数减半以上）。
 - statusBar ctxGradientCells 热力格预计算缓存（w+pct+主题色键——有界：小 w × pct 0..100 × 主题数，无泄漏；StatusRule 100ms tick 重渲染下消除每帧数组分配）。
 - 依赖核查：21 项依赖逐一 grep 全部在役（transformers/robotjs/playwright-core/node-screenshots 等）——**零无用依赖**，如实不删。
-- 门禁：九步全绿 + CLI 启动冒烟（`node dist/cli/index.js -p "你好"` 真实应答 exit 0）；远程 CI #32288xxxx success（1b5e337）。
+- 门禁：九步全绿 + CLI 启动冒烟（`node dist/cli/index.js -p "你好"` 真实应答 exit 0）；远程 CI #32288629808 success（1b5e337）。
 
 **验收对照**（计划 §3）：git ls-files 不含 .db/.superpowers/uia bin|obj/editorLaunch ✅；根目录只余仓库级文件 ✅；lint TODO 归 1（字符串字面量，如实登记）✅；全量 2894 用例零回归 ✅；九步门禁 + 远程 CI 全绿 ✅。诚实边界保持：不重写历史、不删竞品研究内容（只挪位）、不确定归属一律保留。
 
-**尾注（2026-08-20）**：S1/S2/S3 各自全量单测绿 + tsc 干净后提交；S3 远程 CI 号 #32288xxxx（1b5e337 success）。
+**尾注（2026-08-20）**：S1/S2/S3 各自全量单测绿 + tsc 干净后提交；S3 远程 CI #32288629808（1b5e337 success）。
