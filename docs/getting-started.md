@@ -7,7 +7,7 @@
 
 ### 1.1 一键安装（推荐——其他电脑装完即用）
 
-前置仅一个：Node.js 18+（推荐 22）——官网 <https://nodejs.org/>（国内镜像 <https://npmmirror.com/mirrors/node/>）。**无需构建工具链**（安装包自带全部原生二进制）。
+前置仅一个：Node.js 18+（推荐 22）——官网 nodejs.org（国内镜像 npmmirror.com/mirrors/node）。**无需构建工具链**（安装包自带全部原生二进制）。
 
 - **源 A（离线/局域网/U盘，最省事）**：拿到 `wxnodus-<版本>.zip` → 解压 → **双击 `install.bat`**（自动校验、安装、写 PATH）→ 新开 cmd 运行 `wxnodus`。
 - **源 B（URL）**：`powershell -ExecutionPolicy Bypass -File install-bootstrap.ps1 -Url <https://…/wxnodus-<版本>.zip>`

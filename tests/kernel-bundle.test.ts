@@ -15,7 +15,8 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 const okDeps: MarketDeps = {
   safety: async () => ({ ok: true }),
-  fetchImpl: async (url: string) => {
+  fetchImpl: async (input: string | URL | Request) => {
+    const url = String(input)
     if (url.includes('/latest')) return new Response(JSON.stringify({ version: '1.0.0', dist: { tarball: `${url}/x.tgz` } }), { status: 200, headers: { 'content-type': 'application/json' } })
     return new Response(JSON.stringify({ objects: [] }), { status: 200 })
   },

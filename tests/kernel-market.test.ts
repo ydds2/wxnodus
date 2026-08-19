@@ -10,7 +10,8 @@ import { installMcpFromNpm, installSkillFromGithub, installSkillFromNpm, searchG
 const okSafety = async () => ({ ok: true })
 
 const mockFetch = (routes: Record<string, { status?: number; json?: any; buffer?: Buffer }>) =>
-  async (url: string) => {
+  async (input: string | URL | Request) => {
+    const url = String(input)
     const r = routes[url]
     if (!r) return new Response('nf', { status: 404 })
     const body = r.buffer ?? Buffer.from(JSON.stringify(r.json ?? {}))
