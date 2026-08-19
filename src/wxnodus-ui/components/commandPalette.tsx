@@ -9,13 +9,14 @@ import { getOverlayState } from '../runtime/promptStore.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { fuzzyScoreMulti } from '../lib/fuzzy.js'
+import { getRecentActions } from '../runtime/recentActions.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { Theme } from '../theme.js'
 import { icon } from '../glyphs.js'
 
 interface PaletteEntry {
   desc?: string
-  kind: 'cmd' | 'skill' | 'session'
+  kind: 'cmd' | 'skill' | 'session' | 'recent'
   label: string
   value: string
 }
@@ -25,7 +26,8 @@ const MAX_ROWS = 9
 const kindGlyph: Record<PaletteEntry['kind'], string> = {
   cmd: '/',
   skill: '◆',
-  session: icon('diamond')
+  session: icon('diamond'),
+  recent: '↺'
 }
 
 export function CommandPalette({
@@ -53,6 +55,10 @@ export function CommandPalette({
         })
       ])
       const next: PaletteEntry[] = []
+      // P2 增强：最近动作置顶（label=动作文本，Enter 直接重放；查询态与其他条目同源 fuzzy 评分）
+      for (const r of getRecentActions()) {
+        next.push({ kind: 'recent', label: r, desc: '最近动作', value: r })
+      }
       if (catRes.status === 'fulfilled') {
         for (const [cmd, desc] of catRes.value.pairs ?? []) {
           next.push({ kind: 'cmd', label: cmd, desc, value: cmd })

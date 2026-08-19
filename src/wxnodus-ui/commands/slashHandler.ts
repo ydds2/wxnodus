@@ -6,6 +6,7 @@ import type { SlashHandlerContext } from '../bridge/interfaces.js'
 import { findSlashCommand } from './slashRegistry.js'
 import type { SlashRunCtx } from './slashTypes.js'
 import { getUiState } from '../runtime/viewStore.js'
+import { recordRecentAction } from '../runtime/recentActions.js'
 
 export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => boolean {
   const { gw } = ctx.gateway
@@ -92,6 +93,8 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
     const found = findSlashCommand(parsed.name)
 
     if (found) {
+      // P2 增强：记录最近动作（命令面板「最近」区数据源）
+      recordRecentAction(cmd)
       found.run(parsed.arg, runCtx, cmd)
 
       return true
