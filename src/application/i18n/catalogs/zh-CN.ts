@@ -2,6 +2,11 @@
 export const zhCN = {
   'onboarding.selectLanguage': 'Select language / 选择语言\n\n  1. 中文\n  2. English',
   'onboarding.welcome': '系统语言已设为中文。欢迎使用 wxnodus！（/help 查看命令）',
+  'onboarding.checklist.model': ' · 模型：/model 查看目录（默认 deepseek-chat；离线模型 /offline on 一键拉取）',
+  'onboarding.checklist.key': ' · 密钥：/model set-key <key>（AES-256-GCM 本机加密，明文不落盘）',
+  'onboarding.checklist.proxy.ok': ' · 网络：GitHub 连通正常',
+  'onboarding.checklist.proxy.fail': ' · 网络：GitHub 探测不通——如需访问外网请 /proxy 配置代理；也可全程离线（数据不出机）',
+  'onboarding.checklist.offline': ' · 就绪后 /doctor 自检、/help 查看命令',
   'config.argument.unknown': '未知参数',
   'config.argument.missing': '参数缺少值',
   'config.locale.invalid': '语言必须是 zh、zh-CN 或 en',

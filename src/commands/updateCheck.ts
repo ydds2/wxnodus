@@ -145,3 +145,24 @@ export function buildUpdateReport(opts: { modulePath: string; cwd: string }): Up
 export function channelLabel(channel: InstallChannel): string {
   return { git: 'git 工作树/npm link', 'npm-global': 'npm 全局安装', winget: 'winget', scoop: 'scoop', zip: '离线 zip 安装', unknown: '未知' }[channel];
 }
+
+/** 出站连通探测（首启代理指引用）：默认 2.5s 超时；HTTP <500 视为可达；异常诚实 message。 */
+export async function probeOutbound(url: string, fetchImpl: typeof fetch = fetch, timeoutMs = 2500): Promise<{ ok: boolean; message: string }> {
+  try {
+    const res = await fetchImpl(url, { method: 'HEAD', signal: AbortSignal.timeout(timeoutMs) });
+    return { ok: res.ok || res.status < 500, message: `HTTP ${res.status}` };
+  } catch (e: any) {
+    return { ok: false, message: String(e?.message ?? e).slice(0, 120) };
+  }
+}
+
+/** 首启四步清单（纯函数可单测）：模型/密钥/代理（按探测结果分支）/离线收尾。 */
+export type FirstRunChecklistKey = 'onboarding.checklist.model' | 'onboarding.checklist.key' | 'onboarding.checklist.proxy.ok' | 'onboarding.checklist.proxy.fail' | 'onboarding.checklist.offline';
+export function firstRunChecklistLines<L extends string>(locale: L, net: { ok: boolean; message: string }, t: (locale: L, key: FirstRunChecklistKey) => string): string[] {
+  return [
+    t(locale, 'onboarding.checklist.model'),
+    t(locale, 'onboarding.checklist.key'),
+    net.ok ? t(locale, 'onboarding.checklist.proxy.ok') : t(locale, 'onboarding.checklist.proxy.fail'),
+    t(locale, 'onboarding.checklist.offline'),
+  ];
+}

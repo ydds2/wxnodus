@@ -90,10 +90,13 @@ if (pre.mode === 'error') {
   process.exit(0);
 } else {
   const locale = pre.locale ?? 'en';
-  // 首次安装语言选择完成 → 以所选语言欢迎（选择结果即时可见；后续启动不再提示）
+  // 首次安装语言选择完成 → 以所选语言欢迎 + 四步清单（选择结果即时可见；后续启动不再提示）
   if (pre.mode === 'onboarding-required') {
     const { translate } = await import('../application/i18n/i18nService.js');
     process.stdout.write(`${translate(locale, 'onboarding.welcome')}\n`);
+    const { probeOutbound, firstRunChecklistLines } = await import('../commands/updateCheck.js');
+    const net = await probeOutbound('https://api.github.com');
+    for (const line of firstRunChecklistLines(locale, net, translate)) process.stdout.write(`${line}\n`);
   }
 
   async function main() {

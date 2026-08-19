@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { detectInstallChannel, findRepoRoot, channelGuidance, buildUpdateReport, probeGit, findInstallMeta, probeRemoteVersion } from '../src/commands/updateCheck.js';
+import { detectInstallChannel, findRepoRoot, channelGuidance, buildUpdateReport, probeGit, findInstallMeta, probeRemoteVersion, probeOutbound, firstRunChecklistLines } from '../src/commands/updateCheck.js';
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) { try { rmSync(d, { recursive: true, force: true }); } catch { /* 静默 */ } } });
@@ -127,5 +127,28 @@ describe('zip 渠道（install-meta）', () => {
     const report = buildUpdateReport({ modulePath: join(d, 'dist', 'cli', 'index.js'), cwd: d });
     expect(report.channel).toBe('zip');
     expect(report.installMeta?.version).toBe('3.1.0');
+  });
+});
+
+describe('首启四步清单与连通探测', () => {
+  it('probeOutbound：ok/HTTP 非 5xx 视为可达；网络异常诚实失败', async () => {
+    const okFetch = (async () => new Response('', { status: 200 })) as unknown as typeof fetch;
+    expect((await probeOutbound('https://api.github.com', okFetch)).ok).toBe(true);
+    const failFetch = (async () => { throw new Error('ENOTFOUND'); }) as unknown as typeof fetch;
+    const r = await probeOutbound('https://api.github.com', failFetch);
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('ENOTFOUND');
+  });
+
+  it('firstRunChecklistLines：四行清单，网络失败换代理建议', () => {
+    const t = (locale: string, key: string) => `[${locale}]${key}`;
+    const ok = firstRunChecklistLines('zh-CN', { ok: true, message: '' }, t);
+    expect(ok).toHaveLength(4);
+    expect(ok[0]).toBe('[zh-CN]onboarding.checklist.model');
+    expect(ok[1]).toBe('[zh-CN]onboarding.checklist.key');
+    expect(ok[2]).toBe('[zh-CN]onboarding.checklist.proxy.ok');
+    expect(ok[3]).toBe('[zh-CN]onboarding.checklist.offline');
+    const bad = firstRunChecklistLines('zh-CN', { ok: false, message: 'x' }, t);
+    expect(bad[2]).toBe('[zh-CN]onboarding.checklist.proxy.fail');
   });
 });

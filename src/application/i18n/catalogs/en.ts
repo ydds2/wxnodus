@@ -2,6 +2,11 @@
 export const en = {
   'onboarding.selectLanguage': 'Select language / 选择语言\n\n  1. 中文\n  2. English',
   'onboarding.welcome': 'System language set to English. Welcome to wxnodus! (/help for commands)',
+  'onboarding.checklist.model': ' - Model: /model to browse catalog (default deepseek-chat; offline: /offline on one-shot pull)',
+  'onboarding.checklist.key': ' - Key: /model set-key <key> (AES-256-GCM machine-local encryption, never stored in plaintext)',
+  'onboarding.checklist.proxy.ok': ' - Network: GitHub reachable',
+  'onboarding.checklist.proxy.fail': ' - Network: GitHub unreachable - /proxy to configure, or stay fully offline (data never leaves this machine)',
+  'onboarding.checklist.offline': ' - Ready: /doctor self-check, /help for commands',
   'config.argument.unknown': 'Unknown argument',
   'config.argument.missing': 'Argument value is missing',
   'config.locale.invalid': 'Locale must be zh, zh-CN, or en',
