@@ -30,6 +30,7 @@ import {
   showSelectionHint
 } from '../runtime/viewStore.js'
 import type { Theme } from '../theme.js'
+import { getTuiDensity } from '../config/density.js'
 import type { ActiveTool, ActivityItem, DetailsMode, Msg, Role, SectionVisibility, SubagentProgress } from '../types.js'
 
 import { Md } from './markdown.js'
@@ -413,7 +414,7 @@ export const MessageLine = memo(function MessageLine({
   return (
     <Box
       flexDirection="column"
-      marginBottom={msg.role === 'user' || isDiffSegment ? 1 : 0}
+      marginBottom={msg.role === 'user' || isDiffSegment ? (getTuiDensity() === 'cozy' ? 2 : 1) : getTuiDensity() === 'cozy' ? 1 : 0}
       marginTop={msg.role === 'user' || msg.kind === 'slash' || isDiffSegment || leadGap ? 1 : 0}
       onClick={handleMessageClick}
       onMultiClick={handleMessageMultiClick}

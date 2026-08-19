@@ -24,6 +24,7 @@ import {
 } from '../bridge/interfaces.js'
 import { resolveKeymap, setActiveKeymap } from '../config/keymap.js'
 import { setVimModeEnabled } from '../config/vimMode.js'
+import { setTuiDensity } from '../config/density.js'
 import { turnController } from '../runtime/flowController.js'
 import { patchUiState } from '../runtime/viewStore.js'
 
@@ -215,6 +216,14 @@ export const applyDisplay = (
     const vimMode = (cfg?.config as unknown as Record<string, unknown> | undefined)?.vimMode
     if (typeof vimMode === 'boolean') {
       setVimModeEnabled(vimMode)
+    }
+  }
+
+  // P2 增强：密度档水合（settings.tuiDensity：compact 默认 / cozy 加行距——非法值 last-good 忽略）
+  {
+    const density = (cfg?.config as unknown as Record<string, unknown> | undefined)?.tuiDensity
+    if (density === 'compact' || density === 'cozy') {
+      setTuiDensity(density)
     }
   }
 
