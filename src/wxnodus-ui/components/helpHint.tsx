@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/helpHint.tsx — 帮助提示（? 输入时的命令快捷提示）
 import { Box, Text } from '@wxnodus/ink'
 
 import { HOTKEYS } from '../content/hotkeys.js'

@@ -395,7 +395,7 @@ const renderTable = (k: number, rows: string[][], t: Theme, cols?: number) => {
 
   // When wrapping isn't needed, build single-line strings per row.
   // All cells render as plain text via stripInlineMarkup.
-  // TODO: follow-up — format to ANSI then wrap with wrapAnsi for inline markdown preservation.
+  // 待办（P3 渲染增强）：内联 Markdown 保真——先格式化为 ANSI 再 wrapAnsi 包裹（当前直接换行）
   // See free-code/src/components/MarkdownTable.tsx L44-L62 for approach.
   if (!needsWrap) {
     const buildRowString = (row: string[]): string =>

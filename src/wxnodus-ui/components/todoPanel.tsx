@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/todoPanel.tsx — 任务清单面板（turnTodos 可勾选清单）
 import { Box, Text } from '@wxnodus/ink'
 import { memo, useEffect, useState } from 'react'
 

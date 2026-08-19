@@ -1,3 +1,4 @@
+// src/wxnodus-ui/gatewayTypes.ts — gateway RPC 请求/响应类型契约
 import type { SessionInfo, SlashCategory, SubagentStatus, Usage } from './types.js'
 
 // ── W1-01 compatibility re-exports：协议类型单一事实源（现有 response DTO 保留不动）──

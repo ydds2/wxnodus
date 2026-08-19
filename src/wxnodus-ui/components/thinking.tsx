@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/thinking.tsx — 推理过程折叠块
 import { Box, NoSelect, Text } from '@wxnodus/ink'
 import { memo, type ReactNode, useEffect, useMemo, useState } from 'react'
 import spinners, { type BrailleSpinnerName } from 'unicode-animations'

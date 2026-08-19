@@ -1,3 +1,4 @@
+// src/wxnodus-ui/bridge/interfaces.ts — UI 桥类型契约（OverlayState/栈式浮层/组件 props）
 import type { MouseTrackingMode, ScrollBoxHandle } from '@wxnodus/ink'
 import type { MutableRefObject, ReactNode, RefObject, SetStateAction } from 'react'
 

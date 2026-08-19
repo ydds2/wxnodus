@@ -1,3 +1,4 @@
+// src/wxnodus-ui/bridge/gatewayProvider.tsx — gateway React 上下文（useGateway）
 import { createContext, useContext } from 'react'
 
 import type { GatewayProviderProps, GatewayServices } from './interfaces.js'

@@ -1,3 +1,4 @@
+// src/wxnodus-ui/app.tsx — TUI 根组件装配（provider/布局/输入处理组合）
 import { useAtom as useStore } from '../app/stores/engine.js'
 
 import { GatewayProvider } from './bridge/gatewayProvider.js'

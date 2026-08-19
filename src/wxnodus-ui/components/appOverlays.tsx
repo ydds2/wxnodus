@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/appOverlays.tsx — 浮层渲染（pager/工作台/选择器 FloatBox + 行内提示 PromptZone + 补全弹窗）
 import { Ansi, Box, stringWidth, Text } from '@wxnodus/ink'
 import { useAtom as useStore } from '../../app/stores/engine.js'
 

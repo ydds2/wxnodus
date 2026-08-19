@@ -1,3 +1,4 @@
+// src/wxnodus-ui/theme.ts — 主题 token 契约（10 内置预设 + dataDir 用户主题 + system 终端取色 + dark/light 双变体；语义色沿用基底）
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 
 export interface ThemeColors {

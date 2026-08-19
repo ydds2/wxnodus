@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/messageLine.tsx — 消息行渲染（用户/助手/系统/工具轨迹 + 密度档行距）
 import { Ansi, Box, NoSelect, Text } from '@wxnodus/ink'
 import { memo, useState, type ReactNode } from 'react'
 

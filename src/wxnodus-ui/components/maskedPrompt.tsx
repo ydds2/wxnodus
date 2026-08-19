@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/maskedPrompt.tsx — 掩码输入提示（sudo/secret 密码不回显）
 import { Box, Text } from '@wxnodus/ink'
 import { useState } from 'react'
 

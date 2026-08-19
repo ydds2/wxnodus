@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/activeSessionSwitcher.tsx — 会话浏览器（live+历史列表、惰性预览、恢复/删除、/ 过滤搜索）
 import { Box, Text, useInput, useStdout } from '@wxnodus/ink'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 

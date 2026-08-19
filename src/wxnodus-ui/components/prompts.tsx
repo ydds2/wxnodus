@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/prompts.tsx — 行内提示（审批/澄清/确认——附着消息行）
 import { Box, Text, useInput } from '@wxnodus/ink'
 import { useState } from 'react'
 import { wrapAnsi } from '@wxnodus/ink'

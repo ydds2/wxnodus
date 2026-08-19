@@ -1,3 +1,4 @@
+// src/wxnodus-ui/bridge/eventAdapter.ts — gateway 事件 → UI 状态适配（审批/澄清/sudo/secret/form 注入）
 import { STARTUP_IMAGE, STARTUP_QUERY } from '../config/env.js'
 import { buildSetupRequiredSections, SETUP_REQUIRED_TITLE } from '../content/setup.js'
 import type {

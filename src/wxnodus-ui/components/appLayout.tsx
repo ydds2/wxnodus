@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/appLayout.tsx — 四层布局装配（状态栏/转录流/输入区/浮层 + P2 面板右分栏）
 import { AlternateScreen, Box, NoSelect, ScrollBox, Text } from '@wxnodus/ink'
 import { useAtom as useStore } from '../../app/stores/engine.js'
 import { Fragment, memo, useMemo, useRef } from 'react'

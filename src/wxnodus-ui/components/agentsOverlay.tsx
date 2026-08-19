@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/agentsOverlay.tsx — 子代理面板（树视图/详情/暂停与关闭）
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@wxnodus/ink'
 import { useAtom as useStore } from '../../app/stores/engine.js'
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'

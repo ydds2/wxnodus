@@ -1,3 +1,4 @@
+// src/wxnodus-ui/banner.ts — 横幅提示（错误/状态横幅渲染）
 import { mix, type ThemeColors } from './theme.js'
 import { getTuiTerminalTier } from './lib/terminalTier.js'
 

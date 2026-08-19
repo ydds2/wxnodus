@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/brandBar.tsx — 品牌顶栏（常驻视觉锚点）
 import { Box, Text, useStdout } from '@wxnodus/ink'
 import { memo } from 'react'
 

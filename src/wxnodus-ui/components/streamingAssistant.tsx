@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/streamingAssistant.tsx — 流式助手消息渲染
 import { useAtom as useStore } from '../../app/stores/engine.js'
 import { memo } from 'react'
 

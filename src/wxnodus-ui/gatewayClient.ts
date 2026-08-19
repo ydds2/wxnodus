@@ -1,3 +1,4 @@
+// src/wxnodus-ui/gatewayClient.ts — gateway 客户端（RPC 请求/事件流订阅/审批与澄清应答）
 import { type ChildProcess, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'

@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/textInput.tsx — 输入区（补全弹窗/粘贴保护/vim 模态编辑/外部编辑器）
 import type { InputEvent, Key } from '@wxnodus/ink'
 import * as Ink from '@wxnodus/ink'
 import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'react'

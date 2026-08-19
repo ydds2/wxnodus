@@ -1,3 +1,4 @@
+// src/wxnodus-ui/components/overlayControls.tsx — 浮层提示控件（OverlayHint 等）
 import { Text, useInput } from '@wxnodus/ink'
 
 import { Keycap } from './themed.js'
