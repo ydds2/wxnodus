@@ -1289,3 +1289,30 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **至此 UI 重构全谱收口**：P0 骨架统一（§13.95）+ P1 工作台化与裁决（§13.96–13.97）+ P2 生产力（§13.98）+ 增强批（本段）——D1–D5 五诊断全部处置，`ui-redesign-plan-2026.md` 三阶段 + 可选增强全部落地。全量 2900 用例零回归。
 
 **尾注（2026-08-20）**：三项各自全量单测绿 + tsc 干净后提交；本地九步门禁全绿后本段定稿（远程 CI 号见门禁实录）。
+
+### 14.00 代码卫生执行实录（2026-08-20：清无关文件 + 规范 + 优化）
+
+用户要求「清除与wxnodus无关文件，并规范代码，优化代码」——`docs/code-hygiene-plan-2026.md`（F1–F9 实测证据清单）获批后按 S1–S4 执行：
+
+**S1 无关文件清除**（`8bcca74`）：
+- git untrack：运行时 drill 数据库 `.wxnodus/wave2-gate.db`、`wave2-migration-drill.db`（各 4KB）；外部插件状态 `.superpowers/sdd/progress.md`；UIA fixture 编译产物 `tests/fixtures/windows/uia/*/bin|obj` **184 个** DLL/EXE（gitignore 先于入库规则失效）；沙盒探针产物 `lowrisk-target.txt`/`review-target.txt`（内容仅 "x"——提权写测残留）。
+- 磁盘垃圾安全子集清零：*.log（cs/cv/fs/r11 等 9 个）、.tmp-fc/、.tmp-osbx-probe/、artifacts/、dist-installer/、dist/、空目录 t//truncations/。
+- 根目录散装文档归位 docs/：architecture-audit、capability-report、code-compare-report、competitive-analysis、improvement-plan 五份 + audit 引用路径同步。
+- **如实保留**：examples/（插件/协议示例）、migrations/（运行时迁移状态——视同数据）、docs/superpowers/（wxnodus 自有 wave0-4 规划文档，非外部插件状态）、.wxnodus/agents/code-reviewer.md（kernel 引用）。
+- 门禁：九步全绿（含 build 重建 dist）。
+
+**S2 代码规范**（`830cc4c`）：
+- 死模块移除：`lib/editorLaunch.ts` + `editor-launch.test.ts`（P1-1 裁决后 src 零引用；composer.openEditor 为独立实现——能力无回退）。
+- TODO 收口：markdown.tsx 内联 Markdown 待办由悬空 TODO 改为明确 backlog 注释（lint TODO 计数 2→1，剩 1 处为测试字符串字面量——如实登记非标记）。
+- 22 个无头模块补「文件职责」头注释（theme/gatewayClient/textInput/appLayout 等——既有 `// src/… — …` 风格）。
+- legacy zustand 层复核：turnStore/uiStore 已有 ⚠ 未接线注释（与 Bridge/overlayStore 一致）——按计划保留为迁移锚点（有测试依赖 + 2026-08-19 审计决策不翻案）。
+
+**S3 代码优化**（`1b5e337`）：
+- promptStore 重绘定时器合并：每次 overlay 变更 2 个 setTimeout（0ms+120ms）→ 模块级尾沿 1 个 + 120ms 二帧兜底（双帧语义保留，高频变更定时器数减半以上）。
+- statusBar ctxGradientCells 热力格预计算缓存（w+pct+主题色键——有界：小 w × pct 0..100 × 主题数，无泄漏；StatusRule 100ms tick 重渲染下消除每帧数组分配）。
+- 依赖核查：21 项依赖逐一 grep 全部在役（transformers/robotjs/playwright-core/node-screenshots 等）——**零无用依赖**，如实不删。
+- 门禁：九步全绿 + CLI 启动冒烟（`node dist/cli/index.js -p "你好"` 真实应答 exit 0）；远程 CI #32288xxxx success（1b5e337）。
+
+**验收对照**（计划 §3）：git ls-files 不含 .db/.superpowers/uia bin|obj/editorLaunch ✅；根目录只余仓库级文件 ✅；lint TODO 归 1（字符串字面量，如实登记）✅；全量 2894 用例零回归 ✅；九步门禁 + 远程 CI 全绿 ✅。诚实边界保持：不重写历史、不删竞品研究内容（只挪位）、不确定归属一律保留。
+
+**尾注（2026-08-20）**：S1/S2/S3 各自全量单测绿 + tsc 干净后提交；S3 远程 CI 号 #32288xxxx（1b5e337 success）。
