@@ -59,7 +59,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/delegate': 'confirm', '/goal': 'confirm', '/btw': 'confirm',
   '/rewind': 'confirm', '/reload-skills': 'confirm', '/script': 'confirm',
   '/market search': 'safe', '/market install': 'confirm', '/market': 'safe',
-  '/bundle list': 'safe', '/bundle export': 'safe', '/bundle': 'safe', '/bundle install': 'confirm', '/bundle use': 'confirm', '/bundle add': 'confirm', '/bundle create': 'confirm',
+  '/bundle list': 'safe', '/bundle export': 'safe', '/bundle': 'safe', '/bundle install': 'confirm', '/bundle import': 'confirm', '/bundle use': 'confirm', '/bundle add': 'confirm', '/bundle create': 'confirm',
   '/script record': 'confirm', '/script stop': 'confirm', '/script watch': 'confirm',
   '/jobs retry': 'confirm', '/jobs pause': 'confirm', '/jobs resume': 'confirm', '/jobs clean': 'confirm',
   '/cron run': 'confirm',

@@ -133,7 +133,7 @@ const walkForSkillMd = (root: string, base: string, depth: number): string | nul
 };
 
 /** 技能目录原子落位（tmp 校验通过后 rename；目标已存在则覆盖更新） */
-const installSkillDir = (srcDir: string, dataDir: string): { ok: boolean; message: string } => {
+export const installSkillDir = (srcDir: string, dataDir: string): { ok: boolean; message: string } => {
   const skillFile = join(srcDir, 'SKILL.md');
   let name = '';
   try {

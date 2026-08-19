@@ -735,8 +735,10 @@ ${d}
       const r = loadBundle(ctx.dataDir, name);
       if (!r.ok || !r.manifest) return r.message;
       const reports = await installBundle(r.manifest, ctx.dataDir, ctx.cwd);
-      const ok = reports.filter(x => x.ok).length;
-      return lines(` 整合包安装：${name}（${ok}/${reports.length}） `, reports.map(x => ` ${x.ok ? '✅' : '❌'} ${x.item}\n   ${x.message}`));
+      // N-4：deferred（plugin 提示项）不计入成功数——三段分列不虚报
+      const ok = reports.filter(x => x.ok && !x.deferred).length;
+      const def = reports.filter(x => x.deferred).length;
+      return lines(` 整合包安装：${name}（✅ ${ok} · ⏭ ${def} · ❌ ${reports.length - ok - def}） `, reports.map(x => ` ${x.deferred ? '⏭' : x.ok ? '✅' : '❌'} ${x.item}\n   ${x.message}`));
     }
     if (sub === 'export') {
       const name = args[1];
@@ -745,16 +747,23 @@ ${d}
       const r = exportBundle(ctx.dataDir, name, args[2] || undefined);
       return r.message;
     }
+    if (sub === 'import') {
+      const file = args[1];
+      if (!file) return '用法：/bundle import <文件.tgz>（导入导出的离线整合包：清单+技能落位，同名拒绝）';
+      const { importBundle } = await import('../../kernel/bundle.js');
+      const r = importBundle(file, ctx.dataDir);
+      return r.message;
+    }
     if (sub === 'use') {
       const name = args[1];
-      if (!name) return '用法：/bundle use <名称>（应用场景：settings 并入项目配置 + MCP 落 .mcp.json——该 cwd 后续会话即场景生产会话）';
+      if (!name) return '用法：/bundle use <名称>（应用场景：settings 并入项目配置 + 全量安装 skill/MCP——该 cwd 后续会话即场景生产会话）';
       const { loadBundle, useBundle } = await import('../../kernel/bundle.js');
       const r = loadBundle(ctx.dataDir, name);
       if (!r.ok || !r.manifest) return r.message;
       const u = await useBundle(r.manifest, ctx.dataDir, ctx.cwd);
       return u.message;
     }
-    return '未知子命令——/bundle list|create|add|remove|install|export|use（无参数 = list）';
+    return '未知子命令——/bundle list|create|add|remove|install|import|export|use（无参数 = list）';
   });
 
   // /reload-skills：重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini），汇报统计
