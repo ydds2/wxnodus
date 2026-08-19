@@ -97,7 +97,12 @@ export function buildWorkspaceDoctor(kernel: WorkspaceRpcKernel): WorkspaceData 
   }
 }
 
-/** w 键切换目标（status ⇄ doctor） */
+/** w 键切换目标（status → doctor → sessions → status 三标签循环） */
 export function nextWorkspaceKind(ws: WorkspaceKind): WorkspaceKind {
-  return ws === 'status' ? 'doctor' : 'status'
+  return ws === 'status' ? 'doctor' : ws === 'doctor' ? 'sessions' : 'status'
+}
+
+/** 会话工作台占位数据（渲染走 ActiveSessionSwitcher——data 仅承载标题） */
+export function sessionsWorkspaceData(): WorkspaceData {
+  return { title: '会话工作台（w 切换标签 · Esc 关闭）', sections: [] }
 }

@@ -110,8 +110,8 @@ export type OverlayEntry =
   /** P1 工作台（status/doctor 结构化——w 键切换标签） */
   | { kind: 'workspace'; ws: WorkspaceKind; data: WorkspaceData }
 
-/** 工作台种类（status 会话/模型/成本一览；doctor 体检项） */
-export type WorkspaceKind = 'status' | 'doctor'
+/** 工作台种类（status 会话/模型/成本一览；doctor 体检项；sessions 会话工作台） */
+export type WorkspaceKind = 'status' | 'doctor' | 'sessions'
 
 /** 工作台行（k/v + 语义 tone 着色——真实数据源：gateway 内核端口 ∪ TUI 状态） */
 export interface WorkspaceRow {

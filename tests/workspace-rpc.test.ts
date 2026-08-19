@@ -59,9 +59,10 @@ describe('buildWorkspaceDoctor（adapter 体检行透传）', () => {
 })
 
 describe('nextWorkspaceKind', () => {
-  it('status ⇄ doctor 互切', () => {
+  it('三标签循环：status → doctor → sessions → status', () => {
     expect(nextWorkspaceKind('status')).toBe('doctor')
-    expect(nextWorkspaceKind('doctor')).toBe('status')
+    expect(nextWorkspaceKind('doctor')).toBe('sessions')
+    expect(nextWorkspaceKind('sessions')).toBe('status')
   })
 })
 

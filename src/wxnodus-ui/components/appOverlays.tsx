@@ -238,10 +238,26 @@ export function FloatingOverlays({
         {dirPickerOn && <DirPicker t={theme} />}
       </FloatBox>
 
-      {/* P1 工作台：status/doctor 结构化（w 切换标签、Esc 全局统一出栈）——数据由 slash 拦截
-          经 workspace.status/.doctor RPC 注入，渲染纯展示 */}
+      {/* P1/P2 工作台：status/doctor 结构化 + sessions 会话工作台（w 三标签切换、
+          Esc 全局统一出栈）——status/doctor 数据由 slash 拦截经 RPC 注入；
+          sessions 标签渲染 ActiveSessionSwitcher（Ctrl+X 快切浮层同组件双挂载，互不干扰） */}
       <FloatBox color={theme.color.border} display={wsEntry ? undefined : 'none'}>
-        {wsEntry && <WorkspaceView data={wsEntry.data} onClose={() => closeOverlay('workspace')} t={theme} ws={wsEntry.ws} />}
+        {wsEntry && wsEntry.ws !== 'sessions' && (
+          <WorkspaceView data={wsEntry.data} onClose={() => closeOverlay('workspace')} t={theme} ws={wsEntry.ws} />
+        )}
+        {wsEntry && wsEntry.ws === 'sessions' && (
+          <ActiveSessionSwitcher
+            currentSessionId={sid}
+            gw={gw}
+            onCancel={() => closeOverlay('workspace')}
+            onClose={onActiveSessionClose}
+            onNew={onNewLiveSession}
+            onNewPrompt={onNewPromptSession}
+            onResume={onResumeSelect}
+            onSelect={onActiveSessionSelect}
+            t={theme}
+          />
+        )}
       </FloatBox>
 
       {/* pager：内容首行自带 box-drawing 边框（╔╭┌ lines() 面板）时外层去边框——

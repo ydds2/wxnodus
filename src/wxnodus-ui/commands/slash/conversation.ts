@@ -15,6 +15,7 @@ import { DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES, type IndicatorStyle } from '
 import { patchInline, pushOverlay } from '../../runtime/promptStore.js'
 import { keymapDocs } from '../../keymap/registry.js'
 import type { WorkspaceData, WorkspaceKind, WorkspaceRow } from '../../bridge/interfaces.js'
+import { sessionsWorkspaceData } from '../../rpc/workspaceRpc.js'
 import { getUiState, patchUiState } from '../../runtime/viewStore.js'
 import type { SlashCommand, SlashRunCtx } from '../slashTypes.js'
 
@@ -291,7 +292,9 @@ export const sessionCommands: SlashCommand[] = [
         return ctx.session.resumeById(trimmed)
       }
 
-      pushOverlay({ kind: 'sessions' })
+      // P2：裸 /sessions 打开工作台 sessions 标签（与 status/doctor 同工作台、w 键互切）；
+      // Ctrl+X 快切浮层路径不变（同一 ActiveSessionSwitcher 组件双挂载）
+      pushOverlay({ kind: 'workspace', ws: 'sessions', data: sessionsWorkspaceData() })
     }
   },
 

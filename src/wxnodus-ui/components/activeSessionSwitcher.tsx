@@ -647,8 +647,10 @@ export function ActiveSessionSwitcher({
     const lower = ch?.toLowerCase() ?? ''
     const isCtrl = (letter: string) => key.ctrl && (lower === letter || ch === ctrlChar(letter))
 
-    // P1 收尾：Esc 仅当本选择器为栈顶时消费——pager/工作台盖在上方时 Esc 归顶层
-    if (key.escape && topEntry(getOverlayState())?.kind !== 'sessions') {
+    // P1 收尾：Esc 仅当本选择器为栈顶时消费——pager/工作台盖在上方时 Esc 归顶层；
+    // P2：本组件亦作为工作台 sessions 标签渲染（栈顶 kind=workspace 且 ws=sessions）——同权
+    const top = topEntry(getOverlayState())
+    if (key.escape && !(top?.kind === 'sessions' || (top?.kind === 'workspace' && top.ws === 'sessions'))) {
       return
     }
 

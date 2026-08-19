@@ -1,6 +1,6 @@
 import { getActiveKeymap, matchesAny } from '../config/keymap.js'
 import { getVimNormalActive } from '../config/vimMode.js'
-import { nextWorkspaceKind } from '../rpc/workspaceRpc.js'
+import { nextWorkspaceKind, sessionsWorkspaceData } from '../rpc/workspaceRpc.js'
 import { forceRedraw, useInput } from '@wxnodus/ink'
 import { useAtom as useStore } from '../../app/stores/engine.js'
 import { useEffect, useRef } from 'react'
@@ -508,10 +508,15 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         return
       }
 
-      // P1 工作台：w 切换标签（status ⇄ doctor）——仅栈顶为工作台时生效（RPC 刷新另一侧数据）
+      // P1/P2 工作台：w 三标签切换（status → doctor → sessions）——仅栈顶为工作台时生效；
+      // status/doctor 走 RPC 刷新另一侧数据；sessions 为本地渲染（无 RPC，直接换占位数据）
       if (ch === 'w' && topEntry(overlay)?.kind === 'workspace') {
         const cur = findEntry(overlay, 'workspace')!
         const next = nextWorkspaceKind(cur.ws)
+        if (next === 'sessions') {
+          updateOverlay('workspace', e => (e.kind === 'workspace' ? { ...e, ws: 'sessions', data: sessionsWorkspaceData() } : e))
+          return
+        }
         void gateway
           .rpc<{ title?: string; sections?: unknown[] }>(next === 'status' ? 'workspace.status' : 'workspace.doctor')
           .then(r => {
