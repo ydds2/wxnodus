@@ -47,8 +47,10 @@
   .cur { display:inline-block; width:8px; height:14px; background:var(--primary); vertical-align:-2px; animation:blink 1s infinite; }
 
   .stream { flex:1; overflow-y:auto; padding:9px 12px 6px; }
-  .msg { margin-bottom:11px; max-width:800px; } .msg .role { font-weight:600; margin-bottom:2px; } .msg.user .role { color:var(--primary); } .msg.assistant .role { color:var(--accent); }
-  .msg .body { white-space:pre-wrap; } .msg .meta { color:var(--muted); font-size:11px; margin-top:3px; }
+  .msg { margin-bottom:11px; max-width:800px; } .msg .body { white-space:pre-wrap; } .msg .meta { color:var(--muted); font-size:11px; margin-top:3px; }
+  /* 2026-08-19 输出格式体系：工具轨迹 = ⏺ 单行 + dim 缩进结果（无边框卡片/角色标签） */
+  .trail { margin-top:4px; color:var(--muted); } .trail.out { margin-left:16px; } .trail.err { color:var(--err); }
+  .fin { color:var(--muted); margin-top:6px; }
   .tokbar { display:inline-flex; align-items:center; gap:6px; background:var(--chip); padding:2px 9px; font-size:11px; color:var(--muted); margin-top:4px; cursor:pointer; }
   .tokbar .g { display:inline-block; width:110px; height:6px; background:var(--panel2); overflow:hidden; }
   .tokbar .fill { display:block; height:100%; background:var(--primary); }
@@ -195,53 +197,54 @@
     if(streamTimer){clearInterval(streamTimer);streamTimer=null;}
     if(scene==='stream'){
       streamIdx=0;
-      $('#stream').innerHTML=`<div class="msg user"><div class="role">▸ 用户</div><div class="body">重构订单模块：把鉴权抽成独立模块</div></div>
-        <div class="msg assistant"><div class="role">◈ assistant</div><div class="body" id="streamBody"></div>
-        <div class="meta" id="streamMeta">流式 0 token · 0.0s</div>
-        <span class="tokbar" onclick="toast('成本五维：推理/缓存读/缓存写/输出/输入（演示）')"><span class="g"><span class="fill" id="tokFill" style="width:0%"></span></span>上下文 0/128k</span></div>`;
+      $('#stream').innerHTML=`<div class="msg user"><div class="body"><span style="color:var(--muted)">❯ </span>重构订单模块：把鉴权抽成独立模块</div></div>
+        <div class="msg assistant"><div class="body" id="streamBody"></div>
+        <div class="meta" id="streamMeta">流式 0 token · 0.0s</div></div>`;
       const t0=Date.now();
       streamTimer=setInterval(()=>{
         streamIdx=Math.min(streamIdx+3,FULL_TEXT.length);
         $('#streamBody').textContent=FULL_TEXT.slice(0,streamIdx)+'<span class="cur"></span>';
-        const pct=Math.round(streamIdx/FULL_TEXT.length*26);
         $('#streamMeta').textContent=`流式 ${Math.round(streamIdx/1.5)} token · ${((Date.now()-t0)/1000).toFixed(1)}s`;
-        $('#tokFill').style.width=pct+'%';
         if(streamIdx>=FULL_TEXT.length){clearInterval(streamTimer);streamTimer=null;$('#streamBody').innerHTML=FULL_TEXT;}
       },90);
       return '';
     }
     if(scene==='thinking'){
-      return `<div class="msg user"><div class="role">▸ 用户</div><div class="body">为什么回滚 hunk 后测试没跑？</div></div>
-      <div class="msg assistant"><div class="role">◈ assistant</div>
-        <span class="tokbar" onclick="document.querySelector('.thinkbox').classList.toggle('open')">💭 推理过程（点击展开/折叠 · 18s）</span>
+      return `<div class="msg user"><div class="body"><span style="color:var(--muted)">❯ </span>为什么回滚 hunk 后测试没跑？</div></div>
+      <div class="msg assistant">
+        <div class="trail" onclick="document.querySelector('.thinkbox').classList.toggle('open')">▸ 推理 (1.8k tokens) ——点击展开</div>
         <div class="thinkbox">先查回滚动作是否真的写盘 → 检查快照时间线 → 确认 npm test 的 cwd 与端口 → 定位到：回滚写的是旧路径，测试读的是新路径。<span class="reviewed">结论：路径不一致</span>。</div>
         <div class="body">回滚生效了，但测试脚本读的是旧文件路径——/diff revert 只回滚内容不迁移路径。建议：<b style="color:var(--primary)">rm 旧文件 + 更新 test 引用</b>。已生成修复补丁。</div>
-        <div class="meta">✓ 完成 · 推理 18s · 输出 4s · 2 工具调用</div></div>`;
+        <div class="fin">⏺ 2.1k tokens</div></div>`;
     }
     if(scene==='tools'){
-      return `<div class="msg user"><div class="role">▸ 用户</div><div class="body">跑一下测试并列出结果</div></div>
-      <div class="msg assistant"><div class="role">◈ assistant</div><div class="body">执行测试：</div>
-        <div class="toolcard open" id="tc1"><div class="th" onclick="document.getElementById('tc1').classList.toggle('open')">
-          <span class="ic">⏳</span><span class="nm">bash</span><span class="args">npm test -- --run</span><span class="st">运行中…</span></div>
-          <div class="out">✓ 47 passed · 1 skipped<br>Tests: 48 · Duration: 3.2s</div></div>
-        <div class="toolcard" id="tc2"><div class="th done" onclick="document.getElementById('tc2').classList.toggle('open')">
-          <span class="ic">✓</span><span class="nm">fs_read</span><span class="args">server/auth/check.js</span><span class="st">120ms · 1.4KB</span></div>
-          <div class="out">// auth middleware\nmodule.exports = check;</div></div>
-        <div class="body">全部通过。工具卡可点击折叠（演示）。</div></div>`;
+      return `<div class="msg user"><div class="body"><span style="color:var(--muted)">❯ </span>跑一下测试并列出结果</div></div>
+      <div class="msg assistant">
+        <div class="trail">⏺ <span class="spin">⏳</span> Bash(npm test -- --run)</div>
+        <div class="trail out">✓ 47 passed · 1 skipped（dim）</div>
+        <div class="trail">⏺ fs_read(server/auth/check.js)</div>
+        <div class="trail out">// auth middleware（dim）</div>
+        <div class="trail">⏺ approved (auto)</div>
+        <div class="body">全部通过。工具行可点击选中复制（演示）。</div>
+        <div class="fin">⏺ 1.4k tokens</div></div>`;
     }
     if(scene==='at' || scene==='slash'){ return `<div class="msg user"><div class="role">▸ 用户</div><div class="body">输入区正在演示补全弹窗（${NAMES[scene]}）——按 Tab 接受。</div></div>`; }
     if(scene==='empty'){ return `<div class="banner">✗ 模型调用失败：连接超时（检查代理或 /model set-key）</div>
       <div class="empty"><div class="big">✦</div>暂无会话——输入需求开始，或 Ctrl+X 恢复历史会话<br><span style="font-size:11px">（空态 + 错误横幅组合演示）</span></div>`; }
-    return `<div class="msg user"><div class="role">▸ 用户</div><div class="body">重构订单模块：把鉴权抽成独立模块，订单服务引用它</div></div>
-      <div class="msg assistant"><div class="role">◈ assistant</div><div class="body">已按需求分解为 2 个模块（auth → orders），逐模块生成完成。用 <b style="color:var(--primary)">/diff</b> 打开工作台逐 hunk 审阅：</div>
+    return `<div class="msg user"><div class="body"><span style="color:var(--muted)">❯ </span>重构订单模块：把鉴权抽成独立模块，订单服务引用它</div></div>
+      <div class="msg assistant"><div class="body">已按需求分解为 2 个模块（auth → orders），逐模块生成完成：</div>
+        <div class="trail">⏺ Bash(npm run build)</div>
+        <div class="trail out">✓ 构建通过（dim）</div>
+        <div class="trail">⏺ fs_edit(server/auth/check.js)</div>
+        <div class="trail out">+const TOKEN = process.env.AUTH_TOKEN（+ 绿）</div>
+        <div class="trail out">+module.exports = check</div>
+        <div class="trail">⏺ approved (auto)</div>
+        <div class="body">用 <b style="color:var(--primary)">/diff</b> 打开工作台逐 hunk 审阅：</div>
         <div class="diffblock"><div class="head">▶ server/auth/check.js（1 hunk）<span class="reviewed"> ✓</span></div>
         <div class="hunkhdr">@@ -1,3 +1,5 @@ ✓</div><div class="ctx hunk"> // auth middleware</div>
         <div class="add hunk">+const TOKEN = process.env.AUTH_TOKEN</div><div class="add hunk">+module.exports = check</div></div>
-        <div class="diffblock" style="margin-top:4px"><div class="head">▶ server/index.js（2 hunks）</div>
-        <div class="hunkhdr">@@ -4 +4 @@</div><div class="del hunk">-const legacy = require('./legacy')</div>
-        <div class="add hunk">+const check = require('./auth/check.js')</div>
-        <div class="hunkhdr">@@ -12 +12 @@</div><div class="add hunk">+server.use(check)</div></div></div>
-      <div class="msg assistant"><div class="role">◈ assistant</div><div class="body">fs_edit 修改 server/index.js——需要审批才能继续：</div>
+        <div class="fin">⏺ 2.1k tokens</div></div>
+      <div class="msg assistant"><div class="body">fs_edit 修改 server/index.js——需要审批才能继续：</div>
         <div class="inline"><div class="q">⚠ 审批：fs_edit（高影响）——修改 server/index.js（+2/-1）</div>
         <div class="opts"><span class="btn" onclick="toast('已允许一次（演示）')">y 允许一次</span><span class="btn ghost" onclick="toast('已授权本会话（演示）')">s 本会话</span><span class="btn danger" onclick="toast('已拒绝（演示）')">d 拒绝</span></div></div></div>`;
   }
@@ -426,8 +429,7 @@
   }
   function switchWs(t){ws=t;if(t==='diff')treeOn=false;render();}
   function applyPreset(n,p,a,b){const r=document.documentElement;
-    if(n==='wxnodus'){r.style.setProperty('--primary','#3794ff');r.style.setProperty('--accent','#4fc1ff');r.style.setProperty('--border','#3c3c3c');}
-    else{r.style.setProperty('--primary',p);r.style.setProperty('--accent',a);r.style.setProperty('--border',b);}
+    r.style.setProperty('--primary',p);r.style.setProperty('--accent',a);r.style.setProperty('--border',b);
     toast('主题：'+n);}
   function toggleTheme(){const d=document.documentElement.dataset;d.theme=d.theme==='light'?'dark':'light';toast('明暗：'+d.theme);}
 

@@ -24,13 +24,22 @@ import type { InputHandlerContext, InputHandlerResult } from '../bridge/interfac
 import { $isBlocked, $overlayState, closeOverlay, patchInline, popOverlay, pushOverlay, toggleOverlay, updateOverlay } from '../runtime/promptStore.js'
 import { ESC_GLOBAL_KINDS, findEntry, topEntry } from '../runtime/overlayStack.js'
 import { turnController } from '../runtime/flowController.js'
-import { clearSelectedMessage, showSelectionHint } from '../runtime/viewStore.js'
+import { clearSelectedMessage, patchUiState, showSelectionHint } from '../runtime/viewStore.js'
 import { writeClipboardText } from '../lib/clipboard.js'
 import { escCancelNext } from '../lib/escCancel.js'
 import { patchTurnState } from '../runtime/flowStore.js'
 import { getUiState } from '../runtime/viewStore.js'
+import { DARK_THEME, LIGHT_THEME } from '../theme.js'
 
 const isCtrl = (key: { ctrl: boolean }, ch: string, target: string) => key.ctrl && ch.toLowerCase() === target
+
+// Ctrl+T 明暗切换（mockup 约定——2026-08-19 补齐）：运行时互换 DARK/LIGHT 基底；
+// 当前主题非基底（预设/用户主题）时切回对应基底（预设三元组叠加逻辑归 /theme）
+const toggleLightDark = () => {
+  const cur = getUiState().theme
+  const isDark = cur.color.primary === DARK_THEME.color.primary
+  patchUiState({ theme: isDark ? LIGHT_THEME : DARK_THEME })
+}
 
 /**
  * Approval / clarify / confirm overlays mount their own `useInput` handlers
@@ -272,6 +281,12 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // Ctrl+Shift+P 保留截图即问（下方 isBlocked 分支），此处 shift 排除
     if (isCtrl(key, ch, 'p') && !key.shift) {
       toggleOverlay({ kind: 'commandPalette' })
+      return
+    }
+
+    // Ctrl+T：明暗切换（mockup 约定——2026-08-19 补齐）
+    if (isCtrl(key, ch, 't')) {
+      toggleLightDark()
       return
     }
 
