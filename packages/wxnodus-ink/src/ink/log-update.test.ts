@@ -278,27 +278,25 @@ describe('LogUpdate.render conhost batch path (2026-08-19)', () => {
     if (prevTERM !== undefined) process.env.TERM_PROGRAM = prevTERM
   })
 
-  it('changed frame emits row-batched writes with CR/LF', () => {
+  it('changed frame emits minimal row-segment writes (2026-08-19 最小重绘)', () => {
     const w = 20
     const h = 3
     const prev = mkScreen(w, h)
     paint(prev, 0, 'AAAA')
+    paint(prev, 1, 'KEEP')
     const next = mkScreen(w, h)
     paint(next, 0, 'BBBB')
+    paint(next, 1, 'KEEP')
 
     const log = new LogUpdate({ isTTY: true, stylePool })
     const diff = log.render(mkFrame(prev, w, h), mkFrame(next, w, h), true, false)
     const out = stdoutOnly(diff)
 
-    // 整行重写：变更行内容 + 行尾 CR/LF 全部出现
+    // 只重写变化区间：BBBB 出现、未变行 KEEP 不重写
     expect(out).toContain('BBBB')
-    expect(out).toContain('\r\n')
-    // 行批量：每行至多一次行定位（cursorTo/CUP 合计 ≤ h 次），远小于逐 cell 的 w×h 次
-    const moves =
-      diff.filter(
-        p => p.type === 'cursorTo' || (p.type === 'stdout' && new RegExp(ESC + '\\[\\d+;\\d+H').test((p as { content: string }).content))
-      ).length
-    expect(moves).toBeGreaterThanOrEqual(h - 1)
+    expect(out).not.toContain('KEEP')
+    // 行定位次数远小于逐 cell 的 w×h 次（每脏行至多 1 次定位）
+    const moves = diff.filter(p => p.type === 'cursorTo').length
     expect(moves).toBeLessThan(w * h)
   })
 })

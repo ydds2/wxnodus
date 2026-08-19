@@ -415,8 +415,11 @@ export class LogUpdate {
       renderFrameSlice(screen, next, prev.screen.height, next.screen.height, stylePool, viewportY)
     }
     } else {
-      // conhost 批量：全屏行重写——max(prev,next) 行覆盖，新增行与收缩清行一并处理
-      renderFrameRowsBatched(screen, next, stylePool, Math.max(prev.screen.height, next.screen.height))
+      // conhost 最小重绘：逐脏行一次定位 + 段写入（内联样式）——未变行零写入
+      // （整屏重写是闪屏/覆盖根因：conhost 逐行绘制产生撕裂且大范围写入易行漂移）
+      if (renderConhostDiffRows(screen, prev, next, stylePool, viewportY)) {
+        return fullResetSequence_CAUSES_FLICKER(next, 'offscreen', stylePool)
+      }
     }
 
     // Restore cursor. Skipped in alt-screen: the cursor is hidden, its
@@ -621,74 +624,100 @@ function renderFrameSlice(
 }
 
 /**
- * 2026-08-19 conhost 批量行渲染：每行一次 CUP 绝对定位 + 整行单次写入（CR/LF
- * 换行）——替代逐 cell 光标定位+单字符写入（经典 conhost 上每帧数百次
- * CSI+write 系统调用是「cmd 卡死」的结构性根因）。整行重写天然覆盖删除/
- * 清屏/新增行（rowCount 取 max(prev,next) 高度；超出 next 高度的行写空格清屏）。
+ * 2026-08-19 conhost 最小重绘：只重写「有变化的行」且只写该行变化区间
+ * （一次 CUP 定位 + 段写入，样式转换内联进段字符串）——同时解决两个回归：
+ * ① 逐 cell 定位+单字符写入（每帧数百次 CSI+write，cmd 卡死）；② 上一版
+ * 整屏行重写（conhost 逐行绘制撕裂 = 闪屏，且写满末列触发 pending-wrap
+ * 行漂移 = 状态栏被覆盖）。未变行零写入；末列保护（不写最后一列）。
+ * 返回 true = 需要整屏重置（offscreen 行变化，调用方走 fullReset）。
  */
-function renderFrameRowsBatched(
+function renderConhostDiffRows(
   screen: VirtualScreen,
-  frame: Frame,
+  prev: Frame,
+  next: Frame,
   stylePool: StylePool,
-  rowCount: number
-): void {
-  const { width: screenWidth, cells, charPool, hyperlinkPool } = frame.screen
+  viewportY: number
+): boolean {
+  const { width: screenWidth, cells, charPool, hyperlinkPool } = next.screen
+  const dirty = new Map<number, { min: number; max: number }>()
+  let needsFullReset = false
 
-  // 2026-08-19 修复（样式错乱/闪屏）：上一版把空格一直写到最后一列——写满末列
-  // 会触发 conhost pending-wrap 行漂移（后续行整体错位），且全宽刷屏造成闪屏。
-  // 本版：末列永不写（右缘 1 列留空）；行尾无样式纯空格修剪（有背景色的行如
-  // 状态栏仍完整保留）；清屏行（收缩）例外——必须整行写空格覆盖旧内容。
-  const limit = Math.max(1, screenWidth - 1)
-
-  for (let y = 0; y < rowCount; y += 1) {
-    moveCursorTo(screen, 0, y, 0)
-
-    const clearing = y >= frame.screen.height
-
-    if (clearing) {
-      screen.txn(prev => [[{ type: 'stdout', content: ' '.repeat(limit) + '\r\n' }], { dx: -prev.x, dy: 1 }])
-      continue
+  diffEach(prev.screen, next.screen, (x, y) => {
+    if (y < viewportY) {
+      needsFullReset = true
+      return
     }
+    if (y >= prev.screen.height) {
+      return // 新行统一由下方增长段处理
+    }
+    const r = dirty.get(y)
+    if (r) {
+      if (x < r.min) r.min = x
+      if (x > r.max) r.max = x
+    } else {
+      dirty.set(y, { min: x, max: x })
+    }
+  })
+
+  if (needsFullReset) {
+    return true
+  }
+
+  const writeSegment = (y: number, fromX: number, toX: number, collectTailTrim: boolean) => {
+    const maxX = Math.min(toX, screenWidth - 1) // 末列保护
+    moveCursorTo(screen, fromX, y, viewportY)
 
     let currentStyleId = stylePool.none
     let lastRenderedStyleId = -1
-    let index = y * screenWidth
+    let row = ''
     const seg: Array<{ ch: string; sid: number }> = []
 
-    for (let x = 0; x < limit; x += 1, index += 1) {
-      const cell = visibleCellAtIndex(cells, charPool, hyperlinkPool, index, lastRenderedStyleId)
+    for (let x = fromX; x <= maxX; x += 1) {
+      const idx = y * screenWidth + x
+      const cell = visibleCellAtIndex(cells, charPool, hyperlinkPool, idx, lastRenderedStyleId)
       const sid = cell ? cell.styleId : currentStyleId
-      const ch = charInCellAt(frame.screen, x, y) ?? ' '
-
+      seg.push({ ch: charInCellAt(next.screen, x, y) ?? ' ', sid })
       if (cell) {
         lastRenderedStyleId = cell.styleId
       }
-
-      seg.push({ ch, sid })
     }
 
-    // 尾修剪：去掉无样式纯空格（有背景色/前景色的尾部保留）
-    let end = seg.length
-    while (end > 0 && seg[end - 1]!.ch === ' ' && seg[end - 1]!.sid === stylePool.none) {
-      end -= 1
-    }
-
-    let row = ''
-    for (let i = 0; i < end; i += 1) {
-      if (seg[i]!.sid !== currentStyleId) {
-        row += stylePool.transition(currentStyleId, seg[i]!.sid)
-        currentStyleId = seg[i]!.sid
+    if (collectTailTrim) {
+      let end = seg.length
+      while (end > 0 && seg[end - 1]!.ch === ' ' && seg[end - 1]!.sid === stylePool.none) {
+        end -= 1
       }
-      row += seg[i]!.ch
+      seg.length = end
     }
 
-    // 行尾复位样式，防背景色渗入下一行（与 renderFrameSlice 同策略）
+    for (const s of seg) {
+      if (s.sid !== currentStyleId) {
+        row += stylePool.transition(currentStyleId, s.sid)
+        currentStyleId = s.sid
+      }
+      row += s.ch
+    }
+
     if (currentStyleId !== stylePool.none) {
       row += stylePool.transition(currentStyleId, stylePool.none)
     }
 
-    screen.txn(prev => [[{ type: 'stdout', content: row + '\r\n' }], { dx: -prev.x, dy: 1 }])
+    // CR 归列（不换行）——下一脏行经 moveCursorTo 的 CUP 绝对定位
+    row += '\r'
+    screen.txn(prevPt => [[{ type: 'stdout', content: row }], { dx: -prevPt.x, dy: 0 }])
   }
+
+  // 已有行的变化区间（排序保证自上而下写入）
+  for (const [y, range] of [...dirty.entries()].sort((a, b) => a[0] - b[0])) {
+    writeSegment(y, range.min, range.max, false)
+  }
+
+  // 新行（增长）：整行段写入（尾修剪无样式空格）
+  for (let y = prev.screen.height; y < next.screen.height; y += 1) {
+    writeSegment(y, 0, screenWidth - 1, true)
+  }
+
+  return false
 }
 
 type Delta = { dx: number; dy: number }
