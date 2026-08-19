@@ -105,6 +105,17 @@ if (pre.mode === 'error') {
     _initErrorLog(dataDir);
     mkdirSync(dataDir, { recursive: true });
 
+    // 2026-08-19 卡死诊断探针（env 门控，默认关闭）：WXNODUS_HEARTBEAT=1 时每 2s 向
+    // dataDir/logs/heartbeat-<日期>.log 写心跳。cmd 冻结（conhost/QuickEdit 类）不产生
+    // JS 异常——error-*.log 看不到；心跳断档的时间点即卡死发生点。
+    // 配合 scripts/watch-wxnodus.mjs 或 PowerShell Get-Content -Wait 实时观察。
+    if (process.env.WXNODUS_HEARTBEAT === '1') {
+      const hbFile = () => join(dataDir, 'logs', `heartbeat-${new Date().toISOString().slice(0, 10)}.log`);
+      setInterval(() => {
+        try { appendFileSync(hbFile(), `${new Date().toISOString()} alive\n`); } catch { /* 落盘失败静默 */ }
+      }, 2000).unref?.();
+    }
+
   const [{ createCommandBus }, { GatewayClient }, { createApprovalCache }] = await Promise.all([
     import('../app/CommandBus.js'),
     import('../wxnodus-ui/wxGateway.js'),
