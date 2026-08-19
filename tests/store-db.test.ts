@@ -1,6 +1,6 @@
 // tests/store-db.test.ts — L1-1 数据库层：schema/迁移/容错/FTS5 中文/审计链/checkpoint
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDB, closeDB, appendAudit, saveCheckpoint, restoreCheckpoint, bigramZh, auditHash, forkSession, pickResumeSession, deleteMessage, updateMessage } from '../src/store/db.js';
@@ -274,5 +274,19 @@ describe('usage_stats 表', () => {
     // 会话隔离
     const other = db.prepare(`SELECT COUNT(*) AS c FROM usage_stats WHERE session_id='usage-other'`).get() as any;
     expect(other.c).toBe(0);
+  });
+});
+
+describe('F4：openDB 损坏容错（根因透出 + 恢复指引，绝不裸抛 sqlite 原始错）', () => {
+  it('损坏的 nodus.db → 抛错含真因与恢复指引', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wxn-dbcorrupt-'));
+    try {
+      writeFileSync(join(d, 'nodus.db'), '这不是数据库文件', 'utf8');
+      expect(() => openDB(d)).toThrow(/数据库不可用/);
+      expect(() => openDB(d)).toThrow(/恢复指引/);
+    } finally {
+      // Windows：better-sqlite3 构造失败后的句柄释放有延迟——重试 + 容错清理（仓库既有惯例）
+      try { rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 }); } catch { /* EBUSY 残留由系统回收 */ }
+    }
   });
 });

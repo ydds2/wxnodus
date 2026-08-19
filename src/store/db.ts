@@ -30,6 +30,19 @@ export { saveCheckpoint } from '../kernel/checkpoint.js';
 export function openDB(dataDir: string): Db {
   mkdirSync(dataDir, { recursive: true });
   const dbFile = join(dataDir, 'nodus.db');
+  // F4 修复（2026-08-19）：打开失败根因透出 + 恢复指引——不再让 raw sqlite 错误在组合层被包装吞掉。
+  // 常见根因：wal/shm 与主库不匹配（文件拷贝方式"备份"活库所致）——主库本体通常完好，删陈旧
+  // nodus.db-wal/-shm 即可恢复；或从 data/backups/<ts>/nodus.db 覆盖回。
+  try {
+    return openDBUnchecked(dataDir, dbFile);
+  } catch (cause: any) {
+    if (String(cause?.message ?? '').includes('数据库不可用')) throw cause; // 递归重建路径已包装，不双包
+    throw new Error(`数据库不可用：${String(cause?.message ?? cause).slice(0, 160)}——恢复指引：若曾备份（data/backups/<ts>/nodus.db）可覆盖回 data/nodus.db；或删除陈旧的 nodus.db-wal/nodus.db-shm 后重试（主库本体通常完好）`);
+  }
+}
+
+/** 未包装实现：构造 + 旧版库检测 + pragma + schema——任何一步失败由外层 openDB 统一透出根因与恢复指引。 */
+function openDBUnchecked(dataDir: string, dbFile: string): Db {
   const db = new Database(dbFile);
 
   // 旧版库检测：settings 表存在但结构非 V3（key/value）→ 旧版本遗留库

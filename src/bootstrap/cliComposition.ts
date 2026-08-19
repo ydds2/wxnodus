@@ -21,6 +21,13 @@ import { createShutdown } from './bootstrapShutdown.js';
 // supremacy 1.2：小模型任务档（标题/摘要路由）——taskModels 纯函数 + CLI 侧装配 callOnce
 import { resolveTaskModel, generateTitle } from '../kernel/taskModels.js';
 
+/** 组合失败根因提取（纯函数可单测）：THREW 阶段的真实 cause 优先，否则回退错误码——诚实透出不吞真因。 */
+export function composeFailureCause(result: OperationResult<unknown>): string {
+  const fail = result as { ok: false; error?: { code?: string; details?: unknown } };
+  const details = (fail.error?.details ?? {}) as Record<string, unknown>;
+  return typeof details.cause === 'string' && details.cause ? details.cause : (fail.error?.code ?? '');
+}
+
 /** 表现层桥（CLI 注入）：gateway/TUI/headless 与命令总线依赖经此进入组合根——CLI 不再内联内核装配 */
 export interface KernelBridges {
   approver(request: { toolId: string; args: unknown; effect: { kind: string }; reasonCode?: string; obligations?: unknown[] }): Promise<boolean>;
@@ -329,7 +336,7 @@ export async function createCliComposition(deps: CliCompositionDeps): Promise<Op
     }
     if (!result.ok) {
       await shutdown(`cli-composition:${name}:failed`);
-      return { ok: false, error: configError('CLI_COMPOSITION_PHASE_FAILED', 'cli.composition.phase_failed', { phase: name, cause: result.error.code }) };
+      return { ok: false, error: configError('CLI_COMPOSITION_PHASE_FAILED', 'cli.composition.phase_failed', { phase: name, cause: composeFailureCause(result) }) };
     }
     Object.assign(state, result.value.patch ?? {});
     resources.push(...(result.value.resources ?? []));
