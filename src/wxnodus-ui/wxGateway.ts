@@ -32,6 +32,9 @@ import { createPersonalizationRpcHandlers } from '../protocol/personalization.js
 import type { GatewayEvent } from './gatewayTypes.js'
 import { ZERO } from './domain/usage.js'
 import type { SessionInfo, TodoItem } from './types.js'
+// C-02 拆分（2026-08-19）：无状态 RPC 委托（diff×3 / session×4）
+import { diffViewRpc, diffRevertRpc, diffMarkRpc } from './rpc/diffRpc.js'
+import { sessionListRpc, sessionTailRpc, sessionMostRecentRpc, sessionTitleRpc } from './rpc/sessionRpc.js'
 
 const LOG_LIMIT = 200
 
@@ -355,13 +358,14 @@ export class GatewayClient extends EventEmitter {
       case 'session.undo': return this.sessionUndo(params) as T
       case 'session.delete': return this.sessionDelete(params) as T
       case 'session.active_list': return this.sessionActiveList(params) as T
-      case 'session.list': return this.sessionList(params) as T
-      case 'session.tail': return this.sessionTail(params) as T
-      case 'diff.view': return this.diffView(params) as T
-      case 'diff.revert': return this.diffRevert(params) as T
-      case 'diff.mark': return this.diffMark(params) as T
-      case 'session.most_recent': return this.sessionMostRecent() as T
-      case 'session.title': return this.sessionTitle(params) as T
+      // C-02 拆分（2026-08-19）：无状态 RPC 委托至 rpc/ 模块（结构子集，零实例态）
+      case 'session.list': return sessionListRpc(this.kernel, params) as T
+      case 'session.tail': return sessionTailRpc(this.kernel, params) as T
+      case 'diff.view': return diffViewRpc(this.kernel, params) as T
+      case 'diff.revert': return diffRevertRpc(this.kernel, params) as T
+      case 'diff.mark': return diffMarkRpc(this.kernel, params) as T
+      case 'session.most_recent': return sessionMostRecentRpc(this.kernel) as T
+      case 'session.title': return sessionTitleRpc(this.kernel, params) as T
       case 'session.steer': return this.sessionSteer(params) as T
       case 'session.interrupt': return this.sessionInterrupt() as T
       case 'session.compress': return this.sessionCompress(params) as T
@@ -1360,180 +1364,16 @@ export class GatewayClient extends EventEmitter {
 
   // 审计修复：session.list 真实实现（此前 UI 调用无后端分支——可恢复会话区恒报错）
   // 与 session.active_list 同源（DB 查询），历史会话也可恢复
-  private async sessionList(params: Record<string, unknown>): Promise<unknown> {
-    const current = String(params.current_session_id ?? '')
-    const limit = Math.min(Number(params.limit ?? 200) || 200, 500)
-    let rows: any[] = []
-    try {
-      rows = this.kernel.adapter.data.sessions.list(limit)
-    } catch {
-      rows = []
-    }
-    const sessions = rows.map((r: any) => ({
-      id: String(r.id),
-      title: String(r.title ?? ''),
-      current: String(r.id) === current,
-      created_at: Number(r.created_at ?? 0) / 1000,
-      updated_at: Number(r.updated_at ?? 0) / 1000,
-      message_count: Number(r.message_count ?? 0),
-      ...(typeof r.cost_usd === 'number' ? { cost_usd: r.cost_usd } : {}),
-    }))
-    return { sessions }
-  }
 
   /** 交互式 diff 查看（2026-08-19 A/B 收口）：turn 源结构化视图——快照基线 + 当前 + 渲染行 + hunk 数
    * v2（③ 残留收口）：无 file 参数 = 全文件集聚合视图（文件分节 + 分节元数据 + ✓ 审阅标记） */
-  private async diffView(params: Record<string, unknown>): Promise<unknown> {
-    const file = String(params.file ?? '').trim()
-    const { existsSync, readFileSync } = await import('node:fs')
-    const { lineDiff, parseHunks } = await import('../kernel/hunkApply.js')
-    const { versionsOfFile, listShadows } = await import('../kernel/undoShadows.js')
-    const { loadDiffReviewed, hunkFingerprint } = await import('../kernel/diffReviewed.js')
-    const { resolve } = await import('node:path')
-    const reviewed = loadDiffReviewed(this.kernel.dataDir)
-    const cwd = this.kernel.cwd
-
-    // 收集变更文件集（相对路径 → {abs, base}）：单文件 or cwd 内全部有快照文件
-    const targets: Array<{ abs: string; rel: string; base: string }> = []
-    if (file) {
-      const abs = resolve(cwd, file)
-      if (!existsSync(abs)) return { ok: false, error: `文件不存在：${file}` }
-      const versions = versionsOfFile(this.kernel.dataDir, abs)
-      if (!versions.length) return { ok: false, error: '该文件无编辑快照（turn 源需先经 fs_edit/fs_write 编辑过；git 源请用 /diff <文件> git）' }
-      targets.push({ abs, rel: file, base: versions[0]!.content })
-    } else {
-      const norm = (p: string) => p.replace(/\\/g, '/')
-      const cwdNorm = norm(cwd)
-      const latest = new Map<string, { content: string; ts: number }>()
-      for (const s of listShadows(this.kernel.dataDir)) {
-        if (!norm(s.path).startsWith(cwdNorm + '/')) continue
-        const prev = latest.get(s.path)
-        if (!prev || s.ts > prev.ts) latest.set(s.path, { content: s.content, ts: s.ts })
-      }
-      for (const [path, base] of latest) {
-        if (!existsSync(path)) continue
-        targets.push({ abs: path, rel: norm(path).startsWith(cwdNorm + '/') ? norm(path).slice(cwdNorm.length + 1) : path, base: base.content })
-      }
-      targets.sort((a, b) => a.rel.localeCompare(b.rel))
-      if (!targets.length) return { ok: false, error: '无会话编辑快照——turn 源需要先经 fs_edit/fs_write 编辑过（git 源可用 /diff <文件> git）' }
-    }
-
-    // 逐文件构建分节：header + diff 行；已审 hunk 头部追加 ✓ 标记（不破坏 @@ 检测正则）
-    const lines: string[] = []
-    const sections: Array<{ abs: string; rel: string; hunks: number; start: number; end: number }> = []
-    let changedFiles = 0
-    for (const t of targets) {
-      let cur = ''
-      try { cur = readFileSync(t.abs, 'utf8') } catch { continue }
-      const d = lineDiff(t.base, cur)
-      if (!d) continue
-      const hunks = parseHunks(d)
-      const start = lines.length
-      lines.push(`▶ ${t.rel}（${hunks.length} hunk${hunks.length > 1 ? 's' : ''}）`, '')
-      for (const h of hunks) {
-        const mark = reviewed.marks[t.abs]?.[hunkFingerprint(h)] ? '  ✓' : ''
-        lines.push(h.header + mark)
-        for (const l of h.lines) lines.push((l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' ') + l.text)
-      }
-      sections.push({ abs: t.abs, rel: t.rel, hunks: hunks.length, start, end: lines.length })
-      changedFiles++
-    }
-    if (!changedFiles) return { ok: false, error: '会话内编辑过的文件与当前无差异（或已被还原）' }
-
-    return {
-      ok: true,
-      aggregate: !file,
-      file: file || undefined,
-      changedFiles,
-      sections: sections.map(s => ({ abs: s.abs, rel: s.rel, hunks: s.hunks, start: s.start, end: s.end })),
-      lines,
-    }
-  }
 
   /** 交互式逐 hunk 回滚（无状态：基线=最新快照、当前=磁盘——每次重算，序号即序数） */
-  private async diffRevert(params: Record<string, unknown>): Promise<unknown> {
-    const file = String(params.file ?? '').trim()
-    const hunkIndex = Number(params.hunk_index ?? NaN)
-    if (!Number.isInteger(hunkIndex) || hunkIndex < 1) return { ok: false, error: 'hunk 序号非法' }
-    const { existsSync, readFileSync, writeFileSync } = await import('node:fs')
-    if (!file || !existsSync(file)) return { ok: false, error: `文件不存在：${file}` }
-    const { lineDiff, parseHunks, applyHunkToText, reverseHunk } = await import('../kernel/hunkApply.js')
-    const { versionsOfFile, snapshotFile } = await import('../kernel/undoShadows.js')
-    const versions = versionsOfFile(this.kernel.dataDir, file)
-    if (!versions.length) return { ok: false, error: '无快照可回滚' }
-    const cur = readFileSync(file, 'utf8')
-    const hunks = parseHunks(lineDiff(versions[0]!.content, cur))
-    const h = hunks[hunkIndex - 1]
-    if (!h) return { ok: false, error: `hunk ${hunkIndex} 不存在（共 ${hunks.length} 个）` }
-    const r = applyHunkToText(cur, reverseHunk(h))
-    if (!r.ok) return { ok: false, error: `回滚失败：${r.error}` }
-    snapshotFile(this.kernel.dataDir, file, cur)
-    writeFileSync(file, r.text, 'utf8')
-    return { ok: true, output: `已回滚 hunk ${hunkIndex}/${hunks.length}（快照已留存，/undo fs restore 可再滚回）` }
-  }
 
   /** mark-reviewed（③ 残留收口）：逐 hunk 审阅标记——内容指纹持久化（变更即失效，不跟随漂移） */
-  private async diffMark(params: Record<string, unknown>): Promise<unknown> {
-    const file = String(params.file ?? '').trim()
-    const hunkIndex = Number(params.hunk_index ?? NaN)
-    if (!Number.isInteger(hunkIndex) || hunkIndex < 1) return { ok: false, error: 'hunk 序号非法' }
-    const { existsSync, readFileSync } = await import('node:fs')
-    if (!file || !existsSync(file)) return { ok: false, error: `文件不存在：${file}` }
-    const { lineDiff, parseHunks } = await import('../kernel/hunkApply.js')
-    const { versionsOfFile } = await import('../kernel/undoShadows.js')
-    const { markHunkReviewed, hunkFingerprint } = await import('../kernel/diffReviewed.js')
-    const versions = versionsOfFile(this.kernel.dataDir, file)
-    if (!versions.length) return { ok: false, error: '无快照（turn 源需先经 fs_edit/fs_write 编辑过）' }
-    const hunks = parseHunks(lineDiff(versions[0]!.content, readFileSync(file, 'utf8')))
-    const h = hunks[hunkIndex - 1]
-    if (!h) return { ok: false, error: `hunk ${hunkIndex} 不存在（共 ${hunks.length} 个）` }
-    markHunkReviewed(this.kernel.dataDir, file, hunkFingerprint(h))
-    return { ok: true, output: `已标记审阅 hunk ${hunkIndex}/${hunks.length}` }
-  }
 
-  private async sessionTail(params: Record<string, unknown>): Promise<unknown> {
-    // 会话尾部消息（2026-08-19 会话浏览器惰性展开预览，codex resume_picker 惰性加载对标）
-    const id = String(params.session_id ?? '')
-    const limit = Math.min(Math.max(Number(params.limit ?? 6) || 6, 1), 20)
-    let rows: any[] = []
-    try {
-      rows = this.kernel.adapter.data.messages.rows(id)
-    } catch {
-      rows = []
-    }
-    const tail = rows
-      .filter((r: any) => !r.archived && (r.role === 'user' || r.role === 'assistant'))
-      .slice(-limit)
-      .map((r: any) => ({ role: String(r.role), text: String(r.content ?? '') }))
-    return { messages: tail }
-  }
 
-  private async sessionMostRecent(): Promise<unknown> {
-    let row: any = null
 
-    try {
-      row = this.kernel.adapter.data.sessions.mostRecent() ?? null
-    } catch {
-      row = null
-    }
-
-    if (!row) return { session_id: null }
-
-    return {
-      session_id: String(row.id),
-      title: String(row.title ?? ''),
-      started_at: Number(row.created_at ?? 0) / 1000,
-    }
-  }
-
-  private async sessionTitle(params: Record<string, unknown>): Promise<unknown> {
-    const id = String(params.session_id ?? '')
-    const title = String(params.title ?? '')
-
-    this.kernel.adapter.data.sessions.rename(id, title)
-
-    return { title }
-  }
 
   private async sessionInterrupt(): Promise<unknown> {
     this.kernel.adapter.agent.abort()

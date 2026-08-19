@@ -1195,3 +1195,13 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **评分口径（诚实）**：939 维持——③ 残留项为「冲 10 候选」不升档（opencode 仍有树面板交互形态差异）；B-04 为 ② 已满格的体验加固。
 
 **尾注（2026-08-19）**：本地九步门禁全绿（新增 terminal-colors 7 + diff-reviewed 3 用例入闸）；远程 CI #32259335659 全绿（`f4dc798`）。
+
+### 13.92 C-02 wxGateway 拆分执行（2026-08-19：2628 → 2464 行，无状态 RPC 提取）
+
+用户确认执行拆分（原决策「>3000 再拆」因本会话 +160 行增速提前触发——趁改动面小拆干净）：
+
+1. **提取**：`src/wxnodus-ui/rpc/diffRpc.ts`（diffView/diffRevert/diffMark）+ `src/wxnodus-ui/rpc/sessionRpc.ts`（sessionList/sessionTail/sessionMostRecent/sessionTitle）——7 个纯无状态方法（仅 dataDir/cwd/adapter），**结构类型子集**参数（不 import wxGateway——零新增循环依赖，check-cycles 4 环不变）。
+2. **保留**：sessionDelete/sessionActiveList/sessionCreate/Activate/Resume/Close/Steer/Undo/Save/Compress/Branch/Interrupt 等触碰实例态（currentSessionId/sessionSeq/running/publish）——留网关内（协议面完整）。
+3. **dispatch 薄壳**：7 个 case 委托函数调用；`wxGateway.ts` **2628 → 2464 行**（-164，回到 2026-08-18 维持决策基线附近）；typecheck/17 相关用例/环检查全绿。
+
+**C-02 状态更新**：拆分第一步落地——剩余 2464 行仍以状态耦合方法为主（会话生命周期/审批桥/配置面板），继续拆需引入实例态注入设计（风险/收益比恶化）；维持「>3000 再拆」触发线不变。
