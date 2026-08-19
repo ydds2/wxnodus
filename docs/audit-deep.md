@@ -1316,3 +1316,5 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **验收对照**（计划 §3）：git ls-files 不含 .db/.superpowers/uia bin|obj/editorLaunch ✅；根目录只余仓库级文件 ✅；lint TODO 归 1（字符串字面量，如实登记）✅；全量 2894 用例零回归 ✅；九步门禁 + 远程 CI 全绿 ✅。诚实边界保持：不重写历史、不删竞品研究内容（只挪位）、不确定归属一律保留。
 
 **尾注（2026-08-20）**：S1/S2/S3 各自全量单测绿 + tsc 干净后提交；S3 远程 CI #32288629808（1b5e337 success）。
+
+**复查实录（2026-08-20，用户要求「重新检查」——发现一处自我回归并根治）**：复查发现 `lowrisk-target.txt`/`review-target.txt` **重新入库**——根因链：S1 移除后，`tests/kernel-agent.test.ts` 的探针工厂默认目标为 `process.cwd()`（仓库根），每次全量测试都在根目录重建这两个文件，随后 S3 提交的 `git add -A` 将它们再次纳入索引。根治：① 测试默认目标改至 `process.cwd()/.tmp/`（`.tmp/` 已 gitignore——探针写入不再污染工作树；同时保持「工作区内」语义使低危放行用例不回归，65/65 全绿）；② afterAll 清理探针产物；③ .gitignore 增加裸文件名防御条目（防未来代码回退重写根目录）；④ 再次 untrack + 磁盘删除。另复查确认：CHANGELOG 结构违规（「代码卫生」段落曾置于 [Unreleased] 之上）已修正并入 Unreleased 的 Changed；docs-links 4/4 绿；无其他跟踪二进制；模块头缺口 121→99 如实登记（计划约定抽查 20，实补 22，其余留批）。

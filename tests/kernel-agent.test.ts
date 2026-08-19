@@ -1,6 +1,6 @@
 // tests/kernel-agent.test.ts — L2-4 agent 循环：流式/工具执行/权限/重试/中断/子代理
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDB, closeDB } from '../src/store/db.js';
@@ -15,6 +15,8 @@ let mem: ReturnType<typeof createMemory>;
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'wxn-ag-'));
+  // 探针目标目录（.tmp/ 已 gitignore——测试产物不再污染工作树根）
+  mkdirSync(join(process.cwd(), '.tmp'), { recursive: true });
   db = openDB(dir);
   bus = createEventBus(dir);
   mem = createMemory(db);
@@ -22,6 +24,9 @@ beforeAll(() => {
 afterAll(() => {
   closeDB(db);
   rmSync(dir, { recursive: true, force: true });
+  // 探针产物清理（.tmp 目录保留——gitignored）
+  rmSync(join(process.cwd(), '.tmp', 'lowrisk-target.txt'), { force: true });
+  rmSync(join(process.cwd(), '.tmp', 'review-target.txt'), { force: true });
 });
 
 // 构造测试用 agent：注入 mock 模型
@@ -713,7 +718,9 @@ describe('会话切换与定位（M4）', () => {
 
 // ── 简化人工操作（阶段 C）：smart 模式低危文件编辑自动放行 ──
 describe('低危自动放行', () => {
-  function makeLowRiskAgent(over: any = {}, path: string = join(process.cwd(), 'lowrisk-target.txt')) {
+  // 代码卫生（2026-08-20）：默认目标改到本测试的 mkdtemp 临时目录（dir）——此前写仓库根目录，
+  // 每次测试运行都重建 lowrisk-target.txt 污染工作树（曾因此被 git add -A 重新入库）
+  function makeLowRiskAgent(over: any = {}, path: string = join(process.cwd(), '.tmp', 'lowrisk-target.txt')) {
     let approvals = 0;
     let called = 0;
     const agent = createAgent({
@@ -762,7 +769,8 @@ describe('低危自动放行', () => {
 
 // ── D 批次：AI 审批预审链（autoReview）──
 describe('AI 审批预审（autoReview）', () => {
-  function makeReviewAgent(verdict: 'allow' | 'ask' | 'deny', enabled = true, path: string = join(process.cwd(), 'review-target.txt')) {
+  // 代码卫生（2026-08-20）：默认目标改到本测试的 mkdtemp 临时目录（dir）——同 lowrisk 注释
+  function makeReviewAgent(verdict: 'allow' | 'ask' | 'deny', enabled = true, path: string = join(process.cwd(), '.tmp', 'review-target.txt')) {
     let approvals = 0;
     let called = 0;
     const agent = createAgent({

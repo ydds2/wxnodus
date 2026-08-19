@@ -31,3 +31,7 @@ sbx-write-test.txt
 
 # 安装包构建产物（scripts/package-installer.ts → dist-installer/）
 dist-installer/
+
+# 测试曾写仓库根目录的探针产物（kernel-agent 测试已改临时目录——防御性忽略防回归）
+lowrisk-target.txt
+review-target.txt
