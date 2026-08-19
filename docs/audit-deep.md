@@ -1238,3 +1238,20 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 **验收对照**（`ui-redesign-plan-2026.md` P0 四项）：① 新增浮层仅改 2 处 ✅；② `/help keys` 列出全键位 ✅（TUI 内，注册表生成）；③ appChrome ≤200 行 ✅（119）；④ 34 组件回归全绿 ✅（全量 2877 用例、11 skip 为既有 skip，零新增失败）。诚实边界保持：legacy `app/stores/overlayStore.ts`（未接线）不触碰；组件自带 Esc → 统一协议收编留 P1；Ctrl+O/Ctrl+R 双触发缺陷登记待 P1 裁决不擅改行为。
 
 **尾注（2026-08-19）**：P0 四步各自全量单测绿 + tsc 干净后提交；本地九步门禁全绿后本段定稿（远程 CI 号见门禁实录）。
+
+### 13.96 UI 重构 P1 执行实录（2026-08-20：双触发裁决 + status/doctor 工作台化）
+
+用户「继续」——P1 按 `ui-refactor-exec-2026.md` 顺序推进，两次提交：
+
+1. **P1-1 双触发裁决**（`6d31401`）——D3 缺陷证据的处置：
+   - **Ctrl+O 唯一化**：移除 textInput 的 Ctrl+O 外部编辑器分支（与全局模型选择器双触发）；编辑器保留唯一键位 Ctrl+G/Alt+G（global.editor，`/help keys` 可见）——能力不丢、冲突消除；registry 移除已删除的 `prompt.editor` 绑定（「消失即证据」——诊断不再报该重叠）。
+   - **Ctrl+R 运行时门控**：`config/vimMode.ts` 新增 `getVimNormalActive/setVimNormalActive`（模块级 last-good，textInput 两处模态更新点同步）；useKeyBindings 历史搜索打开前检查——vim NORMAL 下 Ctrl+R 让位 redo，非 vim 态零变化。
+   - **registry 裁决标注**：`RESOLVED_OVERLAPS`（chord@ids 键 → 处置说明）——诊断不掩盖：门控类保留条目 + resolved 标注，移除类条目直接消失；测试断言两条裁决结果。3 处测试更新 + 1 处新测试（vim 标志）。
+2. **P1-2 status/doctor 结构化工作台**（`320debe`）——D2 修的第一批：
+   - `OverlayEntry` 新增 `workspace` kind（`WorkspaceKind = status|doctor`、`WorkspaceData` 分节 kv + 语义 tone——`bridge/interfaces.ts`）。
+   - **数据源分层**（诚实口径）：status = gateway 内核端口（模型/模式/目录/档案/余额监控/命令数/技能数/会话数/后台活动——`rpc/workspaceRpc.ts` 纯函数构建，C-02 同模式结构子集端口零新环）∪ TUI 状态行（成本/上下文/权限——slash 命令合并，与状态栏同源）；doctor = `adapter.data.doctor()` 新窄端口（db 完整性 PRAGMA/记忆层计数/FTS 计数/密钥真实解密校验/当前模型——检查项与内核 /doctor 同源，失败如实降级 tone bad/muted 不抛穿）。
+   - wxGateway 新增 `workspace.status` / `workspace.doctor` RPC；`/status` `/doctor` TUI 本地拦截（RPC 无 sections 诚实提示不压栈）；`w` 键切换标签（RPC 刷新另一侧，仅栈顶为 workspace 生效）；Esc 统一出栈覆盖 workspace（`ESC_GLOBAL_KINDS` 数据驱动收编，useKeyBindings 不再硬编码 kind 名单）；registry 新增 workspace scope（w/esc 两键）。12 新测试，全量 2889 用例零回归。
+
+**P1 剩余（如实登记）**：① sessions 工作台搜索过滤——列表/惰性预览/恢复已具备，搜索需重算 activeSessionSwitcher（953 行）选中索引（导航/删除/预览全链路），风险>收益暂缓至 P1 收尾批；② 面板右分栏（config/model/skills/plugins 不遮转录流）——最大布局变更同批；③ 组件自带 Esc 收编统一协议（ESC_GLOBAL_KINDS 之外 kind 仍组件级处理）。评分联动：⑨ 工程化随键位注册表裁决标注与工作台端口分层获加固（不升分口径不变）。
+
+**尾注（2026-08-20）**：P1 两步各自全量单测绿 + tsc 干净后提交；本地九步门禁全绿后本段定稿（远程 CI 号见门禁实录）。

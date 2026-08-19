@@ -7,6 +7,7 @@
 
 ### Changed
 - **UI 重构 P0 落地（2026-08-19）**：按 `docs/ui-redesign-plan-2026.md` 完成骨架统一——① **栈式浮层**：17 布尔位浮层态重构为 stack+inline（z 序=栈序、Esc 统一出栈）；面板（配置/模型/skills/plugins）与选择器（会话/目录/历史/命令面板）改为**互斥组**（不再同时开两个面板）；skills/plugins 面板补上 Esc 关闭。② **键位注册表**：`/help keys` 在 TUI 内由注册表单一事实源生成完整键位总览（global/prompt/vim/pager/panel 五层分组；Ctrl+P 新增为命令面板别名，与 Ctrl+K 同动作）；注册期同层冲突直接报错。③ **状态栏组件化**：1031 行巨组件拆分为 statusBar/floating/转录 chrome 三个模块（行为零变化）。详见 `docs/ui-refactor-exec-2026.md` 与 audit §13.95。
+- **UI 重构 P1 落地（2026-08-20）**：① **双触发裁决**：Ctrl+O 唯一化为模型选择器（外部编辑器保留 Ctrl+G/Alt+G——此前两键双触发）、Ctrl+R 在 vim NORMAL 下让位 redo（此前 redo 与历史搜索同时触发）。② **status/doctor 结构化工作台**：`/status` `/doctor` 不再落文本翻页器——TUI 打开结构化工作台（分节 kv + 语义着色），`w` 键切换状态⇄体检，Esc 统一关闭；体检项为真实检测（数据库完整性/记忆层/全文索引/密钥解密/当前模型，异常如实标红）。详见 audit §13.96。
 
 ### Added
 - **`/encrypt` 真实文件加解密（2026-08-19）**：此前仅凭证状态展示——现真实实现：`/encrypt file <路径> --key <口令>` 用 scrypt + AES-256-GCM 加密为 `<路径>.enc`（篡改/口令错即诚实拒绝）；`/encrypt decrypt` 反向还原；口令不落盘不回显。
