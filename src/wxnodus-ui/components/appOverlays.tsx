@@ -15,13 +15,9 @@ import { DirPicker } from './dirPicker.js'
 import { FloatBox } from './appChrome.js'
 import { HistorySearch } from './historySearch.js'
 import { MaskedPrompt } from './maskedPrompt.js'
-import { ConfigPanel } from './configPanel.js'
-import { ModelPicker } from './modelPicker.js'
 import { OverlayHint } from './overlayControls.js'
-import { PluginsHub } from './pluginsHub.js'
 import { ApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
 import { DynamicFormPrompt } from './dynamicFormPrompt.js'
-import { SkillsHub } from './skillsHub.js'
 import { WorkspaceView } from './workspaceView.js'
 import { icon, translateText } from '../glyphs.js'
 
@@ -157,7 +153,6 @@ export function FloatingOverlays({
   onActiveSessionSelect,
   onActiveSessionClose,
   onCompletionSelect,
-  onModelSelect,
   onNewLiveSession,
   onNewPromptSession,
   onPaletteSubmit,
@@ -171,7 +166,6 @@ export function FloatingOverlays({
   | 'onActiveSessionSelect'
   | 'onActiveSessionClose'
   | 'onCompletionSelect'
-  | 'onModelSelect'
   | 'onNewLiveSession'
   | 'onNewPromptSession'
   | 'onPaletteSubmit'
@@ -189,11 +183,7 @@ export function FloatingOverlays({
   const pagerEntry = findEntry(overlay, 'pager')
   const wsEntry = findEntry(overlay, 'workspace')
   const sessionsOn = !!findEntry(overlay, 'sessions')
-  const configOn = !!findEntry(overlay, 'configPanel')
-  const modelOn = !!findEntry(overlay, 'modelPicker')
-  const skillsOn = !!findEntry(overlay, 'skillsHub')
   const paletteOn = !!findEntry(overlay, 'commandPalette')
-  const pluginsOn = !!findEntry(overlay, 'pluginsHub')
   const dirPickerOn = !!findEntry(overlay, 'dirPicker')
 
   // Fixed viewport centered on compIdx — previously the slice end was
@@ -226,25 +216,8 @@ export function FloatingOverlays({
         )}
       </FloatBox>
 
-      <FloatBox color={theme.color.border} display={configOn ? undefined : 'none'}>
-        {configOn && <ConfigPanel gw={gw} onClose={() => closeOverlay('configPanel')} t={theme} />}
-      </FloatBox>
-
-      <FloatBox color={theme.color.border} display={modelOn ? undefined : 'none'}>
-        {modelOn && (
-          <ModelPicker
-            gw={gw}
-            onCancel={() => closeOverlay('modelPicker')}
-            onSelect={onModelSelect}
-            sessionId={sid}
-            t={theme}
-          />
-        )}
-      </FloatBox>
-
-      <FloatBox color={theme.color.border} display={skillsOn ? undefined : 'none'}>
-        {skillsOn && <SkillsHub gw={gw} onClose={() => closeOverlay('skillsHub')} t={theme} />}
-      </FloatBox>
+      {/* P2 右分栏：面板组（config/model/skills/plugins）已迁至 appLayout 的右侧分栏
+          （RightPanelPane）——不再以浮层遮蔽转录流；小窗 <80 列自动降级为全宽块 */}
 
       <FloatBox color={theme.color.border} display={paletteOn ? undefined : 'none'}>
         {paletteOn && (
@@ -258,10 +231,6 @@ export function FloatingOverlays({
             t={theme}
           />
         )}
-      </FloatBox>
-
-      <FloatBox color={theme.color.border} display={pluginsOn ? undefined : 'none'}>
-        {pluginsOn && <PluginsHub gw={gw} onClose={() => closeOverlay('pluginsHub')} t={theme} />}
       </FloatBox>
 
       {/* A24：目录选择器（点击状态栏 cwd 打开——浏览/切换工作目录） */}

@@ -28,6 +28,16 @@ export const KIND_GROUPS: ReadonlyArray<{ name: 'panel' | 'picker'; kinds: reado
   { name: 'picker', kinds: PICKER_KINDS },
 ]
 
+/** 栈内当前面板 kind（互斥组保证至多 1 个——P2 右分栏渲染数据源）；无 → null */
+export function findPanelKind(state: OverlayStackState): 'configPanel' | 'modelPicker' | 'skillsHub' | 'pluginsHub' | null {
+  for (const e of state.stack) {
+    if ((PANEL_KINDS as readonly string[]).includes(e.kind)) {
+      return e.kind as 'configPanel' | 'modelPicker' | 'skillsHub' | 'pluginsHub'
+    }
+  }
+  return null
+}
+
 /** 浮层所属互斥组（不在组内 → null：pager/agents 各自独立，可压栈叠加） */
 export function groupOf(kind: OverlayEntry['kind']): 'panel' | 'picker' | null {
   if ((PANEL_KINDS as readonly string[]).includes(kind)) return 'panel'

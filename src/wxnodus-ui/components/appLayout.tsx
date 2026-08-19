@@ -5,7 +5,7 @@ import { Fragment, memo, useMemo, useRef } from 'react'
 import { useGateway } from '../bridge/gatewayProvider.js'
 import type { AppLayoutProps } from '../bridge/interfaces.js'
 import { $isBlocked, $overlayState, closeOverlay, pushOverlay } from '../runtime/promptStore.js'
-import { findEntry } from '../runtime/overlayStack.js'
+import { findEntry, findPanelKind } from '../runtime/overlayStack.js'
 import { clearSelectedMessage, $uiState } from '../runtime/viewStore.js'
 import { useTurnSelector } from '../runtime/flowStore.js'
 import { bgActiveCount, useBgSelector } from '../runtime/backgroundStore.js'
@@ -26,6 +26,7 @@ import { AgentsOverlay } from './agentsOverlay.js'
 import { GoodVibesHeart, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { BlackHolePet, WelcomeCard, modeBadgeSpec, type PetMood } from './blackHolePet.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
+import { RightPanelPane } from './rightPanel.js'
 import { Banner, Panel, SessionPanel } from './branding.js'
 import { BrandBar } from './brandBar.js'
 import { accretionRule } from '../lib/brandRule.js'
@@ -323,7 +324,6 @@ const ComposerPane = memo(function ComposerPane({
           onActiveSessionClose={actions.closeLiveSession}
           onActiveSessionSelect={actions.activateLiveSession}
           onCompletionSelect={composer.acceptCompletion}
-          onModelSelect={actions.onModelSelect}
           onNewLiveSession={actions.newLiveSession}
           onNewPromptSession={actions.newPromptSession}
           onPaletteSubmit={(text) => {
@@ -504,6 +504,13 @@ export const AppLayout = memo(function AppLayout({
   const overlay = useStore($overlayState)
   const ui = useStore($uiState)
 
+  // P2 右分栏：面板组（config/model/skills/plugins——互斥组至多 1 个）宽窗（≥80 列）
+  // 渲染为右侧分栏（宽度 min(40, cols-50%)，不遮转录流）；小窗降级为全宽块（挂载点
+  // 见下方 narrow 分支——与既有浮层视觉接近，如实降级不假自适应）
+  const panelKind = findPanelKind(overlay)
+  const panelWidth = Math.max(20, Math.min(40, composer.cols - Math.floor(composer.cols / 2)))
+  const usePanelColumn = !!panelKind && composer.cols >= 80
+
   // Inline mode skips AlternateScreen so the host terminal's native
   // scrollback captures rows scrolled off the top; composer + progress
   // stay anchored via normal flex-column flow.
@@ -512,7 +519,8 @@ export const AppLayout = memo(function AppLayout({
 
   return (
     <Shell {...shellProps}>
-      <Box flexDirection="column" flexGrow={1}>
+      <Box flexDirection={usePanelColumn ? 'row' : 'column'} flexGrow={1}>
+        <Box flexDirection="column" flexGrow={1} flexShrink={1}>
         {/* 启动欢迎卡片：吸积盘 6 帧（1.5s）后自消散——仅 full 动效档且
             WXNODUS_NO_INTRO 未设时出现（简约：只占启动一瞬，之后永不再现） */}
         <WelcomeCard mode={ui.info?.perm ?? 'smart'} t={ui.theme} />
@@ -528,6 +536,11 @@ export const AppLayout = memo(function AppLayout({
           <PerfPane id="transcript">
             <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
           </PerfPane>
+        )}
+
+        {/* P2 右分栏小窗降级：<80 列面板渲染为全宽块（转录流与输入区之间，不浮层遮蔽） */}
+        {panelKind && !usePanelColumn && (
+          <RightPanelPane onModelSelect={actions.onModelSelect} width={Math.max(20, composer.cols - 2)} />
         )}
 
         {!findEntry(overlay, 'agents') && (
@@ -559,6 +572,10 @@ export const AppLayout = memo(function AppLayout({
               </Box>
             )}
           </>
+        )}
+        </Box>
+        {usePanelColumn && (
+          <RightPanelPane onModelSelect={actions.onModelSelect} width={panelWidth} />
         )}
       </Box>
     </Shell>

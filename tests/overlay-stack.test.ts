@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   closeKind,
   findEntry,
+  findPanelKind,
   flowReset,
   groupOf,
   popTop,
@@ -55,6 +56,17 @@ describe('pushInto（入栈 + 互斥组）', () => {
     expect(groupOf('histSearch')).toBe('picker')
     expect(groupOf('pager')).toBeNull()
     expect(groupOf('agents')).toBeNull()
+  })
+})
+
+describe('findPanelKind（P2 右分栏数据源）', () => {
+  it('栈内面板 kind；无面板 → null；互斥组保证至多 1 个', () => {
+    expect(findPanelKind(empty())).toBeNull()
+    const s = pushInto(pushInto(empty(), { kind: 'pager', pager: { lines: [], offset: 0 } }), { kind: 'modelPicker' })
+    expect(findPanelKind(s)).toBe('modelPicker')
+    const s2 = pushInto(s, { kind: 'configPanel' })
+    expect(findPanelKind(s2)).toBe('configPanel')
+    expect(s2.stack.map(e => e.kind)).toEqual(['pager', 'configPanel'])
   })
 })
 

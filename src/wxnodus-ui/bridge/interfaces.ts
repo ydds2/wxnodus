@@ -547,7 +547,6 @@ export interface AppOverlaysProps {
   onClarifyAnswer: (value: string) => void
   onActiveSessionSelect: (sessionId: string) => void
   onActiveSessionClose: (sessionId: string) => Promise<null | SessionCloseResponse>
-  onModelSelect: (value: string) => void
   onNewLiveSession: () => void
   onNewPromptSession: (prompt: string, modelArg?: string) => void
   /** Ctrl+K 命令面板执行（命令/技能 → 提交输入流） */
