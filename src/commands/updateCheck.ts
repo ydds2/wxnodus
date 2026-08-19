@@ -6,7 +6,7 @@ import { execSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { WXNODUS_VERSION } from '../kernel/version.js';
 
-export type InstallChannel = 'git' | 'npm-global' | 'winget' | 'scoop' | 'unknown';
+export type InstallChannel = 'git' | 'npm-global' | 'winget' | 'scoop' | 'zip' | 'unknown';
 
 export interface GitState {
   isRepo: boolean;
@@ -16,16 +16,44 @@ export interface GitState {
   date: string;
 }
 
+/** zip 渠道元数据（install.ps1 安装时写入 install-meta.json；source 由 -Source 透传，供远程版本探测）。 */
+export interface InstallMeta {
+  app: string;
+  version: string;
+  installedAt?: string;
+  source?: string;
+}
+
 export interface UpdateReport {
   channel: InstallChannel;
   version: string;
   git: GitState | null;
+  installMeta: InstallMeta | null;
   guidance: string;
   canAutoUpdate: boolean;
 }
 
-/** 纯函数：从模块路径推断安装渠道（可单测）。npm link 指向仓库目录 → git；npm -g → npm-global。 */
+/** zip 渠道元数据上探（≤5 层找 install-meta.json）；BOM 容忍 + 损坏/缺字段返回 null（绝不抛出）。 */
+export function findInstallMeta(modulePath: string, readFile: (p: string) => string | null = p => { try { return require('node:fs').readFileSync(p, 'utf8'); } catch { return null; } }): InstallMeta | null {
+  let dir = dirname(modulePath);
+  for (let i = 0; i < 5; i++) {
+    const text = readFile(join(dir, 'install-meta.json'));
+    if (text !== null) {
+      try {
+        const meta = JSON.parse(text.replace(/^\uFEFF/, '')) as InstallMeta;
+        if (meta && typeof meta.app === 'string' && typeof meta.version === 'string') return meta;
+      } catch { return null; }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+/** 纯函数：从模块路径推断安装渠道（可单测）。zip（install-meta 命中）优先于 git/npm。 */
 export function detectInstallChannel(modulePath: string): InstallChannel {
+  if (findInstallMeta(modulePath)) return 'zip';
   const norm = modulePath.replace(/\\/g, '/');
   if (norm.includes('/node_modules/')) {
     // npm 全局安装：<prefix>/node_modules/wxnodus/…（npm link 例外——link 目标是仓库目录，不含 node_modules 中间段）
@@ -33,6 +61,22 @@ export function detectInstallChannel(modulePath: string): InstallChannel {
   }
   // 其余（仓库内 dist/ 或 tsx src/）按 git 工作树处理；是否真 git 由 probeGit 判定
   return 'git';
+}
+
+/** 远程版本探测（zip + -Source 记录）：仅 https；HEAD 4s 超时；版本号从 Content-Disposition 文件名/最终 URL 提取。 */
+export async function probeRemoteVersion(source: string, fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; version?: string; message: string }> {
+  if (!/^https:\/\//.test(source)) return { ok: false, message: `更新源非 https，拒绝探测：${source}` };
+  try {
+    const res = await fetchImpl(source, { method: 'HEAD', signal: AbortSignal.timeout(4000), redirect: 'follow' });
+    if (!res.ok && res.status !== 200) return { ok: false, message: `更新源响应 ${res.status}` };
+    const disposition = res.headers.get('content-disposition') ?? '';
+    const url = res.url ?? source;
+    const m = /(\d+\.\d+\.\d+)/.exec(`${disposition} ${url}`);
+    if (!m) return { ok: false, message: '响应中未解析出版本号（Content-Disposition/URL 均无）' };
+    return { ok: true, version: m[1]!, message: '' };
+  } catch (e: any) {
+    return { ok: false, message: `探测失败：${String(e?.message ?? e).slice(0, 120)}` };
+  }
 }
 
 /** 仓库根定位（纯函数）：沿模块路径向上找 package.json 且 name=wxnodus 的目录。 */
@@ -79,6 +123,8 @@ export function channelGuidance(channel: InstallChannel, git: GitState | null): 
       if (!git.clean) return `工作树有未提交改动（git status 非空）——先提交/暂存后再更新（/update --yes 拒绝对脏树执行）`;
       return `git pull && npm install && npm run build（远程 ${git.remote}）`;
     }
+    case 'zip':
+      return '离线 zip 安装渠道：下载新版 wxnodus-<版本>.zip → 解压 → 双击 install.bat（或 powershell -ExecutionPolicy Bypass -File install.ps1）幂等覆盖安装；数据目录与密钥保留（安装不删 %LOCALAPPDATA%\\wxnodus）。';
     default:
       return '无法确定安装渠道——请手动执行对应包管理器更新';
   }
@@ -87,14 +133,15 @@ export function channelGuidance(channel: InstallChannel, git: GitState | null): 
 /** 汇总报告（handler 入口）。 */
 export function buildUpdateReport(opts: { modulePath: string; cwd: string }): UpdateReport {
   const channel = detectInstallChannel(opts.modulePath);
+  const installMeta = channel === 'zip' ? findInstallMeta(opts.modulePath) : null;
   const repoRoot = channel === 'git' ? (findRepoRoot(opts.modulePath) ?? opts.cwd) : null;
   const git = repoRoot ? probeGit(repoRoot) : null;
   const guidance = channelGuidance(channel, git);
   const canAutoUpdate = channel === 'git' && git?.isRepo === true && Boolean(git.remote) && git.clean;
-  return { channel, version: WXNODUS_VERSION, git, guidance, canAutoUpdate };
+  return { channel, version: WXNODUS_VERSION, git, installMeta, guidance, canAutoUpdate };
 }
 
 /** 渠道中文名（显示用）。 */
 export function channelLabel(channel: InstallChannel): string {
-  return { git: 'git 工作树/npm link', 'npm-global': 'npm 全局安装', winget: 'winget', scoop: 'scoop', unknown: '未知' }[channel];
+  return { git: 'git 工作树/npm link', 'npm-global': 'npm 全局安装', winget: 'winget', scoop: 'scoop', zip: '离线 zip 安装', unknown: '未知' }[channel];
 }

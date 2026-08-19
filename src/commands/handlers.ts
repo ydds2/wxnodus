@@ -323,9 +323,18 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const base = lines(' 更新检查 ', [
       ` 版本：${report.version}`,
       ` 安装渠道：${channelLabel(report.channel)}`,
+      ...(report.installMeta ? [` 安装包：${report.installMeta.app} v${report.installMeta.version}${report.installMeta.installedAt ? ` @ ${report.installMeta.installedAt}` : ''}`] : []),
       ...(report.git?.isRepo ? [` 仓库：HEAD ${report.git.head} @ ${report.git.date}（${report.git.clean ? '干净' : '有未提交改动'}）${report.git.remote ? '' : '——未配置 origin'}`] : []),
       ` 更新方式：${report.guidance}`,
     ]);
+    // zip 渠道记录过安装源（-Source 透传）→ 真实远程版本探测；失败诚实降级
+    if (report.installMeta?.source) {
+      const { probeRemoteVersion } = await import('./updateCheck.js');
+      const remote = await probeRemoteVersion(report.installMeta.source);
+      return base + (remote.ok
+        ? `\n 远程最新：${remote.version}（安装源 ${report.installMeta.source}）\n 升级：下载新版 zip → 解压 → 双击 install.bat 幂等覆盖（数据保留）`
+        : `\n 远程探测失败：${remote.message}（离线渠道诚实降级）`);
+    }
     if (!report.canAutoUpdate) return base + (args.includes('--yes') ? '\n --yes 不可用：仅 git 渠道 + 已配置 remote + 工作树干净时可执行（当前不满足，已拒绝）。' : '');
     if (!args.includes('--yes')) return base + '\n 可用 /update --yes 自动执行（git pull && npm install && npm run build，需确认）。';
     try {

@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { detectInstallChannel, findRepoRoot, channelGuidance, buildUpdateReport, probeGit } from '../src/commands/updateCheck.js';
+import { detectInstallChannel, findRepoRoot, channelGuidance, buildUpdateReport, probeGit, findInstallMeta, probeRemoteVersion } from '../src/commands/updateCheck.js';
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) { try { rmSync(d, { recursive: true, force: true }); } catch { /* 静默 */ } } });
@@ -79,5 +79,53 @@ describe('buildUpdateReport 报告汇总（真实 probeGit 降级路径）', () 
     const d = mkdtempSync(join(tmpdir(), 'wx-probe-'));
     dirs.push(d);
     expect(probeGit(d).isRepo).toBe(false);
+  });
+});
+
+describe('zip 渠道（install-meta）', () => {
+  it('findInstallMeta 上探命中 / 缺失 null / JSON 损坏 null / BOM 容忍', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-meta-'));
+    dirs.push(d);
+    mkdirSync(join(d, 'a', 'b', 'c'), { recursive: true });
+    writeFileSync(join(d, 'a', 'install-meta.json'), JSON.stringify({ app: 'wxnodus', version: '3.1.0', source: 'https://x.example/wxnodus-3.1.0.zip' }), 'utf8');
+    const meta = findInstallMeta(join(d, 'a', 'b', 'c', 'x.js'));
+    expect(meta).toMatchObject({ app: 'wxnodus', version: '3.1.0' });
+    expect(findInstallMeta(join(d, 'other', 'x.js'))).toBeNull();
+    writeFileSync(join(d, 'a', 'install-meta.json'), '{broken', 'utf8');
+    expect(findInstallMeta(join(d, 'a', 'b', 'c', 'x.js'))).toBeNull();
+    writeFileSync(join(d, 'a', 'install-meta.json'), '\uFEFF' + JSON.stringify({ app: 'wxnodus', version: '3.1.0' }), 'utf8');
+    expect(findInstallMeta(join(d, 'a', 'b', 'c', 'x.js'))).toMatchObject({ version: '3.1.0' });
+  });
+
+  it('detectInstallChannel 识别 zip 优先于 git', () => {
+    const d = mkdtempSync(join(tmpdir(), 'wx-zipch-'));
+    dirs.push(d);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, 'install-meta.json'), JSON.stringify({ app: 'wxnodus', version: '3.1.0' }), 'utf8');
+    expect(detectInstallChannel(join(d, 'dist', 'cli', 'index.js'))).toBe('zip');
+  });
+
+  it('probeRemoteVersion：HEAD 提取版本；非 https 拒绝；失败诚实', async () => {
+    const okFetch = (async () => new Response('', { status: 200, headers: { 'content-disposition': 'attachment; filename="wxnodus-3.2.0.zip"' } })) as unknown as typeof fetch;
+    const r1 = await probeRemoteVersion('https://x.example/wxnodus-3.2.0.zip', okFetch);
+    expect(r1.ok).toBe(true);
+    expect(r1.version).toBe('3.2.0');
+    const r2 = await probeRemoteVersion('http://x.example/a.zip', okFetch);
+    expect(r2.ok).toBe(false);
+    const badFetch = (async () => { throw new Error('net down'); }) as unknown as typeof fetch;
+    const r3 = await probeRemoteVersion('https://x.example/a.zip', badFetch);
+    expect(r3.ok).toBe(false);
+    expect(r3.message.length).toBeGreaterThan(0);
+  });
+
+  it('channelGuidance zip 分支 + buildUpdateReport 透出 installMeta', () => {
+    const g = channelGuidance('zip', null);
+    expect(g).toContain('install.ps1');
+    const d = mkdtempSync(join(tmpdir(), 'wx-rep-'));
+    dirs.push(d);
+    writeFileSync(join(d, 'install-meta.json'), JSON.stringify({ app: 'wxnodus', version: '3.1.0', source: 'https://x.example/wxnodus-3.1.0.zip' }), 'utf8');
+    const report = buildUpdateReport({ modulePath: join(d, 'dist', 'cli', 'index.js'), cwd: d });
+    expect(report.channel).toBe('zip');
+    expect(report.installMeta?.version).toBe('3.1.0');
   });
 });
