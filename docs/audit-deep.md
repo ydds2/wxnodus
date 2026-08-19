@@ -1137,3 +1137,5 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 3. **CI actions v5 + SHA ratchet（⑨ 维度加固，gemini `ci.yml:160-168` 风格）**：checkout/setup-node/upload-artifact/download-artifact 全部从浮动 v4 tag 固定到 v5 精确 SHA（`# ratchet:` 注释标注源 tag，防供应链漂移）；v5 行动作运行于 Node 24 runtime——消除 Node 20 弃用告警。Node 版本矩阵（20/22/24 × shard）留后续（engines >=22 单版本为明确支持口径）。
 
 **评分口径（诚实）**：931 维持——本轮为 ②③⑨ 加固不升档（② 冲 10 仍需真文本对象语法感知；③ 冲 9 需 turn 全文件集 + 交互查看器；⑨ 冲 10 需多版本矩阵）。
+
+**尾注（2026-08-19）**：本地九步门禁全绿（CI_GATE_EXIT=0）；远程 CI #32219348848 全绿（9m34s，`3e1a90a`——同轮验证 v5 SHA ratchet 后四个 actions 全部可用、Node 20 弃用告警消除）。
