@@ -11,6 +11,7 @@
 ### Fixed
 - **滚动强制拉底（2026-08-19）**：用户向上翻看时不再被强制拉回底部——根因：手动滚动断 sticky 后，虚拟化 clamp 追赶期间 scrollTop 可能瞬间回到 max，下一帧内容增长即被渲染器误判「用户回到底部」而重贴底（流式输出中翻看被反复拉底）。修复：渲染器加**手动滚动重贴底宽限**（`STICKY_REPIN_GRACE_MS=1200ms`，scrollTo/scrollBy 写入 `lastManualScrollAt`，宽限期内抑制位置跟随与 sticky 恢复；宽限过后用户仍停留在底部则自然恢复跟随）。新增回归测试 `packages/wxnodus-ink/src/ink/scroll-sticky-grace.test.ts`（断 sticky 位置保持 / 宽限抑制 / 显式 scrollToBottom 仍生效，3 条全绿）。
 - **输出降噪（2026-08-19）**：① 状态栏 📊 点击轮换 token 区间不再向 transcript 注入「token 区间已切换」sys 消息（反馈仅在状态栏段内体现，对话流不再被状态噪声刷屏）；② 工具调用默认从逐条展开改为**折叠单行摘要「▾ Tool calls (N)」**（点击展开逐条，对标同类 CLI 紧凑输出；`/details tools expanded` 或 config 可恢复展开）；③ **Todo 面板默认折叠**为单行「▸ Todo (N/M)」（点击展开逐条——长任务几十条 todo 不再刷屏）；④ **工具调用标签头尾截取**（edgePreview 头 24/尾 20 字符）替代 64 字符全文截断——PowerShell 长单行命令不再整串入行撑爆工具卡片（长命令行首尾信息保留、行宽有界）。
+- **`-p` 非交互模式流式输出（2026-08-19）**：此前 `wxnodus -p` 只在 agent.run 结束后一次性打印全文——长任务空屏干等分钟级无反馈；现订阅 agent.token 逐 token 实时写 stdout（对齐 claude -p / gemini -p / codex exec）；`--json` 模式仍输出完整 JSON 对象（不做流式）；`[steer]` 内部干预标记不进 stdout；无流式 token 到达时回退旧路径打印终稿。TUI 流式（16ms 批量渲染）原有链路不变。
 
 ## [3.2.0] - 2026-08-20
 

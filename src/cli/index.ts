@@ -605,7 +605,28 @@ if (pre.mode === 'error') {
           for (const m of r.missing) process.stderr.write(`wxnodus: 提及文件不存在（原文保留）：${m}\n`);
           for (const m of r.skipped) process.stderr.write(`wxnodus: 提及文件为二进制已跳过：${m}\n`);
         } catch { /* 展开失败按原文提交 */ }
-        const result = await agent.run(finalText);
+        // 2026-08-19 流式输出（对齐 claude -p / gemini -p / codex exec）：
+        // 此前 -p 只在 agent.run 结束后一次性 console.log 全文——长任务里用户
+        // 看着空屏等分钟级无反馈。现订阅 agent.token 实时写 stdout（--json 除外，
+        // JSON 需要完整对象）。[steer] 注入行是内部干预标记，不进 stdout。
+        let streamedAny = false
+        let streamedEndsNewline = false
+        const offToken = opts.json
+          ? null
+          : bus.on('agent.token', (e: any) => {
+              const t = String(e?.text ?? '')
+              if (!t) return
+              if (t.startsWith('\n[steer]')) return
+              streamedAny = true
+              streamedEndsNewline = t.endsWith('\n')
+              process.stdout.write(t)
+            })
+        const result = await agent.run(finalText)
+        offToken?.()
+        if (streamedAny) {
+          // 流式已输出全部正文——只补末尾换行（避免与 console.log 重复打印）
+          if (!streamedEndsNewline) process.stdout.write('\n')
+        }
         if (opts.json) {
           // Gemini --output-format json 的 stats 对齐：usage 为会话累计 token
           let usage: number | null = null;
@@ -633,7 +654,8 @@ if (pre.mode === 'error') {
             }
           }
           console.log(JSON.stringify({ ok: result.ok, text: result.text, turns: result.turns, interrupted: result.interrupted, usage }));
-        } else {
+        } else if (!streamedAny) {
+          // 无流式 token 到达（如纯工具任务/异常回退）——按旧路径打印终稿
           console.log(result.text);
         }
         // P1-2 退出码协议：0 成功｜1 失败（-p 分支）——W3-01 起走共享 completionTransport（interrupted → cancelled 130）
