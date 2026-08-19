@@ -1,3 +1,5 @@
+# 自托管 runner（2026-08-20）：hosted windows 镜像供给故障（免费档分钟耗尽——job 秒失败零日志）
+# → 改用本机 self-hosted runner（wxnodus-local-win）：数据不出机更彻底；机器需开机 CI 才可跑。
 name: CI
 
 # supremacy 2.4：GitHub Actions CI——门禁与本地 `npm run ci` 同源（九命令：typecheck×2 + 全量测试 +
@@ -29,7 +31,7 @@ concurrency:
 jobs:
   gate:
     # 构建 + 静态门禁（typecheck×2/build/发现/覆盖/lint/环）——产出 dist 供测试分片复用
-    runs-on: windows-2022
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
 
@@ -89,7 +91,7 @@ jobs:
 
   test:
     needs: gate
-    runs-on: windows-2022
+    runs-on: self-hosted
     strategy:
       fail-fast: false
       # 单版本（2026-08-19 N-01 终审）：Node 24.x 两次矩阵实验（#32245589517 / #32252786649）均全片
@@ -142,7 +144,7 @@ jobs:
           if (${{ matrix.shard }} -eq 1) { npm run test:known-failures }
 
   vscode-ext:
-    runs-on: windows-2022
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
 
@@ -171,7 +173,7 @@ jobs:
   # （-SkipPath 不污染 PATH）→ 运行安装产物 -p /status（完整组合根装配）→ journal 卸载。
   install-smoke:
     name: install-smoke (zip → install → run → uninstall)
-    runs-on: windows-2022
+    runs-on: self-hosted
     needs: gate
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
