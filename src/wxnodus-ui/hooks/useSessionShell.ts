@@ -1170,19 +1170,14 @@ export function useMainApp(gw: GatewayClient) {
   }, [gw, sys])
 
   // 状态栏 📊 点击：轮换 token 区间（与 /usage range 同链路，服务端持久化）。
+  // 2026-08-19 降噪：点击反馈只在状态栏段内体现（段标签即结果），
+  // 不再向 transcript 注入 sys 消息——此前每次点击都刷一条「token 区间已切换」
+  // 进对话流，用户回翻时全是状态噪声。
   const onCycleUsageRange = useCallback(() => {
-    cycleUsageRange(gw)
-      .then(raw => {
-        const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
-        if (o?.range) {
-          const label = o.range === 'today' ? '今日' : o.range === '7d' ? '近 7 天' : '近 30 天'
-          sys(`token 区间已切换：${label}`)
-        }
-      })
-      .catch(() => {
-        /* 静默——下次 message.complete 会再拉 */
-      })
-  }, [gw, sys])
+    cycleUsageRange(gw).catch(() => {
+      /* 静默——下次 message.complete 会再拉 */
+    })
+  }, [gw])
 
   const appActions = useMemo(
     () => ({

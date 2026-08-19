@@ -23,6 +23,12 @@ function isXtermJsHost(): boolean {
   return process.env.TERM_PROGRAM === 'vscode' || isXtermJs()
 }
 
+// 2026-08-19：手动滚动后的重贴底宽限。scrollTo/scrollBy 会断 sticky（stickyScroll=false）
+// 并写 node.lastManualScrollAt；虚拟化 clamp 追赶期间 scrollTop 可能瞬间回到 max，
+// 若无宽限会被误判为「用户回到底部」而重新 sticky——流式输出中向上翻看被强制拉底。
+// 宽限期内抑制位置跟随与 sticky 恢复；过后用户仍停留在底部则自然恢复跟随。
+const STICKY_REPIN_GRACE_MS = 1200
+
 // Per-frame scratch: set when any node's yoga position/size differs from
 // its cached value, or a child was removed. Read by ink.tsx to decide
 // whether the full-damage sledgehammer (PR #20120) is needed this frame.
@@ -826,7 +832,15 @@ function renderNodeToOutput(
 
         const atBottom = sticky || (grew && scrollTopBeforeFollow >= prevMaxScroll)
 
-        if (atBottom && (node.pendingScrollDelta ?? 0) >= 0) {
+        // 2026-08-19 手动滚动宽限：用户刚手动滚过（sticky 显式为 false）时，
+        // 虚拟化 clamp 追赶 / 高度缓存修正可能让 scrollTop 瞬间回到 max——
+        // 若无宽限，下一帧内容增长即被误判「用户回到底部」→ 重贴底，
+        // 流式输出中向上翻看被强制拉底。宽限期内抑制位置跟随与 sticky 恢复；
+        // 宽限过后用户仍停留在底部则自然恢复跟随。
+        const repinGrace =
+          node.stickyScroll === false && Date.now() - (node.lastManualScrollAt ?? 0) < STICKY_REPIN_GRACE_MS
+
+        if (atBottom && !repinGrace && (node.pendingScrollDelta ?? 0) >= 0) {
           node.scrollTop = maxScroll
           node.pendingScrollDelta = undefined
 

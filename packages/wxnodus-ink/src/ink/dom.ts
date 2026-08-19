@@ -54,6 +54,11 @@ export type DOMElement = {
   // are computed at render time and stored for imperative access. stickyScroll
   // auto-pins scrollTop to the bottom when content grows.
   scrollTop?: number
+  // 2026-08-19 手动滚动时间戳（scrollTo/scrollBy 写入）。渲染器的跟随/恢复
+  // 逻辑在 STICKY_REPIN_GRACE_MS 内抑制重贴底——虚拟化 clamp 追赶期间
+  // scrollTop 可能瞬间回到 max，若无宽限会被误判为「用户回到底部」而重新
+  // sticky，用户在流式输出中向上翻看时即被强制拉底。
+  lastManualScrollAt?: number
   // Accumulated scroll delta not yet applied to scrollTop. The renderer
   // drains this at SCROLL_MAX_PER_FRAME rows/frame so fast flicks show
   // intermediate frames instead of one big jump. Direction reversal

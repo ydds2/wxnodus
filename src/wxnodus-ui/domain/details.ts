@@ -7,8 +7,11 @@ export const SECTION_NAMES = ['thinking', 'tools', 'subagents', 'activity'] as c
 // Out-of-the-box per-section defaults — applied when the user hasn't pinned
 // an explicit override and layered ABOVE the global details_mode:
 //
-//   - thinking / tools: expanded — stream open so the turn reads like a
-//     live transcript (reasoning + tool calls side by side) instead of a
+//   - tools: collapsed（2026-08-19 降噪）——每回合收成一行「▾ Tool calls (N)」
+//     摘要（点击展开逐条），对标同类 CLI 紧凑输出：长任务里几十条工具调用
+//     不再刷屏，想细看时点开即可。
+//   - thinking: expanded — stream open so the turn reads like a live
+//     transcript (reasoning + tool calls side by side) instead of a
 //     wall of chevrons the user has to click every turn.
 //   - activity: hidden — ambient meta (gateway hints, terminal-parity
 //     nudges, background notifications) is noise for typical use.  Tool
@@ -22,7 +25,7 @@ export const SECTION_NAMES = ['thinking', 'tools', 'subagents', 'activity'] as c
 // or at runtime via `/details <name> collapsed|hidden`.
 const SECTION_DEFAULTS: SectionVisibility = {
   thinking: 'expanded',
-  tools: 'expanded',
+  tools: 'collapsed',
   activity: 'hidden'
 }
 

@@ -144,6 +144,7 @@ function ScrollBox({ children, ref, stickyScroll, ...style }: PropsWithChildren<
         // breaks stickiness. Render code checks ?? precedence.
         el.stickyScroll = false
         manualScrollAtRef.current = Date.now()
+        el.lastManualScrollAt = manualScrollAtRef.current
         el.pendingScrollDelta = undefined
         el.scrollAnchor = undefined
         el.scrollTop = Math.max(0, Math.floor(y))
@@ -158,6 +159,7 @@ function ScrollBox({ children, ref, stickyScroll, ...style }: PropsWithChildren<
 
         box.stickyScroll = false
         manualScrollAtRef.current = Date.now()
+        box.lastManualScrollAt = manualScrollAtRef.current
         box.pendingScrollDelta = undefined
         box.scrollAnchor = {
           el,
@@ -174,6 +176,7 @@ function ScrollBox({ children, ref, stickyScroll, ...style }: PropsWithChildren<
 
         el.stickyScroll = false
         manualScrollAtRef.current = Date.now()
+        el.lastManualScrollAt = manualScrollAtRef.current
         el.scrollAnchor = undefined
         el.pendingScrollDelta = (el.pendingScrollDelta ?? 0) + Math.floor(dy)
         scrollMutated(el)
