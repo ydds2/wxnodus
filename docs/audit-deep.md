@@ -1037,3 +1037,18 @@ WPF fixture（真实 Invoke/Selection 模式）+ notepad（真实 Value 模式�
 4. **场景生产会话**：use → config.settings 并入项目配置（B-05 分层——该 cwd 后续会话即场景生产会话）+ MCP 落 .mcp.json + 技能登记提示；projectConfig 增 writeProjectConfig/mergeProjectSettings 写入口。
 5. **后续**：自建插件托管市场待 wxnodus 公开项目后同步构建（用户决策在案）——当前 /market 消费开放生态 + /bundle 整合打包已闭环资源面。
 6. **验证**：本地九命令门禁全绿（全量 376 文件/2767 用例）；远程 CI **workflow #32198478712 全绿**（wall 9m19s）；push 经全局代理，`git ls-remote` 验证远端 = 本地 HEAD ea6c668。
+
+### 13.81 生产级阶段 1 收官轮（2026-08-19：分发闭环——自包含 zip 一键装/三源下载/首启四步清单/zip 渠道 /update/CI 安装冒烟）
+
+按 `docs/superpowers/specs/2026-08-19-production-readiness-design.md`（用户三决策在案：暂不公开、自包含 zip + 一键脚本、全量范围）与 `docs/superpowers/plans/2026-08-19-production-phase1-distribution.md` 执行，T1-T6 六个提交（3a24878→c6e3db7）全落地：
+
+1. **install.ps1 强化（3a24878）**：Node 18+ 预检（22 推荐 + nodejs.org/npmmirror 双指引，失败 INSTALLER_NODE_MISSING exit 1）· 用户 PATH 注册（-SkipPath 可关，去重）· `-Source` 透传 · 命令 shim `start.cmd` → `<appName>.cmd`（注入 `WXNODUS_DATA_DIR=%LOCALAPPDATA%\wxnodus`）· install-meta.json（**无 BOM UTF-8——PS 5.1 Set-Content 带 BOM 会炸 JSON.parse，实测抓出改 .NET WriteAllText**）· 同版本幂等提示 REINSTALL_SAME_VERSION · zip 内置 install.bat 双击向导（robocopy /XF 排除安装器工具自身）——5 契约用例（真实安装改走 -SkipPath）。
+2. **三源下载入口（b779355）**：`packaging/install-bootstrap.ps1`（checked-in 非生成物）——本地 zip / -Url（https 强制）/ -GitHub（gh auth status 门 + gh release download，Token 不落盘）；解包转调 zip 内 install.ps1 并透传 -TargetDir/-DryRun/-Source——3 内容契约用例。
+3. **/update zip 渠道（5b48754）**：`findInstallMeta`（沿模块路径上探 ≤5 层 + BOM 容忍 + 损坏返回 null）· detectInstallChannel zip 优先 · `probeRemoteVersion`（HEAD 4s 超时、仅 https、Content-Disposition 提取版本、注入式 fetch）· 处理器对 source 记录真实探测、失败诚实降级——update-check 14 用例 + commands 62 回归。
+4. **首启四步清单（739ad29）**：onboarding-required 时输出模型/密钥/代理/离线清单（i18n zh/en 双目录严格同键）+ `probeOutbound`（GitHub 连通 2.5s 超时，失败建议 /proxy）——纯函数 2 用例 + cli-first-run 全回归；严格类型收窄 FirstRunChecklistKey 过 tsc。
+5. **CI install-smoke job（dafd21e）**：gate 后新 job——freeze-candidate → package-installer（**版本须纯 SEMVER——0.0.0-ci 被 INSTALLER_VERSION_INVALID 拒，本地冒烟实测抓出改 0.0.1**）→ Expand-Archive → install.ps1 -SkipPath 真实安装 → `wxnodus.cmd -p /status` 完整组合根装配 → journal 卸载。**本机冒烟链先全链路实证**（INSTALLED → 运行产物输出「当前未配置模型密钥」诚实提示 → UNINSTALLED），再上 CI。
+6. **文档（dafd21e/c6e3db7）**：getting-started「一键安装」三源章节（开发者路径保留）；CHANGELOG 阶段 1 条目；docs-links 对账测试抓出 URL 假命令抽取（`https://` 双斜杠后 host 首段被当 /command）——改无 scheme 写法，测试契约不动。
+7. **typecheck:tests 红修复（c6e3db7）**：并发会话提交的 kernel-market/bundle 测试注入 fetchImpl 参数 `(url: string)` 与 `typeof fetch`（string|URL|Request）严格函数逆变不兼容——本地门禁抓出，参数收窄至全类型；此前远程绿疑为 node_modules 类型版本漂移（本轮以当前锁定状态修绿为准）。
+8. **验证**：`npm run ci` 本地九步全绿（CI_GATE_EXIT=0；全量 378 文件 / 0 失败）；远程 CI **workflow #32204666784 全绿**——gate / vscode-ext / test×3 / **install-smoke（zip → install → run → uninstall）** 六 job 全 success；push 经全局代理，`git ls-remote` 验证远端 = 本地 HEAD c6e3db7。
+
+**评分口径（诚实，不预支）**：⑧ 5→9 的 +36 仍卡「转公开」决策；本轮交付的是私有渠道真实可用的安装体验 + 转公开即可一键兑现的全部前置——931 维持，如实记录。
