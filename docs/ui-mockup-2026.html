@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WxNodus CLI UI 重设计原型（2026-08-19 规划演示）</title>
+<style>
+  :root, [data-theme="dark"] {
+    --bg:#0f1115; --panel:#161a22; --panel2:#1c2130; --border:#2c3550;
+    --text:#c9d1e3; --muted:#7a849c; --primary:#7DCFFF; --accent:#BB9AF7;
+    --ok:#9ece6a; --err:#f7768e; --warn:#e0af68;
+    --add:#3f6b4c; --addfg:#a9d4a0; --del:#6b3a3f; --delfg:#e5a6ab;
+    --sel:#22304d; --header:#1a2030;
+  }
+  [data-theme="light"] {
+    --bg:#f5f5f2; --panel:#ffffff; --panel2:#eef0f4; --border:#d4d8e0;
+    --text:#333a45; --muted:#8b94a3; --primary:#0b6ea8; --accent:#7a4fd0;
+    --ok:#4f8a3a; --err:#c2454f; --warn:#a8712e;
+    --add:#e2f3dc; --addfg:#3c6d31; --del:#f9e3e5; --delfg:#b03a47;
+    --sel:#d9e4f5; --header:#eceef4;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body {
+    font-family:"Cascadia Mono","JetBrains Mono",Consolas,"Courier New",monospace;
+    background:#0a0c10; color:var(--text); font-size:13px; line-height:1.5;
+    display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px;
+  }
+  [data-theme="light"] body { background:#d8dae0; }
+
+  /* ── 终端窗口 ── */
+  .term {
+    width:960px; max-width:96vw; height:640px; max-height:92vh;
+    background:var(--bg); border:1px solid var(--border); border-radius:8px;
+    display:flex; flex-direction:column; overflow:hidden; position:relative;
+    box-shadow:0 12px 40px rgba(0,0,0,.45);
+  }
+  .titlebar {
+    display:flex; align-items:center; gap:8px; padding:8px 12px;
+    background:var(--header); border-bottom:1px solid var(--border);
+    font-size:12px; color:var(--muted); user-select:none;
+  }
+  .dots { display:flex; gap:6px; }
+  .dots i { width:11px; height:11px; border-radius:50%; display:inline-block; }
+  .dots i:nth-child(1){background:#f7768e} .dots i:nth-child(2){background:#e0af68} .dots i:nth-child(3){background:#9ece6a}
+  .titlebar .sp { flex:1; }
+  .titlebar b { color:var(--text); font-weight:600; }
+  .tag { border:1px solid var(--border); border-radius:4px; padding:1px 7px; font-size:11px; color:var(--muted); }
+
+  /* ── L1 状态栏 ── */
+  .statusbar {
+    display:flex; align-items:center; gap:4px; padding:4px 10px;
+    background:var(--header); border-bottom:1px solid var(--border);
+    font-size:12px; white-space:nowrap; overflow:hidden; user-select:none;
+  }
+  .sb-item { padding:2px 8px; border-radius:4px; color:var(--text); cursor:pointer; }
+  .sb-item:hover { background:var(--sel); }
+  .sb-item .k { color:var(--muted); }
+  .sb-item.act { color:var(--accent); font-weight:700; }
+  .sb-mut { color:var(--muted); }
+  .sb-cost { color:var(--warn); }
+  .sb-sp { flex:1; }
+  .pet { color:var(--primary); animation:pulse 2.4s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+
+  /* ── L2 转录流 ── */
+  .stream { flex:1; overflow-y:auto; padding:10px 12px 8px; }
+  .msg { margin-bottom:12px; max-width:760px; }
+  .msg .role { font-weight:700; margin-bottom:2px; }
+  .msg.user .role { color:var(--primary); }
+  .msg.assistant .role { color:var(--accent); }
+  .msg .body { white-space:pre-wrap; }
+  .diffblock { margin-top:6px; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+  .diffblock .head { background:var(--panel2); padding:3px 10px; color:var(--muted); font-size:12px; border-bottom:1px solid var(--border); }
+  .diffblock .hunk { padding:2px 10px; }
+  .diffblock .add { background:var(--add); color:var(--addfg); }
+  .diffblock .del { background:var(--del); color:var(--delfg); }
+  .diffblock .ctx { color:var(--muted); }
+  .diffblock .hunkhdr { color:var(--primary); background:var(--panel2); padding:2px 10px; border-top:1px dashed var(--border); }
+  .reviewed { color:var(--ok); }
+
+  /* 行内弹层（附着消息行） */
+  .inline { margin-top:8px; border:1px solid var(--border); border-left:3px solid var(--warn); border-radius:6px; padding:8px 12px; background:var(--panel); max-width:640px; }
+  .inline .q { font-weight:700; margin-bottom:4px; }
+  .inline .opts { display:flex; gap:8px; }
+  .btn { border:1px solid var(--border); border-radius:5px; padding:3px 12px; cursor:pointer; background:var(--panel2); color:var(--text); }
+  .btn:hover { border-color:var(--accent); }
+  .btn.primary { border-color:var(--accent); color:var(--accent); font-weight:700; }
+  .btn.danger { border-color:var(--err); color:var(--err); }
+
+  /* ── L3 输入区 ── */
+  .prompt {
+    display:flex; align-items:center; gap:8px; padding:8px 12px;
+    border-top:1px solid var(--border); background:var(--header);
+  }
+  .prompt .gt { color:var(--primary); font-weight:700; }
+  .prompt .text { flex:1; color:var(--text); }
+  .prompt .caret { display:inline-block; width:8px; height:15px; background:var(--primary); vertical-align:-2px; animation:pulse 1.1s infinite; }
+  .badge { border:1px solid var(--border); border-radius:4px; padding:1px 8px; font-size:11px; color:var(--muted); }
+  .badge.vim { border-color:var(--accent); color:var(--accent); font-weight:700; }
+
+  /* ── L4 浮层（栈） ── */
+  .overlay { position:absolute; left:0; right:0; top:0; bottom:0; pointer-events:none; }
+  .workspace {
+    position:absolute; left:10px; right:10px; top:44px; bottom:56px;
+    background:var(--bg); border:1px solid var(--border); border-radius:8px;
+    display:flex; flex-direction:column; overflow:hidden; pointer-events:auto;
+    box-shadow:0 8px 30px rgba(0,0,0,.4);
+  }
+  .ws-head { display:flex; align-items:center; gap:6px; padding:6px 12px; background:var(--header); border-bottom:1px solid var(--border); }
+  .ws-tab { padding:3px 12px; border-radius:5px; cursor:pointer; color:var(--muted); }
+  .ws-tab.act { background:var(--sel); color:var(--text); font-weight:700; }
+  .ws-head .sp { flex:1; }
+  .ws-body { flex:1; overflow-y:auto; padding:8px 12px; font-size:12.5px; }
+  .ws-foot { padding:4px 12px; border-top:1px solid var(--border); background:var(--header); color:var(--muted); font-size:12px; }
+  .ws-foot b { color:var(--text); }
+  .filehdr { color:var(--accent); font-weight:700; margin:8px 0 2px; }
+  .tree { border:1px solid var(--border); border-radius:6px; padding:6px 10px; }
+  .tree .trow { padding:1px 4px; cursor:pointer; border-radius:3px; }
+  .tree .trow.on { background:var(--sel); color:var(--text); }
+  .tree .trow .n { color:var(--muted); }
+  .panel {
+    position:absolute; right:10px; top:44px; bottom:56px; width:340px;
+    background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    display:flex; flex-direction:column; overflow:hidden; pointer-events:auto;
+    box-shadow:-6px 0 24px rgba(0,0,0,.3);
+  }
+  .panel .ph { padding:8px 12px; border-bottom:1px solid var(--border); font-weight:700; color:var(--accent); }
+  .panel .row { display:flex; align-items:center; padding:5px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
+  .panel .row:hover { background:var(--sel); }
+  .panel .row .l { flex:1; }
+  .panel .row .v { color:var(--primary); }
+  .panel .row .b { color:var(--ok); font-weight:700; }
+  .panel .row.off .v { color:var(--muted); }
+  .modal {
+    position:absolute; left:50%; top:42%; transform:translate(-50%,-50%);
+    background:var(--panel); border:1px solid var(--err); border-radius:10px;
+    padding:16px 20px; min-width:380px; pointer-events:auto;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);
+  }
+  .modal .mt { font-weight:700; margin-bottom:6px; }
+  .modal .md { color:var(--muted); margin-bottom:12px; font-size:12.5px; }
+  .modal .opts { display:flex; gap:8px; justify-content:flex-end; }
+  .palette {
+    position:absolute; left:50%; top:34%; transform:translate(-50%,-50%);
+    width:480px; background:var(--panel); border:1px solid var(--border); border-radius:8px; pointer-events:auto;
+    box-shadow:0 10px 40px rgba(0,0,0,.5); overflow:hidden;
+  }
+  .palette input { width:100%; background:transparent; border:none; outline:none; color:var(--text); font:inherit; padding:8px 12px; border-bottom:1px solid var(--border); }
+  .palette .prow { display:flex; gap:8px; padding:4px 12px; }
+  .palette .prow.on { background:var(--sel); }
+  .palette .prow .c { color:var(--accent); min-width:90px; }
+  .palette .prow .d { color:var(--muted); }
+
+  /* 帮助条 */
+  .help {
+    position:absolute; bottom:56px; left:0; right:0; padding:3px 12px;
+    background:rgba(10,12,16,.85); color:var(--muted); font-size:11px;
+    border-top:1px solid var(--border); display:flex; gap:10px; flex-wrap:wrap; user-select:none;
+  }
+  .help b { color:var(--primary); font-weight:600; }
+  .anno {
+    position:absolute; left:12px; bottom:104px; font-size:11px; color:var(--muted);
+    background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:6px 10px;
+  }
+  .anno b { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="term" id="term">
+  <div class="titlebar">
+    <span class="dots"><i></i><i></i><i></i></span>
+    <b>WxNodus</b><span class="sp"></span>
+    <span class="tag">v3.1.0 · UI 重设计原型</span>
+    <span class="tag" onclick="toggleTheme()" style="cursor:pointer">主题切换 Ctrl+T</span>
+  </div>
+
+  <!-- L1 状态栏 -->
+  <div class="statusbar" id="statusbar">
+    <span class="sb-item act" title="点击切会话（P2 固定入口演示）" onclick="openPanel('config')"><span class="k">⎇</span> sess-7f3a <span class="sb-mut">· 商城重构</span></span>
+    <span class="sb-item" onclick="openPanel('config')"><span class="k">◈</span> deepseek-v4-pro</span>
+    <span class="sb-item"><span class="k">⚿</span> smart</span>
+    <span class="sb-item sb-cost">$0.0412</span>
+    <span class="sb-item sb-mut">⏱ 1 后台任务</span>
+    <span class="sb-sp"></span>
+    <span class="pet">✦</span>
+    <span class="sb-mut">Ctrl+X 会话</span>
+  </div>
+
+  <!-- L2 转录流 -->
+  <div class="stream" id="stream">
+    <div class="msg user"><div class="role">▸ 用户</div><div class="body">重构订单模块：把鉴权抽成独立模块，订单服务引用它</div></div>
+    <div class="msg assistant"><div class="role">◈ assistant</div><div class="body">已按需求分解为 2 个模块（auth → orders），逐模块生成完成。diff 如下（r 回滚 / m 标记已审 / t 文件树）：</div>
+      <div class="diffblock">
+        <div class="head">▶ server/auth/check.js（1 hunk）<span class="reviewed"> ✓</span></div>
+        <div class="hunkhdr">@@ -1,3 +1,5 @@ ✓</div>
+        <div class="ctx hunk"> // auth middleware</div>
+        <div class="add hunk">+const TOKEN = process.env.AUTH_TOKEN</div>
+        <div class="add hunk">+module.exports = check</div>
+      </div>
+      <div class="diffblock" style="margin-top:4px">
+        <div class="head">▶ server/index.js（2 hunks）</div>
+        <div class="hunkhdr" id="h1">@@ -4 +4 @@</div>
+        <div class="del hunk">-const legacy = require('./legacy')</div>
+        <div class="add hunk">+const check = require('./auth/check.js')</div>
+        <div class="hunkhdr" id="h2">@@ -12 +12 @@</div>
+        <div class="add hunk">+server.use(check)</div>
+      </div>
+    </div>
+    <div class="msg assistant"><div class="role">◈ assistant</div><div class="body">fs_edit 修改了 server/index.js——需要审批才能继续：</div>
+      <div class="inline" id="inlineApproval">
+        <div class="q">⚠ 审批：fs_edit（高影响）——修改 server/index.js（+2/-1）</div>
+        <div class="opts"><span class="btn primary" onclick="dismissInline()">y 允许一次</span><span class="btn" onclick="dismissInline()">s 本会话</span><span class="btn danger" onclick="dismissInline()">d 拒绝</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- L3 输入区 -->
+  <div class="prompt">
+    <span class="gt">▸</span>
+    <span class="text">继续接入支付模<span class="caret"></span></span>
+    <span class="badge vim">NORMAL</span>
+    <span class="badge">@ 补全</span>
+    <span class="badge">Ctrl+P 命令</span>
+  </div>
+
+  <div class="help">
+    <span><b>t</b> 文件树</span><span><b>w</b> 工作台标签</span><span><b>[/]</b> hunk 跳转</span>
+    <span><b>r</b> 回滚</span><span><b>m</b> 标记已审</span><span><b>c</b> 配置面板</span>
+    <span><b>Ctrl+P</b> 命令面板</span><span><b>Esc</b> 关闭浮层</span><span><b>Ctrl+T</b> 明暗主题</span>
+  </div>
+
+  <div class="anno" id="anno">L1 状态栏（浮层不可遮）· L2 转录流（行内审批附着消息行）· L3 输入区 · L4 浮层栈</div>
+
+  <!-- L4 浮层栈 -->
+  <div class="overlay" id="overlay"></div>
+</div>
+
+<script>
+  const $ = s => document.querySelector(s);
+  const overlay = $('#overlay');
+  const h1 = $('#h1'), h2 = $('#h2');
+  let treeOn = false, reviewed2 = false, ws = 'diff';
+
+  function openWorkspace() {
+    const tabs = ['diff','status','doctor'].map(t =>
+      `<span class="ws-tab ${t===ws?'act':''}" onclick="switchWs('${t}')">${t==='diff'?'diff 工作台':t==='status'?'status':'doctor'}</span>`).join('');
+    const body = ws === 'diff' ? diffBody() : (ws === 'status'
+      ? `<div class="filehdr">◈ 状态（结构化工作台——不再落 pager 文本）</div>
+         <div class="tree"><div class="trow">会话 sess-7f3a · 3 轮 · 成本 $0.0412</div><div class="trow">模型 deepseek-v4-pro · 模式 smart</div><div class="trow">离线 关 · 沙盒 Low IL · 代理 直连</div></div>`
+      : `<div class="filehdr">◈ 体检（9 项全绿——结构化分节）</div>
+         <div class="tree"><div class="trow"><span class="n">✓</span> 数据库 WAL 正常</div><div class="trow"><span class="n">✓</span> 密钥已配置（AES-256-GCM）</div><div class="trow"><span class="n">✓</span> 模型连通 340ms</div><div class="trow"><span class="n">✓</span> 磁盘空间充足</div></div>`);
+    overlay.innerHTML = `<div class="workspace">
+      <div class="ws-head">${tabs}<span class="sp"></span><span style="color:var(--muted)">Esc 关闭</span></div>
+      <div class="ws-body">${body}</div>
+      <div class="ws-foot">↑↓ 行 · <b>[/]</b> hunk 跳转 · <b>r</b> 回滚 · <b>m</b> 标记已审 · <b>t</b> 文件树 · <b>w</b> 标签 · <b>Esc</b> 关闭</div>
+    </div>`;
+  }
+  function diffBody() {
+    if (treeOn) {
+      return `<div class="filehdr">◈ diff 全文件集 · 文件树（↑↓ 选择 · Enter 跳转 · t 返回 diff）</div>
+        <div class="tree">
+          <div class="trow on">▸ server/auth/check.js <span class="n">（1 hunk · ✓ 已审）</span></div>
+          <div class="trow">&nbsp;&nbsp;server/index.js <span class="n">（2 hunks）</span></div>
+        </div>`;
+    }
+    return `<div class="filehdr">▶ server/auth/check.js（1 hunk）<span class="reviewed"> ✓</span></div>
+      <div class="diffblock" style="border:none"><div class="hunkhdr">@@ -1,3 +1,5 @@ ✓</div>
+      <div class="ctx hunk"> // auth middleware</div>
+      <div class="add hunk">+const TOKEN = process.env.AUTH_TOKEN</div>
+      <div class="add hunk">+module.exports = check</div></div>
+      <div class="filehdr">▶ server/index.js（2 hunks）</div>
+      <div class="diffblock" style="border:none">
+      <div class="hunkhdr" id="wh1">@@ -4 +4 @@</div>
+      <div class="del hunk">-const legacy = require('./legacy')</div>
+      <div class="add hunk">+const check = require('./auth/check.js')</div>
+      <div class="hunkhdr" id="wh2">@@ -12 +12 @@${reviewed2?' ✓':''}</div>
+      <div class="add hunk">+server.use(check)</div></div>`;
+  }
+  function switchWs(t) { ws = t; if (t==='diff') treeOn = false; openWorkspace(); }
+
+  function openPanel(kind) {
+    overlay.innerHTML = `<div class="panel">
+      <div class="ph">⚙ 配置面板（右分栏——不遮转录流）</div>
+      <div class="row"><span class="l">思考（reasoning）</span><span class="v b">on</span></div>
+      <div class="row"><span class="l">流式输出</span><span class="v b">on</span></div>
+      <div class="row off"><span class="l">完成响铃</span><span class="v">off</span></div>
+      <div class="row"><span class="l">主题</span><span class="v">tokyo-night</span></div>
+      <div class="row"><span class="l">Vim 模态</span><span class="v b">on</span></div>
+      <div class="row off"><span class="l">记忆收件箱</span><span class="v">off</span></div>
+      <div class="row" style="color:var(--muted)">↑↓ 导航 · Enter 布尔切换 · Esc 关闭</div>
+    </div>`;
+  }
+
+  function openModal() {
+    overlay.innerHTML = `<div class="modal">
+      <div class="mt">回滚 hunk 2/2？</div>
+      <div class="md">server/index.js——该 hunk 恢复为快照内容（快照留存，/undo fs restore 可再滚回）</div>
+      <div class="opts"><span class="btn danger" onclick="confirmRevert()">Enter 回滚</span><span class="btn" onclick="closeTop()">Esc 取消</span></div>
+    </div>`;
+  }
+  function confirmRevert() { overlay.innerHTML=''; reviewed2=false; treeOn=false; openWorkspace(); toast('已回滚 hunk 2/2——快照留存'); }
+  function dismissInline() { $('#inlineApproval').style.display='none'; toast('审批：已处理（演示）'); }
+
+  function openPalette() {
+    overlay.innerHTML = `<div class="palette">
+      <input placeholder="命令…（Ctrl+P 聚合一切动作）" autofocus>
+      <div class="prow on"><span class="c">/sessions</span><span class="d">会话浏览器（工作台）</span></div>
+      <div class="prow"><span class="c">/model</span><span class="d">切换模型</span></div>
+      <div class="prow"><span class="c">/diff</span><span class="d">diff 工作台</span></div>
+      <div class="prow"><span class="c">/config</span><span class="d">配置面板</span></div>
+      <div class="prow"><span class="c">/theme system</span><span class="d">终端取色主题</span></div>
+    </div>`;
+  }
+  function closeTop() { overlay.innerHTML=''; }
+  function toast(t) { const a=$('#anno'); a.innerHTML='<b>系统通知</b>：'+t; setTimeout(()=>{a.innerHTML='L1 状态栏（浮层不可遮）· L2 转录流（行内审批附着消息行）· L3 输入区 · L4 浮层栈';},1800); }
+
+  function toggleTheme() {
+    const cur = document.documentElement.dataset.theme==='light'?'dark':'light';
+    document.documentElement.dataset.theme=cur;
+    toast('主题：'+cur);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { overlay.innerHTML=''; e.preventDefault(); return; }
+    if (e.ctrlKey && e.key.toLowerCase()==='p') { e.preventDefault(); openPalette(); return; }
+    if (e.ctrlKey && e.key.toLowerCase()==='t') { e.preventDefault(); toggleTheme(); return; }
+    if (!overlay.innerHTML) { if (e.key==='d') { openWorkspace(); e.preventDefault(); } if (e.key==='c') { openPanel(); } return; }
+    if (overlay.querySelector('.workspace')) {
+      if (e.key==='t') { treeOn=!treeOn; openWorkspace(); }
+      else if (e.key==='w') { switchWs(ws==='diff'?'status':ws==='status'?'doctor':'diff'); }
+      else if (e.key==='r') { openModal(); }
+      else if (e.key==='m') { reviewed2=!reviewed2; treeOn=false; openWorkspace(); toast(reviewed2?'已标记审阅 hunk 2/2':'已取消审阅标记'); }
+      e.preventDefault();
+    }
+  });
+
+  // 初始：直接展示 diff 工作台（演示主场景）
+  openWorkspace();
+</script>
+</body>
+</html>
