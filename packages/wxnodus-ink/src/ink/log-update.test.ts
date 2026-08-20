@@ -299,4 +299,79 @@ describe('LogUpdate.render conhost batch path (2026-08-19)', () => {
     const moves = diff.filter(p => p.type === 'cursorTo').length
     expect(moves).toBeLessThan(w * h)
   })
+
+  it('never writes the last column (2026-08-19 pending-wrap 行漂移防护)', () => {
+    const w = 20
+    const h = 1
+    const prev = mkScreen(w, h)
+    paint(prev, 0, 'AAAAAAAAAAAAAAAAAA') // 18 列，末列前
+    const next = mkScreen(w, h)
+    paint(next, 0, 'BBBBBBBBBBBBBBBBBBBB') // 写满 20 列（末列有内容）
+    prev.damage = undefined
+    next.damage = { x: 0, y: 0, width: w, height: h }
+
+    const log = new LogUpdate({ isTTY: true, stylePool })
+    const diff = log.render(mkFrame(prev, w, h + 1, 0), mkFrame(next, w, h + 1, 0), true, false)
+    const out = stdoutOnly(diff)
+
+    // 末列（第 20 列）的字符绝不写入——写满末列触发 conhost pending-wrap 行漂移
+    // 19 个 B 出现（col 0..18），第 20 个 B（末列）被丢弃
+    expect(out).toContain('B'.repeat(19))
+    expect(out).not.toContain('B'.repeat(20))
+
+    const lastColumnOnly = mkScreen(w, h)
+    paint(lastColumnOnly, 0, 'AAAAAAAAAAAAAAAAAAAB')
+    lastColumnOnly.damage = { x: w - 1, y: 0, width: 1, height: h }
+    const lastColumnDiff = log.render(
+      mkFrame(prev, w, h + 1, 0),
+      mkFrame(lastColumnOnly, w, h + 1, 0),
+      true,
+      false
+    )
+
+    expect(stdoutOnly(lastColumnDiff)).not.toContain('B')
+  })
+
+  it('scroll frame repaints the whole scrollHint region (2026-08-19 拉顶修复)', () => {
+    // ScrollBox 滚动帧：blit+shift 后 damage 只覆盖新滚入的底部边行，
+    // 顶部滚入行不在 damage 内——无 DECSTBM 的 conhost 上必须整区重绘，
+    // 否则顶部行内容缺失（真机复现「运行中拉顶/锁死在首页」）。
+    const w = 20
+    const h = 6
+    const prev = mkScreen(w, h)
+    paint(prev, 0, 'OLDTOP') // 滚出区（旧顶行，滚出可视区）
+    paint(prev, 1, 'MOVEDUP') // 将滚入顶部可视区
+    paint(prev, 2, 'STABLE2')
+    paint(prev, 3, 'STABLE3')
+    paint(prev, 4, 'STABLE4')
+    paint(prev, 5, 'STABLE5')
+
+    const next = mkScreen(w, h)
+    paint(next, 0, 'MOVEDUP') // 内容整体上移 1 行
+    paint(next, 1, 'STABLE2')
+    paint(next, 2, 'STABLE3')
+    paint(next, 3, 'STABLE4')
+    paint(next, 4, 'STABLE5')
+    paint(next, 5, 'NEWROW')
+    // 真实管线：prev.screen 是上一帧的 OUTPUT（resetScreen 每帧清 damage），
+    // 滚动快路径只给 next 标底部边行 damage（顶部滚入行不在 damage 内）
+    prev.damage = undefined
+    next.damage = { x: 0, y: 4, width: w, height: 2 }
+
+    const log = new LogUpdate({ isTTY: true, stylePool })
+    const diff = log.render(
+      mkFrame(prev, w, h + 1, 0),
+      { ...mkFrame(next, w, h + 1, h - 1), scrollHint: { top: 0, bottom: 4, delta: 1 } },
+      true,
+      false
+    )
+    const out = stdoutOnly(diff)
+
+    // 顶部滚入行必须被重绘（无 DECSTBM 兜底时这是唯一绘制机会）
+    expect(out).toContain('MOVEDUP')
+    // 滚动区各行全部重绘（STABLE2 亦被移位，需重写）
+    expect(out).toContain('STABLE2')
+    // 不发生整屏重置（仍在区域内，无需 clearTerminal）
+    expect(diff.some(p => p.type === 'clearTerminal')).toBe(false)
+  })
 })

@@ -659,12 +659,34 @@ function renderConhostDiffRows(
     }
   })
 
+  // 滚动帧整区重绘（2026-08-19「运行中拉顶/锁死在首页」根因修复）：ScrollBox
+  // 滚动时 blit+shift 只把新帧写进模型（next.screen 已含移位内容），damage 只
+  // 覆盖新滚入的边行——diffEach 受 damage 门控，滚动区内其余行不会被检查，顶部
+  // 滚入行永远不被绘制（内容缺行，视觉「跳顶」）。现代终端有 DECSTBM 硬件滚动
+  // 兜底（像素随终端滚动正确上移），conhost 无此能力——必须显式把整个滚动区
+  // 并入脏行集合逐行重绘，等价于 DECSTBM 的整区刷新。scrollHint 仅 alt-screen
+  // 产生（renderer.ts），该模式下 viewportY≤0，区域行全部可达，不会误触重置。
+  const hint = next.scrollHint
+  if (hint && hint.delta !== 0 && hint.top >= 0 && hint.bottom >= hint.top) {
+    const regionBottom = Math.min(hint.bottom, Math.min(prev.screen.height, next.screen.height) - 1)
+
+    for (let y = hint.top; y <= regionBottom; y += 1) {
+      dirty.set(y, { min: 0, max: screenWidth - 1 })
+    }
+  }
+
   if (needsFullReset) {
     return true
   }
 
   const writeSegment = (y: number, fromX: number, toX: number, collectTailTrim: boolean) => {
-    const maxX = Math.min(toX, screenWidth - 1) // 末列保护
+    // 末列永不写（2026-08-19「拉顶」根因修复）：写满最后一列会触发 conhost
+    // pending-wrap 行漂移（真机实测，见 6b25a2f——上一版 39edf12 把上限放宽回
+    // screenWidth-1 重新引入漂移）。右缘 1 列留空；宽字符头部落在 w-2 时由头部
+    // 写入连带画满两格（光标进 pending-wrap 由行尾 \r 复位），不单独写末列。
+    const maxWritableX = screenWidth - 2
+    if (fromX > maxWritableX) return
+    const maxX = Math.min(toX, maxWritableX)
     moveCursorTo(screen, fromX, y, viewportY)
 
     let currentStyleId = stylePool.none
