@@ -1,6 +1,8 @@
 // tests/docs-links.test.ts — supremacy 2.3 用户文档三件套链接契约
 // 契约：README 引用三件套；三件套文件存在且互相引用；examples.md 中提到的命令全部真实注册
 //（文档不撒谎——命令契约与 SLASH 注册表对账）
+// V4.0 迁移暂缓（2026-08-21）：用户裁决「文档仅保留本会话产生的文档」，三件套未随迁。
+// V4-M0 任务：重写为 V4 文档集契约（docs/ 三份计划 + 输出 spec 的链接与命令对账）后恢复。
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,7 +10,7 @@ import { SLASH } from '../src/commands/registry.js';
 
 const read = (p: string) => readFileSync(p, 'utf8');
 
-describe('用户文档三件套（docs/getting-started|troubleshooting|examples）', () => {
+describe.skip('用户文档三件套（docs/getting-started|troubleshooting|examples）', () => {
   const files = {
     readme: read('README.md'),
     gs: read('docs/getting-started.md'),
