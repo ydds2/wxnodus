@@ -1,0 +1,230 @@
+name: CI
+
+# supremacy 2.4：GitHub Actions CI——门禁与本地 `npm run ci` 同源（九命令：typecheck×2 + 全量测试 +
+# known-failures + 发现/覆盖检查 + lint + 环检查 + 构建），另加 packages/vscode-ext 独立门禁与 vsix 工件。
+# 注意：vscode-ext 由独立 job 门禁覆盖，根 tsconfig.tests.json 不扫 packages/vscode-ext（其 'vscode' 模块
+# 类型仅在自身 node_modules 中——根门禁扫描会因安装顺序而红，2026-08-18 首轮实测修复）。
+#
+# 效率演进（2026-08-18）：concurrency cancel-in-progress（只验最新 HEAD）+ paths-ignore（纯文档不跑）+
+# workflow_dispatch（手动兜底）+ 并行化拆分（vscode-ext ∥ gate 并行；test 三分片 needs gate 复用 dist/ink-dist
+# 工件——三片互并、串在 gate 后）——单轮 wall 由 ~14 分钟压到 ~8.5 分钟（实测 #32179602007）。
+
+on:
+  push:
+    branches: [main, master]
+    # 效率：纯文档提交（docs/CHANGELOG/README）不触发全量门禁——代码零变化零价值
+    paths-ignore:
+      - 'docs/**'
+      - 'CHANGELOG.md'
+      - 'README.md'
+  pull_request:
+  # 手动触发兜底（webhook 异常时 gh workflow run CI --ref master 可强制起跑）
+  workflow_dispatch:
+
+# 效率：新提交到来即取消排队/进行中的旧运行——只验最新 HEAD
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    # 构建 + 静态门禁（typecheck×2/build/发现/覆盖/lint/环）——产出 dist 供测试分片复用
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
+        with:
+          node-version: 22.18.0
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Exempt Defender scanning (runner perf)
+        shell: pwsh
+        run: |
+          try { Add-MpPreference -ExclusionPath 'D:\a' -ErrorAction SilentlyContinue } catch {}
+          try { Add-MpPreference -ExclusionPath (Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp') -ErrorAction SilentlyContinue } catch {}
+          foreach ($p in 'powershell.exe','pwsh.exe','node.exe','cmd.exe','conhost.exe') {
+            try { Add-MpPreference -ExclusionProcess $p -ErrorAction SilentlyContinue } catch {}
+          }
+
+      - name: Static gate + build (no tests)
+        shell: pwsh
+        # 反恒绿：7 条命令拆独立 step——pwsh 单 step 多命令只有末条退出码生效，
+        # 曾存在 typecheck/lint 失败被 check:cycles 吞掉的恒绿漏洞（2026-08-19 审计修复）
+        run: |
+          $ciTmp = Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp'
+          New-Item -ItemType Directory -Force -Path $ciTmp | Out-Null
+          $env:TMP = $ciTmp; $env:TEMP = $ciTmp
+          $env:WXNODUS_LANG = 'zh-CN'
+          npm run typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run typecheck:tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run check:test-discovery
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run check:requirement-coverage
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run lint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run check:cycles
+
+      - name: Upload dist artifact (test shards reuse)
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # ratchet:actions/upload-artifact@v5
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+
+      - name: Upload ink dist artifact (ui 测试解析 packages/wxnodus-ink/dist/entry-exports.js)
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # ratchet:actions/upload-artifact@v5
+        with:
+          name: ink-dist
+          path: packages/wxnodus-ink/dist
+          if-no-files-found: error
+
+  test:
+    needs: gate
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      # 单版本（2026-08-19 N-01 终审）：Node 24.x 两次矩阵实验（#32245589517 / #32252786649）均全片
+      # 原生 teardown 崩溃（node::RemoveEnvironmentCleanupHook assertion——better-sqlite3/sqlite-vec
+      # 上游预编译的 Node 24 ABI teardown bug，依赖 11.10.0+vec 0.1.9 仍复现）——非我方层面可修；
+      # engines 维持 >=22 <24；解锁路径：上游原生栈 Node 24 预编译成熟后重开矩阵。
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
+        with:
+          node-version: 22.18.0
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
+        with:
+          name: dist
+          path: dist
+
+      - name: Download ink dist artifact
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
+        with:
+          name: ink-dist
+          path: packages/wxnodus-ink/dist
+
+      - name: Exempt Defender scanning (runner perf)
+        shell: pwsh
+        run: |
+          try { Add-MpPreference -ExclusionPath 'D:\a' -ErrorAction SilentlyContinue } catch {}
+          foreach ($p in 'powershell.exe','pwsh.exe','node.exe','cmd.exe','conhost.exe') {
+            try { Add-MpPreference -ExclusionProcess $p -ErrorAction SilentlyContinue } catch {}
+          }
+
+      - name: Test shard ${{ matrix.shard }}/3 (+ known-failures on shard 1)
+        shell: pwsh
+        run: |
+          $ciTmp = Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp'
+          New-Item -ItemType Directory -Force -Path $ciTmp | Out-Null
+          $env:TMP = $ciTmp; $env:TEMP = $ciTmp
+          $env:WXNODUS_LANG = 'zh-CN'
+          npx vitest run --config vitest.config.ts --shard=${{ matrix.shard }}/3
+          # 反恒绿：vitest 失败必须立刻传播——曾被随后的 known-failures 绿退出码吞掉（2026-08-19 审计修复）
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (${{ matrix.shard }} -eq 1) { npm run test:known-failures }
+
+  vscode-ext:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
+        with:
+          node-version: 22.18.0
+          cache: npm
+
+      - name: Install vscode-ext dependencies
+        run: npm --prefix packages/vscode-ext install
+
+      - name: vscode-ext typecheck + tests
+        run: npm --prefix packages/vscode-ext run typecheck && npm --prefix packages/vscode-ext run test
+
+      - name: Package vscode-ext (vsix)
+        run: npm --prefix packages/vscode-ext run package
+
+      - name: Upload vsix artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # ratchet:actions/upload-artifact@v5
+        with:
+          name: wxnodus-vscode-vsix
+          path: packages/vscode-ext/wxnodus-vscode.vsix
+          if-no-files-found: error
+
+  # 生产级阶段 1（分发闭环）：全新 runner 模拟「其他电脑」——zip 构建 → install.ps1 真实安装
+  # （-SkipPath 不污染 PATH）→ 运行安装产物 -p /status（完整组合根装配）→ journal 卸载。
+  install-smoke:
+    name: install-smoke (zip → install → run → uninstall)
+    runs-on: windows-latest
+    needs: gate
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # ratchet:actions/checkout@v5
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # ratchet:actions/setup-node@v5
+        with:
+          node-version: 22.18.0
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
+        with:
+          name: dist
+          path: dist
+
+      - name: Exempt Defender scanning (runner perf)
+        shell: pwsh
+        run: |
+          try { Add-MpPreference -ExclusionPath 'D:\a' -ErrorAction SilentlyContinue } catch {}
+          foreach ($p in 'powershell.exe','pwsh.exe','node.exe','cmd.exe','conhost.exe') {
+            try { Add-MpPreference -ExclusionProcess $p -ErrorAction SilentlyContinue } catch {}
+          }
+
+      - name: Build installer zip (freeze candidate → package)
+        shell: pwsh
+        run: |
+          $ciTmp = Join-Path $env:LOCALAPPDATA 'wxnodus-ci-tmp'
+          New-Item -ItemType Directory -Force -Path $ciTmp | Out-Null
+          $env:TMP = $ciTmp; $env:TEMP = $ciTmp
+          $env:WXNODUS_LANG = 'zh-CN'
+          node --import tsx scripts/freeze-candidate.ts --run install-smoke
+          npm exec -- tsx scripts/package-installer.ts --candidate artifacts/release-evidence/install-smoke/candidate.json --name wxnodus --version 0.0.1 --out dist-installer
+
+      - name: Real install (install.ps1, -SkipPath)
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist-installer -Filter '*.zip' | Select-Object -First 1
+          $unpack = Join-Path $env:RUNNER_TEMP 'wxsmoke-unpack'
+          Expand-Archive -Path $zip.FullName -DestinationPath $unpack -Force
+          $target = Join-Path $env:RUNNER_TEMP 'wxsmoke-installed'
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $unpack 'install.ps1') -TargetDir $target -SkipPath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run installed binary (full composition via -p /status)
+        shell: cmd
+        run: |
+          call "%RUNNER_TEMP%\wxsmoke-installed\wxnodus.cmd" --data-dir "%RUNNER_TEMP%\wxsmoke-data" -p "/status"
+
+      - name: Uninstall (journal-only)
+        shell: pwsh
+        run: |
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path (Join-Path $env:RUNNER_TEMP 'wxsmoke-unpack') 'install.ps1') -TargetDir (Join-Path $env:RUNNER_TEMP 'wxsmoke-installed') -Uninstall
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

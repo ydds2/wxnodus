@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "waveScope": "wave0",
+  "gate": "B",
+  "requirementIds": [
+    "R10",
+    "R15",
+    "R16",
+    "R18",
+    "R20"
+  ],
+  "profiles": [
+    "core",
+    "standard",
+    "full-local-ai"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "capabilityIds": [
+    "wave0-gate-b"
+  ],
+  "binding": {
+    "environment": {
+      "path": "docs/superpowers/evidence/wave0/attachments/environment.json",
+      "sha256": "2fd8225a2a72cb6a96541aeb5bcbe79f1397da6c9238209b75499390d4691a9d",
+      "kind": "environment"
+    },
+    "policyManifest": {
+      "path": "docs/superpowers/manifests/v3-policy.json",
+      "sha256": "0812344a8fe7895f2576d13991d265d104a10574db501a110f8b03e1531fffb9",
+      "kind": "policy-manifest",
+      "manifestChecksum": "a8289474edb89702e4f69a3943b3b3553c20585f8e1f4c8795da19750d37bf04"
+    },
+    "artifact": {
+      "path": "docs/superpowers/evidence/wave0/candidate-artifact.json",
+      "sha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
+      "kind": "artifact",
+      "artifactSha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
+      "commit": "50089faa0def6c8c338fb6b5863e2fcd8da47528"
+    },
+    "bindingSha256": "79051f70ce712a50f06358e971dd9f15d4b2f7996f22d489fcc02d41cc8fed84"
+  },
+  "status": "passed",
+  "commands": [
+    {
+      "executable": "npm.cmd",
+      "args": [
+        "run",
+        "check:test-discovery"
+      ],
+      "exitCode": 0,
+      "stdoutAttachment": "docs/superpowers/evidence/wave0/attachments/run-jenuiv-stdout.txt",
+      "stderrAttachment": "docs/superpowers/evidence/wave0/attachments/run-jenuiv-stderr.txt"
+    },
+    {
+      "executable": "npm.cmd",
+      "args": [
+        "run",
+        "test:all"
+      ],
+      "exitCode": 0,
+      "stdoutAttachment": "docs/superpowers/evidence/wave0/attachments/run-h0o7ho-stdout.txt",
+      "stderrAttachment": "docs/superpowers/evidence/wave0/attachments/run-h0o7ho-stderr.txt"
+    },
+    {
+      "executable": "npm.cmd",
+      "args": [
+        "run",
+        "test:known-failures"
+      ],
+      "exitCode": 0,
+      "stdoutAttachment": "docs/superpowers/evidence/wave0/attachments/run-63r2sc-stdout.txt",
+      "stderrAttachment": "docs/superpowers/evidence/wave0/attachments/run-63r2sc-stderr.txt"
+    }
+  ],
+  "attachments": [
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/run-jenuiv-stdout.txt",
+      "sha256": "1855985c427b869270831949150ec55a4f122fafca6bfc962d465997bc487d6b",
+      "kind": "stdout"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/run-jenuiv-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kind": "stderr"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/run-h0o7ho-stdout.txt",
+      "sha256": "8cfaaa71cf64c6f55ac1aa403fa35d8d31ede16db52fa24752c6d7c6b656f631",
+      "kind": "stdout"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/run-h0o7ho-stderr.txt",
+      "sha256": "c02986d9084136d5a6a5f01d6d23feb377838f12fbaf58194f58b8598c4c0a03",
+      "kind": "stderr"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/run-63r2sc-stdout.txt",
+      "sha256": "dba70880f135fbfbc1ca9d99a7ae04c92cdb56b9a36fc0542a44763e166ce6a2",
+      "kind": "stdout"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/run-63r2sc-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kind": "stderr"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/environment.json",
+      "sha256": "2fd8225a2a72cb6a96541aeb5bcbe79f1397da6c9238209b75499390d4691a9d",
+      "kind": "environment"
+    },
+    {
+      "path": "docs/superpowers/manifests/v3-policy.json",
+      "sha256": "0812344a8fe7895f2576d13991d265d104a10574db501a110f8b03e1531fffb9",
+      "kind": "policy-manifest"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/candidate-artifact.json",
+      "sha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
+      "kind": "artifact"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+node_modules/
+dist/
+data/
+*.log
+.tmp/
+.zcode/
+.playwright-mcp/
+artifacts/
+
+# W3 recovery drill 运行产物（每次 drill 真实重演产生：config 回滚备份 + drill 数据库 + 恢复 receipt）
+.wxnodus/wave3-config.json*
+.wxnodus/wave3-drill.db
+.wxnodus/*.db
+migrations/
+
+# fixture 构建产物（验收机现场构建——锁哈希核验，不入库）
+tests/fixtures/windows/uia/*/bin/
+tests/fixtures/windows/uia/*/obj/
+tests/fixtures/windows/uia/electron/node_modules/
+tests/fixtures/windows/uia/electron/dist/
+scripts/provisioned-runner.json
+
+# packages/vscode-ext 本地构建产物（supremacy 2.1——依赖独立 npm install，不入库）
+packages/vscode-ext/node_modules/
+packages/vscode-ext/dist/
+packages/vscode-ext/*.vsix
+.tmp-osbx-probe/
+# 提权实测产物（管理员终端运行 scripts/probe-elevated.cmd 生成——结果贴回会话后删除）
+elevated-probe-result.txt
+sbx-write-test.txt
+
+# 安装包构建产物（scripts/package-installer.ts → dist-installer/）
+dist-installer/
+
+# 测试曾写仓库根目录的探针产物（kernel-agent 测试已改临时目录——防御性忽略防回归）
+lowrisk-target.txt
+review-target.txt

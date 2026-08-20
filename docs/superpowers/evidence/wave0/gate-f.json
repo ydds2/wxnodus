@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "waveScope": "wave0",
+  "gate": "F",
+  "requirementIds": [
+    "R10",
+    "R15",
+    "R16"
+  ],
+  "profiles": [
+    "core",
+    "standard",
+    "full-local-ai"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "capabilityIds": [
+    "wave0-gate-f"
+  ],
+  "binding": {
+    "environment": {
+      "path": "docs/superpowers/evidence/wave0/attachments/environment.json",
+      "sha256": "2fd8225a2a72cb6a96541aeb5bcbe79f1397da6c9238209b75499390d4691a9d",
+      "kind": "environment"
+    },
+    "policyManifest": {
+      "path": "docs/superpowers/manifests/v3-policy.json",
+      "sha256": "0812344a8fe7895f2576d13991d265d104a10574db501a110f8b03e1531fffb9",
+      "kind": "policy-manifest",
+      "manifestChecksum": "a8289474edb89702e4f69a3943b3b3553c20585f8e1f4c8795da19750d37bf04"
+    },
+    "artifact": {
+      "path": "docs/superpowers/evidence/wave0/candidate-artifact.json",
+      "sha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
+      "kind": "artifact",
+      "artifactSha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
+      "commit": "50089faa0def6c8c338fb6b5863e2fcd8da47528"
+    },
+    "bindingSha256": "79051f70ce712a50f06358e971dd9f15d4b2f7996f22d489fcc02d41cc8fed84"
+  },
+  "status": "passed",
+  "commands": [
+    {
+      "executable": "node",
+      "args": [
+        "scripts/generate-policy-manifest.mjs",
+        "--check"
+      ],
+      "exitCode": 0,
+      "stdoutAttachment": "docs/superpowers/evidence/wave0/attachments/run-904hm0-stdout.txt",
+      "stderrAttachment": "docs/superpowers/evidence/wave0/attachments/run-904hm0-stderr.txt"
+    },
+    {
+      "executable": "npm.cmd",
+      "args": [
+        "exec",
+        "--",
+        "vitest",
+        "run",
+        "tests/policy-manifest.test.ts"
+      ],
+      "exitCode": 0,
+      "stdoutAttachment": "docs/superpowers/evidence/wave0/attachments/run-dmfvs0-stdout.txt",
+      "stderrAttachment": "docs/superpowers/evidence/wave0/attachments/run-dmfvs0-stderr.txt"
+    }
+  ],
+  "attachments": [
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/run-904hm0-stdout.txt",
+      "sha256": "bb26d026d800bb68199586cdf18a0bd47c55fb8d2a0ff3ebf5ed7d2c1730453c",
+      "kind": "stdout"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/run-904hm0-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kind": "stderr"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/run-dmfvs0-stdout.txt",
+      "sha256": "e86a73794a8472a057c6dbb57eed9d84d3958cbe52c98f2a83b3081c84122453",
+      "kind": "stdout"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/run-dmfvs0-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kind": "stderr"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/environment.json",
+      "sha256": "2fd8225a2a72cb6a96541aeb5bcbe79f1397da6c9238209b75499390d4691a9d",
+      "kind": "environment"
+    },
+    {
+      "path": "docs/superpowers/manifests/v3-policy.json",
+      "sha256": "0812344a8fe7895f2576d13991d265d104a10574db501a110f8b03e1531fffb9",
+      "kind": "policy-manifest"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/candidate-artifact.json",
+      "sha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
+      "kind": "artifact"
+    }
+  ]
+}

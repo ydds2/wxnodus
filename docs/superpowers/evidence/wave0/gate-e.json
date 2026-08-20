@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "waveScope": "wave0",
+  "gate": "E",
+  "requirementIds": [
+    "R07",
+    "R08"
+  ],
+  "profiles": [
+    "core",
+    "standard",
+    "full-local-ai"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "capabilityIds": [
+    "voice-runtime",
+    "computer-use"
+  ],
+  "binding": {
+    "environment": {
+      "path": "docs/superpowers/evidence/wave0/attachments/environment.json",
+      "sha256": "2fd8225a2a72cb6a96541aeb5bcbe79f1397da6c9238209b75499390d4691a9d",
+      "kind": "environment"
+    },
+    "policyManifest": {
+      "path": "docs/superpowers/manifests/v3-policy.json",
+      "sha256": "0812344a8fe7895f2576d13991d265d104a10574db501a110f8b03e1531fffb9",
+      "kind": "policy-manifest",
+      "manifestChecksum": "a8289474edb89702e4f69a3943b3b3553c20585f8e1f4c8795da19750d37bf04"
+    },
+    "artifact": {
+      "path": "docs/superpowers/evidence/wave0/candidate-artifact.json",
+      "sha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
+      "kind": "artifact",
+      "artifactSha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
+      "commit": "50089faa0def6c8c338fb6b5863e2fcd8da47528"
+    },
+    "bindingSha256": "79051f70ce712a50f06358e971dd9f15d4b2f7996f22d489fcc02d41cc8fed84"
+  },
+  "status": "not_applicable",
+  "unreachableEvidenceIds": [
+    "voice-runtime",
+    "computer-use"
+  ],
+  "reasonCode": "CAPABILITY_NOT_DELIVERED_IN_WAVE_SCOPE",
+  "attachments": [
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/unreachable-e-voice-runtime.json",
+      "sha256": "35743823432c327d3a0bb640bf753456150045f35211fa7c05b9924057938f8f",
+      "kind": "unreachable-capability"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/unreachable-e-computer-use.json",
+      "sha256": "ff9a844fce5d15b24bb8366fb1ae2ed7717c3535e1f9c5fd9865ae5819efae8b",
+      "kind": "unreachable-capability"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/attachments/environment.json",
+      "sha256": "2fd8225a2a72cb6a96541aeb5bcbe79f1397da6c9238209b75499390d4691a9d",
+      "kind": "environment"
+    },
+    {
+      "path": "docs/superpowers/manifests/v3-policy.json",
+      "sha256": "0812344a8fe7895f2576d13991d265d104a10574db501a110f8b03e1531fffb9",
+      "kind": "policy-manifest"
+    },
+    {
+      "path": "docs/superpowers/evidence/wave0/candidate-artifact.json",
+      "sha256": "6b98fa1dadcdad4f60a6cbbe480d911c43ede3c104fc89b9503851ecfc48ebef",
+      "kind": "artifact"
+    }
+  ]
+}

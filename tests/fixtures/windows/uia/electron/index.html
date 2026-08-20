@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="utf-8" /><title>WxNodus UIA Fixture</title></head>
+<body>
+  <button id="invoke" aria-label="invoke">Invoke Me</button>
+  <select id="selection" aria-label="selection"><option>item-1</option><option>item-2</option><option>item-3</option></select>
+  <input id="value" aria-label="value" type="text" />
+  <div id="status" role="status">status:ready</div>
+  <script>
+    document.getElementById('invoke').addEventListener('click', () => {
+      document.getElementById('status').textContent = 'invoked';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,2720 @@
+{
+  "schemaVersion": 1,
+  "generatedFromCommit": "50089faa0def6c8c338fb6b5863e2fcd8da47528",
+  "entries": [
+    {
+      "id": "cli:--cwd",
+      "kind": "cli",
+      "name": "--cwd",
+      "descriptor": {
+        "short": "-C",
+        "key": "cwd",
+        "takeValue": true,
+        "type": "string"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:--ephemeral",
+      "kind": "cli",
+      "name": "--ephemeral",
+      "descriptor": {
+        "short": null,
+        "key": "ephemeral",
+        "takeValue": false,
+        "type": "bool"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:--help",
+      "kind": "cli",
+      "name": "--help",
+      "descriptor": {
+        "short": "-h",
+        "key": "help",
+        "takeValue": false,
+        "type": "bool"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:--json",
+      "kind": "cli",
+      "name": "--json",
+      "descriptor": {
+        "short": null,
+        "key": "json",
+        "takeValue": false,
+        "type": "bool"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:--output-schema",
+      "kind": "cli",
+      "name": "--output-schema",
+      "descriptor": {
+        "short": null,
+        "key": "outputSchema",
+        "takeValue": true,
+        "type": "string"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:--port",
+      "kind": "cli",
+      "name": "--port",
+      "descriptor": {
+        "short": null,
+        "key": "port",
+        "takeValue": true,
+        "type": "string"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:--prompt",
+      "kind": "cli",
+      "name": "--prompt",
+      "descriptor": {
+        "short": "-p",
+        "key": "prompt",
+        "takeValue": true,
+        "type": "string"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:--serve",
+      "kind": "cli",
+      "name": "--serve",
+      "descriptor": {
+        "short": null,
+        "key": "serve",
+        "takeValue": false,
+        "type": "bool"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:--session",
+      "kind": "cli",
+      "name": "--session",
+      "descriptor": {
+        "short": "-s",
+        "key": "session",
+        "takeValue": true,
+        "type": "string"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:--strict-mcp-config",
+      "kind": "cli",
+      "name": "--strict-mcp-config",
+      "descriptor": {
+        "short": null,
+        "key": "strictMcpConfig",
+        "takeValue": false,
+        "type": "bool"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:--version",
+      "kind": "cli",
+      "name": "--version",
+      "descriptor": {
+        "short": "-v",
+        "key": "version",
+        "takeValue": false,
+        "type": "bool"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:--wire",
+      "kind": "cli",
+      "name": "--wire",
+      "descriptor": {
+        "short": null,
+        "key": "wire",
+        "takeValue": false,
+        "type": "bool"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "cli:unknown-flag-policy",
+      "kind": "cli",
+      "name": "unknown-flag-policy",
+      "descriptor": {
+        "policy": "ignore"
+      },
+      "disposition": "deprecate",
+      "replacement": "reject with exit 2 and stable reason code",
+      "reasonCode": "unknown_flag_ignored"
+    },
+    {
+      "id": "config:dotted-path",
+      "kind": "config",
+      "name": "dotted-path",
+      "descriptor": {
+        "support": "getKey/setKey dot paths"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:partition-file",
+      "kind": "config",
+      "name": "partition-file",
+      "descriptor": {
+        "pattern": "data/<partition>.json",
+        "write": "tmp+rename atomic"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:read-corrupt",
+      "kind": "config",
+      "name": "read-corrupt",
+      "descriptor": {
+        "behavior": "silently returns {}"
+      },
+      "disposition": "deprecate",
+      "replacement": "CONFIG_CORRUPT 稳定错误（Wave 0 W0-05）",
+      "reasonCode": "fail_open_security"
+    },
+    {
+      "id": "config:read-missing",
+      "kind": "config",
+      "name": "read-missing",
+      "descriptor": {
+        "behavior": "returns {}"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:apiKeyEnc",
+      "kind": "config",
+      "name": "settings:apiKeyEnc",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": true,
+        "exposedByKnownKeysApi": false
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:autoRepoMap",
+      "kind": "config",
+      "name": "settings:autoRepoMap",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:autoResume",
+      "kind": "config",
+      "name": "settings:autoResume",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:autoReview",
+      "kind": "config",
+      "name": "settings:autoReview",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:baseURL",
+      "kind": "config",
+      "name": "settings:baseURL",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:budgetTokens",
+      "kind": "config",
+      "name": "settings:budgetTokens",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:busy_input_mode",
+      "kind": "config",
+      "name": "settings:busy_input_mode",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:curator",
+      "kind": "config",
+      "name": "settings:curator",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:hooks",
+      "kind": "config",
+      "name": "settings:hooks",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:lang",
+      "kind": "config",
+      "name": "settings:lang",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:lowRiskAutoApprove",
+      "kind": "config",
+      "name": "settings:lowRiskAutoApprove",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:mode",
+      "kind": "config",
+      "name": "settings:mode",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:model",
+      "kind": "config",
+      "name": "settings:model",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:security",
+      "kind": "config",
+      "name": "settings:security",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:skin",
+      "kind": "config",
+      "name": "settings:skin",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:strictMcpConfig",
+      "kind": "config",
+      "name": "settings:strictMcpConfig",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:theme",
+      "kind": "config",
+      "name": "settings:theme",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:thinking",
+      "kind": "config",
+      "name": "settings:thinking",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:toolLazyLoad",
+      "kind": "config",
+      "name": "settings:toolLazyLoad",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:tui_dual_pane",
+      "kind": "config",
+      "name": "settings:tui_dual_pane",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:tui_status_indicator",
+      "kind": "config",
+      "name": "settings:tui_status_indicator",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:tui_statusbar",
+      "kind": "config",
+      "name": "settings:tui_statusbar",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:voice",
+      "kind": "config",
+      "name": "settings:voice",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:settings:webhooks",
+      "kind": "config",
+      "name": "settings:webhooks",
+      "descriptor": {
+        "partition": "settings",
+        "sensitive": false,
+        "exposedByKnownKeysApi": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "config:unknown-key-policy",
+      "kind": "config",
+      "name": "unknown-key-policy",
+      "descriptor": {
+        "behavior": "warn on unknown settings key"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:mcp:config-priority",
+      "kind": "extension",
+      "name": "mcp:config-priority",
+      "descriptor": {
+        "rule": "project-over-user",
+        "strict": "strictProjectOnly option"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:mcp:config-roundtrip",
+      "kind": "extension",
+      "name": "mcp:config-roundtrip",
+      "descriptor": {
+        "behavior": "object format keeps command/args/env only"
+      },
+      "disposition": "deprecate",
+      "replacement": "全字段往返（url/startupTimeoutMs/toolDanger）",
+      "reasonCode": "unknown_flag_ignored"
+    },
+    {
+      "id": "extension:mcp:http-protocol",
+      "kind": "extension",
+      "name": "mcp:http-protocol",
+      "descriptor": {
+        "protocolVersion": "2025-06-18",
+        "transport": "streamable-http"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:mcp:stdio-protocol",
+      "kind": "extension",
+      "name": "mcp:stdio-protocol",
+      "descriptor": {
+        "protocolVersion": "2024-11-05",
+        "transport": "stdio"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:mcp:tool-namespace",
+      "kind": "extension",
+      "name": "mcp:tool-namespace",
+      "descriptor": {
+        "pattern": "mcp__<server>__<tool>"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:plugin:load",
+      "kind": "extension",
+      "name": "plugin:load",
+      "descriptor": {
+        "runtime": "in-process dynamic import"
+      },
+      "disposition": "deprecate",
+      "replacement": "隔离运行时 + 权限清单（Wave 2）",
+      "reasonCode": "fail_open_security"
+    },
+    {
+      "id": "extension:plugin:manifest",
+      "kind": "extension",
+      "name": "plugin:manifest",
+      "descriptor": {
+        "file": "plugin.json",
+        "fields": [
+          "name",
+          "enabled",
+          "tools",
+          "commands",
+          "nlTriggers"
+        ]
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:skill:discovery",
+      "kind": "extension",
+      "name": "skill:discovery",
+      "descriptor": {
+        "roots": [
+          "project",
+          "user"
+        ],
+        "priority": "same-name-first-wins"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:skill:frontmatter:ai_generated",
+      "kind": "extension",
+      "name": "skill:frontmatter:ai_generated",
+      "descriptor": {
+        "scalar": true,
+        "crlf": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:skill:frontmatter:description",
+      "kind": "extension",
+      "name": "skill:frontmatter:description",
+      "descriptor": {
+        "scalar": true,
+        "crlf": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:skill:frontmatter:effort",
+      "kind": "extension",
+      "name": "skill:frontmatter:effort",
+      "descriptor": {
+        "scalar": true,
+        "crlf": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:skill:frontmatter:flow",
+      "kind": "extension",
+      "name": "skill:frontmatter:flow",
+      "descriptor": {
+        "scalar": true,
+        "crlf": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:skill:frontmatter:name",
+      "kind": "extension",
+      "name": "skill:frontmatter:name",
+      "descriptor": {
+        "scalar": true,
+        "crlf": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "extension:skill:frontmatter:version",
+      "kind": "extension",
+      "name": "skill:frontmatter:version",
+      "descriptor": {
+        "scalar": true,
+        "crlf": true
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:command.dispatch",
+      "kind": "gateway",
+      "name": "command.dispatch",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:config.get",
+      "kind": "gateway",
+      "name": "config.get",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:config.set",
+      "kind": "gateway",
+      "name": "config.set",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:delegation.pause",
+      "kind": "gateway",
+      "name": "delegation.pause",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:delegation.status",
+      "kind": "gateway",
+      "name": "delegation.status",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:http:/events",
+      "kind": "gateway",
+      "name": "http:/events",
+      "descriptor": {
+        "bind": "127.0.0.1"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:http:/health",
+      "kind": "gateway",
+      "name": "http:/health",
+      "descriptor": {
+        "bind": "127.0.0.1"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:http:/rpc",
+      "kind": "gateway",
+      "name": "http:/rpc",
+      "descriptor": {
+        "bind": "127.0.0.1"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:http:auth",
+      "kind": "gateway",
+      "name": "http:auth",
+      "descriptor": {
+        "policy": "none"
+      },
+      "disposition": "deprecate",
+      "replacement": "本地 token / origin 校验（Wave 1）",
+      "reasonCode": "fail_open_security"
+    },
+    {
+      "id": "gateway:http:cors",
+      "kind": "gateway",
+      "name": "http:cors",
+      "descriptor": {
+        "policy": "Access-Control-Allow-Origin: *"
+      },
+      "disposition": "deprecate",
+      "replacement": "默认拒绝跨源 + 显式 origin 白名单",
+      "reasonCode": "unsafe_http_default"
+    },
+    {
+      "id": "gateway:memory.digest",
+      "kind": "gateway",
+      "name": "memory.digest",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:memory.recall",
+      "kind": "gateway",
+      "name": "memory.recall",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:memory.search",
+      "kind": "gateway",
+      "name": "memory.search",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:paste.collapse",
+      "kind": "gateway",
+      "name": "paste.collapse",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:prompt.submit",
+      "kind": "gateway",
+      "name": "prompt.submit",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:reload.env",
+      "kind": "gateway",
+      "name": "reload.env",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:rollback.diff",
+      "kind": "gateway",
+      "name": "rollback.diff",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:rollback.list",
+      "kind": "gateway",
+      "name": "rollback.list",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:rollback.restore",
+      "kind": "gateway",
+      "name": "rollback.restore",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:secret.respond",
+      "kind": "gateway",
+      "name": "secret.respond",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:session.activate",
+      "kind": "gateway",
+      "name": "session.activate",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:session.active_list",
+      "kind": "gateway",
+      "name": "session.active_list",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:session.fork",
+      "kind": "gateway",
+      "name": "session.fork",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:session.save",
+      "kind": "gateway",
+      "name": "session.save",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:session.undo",
+      "kind": "gateway",
+      "name": "session.undo",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:sessions",
+      "kind": "gateway",
+      "name": "sessions",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:setup.status",
+      "kind": "gateway",
+      "name": "setup.status",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:shell.exec",
+      "kind": "gateway",
+      "name": "shell.exec",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:sudo.respond",
+      "kind": "gateway",
+      "name": "sudo.respond",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:terminal.kill",
+      "kind": "gateway",
+      "name": "terminal.kill",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:terminal.resize",
+      "kind": "gateway",
+      "name": "terminal.resize",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:terminal.spawn",
+      "kind": "gateway",
+      "name": "terminal.spawn",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:terminal.write",
+      "kind": "gateway",
+      "name": "terminal.write",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "gateway:tools.configure",
+      "kind": "gateway",
+      "name": "tools.configure",
+      "descriptor": {
+        "transport": "in-process GatewayClient"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "schema:file",
+      "kind": "schema",
+      "name": "file",
+      "descriptor": {
+        "name": "nodus.db",
+        "journal": "WAL",
+        "foreignKeys": "ON"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "schema:migration-error-handling",
+      "kind": "schema",
+      "name": "migration-error-handling",
+      "descriptor": {
+        "behavior": "ALTER failure swallowed as duplicate column"
+      },
+      "disposition": "deprecate",
+      "replacement": "失败显式记录 history=failed 且版本不提升",
+      "reasonCode": "false_success"
+    },
+    {
+      "id": "schema:optional-extension",
+      "kind": "schema",
+      "name": "optional-extension",
+      "descriptor": {
+        "fts5": "optional",
+        "sqliteVec": "optional",
+        "fallback": "LIKE"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "schema:schema-version-drift",
+      "kind": "schema",
+      "name": "schema-version-drift",
+      "descriptor": {
+        "storedValue": 1,
+        "inlineEvolution": [
+          "V2",
+          "V3",
+          "V4"
+        ]
+      },
+      "disposition": "deprecate",
+      "replacement": "正式 migration registry（Wave 0 W0-06）",
+      "reasonCode": "false_success"
+    },
+    {
+      "id": "schema:table:audit",
+      "kind": "schema",
+      "name": "table:audit",
+      "descriptor": {
+        "columns": [
+          "id",
+          "prev_hash",
+          "event",
+          "payload",
+          "hash",
+          "ts"
+        ]
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "schema:table:checkpoints",
+      "kind": "schema",
+      "name": "table:checkpoints",
+      "descriptor": {
+        "columns": [
+          "id",
+          "session_id",
+          "data",
+          "ts",
+          "prev_id"
+        ]
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "schema:table:cron_jobs",
+      "kind": "schema",
+      "name": "table:cron_jobs",
+      "descriptor": {
+        "columns": [
+          "id",
+          "schedule",
+          "action",
+          "last_run",
+          "enabled"
+        ]
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "schema:table:flow_runs",
+      "kind": "schema",
+      "name": "table:flow_runs",
+      "descriptor": {
+        "columns": [
+          "id",
+          "skill",
+          "nodes",
+          "current",
+          "finished",
+          "ts"
+        ]
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "schema:table:messages",
+      "kind": "schema",
+      "name": "table:messages",
+      "descriptor": {
+        "columns": [
+          "id",
+          "session_id",
+          "role",
+          "content",
+          "tool_call_id",
+          "archived",
+          "ts",
+          "salience",
+          "run_no",
+          "parts"
+        ]
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "schema:table:sessions",
+      "kind": "schema",
+      "name": "table:sessions",
+      "descriptor": {
+        "columns": [
+          "id",
+          "title",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "schema:table:settings",
+      "kind": "schema",
+      "name": "table:settings",
+      "descriptor": {
+        "columns": [
+          "key",
+          "value"
+        ]
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "schema:table:tasks",
+      "kind": "schema",
+      "name": "table:tasks",
+      "descriptor": {
+        "columns": [
+          "id",
+          "goal",
+          "status",
+          "output",
+          "created_at",
+          "done_at",
+          "parent_id",
+          "kind",
+          "pid",
+          "exit_code",
+          "log_file",
+          "retries",
+          "timeout_ms",
+          "tags",
+          "cwd",
+          "started_at",
+          "error"
+        ]
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "schema:table:usage_stats",
+      "kind": "schema",
+      "name": "table:usage_stats",
+      "descriptor": {
+        "columns": [
+          "id",
+          "session_id",
+          "model",
+          "input_tokens",
+          "output_tokens",
+          "ts"
+        ]
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/a2a",
+      "kind": "slash",
+      "name": "/a2a",
+      "descriptor": {
+        "description": "A2A 跨 agent 协议",
+        "category": "⛭",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/acp",
+      "kind": "slash",
+      "name": "/acp",
+      "descriptor": {
+        "description": "ACP server",
+        "category": "⛭",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/afk",
+      "kind": "slash",
+      "name": "/afk",
+      "descriptor": {
+        "description": "无人值守自动批准开关",
+        "category": "⛨",
+        "level": "redline"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/agent",
+      "kind": "slash",
+      "name": "/agent",
+      "descriptor": {
+        "description": "自定义 agent（list/run——.wxnodus/agents/*.md 定义）",
+        "category": "◍",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/arena",
+      "kind": "slash",
+      "name": "/arena",
+      "descriptor": {
+        "description": "多模型对战（双模型执行同一任务对比选优）",
+        "category": "◍",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/assimilate",
+      "kind": "slash",
+      "name": "/assimilate",
+      "descriptor": {
+        "description": "黑洞同化（目录 100% 同化技能 / 文件·URL·对话 AI 消化产出融入）",
+        "category": "◆",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/audit",
+      "kind": "slash",
+      "name": "/audit",
+      "descriptor": {
+        "description": "审计导出",
+        "category": "⛨",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/backup",
+      "kind": "slash",
+      "name": "/backup",
+      "descriptor": {
+        "description": "备份",
+        "category": "◉",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/base64",
+      "kind": "slash",
+      "name": "/base64",
+      "descriptor": {
+        "description": "Base64 编解码",
+        "category": "☆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/bench",
+      "kind": "slash",
+      "name": "/bench",
+      "descriptor": {
+        "description": "基准测试",
+        "category": "◉",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/browser",
+      "kind": "slash",
+      "name": "/browser",
+      "descriptor": {
+        "description": "浏览器自动化（打开/点击/输入/截图，AI 可自主操作）",
+        "category": "⛭",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/btw",
+      "kind": "slash",
+      "name": "/btw",
+      "descriptor": {
+        "description": "侧边提问（隔离只读上下文，不打断主对话）",
+        "category": "◍",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/build",
+      "kind": "slash",
+      "name": "/build",
+      "descriptor": {
+        "description": "概念编译：自然语言需求直达可运行系统",
+        "category": "◆",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/calc",
+      "kind": "slash",
+      "name": "/calc",
+      "descriptor": {
+        "description": "计算器（自然语言直达）",
+        "category": "☆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/capture",
+      "kind": "slash",
+      "name": "/capture",
+      "descriptor": {
+        "description": "屏幕截屏（当前界面留证）",
+        "category": "❖",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/checkpoint",
+      "kind": "slash",
+      "name": "/checkpoint",
+      "descriptor": {
+        "description": "会话快照（save/list/compare/restore/clear，undo 前自动保存）",
+        "category": "◈",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/claw",
+      "kind": "slash",
+      "name": "/claw",
+      "descriptor": {
+        "description": "网页抓取（SSRF 防护）",
+        "category": "⛭",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/clear",
+      "kind": "slash",
+      "name": "/clear",
+      "descriptor": {
+        "description": "清空会话视图",
+        "category": "◈",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/compact",
+      "kind": "slash",
+      "name": "/compact",
+      "descriptor": {
+        "description": "压缩上下文（有密钥时 LLM 真实总结）",
+        "category": "▤",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/compliance",
+      "kind": "slash",
+      "name": "/compliance",
+      "descriptor": {
+        "description": "合规五项",
+        "category": "⛨",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/computer",
+      "kind": "slash",
+      "name": "/computer",
+      "descriptor": {
+        "description": "桌面控制（Computer Use：截图/点击/键入/打开——robotjs 动作层 + GLM-4V 屏幕理解）",
+        "category": "⛭",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/config",
+      "kind": "slash",
+      "name": "/config",
+      "descriptor": {
+        "description": "配置中心",
+        "category": "◉",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/consent",
+      "kind": "slash",
+      "name": "/consent",
+      "descriptor": {
+        "description": "授权存证",
+        "category": "⛨",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/context",
+      "kind": "slash",
+      "name": "/context",
+      "descriptor": {
+        "description": "上下文占用可视化",
+        "category": "◈",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/cron",
+      "kind": "slash",
+      "name": "/cron",
+      "descriptor": {
+        "description": "定时任务（add/list/del/pause 真实调度）",
+        "category": "◍",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/csv",
+      "kind": "slash",
+      "name": "/csv",
+      "descriptor": {
+        "description": "CSV 摘要",
+        "category": "☆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/curator",
+      "kind": "slash",
+      "name": "/curator",
+      "descriptor": {
+        "description": "黑洞策展（即时审查 + 后台自动审查 on/off/interval）",
+        "category": "▤",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/delegate",
+      "kind": "slash",
+      "name": "/delegate",
+      "descriptor": {
+        "description": "派生子代理",
+        "category": "◍",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/deploy",
+      "kind": "slash",
+      "name": "/deploy",
+      "descriptor": {
+        "description": "本地部署：验证→启动服务→探活端口",
+        "category": "◆",
+        "level": "danger"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/digest",
+      "kind": "slash",
+      "name": "/digest",
+      "descriptor": {
+        "description": "摘要最近对话并展示（不写记忆——整理视图）",
+        "category": "▤",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/doctor",
+      "kind": "slash",
+      "name": "/doctor",
+      "descriptor": {
+        "description": "健康体检",
+        "category": "⚙",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/duo",
+      "kind": "slash",
+      "name": "/duo",
+      "descriptor": {
+        "description": "双脑协作",
+        "category": "◍",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/encrypt",
+      "kind": "slash",
+      "name": "/encrypt",
+      "descriptor": {
+        "description": "加密工具",
+        "category": "⛨",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/evidence",
+      "kind": "slash",
+      "name": "/evidence",
+      "descriptor": {
+        "description": "证据链查看",
+        "category": "◆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/export",
+      "kind": "slash",
+      "name": "/export",
+      "descriptor": {
+        "description": "导出",
+        "category": "◉",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/fdr",
+      "kind": "slash",
+      "name": "/fdr",
+      "descriptor": {
+        "description": "生成部署后保障文档（FDR.md，AI 审对话或模板）",
+        "category": "◆",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/flow",
+      "kind": "slash",
+      "name": "/flow",
+      "descriptor": {
+        "description": "AI 生成流程图（Mermaid 写入 data/flow/）",
+        "category": "◆",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/forge",
+      "kind": "slash",
+      "name": "/forge",
+      "descriptor": {
+        "description": "组件锻造（MCP Server/Skill 打包）",
+        "category": "◆",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/fork",
+      "kind": "slash",
+      "name": "/fork",
+      "descriptor": {
+        "description": "分支会话（复制当前会话为副本）",
+        "category": "◈",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/fortune",
+      "kind": "slash",
+      "name": "/fortune",
+      "descriptor": {
+        "description": "今日运势（本地确定性）",
+        "category": "◉",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/fs",
+      "kind": "slash",
+      "name": "/fs",
+      "descriptor": {
+        "description": "文件操作",
+        "category": "☆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/gate",
+      "kind": "slash",
+      "name": "/gate",
+      "descriptor": {
+        "description": "统一质量门（五门：自测/健康/证据/合规/测试）",
+        "category": "◆",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/gateway",
+      "kind": "slash",
+      "name": "/gateway",
+      "descriptor": {
+        "description": "HTTP 网关",
+        "category": "⛭",
+        "level": "danger"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/goal",
+      "kind": "slash",
+      "name": "/goal",
+      "descriptor": {
+        "description": "循环目标执行",
+        "category": "◍",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/hash",
+      "kind": "slash",
+      "name": "/hash",
+      "descriptor": {
+        "description": "哈希（md5/sha256）",
+        "category": "☆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/help",
+      "kind": "slash",
+      "name": "/help",
+      "descriptor": {
+        "description": "查看帮助（/help <命令> 展开单个）",
+        "category": "◈",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/hole",
+      "kind": "slash",
+      "name": "/hole",
+      "descriptor": {
+        "description": "黑洞引擎检索（自然语言直达）",
+        "category": "▤",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/hooks",
+      "kind": "slash",
+      "name": "/hooks",
+      "descriptor": {
+        "description": "生命周期 Hooks（settings.hooks 本地命令）",
+        "category": "⚙",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/img",
+      "kind": "slash",
+      "name": "/img",
+      "descriptor": {
+        "description": "图片分析（GLM-4V 多模态）",
+        "category": "❖",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/import",
+      "kind": "slash",
+      "name": "/import",
+      "descriptor": {
+        "description": "导入消息（JSON 或文本文件回填会话）",
+        "category": "◆",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/init",
+      "kind": "slash",
+      "name": "/init",
+      "descriptor": {
+        "description": "分析项目生成 AGENTS.md（本地扫描，--overwrite 覆盖）",
+        "category": "◉",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/input",
+      "kind": "slash",
+      "name": "/input",
+      "descriptor": {
+        "description": "动态内容表（多字段敏感输入——仅内存，不保存）",
+        "category": "⚿",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/jobs",
+      "kind": "slash",
+      "name": "/jobs",
+      "descriptor": {
+        "description": "后台任务中心",
+        "category": "◍",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/json",
+      "kind": "slash",
+      "name": "/json",
+      "descriptor": {
+        "description": "JSON 格式化",
+        "category": "☆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/key",
+      "kind": "slash",
+      "name": "/key",
+      "descriptor": {
+        "description": "配置/查看模型密钥（加密存储）",
+        "category": "⚙",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/lang",
+      "kind": "slash",
+      "name": "/lang",
+      "descriptor": {
+        "description": "语言切换",
+        "category": "◉",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/learn",
+      "kind": "slash",
+      "name": "/learn",
+      "descriptor": {
+        "description": "从最近对话学习生成技能（需密钥，AI 生成标注）",
+        "category": "◆",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/logs",
+      "kind": "slash",
+      "name": "/logs",
+      "descriptor": {
+        "description": "日志查看",
+        "category": "◉",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/map",
+      "kind": "slash",
+      "name": "/map",
+      "descriptor": {
+        "description": "仓库地图（aider repo-map 自研版——符号索引注入上下文，/map <预算>）",
+        "category": "⬡",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/mcp",
+      "kind": "slash",
+      "name": "/mcp",
+      "descriptor": {
+        "description": "MCP 服务器管理",
+        "category": "⛭",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/memory",
+      "kind": "slash",
+      "name": "/memory",
+      "descriptor": {
+        "description": "记忆概览（三层）",
+        "category": "▤",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/model",
+      "kind": "slash",
+      "name": "/model",
+      "descriptor": {
+        "description": "切换模型（打开选择器或 /model <名称>）",
+        "category": "⚙",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/new",
+      "kind": "slash",
+      "name": "/new",
+      "descriptor": {
+        "description": "新建空会话并切换",
+        "category": "◈",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/offline",
+      "kind": "slash",
+      "name": "/offline",
+      "descriptor": {
+        "description": "离线 token 包（本地 LLM：pack status/download + 切换，断网可用）",
+        "category": "⬇",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/perm",
+      "kind": "slash",
+      "name": "/perm",
+      "descriptor": {
+        "description": "权限模式（smart 确认/auto 自动编辑/goal 循环/plan 计划/yolo 全放）",
+        "category": "⛨",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/plan",
+      "kind": "slash",
+      "name": "/plan",
+      "descriptor": {
+        "description": "计划模式（on/off/save/view/clear）",
+        "category": "◆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/plugin",
+      "kind": "slash",
+      "name": "/plugin",
+      "descriptor": {
+        "description": "插件管理（list/install/remove/enable/disable）",
+        "category": "⛭",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/proxy",
+      "kind": "slash",
+      "name": "/proxy",
+      "descriptor": {
+        "description": "代理转发",
+        "category": "⛭",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/quit",
+      "kind": "slash",
+      "name": "/quit",
+      "descriptor": {
+        "description": "退出",
+        "category": "◈",
+        "level": "redline"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/rand",
+      "kind": "slash",
+      "name": "/rand",
+      "descriptor": {
+        "description": "随机数",
+        "category": "☆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/reload-skills",
+      "kind": "slash",
+      "name": "/reload-skills",
+      "descriptor": {
+        "description": "重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini）并汇报",
+        "category": "⬡",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/render",
+      "kind": "slash",
+      "name": "/render",
+      "descriptor": {
+        "description": "Markdown 排版预览",
+        "category": "❖",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/resume",
+      "kind": "slash",
+      "name": "/resume",
+      "descriptor": {
+        "description": "切换会话（真正加载历史并继续）",
+        "category": "◈",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/review",
+      "kind": "slash",
+      "name": "/review",
+      "descriptor": {
+        "description": "任务自查（AI 审查视角复查改动，只读不修改）",
+        "category": "◍",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/rewind",
+      "kind": "slash",
+      "name": "/rewind",
+      "descriptor": {
+        "description": "回滚到最近快照（Claude Code /rewind 同款，等价 /checkpoint restore）",
+        "category": "⬡",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/sandbox",
+      "kind": "slash",
+      "name": "/sandbox",
+      "descriptor": {
+        "description": "分层沙盒（L0-L3）",
+        "category": "⛨",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/script",
+      "kind": "slash",
+      "name": "/script",
+      "descriptor": {
+        "description": "可执行剧本（record/run/verify/ci/watch——会话录制为可重放脚本+回放CI+自动回归）",
+        "category": "◈",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/search",
+      "kind": "slash",
+      "name": "/search",
+      "descriptor": {
+        "description": "联网搜索（DuckDuckGo）",
+        "category": "⛭",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/security",
+      "kind": "slash",
+      "name": "/security",
+      "descriptor": {
+        "description": "安全注入通道（sudo/secret，关闭即清缓存）",
+        "category": "⛨",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/self-evolve",
+      "kind": "slash",
+      "name": "/self-evolve",
+      "descriptor": {
+        "description": "自举模式（AI 分析自身源码→补丁→自测→报告，不自动提交；--report 只审查不改码）",
+        "category": "◈",
+        "level": "redline"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/session-stream",
+      "kind": "slash",
+      "name": "/session-stream",
+      "descriptor": {
+        "description": "会话事件流（list/show——用户消息/工具/压缩/审批可重放时间线）",
+        "category": "◍",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/sessions",
+      "kind": "slash",
+      "name": "/sessions",
+      "descriptor": {
+        "description": "会话列表（非交互模式输出文本列表）",
+        "category": "◈",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/skill",
+      "kind": "slash",
+      "name": "/skill",
+      "descriptor": {
+        "description": "技能管理（/skill list｜inspect｜new；/skill:名 注入）",
+        "category": "◆",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/snapshot",
+      "kind": "slash",
+      "name": "/snapshot",
+      "descriptor": {
+        "description": "目录级快照（建档/整体回滚，/snapshot restore）",
+        "category": "◈",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/sql",
+      "kind": "slash",
+      "name": "/sql",
+      "descriptor": {
+        "description": "SQL 查询（只读）",
+        "category": "☆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/status",
+      "kind": "slash",
+      "name": "/status",
+      "descriptor": {
+        "description": "系统状态",
+        "category": "⚙",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/swarm",
+      "kind": "slash",
+      "name": "/swarm",
+      "descriptor": {
+        "description": "同种子代理多开",
+        "category": "◍",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/task",
+      "kind": "slash",
+      "name": "/task",
+      "descriptor": {
+        "description": "后台任务浏览器（等价 /jobs）",
+        "category": "◍",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/term",
+      "kind": "slash",
+      "name": "/term",
+      "descriptor": {
+        "description": "后台终端（PTY 交互会话）",
+        "category": "◍",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/theme",
+      "kind": "slash",
+      "name": "/theme",
+      "descriptor": {
+        "description": "主题切换",
+        "category": "◉",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/thinking",
+      "kind": "slash",
+      "name": "/thinking",
+      "descriptor": {
+        "description": "推理显示开关（on/off）",
+        "category": "⚙",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/timer",
+      "kind": "slash",
+      "name": "/timer",
+      "descriptor": {
+        "description": "计时器",
+        "category": "☆",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/title",
+      "kind": "slash",
+      "name": "/title",
+      "descriptor": {
+        "description": "重命名当前会话",
+        "category": "◈",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/understand",
+      "kind": "slash",
+      "name": "/understand",
+      "descriptor": {
+        "description": "逆向编译（代码→概念规格，与 /build 形成双向编译闭环——竞品无此设计）",
+        "category": "◍",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/undo",
+      "kind": "slash",
+      "name": "/undo",
+      "descriptor": {
+        "description": "撤销最近 N 轮（/undo list 查看可撤销轮次）",
+        "category": "◈",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/units",
+      "kind": "slash",
+      "name": "/units",
+      "descriptor": {
+        "description": "单位换算",
+        "category": "☆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/usage",
+      "kind": "slash",
+      "name": "/usage",
+      "descriptor": {
+        "description": "用量统计（token/成本；--waterfall 瀑布）",
+        "category": "◈",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/uuid",
+      "kind": "slash",
+      "name": "/uuid",
+      "descriptor": {
+        "description": "生成 UUID",
+        "category": "☆",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/version",
+      "kind": "slash",
+      "name": "/version",
+      "descriptor": {
+        "description": "版本信息",
+        "category": "⚙",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/versions",
+      "kind": "slash",
+      "name": "/versions",
+      "descriptor": {
+        "description": "文件时间机器（/versions <文件> 查看历史版本，restore 回滚）",
+        "category": "◈",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/video",
+      "kind": "slash",
+      "name": "/video",
+      "descriptor": {
+        "description": "视频人工视觉分析（不下载）",
+        "category": "❖",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/vision",
+      "kind": "slash",
+      "name": "/vision",
+      "descriptor": {
+        "description": "GLM 视觉理解（/vision <图片>）",
+        "category": "❖",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/voice",
+      "kind": "slash",
+      "name": "/voice",
+      "descriptor": {
+        "description": "语音模式（TUI 内 Ctrl+B/麦克风钮；status 查看组件）",
+        "category": "◉",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/web",
+      "kind": "slash",
+      "name": "/web",
+      "descriptor": {
+        "description": "抓取网页（/claw 别名）",
+        "category": "⛭",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/webhook",
+      "kind": "slash",
+      "name": "/webhook",
+      "descriptor": {
+        "description": "Webhook 配置",
+        "category": "⛭",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:/yolo",
+      "kind": "slash",
+      "name": "/yolo",
+      "descriptor": {
+        "description": "完全访问开关（除硬红线全部放行）",
+        "category": "⛨",
+        "level": "redline"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/版本",
+      "kind": "slash",
+      "name": "alias:/版本",
+      "descriptor": {
+        "aliasOf": "/version",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/帮助",
+      "kind": "slash",
+      "name": "alias:/帮助",
+      "descriptor": {
+        "aliasOf": "/help",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/备份",
+      "kind": "slash",
+      "name": "alias:/备份",
+      "descriptor": {
+        "aliasOf": "/backup",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/部署",
+      "kind": "slash",
+      "name": "alias:/部署",
+      "descriptor": {
+        "aliasOf": "/deploy",
+        "level": "danger"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/导出",
+      "kind": "slash",
+      "name": "alias:/导出",
+      "descriptor": {
+        "aliasOf": "/export",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/定时",
+      "kind": "slash",
+      "name": "alias:/定时",
+      "descriptor": {
+        "aliasOf": "/cron",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/锻造",
+      "kind": "slash",
+      "name": "alias:/锻造",
+      "descriptor": {
+        "aliasOf": "/forge",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/构建",
+      "kind": "slash",
+      "name": "alias:/构建",
+      "descriptor": {
+        "aliasOf": "/build",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/哈希",
+      "kind": "slash",
+      "name": "alias:/哈希",
+      "descriptor": {
+        "aliasOf": "/hash",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/合规",
+      "kind": "slash",
+      "name": "alias:/合规",
+      "descriptor": {
+        "aliasOf": "/compliance",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/黑洞",
+      "kind": "slash",
+      "name": "alias:/黑洞",
+      "descriptor": {
+        "aliasOf": "/hole",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/换算",
+      "kind": "slash",
+      "name": "alias:/换算",
+      "descriptor": {
+        "aliasOf": "/units",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/恢复",
+      "kind": "slash",
+      "name": "alias:/恢复",
+      "descriptor": {
+        "aliasOf": "/resume",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/会话",
+      "kind": "slash",
+      "name": "alias:/会话",
+      "descriptor": {
+        "aliasOf": "/sessions",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/计算",
+      "kind": "slash",
+      "name": "alias:/计算",
+      "descriptor": {
+        "aliasOf": "/calc",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/记忆",
+      "kind": "slash",
+      "name": "alias:/记忆",
+      "descriptor": {
+        "aliasOf": "/memory",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/技能",
+      "kind": "slash",
+      "name": "alias:/技能",
+      "descriptor": {
+        "aliasOf": "/skill",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/密钥",
+      "kind": "slash",
+      "name": "alias:/密钥",
+      "descriptor": {
+        "aliasOf": "/key",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/模型",
+      "kind": "slash",
+      "name": "alias:/模型",
+      "descriptor": {
+        "aliasOf": "/model",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/清空",
+      "kind": "slash",
+      "name": "alias:/清空",
+      "descriptor": {
+        "aliasOf": "/clear",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/权限",
+      "kind": "slash",
+      "name": "alias:/权限",
+      "descriptor": {
+        "aliasOf": "/perm",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/沙盒",
+      "kind": "slash",
+      "name": "alias:/沙盒",
+      "descriptor": {
+        "aliasOf": "/sandbox",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/视觉",
+      "kind": "slash",
+      "name": "alias:/视觉",
+      "descriptor": {
+        "aliasOf": "/vision",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/视频",
+      "kind": "slash",
+      "name": "alias:/视频",
+      "descriptor": {
+        "aliasOf": "/video",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/授权",
+      "kind": "slash",
+      "name": "alias:/授权",
+      "descriptor": {
+        "aliasOf": "/consent",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/体检",
+      "kind": "slash",
+      "name": "alias:/体检",
+      "descriptor": {
+        "aliasOf": "/doctor",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/同化",
+      "kind": "slash",
+      "name": "alias:/同化",
+      "descriptor": {
+        "aliasOf": "/assimilate",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/图片",
+      "kind": "slash",
+      "name": "alias:/图片",
+      "descriptor": {
+        "aliasOf": "/img",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/退出",
+      "kind": "slash",
+      "name": "alias:/退出",
+      "descriptor": {
+        "aliasOf": "/quit",
+        "level": "redline"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/压缩",
+      "kind": "slash",
+      "name": "alias:/压缩",
+      "descriptor": {
+        "aliasOf": "/compact",
+        "level": "confirm"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/语言",
+      "kind": "slash",
+      "name": "alias:/语言",
+      "descriptor": {
+        "aliasOf": "/lang",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/主题",
+      "kind": "slash",
+      "name": "alias:/主题",
+      "descriptor": {
+        "aliasOf": "/theme",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/抓取",
+      "kind": "slash",
+      "name": "alias:/抓取",
+      "descriptor": {
+        "aliasOf": "/claw",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/状态",
+      "kind": "slash",
+      "name": "alias:/状态",
+      "descriptor": {
+        "aliasOf": "/status",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/task",
+      "kind": "slash",
+      "name": "alias:/task",
+      "descriptor": {
+        "aliasOf": "/jobs",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:alias:/vision",
+      "kind": "slash",
+      "name": "alias:/vision",
+      "descriptor": {
+        "aliasOf": "/img",
+        "level": "safe"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:classify:non-command-input",
+      "kind": "slash",
+      "name": "classify:non-command-input",
+      "descriptor": {
+        "level": "redline",
+        "channel": "wx_cmd"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "slash:classify:unlisted-command",
+      "kind": "slash",
+      "name": "classify:unlisted-command",
+      "descriptor": {
+        "level": "confirm",
+        "channel": "wx_cmd"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "wire:event.agent-result",
+      "kind": "wire",
+      "name": "event.agent-result",
+      "descriptor": {
+        "type": "agent.result"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "wire:event.response",
+      "kind": "wire",
+      "name": "event.response",
+      "descriptor": {
+        "type": "wire.response",
+        "method": "string"
+      },
+      "disposition": "preserve"
+    },
+    {
+      "id": "wire:exit-code-on-agent-failure",
+      "kind": "wire",
+      "name": "exit-code-on-agent-failure",
+      "descriptor": {
+        "behavior": "exit 0"
+      },
+      "disposition": "deprecate",
+      "replacement": "非零退出码传播（Wave 1 Gateway error 语义）",
+      "reasonCode": "false_success"
+    },
+    {
+      "id": "wire:frame.stdin",
+      "kind": "wire",
+      "name": "frame.stdin",
+      "descriptor": {
+        "method": "string",
+        "params": "object"
+      },
+      "disposition": "preserve"
+    }
+  ],
+  "checksum": "33a379eafe898dd85c6aa0ff1cc323290176ba3b95637970cb88136d8bd220df"
+}

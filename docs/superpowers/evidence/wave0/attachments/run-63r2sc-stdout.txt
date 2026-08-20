@@ -1,0 +1,44 @@
+
+> wxnodus@3.0.0 test:known-failures
+> vitest run --config vitest.known-failures.config.ts
+
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/20164/Desktop/WxNodusV3CLI[39m
+
+ [32m✓[39m tests/known-failures/known-failures-wrapper.test.ts [2m([22m[2m31 tests[22m[2m)[22m[33m 100278[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-001 open oracle emits its stable failure code [33m11430[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-002 open oracle emits its stable failure code [33m513[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-003 open oracle emits its stable failure code [33m377[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-004 open oracle emits its stable failure code [33m386[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-005 open oracle emits its stable failure code [33m409[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-006 open oracle emits its stable failure code [33m1902[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-007 open oracle emits its stable failure code [33m449[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-008 open oracle emits its stable failure code [33m432[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-009 open oracle emits its stable failure code [33m467[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-010 open oracle emits its stable failure code [33m13843[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-011 resolved regression is an ordinary green test [33m6064[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-012 open oracle emits its stable failure code [33m988[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-013 open oracle emits its stable failure code [33m884[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-014 open oracle emits its stable failure code [33m12192[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-015 open oracle emits its stable failure code [33m11762[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-016 open oracle emits its stable failure code [33m424[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-017 open oracle emits its stable failure code [33m446[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-018 open oracle emits its stable failure code [33m508[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-019 resolved regression is an ordinary green test [33m1981[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-020 open oracle emits its stable failure code [33m404[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-021 resolved regression is an ordinary green test [33m2372[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-022 open oracle emits its stable failure code [33m395[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-023 open oracle emits its stable failure code [33m11419[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-024 open oracle emits its stable failure code [33m11545[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-025 open oracle emits its stable failure code [33m4063[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-026 open oracle emits its stable failure code [33m1097[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-027 open oracle emits its stable failure code [33m529[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-028 open oracle emits its stable failure code [33m415[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-029 open oracle emits its stable failure code [33m426[2mms[22m[39m
+   [33m[2m✓[22m[39m known V3 failure registry[2m > [22mKF-030 resolved regression is an ordinary green test [33m2152[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m31 passed[39m[22m[90m (31)[39m
+[2m   Start at [22m 17:53:52
+[2m   Duration [22m 101.16s[2m (transform 50ms, setup 0ms, collect 53ms, tests 100.28s, environment 0ms, prepare 119ms)[22m
+

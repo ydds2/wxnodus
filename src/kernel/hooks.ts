@@ -1,0 +1,148 @@
+// src/kernel/hooks.ts — L2-6 生命周期 Hooks（本地命令执行）
+// 设计：settings.hooks 配置事件 → 本地 shell 命令（PowerShell/bash 适配），
+//       上下文经环境变量 WXNODUS_HOOK_EVENT / WXNODUS_HOOK_DATA（JSON）传入，
+//       全部本地进程执行（本地化为准）；preToolUse 输出 DENY: 开头即真实拦截工具。
+//       P0-06：安全关键 hook 崩溃/超时/缺失/非零退出 fail-closed（结构化决策，见 domain/hooks/hookDecision）。
+import { execFileSync } from 'node:child_process';
+import { platform } from 'node:os';
+import type { EventBus } from './events.js';
+import { sanitizedEnv } from './env.js';
+import { decideSecurityHook, type HookExecutionOutcome } from '../domain/hooks/hookDecision.js';
+
+export type HookEvent =
+  | 'userPromptSubmit' | 'preToolUse' | 'postToolUse' | 'stop'
+  | 'sessionStart' | 'sessionEnd'
+  | 'preCompact' | 'postCompact'
+  | 'subagentStart' | 'subagentStop'
+  | 'postToolUseFailure' | 'notification';
+
+export type HookConfig = Partial<Record<HookEvent, string>>;
+
+export const HOOK_EVENTS: HookEvent[] = ['userPromptSubmit', 'preToolUse', 'postToolUse', 'stop', 'sessionStart', 'sessionEnd', 'preCompact', 'postCompact', 'subagentStart', 'subagentStop', 'postToolUseFailure', 'notification'];
+
+// 从 settings 读取 hooks 配置（空对象/非法值 → 全禁用）
+export function hooksFromConfig(settings: Record<string, any> | undefined): HookConfig {
+  const raw = settings?.hooks;
+  if (!raw || typeof raw !== 'object') return {};
+  const out: HookConfig = {};
+  for (const ev of HOOK_EVENTS) {
+    const cmd = (raw as Record<string, unknown>)[ev];
+    if (typeof cmd === 'string' && cmd.trim()) out[ev] = cmd.trim();
+  }
+  return out;
+}
+
+// 执行单条 hook 命令（execFileSync 精确 shell 参数，10s 超时，stdout 截断）
+// P0-06：返回结构化结果（成功/非零退出/超时/缺失/错误），不再用空输出吞噬失败。
+// 编码加固（2026-08-18 CI 实测）：-Command 直传 CJK 命令受 argv 编码影响（Node 22.23.x
+// 下 PowerShell 可能收到空/损坏命令并等待 stdin → 误判超时）；改 -EncodedCommand
+// （UTF-16LE base64）——命令字节零歧义，任意 Node 版本/任意字符同语义。
+export function runHook(cmd: string, event: HookEvent, data: unknown): HookExecutionOutcome {
+  const isWin = platform() === 'win32';
+  const args = isWin
+    ? ['-NoProfile', '-EncodedCommand', Buffer.from(cmd, 'utf16le').toString('base64')]
+    : ['-c', cmd];
+  const env = {
+    // P0-3 环境净化：hook 子进程不继承密钥类变量（env.ts 统一策略），
+    // WXNODUS_HOOK_* 为显式白名单传入（配置在 settings.hooks，非密钥）
+    ...sanitizedEnv(),
+    WXNODUS_HOOK_EVENT: event,
+    WXNODUS_HOOK_DATA: JSON.stringify(data ?? {}),
+  };
+  try {
+    const out = execFileSync(isWin ? 'powershell.exe' : '/bin/bash', args, {
+      encoding: 'utf8',
+      timeout: 10_000,
+      maxBuffer: 4 * 1024 * 1024,
+      windowsHide: true,
+      env,
+    });
+    return { kind: 'ok', output: String(out ?? '').trim().slice(0, 4000) };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException & { stdout?: string };
+    // 超时优先判定：Node 22 的超时错误可能附带空 stdout，不能误判为非零退出
+    if (err.code === 'ETIMEDOUT') return { kind: 'timeout' };
+    if (err.stdout !== undefined) {
+      return { kind: 'exited-nonzero', output: String(err.stdout).trim().slice(0, 4000) };
+    }
+    if (err.code === 'ENOENT') return { kind: 'missing' };
+    return { kind: 'error', message: String(err.message ?? err).slice(0, 100) };
+  }
+}
+
+export interface HookRunner {
+  preToolUse(name: string, args: Record<string, any>): Promise<boolean>;
+  postToolUse(name: string, out: string): void;
+  postToolUseFailure(name: string, err: string): void;
+  userPromptSubmit(prompt: string, sessionId: string): void;
+  stop(result: { ok: boolean; turns: number }): void;
+  sessionStart(sessionId: string): void;
+  sessionEnd(result: { ok: boolean; turns: number }): void;
+  /** 压缩前——输出 BLOCK 开头可阻止压缩（Claude PreCompact 语义） */
+  preCompact(reason: string): boolean;
+  postCompact(prevTokens: number, nextTokens: number): void;
+  subagentStart(goal: string): void;
+  subagentStop(result: { ok: boolean; output: string; turns: number }): void;
+  /** 后台任务/定时任务完成通知 */
+  notification(kind: string, text: string): void;
+}
+
+// 构建 hook 运行器（订阅配置快照——每次读取当前 settings，热生效）
+export function createHookRunner(getSettings: () => Record<string, any> | undefined, bus: EventBus): HookRunner {
+  const fire = (event: HookEvent, data: unknown): HookExecutionOutcome | null => {
+    const cfg = hooksFromConfig(getSettings());
+    const cmd = cfg[event];
+    if (!cmd) return null;
+    const outcome = runHook(cmd, event, data);
+    const text = outcome.kind === 'ok' || outcome.kind === 'exited-nonzero' ? outcome.output
+      : outcome.kind === 'timeout' ? `[hook:${event}] 超时未响应（10s）`
+      : outcome.kind === 'missing' ? `[hook:${event}] 执行失败：未找到 shell（hook 未运行——请检查 PATH）`
+      : `[hook:${event}] 执行失败：${outcome.message}（hook 未运行）`;
+    if (text) bus.emit('system.notice', { text: text.slice(0, 120) });
+    return outcome;
+  };
+
+  return {
+    async preToolUse(name, args) {
+      const outcome = fire('preToolUse', { tool: name, args });
+      if (outcome === null) return true;
+      // P0-06：安全关键事件走结构化 fail-closed 决策；DENY 只来自干净退出的合法协议
+      return decideSecurityHook(outcome).allow;
+    },
+    postToolUse(name, out) {
+      fire('postToolUse', { tool: name, output: out.slice(0, 2000) });
+    },
+    postToolUseFailure(name, err) {
+      fire('postToolUseFailure', { tool: name, error: String(err ?? '').slice(0, 2000) });
+    },
+    userPromptSubmit(prompt, sessionId) {
+      fire('userPromptSubmit', { prompt: prompt.slice(0, 2000), session_id: sessionId });
+    },
+    stop(result) {
+      fire('stop', { ok: result.ok, turns: result.turns });
+    },
+    sessionStart(sessionId) {
+      fire('sessionStart', { session_id: sessionId });
+    },
+    sessionEnd(result) {
+      fire('sessionEnd', { ok: result.ok, turns: result.turns });
+    },
+    preCompact(reason) {
+      const outcome = fire('preCompact', { reason });
+      const output = outcome && (outcome.kind === 'ok' || outcome.kind === 'exited-nonzero') ? outcome.output : '';
+      return output.startsWith('BLOCK') || /\nBLOCK/.test(output);
+    },
+    postCompact(prevTokens, nextTokens) {
+      fire('postCompact', { prev_tokens: prevTokens, next_tokens: nextTokens });
+    },
+    subagentStart(goal) {
+      fire('subagentStart', { goal: String(goal ?? '').slice(0, 500) });
+    },
+    subagentStop(result) {
+      fire('subagentStop', { ok: result.ok, output: String(result.output ?? '').slice(0, 500), turns: result.turns });
+    },
+    notification(kind, text) {
+      fire('notification', { kind, text: String(text ?? '').slice(0, 1000) });
+    },
+  };
+}

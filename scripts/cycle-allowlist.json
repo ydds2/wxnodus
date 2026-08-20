@@ -1,0 +1,9 @@
+{
+  "comment": "循环依赖 allowlist（supremacy 3.5）——每条必须是「运行时无环」的良性环：仅 type-only 边（编译期擦除）或 dynamic import 边（运行时惰性、不成环）。修复后的环必须从本表移除。",
+  "cycles": [
+    { "chain": "store/db.ts > infrastructure/sqlite/memoryMigrations.ts", "reason": "memoryMigrations→db 为 import type Db（编译期擦除）；db→memoryMigrations 为值导入（迁移注册）——运行时无环" },
+    { "chain": "migrations/db/registry.ts > infrastructure/sqlite/marketMigrations.ts", "reason": "marketMigrations→registry 为 import type DbMigration（类型擦除）；registry→market 为值导入——运行时无环" },
+    { "chain": "migrations/db/registry.ts > infrastructure/sqlite/securityMigrations.ts", "reason": "securityMigrations→registry 为 import type DbMigration（类型擦除）；registry→security 为值导入——运行时无环" },
+    { "chain": "application/memory/memoryToolService.ts > kernel/tools.ts", "reason": "tools→memoryToolService 为 await import（动态惰性）；memoryToolService→tools 为 import type ToolCtx（类型擦除）——运行时无环" }
+  ]
+}

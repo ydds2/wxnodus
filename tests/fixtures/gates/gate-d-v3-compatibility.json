@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "purpose": "gate_d_input_fixture_only",
+  "manifestPath": "docs/superpowers/manifests/v3-compatibility.json",
+  "requiredScenarioKinds": ["cli", "headless", "gateway", "wire", "extension"],
+  "generatedBy": "scripts/generate-v3-compatibility.mjs"
+}

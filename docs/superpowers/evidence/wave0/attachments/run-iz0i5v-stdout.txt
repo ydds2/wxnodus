@@ -1,0 +1,8 @@
+
+> wxnodus@3.0.0 build
+> npm run clean && tsc
+
+
+> wxnodus@3.0.0 clean
+> node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+

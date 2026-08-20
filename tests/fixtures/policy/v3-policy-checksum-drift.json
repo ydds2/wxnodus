@@ -1,0 +1,498 @@
+{
+  "schemaVersion": 1,
+  "catalogVersion": 1,
+  "categories": [
+    {
+      "id": "root_home_recursive_destruction",
+      "normative": true,
+      "descriptionKey": "policy.redline.root_home_recursive_destruction"
+    },
+    {
+      "id": "disk_format_partition_raw_write",
+      "normative": true,
+      "descriptionKey": "policy.redline.disk_format_partition_raw_write"
+    },
+    {
+      "id": "shutdown_restart_fork_bomb",
+      "normative": true,
+      "descriptionKey": "policy.redline.shutdown_restart_fork_bomb"
+    },
+    {
+      "id": "system_registry_destruction",
+      "normative": true,
+      "descriptionKey": "policy.redline.system_registry_destruction"
+    },
+    {
+      "id": "interpreter_pipe_injection",
+      "normative": true,
+      "descriptionKey": "policy.redline.interpreter_pipe_injection"
+    },
+    {
+      "id": "credential_secret_persistence_leak",
+      "normative": true,
+      "descriptionKey": "policy.redline.credential_secret_persistence_leak"
+    },
+    {
+      "id": "unmediated_privilege_key_security_mode_change",
+      "normative": true,
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change"
+    },
+    {
+      "id": "remote_history_force_push",
+      "normative": true,
+      "descriptionKey": "policy.redline.remote_history_force_push"
+    }
+  ],
+  "rules": [
+    {
+      "id": "redline.rm-rf-root-home",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "root_home_recursive_destruction",
+      "descriptionKey": "policy.redline.rm_rf_root_home",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "rm\\s+-rf\\s+\\/|rm\\s+-rf\\s+[a-zA-Z]:[\\\\/]|rm\\s+-rf\\s+~(?=[\\\\/]|\\s|$)|rm\\s+-rf\\s+~\\/*",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.rm-rf-home-env",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "root_home_recursive_destruction",
+      "descriptionKey": "policy.redline.rm_rf_home_env",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "rm\\s+-rf\\s+(?:\\$HOME|%USERPROFILE%|\\/home\\/|\\/root)(?:\\s|$)",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.del-recursive-system-drive",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "root_home_recursive_destruction",
+      "descriptionKey": "policy.redline.del_recursive_system_drive",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "del\\s+\\/f\\s+\\/s\\s+[a-zA-Z]:[\\\\/]|Remove-Item\\s+-Recurse\\s+-Force\\s+[a-zA-Z]:[\\\\/]",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.format-drive",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "disk_format_partition_raw_write",
+      "descriptionKey": "policy.redline.format_drive",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "\\bformat\\s+[a-zA-Z]:",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.diskpart",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "disk_format_partition_raw_write",
+      "descriptionKey": "policy.redline.diskpart",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "\\bdiskpart\\b",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.mkfs",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "disk_format_partition_raw_write",
+      "descriptionKey": "policy.redline.mkfs",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "\\bmkfs(?:\\s|$)",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.dd-raw-device",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "disk_format_partition_raw_write",
+      "descriptionKey": "policy.redline.dd_raw_device",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "\\bdd\\s+.*\\bof=\\/dev\\/(?:sd|nvme|hd)",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.shutdown-reboot",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "shutdown_restart_fork_bomb",
+      "descriptionKey": "policy.redline.shutdown_reboot",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "\\b(shutdown|reboot|poweroff|halt|init\\s+0|telinit\\s+0|systemctl\\s+(poweroff|reboot))\\b",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.kill-1-fork-bomb",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "shutdown_restart_fork_bomb",
+      "descriptionKey": "policy.redline.kill_1_fork_bomb",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "\\bkill\\s+-9?\\s+-1\\b|:\\(\\)\\s*\\{\\s*:\\|:\\s*&\\s*\\}\\s*;",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.reg-delete-hklm",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "system_registry_destruction",
+      "descriptionKey": "policy.redline.reg_delete_hklm",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "\\breg\\s+delete\\s+HKLM",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.iex-powershell",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "interpreter_pipe_injection",
+      "descriptionKey": "policy.redline.iex_powershell",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "\\biex\\b|Invoke-Expression|Format-Volume",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.pipe-to-shell",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "interpreter_pipe_injection",
+      "descriptionKey": "policy.redline.pipe_to_shell",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "\\|\\s*(sh|bash|pwsh|powershell)\\b",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.git-push-force",
+      "version": 1,
+      "kind": "hard_redline",
+      "category": "remote_history_force_push",
+      "descriptionKey": "policy.redline.git_push_force",
+      "source": "permissions.ts#HARD_REDLINES",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "git\\s+push\\s+--force(?:\\s|$)",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.sensitive-write",
+      "version": 1,
+      "kind": "sensitive_write",
+      "category": "credential_secret_persistence_leak",
+      "descriptionKey": "policy.redline.sensitive_write",
+      "source": "permissions.ts#SENSITIVE_WRITE",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "(^|[\\\\/])(\\.bashrc|\\.zshrc|\\.profile|\\.bash_profile|\\.ssh[\\\\/].*|\\.env|\\.env\\.local|id_rsa|id_ed25519|authorized_keys|known_hosts|\\.git[\\\\/]config|\\.npmrc|\\.pypirc|settings\\.json(?:\\.tmp)?|permissions\\.json(?:\\.tmp)?)(\\s|$)",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.credential-file-write",
+      "version": 1,
+      "kind": "sensitive_write",
+      "category": "credential_secret_persistence_leak",
+      "descriptionKey": "policy.redline.credential_file_write",
+      "source": "permissions.ts#CREDENTIAL_WRITE",
+      "overrideable": false,
+      "requiresUserPresence": false,
+      "matcher": {
+        "type": "regex",
+        "value": "(^|[\\\\/])(.*\\.(pem|key|p12|pfx|jks)|credentials(\\.[a-z]+)?|\\.aws[\\\\/]credentials|\\.kube[\\\\/]config)(\\s|$)",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "redline.command.-perm",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/perm"
+      }
+    },
+    {
+      "id": "redline.command.-perm-rule",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/perm rule"
+      }
+    },
+    {
+      "id": "redline.command.-yolo",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/yolo"
+      }
+    },
+    {
+      "id": "redline.command.-afk",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/afk"
+      }
+    },
+    {
+      "id": "redline.command.-key-set",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/key set"
+      }
+    },
+    {
+      "id": "redline.command.-key-off",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/key off"
+      }
+    },
+    {
+      "id": "redline.command.-self-evolve",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/self-evolve"
+      }
+    },
+    {
+      "id": "redline.command.-security",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/security"
+      }
+    },
+    {
+      "id": "redline.command.-security-sudo-on",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/security sudo on"
+      }
+    },
+    {
+      "id": "redline.command.-security-secret-on",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/security secret on"
+      }
+    },
+    {
+      "id": "redline.command.-sandbox-L0",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/sandbox L0"
+      }
+    },
+    {
+      "id": "redline.command.-sandbox-L1",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/sandbox L1"
+      }
+    },
+    {
+      "id": "redline.command.-sandbox-L2",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/sandbox L2"
+      }
+    },
+    {
+      "id": "redline.command.-sandbox-L3",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/sandbox L3"
+      }
+    },
+    {
+      "id": "redline.command.-plan-on",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/plan on"
+      }
+    },
+    {
+      "id": "redline.command.-plan-off",
+      "version": 1,
+      "kind": "command_redline",
+      "category": "unmediated_privilege_key_security_mode_change",
+      "descriptionKey": "policy.redline.unmediated_privilege_key_security_mode_change",
+      "source": "kernel/commandLevels.ts#COMMAND_LEVELS",
+      "overrideable": false,
+      "requiresUserPresence": true,
+      "matcher": {
+        "type": "command",
+        "value": "/plan off"
+      }
+    }
+  ],
+  "checksum": "0000000000000000000000000000000000000000000000000000000000000000"
+}

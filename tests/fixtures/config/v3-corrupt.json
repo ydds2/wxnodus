@@ -1,0 +1,2 @@
+// tests/fixtures/config/v3-corrupt.json — 确定性截断 JSON（触发 CONFIG_CORRUPT）
+{"configVersion":0,"locale":"zh-CN"

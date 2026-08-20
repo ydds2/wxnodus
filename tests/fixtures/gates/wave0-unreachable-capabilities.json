@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "purpose": "wave0_unreachable_capability_fixture",
+  "reasonCode": "CAPABILITY_NOT_DELIVERED_IN_WAVE_SCOPE",
+  "waveScope": "wave0",
+  "unreachableCapabilityIds": [
+    "gate-d-functional-scenario",
+    "voice-runtime",
+    "computer-use",
+    "completion-gate-decision",
+    "distribution-installer",
+    "secondary-platform-matrix"
+  ]
+}

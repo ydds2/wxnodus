@@ -1,0 +1,7 @@
+
+> wxnodus@3.0.0 drill:wave0-recovery
+> npm exec -- tsx scripts/drill-wave0-recovery.ts
+
+CONFIG_DRILL: config-v0-to-v1 六步 + 故障注入通过
+DB_DRILL: DB forward-only：expand → N-1 窗口 → confirmed-write → reconcile → readback 通过
+WROTE:C:\Users\20164\Desktop\WxNodusV3CLI\docs\superpowers\evidence\wave0\recovery-drill.json

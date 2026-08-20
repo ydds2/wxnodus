@@ -1,0 +1,61 @@
+{
+  "name": "wxnodus-vscode",
+  "displayName": "WxNodus — Windows 本地 AI agent（VS Code 伴侣）",
+  "version": "0.1.0",
+  "description": "WxNodus CLI 的 VS Code 伴侣插件：--wire 事件流桥接 + 对话面板 + 审批模态（数据不出机）。",
+  "license": "Apache-2.0",
+  "private": true,
+  "publisher": "wxnodus",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      { "command": "wxnodus.run", "title": "WxNodus: 提问（--wire 无头执行）" },
+      { "command": "wxnodus.panel", "title": "WxNodus: 打开对话面板" },
+      { "command": "wxnodus.stop", "title": "WxNodus: 停止当前回合" }
+    ],
+    "configuration": {
+      "title": "WxNodus",
+      "properties": {
+        "wxnodus.bin": {
+          "type": "string",
+          "default": "wxnodus",
+          "description": "wxnodus 可执行文件（npm link 后通常为 wxnodus；也可填 dist/cli/index.js 的绝对路径）"
+        },
+        "wxnodus.dataDir": {
+          "type": "string",
+          "default": "",
+          "description": "数据目录（缺省使用本扩展 globalStorage——与 CLI 独立，避免污染主 CLI 数据）"
+        },
+        "wxnodus.mode": {
+          "type": "string",
+          "default": "smart",
+          "enum": ["smart", "auto", "plan", "yolo"],
+          "description": "会话权限模式（与 CLI /perm 同一语义）"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/wireBridge.test.mjs",
+    "package": "npm run build && vsce package --no-dependencies -o wxnodus-vscode.vsix",
+    "all": "npm run typecheck && npm run test && npm run package"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://example.invalid/wxnodus-vscode"
+  }
+}
