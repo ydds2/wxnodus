@@ -236,6 +236,7 @@ M-1~M-6 照【V3 计划】（黑洞记忆/build/UIA/合规/ACP/语音——含 v
 - **L3 = 波 3 生效 6（P3-4 作废）**
 - **L4 = 波 4（7）+ 波 5（4）**
 - **维护轨 M（6）贯穿；C 级积压随波消化**
+  - **M-1 执行记录（2026-08-21）**：黑洞记忆三件套闭环——curator 会话化 / imageHistory FTS 刷新（改走 updateMessage）/ absorbCount（即 /memory 概览 default 硬编码）均已修；审计同段附带两项同批修复（-p --json usage 会话对齐、ACP sessions LRU 界 64）。
 - 合计生效任务卡 ≈ 95 + L0 新增 7 − 重复合并 2（A-5、P4-2）≈ **100 张**；全部细节锚点见【V3 计划】第 5 章。
 
 ---
