@@ -7,7 +7,7 @@ import { setInputSelection } from '../runtime/selectionStore.js'
 import { readClipboardText, writeClipboardText } from '../lib/clipboard.js'
 import { highlightInputAnsi } from '../lib/inputHighlight.js'
 import { initialVimState, initialVimHistory, vimHandleKey, vimHistoryPush, vimHistoryUndo, vimHistoryRedo, type VimHistory, type VimMode } from '../lib/vimCore.js'
-import { setVimNormalActive } from '../config/vimMode.js'
+import { setVimNormalActive, insertToNormalCursor } from '../config/vimMode.js'
 import { cursorLayout, offsetFromPosition } from '../lib/inputMetrics.js'
 import {
   DEFAULT_VOICE_RECORD_KEY,
@@ -997,15 +997,9 @@ export function TextInput({
     (inp: string, k: Key, event: InputEvent) => {
       const eventRaw = event.keypress.raw
 
-      // Configured voice shortcut wins over composer-level defaults like
-      // paste/copy so users who bind voice to ctrl+v / alt+v / cmd+v
-      // actually get voice toggled instead of a paste (Copilot round-7
-      // follow-up on #19835). The pass-through predicate is a no-op for
-      // ordinary typing and plain paste when voice is unbound to 'v'.
-      // A-23（V4 P4-5）：vim 截 Esc 必须先于全局 pass-through——predicate 含 key.escape，
-      // 不让位则 insert→normal 的 Esc 永远到不了 vim 分支（原「Esc 死代码」根因）。
-      // vimEnabled 时 Esc 归 vim（insert→normal / normal 清搜索——肌肉记忆优先）；
-      // 非 vim 用户零变化（pass-through 照旧，全局 esc.multi 链不受影响）。
+      // Voice shortcut wins over paste/copy（Copilot #19835）。A-23（V4 P4-5）：vim 截 Esc
+      // 先于 pass-through（predicate 含 escape——不让位则 Esc 到不了 vim，死代码根因）；
+      // vimEnabled 时 Esc 归 vim（insert→normal/清搜索），非 vim 用户零变化。
       const vimWantsEsc = vimEnabled && k.escape
       if (!vimWantsEsc && shouldPassThroughToGlobalHandler(inp, k, voiceRecordKey)) {
         flushKeyBurst()
@@ -1013,7 +1007,7 @@ export function TextInput({
         return
       }
 
-      // 波 3 ②：vim 模态按键拦截（vimEnabled 且 normal 模式全拦截；insert 模式仅截 Esc 回 normal）
+      // 波 3 ②：vim 模态拦截（normal 全拦截；insert 仅截 Esc 回 normal）
       if (vimEnabled && (vimRef.current.mode !== 'insert' || k.escape)) {
         flushKeyBurst()
 
@@ -1022,19 +1016,13 @@ export function TextInput({
           vimRef.current = esc.state
           setVimModeUi(esc.state.mode)
           setVimNormalActive(esc.state.mode !== 'insert')
-          // P4-5（A-23）：insert 光标域（0..len）→ normal 域（0..len-1）——左移一格坐
-          // 在字符上（真 vim 语义）。不转换则 x/dw 等作用对象越界为 no-op（接线实测）；
-          // vimCore 纯函数不越权移动光标（其 doc 模型按 normal 域消费——单测既有口径）。
-          if (vRef.current.length) {
-            const clamped = Math.max(0, Math.min(curRef.current, vRef.current.length) - 1)
-            if (clamped !== curRef.current) commit(vRef.current, clamped)
-          }
+          const clamped = insertToNormalCursor(vRef.current.length, curRef.current) // P4-5：光标域转换（vimMode）
+          if (clamped !== curRef.current) commit(vRef.current, clamped)
 
           return
         }
 
-        // 键名映射：Esc/Enter/Backspace + 无修饰单字符；其余（Ctrl 组合等）不属 vim
-        // Ctrl-R = redo（P3 评估轮——/ 搜索外另一六家题）
+        // 键名映射：Esc/Enter/Backspace + 无修饰单字符；Ctrl-R=redo（其余不属 vim）
         let token: string | null = null
         if (k.escape) token = 'Escape'
         else if (k.return) token = 'Enter'

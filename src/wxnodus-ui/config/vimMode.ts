@@ -25,3 +25,12 @@ export function setVimNormalActive(active: boolean): void {
 export function getVimNormalActive(): boolean {
   return VIM_NORMAL_ACTIVE
 }
+
+/**
+ * P4-5（A-23）：insert 光标域（0..len）→ normal 域（0..len-1）转换——离开 insert 时
+ * 左移一格坐在字符上（真 vim 语义；不转换则 x/dw 等作用对象越界为 no-op，接线实测）。
+ * 抽在 vimMode（textInput 与测试共用；textInput 有 L4 行数 ratchet 只降不升）。
+ */
+export function insertToNormalCursor(textLength: number, cursor: number): number {
+  return textLength ? Math.max(0, Math.min(cursor, textLength) - 1) : 0;
+}
