@@ -323,7 +323,7 @@ describe('P0-1 replaceSessionMessages 事务原子性', () => {
     expect(after.length).toBe(3);
     expect(after.map((r: any) => r.content)).toEqual(['旧消息A', '旧消息B', '旧消息C']);
     // FTS 检索同样完好（删 FTS+重插也须随事务回滚）
-    expect(searchMessages(db, '旧消息A', { sessionIds: [sid] }).length).toBeGreaterThan(0);
+    expect(searchMessages(db, '旧消息A', { sessionId: sid }).length).toBeGreaterThan(0);
   });
 
   it('正常路径回归：快照替换成功且内容/检索正确', () => {
@@ -340,7 +340,7 @@ describe('P0-1 replaceSessionMessages 事务原子性', () => {
     expect(rows.length).toBe(2);
     expect((rows[0] as any).content).toBe('替换后甲');
     expect((rows[1] as any).content).toBe('替换后乙');
-    expect(searchMessages(db, '替换后乙', { sessionIds: [sid] }).length).toBeGreaterThan(0);
+    expect(searchMessages(db, '替换后乙', { sessionId: sid }).length).toBeGreaterThan(0);
   });
 });
 

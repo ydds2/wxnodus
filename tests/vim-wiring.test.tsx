@@ -55,7 +55,7 @@ const mk = (vimEnabled: boolean) => {
     value: '',
     onChange: (v: string) => { value = v },
     onSubmit: (t: string) => { submitted = t },
-    onPaste: () => {},
+    onPaste: () => null,
     vimEnabled,
     columns: 60,
   }), {

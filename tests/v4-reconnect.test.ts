@@ -35,7 +35,7 @@ describe('V4 P2-1 断网重连', () => {
       if (calls <= 2) { throw new TypeError('fetch failed'); } // 前两次断网
       return sseBody('恢复后回答');
     }) as typeof fetch;
-    const r = await callLlmStream({ ...OPTS, onRetryNotice: t => notices.push(t) } as any);
+    const r = await callLlmStream({ ...OPTS, onRetryNotice: (t: string) => { notices.push(t); } } as any);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.content).toBe('恢复后回答');
     expect(calls).toBe(3);
@@ -81,7 +81,7 @@ describe('V4 P2-1 断网重连', () => {
       if (calls2 === 1) return new Response('overloaded', { status: 529 });
       return sseBody('ok529');
     }) as typeof fetch;
-    const r529 = await callLlmStream({ ...OPTS, onRetryNotice: t => notices.push(t) } as any);
+    const r529 = await callLlmStream({ ...OPTS, onRetryNotice: (t: string) => { notices.push(t); } } as any);
     expect(r529.ok).toBe(true);
     expect(notices.some(n => /服务端过载/.test(n))).toBe(true);
   }, 15_000);

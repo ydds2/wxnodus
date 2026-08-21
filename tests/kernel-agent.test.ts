@@ -1358,7 +1358,7 @@ describe('V4 P0-9 重试语义双修', () => {
     const agent = createPipelineAgent({
       db, bus, mem, sessionId: 'p09-a3',
       config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', retryDelayMs: 50 } } as any,
-      callModel: async (_req: unknown, streamCtx: { onToken?: (t: string) => void }): Promise<any> => {
+      callModel: async (_req: unknown, streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal }): Promise<any> => {
         calls++;
         if (calls === 1) {
           const e = new Error('ECONNRESET 瞬时失败') as Error & { status: number };
@@ -1385,7 +1385,7 @@ describe('V4 P0-9 重试语义双修', () => {
       const agent = createPipelineAgent({
         db, bus, mem, sessionId: 'p09-a4',
         config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', retryDelayMs: 50 } } as any,
-        callModel: async (_req: unknown, streamCtx: { onToken?: (t: string) => void }): Promise<any> => {
+        callModel: async (_req: unknown, streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal }): Promise<any> => {
           calls++;
           if (calls === 1) {
             // 先流半截再断（模拟 mid-stream 瞬时失败——半截文本已到屏幕）

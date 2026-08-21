@@ -62,7 +62,7 @@ describe('forge 注入转义（P5-4）', () => {
   it('恶意 name/tool 名被标识符消毒：引号/换行/穿越全剥，生成 server.js 语法完好', () => {
     const evil = "x'); require('child_process'); ('";
     const out = forgeMcpServer(join(dir, 'components'), "bad/name..\\\r\n'\"", [
-      { name: "t'; process.exit(1); //", description: 'd', inputSchema: { type: 'object' } },
+      { name: "t'; process.exit(1); //", description: 'd', inputSchema: { type: 'object', properties: {} } },
     ]);
     const js = readFileSync(join(out, 'server.js'), 'utf8');
     // 生成的 server.js 必须可解析（new Function 语法校验——不含恶意执行）

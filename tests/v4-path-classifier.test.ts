@@ -7,19 +7,21 @@ const BS = String.fromCharCode(92);
 
 describe('V4 P1-8 路径分类器归一化', { skip: process.platform !== 'win32' }, () => {
   const env = { WINDIR: process.env.WINDIR ?? 'C:' + BS + 'Windows', ProgramFiles: process.env.ProgramFiles };
+  // ClassifyOptions 必填 workspaceRoot（测试统一给临时根——分类断言不依赖其值）
+  const opts = { env, workspaceRoot: process.cwd() };
 
   it('尾点别名：C:' + BS + 'Windows.' + BS + 'system32' + BS + 'x → system-windows（此前逃过降 other）', () => {
-    const r = classifyWindowsPath('C:' + BS + 'Windows.' + BS + 'system32' + BS + 'x', { env });
+    const r = classifyWindowsPath('C:' + BS + 'Windows.' + BS + 'system32' + BS + 'x', opts);
     expect(r.class).toBe('system-windows');
   });
 
   it('全正斜杠别名：C:/Windows/System32/x → system-windows（此前逃过）', () => {
-    const r = classifyWindowsPath('C:/Windows/System32/x', { env });
+    const r = classifyWindowsPath('C:/Windows/System32/x', opts);
     expect(r.class).toBe('system-windows');
   });
 
   it('8.3 短名别名：PROGRA~1 → system-programs（realpath 展开命中）', () => {
-    const r = classifyWindowsPath('C:' + BS + 'PROGRA~1' + BS + 'whatever.dll', { env });
+    const r = classifyWindowsPath('C:' + BS + 'PROGRA~1' + BS + 'whatever.dll', opts);
     expect(r.class).toBe('system-programs');
   });
 

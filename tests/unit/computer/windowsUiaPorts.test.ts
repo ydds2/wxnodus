@@ -54,27 +54,27 @@ describe('createWindowsUiaPorts 边界分类', () => {
 
 describe('createWindowsUiaPorts 单能力端口映射', () => {
   it('invoke 端口只认 method=invoke（无跨模式回落）', async () => {
-    vi.mocked(uiaInvokeOnly).mockReturnValue({ ok: true, element: { method: 'invoke' } });
+    vi.mocked(uiaInvokeOnly).mockResolvedValue({ ok: true, element: { method: 'invoke' } });
     const ports = createWindowsUiaPorts(() => baseProbe());
     expect(await ports.invoke('btn|id|42')).toBe(true);
-    vi.mocked(uiaInvokeOnly).mockReturnValue({ ok: true, element: { method: 'select' } });
+    vi.mocked(uiaInvokeOnly).mockResolvedValue({ ok: true, element: { method: 'select' } });
     expect(await ports.invoke('btn|id|42')).toBe(false);
     expect(uiaInvokeOnly).toHaveBeenLastCalledWith('btn|id', '42');
   });
 
   it('select 端口只认 method=select', async () => {
-    vi.mocked(uiaSelectOnly).mockReturnValue({ ok: true, element: { method: 'select' } });
+    vi.mocked(uiaSelectOnly).mockResolvedValue({ ok: true, element: { method: 'select' } });
     const ports = createWindowsUiaPorts(() => baseProbe());
     expect(await ports.select('item|id|42')).toBe(true);
-    vi.mocked(uiaSelectOnly).mockReturnValue({ ok: false, reason: 'no selection pattern' });
+    vi.mocked(uiaSelectOnly).mockResolvedValue({ ok: false, reason: 'no selection pattern' });
     expect(await ports.select('item|id|42')).toBe(false);
   });
 
   it('coordinateFallback：真实 mouse 结果 → acted+receipt；失败 → acted=false', async () => {
     const ports = createWindowsUiaPorts(() => baseProbe());
-    vi.mocked(uiaMouseOnly).mockReturnValue({ ok: true, element: { method: 'mouse', x: 10, y: 20 } });
+    vi.mocked(uiaMouseOnly).mockResolvedValue({ ok: true, element: { method: 'mouse', x: 10, y: 20 } });
     expect(await ports.coordinateFallback('el|id|42')).toEqual({ acted: true, receiptId: 'uia-mouse-10-20' });
-    vi.mocked(uiaMouseOnly).mockReturnValue({ ok: false, reason: 'element not found' });
+    vi.mocked(uiaMouseOnly).mockResolvedValue({ ok: false, reason: 'element not found' });
     expect(await ports.coordinateFallback('el|id|42')).toEqual({ acted: false, receiptId: null });
   });
 });

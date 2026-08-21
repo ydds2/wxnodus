@@ -12,7 +12,7 @@ import type { Msg } from '../src/wxnodus-ui/types.js';
 
 const t = DEFAULT_THEME;
 const line = (msg: Partial<Msg> & Pick<Msg, 'role' | 'text'>) =>
-  render(<MessageLine cols={100} msg={msg as Msg} t={t} />).lastFrame?.() ?? (() => '');
+  render(<MessageLine cols={100} msg={msg as Msg} t={t} />).lastFrame?.() ?? '';
 
 describe('V4 L0-3 bridge：Msg → OutputEvent 纯函数', () => {
   it('tool 消息 → tool-result（工具名从「name: 」前缀提取；toolOutcome 透传）', () => {
