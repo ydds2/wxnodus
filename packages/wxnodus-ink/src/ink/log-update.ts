@@ -368,7 +368,8 @@ export class LogUpdate {
         return true // early exit
       }
 
-      moveCursorTo(screen, x, y, viewportY)
+      // V4 P3-1：已滚入 scrollback 的行跳过（viewportY 补偿——主屏模式）
+      if (!moveCursorTo(screen, x, y, viewportY)) return
 
       if (added) {
         const targetHyperlink = added.hyperlink
@@ -465,7 +466,10 @@ export class LogUpdate {
         return [[], { dx: 0, dy: 0 }]
       })
     } else {
-      moveCursorTo(screen, next.cursor.x, next.cursor.y, viewportY)
+      // V4 P3-1：光标目标行已滚入 scrollback——跳过光标恢复（返回当前 diff）
+      if (!moveCursorTo(screen, next.cursor.x, next.cursor.y, viewportY)) {
+        return screen.diff.length > 0 ? screen.diff : []
+      }
     }
 
     const elapsed = performance.now() - startTime
@@ -589,7 +593,8 @@ function renderFrameSlice(
         continue
       }
 
-      moveCursorTo(screen, x, y, viewportY)
+      // V4 P3-1：已滚入 scrollback 的行跳过（viewportY 补偿——主屏模式）
+      if (!moveCursorTo(screen, x, y, viewportY)) continue
 
       // Handle hyperlink
       const targetHyperlink = cell.hyperlink
@@ -687,7 +692,7 @@ function renderConhostDiffRows(
     const maxWritableX = screenWidth - 2
     if (fromX > maxWritableX) return
     const maxX = Math.min(toX, maxWritableX)
-    moveCursorTo(screen, fromX, y, viewportY)
+    if (!moveCursorTo(screen, fromX, y, viewportY)) return // V4 P3-1：scrollback 行跳过
 
     let currentStyleId = stylePool.none
     let lastRenderedStyleId = -1
@@ -809,7 +814,16 @@ function writeCellWithStyleStr(screen: VirtualScreen, cell: Cell, styleStr: stri
   return true
 }
 
-function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, _viewportY = 0) {
+function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, viewportY = 0): boolean {
+  // V4 P3-1：INLINE 主屏（scrollback）模式 viewportY 补偿恢复——
+  // 内容行 y 的正确终端行是 y - viewportY + 1（内容已滚入 scrollback 的行数要减去）。
+  // 此前 CUP 按 alt-screen 语义（行 0 = 终端行 1）直发：viewportY > 0 后全部脏行 CUP
+  // 偏移 viewportY 行、被终端 clamp 到最后一行——中部行增量更新堆到底行（视口乱码/状态栏被踩）。
+  // 已滚入 scrollback 的行（targetY - viewportY < 0）跳过重绘（对齐非 conhost 路径的
+  // scrollback 跳过语义）；alt-screen（viewportY = -1）不变。
+  const screenRow = targetY - viewportY
+  if (screenRow < 0) return false
+
   screen.txn(prev => {
     const dx = targetX - prev.x
     const dy = targetY - prev.y
@@ -819,8 +833,18 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, _
     // 依赖物理光标状态——winpty/conpty 渲染层吞掉帧首 HOME 后，每帧
     // 起点漂移，高频更新行（状态栏）逐 cell 定位累积错位 → 内容重叠
     // 乱码（elapsed 残留 / 模型名串位）。
+    // 主屏（viewportY >= 0）：终端行按内容坐标补偿（- viewportY + 1）。
+    // 主屏 CR+相对兜底：CUP 依赖 alt-screen 原点，主屏 scrollback 场景退化
+    // 为 CR + 相对列（同帧内 dx 仍可靠——帧首 CR 锚定行首）。
     if (inPendingWrap || dy !== 0) {
-      return [[{ type: 'stdout', content: `\x1b[${targetY + 1};${targetX + 1}H` }], { dx, dy }]
+      if (viewportY > 0) {
+        // 主屏内容坐标系：CUP 用补偿行号；CR 兜底行内位移
+        if (dx !== 0) {
+          return [[{ type: 'stdout', content: `\r${dx > 0 ? `\x1b[${dx}C` : `\x1b[${-dx}D`}` }], { dx, dy }]
+        }
+        return [[{ type: 'stdout', content: '\r' }], { dx: -prev.x, dy }]
+      }
+      return [[{ type: 'stdout', content: `\x1b[${screenRow + 1};${targetX + 1}H` }], { dx, dy }]
     }
 
     // Standard same-line cursor move → 绝对列定位（cursorTo/CHA）：
@@ -829,6 +853,7 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number, _
     // CHA 是 1-based——0-based targetX 需 +1（与 CUP 分支、宽字符补偿一致）
     return [[{ type: 'cursorTo', col: targetX + 1 }], { dx, dy }]
   })
+  return true
 }
 
 /**
