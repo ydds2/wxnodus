@@ -1,6 +1,6 @@
 {
   "name": "wxnodus",
-  "version": "3.2.0",
+  "version": "4.0.0-rc.1",
   "type": "module",
   "description": "WxNodus V3 — Windows 本地 AI agent CLI（Node22 + TypeScript）",
   "bin": {
