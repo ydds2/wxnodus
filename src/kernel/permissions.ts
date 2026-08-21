@@ -210,14 +210,40 @@ function classifyBashSingle(seg: string): BashCategory {
   // 解包后重新按白名单/写/网络分类
   if (BASH_WRITE.test(unwrapped)) return 'write';
   if (BASH_NETWORK.test(unwrapped)) return 'network';
-  if (BASH_READONLY.test(unwrapped)) return 'readonly';
+  // V4 P0-4：只读白名单仅在段内无命令替换/反引号/进程替换/控制结构时生效——
+  // `pwd <(rm x)`、含 $() 的段不可信为只读（纵深防御：主分类已提取 $()，此处防漏网形态）
+  if (BASH_READONLY.test(unwrapped) && !/\$\(|`|<\(|\bwhile\b|\bfor\b|\bif\b|\buntil\b/.test(unwrapped)) return 'readonly';
   return 'danger'; // 未知命令保守确认
+}
+
+// V4 P0-4：命令替换提取（$() 与反引号）——嵌套递归（深度上限 3 防爆炸）。
+// 提取出的内层命令独立参与分段分类：`echo $(del C:\x)` 的 $(del …) 不再藏身只读首词之后。
+const SEGMENT_SPLIT = /\s*(?:&&|\|\||;|\||&|>>|>|2>|\r?\n)\s*/;
+function extractSubstitutions(cmd: string, out: string[], depth = 0): string {
+  if (depth > 3) { out.push(cmd); return cmd; }
+  return cmd.replace(/\$\(([\s\S]*?)\)|`([^`]*)`/g, (_m, d1: string, d2: string) => {
+    const inner = String(d1 ?? d2 ?? '').trim();
+    if (!inner) return ' CMD_SUB ';
+    // 先提取 inner 自身的嵌套替换，再把 inner 剩余段与嵌套段一起落盘
+    const nested: string[] = [];
+    const strippedInner = extractSubstitutions(inner, nested, depth + 1);
+    out.push(strippedInner, ...nested);
+    return ' CMD_SUB ';
+  });
 }
 
 export function classifyBashCommand(command: string): BashCategory {
   const c = String(command ?? '').trim();
   if (!c) return 'danger';
-  const segs = c.split(/\s*(?:&&|\|\||;|\||>>|>|2>)\s*/).map(s => s.trim()).filter(Boolean);
+  // V4 P0-4：切分补全——换行 \r?\n、单 & 与 $()/反引号命令替换全部参与分段。
+  // 此前缺这三类：`cat file\nRemove-Item -Recurse -Force src` 以 cat 开头被判只读整体放行（smart 模式免审批）。
+  const substitutionBodies: string[] = [];
+  const stripped = extractSubstitutions(c, substitutionBodies);
+  const segs = [
+    ...stripped.split(SEGMENT_SPLIT),
+    ...substitutionBodies.flatMap(b => b.split(SEGMENT_SPLIT)),
+  ]
+    .map(s => s.trim()).filter(Boolean);
   if (!segs.length) return 'danger';
   const rank: Record<BashCategory, number> = { readonly: 0, write: 1, network: 2, danger: 3 };
   let worst: BashCategory = 'readonly';

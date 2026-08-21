@@ -13,7 +13,7 @@ describe('A2A 协议（本地环回）', () => {
   it('serve 启动端点 + call 环回调用（messages/send → agent 应答）', async () => {
     const s = await a2aServe(0, async (text) => ({ ok: true, text: `echo:${text}` }));
     servers.push(s);
-    const r = await a2aCall(s.url, 'hello-a2a');
+    const r = await a2aCall(s.url, 'hello-a2a', { token: s.token });
     expect(r.ok).toBe(true);
     expect(r.text).toBe('echo:hello-a2a');
   });
@@ -47,7 +47,7 @@ describe('A2A 协议（本地环回）', () => {
     const controller = new AbortController();
     const request = fetch(s.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'messages/send', params: { message: { role: 'user', parts: [{ text: 'disconnect' }] } } }),
       signal: controller.signal,
     });
@@ -83,14 +83,14 @@ describe('A2A 协议（本地环回）', () => {
 
     const message = (text: string, id: number) => fetch(s.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` },
       body: JSON.stringify({ jsonrpc: '2.0', id, method: 'messages/send', params: { message: { role: 'user', parts: [{ text }] } } }),
     }).catch(() => undefined);
     const first = message('message-one', 1);
     const second = message('message-two', 2);
     const taskResponse = await fetch(s.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` },
       body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tasks/send', params: { message: { role: 'user', parts: [{ text: 'task-one' }] } } }),
     });
     await taskResponse.json();
@@ -242,7 +242,7 @@ describe('A2A 完整版（agent card / 任务流 / cancel / push / stdio）', ()
   it('tasks/send → 轮询至 completed（artifact 回声）', async () => {
     const s = await a2aServe(0, async t => ({ ok: true, text: 'echo:' + t }));
     servers.push(s);
-    const r = await a2aTaskSend(s.url, 'hello-task', { timeoutMs: 15000 });
+    const r = await a2aTaskSend(s.url, 'hello-task', { timeoutMs: 15000, token: s.token });
     expect(r.ok).toBe(true);
     expect(r.state).toBe('completed');
     expect(r.text).toBe('echo:hello-task');
@@ -252,7 +252,7 @@ describe('A2A 完整版（agent card / 任务流 / cancel / push / stdio）', ()
   it('tasks/get 未知任务 → -32602 诚实错误', async () => {
     const s = await a2aServe(0, async t => ({ ok: true, text: t }));
     servers.push(s);
-    const resp = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tasks/get', params: { id: 't-nope' } }) });
+    const resp = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tasks/get', params: { id: 't-nope' } }) });
     const j = await resp.json() as any;
     expect(j.error.code).toBe(-32602);
   });
@@ -269,9 +269,9 @@ describe('A2A 完整版（agent card / 任务流 / cancel / push / stdio）', ()
       },
     }));
     servers.push(s);
-    const send = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tasks/send', params: { message: { role: 'user', parts: [{ text: 'block' }] } } }) });
+    const send = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tasks/send', params: { message: { role: 'user', parts: [{ text: 'block' }] } } }) });
     const task = ((await send.json()) as any).result;
-    const cancel = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tasks/cancel', params: { id: task.id } }) });
+    const cancel = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tasks/cancel', params: { id: task.id } }) });
     const cj = (await cancel.json()) as any;
     expect(cj.result.state).toBe('canceled');
     expect(cancelCount).toBe(1);
@@ -284,7 +284,7 @@ describe('A2A 完整版（agent card / 任务流 / cancel / push / stdio）', ()
       return { ok: false, text: '', status: 'blocked', error: 'policy denied' };
     });
     servers.push(s);
-    const r = await a2aTaskSend(s.url, 'blocked', { timeoutMs: 15_000 });
+    const r = await a2aTaskSend(s.url, 'blocked', { timeoutMs: 15_000, token: s.token });
     expect(r.ok).toBe(false);
     expect(r.state).toBe('failed');
     expect(r.error).toBe('policy denied');
@@ -302,7 +302,7 @@ describe('A2A 完整版（agent card / 任务流 / cancel / push / stdio）', ()
     const recvUrl = `http://127.0.0.1:${(recv.address() as any).port}/hook`;
     const s = await a2aServe(0, async t => ({ ok: true, text: 'p:' + t }));
     servers.push(s);
-    const resp = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tasks/send', params: { message: { role: 'user', parts: [{ text: 'hi' }] }, pushNotificationConfig: { url: recvUrl } } }) });
+    const resp = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tasks/send', params: { message: { role: 'user', parts: [{ text: 'hi' }] }, pushNotificationConfig: { url: recvUrl } } }) });
     const j = (await resp.json()) as any;
     expect(j.result.id).toBeTruthy();
     await new Promise(res => setTimeout(res, 400));
@@ -328,5 +328,31 @@ describe('A2A 完整版（agent card / 任务流 / cancel / push / stdio）', ()
     expect(init.result.protocolVersion).toBe('0.3.0');
     const send = JSON.parse(lines[1]!);
     expect(send.result.id).toContain('t-');
+  });
+});
+
+// V4 P0-7：a2a 端点认证门——无 token 401 / 非 JSON Content-Type 415 / agent.json 卡片保持公开。
+describe('V4 P0-7 a2a 认证门', () => {
+  it('无 Bearer → 401；text/plain（CORS simple request 形态）→ 415；带 token 正常', async () => {
+    const s = await a2aServe(0, async t => ({ ok: true, text: `echo:${t}` }));
+    try {
+      // 无认证
+      const noAuth = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'messages/send', params: { message: { role: 'user', parts: [{ text: 'x' }] } } }) });
+      expect(noAuth.status).toBe(401);
+      // text/plain（恶意网页跨站 simple request 形态——无预检即可发送）
+      const plain = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{}' });
+      expect(plain.status).toBe(415);
+      // agent.json 发现性卡片保持公开（零敏感）
+      const card = await fetch(`${s.url.replace(/\/$/, '')}/.well-known/agent.json`);
+      expect(card.status).toBe(200);
+      // 错 token 401
+      const bad = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer wrong-token' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'messages/send', params: { message: { role: 'user', parts: [{ text: 'x' }] } } }) });
+      expect(bad.status).toBe(401);
+      // 正确 token 正常
+      const ok = await a2aCall(s.url, 'hi', { token: s.token });
+      expect(ok.ok).toBe(true);
+    } finally {
+      await s.stop();
+    }
   });
 });

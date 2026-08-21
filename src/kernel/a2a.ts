@@ -4,7 +4,7 @@
 // 任务流（tasks/send → 状态轮询 tasks/get → tasks/cancel；pushNotificationConfig 状态推送）、
 // stdio 行协议传输（a2aStdioServe——NDJSON 一行一帧）。诚实边界：任务注册表内存态（进程退出即清，
 // 不做持久化——本地单机 A2A 无跨重启任务语义）；push 为 fire-and-forget（3s 超时，失败不阻断任务）。
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import {
   asCancellableExecution,
@@ -32,6 +32,10 @@ export interface A2AAgentCard {
 
 export interface A2AServeOptions {
   card?: { name: string; description: string; skills?: A2ASkill[] };
+  /** V4 P0-7：本地监听 Bearer token——未配置时自动生成随机 token（调用方从返回值取回打印）。
+   * 此前零认证：本机任意进程/浏览器恶意页面可用 CORS simple request 静默驱动任意 prompt
+   * （对照同仓 --serve 的 Bearer+CSRF 三重防护——OpenCode 同型缺陷已酿 CVE-2026-22812）。 */
+  token?: string;
 }
 
 interface OwnedExecution<T> {
@@ -98,12 +102,12 @@ export async function fetchAgentCard(url: string): Promise<{ ok: boolean; card?:
 }
 
 // 客户端：POST messages/send → 提取对端文本回复（快捷通道，保持既有契约）
-export async function a2aCall(url: string, text: string, opts: { timeoutMs?: number } = {}): Promise<A2AResponse> {
+export async function a2aCall(url: string, text: string, opts: { timeoutMs?: number; token?: string } = {}): Promise<A2AResponse> {
   const timeout = opts.timeoutMs ?? 120_000;
   try {
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}) },
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
@@ -124,7 +128,7 @@ export async function a2aCall(url: string, text: string, opts: { timeoutMs?: num
 
 /** 客户端：任务流（tasks/send → 轮询 tasks/get 至终态；超时诚实报错）。 */
 export async function a2aTaskSend(
-  url: string, text: string, opts: { timeoutMs?: number; pollMs?: number; pushUrl?: string } = {},
+  url: string, text: string, opts: { timeoutMs?: number; pollMs?: number; pushUrl?: string; token?: string } = {},
 ): Promise<{ ok: boolean; text: string; taskId: string; state: string; error?: string }> {
   const timeout = opts.timeoutMs ?? 120_000;
   const poll = opts.pollMs ?? 100;
@@ -133,7 +137,7 @@ export async function a2aTaskSend(
     if (opts.pushUrl) params.pushNotificationConfig = { url: opts.pushUrl };
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}) },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tasks/send', params }),
       signal: AbortSignal.timeout(timeout),
     });
@@ -145,7 +149,7 @@ export async function a2aTaskSend(
     while (Date.now() < deadline) {
       const g = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}) },
         body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tasks/get', params: { id: taskId } }),
         signal: AbortSignal.timeout(5000),
       });
@@ -166,6 +170,8 @@ export async function a2aTaskSend(
 
 export interface A2AServer {
   url: string;
+  /** V4 P0-7：本端点 Bearer token（自动生成或调用方传入）——调用方打印给用户，请求方凭此访问。 */
+  token: string;
   stop(): Promise<void>;
 }
 
@@ -180,6 +186,15 @@ export async function a2aServe(
   let accepting = true;
   let stopping: Promise<void> | undefined;
   let serverUrl = '';
+  // V4 P0-7：Bearer 认证——token 由调用方传入或自动生成（A2AServer.token 回传打印一次）
+  const token = opts.token || randomBytes(24).toString('hex');
+  const bearerOk = (req: import('node:http').IncomingMessage): boolean => {
+    const auth = String(req.headers.authorization ?? '');
+    if (!auth.startsWith('Bearer ')) return false;
+    const given = Buffer.from(auth.slice(7));
+    const want = Buffer.from(token);
+    return given.length === want.length && timingSafeEqual(given, want);
+  };
   const ownExecution = (operation: CancellableOperation<A2ARunResult>): OwnedExecution<A2ARunResult> => {
     const execution = asCancellableExecution(operation);
     let cancelled = false;
@@ -234,6 +249,17 @@ export async function a2aServe(
     res.setHeader('Content-Type', 'application/json');
     if (req.method !== 'POST') {
       sendJson(res, 404, { jsonrpc: '2.0', error: { code: -32601, message: 'method not found' } });
+      return;
+    }
+    // V4 P0-7 认证门（先于 body 读取）：Bearer 必须 + Content-Type 必须 application/json。
+    // application/json 使浏览器跨站请求必经 CORS 预检（预检不带凭据→401）——simple request
+    // （text/plain）无预检即可跨站发送的路径被彻底封死。agent.json 卡片保留公开（发现性，零敏感）。
+    if (String(req.headers['content-type'] ?? '').toLowerCase().indexOf('application/json') < 0) {
+      sendJson(res, 415, { jsonrpc: '2.0', error: { code: -32001, message: 'content-type must be application/json' } });
+      return;
+    }
+    if (!bearerOk(req)) {
+      sendJson(res, 401, { jsonrpc: '2.0', error: { code: -32002, message: 'missing or invalid bearer token' } });
       return;
     }
     let body = '';
@@ -344,6 +370,7 @@ export async function a2aServe(
   serverUrl = `http://127.0.0.1:${actual}/`;
   return {
     url: serverUrl,
+    token,
     stop: () => {
       if (stopping) return stopping;
       accepting = false;

@@ -78,7 +78,8 @@ describe('/a2a serve handler Run 生命周期', () => {
     expect(url).toBeTruthy();
     expect(h.disposers.has('a2a-server')).toBe(true);
 
-    const task = await a2aTaskSend(url!, 'handler-task', { timeoutMs: 15_000 });
+    const token = started.output?.match(/令牌[^：]*：([0-9a-f]{16,})/)?.[1] ?? '';
+    const task = await a2aTaskSend(url!, 'handler-task', { timeoutMs: 15_000, token });
     expect(task).toMatchObject({ ok: true, state: 'completed', text: 'a2a:handler-task' });
     expect(h.calls).toHaveLength(1);
     expect(h.calls[0]?.sessionId).toMatch(/^a2a-task-/);

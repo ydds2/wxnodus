@@ -762,6 +762,31 @@ export const commands = {
     return '用法：/perm rule list ｜ add <工具> allow|deny|ask [glob] [理由] ｜ remove <编号> ｜ clear';
   });
 
+  // /perm budget：工具执行预算查看/重置（V4 P0-3——预算按日换代自动重计，本命令提供
+  // 即时余量可见性与手动清零出口；limits 是并发护栏语义而非终身配额）
+  bus.register('/perm budget', (args) => {
+    const [sub] = args;
+    const row = ctx.db.prepare(`SELECT id, limits_json, used_json FROM budget_snapshots WHERE active=1`).get() as
+      | { id: string; limits_json: string; used_json: string }
+      | undefined;
+    if (!row) return '预算快照不存在（安全子系统未初始化）';
+    const limits = JSON.parse(row.limits_json) as Record<string, number>;
+    const used = JSON.parse(row.used_json) as Record<string, number>;
+    const fmt = () => Object.keys(limits).sort().map(k => {
+      const u = used[k] ?? 0;
+      const left = Math.max(0, limits[k] - u);
+      return ` ${k.padEnd(16)} 已用 ${String(u).padStart(4)} / ${limits[k]}（剩 ${left}）`;
+    });
+    if (sub === 'reset') {
+      ctx.db.prepare(`UPDATE budget_snapshots SET used_json='{}' WHERE id=?`).run(row.id);
+      return `已清零预算用量（${row.id}）——全部工具类额度恢复上限`;
+    }
+    if (sub && sub !== 'status') {
+      return '用法：/perm budget status ｜ reset';
+    }
+    return lines(` 预算 ${row.id} `, fmt());
+  });
+
   // /self-evolve：自举模式（颠覆性改造——WxNodus 改进自己）
   // 闭环：AI 分析自身源码 → 生成补丁（JSON）→ 真实应用（undo shadow 备份可回滚）
   //   → 跑自身测试套件 → 失败自动回滚 → 报告（绝不自动提交——用户确认）
@@ -1125,10 +1150,29 @@ export const commands = {
     if (sub === 'start' || !sub) {
       if (gatewayServer) return `网关已在运行：http://127.0.0.1:${(gatewayServer.address() as any)?.port ?? port}`;
       const { createServer } = await import('node:http');
+      const { randomBytes, timingSafeEqual } = await import('node:crypto');
+      // V4 P0-7：Bearer 认证——此前 /rpc 零认证：CORS simple request（text/plain 无需预检）可
+      // 从任意浏览器恶意页面跨站驱动 command/prompt（含 /perm yolo 类提权）。OpenCode 同型
+      // 缺陷已酿 CVE-2026-22812。token：WXNODUS_GATEWAY_TOKEN 可固定（脚本集成），否则随机。
+      const gatewayToken = process.env.WXNODUS_GATEWAY_TOKEN || randomBytes(24).toString('hex');
+      const bearerOk = (req: import('node:http').IncomingMessage): boolean => {
+        const auth = String(req.headers.authorization ?? '');
+        if (!auth.startsWith('Bearer ')) return false;
+        const given = Buffer.from(auth.slice(7));
+        const want = Buffer.from(gatewayToken);
+        return given.length === want.length && timingSafeEqual(given, want);
+      };
       gatewayServer = createServer((req, res) => {
         res.setHeader('Content-Type', 'application/json');
         if (req.method !== 'POST' || req.url !== '/rpc') {
           res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return;
+        }
+        // 认证门先于 body 读取：Content-Type 必须 application/json（封死 simple request 跨站路径）+ Bearer
+        if (String(req.headers['content-type'] ?? '').toLowerCase().indexOf('application/json') < 0) {
+          res.writeHead(415); res.end(JSON.stringify({ error: 'content-type must be application/json' })); return;
+        }
+        if (!bearerOk(req)) {
+          res.writeHead(401); res.end(JSON.stringify({ error: 'missing or invalid bearer token' })); return;
         }
         let body = '';
         req.on('data', c => { body += c; if (body.length > 1e6) req.destroy(); });
@@ -1210,7 +1254,7 @@ export const commands = {
       }).catch(() => { gatewayServer = null; return; });
       if (!gatewayServer) return `启动失败：端口 ${port} 可能被占用（/gateway start <其他端口>）`;
       const activePort = (gatewayServer.address() as import('node:net').AddressInfo).port;
-      return `__KEEPALIVE__\n网关已启动：http://127.0.0.1:${activePort}（POST /rpc，method=command|prompt|health；仅本机监听，SIGINT 停止）`;
+      return `__KEEPALIVE__\n网关已启动：http://127.0.0.1:${activePort}（POST /rpc，method=command|prompt|health；仅本机监听，SIGINT 停止）\n访问令牌（Bearer，仅此一次展示；WXNODUS_GATEWAY_TOKEN 可固定）：${gatewayToken}`;
     }
     if (sub === 'stop') {
       if (!gatewayServer) return '网关未运行';
@@ -1283,7 +1327,7 @@ export const commands = {
   });
 
   // /a2a：Agent-to-Agent 协议——call 调用对端 / serve 启动本地端点（A2A messages/send）
-  let a2aServer: { url: string; stop(): Promise<void> } | null = null;
+  let a2aServer: { url: string; token: string; stop(): Promise<void> } | null = null;
   const closeA2a = async (): Promise<void> => {
     const server = a2aServer;
     a2aServer = null;
@@ -1331,7 +1375,7 @@ export const commands = {
             skills: discoverSkills(ctx.dataDir, ctx.cwd).slice(0, 50).map(s => ({ name: s.name, description: s.description })),
           },
         });
-        return `__KEEPALIVE__\nA2A 端点已启动：${a2aServer.url}（messages/send 快捷通道 + tasks/* 任务流 + /.well-known/agent.json 卡片，仅本机监听，SIGINT 停止；/a2a stop 停止）`;
+        return `__KEEPALIVE__\nA2A 端点已启动：${a2aServer.url}（messages/send 快捷通道 + tasks/* 任务流 + /.well-known/agent.json 卡片，仅本机监听，SIGINT 停止；/a2a stop 停止）\n访问令牌（Authorization: Bearer，仅此一次展示）：${a2aServer.token}`;
       } catch (e: any) {
         return `启动失败：端口 ${port} 可能被占用（/a2a serve <其他端口>）——${e?.message?.slice(0, 80)}`;
       }

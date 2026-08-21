@@ -91,6 +91,7 @@ function createHarness() {
   registerExtHandlers(commandBus, ctx);
 
   let url = '';
+  let token = '';
   return {
     calls,
     events,
@@ -102,11 +103,13 @@ function createHarness() {
       const match = result.output?.match(/http:\/\/127\.0\.0\.1:\d+/);
       expect(match?.[0]).toBeTruthy();
       url = `${match![0]}/rpc`;
+      // V4 P0-7：/gateway 现需 Bearer——从启动输出解析一次性令牌
+      token = result.output?.match(/令牌[^：]*：([0-9a-f]{16,})/)?.[1] ?? '';
     },
     async rpc(method: string, params: Record<string, unknown>, signal?: AbortSignal) {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ method, params }),
         signal,
       });
@@ -119,7 +122,7 @@ function createHarness() {
         port: target.port,
         path: target.pathname,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       });
       request.on('error', () => {});
       request.end(JSON.stringify({ method, params }));

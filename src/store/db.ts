@@ -254,26 +254,31 @@ export interface SnapshotMessage {
  * messages_ai（AFTER INSERT 同步 messages_fts）会导致重插同 rowid 时
  * 「constraint failed」：DELETE messages 不清理 FTS 行，重插撞 FTS UNIQUE。
  * 统一修复：先删 FTS 旧行 + 重置 sequence，再按快照重插（保留原始 id/ts/archived）。
+ * V4 P0-1：DELETE+FTS 清理+重插全部包进单事务——中途崩溃/断电整体回滚，
+ * 绝不出现「已删未插」的全会话消息永久丢失窗口（undo/checkpoint 恢复是高频操作）。
  */
 export function replaceSessionMessages(db: Db, sessionId: string, messages: SnapshotMessage[]): number {
-  const oldIds = (db.prepare(`SELECT id FROM messages WHERE session_id=?`).all(sessionId) as Array<{ id: number }>).map(r => r.id);
-  db.prepare(`DELETE FROM messages WHERE session_id=?`).run(sessionId);
-  // FTS5 清理旧行（触发器只 AFTER INSERT——DELETE 不会自动清 FTS）
-  try {
-    if (oldIds.length) {
-      db.prepare(`DELETE FROM messages_fts WHERE rowid IN (${oldIds.map(() => '?').join(',')})`).run(...oldIds);
-    }
-    // AUTOINCREMENT 序列重置——让快照原始 id 可恢复
-    db.prepare(`DELETE FROM sqlite_sequence WHERE name='messages'`).run();
-  } catch { /* FTS/序列不可用：降级重插 */ }
-  const ins = db.prepare(`INSERT INTO messages (id, session_id, role, content, tool_call_id, archived, ts) VALUES (?,?,?,?,?,?,?)`);
-  const now = Date.now();
-  messages.forEach((m, i) => {
-    const rawId = Number(m.id);
-    const mid = Number.isInteger(rawId) && rawId > 0 ? rawId : undefined;
-    ins.run(mid ?? null, sessionId, m.role, String(m.content ?? ''), m.tool_call_id ?? null, m.archived === 1 ? 1 : 0, Number(m.ts) || now + i);
+  const replace = db.transaction((msgs: SnapshotMessage[]): number => {
+    const oldIds = (db.prepare(`SELECT id FROM messages WHERE session_id=?`).all(sessionId) as Array<{ id: number }>).map(r => r.id);
+    db.prepare(`DELETE FROM messages WHERE session_id=?`).run(sessionId);
+    // FTS5 清理旧行（触发器只 AFTER INSERT——DELETE 不会自动清 FTS）
+    try {
+      if (oldIds.length) {
+        db.prepare(`DELETE FROM messages_fts WHERE rowid IN (${oldIds.map(() => '?').join(',')})`).run(...oldIds);
+      }
+      // AUTOINCREMENT 序列重置——让快照原始 id 可恢复
+      db.prepare(`DELETE FROM sqlite_sequence WHERE name='messages'`).run();
+    } catch { /* FTS/序列不可用：降级重插 */ }
+    const ins = db.prepare(`INSERT INTO messages (id, session_id, role, content, tool_call_id, archived, ts) VALUES (?,?,?,?,?,?,?)`);
+    const now = Date.now();
+    msgs.forEach((m, i) => {
+      const rawId = Number(m.id);
+      const mid = Number.isInteger(rawId) && rawId > 0 ? rawId : undefined;
+      ins.run(mid ?? null, sessionId, m.role, String(m.content ?? ''), m.tool_call_id ?? null, m.archived === 1 ? 1 : 0, Number(m.ts) || now + i);
+    });
+    return msgs.length;
   });
-  return messages.length;
+  return replace(messages);
 }
 
 // 会话 fork：复制会话（含全部消息）到新会话——分支会话不回写源

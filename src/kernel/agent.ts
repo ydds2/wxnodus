@@ -1212,7 +1212,7 @@ export function createAgent(opts: AgentOptions) {
         hooks?.postCompact?.(used, nextTokens);
         }
       }
-      let res: ModelCall | ToolCallMsg;
+      let res: ModelCall | ToolCallMsg | undefined;
       // A22：实时状态一句话——LLM 推理期（动态文本，UI 状态行显示）
       bus.emit('agent.stage', { stage: turns > 0 ? '正在推理下一步…' : '正在思考分析需求…' });
       try {
@@ -1231,6 +1231,10 @@ export function createAgent(opts: AgentOptions) {
         let lastErr = e;
         while (tried < 3) {
           await new Promise(r => setTimeout(r, EFF.retryDelayMs * (tried + 1)));
+          // V4 P0-9（A-4）：重发前发流重置信号——UI 清空失败尝试的半截输出再接收重试全文，
+          // 杜绝「半截旧文 + 完整新文」拼接显示（gemini StreamEventType.RETRY 同语义）。
+          // 语义增量已有 token 推到屏幕的场景同理适用（presentationReducer 按 reset 清空）。
+          bus.emit('agent.token', { text: '', reset: true });
           try { res = await callWithAbort({ messages: msgs, tools: toolList }); break; }
           catch (e2: any) { if (st.aborted) { st.interrupted = true; break; } lastErr = e2; tried++; }
         }
@@ -1239,7 +1243,10 @@ export function createAgent(opts: AgentOptions) {
           bus.emit('agent.error', { message: String(lastErr?.message ?? lastErr) });
           return finishEarly(`模型调用失败：${lastErr?.message?.slice(0, 200)}`);
         }
-        continue;
+        // V4 P0-9（A-3）：重试成功后不再 continue——此前 continue 丢弃已成功的 res 并
+        // 重新发起全新模型调用（token 已流到 UI 后丢弃重来：重复流式输出+双倍计费+多耗一轮）。
+        // 重试成功的 res 直接落入下方正常处理（text/tool_call 分支）。
+        if (!res) continue; // definite-assignment 防御（理论不可达：interrupted 已 break、耗尽已 return）
       }
       if (res.type === 'text') {
         finalText = res.content;

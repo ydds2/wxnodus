@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDB, closeDB, appendAudit, saveCheckpoint, restoreCheckpoint, bigramZh, auditHash, forkSession, pickResumeSession, deleteMessage, updateMessage } from '../src/store/db.js';
+import { openDB, closeDB, appendAudit, saveCheckpoint, restoreCheckpoint, bigramZh, auditHash, forkSession, pickResumeSession, deleteMessage, updateMessage, replaceSessionMessages } from '../src/store/db.js';
 import { searchMessages } from '../src/kernel/memory.js';
 
 let dir: string;
@@ -289,5 +289,53 @@ describe('F4：openDB 损坏容错（根因透出 + 恢复指引，绝不裸抛 
       // Windows：better-sqlite3 构造失败后的句柄释放有延迟——重试 + 容错清理（仓库既有惯例）
       try { rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 }); } catch { /* EBUSY 残留由系统回收 */ }
     }
+  });
+});
+
+// V4 P0-1：replaceSessionMessages 事务原子性——DELETE+重插中途失败必须整体回滚，
+// 绝不出现「已删未插」的全会话消息永久丢失窗口（undo/checkpoint 恢复高频路径）。
+describe('P0-1 replaceSessionMessages 事务原子性', () => {
+  it('重插中途撞约束（快照含重复 id）→ 抛错且旧消息原样保留', () => {
+    const sid = 'p01-atomic';
+    db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`).run(sid, 'P0-1', Date.now(), Date.now());
+    const ins = db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES (?,?,?,?)`);
+    ins.run(sid, 'user', '旧消息A', Date.now());
+    ins.run(sid, 'assistant', '旧消息B', Date.now());
+    ins.run(sid, 'user', '旧消息C', Date.now());
+    const before = db.prepare(`SELECT id, role, content FROM messages WHERE session_id=? ORDER BY id`).all(sid);
+    expect(before.length).toBe(3);
+
+    // 快照含两条相同 id → 第二条 INSERT 撞 PRIMARY KEY——模拟崩溃窗口中段失败
+    const t0 = Date.now();
+    expect(() =>
+      replaceSessionMessages(db, sid, [
+        { id: 9001, role: 'user', content: '新1', ts: t0 },
+        { id: 9001, role: 'user', content: '新2-重复id触发约束', ts: t0 + 1 },
+      ])
+    ).toThrow();
+
+    // 事务回滚证据：旧 3 条原样保留（若无事务，DELETE 已提交 → 0 条或半删状态）
+    const after = db.prepare(`SELECT id, role, content FROM messages WHERE session_id=? ORDER BY id`).all(sid);
+    expect(after.length).toBe(3);
+    expect(after.map((r: any) => r.content)).toEqual(['旧消息A', '旧消息B', '旧消息C']);
+    // FTS 检索同样完好（删 FTS+重插也须随事务回滚）
+    expect(searchMessages(db, '旧消息A', { sessionIds: [sid] }).length).toBeGreaterThan(0);
+  });
+
+  it('正常路径回归：快照替换成功且内容/检索正确', () => {
+    const sid = 'p01-ok';
+    db.prepare(`INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)`).run(sid, 'P0-1-ok', Date.now(), Date.now());
+    const ins = db.prepare(`INSERT INTO messages (session_id, role, content, ts) VALUES (?,?,?,?)`);
+    ins.run(sid, 'user', '替换前', Date.now());
+    const n = replaceSessionMessages(db, sid, [
+      { id: 9101, role: 'user', content: '替换后甲', ts: Date.now() },
+      { id: 9102, role: 'assistant', content: '替换后乙', ts: Date.now() + 1 },
+    ]);
+    expect(n).toBe(2);
+    const rows = db.prepare(`SELECT id, content FROM messages WHERE session_id=? ORDER BY id`).all(sid);
+    expect(rows.length).toBe(2);
+    expect((rows[0] as any).content).toBe('替换后甲');
+    expect((rows[1] as any).content).toBe('替换后乙');
+    expect(searchMessages(db, '替换后乙', { sessionIds: [sid] }).length).toBeGreaterThan(0);
   });
 });

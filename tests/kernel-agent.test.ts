@@ -1349,3 +1349,66 @@ describe('余额耗尽自动停（/balance auto-stop）', () => {
     }
   });
 });
+
+// V4 P0-9（A-3/A-4）：瞬时失败重试语义——重试成功不丢弃响应；重发前发流重置信号。
+describe('V4 P0-9 重试语义双修', () => {
+  it('A-3：瞬时失败重试成功后直接处理响应（不发起第三次调用、不丢弃文本）', async () => {
+    let calls = 0;
+    const seenTokens: string[] = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 'p09-a3',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', retryDelayMs: 50 } } as any,
+      callModel: async (_req: unknown, streamCtx: { onToken?: (t: string) => void }): Promise<any> => {
+        calls++;
+        if (calls === 1) {
+          const e = new Error('ECONNRESET 瞬时失败') as Error & { status: number };
+          e.status = 503;
+          throw e;
+        }
+        if (streamCtx?.onToken) streamCtx.onToken('好的');
+        return { type: 'text', content: '好的' };
+      },
+    });
+    const r = await agent.run('hi');
+    // A-3 修复前：重试成功后 continue → calls 变 3 且首轮成功响应被丢弃
+    expect(calls).toBe(2);
+    expect(r.ok).toBe(true);
+    expect(r.text).toBe('好的');
+  });
+
+  it('A-4：重发前发流重置信号（半截输出不与重试全文拼接）', async () => {
+    let calls = 0;
+    const tokenEvents: Array<{ text: string; reset?: boolean }> = [];
+    const handler = (e: any) => tokenEvents.push({ text: String(e?.payload?.text ?? ''), reset: !!e?.payload?.reset });
+    const unsubscribe = bus.on('agent.token', handler);
+    try {
+      const agent = createPipelineAgent({
+        db, bus, mem, sessionId: 'p09-a4',
+        config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', retryDelayMs: 50 } } as any,
+        callModel: async (_req: unknown, streamCtx: { onToken?: (t: string) => void }): Promise<any> => {
+          calls++;
+          if (calls === 1) {
+            // 先流半截再断（模拟 mid-stream 瞬时失败——半截文本已到屏幕）
+            streamCtx?.onToken?.('半截内容');
+            const e = new Error('mid-stream abort') as Error & { status: number };
+            e.status = 503;
+            throw e;
+          }
+          streamCtx?.onToken?.('完整回答');
+          return { type: 'text', content: '完整回答' };
+        },
+      });
+      const r = await agent.run('hi');
+      expect(r.text).toBe('完整回答');
+      // reset 信号存在且位于重试 token 之前
+      const resetIdx = tokenEvents.findIndex(e => e.reset);
+      expect(resetIdx).toBeGreaterThanOrEqual(0);
+      const retryTokenIdx = tokenEvents.findIndex(e => e.text === '完整回答');
+      expect(retryTokenIdx).toBeGreaterThan(resetIdx);
+      // 半截内容确实流过（场景成立性）
+      expect(tokenEvents.some(e => e.text === '半截内容')).toBe(true);
+    } finally {
+      unsubscribe();
+    }
+  });
+});

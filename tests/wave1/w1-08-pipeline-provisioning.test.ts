@@ -113,3 +113,30 @@ describe('W1-08 UoW lifecycle extension', () => {
     expect(unit.verifyJournal()).toMatchObject({ ok: true });
   });
 });
+
+// V4 P0-3：预算 id 换代（cliComposition 按日代际后缀）→ active 切换且 used 归零。
+// 此前 id 恒定 'budget-cli-v1' → 永不轮换 → used_json 跨启动持久累积：
+// 50 次 bash/100 网络/200 写后对应工具类终身瘫痪且重启无效。
+describe('V4 P0-3 预算代际轮换', () => {
+  it('同 id 重复启动：used 保留（护栏内累计）；id 换代（次日）：used 归零', () => {
+    const { db } = fixture();
+    // 第一天启动
+    provisionSecurityControlPlane(db, { policy: { id: 'policy-cli-v1', document: policyDoc }, budget: { id: 'budget-cli-v1-2026-08-21', limits }, now: 'd1' });
+    db.prepare('UPDATE budget_snapshots SET used_json=? WHERE active=1').run(JSON.stringify({ processSpawns: 2 }));
+    // 同日二次启动（同 id）：幂等不轮换——used 保留（当日护栏内累计）
+    provisionSecurityControlPlane(db, { policy: { id: 'policy-cli-v1', document: policyDoc }, budget: { id: 'budget-cli-v1-2026-08-21', limits }, now: 'd1-again' });
+    let active = db.prepare('SELECT id, used_json FROM budget_snapshots WHERE active=1').get() as { id: string; used_json: string };
+    expect(active.id).toBe('budget-cli-v1-2026-08-21');
+    expect(JSON.parse(active.used_json)).toEqual({ processSpawns: 2 });
+    // 次日启动（id 换代）：轮换——新 active、used 归零（撞上限用户自动解救）
+    provisionSecurityControlPlane(db, { policy: { id: 'policy-cli-v1', document: policyDoc }, budget: { id: 'budget-cli-v1-2026-08-22', limits }, now: 'd2' });
+    active = db.prepare('SELECT id, used_json FROM budget_snapshots WHERE active=1').get() as { id: string; used_json: string };
+    expect(active.id).toBe('budget-cli-v1-2026-08-22');
+    expect(JSON.parse(active.used_json)).toEqual({});
+    // 旧快照保留为非 active（审计可溯）
+    const rows = db.prepare('SELECT id, active FROM budget_snapshots ORDER BY id').all();
+    expect(rows.length).toBe(2);
+    expect((rows[0] as any).active).toBe(0);
+    expect((rows[1] as any).active).toBe(1);
+  });
+});

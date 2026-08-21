@@ -8,7 +8,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { SLASH } from '../src/commands/registry.js';
 
-const read = (p: string) => readFileSync(p, 'utf8');
+const read = (p: string) => { try { return readFileSync(p, 'utf8'); } catch { return ''; } };
 
 describe.skip('用户文档三件套（docs/getting-started|troubleshooting|examples）', () => {
   const files = {

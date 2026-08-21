@@ -1,8 +1,8 @@
 // tests/kernel-tools.test.ts — cron_create 工具（Claude Code CronCreate 对齐）
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { coreTools } from '../src/kernel/tools.js';
 import { openDB, closeDB } from '../src/store/db.js';
 
@@ -196,5 +196,112 @@ describe('fs_edit 多处出现行号换算（O(n+k·log n) 防大文件卡顿）
     expect(lineNumbersOf(content, [0, 2, 5, 9])).toEqual([1, 2, 3, 4]);
     expect(lineNumbersOf(content, [content.length - 1])).toEqual([4]); // 末字符仍在末行
     expect(lineNumbersOf('', [])).toEqual([]);
+  });
+});
+
+// V4 P0-2：view_image 工作区边界——绝不允许越界读取本机图片外发视觉端点。
+describe('view_image 工作区边界（P0-2）', () => {
+  const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+
+  it('工作区内图片正常载入；工作区外相对/绝对路径均拒绝', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'wx-viewimg-'));
+    const parent = dirname(root);
+    try {
+      writeFileSync(join(root, 'in.png'), PNG_MAGIC);
+      writeFileSync(join(parent, 'outside-p02.png'), PNG_MAGIC);
+      const tools = coreTools();
+      const vi = tools.view_image!;
+      const ctx = { cwd: root } as any;
+
+      // 工作区内：成功
+      const ok = await vi.run({ path: 'in.png' }, ctx);
+      expect(String(ok)).toContain('图片已载入');
+
+      // 相对路径逃逸（../outside-p02.png）：拒绝并明示越界
+      const rel = await vi.run({ path: '../outside-p02.png' }, ctx);
+      expect(String(rel)).toMatch(/越界|WORKSPACE_|boundary|escape|outside/i);
+
+      // 工作区外绝对路径：拒绝
+      const abs = await vi.run({ path: join(parent, 'outside-p02.png') }, ctx);
+      expect(String(abs)).toMatch(/越界|WORKSPACE_|boundary|escape|outside/i);
+
+      // extractImages 同源：越界不附加（null），工作区内附加 image_url
+      expect(await vi.extractImages!({ path: '../outside-p02.png' } as any, ctx)).toBeNull();
+      const parts = await vi.extractImages!({ path: 'in.png' } as any, ctx);
+      expect(Array.isArray(parts)).toBe(true);
+      expect((parts as any[])[0]?.image_url?.url).toMatch(/^data:image\/png;base64,/);
+    } finally {
+      try { rmSync(root, { recursive: true, force: true }); } catch { /* EBUSY */ }
+      try { rmSync(join(parent, 'outside-p02.png'), { force: true }); } catch { /* 同上 */ }
+    }
+  });
+});
+
+// V4 P0-5：ls/grep 工作区边界——绝不允许越权列目录/搜索工作区外文件。
+describe('ls/grep 工作区边界（P0-5）', () => {
+  it('工作区内正常；../ 与工作区外绝对路径均拒绝', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'wx-lsgrep-'));
+    const parent = dirname(root);
+    try {
+      writeFileSync(join(root, 'a.txt'), 'needle-here');
+      const tools = coreTools();
+      const ctx = { cwd: root } as any;
+
+      // 工作区内正常
+      expect(await tools.ls!.run({ path: '.' }, ctx)).toContain('a.txt');
+      expect(await tools.grep!.run({ pattern: 'needle', path: '.' }, ctx)).toContain('a.txt');
+
+      // 相对逃逸：拒绝并明示越界
+      expect(await tools.ls!.run({ path: '..' }, ctx)).toMatch(/越界/);
+      // 工作区外绝对路径（temp 根）：拒绝
+      expect(await tools.ls!.run({ path: parent }, ctx)).toMatch(/越界/);
+      expect(await tools.grep!.run({ pattern: 'x', path: parent }, ctx)).toMatch(/越界/);
+    } finally {
+      try { rmSync(root, { recursive: true, force: true }); } catch { /* EBUSY */ }
+    }
+  });
+});
+
+// V4 P0-8：fs_edit 行尾归一 + 三级容错 + 写回行尾保真（Windows 编辑最高频失败点根治）。
+describe('fs_edit 容错匹配与行尾保真（P0-8）', () => {
+  it('CRLF 文件 + LF oldText：匹配成功且写回保持 CRLF', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'wx-fsedit-'));
+    try {
+      const file = join(root, 'crlf.ts');
+      writeFileSync(file, 'const a = 1;\r\nconst b = 2;\r\nconst c = 3;\r\n', 'utf8');
+      const tools = coreTools();
+      const r = await tools.fs_edit!.run({ path: 'crlf.ts', oldText: 'const b = 2;\n', newText: 'const b = 22;\n' }, { cwd: root } as any);
+      expect(String(r)).toContain('已替换');
+      const after = readFileSync(file, 'utf8');
+      expect(after).toBe('const a = 1;\r\nconst b = 22;\r\nconst c = 3;\r\n'); // 行尾保真（不整体翻 LF）
+    } finally { try { rmSync(root, { recursive: true, force: true }); } catch { /* EBUSY */ } }
+  });
+  it('尾空白漂移（trimEnd 降级）与缩进漂移（reindent 降级）均匹配成功', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'wx-fsedit2-'));
+    try {
+      const file = join(root, 'drift.ts');
+      writeFileSync(file, 'function main() {\n  call();   \n}\n', 'utf8'); // 行尾多空格
+      const tools = coreTools();
+      const r1 = await tools.fs_edit!.run({ path: 'drift.ts', oldText: '  call();\n', newText: '  call2();\n' }, { cwd: root } as any);
+      expect(String(r1)).toContain('已替换');
+      expect(readFileSync(file, 'utf8')).toBe('function main() {\n  call2();\n}\n');
+      // 缩进漂移：文件 2 空格、模型给 4 空格
+      writeFileSync(file, 'if (x) {\n  doWork();\n}\n', 'utf8');
+      const r2 = await tools.fs_edit!.run({ path: 'drift.ts', oldText: '    doWork();\n', newText: '    doWork2();\n' }, { cwd: root } as any);
+      expect(String(r2)).toContain('已替换');
+      expect(readFileSync(file, 'utf8')).toBe('if (x) {\n  doWork2();\n}\n');
+    } finally { try { rmSync(root, { recursive: true, force: true }); } catch { /* EBUSY */ } }
+  });
+  it('精确唯一性语义不回归：多处出现仍拒绝；真正不存在给出未找到', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'wx-fsedit3-'));
+    try {
+      const file = join(root, 'multi.ts');
+      writeFileSync(file, 'x = 1;\nx = 1;\n', 'utf8');
+      const tools = coreTools();
+      const dup = await tools.fs_edit!.run({ path: 'multi.ts', oldText: 'x = 1;', newText: 'x = 2;' }, { cwd: root } as any);
+      expect(String(dup)).toMatch(/出现 2 处/);
+      const none = await tools.fs_edit!.run({ path: 'multi.ts', oldText: 'totally-absent-text', newText: 'y' }, { cwd: root } as any);
+      expect(String(none)).toMatch(/未找到/);
+    } finally { try { rmSync(root, { recursive: true, force: true }); } catch { /* EBUSY */ } }
   });
 });

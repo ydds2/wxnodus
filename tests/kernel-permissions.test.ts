@@ -259,3 +259,35 @@ describe('只读工具名单自动推导（开放兼容 M2.1）', () => {
     setReadonlyTools(deriveReadonlyTools({ fs_read: {}, ls: {}, grep: {}, skill_load: {}, repo_map: {} }));
   });
 });
+
+// V4 P0-4 红队用例：bash 分级切分补全——换行/单&/$()/反引号/管道尾接破坏命令，
+// 全部不得伪装成只读（smart 模式 readonly 免审批 = 破坏性命令无确认执行）。
+describe('V4 P0-4 bash 分级切分红队', () => {
+  const disguise = [
+    'cat file\nRemove-Item -Recurse -Force src',            // 换行伪装
+    'ls\r\ndel C:\\important',                              // CRLF 伪装
+    'git status & taskkill /F /IM node.exe',                // 单 & 后台串联
+    'echo $(del C:\\x)',                                    // $() 命令替换
+    'echo $(rm -rf ./src)',                                 // $() 内嵌破坏
+    'echo $(echo $(del nested))',                           // 嵌套 $()
+    'echo `rm -rf /tmp/x`',                                 // 反引号替换
+    'cat a | del b',                                        // 管道尾接删除
+    'pwd <(rm -rf x)',                                      // 进程替换（readonly 加严兜底）
+    'while true; do rm x; done',                            // 控制结构（readonly 加严兜底）
+  ];
+  for (const cmd of disguise) {
+    it(`伪装只读被拒：${JSON.stringify(cmd).slice(0, 46)}`, () => {
+      expect(classifyBashCommand(cmd)).not.toBe('readonly');
+    });
+  }
+  it('合法只读命令零回归', () => {
+    for (const ok of ['pwd', 'ls -la', 'cat README.md', 'git status', 'git log --oneline -5', 'echo hello world']) {
+      expect(classifyBashCommand(ok)).toBe('readonly');
+    }
+  });
+  it('合法写/网络命令分级不回归', () => {
+    expect(classifyBashCommand('npm install')).toBe('write');
+    expect(classifyBashCommand('curl https://example.com')).toBe('network');
+    expect(classifyBashCommand('echo hi && rm -rf x')).toBe('danger');
+  });
+});

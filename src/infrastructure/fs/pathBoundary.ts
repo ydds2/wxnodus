@@ -20,8 +20,10 @@ export function lexicalContainment(root: string, target: string): string | null 
   return resolved;
 }
 
-/** realpath/symlink/junction 双检：每个已存在组件非 symlink 且 realpath 仍被 root realpath 包含。 */
-export async function validateWorkspaceTarget(root: string, target: string): Promise<PathBoundaryResult> {
+/** realpath/symlink/junction 双检：每个已存在组件非 symlink 且 realpath 仍被 root realpath 包含。
+ * V4 P0-5：allowRoot——目录类操作（ls/grep 以根为搜索起点）允许 target 等于 root 自身
+ * （文件级语义不允许等于根；目录列举 '.' 是合法高频操作）。 */
+export async function validateWorkspaceTarget(root: string, target: string, options?: { allowRoot?: boolean }): Promise<PathBoundaryResult> {
   // Resource-name screening must precede resolve/realpath/lstat: namespaces, ADS,
   // drive-relative names, and device aliases must never reach filesystem APIs.
   if (process.platform === 'win32') {
@@ -30,7 +32,8 @@ export async function validateWorkspaceTarget(root: string, target: string): Pro
     }
   }
 
-  const lexical = lexicalContainment(root, target);
+  const lexical = lexicalContainment(root, target)
+    ?? (options?.allowRoot && resolve(root) === resolve(target) ? resolve(target) : null);
   if (!lexical) return { ok: false, code: 'BUILD_PATH_OUTSIDE_WORKSPACE' };
 
   const rootReal = await realpath(resolve(root)).catch(() => null);

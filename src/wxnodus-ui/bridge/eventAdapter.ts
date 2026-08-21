@@ -888,6 +888,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
       case 'message.delta':
         turnController.recordMessageDelta(ev.payload ?? {})
+        if (ev.payload?.reset) {
+          // V4 P0-9（A-4）：流重置（重试重发前）——清空半截输出，等重试全文
+          feed({ type: 'message.delta', text: '', reset: true })
+          return
+        }
         if (ev.payload?.text) {
           feed({ type: 'message.delta', text: ev.payload.text })
         }

@@ -202,8 +202,18 @@ export async function createCliComposition(deps: CliCompositionDeps): Promise<Op
       const toolExecution = createProductionToolExecution({
         db, dataDir, workspaceRoot, memoryRepository: current.memoryRepository as MemoryRepository,
         policy: { id: 'policy-cli-v1', document: DEFAULT_TOOL_POLICY },
-        budget: { id: 'budget-cli-v1', limits: { ...DEFAULT_TOOL_BUDGET_LIMITS } },
+        // V4 P0-3：预算 id 加日期代际——provisioning「换代即重计」语义生效（同 id/limits 恒定
+        // 会使 used_json 跨启动持久累积：50 次 bash/100 网络/200 写后对应工具类终身瘫痪且
+        // 重启无效，无命令可清零）。CLI 单机场景 limits 是并发护栏而非终身配额——按日换代。
+        budget: { id: `budget-cli-v1-${new Date().toISOString().slice(0, 10)}`, limits: { ...DEFAULT_TOOL_BUDGET_LIMITS } },
         approver: async (request) => {
+          // V4 P0-5：system-touch 系统路径强确认不认前置链 mark——必须真弹窗。
+          // 此前 agent:* 一律 consume 秒过（agentToolSurface 执行前无条件 mark），
+          // PDP 独立复核层对该前缀失效：提示注入可零确认读取系统目录/敏感路径。
+          // mark 豁免仅适用于普通 POLICY_REQUIRE_APPROVAL（legacy 链已放行不二次打断）。
+          if (request.reasonCode === 'SYSTEM_TOUCH_REQUIRES_CONFIRMATION') {
+            return bridges.approver(request);
+          }
           if (String(request.toolId).startsWith('agent:')) {
             return agentApprovalBridge.consume(request.invocationId, request.argsHash);
           }

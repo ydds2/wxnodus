@@ -226,6 +226,11 @@ export class GatewayClient extends EventEmitter {
         this.publish({ type: 'status.update', payload: { kind: 'thinking', text: 'running…' } })
       },
       'agent.token': (p) => {
+        // V4 P0-9（A-4）：reset 信号先行——UI 清空失败尝试的半截流文本（重试重发前发，text 恒空）
+        if (p?.reset) {
+          this.publish({ type: 'message.delta', payload: { text: '', reset: true } })
+          return
+        }
         const text = String(p?.text ?? '')
         if (text) this.publish({ type: 'message.delta', payload: { text } })
       },

@@ -107,7 +107,7 @@ export type PresentationEvent = {
   | { type: 'turn.start'; at?: number }
   | { type: 'turn.phase'; phase: TurnPhase }
   | { type: 'turn.interrupted'; at?: number }
-  | { type: 'message.delta'; text: string; at?: number }
+  | { type: 'message.delta'; text: string; at?: number; reset?: boolean }
   | { type: 'message.complete'; text: string; role?: 'assistant' | 'system'; at?: number }
   | { type: 'tool.start'; id: string; name: string; context?: string; at?: number }
   | { type: 'tool.complete'; id: string; ok: boolean; summary?: string; at?: number }
@@ -210,7 +210,11 @@ export function presentationReducer(state: PresentationState, event: Presentatio
       return { ...current, phase: event.phase }
 
     case 'message.delta':
-      return { ...current, streaming: current.streaming + event.text }
+      // V4 P0-9（A-4）：reset 时清空半截流文本（模型调用瞬时失败重试重发前发）——
+      // 杜绝失败尝试的部分输出与重试全文拼接显示
+      return event.reset
+        ? { ...current, streaming: event.text }
+        : { ...current, streaming: current.streaming + event.text }
 
     case 'message.complete': {
       const text = event.text

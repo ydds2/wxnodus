@@ -6,6 +6,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { safeWorkspaceRead, safeWorkspaceWrite, workspaceSha256 } from '../infrastructure/fs/safeWorkspaceFs.js';
+import { validateWorkspaceTarget } from '../infrastructure/fs/pathBoundary.js';
 import { sanitizedEnv } from './env.js';
 import { probeProcessAvailable } from './processProbe.js';
 import { labelTruncate, capNote } from './truncate.js';
@@ -188,19 +189,64 @@ export function coreTools(): Record<string, ToolDef> {
       try {
         const p = resolve(ctx.cwd, path);
         const contentBuffer = await safeWorkspaceRead(ctx.cwd, p);
-        const content = contentBuffer.toString('utf8');
-        const needle = String(oldText);
+        const raw = contentBuffer.toString('utf8');
+        // V4 P0-8：行尾归一匹配视图（LF）+ 写回按原 eol 保真。
+        // LLM 默认输出 LF、Windows 文件多 CRLF——此前精确 indexOf 直接「未找到要替换的文本」
+        // 高频失败（竞品同型：crush v0.88 空白自动纠正、opencode detectLineEnding、aider 弹性匹配）。
+        const eol: '\r\n' | '\n' = raw.includes('\r\n') ? '\r\n' : '\n';
+        const content = raw.replace(/\r\n/g, '\n');
+        const needle = String(oldText).replace(/\r\n/g, '\n');
+        const replacement = String(newText).replace(/\r\n/g, '\n');
         // 审查修复（P2）：空 oldText 使 indexOf('') 恒 0 且 from 不前进——无限循环 OOM 挂死
         if (!needle) return 'oldText 不能为空（模型输出不规范——用 fs_write 整文件重写或重试）';
         // 深度：唯一性校验（Aider SearchReplace 对齐）——出现多处时反馈位置列表，
         // 模型据此精化 oldText（避免替换错位置）；缺省只替换第一处并注明
-        const positions: number[] = [];
-        let from = 0;
-        while (true) {
-          const i = content.indexOf(needle, from);
-          if (i < 0) break;
-          positions.push(i);
-          from = i + needle.length;
+        let positions: Array<{ index: number; length: number; reindentFrom?: string; reindentTo?: string }> = [];
+        {
+          let from = 0;
+          while (true) {
+            const i = content.indexOf(needle, from);
+            if (i < 0) break;
+            positions.push({ index: i, length: needle.length });
+            from = i + needle.length;
+          }
+        }
+        // V4 P0-8 二级/三级降级：行级 trimEnd / reindent 容错（applyPatch blockMatches 同族）
+        if (!positions.length) {
+          const hayLines = content.split('\n');
+          const needleLines = needle.split('\n');
+          // 尾部空行（needle 以 \n 结尾 split 产生的 '' 元素）不参与逐行比较——
+          // 结束位置只按真实换行符回吞，保持替换范围语义精确
+          let tailNewlines = 0;
+          while (needleLines.length > 1 && needleLines[needleLines.length - 1] === '') { needleLines.pop(); tailNewlines++; }
+          const norms: Array<(l: string) => string> = [
+            l => l.replace(/[ \t]+$/g, ''),   // trimEnd：尾随空白漂移
+            l => l.replace(/^\s*/, ''),        // reindent：缩进漂移
+          ];
+          const lineStarts: number[] = [];
+          { let acc = 0; for (const l of hayLines) { lineStarts.push(acc); acc += l.length + 1; } }
+          for (const norm of norms) {
+            const isReindent = norm === norms[1]!;
+            for (let i = 0; i + needleLines.length <= hayLines.length; i++) {
+              let matched = true;
+              for (let k = 0; k < needleLines.length; k++) {
+                if (norm(hayLines[i + k]!) !== norm(needleLines[k]!)) { matched = false; break; }
+              }
+              if (matched) {
+                const start = lineStarts[i]!;
+                const endLine = i + needleLines.length - 1;
+                let end = lineStarts[endLine]! + hayLines[endLine]!.length;
+                for (let t = 0; t < tailNewlines && end < content.length && content[end] === '\n'; t++) end += 1;
+                // reindent 命中：记录 needle 首行缩进 → 文件实际缩进（写回按文件缩进重排 newText——
+                // crush v0.88「空白不匹配自动纠正」同款语义：模型 4 空格、文件 2 空格时保持 2 空格）
+                const reindentFrom = isReindent ? (needleLines[0]!.match(/^\s*/)?.[0] ?? '') : undefined;
+                const reindentTo = isReindent ? (hayLines[i]!.match(/^\s*/)?.[0] ?? '') : undefined;
+                positions.push({ index: start, length: end - start, reindentFrom, reindentTo });
+                if (positions.length > 1) break;
+              }
+            }
+            if (positions.length) break; // 每级内找唯一；命中即不再降级
+          }
         }
         if (!positions.length) {
           // 失败反馈带上下文（模型可据此修正 oldText）
@@ -208,30 +254,42 @@ export function coreTools(): Record<string, ToolDef> {
           return `未找到要替换的文本：${needle.slice(0, 60)}${ctxStart >= 0 ? `\n附近内容：…${content.slice(ctxStart, ctxStart + 80).replace(/\n/g, ' ')}…` : ''}`;
         }
         if (positions.length > 1) {
-          return `「${needle.slice(0, 40)}」出现 ${positions.length} 处（行 ${lineNumbersOf(content, positions).join('、')}）——oldText 需更精确（包含更多上下文）或指定唯一片段`;
+          return `「${needle.slice(0, 40)}」出现 ${positions.length} 处（行 ${lineNumbersOf(content, positions.map(x => x.index)).join('、')}）——oldText 需更精确（包含更多上下文）或指定唯一片段`;
         }
         // 影子快照（/undo fs）：编辑前备份原内容
         try {
           const { snapshotFile } = await import('./undoShadows.js');
-          snapshotFile(ctx.dataDir, p, content);
+          snapshotFile(ctx.dataDir, p, raw);
         } catch { /* 快照失败不影响编辑 */ }
-        const idx = positions[0]!;
+        const hit = positions[0]!;
+        // reindent 降级命中：newText 按「needle 缩进 → 文件缩进」重排（空白自动纠正）
+        let replacementOut = replacement;
+        if (hit.reindentFrom !== undefined && hit.reindentTo !== undefined && hit.reindentFrom !== hit.reindentTo) {
+          replacementOut = replacement.split('\n').map(line =>
+            line === '' ? line
+              : line.startsWith(hit.reindentFrom!) ? hit.reindentTo! + line.slice(hit.reindentFrom!.length)
+              : line
+          ).join('\n');
+        }
+        const mergedLf = content.slice(0, hit.index) + replacementOut + content.slice(hit.index + hit.length);
+        const merged = eol === '\r\n' ? mergedLf.replace(/\n/g, '\r\n') : mergedLf;
         await safeWorkspaceWrite(
           ctx.cwd,
           p,
-          content.slice(0, idx) + String(newText) + content.slice(idx + needle.length),
+          merged,
           { expectedSha256: workspaceSha256(contentBuffer) },
         );
         // ③ 波 1：结果携带统一 diff 块（UI DiffRenderer 行号 gutter 回显；模型也能看到精确变更——
         // codex verify→RespondToModel 同款「回给模型看变更」；行数/行长上限见 diffText.ts）
         const { renderUnifiedDiff } = await import('./diffText.js');
+        const idx = hit.index;
         const newLine = lineNumbersOf(content, [idx])[0]!;
         const lineStart = content.lastIndexOf('\n', idx - 1) + 1;
         const before = content.slice(lineStart, idx);
-        const afterStart = idx + needle.length;
+        const afterStart = idx + hit.length;
         const lineEnd = content.indexOf('\n', afterStart);
         const after = lineEnd < 0 ? content.slice(afterStart) : content.slice(afterStart, lineEnd);
-        return `已替换 ${path} 中 1 处\n${renderUnifiedDiff({ newLine, oldText: needle, newText: String(newText), before, after })}`;
+        return `已替换 ${path} 中 1 处\n${renderUnifiedDiff({ newLine, oldText: needle, newText: replacement, before, after })}`;
       } catch (e: any) { return `编辑失败：${e.message}`; }
     },
   };
@@ -500,12 +558,16 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const ls: ToolDef = {
-    schema: { type: 'function', function: { name: 'ls', description: '列出目录内容（head 限制条目数——大目录分段查看）', parameters: { type: 'object', properties: { path: { type: 'string' }, head: { type: 'number', description: '最多返回条目数（缺省 200）' } }, required: [] } } },
+    schema: { type: 'function', function: { name: 'ls', description: '列出目录内容（head 限制条目数——大目录分段查看）。路径限工作区内。', parameters: { type: 'object', properties: { path: { type: 'string', description: '工作区内目录路径' }, head: { type: 'number', description: '最多返回条目数（缺省 200）' } }, required: [] } } },
     danger: false,
     async run({ path = '.', head }, ctx) {
       try {
-        const entries = readdirSync(resolve(ctx.cwd, path)).map(f => {
-          const p = join(resolve(ctx.cwd, path), f);
+        // V4 P0-5：工作区边界——此前 resolve 直读，绝对路径/../ 可零确认列任意本机目录
+        const boundary = await validateWorkspaceTarget(ctx.cwd, resolve(ctx.cwd, path), { allowRoot: true });
+        if (!boundary.ok) return `目录路径越界（仅允许工作区内）：${path}`;
+        const absDir = boundary.target;
+        const entries = readdirSync(absDir).map(f => {
+          const p = join(absDir, f);
           try { return statSync(p).isDirectory() ? `${f}/` : f; } catch { return f; }
         });
         const cap = Math.max(1, Math.floor(Number(head) || 200));
@@ -517,7 +579,7 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const grep: ToolDef = {
-    schema: { type: 'function', function: { name: 'grep', description: '在文件中搜索文本（head 限制结果行数——命中过多时收窄或加 head）', parameters: { type: 'object', properties: { pattern: { type: 'string' }, path: { type: 'string' }, head: { type: 'number', description: '最多返回行数（缺省 200）' } }, required: ['pattern'] } } },
+    schema: { type: 'function', function: { name: 'grep', description: '在工作区内文件中搜索文本（head 限制结果行数——命中过多时收窄或加 head）', parameters: { type: 'object', properties: { pattern: { type: 'string' }, path: { type: 'string', description: '工作区内搜索路径' }, head: { type: 'number', description: '最多返回行数（缺省 200）' } }, required: ['pattern'] } } },
     danger: false,
     async run({ pattern, path = '.', head }, ctx) {
       // 修复 F14：execFileSync 参数数组（不经 shell），消除命令注入
@@ -527,7 +589,11 @@ export function coreTools(): Record<string, ToolDef> {
         return 'grep 工具不可用：未找到 grep 二进制（Windows 请安装 Git for Windows 或配置 PATH；或改用 find_files）';
       }
       try {
-        const out = execFileSync('grep', ['-rn', String(pattern), resolve(ctx.cwd, path)], { encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
+        // V4 P0-5：工作区边界——此前 resolve 直读，`grep password C:/Users/...` 可零确认
+        // 越权搜索工作区外敏感文件（danger:false + smart 模式前置链放行 + 审批桥 mark 短路三重叠加）
+        const boundary = await validateWorkspaceTarget(ctx.cwd, resolve(ctx.cwd, path), { allowRoot: true });
+        if (!boundary.ok) return `搜索路径越界（仅允许工作区内）：${path}`;
+        const out = execFileSync('grep', ['-rn', String(pattern), boundary.target], { encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
         const lines = out.split('\n').filter(l => l.trim());
         const cap = Math.max(1, Math.floor(Number(head) || 200));
         // 诚实截断：超行数结果显式标注（模型知道后面还有匹配——收窄 pattern/限定 path/加 head 续查）
@@ -1422,13 +1488,15 @@ export function coreTools(): Record<string, ToolDef> {
   // ── ③ 波 1：view_image 图片模型输入通道（kimi read_media.py 对标）──
   // 视觉模型会话：工具结果附 image_url parts（extractImages 钩子，agent 附加进模型通道）；
   // 纯文本模型会话：toolTrim 白名单裁掉本工具（VISION_IMAGE_TOOLS）——dataUrl 绝不进纯文本请求。
+  // V4 P0-2：读写走 safeWorkspaceRead（工作区边界）——此前 resolve+readFileSync 直读，
+  // 绝对路径/../ 逃逸放行且 danger:false 无审批，提示注入可诱导读取工作区外敏感截图外发视觉端点。
   const viewImage: ToolDef = {
-    schema: { type: 'function', function: { name: 'view_image', description: '读取本地图片送入视觉通道（png/jpg/jpeg/webp/gif，≤8MB）：返回尺寸/格式/视觉 token 估算，图片内容自动附加供视觉模型分析。', parameters: { type: 'object', properties: { path: { type: 'string', description: '图片文件路径（工作区内或绝对路径）' } }, required: ['path'] } } },
+    schema: { type: 'function', function: { name: 'view_image', description: '读取工作区内图片送入视觉通道（png/jpg/jpeg/webp/gif，≤8MB）：返回尺寸/格式/视觉 token 估算，图片内容自动附加供视觉模型分析。路径限当前工作区内。', parameters: { type: 'object', properties: { path: { type: 'string', description: '工作区内的图片文件路径' } }, required: ['path'] } } },
     danger: false,
     async run({ path }, ctx) {
       try {
         const p = resolve(ctx.cwd, path);
-        const buf = readFileSync(p);
+        const buf = await safeWorkspaceRead(ctx.cwd, p);
         const kind = detectImageType(buf);
         if (!kind) return '不是可识别的图片格式（png/jpg/jpeg/webp/gif）——检查路径或文件内容';
         if (buf.length > 8 * 1024 * 1024) return `图片过大（${(buf.length / 1048576).toFixed(1)}MB > 8MB 上限）——压缩后重试或改用 /img 分析`;
@@ -1436,17 +1504,21 @@ export function coreTools(): Record<string, ToolDef> {
         const dimTxt = dims ? `${dims.width}×${dims.height}` : '未知尺寸';
         const tokenTxt = dims ? `，视觉 token ≈${estimateVisionTokens(dims.width, dims.height)}` : '';
         return `图片已载入：${p}（${kind.toUpperCase()} ${dimTxt}，${(buf.length / 1024).toFixed(1)} KB${tokenTxt}）——图片内容已附加进视觉通道`;
-      } catch (e: any) { return `图片载入失败：${String(e?.message ?? e).slice(0, 120)}`; }
+      } catch (e: any) {
+        const msg = String(e?.message ?? e);
+        return /WORKSPACE_|边界|boundary|escape|outside/i.test(msg)
+          ? `图片路径越界（仅允许工作区内文件）：${msg.slice(0, 120)}`
+          : `图片载入失败：${msg.slice(0, 120)}`;
+      }
     },
     async extractImages({ path }, ctx) {
       try {
-        const p = resolve(ctx.cwd, path);
-        const buf = readFileSync(p);
+        const buf = await safeWorkspaceRead(ctx.cwd, resolve(ctx.cwd, path));
         const kind = detectImageType(buf);
         if (!kind || buf.length > 8 * 1024 * 1024) return null; // 与 run 同源校验——非法直接不附加（诚实降级）
         const mime = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' }[kind]!;
         return [{ type: 'image_url' as const, image_url: { url: `data:${mime};base64,${buf.toString('base64')}` } }];
-      } catch { return null; }
+      } catch { return null; } // 越界/不存在：不附加（run 已向模型回显原因）
     },
   };
 
