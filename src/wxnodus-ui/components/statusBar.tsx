@@ -15,6 +15,7 @@ import { FACES } from '../content/faces.js'
 import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { statusSegmentsFor, type StatusSegments } from '../lib/layoutProfile.js'
+import { buildStatusSegments, segmentById } from './statusBarSegments.js'
 import { getTuiTerminalTier } from '../lib/terminalTier.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { fmtK } from '../lib/text.js'
@@ -507,7 +508,16 @@ export function StatusRule({
       : ''
 
   const bar = !segs.compactCtx && usage.context_max ? ctxBar(pct) : ''
-  const modelText = modelLabel(model, modelReasoningEffort, modelFast)
+  // V4 L0-4：model/cost 段文本经六段内容模块（结构化状态→文本+语义色的单一事实源；
+  // 布局协商不变——宽度档仍归 layoutProfile）
+  const seg6 = buildStatusSegments({
+    model, modelEffort: modelReasoningEffort, modelFast,
+    usage: usage as never,
+    state: busy ? 'busy' : 'ready',
+    statusText: status,
+    density: 'cozy',
+  })
+  const modelText = segmentById(seg6, 'model')?.text ?? modelLabel(model, modelReasoningEffort, modelFast)
 
   // A19：鼠标辅助提示占位（选中/悬停/复制反馈）——优先级高于 notice 与
   // status，busy 时也让 FaceTicker 让位（提示是即时操作反馈，3s 自动清）。

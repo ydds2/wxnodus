@@ -39,6 +39,10 @@
 | reasoning | `▸ ` 折叠 | muted（dense 加 dim） | 1 | dense=完全不可见仅 badge 行 |
 | diff | —（DiffRenderer） | +/- 语义 | 1 | 词级红绿三档同 |
 | command | — | muted dim（exitCode≠0 → error 不 dim） | 1 | 折叠阈值 cozy 5 行 / compact 2 / dense 1 |
+
+> 状态栏六段（L0-4，`statusBarSegments.ts`）：cozy 全段（model·cost·session·budget·net·state）；
+> compact 隐 budget 与 effort 徽标（**保留 net**——重连可见性优先于密度简化）；dense 仅 model·cost·state。
+> cost 段水位着色：上下文 ≥85% error / ≥75% warn；balance 低余额红（结构化 low 标记）。
 | notice | `· /⚠ /✖ ` | level 色 | 1 | scope≠core → 不产出块 |
 | turn-summary | `◦ ` | muted dim | 1 | 三档同 |
 | session-event | `◈ ` | type 映射 | 0 | 三档同 |
