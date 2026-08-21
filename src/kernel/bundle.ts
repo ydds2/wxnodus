@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { installMcpFromNpm, installSkillFromNpm, installSkillFromGithub, installSkillDir, type MarketDeps } from './market.js';
 import { mergeProjectSettings } from './projectConfig.js';
+import { WXNODUS_VERSION } from './version.js';
 
 export interface BundleManifest {
   name: string;
@@ -18,6 +19,10 @@ export interface BundleManifest {
   mcps: string[];     // npm:<pkg>（npx 命令形式）
   plugins: string[];  // 引用名（安装走 /plugin 管线）
   config?: { settings?: Record<string, any>; mode?: string };
+  /** V4 P5-3：版本指纹——创建时的 wxnodus 版本（对方安装时兼容性校验依据） */
+  wxnodus?: string;
+  /** V4 P5-3：最低兼容版本（打包者显式声明；缺省不设限——向后兼容旧包） */
+  wxnodusMin?: string;
 }
 
 export const bundleDir = (dataDir: string): string => join(dataDir, 'bundles');
@@ -29,7 +34,7 @@ export const createBundle = (dataDir: string, name: string, description: string)
   const n = name.trim().toLowerCase();
   if (!BUNDLE_NAME_RE.test(n)) return { ok: false, message: '名称非法（小写字母数字 ._- 开头非数字，≤64 字符）' };
   if (existsSync(bundlePath(dataDir, n))) return { ok: false, message: `整合包 ${n} 已存在（/bundle list 查看）` };
-  const manifest: BundleManifest = { name: n, description: description.trim() || '场景整合包', version: '1.0.0', skills: [], mcps: [], plugins: [] };
+  const manifest: BundleManifest = { name: n, description: description.trim() || '场景整合包', version: '1.0.0', skills: [], mcps: [], plugins: [], wxnodus: WXNODUS_VERSION };
   mkdirSync(bundleDir(dataDir), { recursive: true });
   writeFileSync(bundlePath(dataDir, n), JSON.stringify(manifest, null, 2), 'utf8');
   return { ok: true, message: `已创建整合包 ${n}（${bundlePath(dataDir, n)}）`, manifest };
@@ -221,6 +226,17 @@ export async function useBundle(
   return { ok: true, message: `场景「${manifest.name}」已应用：\n` + parts.map(p => ` · ${p}`).join('\n') };
 }
 
+/** V4 P5-3：当前 wxnodus 版本 ≥ 最低要求（x.y.z 数值比较；非法声明视为兼容——不误拒旧包） */
+export function bundleVersionOk(minVersion: string, current: string = WXNODUS_VERSION): boolean {
+  const a = String(minVersion).replace(/^[vV]/, '').split('.').map(Number);
+  const b = current.replace(/^[vV]/, '').split('.').map(Number);
+  if (a.some(n => !Number.isFinite(n)) || b.some(n => !Number.isFinite(n))) return true;
+  for (let i = 0; i < 3; i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (b[i] ?? 0) > (a[i] ?? 0);
+  }
+  return true;
+}
+
 /** 导入整合包（N-1，纯本地零网络）：解包 → 树安全校验 → 清单校验（name 正则）→ 同名拒绝 →
  * vendored 技能经 installSkillDir 原子落位 → 清单落位。tgz 是不可信输入——三道校验任一不过即拒绝。 */
 export const importBundle = (tgzPath: string, dataDir: string): { ok: boolean; message: string } => {
@@ -252,6 +268,11 @@ export const importBundle = (tgzPath: string, dataDir: string): { ok: boolean; m
     if (!m || typeof m !== 'object' || typeof m.name !== 'string' || !BUNDLE_NAME_RE.test(m.name)
       || !Array.isArray(m.skills) || !Array.isArray(m.mcps) || !Array.isArray(m.plugins)) {
       return { ok: false, message: '整合包清单损坏（name 非法或字段缺失）' };
+    }
+    // V4 P5-3：版本兼容校验——wxnodusMin 显式声明且当前版本低于下限时明确拒绝
+    //（manifest 不兼容时拒绝——卡片验收；旧包无该字段不设限，向后兼容）
+    if (typeof m.wxnodusMin === 'string' && !bundleVersionOk(m.wxnodusMin)) {
+      return { ok: false, message: `整合包 ${m.name} 需要 wxnodus ≥ ${m.wxnodusMin}（当前 ${WXNODUS_VERSION}）——请先 wxnodus update 升级` };
     }
     if (existsSync(bundlePath(dataDir, m.name))) {
       return { ok: false, message: `整合包 ${m.name} 已存在（/bundle remove ${m.name} 移除或改包名后重试）` };

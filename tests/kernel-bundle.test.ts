@@ -140,6 +140,26 @@ describe('N-1~N-8：bundle 修复闭环（import/name 校验/rename 加固/幂�
     } finally { rmSync(b, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
   });
 
+  it('P5-3 wxnodusMin 不兼容 → 明确拒绝（manifest 版本校验）', () => {
+    const b = mkdtempSync(join(tmpdir(), 'wx-min-'));
+    try {
+      const bd = join(b, 'data'); mkdirSync(bd, { recursive: true });
+      createBundle(bd, 'futur', '未来包');
+      // 篡改 manifest 声明未来版本下限（模拟新版本打包的包在旧 wxnodus 上装）
+      const mp = join(bd, 'bundles', 'futur.bundle.json');
+      const m = JSON.parse(readFileSync(mp, 'utf8'));
+      m.wxnodusMin = '99.0.0';
+      m.wxnodus = '99.0.0';
+      writeFileSync(mp, JSON.stringify(m), 'utf8');
+      const ex = exportBundle(bd, 'futur', b);
+      expect(ex.ok).toBe(true);
+      const im = importBundle(ex.path!, bd);
+      expect(im.ok).toBe(false);
+      expect(im.message).toContain('99.0.0');
+      expect(im.message).toContain('wxnodus update');
+    } finally { rmSync(b, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
+  });
+
   it('N-1 importBundle：同名拒绝 / tgz 不存在诚实报错', () => {
     const b = mkdtempSync(join(tmpdir(), 'wx-imp2-'));
     try {

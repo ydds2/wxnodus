@@ -489,6 +489,8 @@ export function vimHandleKey(
   const count = prev.count === 0 ? 1 : prev.count
 
   // ── INSERT 模式：Esc 回 normal（gemini :474-481），其余全放行 ──
+  // （insert→normal 的光标域转换在 textInput 接线层做——见 vim-wiring.test.tsx；
+  //   此处 doc 模型按调用方传入的 normal 域光标消费，不越权移动）
   if (prev.mode === 'insert') {
     if (key === 'Escape' || key === '<esc>') {
       return base({ state: { ...prev, mode: 'normal', count: 0, lastEscTs: now } })

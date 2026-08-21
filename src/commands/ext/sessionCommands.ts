@@ -689,12 +689,14 @@ ${d}
   bus.register('/market', async (args) => {
     const sub = args[0];
     if (!sub) {
-      return lines(' 市场（开放生态目录聚合） ', [
+      return lines(' 市场（开放生态目录聚合·只收不出） ', [
         ' 搜索：/market search <关键词> [--type skill|mcp|plugin]（npm + GitHub 双源）',
         ' 安装：/market install <npm包名> [--type mcp|skill]  或  /market install github:<owner>/<repo> --type skill',
         '       MCP → 项目 .mcp.json（npx 命令形式，Claude Code 生态兼容）',
         '       技能 → data/skills/<name>/SKILL.md（/reload-skills 后即刻可用）',
         '       插件 → 请走 /plugin install（既有管线：SSRF 防护 + 校验 + staging）',
+        ' 只收不出：本工具只消费开源生态（无发布侧/无自托管市场）；自制插件仅本地自用，',
+        '       对外分享唯一通道 /bundle export <名称>（整包 tar.gz 离线分发 → 对方 /bundle import 装回）',
       ]);
     }
     const typeIdx = args.indexOf('--type');
