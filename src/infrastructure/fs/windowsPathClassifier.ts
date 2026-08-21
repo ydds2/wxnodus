@@ -24,6 +24,8 @@ export interface PathClassification {
 }
 
 export interface ClassifyOptions {
+  /** V4 P1-7：false 时跳过第三层属性探测（读类工具豁免——attrib 零成本也不必探） */
+  attributeProbe?: boolean;
   workspaceRoot: string;
   env?: Record<string, string | undefined>;
   platform?: NodeJS.Platform;
@@ -192,9 +194,10 @@ export function classifyWindowsPath(target: string, opts: ClassifyOptions): Path
   }
 
   // 3) 隐藏/系统属性（工作区内文件）——win32 真实属性探测，失败按疑似系统 fail-closed
-  if (stats.isFile()) {
+  // V4 P1-7：attributeProbe=false（读类工具豁免——第一/二层系统目录与 reparse 判定已足够）
+  if (stats.isFile() && opts.attributeProbe !== false) {
     const probe = opts.readAttributes ?? defaultReadAttributes;
-    const attr = probe(target);
+    const attr = probe(target, stats.mtimeMs);
     if (attr === 'hidden-or-system-attribute') {
       return { class: 'hidden-or-system-attribute', path: target, reason: '隐藏/系统属性文件' };
     }
@@ -205,16 +208,37 @@ export function classifyWindowsPath(target: string, opts: ClassifyOptions): Path
   return { class: 'workspace', path: target };
 }
 
-/** win32 属性探测：PowerShell Get-Item -Force Attributes（HIDDEN/SYSTEM 位） */
-function defaultReadAttributes(target: string): 'hidden-or-system-attribute' | 'plain' | 'unavailable' {
+// V4 P1-7：属性探测税废除——attrib（System32 常驻，毫秒级冷启）替代 spawnSync powershell
+// （150-800ms/次且阻塞事件循环：每次带 path 的工具调用 decide 阶段都探测，流式输出呈
+// 脉冲卡顿）。结果按 path+mtime LRU 缓存（同文件二次调用零 spawn）；读类工具在
+// classifyPipelineArgs 侧整体跳过属性探测（仅写类 system-touch 启用第三层）。
+const ATTR_CACHE_MAX = 512;
+const attrCache = new Map<string, 'hidden-or-system-attribute' | 'plain'>();
+/** 测试可观测：attrib 实际 spawn 计数（零 spawn 基准断言用） */
+export const attrProbeStats = { spawnCount: 0 };
+
+/** win32 属性探测：attrib 属性位列含 H/S 任一即隐藏/系统；失败 unavailable（fail-closed 上游） */
+function defaultReadAttributes(target: string, mtimeKey?: number): 'hidden-or-system-attribute' | 'plain' | 'unavailable' {
   if (process.platform !== 'win32') return 'plain';
+  const cacheKey = target.toLowerCase() + '|' + (mtimeKey ?? 0);
+  const cached = attrCache.get(cacheKey);
+  if (cached !== undefined) return cached;
   try {
-    const r = spawnSync('powershell.exe', ['-NoProfile', '-Command', `(Get-Item -LiteralPath '${String(target).replace(/'/g, "''")}' -Force).Attributes -band 6`], {
-      encoding: 'utf8', timeout: 10_000, windowsHide: true,
-    });
-    const out = String(r.stdout ?? '').trim();
-    if (r.status !== 0 || !/^\d+$/.test(out)) return 'unavailable';
-    return (Number(out) & 6) !== 0 ? 'hidden-or-system-attribute' : 'plain';
+    attrProbeStats.spawnCount += 1;
+    const r = spawnSync('attrib', [target], { encoding: 'utf8', timeout: 5_000, windowsHide: true });
+    const out = String(r.stdout ?? '');
+    if (r.status !== 0 || !out.trim()) return 'unavailable'; // 不缓存失败（下次重试）
+    // attrib 输出形如 "  A  SHR      C:\path\file"——属性位列（路径前的空白分隔段）：
+    // 任一属性段（1-4 字母连写，如 SHR/SH/AH）包含 H 或 S 即命中
+    const pathStart = out.indexOf(target.charAt(0));
+    const flagCols = pathStart > 0 ? out.slice(0, pathStart).toUpperCase() : '';
+    const hit: 'hidden-or-system-attribute' | 'plain' = flagCols
+      .split(/\s+/)
+      .some(seg => /^[A-Z]{1,4}$/.test(seg) && /[HS]/.test(seg))
+      ? 'hidden-or-system-attribute' : 'plain';
+    attrCache.set(cacheKey, hit);
+    if (attrCache.size > ATTR_CACHE_MAX) attrCache.delete(attrCache.keys().next().value as string);
+    return hit;
   } catch {
     return 'unavailable';
   }
@@ -237,7 +261,13 @@ export function commandTouchesSystemPath(command: string, opts: Pick<ClassifyOpt
 
 /** 管线 args → system-touch 分类（path/target/filePath 字段分类 + command 字段系统根引用）；
  * 返回 null = 无 system-touch（workspace/other 走普通策略流） */
-export function classifyPipelineArgs(args: unknown, workspaceRoot: string): PathClassification | null {
+// V4 P1-7：读类工具豁免集——这些工具的调用跳过属性探测（第三层），仅保留系统目录/reparse/
+// 命令扫描判定（读操作无写入面；写类 system-touch 保持三层完整）
+const READONLY_PROBE_EXEMPT = new Set(['fs_read', 'ls', 'grep', 'find_files', 'view_image', 'http_get', 'http_request', 'web_search', 'memory_search', 'repo_map', 'lsp_diagnostics', 'lsp_hover', 'lsp_definition', 'command_search', 'tool_search']);
+
+export function classifyPipelineArgs(args: unknown, workspaceRoot: string, opts?: { toolId?: string }): PathClassification | null {
+  const shortId = typeof opts?.toolId === 'string' ? opts.toolId.split(':').pop() ?? '' : '';
+  const attributeProbe = !READONLY_PROBE_EXEMPT.has(shortId);
   const a = (args ?? {}) as Record<string, unknown>;
   const path = typeof a.path === 'string' ? a.path
     : typeof a.target === 'string' ? a.target
@@ -245,7 +275,7 @@ export function classifyPipelineArgs(args: unknown, workspaceRoot: string): Path
     : undefined;
   if (path) {
     const absolutePath = resolve(workspaceRoot, path);
-    const c = classifyWindowsPath(absolutePath, { workspaceRoot });
+    const c = classifyWindowsPath(absolutePath, { workspaceRoot, attributeProbe });
     if (c.class !== 'workspace' && c.class !== 'other') return c;
   }
   if (typeof a.executable === 'string') {

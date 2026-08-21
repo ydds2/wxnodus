@@ -136,7 +136,7 @@ export function createProductionToolExecution(options: ToolExecutionWiringOption
       }
       // W7-02：系统路径感知确认——system-touch（系统目录/隐藏·系统属性/reparse/命令引用系统根）
       // 强制专属确认（分类理由随 decision 进入审批展示与 journal 审计链）
-      const systemTouch = classifyPipelineArgs(input.args, options.workspaceRoot);
+      const systemTouch = classifyPipelineArgs(input.args, options.workspaceRoot, { toolId: String((input as { toolId?: unknown }).toolId ?? '') }); // V4 P1-7：读类工具跳过属性探测
       if (systemTouch) {
         return ok({ action: 'require_approval', reasonCode: 'SYSTEM_TOUCH_REQUIRES_CONFIRMATION', obligations: [{ kind: 'system-touch', class: systemTouch.class, path: systemTouch.path, reason: systemTouch.reason }] });
       }
