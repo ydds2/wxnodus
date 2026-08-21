@@ -60,6 +60,7 @@ export interface LlmStreamOpts {
   tools?: unknown[];
   /** User cancellation signal, combined with the request timeout. */
   signal?: AbortSignal;
+  /** 全程硬顶（V4 P2-2 语义：默认 30min，settings.llmTimeoutMs——此前 120s 全程一刀切杀长流式） */
   timeoutMs?: number;
   onToken?: (t: string) => void;
   onReasoning?: (t: string) => void;
@@ -69,6 +70,10 @@ export interface LlmStreamOpts {
   onRetryNotice?: (text: string) => void;
   /** V4 P2-1：等待网络模式——connect 类失败总时长上限（默认 10min；settings.waitNetworkMs） */
   waitNetworkMs?: number;
+  /** V4 P2-2：idle watchdog 双档——首 chunk 超时（默认 30s；settings.llmFirstChunkMs） */
+  idleFirstChunkMs?: number;
+  /** V4 P2-2：chunk 间隔空闲超时（默认 60s；settings.llmIdleChunkMs）——有数据即续命，慢端点长流式不断 */
+  idleChunkGapMs?: number;
 }
 
 export type LlmStreamResult =
@@ -142,6 +147,67 @@ function retryDelayMs(failure: StreamFailure, retryNumber: number): number {
   return Math.min(Math.round(jittered), cap);
 }
 
+// ── V4 P2-2：idle watchdog 双档 ────────────────────────────────────────
+// 替代 AbortSignal.timeout 全程一刀切：首 chunk 超时（默认 30s）+ chunk 间隔空闲超时
+// （默认 60s，有数据即续命——慢端点/reasoning 模型长流式不再被杀）；全程硬顶默认 30min。
+// TimeoutError 误判修复：watchdog 触发经 idleFired 区分——不再落入 premature-eof/abort
+// 误判（此前 120s 超时被当流损坏重试，3×120s = 8 分钟假死）。
+const FIRST_CHUNK_DEFAULT_MS = 30_000;
+const CHUNK_GAP_DEFAULT_MS = 60_000;
+const HARD_CAP_DEFAULT_MS = 30 * 60_000;
+
+function createIdleWatchdog(opts: LlmStreamOpts, external: AbortSignal): {
+  signal: AbortSignal;
+  feed(): void;
+  dispose(): void;
+  firedKind(): 'first' | 'gap' | 'cap' | null;
+} {
+  const controller = new AbortController();
+  const firstMs = opts.idleFirstChunkMs ?? FIRST_CHUNK_DEFAULT_MS;
+  const gapMs = opts.idleChunkGapMs ?? CHUNK_GAP_DEFAULT_MS;
+  const capMs = opts.timeoutMs ?? HARD_CAP_DEFAULT_MS;
+  let fired: 'first' | 'gap' | 'cap' | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const capTimer = setTimeout(() => {
+    fired = 'cap';
+    controller.abort();
+  }, capMs);
+  const arm = (ms: number, kind: 'first' | 'gap') => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = setTimeout(() => {
+      fired = kind;
+      controller.abort();
+    }, ms);
+  };
+  arm(firstMs, 'first');
+  // 外部（用户 Esc）中止：仅透传 abort——fired 保持 null（语义区分：watchdog 判超时，用户判中止）
+  const forward = () => controller.abort();
+  if (external.aborted) forward();
+  else external.addEventListener('abort', forward, { once: true });
+  return {
+    signal: controller.signal,
+    feed() {
+      if (fired === null) arm(gapMs, 'gap'); // 首 chunk 后切换到间隔档
+    },
+    dispose() {
+      if (timer !== undefined) clearTimeout(timer);
+      clearTimeout(capTimer);
+      external.removeEventListener('abort', forward);
+    },
+    firedKind: () => fired,
+  };
+}
+
+function watchdogFailure(kind: 'first' | 'gap' | 'cap', semanticDelta: boolean): StreamFailure {
+  const label = kind === 'first' ? '首字节超时（服务器长时间未开始响应）' : kind === 'gap' ? '流空闲超时（长时间无新数据）' : '全程时长上限达到';
+  return {
+    ok: false,
+    kind: 'stream-error', // 可重试类（非 abort/premature-eof——V4 P2-2 误判修复核心）
+    error: `模型流超时：${label}`,
+    semanticDelta,
+  };
+}
+
 async function abortableWait(ms: number, signal: AbortSignal): Promise<boolean> {
   if (signal.aborted) return false;
   if (ms <= 0) return true;
@@ -184,7 +250,10 @@ function parseUsage(value: Record<string, unknown>): LlmUsage {
   };
 }
 
-async function parseSse(response: Response, opts: LlmStreamOpts, signal: AbortSignal): Promise<AttemptResult> {
+type IdleWatchdogHandle = { feed(): void; firedKind(): 'first' | 'gap' | 'cap' | null; signal: AbortSignal };
+function wdSignalOf(wd: IdleWatchdogHandle): AbortSignal { return wd.signal; }
+
+async function parseSse(response: Response, opts: LlmStreamOpts, signal: AbortSignal, wd?: IdleWatchdogHandle): Promise<AttemptResult> {
   if (!response.body) {
     return { ok: false, kind: 'premature-eof', error: '模型响应体为空', semanticDelta: false };
   }
@@ -199,6 +268,11 @@ async function parseSse(response: Response, opts: LlmStreamOpts, signal: AbortSi
       error: `流读取失败：${String((error as { message?: unknown })?.message ?? error).slice(0, 200)}`,
       semanticDelta: false,
     };
+  }
+  // V4 P2-2：watchdog 触发 → 主动 cancel 流（abort 不自动打断已建立流的 pending read）
+  if (wd) {
+    const onWdAbort = (): void => { void reader.cancel().catch(() => { /* 已关闭 */ }); };
+    wdSignalOf(wd).addEventListener('abort', onWdAbort, { once: true });
   }
   const decoder = new TextDecoder();
   let buffer = '';
@@ -320,6 +394,7 @@ async function parseSse(response: Response, opts: LlmStreamOpts, signal: AbortSi
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      wd?.feed(); // V4 P2-2：有数据即续命（间隔档重置）
       buffer += decoder.decode(value, { stream: true });
       while (true) {
         const match = /\r?\n\r?\n/.exec(buffer);
@@ -332,6 +407,9 @@ async function parseSse(response: Response, opts: LlmStreamOpts, signal: AbortSi
     }
     buffer += decoder.decode();
   } catch (error) {
+    // V4 P2-2：watchdog 触发优先判定（TimeoutError 不再落入 abort/premature-eof 误判）
+    const fired = wd?.firedKind();
+    if (fired) return watchdogFailure(fired, semanticDelta);
     if (isAbortError(error, signal)) return failureFromException(error, signal, semanticDelta);
     return {
       ok: false,
@@ -343,6 +421,9 @@ async function parseSse(response: Response, opts: LlmStreamOpts, signal: AbortSi
 
   if (buffer.trim().length > 0) return malformedSse('流末尾存在未完成帧', semanticDelta);
   if (!doneSeen) {
+    // V4 P2-2：watchdog cancel 造成的提前 done → 按档判死（非「提前结束」误判）
+    const fired = wd?.firedKind();
+    if (fired) return watchdogFailure(fired, semanticDelta);
     return { ok: false, kind: 'premature-eof', error: '模型流在 [DONE] 前提前结束', semanticDelta };
   }
   if (!semanticDelta) {
@@ -367,16 +448,26 @@ async function attemptModel(model: string, opts: LlmStreamOpts, signal: AbortSig
     stream: true,
     tools: opts.tools,
   });
+  // V4 P2-2：idle watchdog（双档+硬顶）接管超时——外部 signal 仅为用户 Esc
+  const wd = createIdleWatchdog(opts, signal);
+  const combined = AbortSignal.any([signal, wd.signal]);
   let response: Response;
   try {
-    response = await fetch(request.url, { method: 'POST', headers: request.headers, body: request.body, signal });
+    response = await fetch(request.url, { method: 'POST', headers: request.headers, body: request.body, signal: combined });
   } catch (error) {
+    wd.dispose();
+    if (wd.firedKind()) return watchdogFailure(wd.firedKind()!, false);
     return failureFromException(error, signal);
   }
   if (!response.ok) {
+    wd.dispose();
     return classifyHttp(response.status, parseRetryAfter(response.headers?.get('retry-after') ?? null, Date.now()));
   }
-  return parseSse(response, opts, signal);
+  try {
+    return await parseSse(response, opts, combined, wd);
+  } finally {
+    wd.dispose();
+  }
 }
 
 /** Stream one chat completion. Failures are returned rather than thrown. */
@@ -400,8 +491,8 @@ export async function callLlmStream(opts: LlmStreamOpts): Promise<LlmStreamResul
     };
   }
 
-  const timeoutSignal = AbortSignal.timeout(opts.timeoutMs ?? 120_000);
-  const signal = opts.signal ? AbortSignal.any([timeoutSignal, opts.signal]) : timeoutSignal;
+  // V4 P2-2：全程超时移交 idle watchdog（此前 AbortSignal.timeout(120s) 杀长流式 + TimeoutError 误判）
+  const signal = opts.signal ?? new AbortController().signal;
   const models = [opts.model, opts.model, ...fallbackModels(opts.model)].slice(0, MAX_ATTEMPTS);
   let lastFailure: StreamFailure | undefined;
 

@@ -104,3 +104,70 @@ describe('V4 P2-1 durable：等网期间用户消息已在库（崩溃可恢复�
     }
   });
 });
+
+// V4 P2-2：idle watchdog 双档——慢端点长流式不断 / 真死流按档判死 / TimeoutError 误判修复。
+function slowStream(chunks: string[], intervalMs: number): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      for (const c of chunks) {
+        controller.enqueue(encoder.encode(c));
+        await new Promise(r => setTimeout(r, intervalMs));
+      }
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+}
+const frameOf = (t: string) => `data: ${JSON.stringify({ choices: [{ delta: { content: t } }] })}\n\n`;
+
+describe('V4 P2-2 idle watchdog 双档', () => {
+  it('慢端点长流式：chunk 间隔 < 空闲档 → 持续续命不断流（旧 120s 全程一刀切场景）', async () => {
+    const chunks = Array.from({ length: 8 }, (_, i) => frameOf(`段${i}`)).concat(['data: [DONE]\n\n']);
+    globalThis.fetch = (async () => slowStream(chunks, 60)) as typeof fetch; // 总 480ms 流，间隔 60ms
+    const r = await callLlmStream({ ...OPTS, idleFirstChunkMs: 5_000, idleChunkGapMs: 200, timeoutMs: 30_000 } as any);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.content).toBe('段0段1段2段3段4段5段6段7');
+  }, 15_000);
+
+  it('首 chunk 超时档：服务器不响应 → 按首档判死（错误语义非 premature-eof/abort）', async () => {
+    const stream = new ReadableStream<Uint8Array>({ start() { /* 永不 enqueue */ } });
+    globalThis.fetch = (async () => new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })) as typeof fetch;
+    const r = await callLlmStream({ ...OPTS, idleFirstChunkMs: 150 } as any);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/首字节超时/);          // 语义明确
+      expect(r.error).not.toMatch(/提前结束|已中止/); // 误判修复断言（非 premature-eof/abort 文案）
+    }
+  }, 10_000);
+
+  it('chunk 间隔空闲档：首 chunk 后断流 → 按间隔档判死（有数据曾到达——区别于首档）', async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(encoder.encode(frameOf('开头')));
+        // 此后永无数据（死流）
+      },
+    });
+    globalThis.fetch = (async () => new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })) as typeof fetch;
+    const r = await callLlmStream({ ...OPTS, idleFirstChunkMs: 5_000, idleChunkGapMs: 200 } as any);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/流空闲超时/);
+  }, 10_000);
+
+  it('全程硬顶档：无限续命流到达硬顶 → 按 cap 档判死', async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        for (;;) {
+          controller.enqueue(encoder.encode(frameOf('tick')));
+          await new Promise(r => setTimeout(r, 50));
+        }
+      },
+    });
+    globalThis.fetch = (async () => new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })) as typeof fetch;
+    const r = await callLlmStream({ ...OPTS, idleFirstChunkMs: 5_000, idleChunkGapMs: 5_000, timeoutMs: 300 } as any);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/全程时长上限/);
+  }, 10_000);
+});

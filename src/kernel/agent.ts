@@ -507,6 +507,10 @@ export function createAgent(opts: AgentOptions) {
       // V4 P2-1：重试可见信号（断网/限流/过载——「网络中断，第 n 次重连…」直达状态栏 notice）
       onRetryNotice: (text) => bus.emit('system.notice', { text }),
       waitNetworkMs: Number(settingsAny?.waitNetworkMs) > 0 ? Number(settingsAny?.waitNetworkMs) : undefined,
+      // V4 P2-2：idle watchdog 双档 + 全程硬顶（settings.llmTimeoutMs 默认 30min）
+      timeoutMs: Number(settingsAny?.llmTimeoutMs) > 0 ? Number(settingsAny?.llmTimeoutMs) : undefined,
+      idleFirstChunkMs: Number(settingsAny?.llmFirstChunkMs) > 0 ? Number(settingsAny?.llmFirstChunkMs) : undefined,
+      idleChunkGapMs: Number(settingsAny?.llmIdleChunkMs) > 0 ? Number(settingsAny?.llmIdleChunkMs) : undefined,
     });
     if (!r.ok) {
       const err = new Error(r.error) as Error & { status?: number };
