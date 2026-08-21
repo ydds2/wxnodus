@@ -37,11 +37,16 @@ describe('V4 P3-3 事件流落盘分级', () => {
     const d = work(); dirs.push(d);
     appendSessionEvent(d, 's1', { type: 'model', role: 'text', content: 'hello', ts: 1 });
     appendSessionEvent(d, 's1', { type: 'compact', summary: 's', before: 1, after: 2, ts: 2 });
-    await new Promise(r => setTimeout(r, 150)); // 异步完成
-    const evs = readSessionEvents(d, 's1');
+    // 轮询等待（全量负载下异步 appendFile 完成时序不保证——固定 150ms 睡眠曾 flaky）
+    const deadline = Date.now() + 5_000;
+    let evs = readSessionEvents(d, 's1');
+    while (evs.length < 2 && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 50));
+      evs = readSessionEvents(d, 's1');
+    }
     expect(evs.length).toBe(2);
     expect(evs[0]).toMatchObject({ type: 'model', content: 'hello' });
-  });
+  }, 10_000);
 
   it('sessionStream 5MB 轮转：预置超大文件再追加 → 触发翻卷（.1 存在、原文件重置）', async () => {
     const d = work(); dirs.push(d);

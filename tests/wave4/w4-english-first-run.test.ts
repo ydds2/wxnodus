@@ -79,6 +79,9 @@ describeWithDist('DX-05 first-run process contract', () => {
     const cwd = tmp();
     const r = await run(['-p', '算一下 1+1'], cwd);
     expect(r).not.toBeInstanceOf(Error);
-    expect((r as { stdout: string }).stdout).toContain('2');
+    const out = (r as { stdout: string }).stdout;
+    expect(out.length).toBeGreaterThan(0); // 有输出（不挂起/不交互等待）
+    // V4 M5 裁撤无 key 兜底层：未配密钥 → 诚实拒绝并给修复路径；已配密钥 → 真模型答案
+    expect(/2|未配置模型密钥|set-key/s.test(out)).toBe(true);
   });
 });
