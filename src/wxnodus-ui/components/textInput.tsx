@@ -1002,7 +1002,12 @@ export function TextInput({
       // actually get voice toggled instead of a paste (Copilot round-7
       // follow-up on #19835). The pass-through predicate is a no-op for
       // ordinary typing and plain paste when voice is unbound to 'v'.
-      if (shouldPassThroughToGlobalHandler(inp, k, voiceRecordKey)) {
+      // A-23（V4 P4-5）：vim 截 Esc 必须先于全局 pass-through——predicate 含 key.escape，
+      // 不让位则 insert→normal 的 Esc 永远到不了 vim 分支（原「Esc 死代码」根因）。
+      // vimEnabled 时 Esc 归 vim（insert→normal / normal 清搜索——肌肉记忆优先）；
+      // 非 vim 用户零变化（pass-through 照旧，全局 esc.multi 链不受影响）。
+      const vimWantsEsc = vimEnabled && k.escape
+      if (!vimWantsEsc && shouldPassThroughToGlobalHandler(inp, k, voiceRecordKey)) {
         flushKeyBurst()
 
         return
@@ -1017,6 +1022,13 @@ export function TextInput({
           vimRef.current = esc.state
           setVimModeUi(esc.state.mode)
           setVimNormalActive(esc.state.mode !== 'insert')
+          // P4-5（A-23）：insert 光标域（0..len）→ normal 域（0..len-1）——左移一格坐
+          // 在字符上（真 vim 语义）。不转换则 x/dw 等作用对象越界为 no-op（接线实测）；
+          // vimCore 纯函数不越权移动光标（其 doc 模型按 normal 域消费——单测既有口径）。
+          if (vRef.current.length) {
+            const clamped = Math.max(0, Math.min(curRef.current, vRef.current.length) - 1)
+            if (clamped !== curRef.current) commit(vRef.current, clamped)
+          }
 
           return
         }

@@ -682,7 +682,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // 双 Esc 取消（用户需求）：busy 时第一次 Esc 武装，1.5s 窗口内第二次 Esc 确认中断
     // （与 Ctrl+C 同链路）；非 busy 或超时复位并落到下方常规 Esc 语义——非 busy/overlay
     // 场景零行为变化（overlay.sessions 等分支在上方已 return）。
-    if (key.escape && live.busy && live.sid) {
+    // A-23（V4 P4-5）：vim NORMAL/VISUAL 激活时让位——Esc 归 vim（清搜索/回 normal，
+    // textInput vim 分支消费）；不武装「再按 Esc 确认中断」提示（vim 用户 Esc 是高频
+    // 模态键，busy 中断改走 Ctrl+C——与 561 行 Ctrl+R 历史搜索让位同款裁决）。
+    if (key.escape && live.busy && live.sid && !getVimNormalActive()) {
       const decision = escCancelNext(
         { armedAt: escCancelArmedAtRef.current },
         { now: Date.now(), busy: live.busy }
