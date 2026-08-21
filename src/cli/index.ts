@@ -1011,11 +1011,25 @@ if (pre.mode === 'error') {
   // W8-21：退出时 best-effort 恢复 conhost 输入模式（QuickEdit/行/回显）
   disposers.push({ id: 'console-restore', dispose: () => { consoleEnv.restore(); } });
 
+  // V4 P2-11：SIGINT 双语义——第一次仅中断当前 Run（gateway 转发），提示「再按退出」；
+  // 第二次（或空闲态单击）才真正退出。此前 300ms 无条件强退：长任务中想中止任务
+  // （claude code 标准行为）却整个 CLI 退出，会话中断、后台任务未收尾（与注释宣称矛盾）。
+  let firstSigintAt = 0;
   process.on('SIGINT', () => {
     if (exitRequested) { void shutdown('sigint').finally(() => process.exit(0)); return; }
+    const now = Date.now();
+    const busy = gateway?.running === true;
+    if (busy && now - firstSigintAt > 1_500) {
+      // 运行中第一次：只中断当前 Run（双 Esc 同族肌肉记忆——中断不退出）
+      firstSigintAt = now;
+      gateway.kill('SIGINT');
+      try { app?.unmount(); } catch { /* UI 已卸载 */ }
+      console.log('\n已中断当前任务——再按 Ctrl+C 退出 wxnodus');
+      return;
+    }
+    // 第二次（1.5s 内）或空闲态单击：真正退出
     exitRequested = true;
-    gateway.kill('SIGINT');
-    setTimeout(() => { void shutdown('sigint').finally(() => process.exit(0)); }, 300);
+    void shutdown('sigint').finally(() => process.exit(0));
   });
   process.on('SIGTERM', () => { void shutdown('sigterm').finally(() => process.exit(0)); });
 }

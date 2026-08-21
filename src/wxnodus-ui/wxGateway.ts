@@ -101,7 +101,7 @@ export class GatewayClient extends EventEmitter {
   private lastSessionEvent: { sid: string; text: string } | null = null
   private sessionSeq = 0
   private unsubscribe: Array<() => void> = []
-  private running = false
+  running = false // V4 P2-11：public 化——SIGINT 双语义据此判 busy（中断 vs 退出）
   private foregroundAdmission = 0
   private foregroundRun: RunInvocationHandle<unknown> | null = null
   /** 仅记录由本 Gateway 的 prompt.background 创建的任务，process.stop 不触碰其他任务。 */
