@@ -143,7 +143,16 @@ export function runAcpServer(opts: AcpOptions): Promise<number> {
           }
           const session = sessions.get(sid) ?? { id: sid, history: [] };
           session.history.push({ role: 'user', content });
+          // M-1 附带（审计「acp sessions Map 只增不减」）：LRU 界——ACP 协议无
+          // session/end，长驻服务会话累积无界；touch 保活跃序，超限淘汰最旧未用
+          //（历史仅内存回显用——淘汰不丢持久数据，session/load_history 走 store）
+          sessions.delete(sid);
           sessions.set(sid, session);
+          while (sessions.size > 64) {
+            const oldest = sessions.keys().next().value as string | undefined;
+            if (oldest === undefined) break;
+            sessions.delete(oldest);
+          }
           const execution = asCancellableExecution(opts.run(content, sid));
           const untrack = track(sid, execution);
           void execution.completion.then((result) => {

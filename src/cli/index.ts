@@ -970,7 +970,9 @@ if (pre.mode === 'error') {
           // Gemini --output-format json 的 stats 对齐：usage 为会话累计 token
           let usage: number | null = null;
           try {
-            const row = db.prepare(`SELECT COALESCE(SUM(input_tokens + output_tokens),0) t FROM usage_stats WHERE session_id=?`).get(opts.session ?? 'default') as { t: number } | undefined;
+            // M-1 附带（审计「-p --json usage 会话错位」）：统计查询会话与 run 实际
+            // 会话对齐——此前 opts.session ?? 'default'，--ephemeral 或 agent 自派生会话时查错行（恒 0）
+            const row = db.prepare(`SELECT COALESCE(SUM(input_tokens + output_tokens),0) t FROM usage_stats WHERE session_id=?`).get(invocationSessionId) as { t: number } | undefined;
             usage = row?.t ?? null;
           } catch { /* 统计失败静默 */ }
           // --output-schema：输出结构校验（claude --json-schema / codex --output-schema 对齐）——

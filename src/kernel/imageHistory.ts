@@ -47,9 +47,12 @@ export async function attachImageSummary(opts: {
     const raw = await summarize(images);
     if (!raw?.trim()) return false;
     const summary = `\n[附加图片] ${raw.trim().slice(0, SUMMARY_MAX)}`;
-    const r = db.prepare(
-      `UPDATE messages SET content = content || ? WHERE id = (SELECT MAX(id) FROM messages WHERE session_id=? AND role='user')`
-    ).run(summary, sessionId);
+    // M-1（V4 维护轨）：FTS 刷新——此前裸 UPDATE messages（FTS 触发器只覆盖 INSERT，
+    // 摘要内容永不可检索）；改走 updateMessage（FTS 行重建+向量清旧，db.ts P0-2 语义）
+    const { updateMessage } = await import('../store/db.js');
+    const row = db.prepare(`SELECT id, content FROM messages WHERE session_id=? AND role='user' ORDER BY id DESC LIMIT 1`).get(sessionId) as { id: number; content: string } | undefined;
+    if (!row) return false;
+    const r = { changes: updateMessage(db, row.id, row.content + summary) ? 1 : 0 };
     // W1-06：摘要沉淀进 memory repository（image provenance + session scope）——fail-soft
     try {
       const { openMemoryRepository } = await import('../infrastructure/sqlite/memoryRepository.js');

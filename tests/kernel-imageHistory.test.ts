@@ -152,3 +152,20 @@ describe('历史回显端到端（working 上下文可见）', () => {
     expect(r.text).toBe('多模态');
   });
 });
+
+// M-1（V4 维护轨）：摘要内容进 FTS——此前裸 UPDATE 绕过触发器，图片描述永不可检索
+describe('attachImageSummary FTS 刷新（M-1）', () => {
+  it('摘要后 searchMessages 可按摘要关键词命中该消息', async () => {
+    mem.append('s-fts', 'user', '看看这张图');
+    const ok = await attachImageSummary({
+      db, sessionId: 's-fts', images: IMG, apiKeyEnc: 'enc:mock',
+      summarize: async () => '白板上有量子纠缠示意图',
+    });
+    expect(ok).toBe(true);
+    const { searchMessages } = await import('../src/kernel/memory.js');
+    // 修复前：FTS 行仍是旧内容（'看看这张图'）——'量子' 零命中
+    expect(searchMessages(db, '量子纠缠', { limit: 5 }).some(h => h.session_id === 's-fts')).toBe(true);
+    // 旧内容仍可检索（FTS 行整体重建，非增量——两代内容都在）
+    expect(searchMessages(db, '看看这张图', { limit: 5 }).some(h => h.session_id === 's-fts')).toBe(true);
+  });
+});

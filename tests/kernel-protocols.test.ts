@@ -356,3 +356,33 @@ describe('V4 P0-7 a2a 认证门', () => {
     }
   });
 });
+
+// M-1 附带（审计「acp sessions Map 只增不减」）：LRU 界——超 64 会话淘汰最旧未用
+describe('ACP 会话 LRU 界（M-1）', () => {
+  it('70 个会话后最旧会话内存历史被淘汰（无 store 时 load_history 诚实空）', () => {
+    const acpUrl = pathToFileURL(join(process.cwd(), 'dist', 'kernel', 'acp.js')).href;
+    const script = `
+      import { runAcpServer } from '${acpUrl}';
+      runAcpServer({ run: async (t) => ({ ok: true, text: 'ok' }) });
+    `;
+    const reqs: Array<Record<string, unknown>> = [{ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }];
+    for (let i = 0; i < 70; i++) {
+      reqs.push({ jsonrpc: '2.0', id: 100 + i, method: 'prompt', params: { sessionId: `s-${i}`, content: `m${i}` } });
+    }
+    // 最旧会话 s-0 的内存历史应已被淘汰（load_history 无 store 走内存 Map）
+    reqs.push({ jsonrpc: '2.0', id: 900, method: 'session/load_history', params: { sessionId: 's-0' } });
+    // 最新会话 s-69 仍在窗口内
+    reqs.push({ jsonrpc: '2.0', id: 901, method: 'session/load_history', params: { sessionId: 's-69' } });
+    const input = reqs.map(j => JSON.stringify(j)).join('\n') + '\n';
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { input, encoding: 'utf8', timeout: 30000 });
+    const lines = (r.stdout ?? '').trim().split('\n').filter(Boolean);
+    expect(lines.length).toBe(reqs.length);
+    // 响应异步乱序（prompt 完成后才回）——按 id 定位而非行序
+    const byId = new Map<number, any>();
+    for (const l of lines) { const j = JSON.parse(l); byId.set(j.id, j); }
+    const evicted = byId.get(900);
+    const kept = byId.get(901);
+    expect(evicted?.result?.history).toEqual([]);            // 淘汰——诚实空
+    expect(kept?.result?.history?.length).toBeGreaterThan(0); // 窗口内保留（user+assistant）
+  }, 60_000);
+});
