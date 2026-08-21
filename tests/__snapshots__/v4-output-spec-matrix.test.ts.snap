@@ -1,0 +1,416 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > assistant @ compact 1`] = `
+[
+  {
+    "color": "text",
+    "indent": 1,
+    "kind": "assistant",
+    "streaming": true,
+    "text": "已定位问题……",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > assistant @ cozy 1`] = `
+[
+  {
+    "color": "text",
+    "indent": 1,
+    "kind": "assistant",
+    "streaming": true,
+    "text": "已定位问题……",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > assistant @ dense 1`] = `
+[
+  {
+    "color": "text",
+    "indent": 1,
+    "kind": "assistant",
+    "streaming": true,
+    "text": "已定位问题……",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > command @ compact 1`] = `
+[
+  {
+    "color": "muted",
+    "dim": true,
+    "indent": 1,
+    "kind": "command",
+    "text": "ok",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > command @ cozy 1`] = `
+[
+  {
+    "color": "muted",
+    "dim": true,
+    "indent": 1,
+    "kind": "command",
+    "text": "ok",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > command @ dense 1`] = `
+[
+  {
+    "color": "muted",
+    "dim": true,
+    "indent": 1,
+    "kind": "command",
+    "text": "ok",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > diff @ compact 1`] = `
+[
+  {
+    "color": "text",
+    "indent": 1,
+    "kind": "diff",
+    "preview": "src/app.ts",
+    "text": "@@ -1,2 +1,2 @@
+-old
++new",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > diff @ cozy 1`] = `
+[
+  {
+    "color": "text",
+    "indent": 1,
+    "kind": "diff",
+    "preview": "src/app.ts",
+    "text": "@@ -1,2 +1,2 @@
+-old
++new",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > diff @ dense 1`] = `
+[
+  {
+    "color": "text",
+    "indent": 1,
+    "kind": "diff",
+    "preview": "src/app.ts",
+    "text": "@@ -1,2 +1,2 @@
+-old
++new",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > notice @ compact 1`] = `
+[
+  {
+    "color": "warn",
+    "glyph": "⚠ ",
+    "indent": 1,
+    "kind": "notice",
+    "text": "上下文已用 75%",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > notice @ cozy 1`] = `
+[
+  {
+    "color": "warn",
+    "glyph": "⚠ ",
+    "indent": 1,
+    "kind": "notice",
+    "text": "上下文已用 75%",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > notice @ dense 1`] = `
+[
+  {
+    "color": "warn",
+    "glyph": "⚠ ",
+    "indent": 1,
+    "kind": "notice",
+    "text": "上下文已用 75%",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > reasoning @ compact 1`] = `
+[
+  {
+    "color": "muted",
+    "fold": {
+      "badge": "1.0k tokens",
+      "collapsed": true,
+      "title": "推理",
+    },
+    "glyph": "▸ ",
+    "indent": 1,
+    "kind": "fold",
+    "text": "推理 (1.0k tokens)",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > reasoning @ cozy 1`] = `
+[
+  {
+    "color": "muted",
+    "fold": {
+      "badge": "1.0k tokens",
+      "collapsed": true,
+      "title": "推理",
+    },
+    "glyph": "▸ ",
+    "indent": 1,
+    "kind": "fold",
+    "text": "推理 (1.0k tokens)",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > reasoning @ dense 1`] = `
+[
+  {
+    "color": "muted",
+    "dim": true,
+    "fold": {
+      "badge": "1.0k tokens",
+      "collapsed": true,
+      "title": "推理",
+    },
+    "glyph": "▸ ",
+    "indent": 1,
+    "kind": "fold",
+    "text": "推理 (1.0k tokens)",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > session-event @ compact 1`] = `
+[
+  {
+    "color": "accent",
+    "glyph": "◈ ",
+    "indent": 0,
+    "kind": "event",
+    "text": "已切换到会话 s2",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > session-event @ cozy 1`] = `
+[
+  {
+    "color": "accent",
+    "glyph": "◈ ",
+    "indent": 0,
+    "kind": "event",
+    "text": "已切换到会话 s2",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > session-event @ dense 1`] = `
+[
+  {
+    "color": "accent",
+    "glyph": "◈ ",
+    "indent": 0,
+    "kind": "event",
+    "text": "已切换到会话 s2",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > tool-result @ compact 1`] = `
+[
+  {
+    "color": "muted",
+    "dim": true,
+    "glyph": "⎿ ",
+    "indent": 1,
+    "kind": "result",
+    "text": "已替换 1 处 (850ms)",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > tool-result @ cozy 1`] = `
+[
+  {
+    "color": "muted",
+    "dim": true,
+    "glyph": "⎿ ",
+    "indent": 1,
+    "kind": "result",
+    "text": "已替换 1 处",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > tool-result @ dense 1`] = `
+[
+  {
+    "color": "muted",
+    "dim": true,
+    "glyph": "⎿ ",
+    "indent": 1,
+    "kind": "result",
+    "text": "已替换 1 处 (850ms)",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > tool-start @ compact 1`] = `
+[
+  {
+    "color": "accent",
+    "glyph": "⏺ ",
+    "indent": 0,
+    "kind": "tool",
+    "streaming": true,
+    "text": "fs_edit src/app.ts",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > tool-start @ cozy 1`] = `
+[
+  {
+    "color": "accent",
+    "glyph": "⏺ ",
+    "indent": 0,
+    "kind": "tool",
+    "streaming": true,
+    "text": "fs_edit src/app.ts",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > tool-start @ dense 1`] = `
+[
+  {
+    "color": "accent",
+    "glyph": "⏺ ",
+    "indent": 0,
+    "kind": "tool",
+    "streaming": true,
+    "text": "fs_edit src/app.ts",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > turn-summary @ compact 1`] = `
+[
+  {
+    "color": "muted",
+    "dim": true,
+    "glyph": "◦ ",
+    "indent": 1,
+    "kind": "summary",
+    "text": "3 轮 · 8.4k tokens · $0.01 · 24.5s",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > turn-summary @ cozy 1`] = `
+[
+  {
+    "color": "muted",
+    "dim": true,
+    "glyph": "◦ ",
+    "indent": 1,
+    "kind": "summary",
+    "text": "3 轮 · 8.4k tokens · $0.01 · 24.5s",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > turn-summary @ dense 1`] = `
+[
+  {
+    "color": "muted",
+    "dim": true,
+    "glyph": "◦ ",
+    "indent": 1,
+    "kind": "summary",
+    "text": "3 轮 · 8.4k tokens · $0.01 · 24.5s",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > user @ compact 1`] = `
+[
+  {
+    "color": "muted",
+    "glyph": "❯ ",
+    "indent": 0,
+    "kind": "user",
+    "text": "帮我修这个 bug",
+  },
+  {
+    "color": "muted",
+    "dim": true,
+    "glyph": "📎 ",
+    "indent": 1,
+    "kind": "user",
+    "text": "截图.png",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > user @ cozy 1`] = `
+[
+  {
+    "color": "muted",
+    "glyph": "❯ ",
+    "indent": 0,
+    "kind": "user",
+    "text": "帮我修这个 bug",
+  },
+  {
+    "color": "muted",
+    "dim": true,
+    "glyph": "📎 ",
+    "indent": 1,
+    "kind": "user",
+    "text": "截图.png",
+  },
+]
+`;
+
+exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） > user @ dense 1`] = `
+[
+  {
+    "color": "muted",
+    "glyph": "❯ ",
+    "indent": 0,
+    "kind": "user",
+    "text": "帮我修这个 bug",
+  },
+  {
+    "color": "muted",
+    "dim": true,
+    "glyph": "📎 ",
+    "indent": 1,
+    "kind": "user",
+    "text": "截图.png",
+  },
+]
+`;
