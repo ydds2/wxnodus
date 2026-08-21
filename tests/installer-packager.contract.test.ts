@@ -164,3 +164,27 @@ describe.skipIf(process.platform !== 'win32')('install.ps1 真实安装（Window
     expect(existsSync(join(target, 'bin', 'wxnodus.js'))).toBe(false); // 绝不带病安装
   }, 60_000);
 });
+
+// V4 P3-5：发布链闭环——合成根 package.json / Node 22.7 硬门槛 / manifest buildAbi
+describe('V4 P3-5 发布链闭环', () => {
+  it('manifest 携带 buildAbi（当前进程 ABI）+ ps1 含 22.7 硬门槛与 ABI 比对', async () => {
+    const files = new Map([['dist/cli/index.js', Buffer.from('console.log(1)')]]);
+    const r = await buildInstallerPackage({ appName: 'wxnodus', version: '4.0.0', icon: null, entryPath: 'dist/cli/index.js', files, outDir: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const manifest = r.value.manifest; // 直接返回 manifest 对象（zip 落盘产物）
+    expect(manifest.buildAbi).toBe(Number(process.versions.modules));
+    // ps1 从 zip 提取验证——zipPath 落盘；用 manifestSha256 之外的直接读 packager 内嵌……
+    // 简化：直接验证 ps1 模板行为经 install-one.e2e（真实安装）覆盖，此处断言 manifest 契约
+    const fs = await import('node:fs');
+    const zipBytes = fs.readFileSync(r.value.zipPath);
+    const extractDir = join(root, 'unz');
+    fs.mkdirSync(extractDir, { recursive: true });
+    extract(zipBytes, extractDir);
+    const ps1 = fs.readFileSync(join(extractDir, 'install.ps1'), 'utf8');
+    expect(ps1).toContain('ABI mismatch');     // ABI 比对
+    expect(ps1).toContain('-ge 7');             // 22.7 硬门槛
+    expect(ps1).toContain('buildAbi');          // manifest 字段读取
+    expect(ps1).not.toContain('-ge 18)');       // 旧 18 门槛已废
+  });
+});

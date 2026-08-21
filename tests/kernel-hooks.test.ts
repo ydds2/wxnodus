@@ -156,12 +156,16 @@ describe('12 类事件扩充', () => {
       Promise.resolve(runner.subagentStop({ ok: true, output: 'o', turns: 1 })),
       Promise.resolve(runner.notification('cron', '定时任务完成')),
     ]);
-    await new Promise(r => setTimeout(r, 100));
-    expect(notices.some(t => t.includes('sessionStart'))).toBe(true);
-    expect(notices.some(t => t.includes('sessionEnd'))).toBe(true);
-    expect(notices.some(t => t.includes('subagentStart'))).toBe(true);
-    expect(notices.some(t => t.includes('subagentStop'))).toBe(true);
-    expect(notices.some(t => t.includes('notification'))).toBe(true);
+    // V4 P3-5 稳定化：并发 5 个 node 子进程在重载 CI 机器上 100ms 可能未排空——
+    // 轮询至全部到达或 5s 超时（flaky 根治）
+    const want = ['sessionStart', 'sessionEnd', 'subagentStart', 'subagentStop', 'notification'];
+    for (let waited = 0; waited < 5_000; waited += 100) {
+      if (want.every(w => notices.some(t => t.includes(w)))) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    for (const w of want) {
+      expect(notices.some(t => t.includes(w))).toBe(true);
+    }
   });
   it('preCompact 输出 BLOCK 阻止压缩；postCompact 携带 token 数', async () => {
     const bus = createEventBus(dir);

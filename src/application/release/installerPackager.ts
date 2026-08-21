@@ -37,6 +37,8 @@ export interface InstallerPackageManifest {
   entryPath: string;
   entrySha256: string;
   files: Array<{ path: string; sha256: string; bytes: number }>;
+  /** V4 P3-5：打包机 Node ABI（process.versions.modules）——install.ps1 预检比对 */
+  buildAbi?: number;
 }
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
@@ -68,9 +70,12 @@ try {
   $NodeVer = & node -v 2>$null
   if ($NodeVer -match '^v(\\d+)\\.') {
     $major = [int]$Matches[1]
-    if ($major -ge 18) {
+    # V4 P3-5: hard gate Node >= 22.7 (ESM detect-module semantics + engines contract;
+    # installer ships ESM-only dist without transpile - older Node fails at startup, not install)
+    if ($major -gt 22 -or ($major -eq 22 -and (([version]$NodeVer.Substring(1)).Minor -ge 7))) {
       $NodeOk = $true
-      if ($major -lt 22) { Write-Output "WARN: Node $NodeVer below recommended 22 (install continues)" }
+    } elseif ($major -ge 22) {
+      Write-Output "FAIL: Node $NodeVer is 22.x but below 22.7 - ESM startup requires >= 22.7"
     }
   }
 } catch { }
@@ -91,7 +96,16 @@ function Get-WxSha256([string]$Path) {
 }
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ManifestPath = Join-Path $Root 'manifest.json'
+# V4 P3-5: read builder ABI from manifest (single field read - full manifest validated later)
 $Manifest = [System.IO.File]::ReadAllText($ManifestPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+$ManifestAbi = $Manifest.buildAbi
+# V4 P3-5: ABI check (after Node gate) - native modules compiled for builder ABI;
+# mismatch means NODE_MODULE_VERSION crash at require time
+$LocalAbi = (& node -p "process.versions.modules" 2>$null)
+if ($NodeOk -and $LocalAbi -and $ManifestAbi -and [int]$LocalAbi -ne [int]$ManifestAbi) {
+  Write-Output "FAIL: Node ABI mismatch (local $LocalAbi vs built $ManifestAbi) - native modules require the builder Node line"
+  $NodeOk = $false
+}
 $entryRelative = $Manifest.entryPath -replace '/', '\\'
 $JournalName = '.wxnodus-journal.json'
 if ($Uninstall) {
@@ -247,6 +261,9 @@ export async function buildInstallerPackage(input: InstallerPackageInput): Promi
   }
   const fileList = [...input.files.entries()].map(([path, bytes]) => ({ path, sha256: sha256(bytes), bytes: bytes.length }))
     .sort((a, b) => a.path.localeCompare(b.path));
+  // V4 P3-5：manifest 记录打包机 ABI（原生模块 better-sqlite3/robotjs 按此编译——
+  // install.ps1 预检比对，不匹配即 NODE_MODULE_VERSION 崩）
+  const buildAbi = Number(process.versions.modules);
   const manifest: InstallerPackageManifest = {
     schemaVersion: 2,
     appName: name.value,
@@ -255,6 +272,7 @@ export async function buildInstallerPackage(input: InstallerPackageInput): Promi
     entryPath: input.entryPath,
     entrySha256: sha256(input.files.get(input.entryPath)!),
     files: fileList,
+    buildAbi, // V4 P3-5：打包机 Node ABI（install.ps1 预检比对——原生模块版本一致性）
   };
   const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   const installerBytes = installScript(manifest);

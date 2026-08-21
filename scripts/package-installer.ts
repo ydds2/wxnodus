@@ -45,6 +45,41 @@ collect(join(ROOT, 'dist'), ROOT);
 const rootPkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> };
 const closure = collectDependencyClosure(join(ROOT, 'node_modules'), Object.keys(rootPkg.dependencies ?? {}));
 for (const [path, bytes] of stageClosureEntries(closure.files)) staged.set(path, bytes);
+// V4 P3-5（a）：SBOM 闭包版本断言——freeze 时 SBOM（components+versions）与打包时实际
+// node_modules 闭包比对（freeze→package 之间任何 npm install 造成的 semver 内漂移即拒——
+// 此前依赖部分零绑定：candidate.json 只绑定 dist 哈希）
+const sbomPath = flag('--sbom');
+if (sbomPath) {
+  const sbom = JSON.parse(readFileSync(sbomPath, 'utf8')) as { components?: Array<{ name: string; version: string }> };
+  const sbomVersions = new Map((sbom.components ?? []).map(c => [c.name, c.version]));
+  let drift = 0;
+  for (const relPath of closure.files.keys()) {
+    // relPath 形如 node_modules/<name>/... 或 node_modules/@scope/<name>/...
+    const m = /node_modules\/(?:@[^/]+\/)?([^/]+)/.exec(relPath);
+    if (!m) continue;
+    const pkgName = m[1]!;
+    const depPkgPath = join(ROOT, 'node_modules', relPath.slice('node_modules/'.length));
+    try {
+      const depPkg = JSON.parse(readFileSync(join(depPkgPath, 'package.json'), 'utf8')) as { name?: string; version?: string };
+      const expected = depPkg.name ? sbomVersions.get(depPkg.name) : undefined;
+      if (expected && depPkg.version !== expected) {
+        console.error(`SBOM_DRIFT: ${depPkg.name} ${depPkg.version} != frozen ${expected}`);
+        drift++;
+      }
+    } catch { /* 无 package.json 的子树跳过 */ }
+  }
+  if (drift > 0) { console.error(`CANDIDATE_SBOM_DRIFT: ${drift} dependencies differ from frozen SBOM`); process.exit(2); }
+  // ABI 比对：better-sqlite3/robotjs 原生模块按打包机 Node ABI 编译——manifest 记录
+  // process.versions.modules，install.ps1 预检比对（ABI 不匹配即 NODE_MODULE_VERSION 崩）
+  console.log(`  ABI check: node ${process.version} (modules ABI ${process.versions.modules})`);
+}
+
+// V4 P3-5（b）：合成最小根 package.json（name/version/type:module）——tsc 只编译 src、staged 树
+// 从无 package.json：kernel/version.ts 运行时读不到即回退 '0.0.0'（安装版 --version/banner/
+// MCP/serve 全 0.0.0）；且缺 "type":"module" 时 Node <22.7 按 CJS 解析 ESM 直接 SyntaxError
+// （install.ps1 预检已同步改 22.7 硬门槛，双保险）
+staged.set('package.json', Buffer.from(JSON.stringify({ name, version, type: 'module', private: true }, null, 2) + '
+', 'utf8'));
 
 const distDigest = createHash('sha256');
 for (const [path, bytes] of [...staged.entries()].filter(([path]) => path.startsWith('dist/')).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)) {
