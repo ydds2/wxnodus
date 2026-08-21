@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildPowerShellArgs, createIncrementalUtf8 } from '../src/kernel/toolOutput.js';
+import { buildPowerShellArgs, clampInt, createIncrementalUtf8 } from '../src/kernel/toolOutput.js';
 
 describe('V4 P1-1 buildPowerShellArgs（EncodedCommand 构造）', () => {
   it('args 形态：-NoProfile -EncodedCommand <base64>；解码回 UTF-16LE 得到 UTF8 前缀+命令', () => {
@@ -84,4 +84,51 @@ describe('V4 P1-1 真实 PowerShell 中文实测（win32）', { skip: process.pl
       try { rmSync(dir, { recursive: true, force: true }); } catch { /* EBUSY */ }
     }
   }, 30_000);
+});
+
+// V4 P1-2：bash 超时可调 + 空闲计时——默认 60s 不再腰斩长任务；静默挂死仍按预算终止。
+import { coreTools as _coreToolsForP12 } from '../src/kernel/tools.js';
+describe('V4 P1-2 bash 超时可调（win32 真实执行）', { skip: process.platform !== 'win32' }, () => {
+  it('timeout_ms 参数生效：默认 60s 会杀的 3s 任务在 timeout_ms=8000 下完整跑完', async () => {
+    const tools = _coreToolsForP12();
+    const d = mkdtempSync(join(tmpdir(), 'wx-p12-'));
+    try {
+      const r = await tools.bash!.run(
+        { command: `$t=Get-Date; Start-Sleep -Milliseconds 2500; Write-Output "done $(( [int]((Get-Date)-$t).TotalSeconds ))s"`, timeout_ms: 8000 },
+        { cwd: d } as any,
+      );
+      expect(String(r)).toContain('done');
+      expect(String(r)).not.toMatch(/超时/);
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch { /* */ } }
+  }, 20_000);
+
+  it('静默挂死按预算终止：1s 预算杀 Start-Sleep 60s，返回语引导 timeout_ms//jobs', async () => {
+    const tools = _coreToolsForP12();
+    const d = mkdtempSync(join(tmpdir(), 'wx-p12b-'));
+    try {
+      const r = await tools.bash!.run({ command: 'Start-Sleep -Seconds 60', timeout_ms: 1500 }, { cwd: d } as any);
+      expect(String(r)).toMatch(/超时/);
+      expect(String(r)).toMatch(/timeout_ms|\/jobs/);
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch { /* */ } }
+  }, 15_000);
+
+  it('间歇输出续命：每 800ms 输出一次共 3 次（总 2.4s > 1.5s 预算）不被误杀', async () => {
+    const tools = _coreToolsForP12();
+    const d = mkdtempSync(join(tmpdir(), 'wx-p12c-'));
+    try {
+      const r = await tools.bash!.run(
+        { command: '1..3 | ForEach-Object { Start-Sleep -Milliseconds 800; Write-Output "tick $_" }', timeout_ms: 1500 },
+        { cwd: d } as any,
+      );
+      expect(String(r)).toContain('tick 3');
+      expect(String(r)).not.toMatch(/超时/);
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch { /* */ } }
+  }, 20_000);
+
+  it('timeout_ms 上限夹取：>600000 按 600000（clamp 语义——schema 契约由 clampInt 保证）', () => {
+    // 夹取逻辑为 clampInt(timeout_ms ?? settings, 60000, 1000, 600000)——契约级断言（不真跑 10min）
+    expect(clampInt(9_999_999, 60_000, 1_000, 600_000)).toBe(600_000);
+    expect(clampInt(undefined, 60_000, 1_000, 600_000)).toBe(60_000);
+    expect(clampInt(500, 60_000, 1_000, 600_000)).toBe(1_000);
+  });
 });

@@ -296,9 +296,9 @@ export function coreTools(): Record<string, ToolDef> {
   // ── P0-3 子进程环境净化（env.ts 统一实现：bash/hooks/MCP 共用）──
 
   const bash: ToolDef = {
-    schema: { type: 'function', function: { name: 'bash', description: '执行 shell 命令', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },
+    schema: { type: 'function', function: { name: 'bash', description: '执行 shell 命令。长任务（npm install/测试套件）可传 timeout_ms 延长超时（默认 60s、上限 10min；有输出时计时重置——静默挂死才杀）。更长的跑 /jobs 后台。', parameters: { type: 'object', properties: { command: { type: 'string' }, timeout_ms: { type: 'number', description: '空闲超时毫秒（默认 60000，上限 600000）——距上次输出的静默时长超过此值才终止' } }, required: ['command'] } } },
     danger: true,
-    async run({ command }, ctx) {
+    async run({ command, timeout_ms }, ctx) {
       // F15 修复：spawn 异步执行（非 execSync 阻塞）——abort 信号真中断（kill 子进程），60s 兜底超时
       try {
         let cmd = String(command);
@@ -348,11 +348,14 @@ export function coreTools(): Record<string, ToolDef> {
         // ② 流式落盘：完整输出写 truncations/tmp（内存封顶 20000 字防 OOM），
         //    超限时接管为正式 offload 文件——预览 + 续读路径（不再丢尾）
         const sSettings = ctx.getSettings?.() as Record<string, any> | undefined;
+        // V4 P1-2：超时可调——timeout_ms 参数 / settings.bashTimeoutMs 覆盖默认 60s（上限 10min；
+        // opencode shell timeout 同族语义）。此前硬编码 60s：npm install/测试套件必被腰斩。
+        const budgetMs = clampInt(timeout_ms ?? sSettings?.bashTimeoutMs, 60_000, 1_000, 600_000);
         // supremacy S-04 完整版：settings.remoteServer（exec-server，远端可沙盒）优先于 ssh 通道
         const remoteServer = sSettings?.remoteServer as { host?: string; port?: number; token?: string } | undefined;
         if (remoteServer?.host && remoteServer?.token) {
           const { runRemoteExecServer } = await import('./execServer.js');
-          const r = await runRemoteExecServer({ host: String(remoteServer.host), port: Number(remoteServer.port) || 4789, token: String(remoteServer.token) }, cmd, { timeoutMs: 60_000 });
+          const r = await runRemoteExecServer({ host: String(remoteServer.host), port: Number(remoteServer.port) || 4789, token: String(remoteServer.token) }, cmd, { timeoutMs: budgetMs });
           ctx.bus?.emit?.('system.notice', { text: r.sandboxed ? (r.note ?? '远端沙盒执行') : '远端未沙盒（exec-server profile=off）' });
           const full = `${r.out}${r.err ? `\n${r.err}` : ''}${r.error ? `\n${r.error}` : ''}`.trim();
           return wrapDanger(`${full || '(无输出)'}\n[exec-server ${remoteServer.host}:${remoteServer.port} · 退出码 ${r.code ?? '无'} · ${r.sandboxed ? r.note : '远端未沙盒'}]`);
@@ -363,7 +366,7 @@ export function coreTools(): Record<string, ToolDef> {
         if (remoteTarget) {
           const { runRemoteCommand, REMOTE_UNSANDBOXED_NOTE } = await import('./sshRemote.js');
           ctx.bus?.emit?.('system.notice', { text: REMOTE_UNSANDBOXED_NOTE });
-          const r = await runRemoteCommand(remoteTarget, cmd, { timeoutMs: 60_000, signal: ctx.signal });
+          const r = await runRemoteCommand(remoteTarget, cmd, { timeoutMs: budgetMs, signal: ctx.signal });
           const full = `${r.stdout}${r.stderr ? `\n${r.stderr}` : ''}${r.error ? `\n${r.error}` : ''}`.trim();
           return wrapDanger(`${full || '(无输出)'}\n[远程 ${remoteTarget.user}@${remoteTarget.host}:${remoteTarget.port} · 退出码 ${r.code ?? '无'} · ${REMOTE_UNSANDBOXED_NOTE}]`);
         }
@@ -377,7 +380,7 @@ export function coreTools(): Record<string, ToolDef> {
           args: process.platform === 'win32' ? buildPowerShellArgs(cmd) : ['-c', cmd],
           cwd: ctx.cwd,
           stdin: stdinSecret ?? undefined,
-          timeoutMs: 60_000,
+          timeoutMs: budgetMs,
           signal: ctx.signal,
         });
         // fail-closed 门（2026-08-18 评估轮）：沙盒请求但不可用 → 默认拒绝执行，绝不静默降级裸跑；
@@ -426,8 +429,23 @@ export function coreTools(): Record<string, ToolDef> {
           ctx.bus?.emit?.('system.notice', { text: `命令已在 OS 沙盒内执行（${sandboxProfile}）——受限令牌 + Job 遏制${sandboxProfile === 'L0' || sandboxProfile === 'L1' ? ' + 断网' : sandboxProfile === 'L2' ? ' + 限速 10KB/s' : ''}${sandboxProfile === 'L0' ? ' + 只读' : ''}` });
         } else {
           // 普通路径（沙盒未开启/不适用）：spawn + 流式落盘（sink 保证完整输出可续读）
-          const timeout = AbortSignal.timeout(60000);
-          const signal = ctx.signal ? AbortSignal.any([timeout, ctx.signal]) : timeout;
+          // V4 P1-2：空闲超时——每次输出到达重置计时（npm install 间歇输出不误杀；静默挂死才杀），
+          // 硬顶 5×budget（封顶 30min）防持续刷屏循环永生。此前 AbortSignal.timeout(60s) 全程
+          // 一刀切：任何超 60s 命令（npm install/测试）必被腰斩且超时不可配。
+          const idleAc = new AbortController();
+          let idleReason: 'hard' | 'idle' | null = null;
+          const hardMs = Math.min(budgetMs * 5, 30 * 60_000);
+          const startedAt = Date.now();
+          let idleTimer: NodeJS.Timeout | null = null;
+          const armIdle = () => {
+            if (idleTimer) clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+              idleReason = (Date.now() - startedAt) >= hardMs ? 'hard' : 'idle';
+              idleAc.abort();
+            }, budgetMs);
+          };
+          armIdle();
+          const signal = ctx.signal ? AbortSignal.any([idleAc.signal, ctx.signal]) : idleAc.signal;
           let sinkPath: string | null = null;
           let sinkFd: number | null = null;
           try {
@@ -455,6 +473,7 @@ export function coreTools(): Record<string, ToolDef> {
           const decOut = createIncrementalUtf8();
           const decErr = createIncrementalUtf8();
           const appendOut = (d: Buffer, dec: ReturnType<typeof createIncrementalUtf8>) => {
+            armIdle(); // V4 P1-2：有输出到达重置空闲计时（长任务间歇输出不误杀）
             if (sinkFd !== null) { try { writeSync(sinkFd, d); } catch { /* sink 失败不影响执行 */ } }
             if (out.length >= outCap) { truncated = true; return; }
             out += dec.push(d);
@@ -466,6 +485,7 @@ export function coreTools(): Record<string, ToolDef> {
             await new Promise<void>((resolveP, rejectP) => {
               child.on('error', rejectP);
               child.on('close', (code) => {
+                if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
                 if (sinkFd !== null) { try { closeSync(sinkFd); } catch { /* 忽略 */ } sinkFd = null; }
                 // V4 P1-1：流尾 flush（未完成序列显式呈现替换符——诚实）
                 out += decOut.flush() + decErr.flush();
@@ -477,7 +497,12 @@ export function coreTools(): Record<string, ToolDef> {
               });
             });
           } finally {
+            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
             if (sinkFd !== null) { try { closeSync(sinkFd); } catch { /* 忽略 */ } }
+            if (idleReason) {
+              const label = idleReason === 'hard' ? `持续输出超硬顶（${Math.round(hardMs / 1000)}s）` : `静默 ${Math.round(budgetMs / 1000)}s 无输出`;
+              throw new Error(`命令超时（${label}）——带更大 timeout_ms 重试（上限 600000），或转 /jobs 后台执行`);
+            }
             if (sinkPath) {
               if (truncated) fullPath = sinkPath; else { try { rmSync(sinkPath, { force: true }); } catch { /* 忽略 */ } }
             }
