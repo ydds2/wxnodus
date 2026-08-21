@@ -307,7 +307,11 @@ describe('A2A 完整版（agent card / 任务流 / cancel / push / stdio）', ()
     expect(j.result.id).toBeTruthy();
     await new Promise(res => setTimeout(res, 400));
     expect(received.length).toBeGreaterThan(0);
-    expect(JSON.stringify(received)).toContain(j.result.id);
+    // M-5：notification 回包为 JSON-RPC 2.0 信封（method=tasks/notification + params 载荷）
+    expect(received[0]?.jsonrpc).toBe('2.0');
+    expect(received[0]?.method).toBe('tasks/notification');
+    expect(received[0]?.params?.taskId).toBe(j.result.id);
+    expect(['submitted', 'working', 'completed', 'failed']).toContain(received[0]?.params?.state);
     recv.close();
   });
 

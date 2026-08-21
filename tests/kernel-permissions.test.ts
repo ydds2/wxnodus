@@ -291,3 +291,23 @@ describe('V4 P0-4 bash 分级切分红队', () => {
     expect(classifyBashCommand('echo hi && rm -rf x')).toBe('danger');
   });
 });
+
+// M-3（V4 维护轨·W-4 双速权限试点）：sandbox=on + 灰度开关 → 工作区内低危写免审批
+describe('modeVerdict 双速权限试点（M-3）', () => {
+  const cwd = process.cwd();
+  it('fastPath 开：工作区内 fs_write/fs_edit 免审批（confirm→approve）', () => {
+    const opts = { sandboxFastPath: { cwd } };
+    expect(modeVerdict('smart', 'fs_write', { path: 'src/a.ts' }, true, opts)).toBe('approve');
+    expect(modeVerdict('manual', 'fs_edit', { path: join(cwd, 'b.txt'), oldText: 'x', newText: 'y' }, true, opts)).toBe('approve');
+  });
+  it('工作区外维持强审批；apply_patch 不在试点面', () => {
+    const opts = { sandboxFastPath: { cwd } };
+    expect(modeVerdict('smart', 'fs_write', { path: '../outside.txt' }, true, opts)).toBe('confirm');
+    expect(modeVerdict('smart', 'fs_write', { path: 'c:/windows/system32/evil.dll' }, true, opts)).toBe('confirm');
+    expect(modeVerdict('smart', 'apply_patch', { patch: '*** Update File: in.txt' }, true, opts)).toBe('confirm');
+  });
+  it('敏感写红线不受 fastPath 影响；默认（无 opts）行为零变化', () => {
+    expect(modeVerdict('yolo', 'fs_write', { path: 'config/.env' }, true, { sandboxFastPath: { cwd } })).toBe('reject');
+    expect(modeVerdict('smart', 'fs_write', { path: 'src/a.ts' }, true)).toBe('confirm');
+  });
+});

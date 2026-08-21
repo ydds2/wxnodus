@@ -33,20 +33,32 @@ export async function verifyProject(projectDir: string, opts: { timeoutMs?: numb
     // 审查修复（P3）：server 子进程与 healthcheck 同用 sanitizedEnv——此前原始 process.env
     // 把环境里的密钥/凭据原样透传给被验证的项目进程（与文件头部声明的净化策略矛盾）
     const srvEnv = { ...sanitizedEnv(), PORT: port };
-    // 1. 启动（随机端口，healthcheck 探活同一端口）
+    // M-2（V4 维护轨）：探活轮询——此前固定睡 1200ms 后单次探测，冷启动慢的机器
+    // （node 首载/杀软扫描）直接误判 failed；改 200ms 间隔轮询至 deadline（快机更快
+    // 返回，慢机等到真活/真超时）。启动/重启两轮各占预算一半（下限 2s）。
+    const probeDeadline = Math.max(2000, Math.floor(timeoutMs / 2));
+    const waitAlive = async (): Promise<{ ok: boolean; out: string }> => {
+      const deadline = Date.now() + probeDeadline;
+      let last = { ok: false, out: '' };
+      while (Date.now() < deadline) {
+        const r = await run(hc, { PORT: port });
+        last = { ok: r.code === 0, out: r.out };
+        if (last.ok) return last;
+        await new Promise(res => setTimeout(res, 200));
+      }
+      return last;
+    };
+    // 1. 启动（随机端口，healthcheck 探活同一端口）→ 探活轮询
     const srv = spawn(process.execPath, [entry], { cwd: projectDir, env: srvEnv, stdio: 'ignore' });
-    await new Promise(r => setTimeout(r, 1200));
-    // 2. 探活（PORT 显式传递——此前漏传会探默认 4321，端口被占时误连外部进程）
-    const hcRes = await run(hc, { PORT: port });
+    const hc1 = await waitAlive();
     try { srv.kill(); } catch {}
-    if (hcRes.code !== 0) return { status: 'failed', detail: hcRes.out.slice(0, 300) };
-    // 3. 重启读回（声明流程真实化）：杀 → 重启 → 再探活 → 读回一致才算完成
+    if (!hc1.ok) return { status: 'failed', detail: `探活失败（${probeDeadline}ms 内未就绪）：${hc1.out.slice(0, 300)}` };
+    // 2. 重启读回（声明流程真实化）：杀 → 重启 → 再探活轮询 → 读回一致才算完成
     const srv2 = spawn(process.execPath, [entry], { cwd: projectDir, env: srvEnv, stdio: 'ignore' });
-    await new Promise(r => setTimeout(r, 1200));
-    const hcRes2 = await run(hc, { PORT: port });
+    const hc2 = await waitAlive();
     try { srv2.kill(); } catch {}
-    if (hcRes2.code !== 0) return { status: 'failed', detail: `重启后探活失败：${hcRes2.out.slice(0, 300)}` };
-    return { status: 'ok', detail: `启动→探活→重启→读回全部通过：${hcRes2.out.slice(0, 160)}` };
+    if (!hc2.ok) return { status: 'failed', detail: `重启后探活失败（${probeDeadline}ms 内未就绪）：${hc2.out.slice(0, 300)}` };
+    return { status: 'ok', detail: `启动→探活→重启→读回全部通过：${hc2.out.slice(0, 160)}` };
   } catch (e: any) {
     return { status: 'failed', detail: String(e?.message ?? e) };
   }

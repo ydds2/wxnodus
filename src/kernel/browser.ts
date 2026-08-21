@@ -107,7 +107,11 @@ async function ensureBrowser(sessionId = 'default'): Promise<{ ok: true } | { ok
     // 有头失败回退无头（CI/无显示环境）
     try {
       const { chromium } = requireCjs('playwright-core');
-      const browser = await chromium.launch({ headless: true });
+      // M-4 附带（审计「headless 回退对 playwright-core 无效」）：无 channel 的
+      // chromium.launch 找 bundled 浏览器——playwright-core 不带浏览器，此分支此前
+      // 恒失败（不可达代码）；回退同样用系统浏览器 channel（probe 已探测）
+      const fallbackChannel = probe.browser?.startsWith('chrome') ? 'chrome' : 'msedge';
+      const browser = await chromium.launch({ headless: true, channel: fallbackChannel });
       const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
       page.setDefaultTimeout(15000);
       armNavigationGuard(page, sessionId); // B-14：无头路径同样装导航守卫

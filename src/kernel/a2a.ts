@@ -220,10 +220,12 @@ export async function a2aServe(
   };
   const pushState = (task: A2ATask): void => {
     if (!task.pushUrl) return;
+    // M-5（V4 维护轨）：notification 回包协议修正——与 tasks/send 同族 JSON-RPC 2.0 信封
+    //（此前裸 {taskId,state} 对象——对端 JSON-RPC 分发器无法路由）
     void fetch(task.pushUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ taskId: task.id, state: task.state, error: task.error }),
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'tasks/notification', params: { taskId: task.id, state: task.state, error: task.error } }),
       signal: AbortSignal.timeout(3000),
     }).catch(() => { /* fire-and-forget：push 失败不阻断任务 */ });
   };

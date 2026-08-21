@@ -155,7 +155,9 @@ export function detectAudioDevice(env: NodeJS.ProcessEnv = process.env): string 
       if (name && !/virtual|speakers|扬声器|立体声混音/i.test(name)) return name;
     }
     // 回退：无候选时返回第一个 (audio) 设备名（纯扬声器环境也能录系统音频）
-    const anyRe = /"s*([^"]+?)s*"s*(audio)/;
+    // V4 M-4/M-5 附带（审计「死正则」修复）：此前 \s* 误写为字面 s*
+    // （匹配「引号后跟字母 s」永不命中——回退路径恒 null）
+    const anyRe = /"\s*([^"]+?)\s*"\s*\(audio\)/;
     const any = out.match(anyRe);
     return any ? any[1]!.trim() || null : null;
   } catch { return null; }

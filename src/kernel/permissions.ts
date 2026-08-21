@@ -286,7 +286,29 @@ export function createApprovalCache(): ApprovalCache {
   };
 }
 
-export function modeVerdict(mode: Mode, tool: string, args: Record<string, any>, toolDanger?: boolean): Verdict {
+export interface ModeVerdictOpts {
+  /**
+   * M-3（V4 维护轨·W-4 双速权限试点）：sandbox=on 且 settings.sandboxFastPath===true
+   * （默认关，灰度）时，工作区内低危写（fs_write/fs_edit 到 cwd 内）免审批——
+   * Claude「沙盒内即免审批」对齐（实测 -84% 弹窗）。沙盒外/bypass 维持现状强审批；
+   * 红线/敏感写在前序步骤已判，不受此影响。
+   */
+  sandboxFastPath?: { cwd: string };
+}
+
+/** 路径在工作区内（resolve 归一后前缀判定；越界/绝对外路径 false） */
+function isWithinDir(cwd: string, p: string): boolean {
+  try {
+    const { resolve, sep } = require('node:path') as typeof import('node:path');
+    const abs = resolve(cwd, p);
+    const root = resolve(cwd);
+    return abs === root || abs.startsWith(root + sep);
+  } catch { return false; }
+}
+
+const FAST_PATH_WRITE_TOOLS = new Set(['fs_write', 'fs_edit']);
+
+export function modeVerdict(mode: Mode, tool: string, args: Record<string, any>, toolDanger?: boolean, opts?: ModeVerdictOpts): Verdict {
   // 1. 硬红线：任何模式不可绕过
   const red = hitRedline(tool, args);
   if (red) return 'reject';
@@ -307,6 +329,12 @@ export function modeVerdict(mode: Mode, tool: string, args: Record<string, any>,
   // 3. bash 只读命令分级：只读（pwd/ls/cat/git status…）除 manual 外直接放行
   if (tool === 'bash' && classifyBashCommand(String(args?.command ?? '')) === 'readonly') {
     return mode === 'manual' ? 'confirm' : 'approve';
+  }
+  // 3.5 M-3 双速权限试点：沙盒启用 + 灰度开关开 → 工作区内低危写免审批
+  //（红线 1/敏感写 2 已在前序判过——此处放行的仅是「本来要 confirm 的常规写」）
+  if (opts?.sandboxFastPath && FAST_PATH_WRITE_TOOLS.has(tool)) {
+    const p = String(args?.path ?? '');
+    if (p && isWithinDir(opts.sandboxFastPath.cwd, p)) return 'approve';
   }
   const isDanger = toolDanger ?? !READONLY_TOOLS.has(tool);
   // 4. 模式语义（Claude Code 五模式对齐）

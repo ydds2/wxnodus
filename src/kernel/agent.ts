@@ -659,6 +659,18 @@ export function createAgent(opts: AgentOptions) {
   // dataDir 保持启动值（会话数据与记忆不随目录迁移——切换只影响文件/命令操作）
   let ctxCwd = opts.workspaceRoot ?? process.cwd();
   const agentDataDir = opts.dataDir ?? resolveDataDir(ctxCwd);
+  // M-3（V4 维护轨·W-4 双速权限试点，默认关灰度）：沙盒启用 + settings.sandboxFastPath===true
+  // 时工作区内低危写免审批（Claude「沙盒内即免审批」对齐）；沙盒外维持现状强审批
+  const modeVerdictOpts = (() => {
+    const s = opts.config?.settings as Record<string, any> | undefined;
+    if (s?.sandboxFastPath !== true) return undefined;
+    try {
+      const { sandboxEnabled } = require('./winSandbox.js') as typeof import('./winSandbox.js');
+      if (!sandboxEnabled(s)) return undefined;
+      return { sandboxFastPath: { cwd: ctxCwd } };
+    } catch { return undefined; }
+  })();
+
 
   const toolCtx: ToolCtx = {
     // getter：setCwd 后工具侧实时跟随（值快照会滞留旧目录）
@@ -782,10 +794,10 @@ export function createAgent(opts: AgentOptions) {
           cmdForceManual = true;
         } else {
           // confirm 级：走模式语义（smart/manual/auto/goal→确认、plan→计划审批、yolo→放行）
-          verdict = modeVerdict(mode, name, args, tool.danger || tool.canonical?.namespace === 'mcp' || tool.canonical?.namespace === 'plugin');
+          verdict = modeVerdict(mode, name, args, tool.danger || tool.canonical?.namespace === 'mcp' || tool.canonical?.namespace === 'plugin', modeVerdictOpts);
         }
       } else {
-        verdict = modeVerdict(mode, name, args, tool.danger || tool.canonical?.namespace === 'mcp' || tool.canonical?.namespace === 'plugin');
+        verdict = modeVerdict(mode, name, args, tool.danger || tool.canonical?.namespace === 'mcp' || tool.canonical?.namespace === 'plugin', modeVerdictOpts);
       }
       // A21：权限裁决留痕（工具/裁决/命令级别/参数摘要）
       auditTool('tool.verdict', {
