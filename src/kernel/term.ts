@@ -3,6 +3,7 @@
 // python REPL / ssh / 任何交互式命令都能跑，可注入输入、跟随输出。
 // node-pty 是 CJS 原生模块——动态 import（ESM 兼容）；生命周期随 CLI。
 import { join } from 'node:path';
+import { sanitizedEnv } from './env.js';
 import { mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { terminateProcessTree, type ProcessTreeTerminationResult } from '../infrastructure/process/processSupervisor.js';
@@ -107,7 +108,9 @@ export function createTerminalManager(opts: TerminalManagerOptions): TermManager
           cols: 100,
           rows: 30,
           cwd: sessionCwd,
-          env: process.env,
+          // B-15（V4 P4-7）：pty 会话环境走 sanitizedEnv——密钥/令牌类变量不进子 shell
+          //（此前整包 process.env 透传：fs_read 环境可见面扩到任意 shell 内 echo $KEY）
+          env: sanitizedEnv(),
         });
         const id = `t${Date.now().toString(36)}${randomUUID().slice(0, 4)}`;
         let resolveExit!: () => void;

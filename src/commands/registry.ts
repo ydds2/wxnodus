@@ -24,7 +24,7 @@ export const SLASH: string[] = [
   // 工具（确定性）
   '/calc', '/hash', '/base64', '/uuid', '/rand', '/json', '/timer', '/sql', '/fs', '/units', '/csv',
   // 上下文工程（P3：repo map / 快照回滚 / 技能热重载）
-  '/map', '/rewind', '/reload-skills', '/market', '/bundle',
+  '/map', '/warp', '/rewind', '/reload-skills', '/market', '/bundle',
 ];
 
 export const COMMAND_CAT: Record<string, string> = {

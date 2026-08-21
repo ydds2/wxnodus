@@ -290,10 +290,19 @@ export function modeVerdict(mode: Mode, tool: string, args: Record<string, any>,
   // 1. 硬红线：任何模式不可绕过
   const red = hitRedline(tool, args);
   if (red) return 'reject';
-  // 2. 敏感路径写保护（fs_write/fs_edit 的 path 参数——凭据/密钥/配置文件一律拒绝）
+  // 2. 敏感路径写保护（凭据/密钥/配置文件一律拒绝）
   if (tool === 'fs_write' || tool === 'fs_edit') {
     const path = String(args?.path ?? '');
     if (SENSITIVE_WRITE_MATCHERS.some(re => re.test(path))) return 'reject';
+  }
+  // A-22 补遗（V4 P4-7）：apply_patch 敏感写下沉——补丁目标路径同样受敏感写保护
+  //（此前仅 fs_write/fs_edit 查 path 参数，apply_patch 以 patch 文本携带路径整包绕过）。
+  // 提取 Update/Add/Delete/Move File 目标行逐路径比对（补丁内容行误伤面：行首须为
+  // 补丁指令头，普通内容含 ".env" 字样不命中）。
+  if (tool === 'apply_patch') {
+    const patch = String(args?.patch ?? '');
+    const targets = [...patch.matchAll(/^\*\*\* (?:Update|Add|Delete|Move) File:\s*(.+)$/gm)].map(m => m[1]!.trim());
+    if (targets.some(t => SENSITIVE_WRITE_MATCHERS.some(re => re.test(t)))) return 'reject';
   }
   // 3. bash 只读命令分级：只读（pwd/ls/cat/git status…）除 manual 外直接放行
   if (tool === 'bash' && classifyBashCommand(String(args?.command ?? '')) === 'readonly') {

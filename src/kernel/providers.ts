@@ -235,6 +235,11 @@ export function applyCacheBreakpoints(messages: Array<Record<string, any>>, tail
   return out;
 }
 
+/** B-18：不采样模型族（o1/o3/o4 系、gpt-5 类）——请求体须省略 temperature（传即 400） */
+export function modelRejectsTemperature(model: string): boolean {
+  return /^(o[134](?:[-.])?\d*|gpt-5)/i.test(String(model ?? '').trim());
+}
+
 export function buildChatRequest(opts: {
   baseURL: string; model: string; key: string;
   messages: ChatMessage[]; stream: boolean;
@@ -258,8 +263,10 @@ export function buildChatRequest(opts: {
     model: opts.model,
     messages,
     stream: opts.stream,
-    temperature: opts.temperature ?? 0.7,
   };
+  // B-18（V4 P4-7）：不采样模型族省略 temperature——OpenAI o 系/gpt-5 类 reasoning
+  // 模型对采样参数直接 400（unsupported_parameter）；其余模型维持缺省 0.7 不变。
+  if (!modelRejectsTemperature(opts.model)) body.temperature = opts.temperature ?? 0.7;
   if (opts.tools?.length) body.tools = opts.tools;
   if (opts.responseFormat) body.response_format = { type: opts.responseFormat };
   return {

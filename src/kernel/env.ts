@@ -5,8 +5,21 @@ export const CORE_ENV = new Set([
   'PATH', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'SystemRoot', 'WINDIR',
   'COMSPEC', 'PATHEXT', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'TERM', 'PWD', 'OLDPWD',
   'SHELL', 'USER', 'LOGNAME', 'NODE_ENV', 'WXNODUS_', 'MSYS', 'TERM_PROGRAM',
+  // B-15（V4 P4-7）：Windows 进程创建/Shell 启动必需——powershell.exe 缺这些直接
+  // 「内部错误 8009001d 加载托管 PowerShell 失败」（实测），conpty 亦依赖 SYSTEMDRIVE；
+  // 均为非密钥系统变量（机器名/盘符/处理器架构/模块路径——不含任何凭据语义）
+  'SYSTEMDRIVE', 'PROGRAMFILES', 'PROGRAMFILES(X86)', 'PROGRAMW6432',
+  'APPDATA', 'LOCALAPPDATA', 'ALLUSERSPROFILE', 'PROGRAMDATA', 'PUBLIC',
+  'USERNAME', 'USERDOMAIN', 'USERDOMAIN_ROAMINGPROFILE', 'COMPUTERNAME',
+  'OS', 'PROCESSOR_ARCHITECTURE', 'PROCESSOR_IDENTIFIER', 'PROCESSOR_LEVEL',
+  'PROCESSOR_REVISION', 'NUMBER_OF_PROCESSORS', 'DRIVERDATA', 'PSModulePath',
 ]);
 const SECRET_ENV_RE = /(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|AUTH|SIGNATURE|PRIVATE_?KEY)/i;
+
+/** Windows 环境变量大小写不敏感查表（Git Bash 导出 SYSTEMROOT 大写、
+ * 原生进程为 SystemRoot——大小写敏感 Set 匹配会静默漏掉关键系统变量，
+ * PowerShell 缺 SystemRoot 直接「内部错误 8009001d」（B-15 实测）） */
+const CORE_ENV_LC = new Set([...CORE_ENV].map(k => k.toLowerCase()));
 
 /** 生成净化后的子进程环境（白名单 core + 显式 extra；密钥类变量一律不传——
  *  含 WXNODUS_ 前缀内的密钥（WXNODUS_API_KEY / WXNODUS_<厂商>_KEY 等）——
@@ -21,7 +34,7 @@ export function sanitizedEnv(extra: Record<string, string> = {}): NodeJS.Process
       out[k] = v;
       continue;
     }
-    if (CORE_ENV.has(k)) { out[k] = v; continue; }
+    if (CORE_ENV_LC.has(k.toLowerCase())) { out[k] = v; continue; }
     if (SECRET_ENV_RE.test(k)) continue; // 密钥类变量不传子进程
     if (k.startsWith('npm_') || k.startsWith('NODE_')) continue; // 噪声剔除
   }

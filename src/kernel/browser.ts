@@ -24,6 +24,39 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
 }
 const pageOf = (sessionId: string) => sessions.get(sessionId)?.page ?? null;
 
+// B-14（V4 P4-7）：页面内导航守卫记录——最近一次被拦截的跳转（url+原因），供测试与
+// 快照面消费（点击链接/JS 跳转/meta refresh 绕过 navigate 前校验的检测证据）。
+const navigationBlocks = new Map<string, { url: string; reason: string; ts: number }>();
+/** 最近一次导航拦截记录（测试/快照消费；无拦截返回 null） */
+export function lastNavigationBlock(sessionId = 'default'): { url: string; reason: string; ts: number } | null {
+  return navigationBlocks.get(sessionId) ?? null;
+}
+
+/**
+ * B-14（V4 P4-7）：framenavigated 逐跳 SSRF 重检——navigate 前 checkUrlSafety 只覆盖
+ * 主动导航；点击链接/JS location 跳转/meta refresh/子资源重定向不经校验即可进内网。
+ * 每跳重跑 checkUrlSafety，拦截即 goBack 回退 + 记录（导航已发生不可阻止——检测+回退
+ * 是诚实语义）；子框架（广告/嵌入 iframe）不回退主页面。checkUrl 注入便于单测。
+ */
+export function armNavigationGuard(
+  page: any,
+  sessionId = 'default',
+  check: (url: string) => Promise<{ ok: boolean; reason?: string }> = checkUrlSafety,
+): void {
+  page.on('framenavigated', async (frame: any) => {
+    try {
+      if (frame !== page.mainFrame()) return; // 子框架不影响主页面回退
+      const url = String(frame.url() ?? '');
+      if (!/^https?:/i.test(url)) return; // about:blank/data: 等非 http 目标
+      const safe = await check(url);
+      if (!safe.ok) {
+        navigationBlocks.set(sessionId, { url, reason: String((safe as any).reason ?? 'SSRF 拦截'), ts: Date.now() });
+        try { await page.goBack(); } catch { /* 无历史可回退——记录仍在 */ }
+      }
+    } catch { /* 守卫异常不影响页面 */ }
+  });
+}
+
 /** 浏览器可用性探测（不启动）：系统 Edge/Chrome 可执行文件或 playwright 内置 */
 export function browserProbe(): { ok: boolean; browser?: string; error?: string } {
   try {
@@ -66,6 +99,7 @@ async function ensureBrowser(sessionId = 'default'): Promise<{ ok: true } | { ok
     });
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     page.setDefaultTimeout(15000);
+    armNavigationGuard(page, sessionId); // B-14：页面内跳转逐跳重检（含无头回退路径同款）
     sessions.set(sessionId, { browser, page });
     return { ok: true };
   } catch (e: any) {
@@ -76,6 +110,7 @@ async function ensureBrowser(sessionId = 'default'): Promise<{ ok: true } | { ok
       const browser = await chromium.launch({ headless: true });
       const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
       page.setDefaultTimeout(15000);
+      armNavigationGuard(page, sessionId); // B-14：无头路径同样装导航守卫
       sessions.set(sessionId, { browser, page });
       return { ok: true };
     } catch {

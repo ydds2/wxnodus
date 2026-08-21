@@ -331,7 +331,10 @@ async function parseSse(response: Response, opts: LlmStreamOpts, signal: AbortSi
       if (field === 'data') dataLines.push(value);
     }
     if (dataLines.length === 0) return undefined;
-    if (doneSeen) return malformedSse('在 [DONE] 后收到 data 帧', semanticDelta);
+    // B-17（V4 P4-7）：[DONE] 后尾帧宽容——部分中转/网关在 [DONE] 后补发空 data 帧
+    // 或 usage 统计帧；此前整流判 malformed 丢弃已产出的语义增量。已见 [DONE] 即流终：
+    // 尾帧静默忽略（semanticDelta 保持，不做任何处理）。
+    if (doneSeen) return undefined;
 
     const data = dataLines.join('\n');
     if (data.trim() === '[DONE]') {

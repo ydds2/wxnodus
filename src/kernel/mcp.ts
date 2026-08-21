@@ -311,6 +311,7 @@ export function connectMcp(cfg: McpServerConfig): Promise<McpClient> {
       windowsHide: true,
     });
     let buf = '';
+    const mcpStdoutDecoder = new TextDecoder(); // B-12：跨 chunk 多字节增量解码
     let stderrTail = '';
     let nextId = 1;
     const pending = new Map<number, PendingRpc>();
@@ -381,7 +382,10 @@ export function connectMcp(cfg: McpServerConfig): Promise<McpClient> {
     proc.stderr!.on('data', appendStderr);
 
     proc.stdout!.on('data', (chunk: Buffer) => {
-      buf += chunk.toString('utf8');
+      // B-12（V4 P4-7）：增量解码用 TextDecoder({stream:true})——多字节 UTF-8（中文
+      // 工具名/描述）跨 chunk 截断时 chunk.toString('utf8') 产 U+FFFD 替换符，
+      // JSON.parse 行静默丢失；流式解码器保留未完成字节序列到下一 chunk。
+      buf += mcpStdoutDecoder.decode(chunk, { stream: true });
       let idx: number;
       while ((idx = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, idx).trim();

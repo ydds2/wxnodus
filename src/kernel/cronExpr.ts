@@ -95,12 +95,20 @@ export function parseCronExpr(expr: string): CronParseResult {
 }
 
 /** 判断时间是否命中表达式（分钟级） */
+// B-16（V4 P4-7）：dom/dow 标准 Vixie cron 语义——两者同时受限（非 * ）时按 OR
+// （「每月 1 号 OR 每周一」），仅一方受限时按 AND。此前纯 AND 把「0 0 1 * 1」
+// （每月 1 号且恰逢周一才触发）误判成大多数标准 cron 用户预期的反例。
 export function cronMatches(fields: CronFields, date: Date = new Date()): boolean {
   const dow = date.getDay(); // 0 = 周日
   if (!fields.minute.has(date.getMinutes())) return false;
   if (!fields.hour.has(date.getHours())) return false;
-  if (!fields.dayOfMonth.has(date.getDate())) return false;
   if (!fields.month.has(date.getMonth() + 1)) return false;
+  const domRestricted = fields.dayOfMonth.size < 31; // * → 1..31 全集
+  const dowRestricted = fields.dayOfWeek.size < 7;    // * → 0..6 全集（7 已归一为 0）
+  if (domRestricted && dowRestricted) {
+    return fields.dayOfMonth.has(date.getDate()) || fields.dayOfWeek.has(dow);
+  }
+  if (!fields.dayOfMonth.has(date.getDate())) return false;
   if (!fields.dayOfWeek.has(dow)) return false;
   return true;
 }
