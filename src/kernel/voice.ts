@@ -55,7 +55,9 @@ function findCliIn(dir: string): string | null {
     for (const sub of ['Release', '.']) {
       const binDir = join(dir, 'bin', sub === '.' ? '' : sub);
       if (!existsSync(binDir)) continue;
-      const exe = readdirSync(binDir).find(f => /^whisper-cli\.exe$/i.test(f));
+      // V4 P5-4（C 级）：whisper.cpp 各版本产物名（whisper-cli.exe 新版/main.exe 旧版/
+      // whisper.exe 别名）——此前仅精确匹配 whisper-cli.exe，编译产物名稍异即「未找到」
+      const exe = readdirSync(binDir).find(f => /^(whisper-cli|main|whisper)(-[\w.]*)?\.exe$/i.test(f));
       if (exe) return join(binDir, exe);
     }
   } catch { /* 忽略 */ }

@@ -36,10 +36,12 @@ export function writeCuratorState(dataDir: string, state: { lastRunAt: number })
 }
 
 // 确定性审查：记忆/技能统计 + 建议（真实数据）
-export function runCuratorReview(mem: Memory, dataDir: string, cwd: string): string {
-  const recall = mem.recall('default');
-  const working = mem.working('default');
-  const absorbed = mem.absorbCount('default');
+export function runCuratorReview(mem: Memory, dataDir: string, cwd: string, sessionId = 'default'): string {
+  // V4 P5-4（C 级）：会话 id 化——此前硬编码 'default'，非 default 会话的记忆/吸附统计
+  // 永远查的是 default 的（多会话数据错位）；调用方传入当前会话
+  const recall = mem.recall(sessionId);
+  const working = mem.working(sessionId);
+  const absorbed = mem.absorbCount(sessionId);
   const skills = discoverSkills(dataDir, cwd);
   const lines2: string[] = [
     ` 记忆：全量 ${recall.length} 条｜工作窗口 ${working.length} 条｜已吸附 ${absorbed} 条`,

@@ -398,8 +398,13 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
 export function searchMessages(db: Db, query: string, opts: { limit?: number; sessionId?: string; since?: number } = {}): Array<{ id: number; session_id: string; role: string; content: string; ts: number; salience: number }> {
   const limit = opts.limit ?? 10;
   try {
-    const terms = bigramZh(query).split(/\s+/).filter(Boolean);
-    if (!terms.length) return [];
+    const allTerms = bigramZh(query).split(/\s+/).filter(Boolean);
+    if (!allTerms.length) return [];
+    // V4 P5-4：OR 语义降噪——索引侧 unigram+bigram 并发（单字可检），但 OR 查询把
+    // 单字项全并进来会让常用字（的/了/是）命中一切；有多字词时单字项只添噪声，丢弃；
+    // 纯单字查询（如「黑」）保留单字项（这是 unigram 的存在意义）
+    const multi = allTerms.filter(t => t.length >= 2);
+    const terms = multi.length ? multi : allTerms;
     const match = terms.map(t => `"${t.replace(/"/g, '""')}"`).join(' OR ');
     const where = [
       opts.sessionId ? `AND m.session_id = @sid` : '',

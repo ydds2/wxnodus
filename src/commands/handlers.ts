@@ -965,7 +965,7 @@ ${MODEL_SWITCH_CACHE_NOTICE}`;
     });
     const fp = fingerprint(projDir);
     progress(`证据已落盘（${vr.status}）· 质量门五门…`);
-    const gate = await runGate({ projectDir: projDir, dataDir: ctx.dataDir });
+    const gate = await runGate({ projectDir: projDir, dataDir: ctx.dataDir, auditDb: ctx.db });
     const order = topoSort(plan.modules);
     const gateFail = gate.gates.filter(g => !g.ok);
     progress(gate.pass ? '五门质量门通过 ✓' : `质量门未过：${gateFail.map(g => g.name).join(',')}`);

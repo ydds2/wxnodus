@@ -41,7 +41,7 @@ describe('db 基础', () => {
 
 describe('bigramZh（中文检索预处理）', () => {
   it('「黑洞引擎」→「黑洞 洞引 引擎」', () => {
-    expect(bigramZh('黑洞引擎')).toBe('黑洞 洞引 引擎');
+    expect(bigramZh('黑洞引擎')).toBe('黑 洞 引 擎 黑洞 洞引 引擎');
   });
   it('混合中英：「wxnodus 黑洞」保留英文词', () => {
     expect(bigramZh('wxnodus 黑洞')).toContain('wxnodus');
@@ -337,5 +337,14 @@ describe('P0-1 replaceSessionMessages 事务原子性', () => {
     expect((rows[0] as any).content).toBe('替换后甲');
     expect((rows[1] as any).content).toBe('替换后乙');
     expect(searchMessages(db, '替换后乙', { sessionIds: [sid] }).length).toBeGreaterThan(0);
+  });
+});
+
+// V4 P5-4：单字也成 token（边界/结尾残留单字此前被丢弃——单字检索零命中）
+describe('bigramZh 单字 token（P5-4）', () => {
+  it('结尾/边界单字入 token；孤立单字可命中', () => {
+    expect(bigramZh('黑')).toBe('黑');
+    expect(bigramZh('查黑况')).toBe('查 黑 况 查黑 黑况'); // 边界残留单字
+    expect(bigramZh('a黑b')).toBe('a 黑 b');
   });
 });

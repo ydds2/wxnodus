@@ -27,10 +27,16 @@ export function buildLoopJudgePrompt(evidence: LoopEvidence[], repeatCount: numb
   };
 }
 
-/** 宽容解析：loop → loop；progress → progress；其余/空 → unknown（回退静态路径） */
+/** 宽容解析（V4 P5-4 整词锚定）：精确词 → 整词边界匹配；两词齐现=歧义 → unknown
+ * （回退静态安全路径——此前 includes 子串判定，「不是 loop，是 progress」这类解释性
+ * 回答含两词且 loop 先命中 → 误判 loop 误杀合法轮询） */
 export function parseLoopVerdict(text: string | null | undefined): LoopVerdict {
-  const t = String(text ?? '').toLowerCase();
-  if (t.includes('loop')) return 'loop';
-  if (t.includes('progress')) return 'progress';
-  return 'unknown';
+  const t = String(text ?? '').trim().toLowerCase();
+  if (t === 'loop') return 'loop';
+  if (t === 'progress') return 'progress';
+  const hasLoop = /\bloop\b/.test(t);
+  const hasProgress = /\bprogress\b/.test(t);
+  if (hasLoop && !hasProgress) return 'loop';
+  if (hasProgress && !hasLoop) return 'progress';
+  return 'unknown'; // 两词齐现/都没有 → 歧义回退
 }

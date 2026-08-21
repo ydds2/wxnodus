@@ -300,7 +300,7 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
       return `审查间隔已设为 ${h}h`;
     }
     // 即时审查（默认）
-    const report = runCuratorReview(ctx.mem, ctx.dataDir, ctx.cwd);
+    const report = runCuratorReview(ctx.mem, ctx.dataDir, ctx.cwd, ctx.agent?.getSessionId?.() ?? 'default');
     const cfg = curatorConfigFrom(ctx.config.get('settings'));
     const state = readCuratorState(ctx.dataDir);
     const last = state.lastRunAt ? new Date(state.lastRunAt).toLocaleString('zh-CN', { hour12: false }) : '从未';

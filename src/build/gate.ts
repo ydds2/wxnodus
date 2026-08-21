@@ -7,7 +7,12 @@ import { readEvidence, complianceCheck } from './evidence.js';
 import { processExitForCompletion } from '../protocol/completionTransport.js';
 import type { RunFinalStatus } from '../protocol/runs.js';
 
-export interface GateCtx { projectDir: string; dataDir: string }
+export interface GateCtx {
+  projectDir: string;
+  dataDir: string;
+  /** V4 P5-4：审计留痕在线校验（complianceCheck 查 audit 表；缺省跳过该项） */
+  auditDb?: { prepare(sql: string): { get(...a: unknown[]): unknown } };
+}
 export interface GateResult { gates: Array<{ name: string; ok: boolean; detail: string }>; pass: boolean }
 
 /** W3-01：门禁结果投影为 Run 完成终态（pass → succeeded，否则 failed） */
@@ -41,7 +46,7 @@ export async function runGate(ctx: GateCtx): Promise<GateResult> {
     },
     {
       name: '合规门',
-      ok: complianceCheck(ctx.projectDir, ctx.dataDir).ok,
+      ok: complianceCheck(ctx.projectDir, ctx.dataDir, ctx.auditDb).ok,
       detail: '授权声明/AI 标注/证据链/审计留痕',
     },
     // 测试门（P2 概念编译器增强）：产物声明 test 脚本则真实执行 npm test——

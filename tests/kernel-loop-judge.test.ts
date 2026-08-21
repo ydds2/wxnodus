@@ -151,3 +151,18 @@ describe('agent 流：LLM 辅助循环检测（supremacy 1.5）', () => {
     expect(r.text).not.toContain('LLM 循环判定');
   });
 });
+
+// V4 P5-4：整词锚定（此前 includes 子串判定——「不是 loop，是 progress」误判 loop）
+describe('parseLoopVerdict 整词锚定（P5-4）', () => {
+  it('精确词与整词边界', () => {
+    expect(parseLoopVerdict('loop')).toBe('loop');
+    expect(parseLoopVerdict(' LOOP ')).toBe('loop');
+    expect(parseLoopVerdict('progress')).toBe('progress');
+    expect(parseLoopVerdict('this is a Progress case')).toBe('progress');
+    expect(parseLoopVerdict('definitely looping')).toBe('unknown'); // looping 非整词 loop
+  });
+  it('两词齐现=歧义 → unknown（回退静态安全路径——不误杀合法轮询）', () => {
+    expect(parseLoopVerdict('不是 loop，是 progress')).toBe('unknown');
+    expect(parseLoopVerdict('loop or progress')).toBe('unknown');
+  });
+});

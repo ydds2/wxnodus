@@ -96,7 +96,17 @@ export function registerDeterministicTools(bus: CommandBus, ctx: HandlerCtx): vo
     const q = args.join(' ');
     if (!q) return '用法：/sql <SELECT 查询>（只读）';
     const s = q.trim().toLowerCase();
+    // V4 P5-4（C 级）：PRAGMA 白名单收窄——PRAGMA 可写库状态（journal_mode=/writable_schema=/
+    // integrate_checkpoint 等带 = 或 () 的形式），只放行无参只读项
+    const PRAGMA_READONLY = new Set(['integrity_check', 'quick_check', 'foreign_key_check', 'table_info', 'index_list', 'index_info', 'database_list', 'page_count', 'freelist_count', 'user_version', 'compile_options', 'encoding', 'cache_size', 'journal_mode', 'locking_mode']);
     if (!s.startsWith('select') && !s.startsWith('pragma')) return '仅允许只读查询（SELECT/PRAGMA）';
+    if (s.startsWith('pragma')) {
+      const m = /^pragma\s+([a-z_0-9]+)/.exec(s);
+      const name = m?.[1] ?? '';
+      if (!PRAGMA_READONLY.has(name) || s.includes('=') || s.includes('(')) {
+        return `PRAGMA 仅放行只读项（白名单：${[...PRAGMA_READONLY].slice(0, 6).join('/')}…），禁止赋值/函数形式`;
+      }
+    }
     try {
       const rows = ctx.db.prepare(q).all() as any[];
       if (!rows.length) return '（0 行）';

@@ -6,7 +6,7 @@
 // 本文件的 settings 分区 `lang` 只用于运行时 /lang 切换（systemPrompt 输出规范），
 // 不参与 onboarding precedence（禁止第二套 precedence）。
 import { join } from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 
 export type Partition = string;
 
@@ -44,13 +44,27 @@ function read(dataDir: string, p: Partition): Record<string, any> {
   }
 }
 
-// 原子写：先写 .tmp 再 rename（防进程中断半写损坏）
+// 原子写：先写随机名 .tmp 再 rename（防进程中断半写损坏）
+// V4 P5-4（C 级）加固：① 随机 tmp 名——并发进程写同一分区不再互踩同一 .tmp 文件；
+// ② rename 重试 ×3（Windows EBUSY/EPERM：杀毒/索引服务短暂持有句柄，仓内既有先例）
 function write(dataDir: string, p: Partition, obj: Record<string, any>): void {
   mkdirSync(dataDir, { recursive: true });
   const f = pathOf(dataDir, p);
-  const tmp = f + '.tmp';
+  const tmp = `${f}.${process.pid.toString(36)}.${Date.now().toString(36)}.tmp`;
   writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
-  renameSync(tmp, f);
+  let lastErr: unknown;
+  for (let i = 0; i < 3; i++) {
+    try {
+      renameSync(tmp, f);
+      return;
+    } catch (e) {
+      lastErr = e;
+      // EBUSY/EPERM：等持有者放手后重试（50ms/150ms 档）
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * (i + 1));
+    }
+  }
+  try { rmSync(tmp, { force: true }); } catch { /* 清理失败静默 */ }
+  throw lastErr;
 }
 
 function deepSet(obj: Record<string, any>, path: string, value: any): void {

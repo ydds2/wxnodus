@@ -72,10 +72,13 @@ export function startExecServer(opts: ExecServerOptions): Promise<ExecServerHand
           timeoutMs,
         });
         if (r.result) {
-          const { readFileSync } = await import('node:fs');
+          const { readFileSync, rmSync } = await import('node:fs');
           let out = ''; let err = '';
           try { out = readFileSync(r.result.outPath, 'utf8').slice(0, 60_000); } catch { /* 忽略 */ }
           try { err = readFileSync(r.result.errPath, 'utf8').slice(0, 8_000); } catch { /* 忽略 */ }
+          // V4 P5-4（C 级）：沙盒输出临时文件读后即清——此前长驻服务每次 /exec 落两个
+          // 文件永不删（磁盘无界累积；输出含命令产物也属敏感残留）
+          try { rmSync(r.result.outPath, { force: true }); rmSync(r.result.errPath, { force: true }); } catch { /* 清理失败不阻断响应 */ }
           return { ok: r.result.code === 0, code: r.result.code, out, err, sandboxed: true, note: `远端 OS 沙盒 ${profile}`, error: null };
         }
         return { ok: false, code: null, out: '', err: '', sandboxed: false, note: null, error: `远端沙盒不可用（${r.reason ?? '?'}${r.note ? '——' + r.note : ''}）——已拒绝执行（不降级裸跑：诚实 fail-closed）` };
