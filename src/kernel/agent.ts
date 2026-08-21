@@ -1228,7 +1228,7 @@ export function createAgent(opts: AgentOptions) {
           }
         }
         // P1-1：preCompact hook 可阻止压缩（输出 BLOCK）
-        if (hooks?.preCompact?.(`auto: ${used}/${ctxLimit}`)) {
+        if (await hooks?.preCompact?.(`auto: ${used}/${ctxLimit}`)) {
           bus.emit('system.notice', { text: '压缩被 hook 阻止（preCompact BLOCK）' });
         } else {
         bus.emit('system.notice', { text: `上下文已达 ${Math.round((used / ctxLimit) * 100)}%（${used} token）——自动压缩…` });

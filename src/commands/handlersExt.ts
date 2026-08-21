@@ -227,12 +227,12 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       const sub = args[1];
       const { uiaWindows, uiaTree, uiaFind, uiaClick, uiaType } = await import('../kernel/computer/uia.js');
       if (sub === 'windows') {
-        const r = uiaWindows();
+        const r = await uiaWindows();
         if (!r.ok) return r.reason ?? 'UIA 不可用';
         return lines(' UIA 可见窗口 ', (r.windows ?? []).map(w => ` ${w.focused ? '◉' : '○'} 「${w.name.slice(0, 40)}」 pid=${w.pid} handle=${w.handle}`));
       }
       if (sub === 'tree') {
-        const r = uiaTree(args[2] ?? '');
+        const r = await uiaTree(args[2] ?? '');
         if (!r.ok) return r.reason ?? 'UIA 不可用';
         return lines(` UIA 控件树（${(r.elements ?? []).length}） `, (r.elements ?? []).map(e =>
           ` ${e.name ? `「${e.name.slice(0, 30)}」` : ''}${e.id ? ` id=${e.id}` : ''} <${e.ct}> @(${e.x},${e.y})`));
@@ -240,7 +240,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       if (sub === 'find') {
         const q = args.slice(2).join(' ');
         if (!q) return '用法：/computer uia find <名称>|<AutomationId>';
-        const r = uiaFind(q);
+        const r = await uiaFind(q);
         if (!r.ok) return r.reason ?? '未找到';
         const e = r.element as any;
         return `已定位：${e?.name ? `「${e.name}」` : ''}${e?.id ? ` id=${e.id}` : ''} <${e?.ct ?? ''}> @(${e?.x},${e?.y} ${e?.w}x${e?.h})`;
@@ -248,7 +248,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       if (sub === 'click') {
         const q = args.slice(2).join(' ');
         if (!q) return '用法：/computer uia click <名称>|<AutomationId>';
-        const r = uiaClick(q);
+        const r = await uiaClick(q);
         if (!r.ok) return r.reason ?? '点击失败';
         const el = r.element as any;
         return `已点击（${el?.method ?? 'uia'}）${el?.x != null ? ` @(${el.x},${el.y})` : ''}`;
@@ -259,7 +259,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         const q = args[args.length - 1] ?? '';
         const text = args.slice(2, -1).join(' ');
         if (!q || !text) return '用法：/computer uia type <文本…> <名称>|<AutomationId>';
-        const r = uiaType(text, q);
+        const r = await uiaType(text, q);
         if (!r.ok) return r.reason ?? '输入失败';
         return `已输入 ${text.length} 字符（${(r.element as any)?.method ?? 'uia'}）`;
       }
@@ -1515,7 +1515,7 @@ export const commands = {
   //   run <命令> [--parallel <支线>]... [--agent|--parallel-agent <目标>] [--timeout 秒] [--retries N] [--tag <名>] [--cwd <目录>]
   //   tree <id> ｜ show <id> ｜ list [--status x] [--tag x] ｜ logs <id> [N] ｜ follow <id>
   //   kill <id>（父任务级联）｜ retry <id> ｜ pause|resume <id> ｜ clean [keep]
-  bus.register('/jobs', async (args) => {
+  bus.register('/jobs', async (args, _raw, execution) => {
     const [sub, ...rest] = args;
     const tr = ctx.taskRunner;
     if (!tr) return '任务系统不可用（taskRunner 未装配）';
@@ -1615,14 +1615,20 @@ export const commands = {
       let pos = 0;
       const out: string[] = [];
       const deadline = Date.now() + 120_000;
-      while (Date.now() < deadline) {
-        const cur = tr.get(id);
-        if (cur && existsSync(t.log_file)) {
-          const text = readFileSync(t.log_file, 'utf8');
-          if (text.length > pos) { out.push(text.slice(pos)); pos = text.length; }
-        }
-        if (cur && ['success', 'failed', 'cancelled'].includes(cur.status)) break;
-        await new Promise(r => setTimeout(r, 2000));
+      // V4 P2-12：循环加取消信号检查 + sleep 可被 abort 打断（取消后即时返回不挂满 120s）
+      while (Date.now() < deadline && !execution.signal?.aborted) {
+        const final0 = tr.get(id);
+        if (final0 && (final0.status === 'success' || final0.status === 'failed' || final0.status === 'cancelled')) break;
+        try {
+          if (existsSync(t.log_file)) {
+            const text = readFileSync(t.log_file, 'utf8');
+            if (text.length > pos) { out.push(text.slice(pos)); pos = text.length; }
+          }
+        } catch { /* 读失败重试 */ }
+        await new Promise<void>(r => {
+          const timer = setTimeout(r, 2000);
+          execution.signal?.addEventListener('abort', () => { clearTimeout(timer); r(); }, { once: true });
+        });
       }
       const final = tr.get(id);
       return lines(` 日志尾随 ${id} `, [

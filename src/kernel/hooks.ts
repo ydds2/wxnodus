@@ -3,7 +3,9 @@
 //       上下文经环境变量 WXNODUS_HOOK_EVENT / WXNODUS_HOOK_DATA（JSON）传入，
 //       全部本地进程执行（本地化为准）；preToolUse 输出 DENY: 开头即真实拦截工具。
 //       P0-06：安全关键 hook 崩溃/超时/缺失/非零退出 fail-closed（结构化决策，见 domain/hooks/hookDecision）。
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+const execFileAsync = promisify(execFile);
 import { platform } from 'node:os';
 import type { EventBus } from './events.js';
 import { sanitizedEnv } from './env.js';
@@ -37,7 +39,7 @@ export function hooksFromConfig(settings: Record<string, any> | undefined): Hook
 // 编码加固（2026-08-18 CI 实测）：-Command 直传 CJK 命令受 argv 编码影响（Node 22.23.x
 // 下 PowerShell 可能收到空/损坏命令并等待 stdin → 误判超时）；改 -EncodedCommand
 // （UTF-16LE base64）——命令字节零歧义，任意 Node 版本/任意字符同语义。
-export function runHook(cmd: string, event: HookEvent, data: unknown): HookExecutionOutcome {
+export async function runHook(cmd: string, event: HookEvent, data: unknown): Promise<HookExecutionOutcome> {
   const isWin = platform() === 'win32';
   const args = isWin
     ? ['-NoProfile', '-EncodedCommand', Buffer.from(cmd, 'utf16le').toString('base64')]
@@ -50,19 +52,25 @@ export function runHook(cmd: string, event: HookEvent, data: unknown): HookExecu
     WXNODUS_HOOK_DATA: JSON.stringify(data ?? {}),
   };
   try {
-    const out = execFileSync(isWin ? 'powershell.exe' : '/bin/bash', args, {
+    // V4 P2-12：execFileSync → execFileAsync（同步阻塞事件循环最长 10s——TUI 冻结根治；
+    // runHook 本就 async 签名，行为零漂移纯搬运）
+    const { stdout } = await execFileAsync(isWin ? 'powershell.exe' : '/bin/bash', args, {
       encoding: 'utf8',
       timeout: 10_000,
       maxBuffer: 4 * 1024 * 1024,
       windowsHide: true,
       env,
     });
-    return { kind: 'ok', output: String(out ?? '').trim().slice(0, 4000) };
+    return { kind: 'ok', output: String(stdout ?? '').trim().slice(0, 4000) };
   } catch (error) {
-    const err = error as NodeJS.ErrnoException & { stdout?: string };
-    // 超时优先判定：Node 22 的超时错误可能附带空 stdout，不能误判为非零退出
-    if (err.code === 'ETIMEDOUT') return { kind: 'timeout' };
-    if (err.stdout !== undefined) {
+    const err = error as NodeJS.ErrnoException & { stdout?: string; killed?: boolean; signal?: string };
+    // 超时优先判定：execFile 超时以 killed+SIGTERM 形态抛出（V4 P2-12 异步化后形态）
+    if (err.code === 'ETIMEDOUT' || (err.killed === true && err.signal === 'SIGTERM')) return { kind: 'timeout' };
+    // 非零退出（code 为数字）：附 stdout（可为空——exit(N) 无输出也是合法非零退出）
+    if (typeof err.code === 'number' && err.code !== 0) {
+      return { kind: 'exited-nonzero', output: String(err.stdout ?? '').trim().slice(0, 4000) };
+    }
+    if (err.stdout !== undefined && String(err.stdout).length > 0) {
       return { kind: 'exited-nonzero', output: String(err.stdout).trim().slice(0, 4000) };
     }
     if (err.code === 'ENOENT') return { kind: 'missing' };
@@ -79,7 +87,7 @@ export interface HookRunner {
   sessionStart(sessionId: string): void;
   sessionEnd(result: { ok: boolean; turns: number }): void;
   /** 压缩前——输出 BLOCK 开头可阻止压缩（Claude PreCompact 语义） */
-  preCompact(reason: string): boolean;
+  preCompact(reason: string): Promise<boolean>; // V4 P2-12：异步 hook（同步阻塞冻结根治）
   postCompact(prevTokens: number, nextTokens: number): void;
   subagentStart(goal: string): void;
   subagentStop(result: { ok: boolean; output: string; turns: number }): void;
@@ -89,11 +97,11 @@ export interface HookRunner {
 
 // 构建 hook 运行器（订阅配置快照——每次读取当前 settings，热生效）
 export function createHookRunner(getSettings: () => Record<string, any> | undefined, bus: EventBus): HookRunner {
-  const fire = (event: HookEvent, data: unknown): HookExecutionOutcome | null => {
+  const fire = async (event: HookEvent, data: unknown): Promise<HookExecutionOutcome | null> => {
     const cfg = hooksFromConfig(getSettings());
     const cmd = cfg[event];
     if (!cmd) return null;
-    const outcome = runHook(cmd, event, data);
+    const outcome = await runHook(cmd, event, data);
     const text = outcome.kind === 'ok' || outcome.kind === 'exited-nonzero' ? outcome.output
       : outcome.kind === 'timeout' ? `[hook:${event}] 超时未响应（10s）`
       : outcome.kind === 'missing' ? `[hook:${event}] 执行失败：未找到 shell（hook 未运行——请检查 PATH）`
@@ -104,41 +112,41 @@ export function createHookRunner(getSettings: () => Record<string, any> | undefi
 
   return {
     async preToolUse(name, args) {
-      const outcome = fire('preToolUse', { tool: name, args });
+      const outcome = await fire('preToolUse', { tool: name, args });
       if (outcome === null) return true;
       // P0-06：安全关键事件走结构化 fail-closed 决策；DENY 只来自干净退出的合法协议
       return decideSecurityHook(outcome).allow;
     },
-    postToolUse(name, out) {
-      fire('postToolUse', { tool: name, output: out.slice(0, 2000) });
+    async postToolUse(name, out) {
+      return fire('postToolUse', { tool: name, output: out.slice(0, 2000) });
     },
-    postToolUseFailure(name, err) {
-      fire('postToolUseFailure', { tool: name, error: String(err ?? '').slice(0, 2000) });
+    async postToolUseFailure(name, err) {
+      return fire('postToolUseFailure', { tool: name, error: String(err ?? '').slice(0, 2000) });
     },
-    userPromptSubmit(prompt, sessionId) {
-      fire('userPromptSubmit', { prompt: prompt.slice(0, 2000), session_id: sessionId });
+    async userPromptSubmit(prompt, sessionId) {
+      return fire('userPromptSubmit', { prompt: prompt.slice(0, 2000), session_id: sessionId });
     },
-    stop(result) {
-      fire('stop', { ok: result.ok, turns: result.turns });
+    async stop(result) {
+      return fire('stop', { ok: result.ok, turns: result.turns });
     },
-    sessionStart(sessionId) {
-      fire('sessionStart', { session_id: sessionId });
+    async sessionStart(sessionId) {
+      return fire('sessionStart', { session_id: sessionId });
     },
-    sessionEnd(result) {
-      fire('sessionEnd', { ok: result.ok, turns: result.turns });
+    async sessionEnd(result) {
+      return fire('sessionEnd', { ok: result.ok, turns: result.turns });
     },
-    preCompact(reason) {
-      const outcome = fire('preCompact', { reason });
+    async preCompact(reason) {
+      const outcome = await fire('preCompact', { reason });
       const output = outcome && (outcome.kind === 'ok' || outcome.kind === 'exited-nonzero') ? outcome.output : '';
       return output.startsWith('BLOCK') || /\nBLOCK/.test(output);
     },
-    postCompact(prevTokens, nextTokens) {
-      fire('postCompact', { prev_tokens: prevTokens, next_tokens: nextTokens });
+    async postCompact(prevTokens, nextTokens) {
+      return fire('postCompact', { prev_tokens: prevTokens, next_tokens: nextTokens });
     },
-    subagentStart(goal) {
-      fire('subagentStart', { goal: String(goal ?? '').slice(0, 500) });
+    async subagentStart(goal) {
+      return fire('subagentStart', { goal: String(goal ?? '').slice(0, 500) });
     },
-    subagentStop(result) {
+    async subagentStop(result) {
       fire('subagentStop', { ok: result.ok, output: String(result.output ?? '').slice(0, 500), turns: result.turns });
     },
     notification(kind, text) {

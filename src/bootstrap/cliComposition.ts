@@ -411,6 +411,15 @@ export async function createCliComposition(deps: CliCompositionDeps): Promise<Op
       result = { ok: false, error: configError('CLI_COMPOSITION_PHASE_THREW', 'cli.composition.phase_threw', { phase: name, cause: String((cause as Error).message ?? cause) }) };
     }
     if (!result.ok) {
+      // V4 P2-12：kernel phase 中途失败时先清理已连接 MCP 子进程（resources 在 phase
+      // 成功后才 push——kernel 内 registerAgentTools/createAgent 失败点的 mcpHolder.clients
+      // 无人回收成孤儿；closeAllMcp 幂等安全）
+      if (name === 'kernel') {
+        try {
+          const { closeAllMcp } = await import('../kernel/mcp.js');
+          await closeAllMcp(mcpHolder.clients);
+        } catch { /* 清理失败不掩盖原错误 */ }
+      }
       await shutdown(`cli-composition:${name}:failed`);
       return { ok: false, error: configError('CLI_COMPOSITION_PHASE_FAILED', 'cli.composition.phase_failed', { phase: name, cause: composeFailureCause(result) }) };
     }

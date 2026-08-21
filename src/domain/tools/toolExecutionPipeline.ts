@@ -103,9 +103,23 @@ export function createToolExecutionPipeline(ports: PipelinePorts) {
       }
 
       let raw: unknown;
+      let timer: ReturnType<typeof setTimeout> | undefined; // V4 P2-12：execute 超时定时器
       try {
-        raw = await ports.execute(descriptor, normalized.value.args, context, signal);
+        // V4 P2-12：descriptor.timeoutMs（默认 30s）经 Promise.race 强制执行超时——
+        // 此前声明但全链路无实施：执行挂死（broker 卡死/外部工具）只能靠外部 Run 取消
+        const executeTimeoutMs = Math.max(1_000, Number(descriptor.timeoutMs) || 30_000);
+        raw = await Promise.race([
+          ports.execute(descriptor, normalized.value.args, context, signal),
+          new Promise<never>((_, rejectExecutionTimeout) => {
+            timer = setTimeout(() => rejectExecutionTimeout(Object.assign(
+              new Error(`工具执行超时（${Math.round(executeTimeoutMs / 1000)}s）——TOOL_EXECUTION_TIMEOUT`),
+              { code: 'TOOL_EXECUTION_TIMEOUT' },
+            )), executeTimeoutMs);
+          }),
+        ]);
+        if (timer !== undefined) clearTimeout(timer);
       } catch (cause) {
+        if (timer !== undefined) clearTimeout(timer);
         const failure = stageFailure('execute', cause);
         return releaseUnapplied(failure, 'failed', { effectId: request.id, code: failure.code, stage: 'execute' });
       }

@@ -41,17 +41,17 @@ describe('hooksFromConfig 配置解析', () => {
 });
 
 describe('runHook 命令执行', () => {
-  it('注入事件名与数据环境变量', () => {
-    const out = runHook(echoCmd('WXNODUS_HOOK_EVENT'), 'preToolUse', { tool: 'bash' });
+  it('注入事件名与数据环境变量', async () => {
+    const out = await runHook(echoCmd('WXNODUS_HOOK_EVENT'), 'preToolUse', { tool: 'bash' });
     expect(out).toMatchObject({ kind: 'ok', output: 'preToolUse' });
   });
-  it('输出 DENY 开头可被识别为拦截', () => {
-    const out = runHook('node -e "console.log(\'DENY: 安全规则\')"', 'preToolUse', {});
+  it('输出 DENY 开头可被识别为拦截', async () => {
+    const out = await runHook('node -e "console.log(\'DENY: 安全规则\')"', 'preToolUse', {});
     expect(out.kind === 'ok' ? out.output.startsWith('DENY') : false).toBe(true);
   });
-  it('超时不挂死（10s 上限内快速失败）', () => {
+  it('超时不挂死（10s 上限内快速失败）', async () => {
     const t0 = Date.now();
-    const out = runHook('node -e "setTimeout(()=>{}, 60000)"', 'stop', {});
+    const out = await runHook('node -e "setTimeout(()=>{}, 60000)"', 'stop', {});
     expect(out).toMatchObject({ kind: 'timeout' });
     expect(Date.now() - t0).toBeLessThan(15_000);
   });
@@ -81,17 +81,17 @@ describe('createHookRunner 集成', () => {
 
 // ── P3b：截断 / 崩溃容错 / 事件覆盖 ──
 describe('runHook 边界', () => {
-  it('长输出截断至 4000 字符', () => {
-    const out = runHook('node -e "console.log(\\"x\\".repeat(9000))"', 'stop', {});
+  it('长输出截断至 4000 字符', async () => {
+    const out = await runHook('node -e "console.log(\\"x\\".repeat(9000))"', 'stop', {});
     expect(out.kind === 'ok' ? out.output.length : 0).toBeLessThanOrEqual(4000);
   });
   // P0-06：命令失败结构化返回（不抛、不静默）；崩溃/未知命令均归类为非零退出
-  it('命令崩溃返回结构化非零退出（不抛、不静默）', () => {
-    expect(runHook('node -e "process.exit(3)"', 'preToolUse', {})).toMatchObject({ kind: 'exited-nonzero' });
+  it('命令崩溃返回结构化非零退出（不抛、不静默）', async () => {
+    expect(await runHook('node -e "process.exit(3)"', 'preToolUse', {})).toMatchObject({ kind: 'exited-nonzero' });
     // 未知命令走外部 cmd 解析：环境无关的确定性毫秒级失败——PS 层未知命令发现
     // 在部分 runner 上受 PSModulePath 垃圾路径/AMSI 拖慢（CI 实测 3.5s~10s+），
     // 本用例断言的是「结构化非零退出」语义，不绑定 PS 命令发现性能
-    expect(runHook('cmd /c no-such-cmd-xyz', 'preToolUse', {})).toMatchObject({ kind: 'exited-nonzero' });
+    expect(await runHook('cmd /c no-such-cmd-xyz', 'preToolUse', {})).toMatchObject({ kind: 'exited-nonzero' });
   });
   it('HOOK_EVENTS 枚举 12 类', () => {
     expect(HOOK_EVENTS).toEqual(['userPromptSubmit', 'preToolUse', 'postToolUse', 'stop', 'sessionStart', 'sessionEnd', 'preCompact', 'postCompact', 'subagentStart', 'subagentStop', 'postToolUseFailure', 'notification']);
@@ -110,8 +110,11 @@ describe('createHookRunner 事件覆盖', () => {
       },
     };
     const runner = createHookRunner(() => settings, bus);
-    runner.userPromptSubmit('你好', 's1');
-    runner.postToolUse('bash', '工具输出文本');
+    // V4 P2-12：fire 为异步——等待两个事件完成（poll 直至 notice 到达或 3s 超时）
+    const p1 = (runner as any).userPromptSubmit('你好', 's1');
+    const p2 = (runner as any).postToolUse('bash', '工具输出文本');
+    await Promise.all([Promise.resolve(p1).catch(() => {}), Promise.resolve(p2).catch(() => {})]);
+    await new Promise(r => setTimeout(r, 100)); // notice 事件排空
     expect(notices.some(t => t.includes('userPromptSubmit'))).toBe(true);
     expect(notices.some(t => t.includes('postToolUse'))).toBe(true);
   });
@@ -145,18 +148,22 @@ describe('12 类事件扩充', () => {
         notification: 'node -e "console.log(process.env.WXNODUS_HOOK_EVENT)"',
       },
     }), bus);
-    runner.sessionStart('s1');
-    runner.sessionEnd({ ok: true, turns: 2 });
-    runner.subagentStart('目标');
-    runner.subagentStop({ ok: true, output: 'o', turns: 1 });
-    runner.notification('cron', '定时任务完成');
+    // V4 P2-12：fire 异步——等待全部完成再断言
+    await Promise.allSettled([
+      Promise.resolve(runner.sessionStart('s1')),
+      Promise.resolve(runner.sessionEnd({ ok: true, turns: 2 })),
+      Promise.resolve(runner.subagentStart('目标')),
+      Promise.resolve(runner.subagentStop({ ok: true, output: 'o', turns: 1 })),
+      Promise.resolve(runner.notification('cron', '定时任务完成')),
+    ]);
+    await new Promise(r => setTimeout(r, 100));
     expect(notices.some(t => t.includes('sessionStart'))).toBe(true);
     expect(notices.some(t => t.includes('sessionEnd'))).toBe(true);
     expect(notices.some(t => t.includes('subagentStart'))).toBe(true);
     expect(notices.some(t => t.includes('subagentStop'))).toBe(true);
     expect(notices.some(t => t.includes('notification'))).toBe(true);
   });
-  it('preCompact 输出 BLOCK 阻止压缩；postCompact 携带 token 数', () => {
+  it('preCompact 输出 BLOCK 阻止压缩；postCompact 携带 token 数', async () => {
     const bus = createEventBus(dir);
     const runner = createHookRunner(() => ({
       hooks: {
@@ -164,10 +171,10 @@ describe('12 类事件扩充', () => {
         postCompact: 'node -e "console.log(process.env.WXNODUS_HOOK_DATA)"',
       },
     }), bus);
-    expect(runner.preCompact('auto: 100/100')).toBe(true);
+    expect(await runner.preCompact('auto: 100/100')).toBe(true);
     // 非 BLOCK → 放行
     const runner2 = createHookRunner(() => ({ hooks: { preCompact: 'node -e "console.log(\'OK\')"' } }), bus);
-    expect(runner2.preCompact('auto')).toBe(false);
+    expect(await runner2.preCompact('auto')).toBe(false);
     expect(() => runner.postCompact(1000, 300)).not.toThrow();
   });
   it('postToolUseFailure 触发', () => {

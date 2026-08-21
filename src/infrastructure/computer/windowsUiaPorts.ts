@@ -118,7 +118,7 @@ export function createWindowsUiaPorts(probe: (handle?: string) => BoundaryProbe 
     const [name = '', id = '', handle = ''] = String(runtimeId).split('|');
     return { name, id, handle };
   };
-  const actResult = (method: string) => (r: ReturnType<typeof uiaInvokeOnly>): boolean =>
+  const actResult = (method: string) => (r: Awaited<ReturnType<typeof uiaInvokeOnly>>): boolean =>
     r.ok && (r.element as { method?: string } | undefined)?.method === method;
   return {
     async inspectBoundary(runtimeId: string) {
@@ -137,15 +137,15 @@ export function createWindowsUiaPorts(probe: (handle?: string) => BoundaryProbe 
     },
     async invoke(runtimeId: string) {
       const { name, id, handle } = parse(runtimeId);
-      return actResult('invoke')(uiaInvokeOnly(`${name}|${id}`, handle));
+      return actResult('invoke')(await uiaInvokeOnly(`${name}|${id}`, handle));
     },
     async select(runtimeId: string) {
       const { name, id, handle } = parse(runtimeId);
-      return actResult('select')(uiaSelectOnly(`${name}|${id}`, handle));
+      return actResult('select')(await uiaSelectOnly(`${name}|${id}`, handle));
     },
     async coordinateFallback(runtimeId: string) {
       const { name, id, handle } = parse(runtimeId);
-      const r = uiaMouseOnly(`${name}|${id}`, handle);
+      const r = await uiaMouseOnly(`${name}|${id}`, handle);
       if (!r.ok) return { acted: false, receiptId: null };
       const el = r.element as { x?: number; y?: number } | undefined;
       return { acted: true, receiptId: `uia-mouse-${el?.x ?? 0}-${el?.y ?? 0}` };

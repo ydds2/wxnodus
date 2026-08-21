@@ -1386,7 +1386,7 @@ export function coreTools(): Record<string, ToolDef> {
     danger: false,
     async run() {
       const { uiaWindows } = await import('./computer/uia.js');
-      const r = uiaWindows();
+      const r = await uiaWindows();
       if (!r.ok) return r.reason ?? 'UIA 不可用';
       const all = r.windows ?? [];
       if (!all.length) return '未发现可见窗口';
@@ -1400,7 +1400,7 @@ export function coreTools(): Record<string, ToolDef> {
     danger: false,
     async run({ handle }) {
       const { uiaTree } = await import('./computer/uia.js');
-      const r = uiaTree(String(handle ?? ''));
+      const r = await uiaTree(String(handle ?? ''));
       if (!r.ok) return r.reason ?? 'UIA 不可用';
       const els = r.elements ?? [];
       if (!els.length) return '控件树为空（窗口无可交互元素）';
@@ -1416,7 +1416,7 @@ export function coreTools(): Record<string, ToolDef> {
     danger: false,
     async run({ query, handle }) {
       const { uiaFind } = await import('./computer/uia.js');
-      const r = uiaFind(String(query ?? ''), String(handle ?? ''));
+      const r = await uiaFind(String(query ?? ''), String(handle ?? ''));
       if (!r.ok) return r.reason ?? '未找到';
       const e = r.element as any;
       return `已定位：${e.name ? `「${e.name}」` : ''}${e.id ? ` id=${e.id}` : ''} <${e.ct}> @(${e.x},${e.y} ${e.w}x${e.h})`;
@@ -1427,7 +1427,7 @@ export function coreTools(): Record<string, ToolDef> {
     danger: true,
     async run({ query, handle }) {
       const { uiaClick } = await import('./computer/uia.js');
-      const r = uiaClick(String(query ?? ''), String(handle ?? ''));
+      const r = await uiaClick(String(query ?? ''), String(handle ?? ''));
       if (!r.ok) return r.reason ?? '点击失败';
       const el = r.element as any;
       return `已点击（${el?.method ?? 'uia'}）${el?.x != null ? ` @(${el.x},${el.y})` : ''}`;
@@ -1438,7 +1438,7 @@ export function coreTools(): Record<string, ToolDef> {
     danger: true,
     async run({ text, query, handle }) {
       const { uiaType } = await import('./computer/uia.js');
-      const r = uiaType(String(text ?? ''), String(query ?? ''), String(handle ?? ''));
+      const r = await uiaType(String(text ?? ''), String(query ?? ''), String(handle ?? ''));
       if (!r.ok) return r.reason ?? '输入失败';
       return `已输入 ${String(text ?? '').length} 字符（${(r.element as any)?.method ?? 'uia'}）`;
     },
