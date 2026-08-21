@@ -125,6 +125,29 @@ if (pre.mode === 'error') {
       thinking?: boolean; workspace?: string; [key: string]: any;
     };
     const { resolveWorkspaceRoot } = await import('../domain/config/workspaceRoot.js');
+    // V4 P4-3：wxnodus doctor [local] —— 全链路自诊断子命令（codex doctor 机制对齐）。
+    // 结构化报告 + exit code 可判（0=无故障/1=存在故障）；local 跳过网络项；--json 机读。
+    // positional 用 indexOf 定位而非 [0]：--data-dir 等带值旗标的值会被宽松解析器收进
+    // positional 前部（doctor 未必是首元——与既有宽松解析语义一致）。
+    const doctorIdx = opts.positional.indexOf('doctor');
+    if (doctorIdx >= 0) {
+      const { openDB } = await import('../store/db.js');
+      const db = openDB(dataDir);
+      const { runDoctor, renderDoctorText } = await import('../kernel/doctor.js');
+      const report = await runDoctor({
+        dataDir, db, settings,
+        cwd: startupCwd,
+        modulePath: import.meta.url,
+        network: opts.positional[doctorIdx + 1] !== 'local',
+      });
+      db.close();
+      if (opts.json) {
+        process.stdout.write(JSON.stringify({ ok: report.exitCode === 0, ...report }, null, 2) + '\n');
+      } else {
+        process.stdout.write(renderDoctorText(report));
+      }
+      process.exit(report.exitCode);
+    }
     const resolvedWorkspace = resolveWorkspaceRoot({
       cli: opts.workspace ?? undefined,
       env: process.env.WXNODUS_WORKSPACE,

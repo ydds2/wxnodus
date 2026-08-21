@@ -11,7 +11,6 @@ import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias, CORE_COM
 import { capabilityBadges, decryptKey, filterModels, maskKey, MODEL_CATALOG, resolveApiKey } from '../kernel/providers.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { parseModelAddArgs, addCustomModel, applyModelKey } from '../kernel/modelRegistry.js';
-import { profileHealth } from '../kernel/profiles.js';
 import { priceForModel } from '../kernel/cost.js';
 import { sessionCost, costText } from '../kernel/costQuery.js';
 import { snippet } from '../kernel/truncate.js';
@@ -253,53 +252,21 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     ]);
   });
 
-  bus.register('/doctor', () => {
-    // 真实检测（对比轮 6 修复：此前四行硬编码"正常"）
-    const checks: Array<[string, string]> = [];
-    checks.push(['配置中心', existsSync(join(ctx.dataDir, 'settings.json')) ? '正常' : '未初始化']);
-    // 数据库完整性：SQLite PRAGMA integrity_check 真实校验
-    try {
-      const r = ctx.db.prepare(`PRAGMA integrity_check`).get() as { integrity_check: string } | undefined;
-      checks.push(['数据库', r?.integrity_check === 'ok' ? '正常' : `异常（${r?.integrity_check ?? '未知'}）`]);
-    } catch { checks.push(['数据库', '异常（无法执行完整性检查）']); }
-    // 记忆层：三层计数真实查询
-    try {
-      const total = (ctx.db.prepare(`SELECT COUNT(*) c FROM messages`).get() as { c: number }).c;
-      const archived = (ctx.db.prepare(`SELECT COUNT(*) c FROM messages WHERE archived=1`).get() as { c: number }).c;
-      checks.push(['黑洞记忆', `${total} 条（其中 ${archived} 条已归档压缩，仍可检索）`]);
-    } catch { checks.push(['黑洞记忆', '异常（表不可读）']); }
-    // FTS 索引可检索性
-    try {
-      const fts = (ctx.db.prepare(`SELECT COUNT(*) c FROM messages_fts`).get() as { c: number }).c;
-      checks.push(['全文索引', `${fts} 条可检索`]);
-    } catch { checks.push(['全文索引', '未初始化']); }
-    // 密钥真实解密验证 + provider 归属校验（加密 ≠ 可用；归属不符会 401——fail-closed 不误发）
-    const keyRes = resolveApiKey(ctx.config.get('settings') as Record<string, any>);
-    if (keyRes.key) {
-      checks.push(['模型密钥', `已配置且可解密（provider=${keyRes.provider}）`]);
-    } else if (keyRes.error === 'provider-mismatch') {
-      checks.push(['模型密钥', `provider 不符：${keyRes.hint}`]);
-    } else if (keyRes.source === 'enc') {
-      checks.push(['模型密钥', '已配置但无法解密（需 /model set-key 重配）']);
-    } else {
-      checks.push(['模型密钥', '未配置（/model set-key <密钥> 配置）']);
-    }
-    // 当前模型目录可用性
-    const model = ctx.getModel();
-    checks.push(['当前模型', model ? model : '未选择']);
-    // 接入档案一致性（配置漂移防呆：active 指向/重复 id/baseURL 格式）
-    try {
-      const providers = ctx.config.getKey('settings', 'providers') as Array<Record<string, any>> | undefined;
-      const active = ctx.config.getKey('settings', 'activeProvider') as string | undefined;
-      const issues = profileHealth(providers, active);
-      if (Array.isArray(providers) && providers.length) {
-        checks.push(['接入档案', issues.length ? `异常：${issues[0]!.detail}` : `${providers.length} 个档案正常`]);
-      } else {
-        checks.push(['接入档案', '未配置（/profile add 接入任意 OpenAI 兼容端点）']);
-      }
-    } catch { /* 档案读取失败不阻断体检 */ }
-    // 面板着色：键名 label 青、异常/未配置红、正常绿
-    return lines(' 体检 ', checks.map(([k, v]) => ` ${c(k, '36')}：${/异常|未配置|无法/.test(v) ? c(v, '31') : /正常|可解密|可检索/.test(v) ? c(v, '32') : v}`));
+  bus.register('/doctor', async (args) => {
+    // V4 P4-3：全链路自诊断——检查项全部收敛到 doctor.ts 引擎（TUI/CLI 同源）；
+    // `/doctor local` 跳过网络项（端点探活/更新通道），其余默认并行 4s 预算
+    const { runDoctor, renderDoctorText } = await import('../kernel/doctor.js');
+    const report = await runDoctor({
+      dataDir: ctx.dataDir,
+      db: ctx.db,
+      settings: ctx.config.get('settings') as Record<string, any>,
+      cwd: process.cwd(),
+      modulePath: import.meta.url,
+      network: args[0] !== 'local',
+    });
+    // 面板着色：✓绿 / ⚠黄 / ✗红 / ·青（与既有体检面板语义一致）
+    const colorFor = (s: string) => (/✗/.test(s) ? c(s, '31') : /⚠/.test(s) ? c(s, '33') : /✓/.test(s) ? c(s, '32') : c(s, '36'));
+    return lines(' 体检 ', renderDoctorText(report).trimEnd().split('\n').map(colorFor));
   });
 
   // /login [平台] [密钥]：认证入口（对比轮 6 补强——平台选择 + 密钥录入 + 模型目录刷新）

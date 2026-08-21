@@ -119,6 +119,7 @@ export const USAGE = `WxNodus V3 — Windows 本地 AI agent CLI
   wxnodus -p "需求" --strict-mcp-config  仅信任项目声明 MCP
   wxnodus --mcp-server              incoming MCP stdio 服务器（双工 discovery/tools）
   wxnodus --serve                   本地 AI 网关（HTTP，Bearer 认证）
+  wxnodus doctor [local]            全链路自诊断（exit 0=健康/1=有故障；local 跳过网络项）
 
 选项：
   -p, --prompt <text>  非交互单次执行
