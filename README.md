@@ -1,6 +1,8 @@
-# WxNodus V3
+# WxNodus V4
 
-Windows 本地 AI agent CLI：数据不出机，无 key 也有离线能力（本地离线模型 + 确定性工具 + 本地记忆）。
+Windows 本地 AI agent CLI：数据不出机（会话/记忆/密钥全本地），无账号无订阅，任意 OpenAI 兼容端点接入。
+
+> V4.0 变更（2026-08-21）：离线运行能力（离线模型/离线看图/无 key 确定性层）已裁撤——运行需网络与模型密钥，数据仍全部本地存储；临时续用设 `WXNODUS_LEGACY_OFFLINE=1`。语音与本地记忆向量保留。
 
 ## 快速开始
 
@@ -33,9 +35,9 @@ cat 文件.txt | wxnodus -p "总结内容"   # stdin 管道（-p 为指令、std
 
 | 文档 | 内容 |
 |---|---|
-| `docs/getting-started.md` | 快速上手：安装 → 三步跑起来 → 核心能力速览 → 离线能力 |
-| `docs/troubleshooting.md` | 排障手册：按症状索引（安装/模型/构建/会话/通用排查） |
-| `docs/examples.md` | 10 个可复现场景（待办系统/调试循环/多会话/沙盒/远程/分享/无头接入） |
+| `docs/wxnodus-v4-plan-2026-08-21.md` | V4.0 总计划（输出体系重设计 + L0-L4 工作流） |
+| `docs/wxnodus-master-upgrade-plan-2026-08-21.md` | V3 任务卡详册（缺陷锚点与修复方案底册） |
+| `docs/production-readiness-plan-2026-08-21.md` | 纯源码审计报告（缺陷全表） |
 
 ## 协议与集成
 

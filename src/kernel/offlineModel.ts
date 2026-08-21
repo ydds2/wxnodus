@@ -320,6 +320,10 @@ function createWorker(data: Record<string, unknown>): Worker {
 }
 
 export async function callOfflineLlm(model: string, opts: OfflineChatOpts): Promise<OfflineChatResult> {
+  // V4 裁撤轨 D-1：默认禁用（agent 层已守卫，此处纵深防御——直接调用方同样诚实拒绝）
+  if (process.env.WXNODUS_LEGACY_OFFLINE !== '1') {
+    return { ok: false, error: '离线推理已弃用（V4.0 裁撤）——设 WXNODUS_LEGACY_OFFLINE=1 临时续用，或 /model 配置云端模型' };
+  }
   const info = OFFLINE_MODELS[model];
   if (!info) return { ok: false, error: `未知离线模型：${model}` };
   const dataDir = resolveDataDir(process.cwd());

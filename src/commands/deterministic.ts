@@ -48,6 +48,10 @@ const DET: Det[] = [
 ];
 
 export async function deterministicRun(text: string): Promise<string | null> {
+  // V4 裁撤轨 D-3：无 key 确定性层（base64/计算器白名单）默认禁用——返回 null 自然落回
+  // NL 命令路由与 AI 对话（路由本身保留）；逃生开关 WXNODUS_LEGACY_OFFLINE=1。
+  // 此前「加密一下这个文件夹」等任意中文句被 base64 劫持（A-8 缺陷随裁撤消失）。
+  if (process.env.WXNODUS_LEGACY_OFFLINE !== '1') return null;
   for (const d of DET) {
     const m = text.match(d.re);
     if (m) {

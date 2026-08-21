@@ -27,3 +27,16 @@ export function sanitizedEnv(extra: Record<string, string> = {}): NodeJS.Process
   }
   return { ...out, ...extra };
 }
+
+// ── V4 裁撤轨 D（2026-08-21 用户裁决：离线能力在 CLI 中无优势）──
+// 软着陆纪律（Buddy 事件教训：功能下线无缓冲引发反弹）：本版默认禁用+deprecation 警告
+// +WXNODUS_LEGACY_OFFLINE=1 逃生开关；下一版本物理删除代码与开关。
+// 裁撤面：离线对话（offlineModel）/离线看图（moondream2+OCR 兜底）/无 key 确定性层。
+// 保留面：语音、气隙升级、本地记忆向量、「数据不出机」定位（数据本地存储≠离线运行）。
+export function legacyOfflineEnabled(): boolean {
+  return process.env.WXNODUS_LEGACY_OFFLINE === '1';
+}
+export const OFFLINE_DEPRECATION_HINT =
+  '离线能力已于 V4.0 裁撤（2026-08-21 决策：离线在 CLI 中无优势）——'
+  + '临时续用请设置环境变量 WXNODUS_LEGACY_OFFLINE=1（下版移除）；'
+  + '长期方案：/model set-key 配置云端模型（会话与数据仍全部本地存储）。';

@@ -3,6 +3,9 @@
 // 靠数组顺序兜底，任何增改都会静默破坏 README 承诺。本文件把承诺写成断言。
 import { describe, it, expect } from 'vitest';
 import { routeInput, routeNaturalLanguage } from '../src/commands/intent.js';
+// V4 裁撤轨 D-3：以下用例锁定的是 legacy 确定性层行为（默认禁用——
+// WXNODUS_LEGACY_OFFLINE=1 逃生开关路径，兼作开关有效性覆盖）
+process.env.WXNODUS_LEGACY_OFFLINE = '1';
 
 describe('NL 路由契约（README「说人话」六行锁定）', () => {
   const cases: Array<{ text: string; kind: 'command' | 'tool' | 'chat'; cmd?: string }> = [

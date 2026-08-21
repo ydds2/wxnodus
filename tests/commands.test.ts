@@ -11,6 +11,9 @@ import { createCommandBus } from '../src/app/CommandBus.js';
 import { openDB, closeDB } from '../src/store/db.js';
 import { createEventBus } from '../src/kernel/events.js';
 import { createMemory } from '../src/kernel/memory.js';
+// V4 裁撤轨 D-3：以下用例锁定的是 legacy 确定性层行为（默认禁用——
+// WXNODUS_LEGACY_OFFLINE=1 逃生开关路径，兼作开关有效性覆盖）
+process.env.WXNODUS_LEGACY_OFFLINE = '1';
 
 const dirs: string[] = [];
 const tmp = () => {

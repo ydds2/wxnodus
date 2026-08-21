@@ -422,6 +422,11 @@ export function createAgent(opts: AgentOptions) {
 
     // 离线 provider 不读取云端密钥槽位：历史密钥损坏或 provider 不匹配不能阻断本地推理。
     if (configuredModel.startsWith('offline:')) {
+      // V4 裁撤轨 D-1：离线对话默认禁用（软着陆——逃生开关 WXNODUS_LEGACY_OFFLINE=1）
+      const { legacyOfflineEnabled, OFFLINE_DEPRECATION_HINT } = await import('./env.js');
+      if (!legacyOfflineEnabled()) {
+        return { type: 'text', content: OFFLINE_DEPRECATION_HINT };
+      }
       const { isOfflineModelReady } = await import('./offlineModel.js');
       if (isOfflineModelReady(configuredModel)) {
         const { callLlmStream } = await import('./llmStream.js');

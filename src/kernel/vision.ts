@@ -135,8 +135,11 @@ export async function describeImageStatus(target: string, apiKeyEnc: string | nu
     return result;
   };
   const vs = pickSettings(settings);
-  // 本地 VLM 优先（显式开启）——完全离线
-  if (vs.local) {
+  // V4 裁撤轨 D-2：本地离线视觉（moondream2）默认禁用——逃生开关 WXNODUS_LEGACY_OFFLINE=1
+  const { legacyOfflineEnabled } = await import('./env.js');
+  if (vs.local && !legacyOfflineEnabled()) {
+    // 跳过离线通道，落回云端 key 检查（无 key 走下方诚实引导）
+  } else if (vs.local) {
     try {
       const { readFileSync } = await import('node:fs');
       const png = target.startsWith('data:') ? Buffer.from(target.split(',')[1] ?? '', 'base64')
@@ -156,7 +159,8 @@ export async function describeImageStatus(target: string, apiKeyEnc: string | nu
   if (!key) {
     // W8-09 Windows 生态互依：无视觉密钥 → 系统原生 OCR 兜底（离线、零模型下载——提取画面文字；
     // 语义诚实：返回 OCR 文本而非视觉描述）。自动降级路径（visionOcr=false）跳过 OCR。
-    if (vs.ocr !== false) {
+    // V4 裁撤轨 D-2：OCR 离线兜底默认禁用（逃生开关 WXNODUS_LEGACY_OFFLINE=1）——无 key 诚实引导配置
+    if (vs.ocr !== false && legacyOfflineEnabled()) {
       const ocrText = await windowsOcrFallback(target);
       if (ocrText) return store({ ok: true, text: ocrText });
     }

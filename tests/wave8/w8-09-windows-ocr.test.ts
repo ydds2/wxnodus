@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest';
 import { ocrWindowsImage } from '../../src/kernel/computer/ocr.js';
 import { captureScreenNativeFallback } from '../../src/kernel/computer/index.js';
 import { describeImageStatus } from '../../src/kernel/vision.js';
+// V4 裁撤轨 D-2：OCR 兜底默认禁用——本用例验证 WXNODUS_LEGACY_OFFLINE=1 逃生开关路径
+process.env.WXNODUS_LEGACY_OFFLINE = '1';
 
 const isWin = process.platform === 'win32';
 
