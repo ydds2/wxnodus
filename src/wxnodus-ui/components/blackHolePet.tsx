@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 
 import { accretionRing, breatheColor, motionTier } from '../lib/motion.js'
 import type { Theme } from '../theme.js'
+import { WXNODUS_VERSION } from '../../kernel/version.js'
 
 export type PetMood = 'busy' | 'error' | 'idle'
 
@@ -36,11 +37,12 @@ export function permBadgeLabel(mode: string): string {
   return `[${modeBadgeSpec(mode).label}]`
 }
 
-/** 欢迎卡片帧内容（纯函数）：吸积盘 + 模式徽章——每帧确定性。 */
-export function welcomeLines(i: number, mode: string): string[] {
+/** 欢迎卡片帧内容（纯函数）：吸积盘 + 版本 + 模式徽章——每帧确定性。
+ * V4 附加：版本号上卡（claude code/codex 启动显版本对齐——此前升级后 TUI 零版本反馈）。 */
+export function welcomeLines(i: number, mode: string, version?: string): string[] {
   const ring = accretionRing(i)
   return [
-    `${ring[0]}  wxnodus`,
+    `${ring[0]}  wxnodus${version ? ` v${version}` : ''}`,
     `${(ring[1] ?? '').padEnd(7)}  ${permBadgeLabel(mode)} · /help 查看命令`
   ]
 }
@@ -98,7 +100,7 @@ export function WelcomeCard({ mode, t }: { mode: string; t: Theme }) {
     return null
   }
 
-  const lines = welcomeLines(i, mode)
+  const lines = welcomeLines(i, mode, WXNODUS_VERSION)
   const badge = modeBadgeSpec(mode)
   const badgeText = permBadgeLabel(mode)
   const badgeColor =

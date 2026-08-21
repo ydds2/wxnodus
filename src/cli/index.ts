@@ -1038,6 +1038,14 @@ if (pre.mode === 'error') {
     if (banner) process.stdout.write(`${banner}\n`);
   }
 
+  // 版本变更提示（升级后首启可见——落 scrollback 永久可查）：dataDir 记上次运行版本，
+  // 与当前不一致即提示「已更新 x→y」（此前升级后进 TUI 零版本反馈——用户实测报告）
+  {
+    const { detectVersionChange } = await import('../kernel/versionChange.js');
+    const changed = detectVersionChange(dataDir);
+    if (changed) process.stdout.write(`${changed}\n`);
+  }
+
   // Windows cmd 编码修复：默认代码页 936(GBK) 下 UTF-8 边框/中文会乱码——
   // 交互启动时切换到 UTF-8(65001) 并设置终端标题（Kimi/Claude Code 同款处理）
   if (process.platform === 'win32') {
