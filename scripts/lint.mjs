@@ -35,7 +35,7 @@ const COMPONENT_RATCHET = {
   'src/wxnodus-ui/components/markdown.tsx': 1185,
   'src/wxnodus-ui/components/agentsOverlay.tsx': 1158,
   'src/wxnodus-ui/components/activeSessionSwitcher.tsx': 1095,
-  'src/wxnodus-ui/components/statusBar.tsx': 973,
+  'src/wxnodus-ui/components/statusBar.tsx': 728,
   'src/wxnodus-ui/components/modelPicker.tsx': 970,
   'src/wxnodus-ui/components/appLayout.tsx': 565,
   'src/wxnodus-ui/components/branding.tsx': 502,
