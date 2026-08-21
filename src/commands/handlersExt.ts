@@ -1174,9 +1174,12 @@ export const commands = {
         if (!bearerOk(req)) {
           res.writeHead(401); res.end(JSON.stringify({ error: 'missing or invalid bearer token' })); return;
         }
-        let body = '';
-        req.on('data', c => { body += c; if (body.length > 1e6) req.destroy(); });
+        // V4 P1-4：Buffer 聚合整体解码（多字节序列跨分包安全——同 serve.ts readBody 修法）
+        const bodyChunks: Buffer[] = [];
+        let bodyBytes = 0;
+        req.on('data', (c: Buffer) => { bodyChunks.push(c); bodyBytes += c.length; if (bodyBytes > 1e6) req.destroy(); });
         req.on('end', () => {
+          const body = Buffer.concat(bodyChunks).toString('utf8');
           void (async () => {
             try {
               const { method, params } = JSON.parse(body || '{}');

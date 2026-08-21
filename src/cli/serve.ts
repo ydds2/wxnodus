@@ -99,16 +99,21 @@ const BODY_TOO_LARGE = 1_000_000;
 
 function readBody(req: IncomingMessage, maxBytes: number): Promise<{ ok: true; text: string } | { ok: false; code: 'HTTP_REQUEST_BODY_TOO_LARGE' }> {
   return new Promise((resolve, reject) => {
-    let data = '';
+    // V4 P1-4：Buffer 数组聚合，end 时整体 concat 解码——此前 `data += chunk` 逐块隐式
+    // toString('utf8')，中文等多字节序列被 TCP 分包边界截断即产不可逆 U+FFFD（长中文
+    // prompt 高概率损坏）。字节累计限流语义不变。
+    const chunks: Buffer[] = [];
+    let received = 0;
     let overflow = false;
-    req.on('data', chunk => {
+    req.on('data', (chunk: Buffer) => {
       // 超限后继续排空流（不累积、不 destroy——让服务端能写出 413 响应）
       if (!overflow) {
-        data += chunk;
-        if (Buffer.byteLength(data) > maxBytes) overflow = true;
+        chunks.push(chunk);
+        received += chunk.length;
+        if (received > maxBytes) overflow = true;
       }
     });
-    req.on('end', () => resolve(overflow ? { ok: false, code: 'HTTP_REQUEST_BODY_TOO_LARGE' } : { ok: true, text: data }));
+    req.on('end', () => resolve(overflow ? { ok: false, code: 'HTTP_REQUEST_BODY_TOO_LARGE' } : { ok: true, text: Buffer.concat(chunks).toString('utf8') }));
     req.on('error', reject);
     req.on('close', () => {
       if (overflow) resolve({ ok: false, code: 'HTTP_REQUEST_BODY_TOO_LARGE' });

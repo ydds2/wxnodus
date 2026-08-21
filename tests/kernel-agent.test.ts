@@ -1437,3 +1437,18 @@ describe('V4 L0-2 结构化 outcome：连续失败判定（A-5 误杀根治）',
     } finally { try { rmSync(d, { recursive: true, force: true }); } catch { /* EBUSY */ } }
   });
 });
+
+// V4 P1-6：工具参数 JSON 坏 → 不执行 + 结构化错误回喂自纠（哨兵键拦截）。
+describe('V4 P1-6 参数 JSON 坏回喂自纠', () => {
+  it('坏 JSON 哨兵：工具不执行，模型收到「JSON 无效」与原文片段（整体重调指引）', async () => {
+    const { ARGS_PARSE_ERROR_KEY } = await import('../src/kernel/agent.js');
+    const script: Array<any> = [
+      { type: 'tool_call', name: 'fs_read', args: { [ARGS_PARSE_ERROR_KEY]: '{"path": "a.ts' } },
+      { type: 'text', content: '收到错误后自纠完成' },
+    ];
+    const agent = makeAgent(script);
+    const r = await agent.run('读文件');
+    // 回合正常走到终稿（错误回喂后模型自纠——不是静默空参执行）
+    expect(r.text).toBe('收到错误后自纠完成');
+  });
+});

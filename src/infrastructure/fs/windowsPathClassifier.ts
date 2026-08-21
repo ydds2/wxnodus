@@ -103,7 +103,37 @@ export function classifyWindowsResourceName(target: string): WindowsResourceName
   return { allowed: true, class: 'ordinary', path };
 }
 
-const norm = (p: string): string => p.replace(/[\\/]+$/, '').toLowerCase();
+// V4 P1-8：归一化升级——尾斜杠剥离 + 小写之外，补 realpathSync.native（展开 8.3 短名
+// PROGRA~1 与尾点 Windows.\ 等 Win32 真实可达别名）+ win32.normalize + 统一正斜杠。
+// 此前仅小写比对：C:\Windows.\system32\x、C:\PROGRA~1\...、全正斜杠
+// 三类别名全部逃过 system-* 强确认（本机实证）降级 other 普通审批。
+import { realpathSync } from 'node:fs';
+import { basename, dirname, normalize as winNormalize } from 'node:path';
+
+const norm = (p: string): string => {
+  // 段尾点/尾空格剥离（Win32 GetFullPathName 语义："Windows." 即 "Windows"——API 级别名）
+  const stripped = winNormalize(p).replace(/[.\\/]+$/, '')
+    .split('\\').map(seg => seg.replace(/[. ]+$/, '')).join('\\');
+  return stripped.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+};
+
+/** realpath 展开的规范形——逐级回退：尾段不存在时解析最深存在祖先的 realpath，
+ * 拼回剩余相对段（C:\PROGRA~1\x.dll 中 x.dll 不存在但 PROGRA~1 可展开）。
+ * 全程不可解析 → lexical 归一回退。 */
+const realNorm = (p: string): string => {
+  let node = p;
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      return norm(realpathSync.native(node) + (tail.length ? '\\' + tail.join('\\') : ''));
+    } catch {
+      const parent = dirname(node);
+      if (parent === node) return norm(p); // 到根仍不可解析——lexical 回退
+      tail.unshift(basename(node));
+      node = parent;
+    }
+  }
+};
 
 /** 系统根候选（大小写不敏感前缀匹配；Windows 驱动器字母亦不敏感） */
 function systemRoots(env: Record<string, string | undefined>): Array<[SystemPathClass, string[]]> {
@@ -129,15 +159,18 @@ export function classifyWindowsPath(target: string, opts: ClassifyOptions): Path
   if (!target || !isAbsolute(target)) {
     return { class: 'other', path: target };
   }
-  const t = norm(target);
+  const tLex = norm(target);
+  const tReal = realNorm(target); // V4 P1-8：别名展开形（8.3 短名/尾点/连接点解引用后）
 
-  // 1) 系统目录（WINDIR/Program Files/ProgramData/AppData——前缀匹配）
+  // 1) 系统目录（WINDIR/Program Files/ProgramData/AppData——前缀匹配；双形任一命中）
   for (const [cls, roots] of systemRoots(env)) {
     for (const root of roots) {
       if (!root) continue;
       const r = norm(root);
-      if (t === r || t.startsWith(r + '\\') || t.startsWith(r + '/')) {
-        return { class: cls, path: target, reason: `系统目录：${root}` };
+      for (const t of [tLex, tReal]) {
+        if (t === r || t.startsWith(r + '/')) {
+          return { class: cls, path: target, reason: `系统目录：${root}` };
+        }
       }
     }
   }
@@ -191,7 +224,8 @@ function defaultReadAttributes(target: string): 'hidden-or-system-attribute' | '
 export function commandTouchesSystemPath(command: string, opts: Pick<ClassifyOptions, 'env' | 'platform'> = {}): PathClassification | null {
   if ((opts.platform ?? process.platform) !== 'win32') return null;
   const env = opts.env ?? process.env;
-  const text = String(command ?? '').toLowerCase();
+  // V4 P1-8：与 norm 同款归一（小写+反斜杠→正斜杠）——两侧形制一致，includes 语义不漂移
+  const text = String(command ?? '').toLowerCase().replace(/\\/g, '/');
   for (const [cls, roots] of systemRoots(env)) {
     for (const root of roots) {
       if (!root) continue;

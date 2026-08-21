@@ -1288,6 +1288,15 @@ export function createAgent(opts: AgentOptions) {
             unknownRounds++;
             return { id: c.id, name: c.name, args: c.args, out: `工具 ${c.name} 不存在`, reasoning: c.reasoning, reasoningField: c.reasoningField, outcome: 'failed' as const };
           }
+          // V4 P1-6：参数 JSON 哨兵——不执行，结构化错误回喂模型自纠（码+解释+建议）
+          if (c.args && typeof c.args === 'object' && ARGS_PARSE_ERROR_KEY in (c.args as Record<string, unknown>)) {
+            const raw = String((c.args as Record<string, unknown>)[ARGS_PARSE_ERROR_KEY] ?? '');
+            return {
+              id: c.id, name: c.name, args: c.args, reasoning: c.reasoning, reasoningField: c.reasoningField,
+              outcome: 'failed' as const,
+              out: `参数 JSON 无效（工具 ${c.name} 未执行）：模型输出的 arguments 不是合法 JSON——原文片段：${raw.slice(0, 80)}。请整体重新调用该工具，并确保 arguments 为合法 JSON（检查引号/括号闭合/换行转义）。`,
+            };
+          }
           unknownRounds = 0;
           const cacheKey = `${c.name}:${JSON.stringify(c.args ?? {})}`;
           // V4 L0-2：调用级结构化结局（verified/failed/other/cached）——anyFail、消息 parts、
@@ -1709,6 +1718,11 @@ function isPathWithinCwd(p: string, cwd = process.cwd()): boolean {
   } catch { return false; }
 }
 
+// V4 P1-6：工具参数 JSON 坏的哨兵键——runOneCall 检测后不执行、错误回喂模型自纠
+// （opencode InvalidTool / codex RespondToModel 同族；此前静默吞 {} → 工具以空参执行
+// 报误导错误，模型收不到「我的 JSON 坏了」信号）
+export const ARGS_PARSE_ERROR_KEY = '__wxnodus_args_parse_error__';
+
 function safeJson(s: string): Record<string, any> {
-  try { return JSON.parse(s); } catch { return {}; }
+  try { return JSON.parse(s); } catch { return { [ARGS_PARSE_ERROR_KEY]: String(s ?? '').slice(0, 120) }; }
 }
