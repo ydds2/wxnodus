@@ -10,7 +10,7 @@ import { validateWorkspaceTarget } from '../infrastructure/fs/pathBoundary.js';
 import { sanitizedEnv } from './env.js';
 import { probeProcessAvailable } from './processProbe.js';
 import { labelTruncate, capNote } from './truncate.js';
-import { UNTRUSTED_WRAP_LIMIT_DEFAULT, clampInt } from './toolOutput.js';
+import { UNTRUSTED_WRAP_LIMIT_DEFAULT, clampInt, buildPowerShellArgs, createIncrementalUtf8 } from './toolOutput.js';
 import { parseRemoteTarget } from './sshRemote.js';
 import { resolveSubagentDef, type SubagentDefinition, type SubagentRunOptions } from './subagentTypes.js';
 import { detectImageType, readImageDimensions, estimateVisionTokens } from './imageMeta.js';
@@ -373,7 +373,8 @@ export function coreTools(): Record<string, ToolDef> {
           settings: sSettings,
           dataDir: ctx.dataDir,
           cmd: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
-          args: process.platform === 'win32' ? ['-NoProfile', '-Command', cmd] : ['-c', cmd],
+          // V4 P1-1：-EncodedCommand + UTF8 前缀（GBK 乱码/CJK argv 损坏根治——toolOutput.ts 同族修法）
+          args: process.platform === 'win32' ? buildPowerShellArgs(cmd) : ['-c', cmd],
           cwd: ctx.cwd,
           stdin: stdinSecret ?? undefined,
           timeoutMs: 60_000,
@@ -438,7 +439,9 @@ export function coreTools(): Record<string, ToolDef> {
           } catch { sinkPath = null; }
           const child = spawn(
             process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
-            process.platform === 'win32' ? ['-NoProfile', '-Command', cmd] : ['-c', cmd],
+            // V4 P1-1：-EncodedCommand（UTF-16LE base64）——-Command 直传 CJK 受 argv 编码影响
+            // （hooks.ts:37-43 CI 实测：可能收到空/损坏命令并等待 stdin → 误判超时）
+            process.platform === 'win32' ? buildPowerShellArgs(cmd) : ['-c', cmd],
             { cwd: ctx.cwd, signal, stdio: ['pipe', 'pipe', 'pipe'], env: sanitizedEnv() },
           );
           if (stdinSecret) {
@@ -447,19 +450,25 @@ export function coreTools(): Record<string, ToolDef> {
           }
           // C12 修复：流式截断——内存封顶 20000 字（完整输出已同步写 sink 文件）
           const { writeSync, closeSync, rmSync } = await import('node:fs');
-          const appendOut = (d: Buffer) => {
+          // V4 P1-1：增量 UTF-8 解码（前缀已强制 PS 输出 UTF-8；多字节序列跨 chunk 边界安全——
+          // 此前 d.toString() 逐块解码，中文 3 字节序列被 TCP 管道边界截断即产 U+FFFD 损坏）
+          const decOut = createIncrementalUtf8();
+          const decErr = createIncrementalUtf8();
+          const appendOut = (d: Buffer, dec: ReturnType<typeof createIncrementalUtf8>) => {
             if (sinkFd !== null) { try { writeSync(sinkFd, d); } catch { /* sink 失败不影响执行 */ } }
             if (out.length >= outCap) { truncated = true; return; }
-            out += d.toString();
+            out += dec.push(d);
             if (out.length > outCap) { out = out.slice(0, outCap); truncated = true; }
           };
-          child.stdout?.on('data', appendOut);
-          child.stderr?.on('data', appendOut);
+          child.stdout?.on('data', d => appendOut(d, decOut));
+          child.stderr?.on('data', d => appendOut(d, decErr));
           try {
             await new Promise<void>((resolveP, rejectP) => {
               child.on('error', rejectP);
               child.on('close', (code) => {
                 if (sinkFd !== null) { try { closeSync(sinkFd); } catch { /* 忽略 */ } sinkFd = null; }
+                // V4 P1-1：流尾 flush（未完成序列显式呈现替换符——诚实）
+                out += decOut.flush() + decErr.flush();
                 if (ctx.signal?.aborted) return rejectP(new Error('已中断（用户中止）'));
                 if (code === 0) return resolveP();
                 exitCode = code;

@@ -165,3 +165,28 @@ export function maskOldToolOutputs(
   }
   return maskIdx.length;
 }
+
+// ── V4 P1-1：bash 中文 Windows GBK 三连根治（可测辅助）─────────────────
+// 三连缺陷：① PowerShell 5.1 重定向输出按控制台 OEM 代码页（zh-CN=GBK）编码，
+// Node 按 UTF-8 解码 → dir 中文文件名/git log 中文提交全乱码；② -Command 直传 CJK
+// 命令受 argv 编码影响（可能空/损坏并等 stdin → 误判超时，hooks.ts:37-43 CI 实测）；
+// ③ 输出按 UTF-8 逐 chunk toString——多字节序列跨 chunk 边界截断产 U+FFFD。
+// 修法（同仓已实测回灌）：-EncodedCommand（UTF-16LE base64）+ 输出编码 UTF8 前缀 +
+// TextDecoder 流式增量解码（winSandbox.ts:63 / hooks.ts / llmStream.ts:190 同族）。
+
+/** PS 输出编码 UTF8 前缀（设置失败不阻断——策略受限环境降级为原代码页，解码仍尽力） */
+const PS_UTF8_PREFIX = "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8 } catch { }; ";
+
+/** Windows PowerShell 参数：UTF8 前缀 + -EncodedCommand（UTF-16LE base64——命令字节零歧义） */
+export function buildPowerShellArgs(command: string): string[] {
+  return ['-NoProfile', '-EncodedCommand', Buffer.from(PS_UTF8_PREFIX + command, 'utf16le').toString('base64')];
+}
+
+/** 流式 UTF-8 增量解码器：多字节序列跨 chunk 边界安全（替代逐 chunk toString 的 U+FFFD 损坏） */
+export function createIncrementalUtf8(): { push(chunk: Buffer): string; flush(): string } {
+  const decoder = new TextDecoder('utf-8');
+  return {
+    push(chunk) { return decoder.decode(chunk, { stream: true }); },
+    flush() { return decoder.decode(); },
+  };
+}
