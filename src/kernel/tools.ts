@@ -176,7 +176,14 @@ export function coreTools(): Record<string, ToolDef> {
             snapshotFile(ctx.dataDir, p, before.toString('utf8'));
           } catch { /* 快照失败不影响写入 */ }
         }
-        await safeWorkspaceWrite(ctx.cwd, p, String(content), before ? { expectedSha256: workspaceSha256(before) } : { mustNotExist: true });
+        // V4 P1-9：BOM 保真——原文件有 BOM 而新内容无（LLM 输出通常不带）时前置保留
+        //（整文件覆盖此前静默去 BOM：PowerShell/老解析器按编码误判炸）；新内容自带则不双写
+        let outContent = String(content);
+        if (before && before.length >= 3 && before[0] === 0xef && before[1] === 0xbb && before[2] === 0xbf
+            && !(outContent.length >= 1 && outContent.charCodeAt(0) === 0xfeff)) {
+          outContent = '﻿' + outContent;
+        }
+        await safeWorkspaceWrite(ctx.cwd, p, outContent, before ? { expectedSha256: workspaceSha256(before) } : { mustNotExist: true });
         return `已写入 ${path}`;
       }
       catch (e: any) { return `写入失败：${e.message}`; }

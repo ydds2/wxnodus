@@ -525,13 +525,13 @@ export const commands = {
       // 复制 plugin.json 与 index.js（及 data 目录）
       for (const f of ['plugin.json', 'index.js']) {
         const srcF = join(src, f);
-        if (existsSync(srcF)) writeFileSync(join(dest, f), readFileSync(srcF, 'utf8'), 'utf8');
+        if (existsSync(srcF)) writeFileSync(join(dest, f), readFileSync(srcF)); // V4 P1-11：Buffer 直拷——utf8 字符串往返损坏二进制插件资产
       }
       const srcData = join(src, 'data');
       if (existsSync(srcData)) {
         mkdirSync(join(dest, 'data'), { recursive: true });
         for (const f of readdirSync(srcData)) {
-          writeFileSync(join(dest, 'data', f), readFileSync(join(srcData, f), 'utf8'), 'utf8');
+          writeFileSync(join(dest, 'data', f), readFileSync(join(srcData, f))); // V4 P1-11：同上
         }
       }
       const reloaded = await ctx.reloadPlugins();

@@ -65,6 +65,14 @@ export function reverseHunk(h: ParsedHunk): ParsedHunk {
 
 const linesOf = (text: string): string[] => text.replace(/\r\n/g, '\n').split('\n')
 
+// V4 P1-9：探测原文本主行尾（CRLF 文件回写保持 CRLF——此前统一 join('\n') 使单 hunk 回滚
+// 即整文件行尾翻转 LF，git 全文件 diff/老解析器炸；applyPatch.ts eol 保真同族语义）
+const eolOf = (text: string): '\r\n' | '\n' => {
+  const crlf = (text.match(/\r\n/g) ?? []).length
+  const lf = (text.match(/(?<!\r)\n/g) ?? []).length
+  return crlf > lf ? '\r\n' : '\n'
+}
+
 /** 在 content 中定位 old 侧序列（先按 @@ 行号精确落点，失败全文回退首个匹配） */
 function locateOld(contentLines: string[], h: ParsedHunk): number | null {
   const old = oldSide(h)
@@ -92,6 +100,7 @@ export type HunkApplyResult = { ok: true; text: string } | { ok: false; error: s
 /** 单 hunk 应用到文本：old 侧（context+del）全量锚定匹配才替换为 new 侧（context+add）；
  *  不匹配 → 明确报错绝不写半行（codex verify-before-apply 同款纪律）。 */
 export function applyHunkToText(content: string, h: ParsedHunk): HunkApplyResult {
+  const eol = eolOf(content) // V4 P1-9：原行尾保真
   const contentLines = linesOf(content)
   const old = oldSide(h)
   const next = newSide(h)
@@ -100,14 +109,14 @@ export function applyHunkToText(content: string, h: ParsedHunk): HunkApplyResult
   if (h.oldStart === 0 && h.oldCount === 0) {
     const at = Math.max(0, Math.min(h.newStart - 1, contentLines.length))
     const out = [...contentLines.slice(0, at), ...next, ...contentLines.slice(at)]
-    return { ok: true, text: out.join('\n') }
+    return { ok: true, text: eol === '\r\n' ? out.join('\r\n') : out.join('\n') }
   }
   const pos = locateOld(contentLines, h)
   if (pos === null) {
     return { ok: false, error: `hunk 上下文不匹配（@@ -${h.oldStart},${h.oldCount} +${h.newStart},${h.newCount} @@）——文件已被改动或 hunk 顺序错误` }
   }
   const out = [...contentLines.slice(0, pos), ...next, ...contentLines.slice(pos + old.length)]
-  return { ok: true, text: out.join('\n') }
+  return { ok: true, text: eol === '\r\n' ? out.join('\r\n') : out.join('\n') }
 }
 
 // ── 行级 LCS unified diff（/diff 快照对比数据源）────────────────

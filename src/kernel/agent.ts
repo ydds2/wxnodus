@@ -188,6 +188,19 @@ export function createAgent(opts: AgentOptions) {
   // 裁剪结果随装配缓存（getToolTrim 查询面）。
   const settingsAny0 = opts.config?.settings as Record<string, any> | undefined;
   let lastTrimInfo: { dropped: string[]; tier: 'full' | 'lite' } = { dropped: [], tier: 'full' };
+
+  // V4 P1-10（B-10）：tool_search 工厂——纳入 assembleTools 装配链（updateTools 重建不再丢失懒加载入口）
+  const makeToolSearchTool = (): ToolDef => ({
+      schema: { type: 'function', function: { name: 'tool_search', description: '检索高级工具（按关键词，如 "图片" "网络" "视频"）——命中后该工具立即可用', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+      danger: false,
+      async run({ query }) {
+        const hits = searchTools(String(query ?? ''), tools);
+        if (!hits.length) return '未找到匹配工具（可用核心工具：' + [...CORE_TOOL_NAMES].filter(n => n !== 'tool_search').join('、') + '）';
+        for (const h of hits) activeToolNames?.add(h.name);
+        return `已激活 ${hits.length} 个工具（下次调用可用）：\n` + hits.map(h => `- ${h.name}：${h.description}`).join('\n');
+      },
+    });
+
   const assembleTools = (): Record<string, ToolDef> => {
     const merged = Object.fromEntries(
       Object.entries({ ...coreTools(), ...extraTools })
@@ -196,7 +209,9 @@ export function createAgent(opts: AgentOptions) {
     );
     const r = trimToolsForModel(String(settingsAny0?.model ?? ''), merged, { mode: String(settingsAny0?.toolTrim ?? 'auto') });
     lastTrimInfo = { dropped: r.dropped, tier: r.tier };
-    return r.tools;
+    // V4 P1-10：懒加载开启时 tool_search 随装配注入（此前仅 createAgent 手工注入一次，
+    // updateTools 重建即丢——/mcp add、/plugin reload 后模型再也检索不到高级工具）
+    return opts.toolLazyLoad ? { ...r.tools, tool_search: makeToolSearchTool() } : r.tools;
   };
   let tools = assembleTools();
   const bus = opts.bus;
@@ -615,19 +630,6 @@ export function createAgent(opts: AgentOptions) {
     }
   };
 
-  // tool_search 工具（延迟加载入口）：检索 + 激活高级工具
-  if (opts.toolLazyLoad) {
-    tools['tool_search'] = {
-      schema: { type: 'function', function: { name: 'tool_search', description: '检索高级工具（按关键词，如 "图片" "网络" "视频"）——命中后该工具立即可用', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
-      danger: false,
-      async run({ query }) {
-        const hits = searchTools(String(query ?? ''), tools);
-        if (!hits.length) return '未找到匹配工具（可用核心工具：' + [...CORE_TOOL_NAMES].filter(n => n !== 'tool_search').join('、') + '）';
-        for (const h of hits) activeToolNames?.add(h.name);
-        return `已激活 ${hits.length} 个工具（下次调用可用）：\n` + hits.map(h => `- ${h.name}：${h.description}`).join('\n');
-      },
-    };
-  }
   const initialToolSync = opts.onToolTableUpdate?.(tools);
   if (initialToolSync && !initialToolSync.ok) {
     throw Object.assign(new Error(`工具目录初始化失败：${initialToolSync.error.code}`), { code: initialToolSync.error.code });
