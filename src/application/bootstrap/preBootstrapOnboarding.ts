@@ -29,10 +29,16 @@ export interface PreBootstrapDecision {
 const VALUE_FLAGS = new Set(['--lang', '--data-dir', '--prompt', '-p', '--cwd', '-C', '--session', '-s', '--port', '--output-schema', '--workspace']);
 const BOOL_FLAGS = new Set(['--help', '-h', '--version', '-v', '--json', '--wire', '--stream-json', '--serve', '--strict-mcp-config', '--ephemeral', '--mcp-server']);
 
+// V4 P5-1/P4-3：子命令命名空间——`wxnodus update|doctor` 后续 token 是子命令旗标
+// （update --skip/--apply/--file/--rollback、doctor local），不属顶层 CLI 旗标面；
+// 严格解析到此为止原样放行（否则 CONFIG_UNKNOWN_FLAG exit 2 误杀子命令）。
+const SUB_COMMANDS = new Set(['update', 'doctor']);
+
 export function parsePreBootstrapArgs(argv: string[]): OperationResult<PreBootstrapArgs> {
   const out: PreBootstrapArgs = { help: false, version: false, nonInteractive: false };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index]!;
+    if (SUB_COMMANDS.has(token)) break; // 子命令命名空间开始——剩余 token 由 CLI 子命令分支解析
     const [flag, inline] = token.startsWith('--') && token.includes('=') ? token.split(/=(.*)/s, 2) : [token, undefined];
     if (BOOL_FLAGS.has(flag)) {
       if (flag === '--help' || flag === '-h') out.help = true;

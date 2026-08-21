@@ -2,8 +2,8 @@
 // src/cli/index.ts — L6-2 CLI 入口（commander + WxNodus UI 装配）
 // 装配：data/config/db/mem/bus/agent → wxGateway（进程内桥接）→ @wxnodus/ink render App
 
-import { join } from 'node:path';
-import { mkdirSync, appendFileSync, readFileSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { mkdirSync, appendFileSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { format } from 'node:util';
 import { parseCronExpr, parseIntervalExpr, cronMatches } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
@@ -130,6 +130,121 @@ if (pre.mode === 'error') {
     // positional 用 indexOf 定位而非 [0]：--data-dir 等带值旗标的值会被宽松解析器收进
     // positional 前部（doctor 未必是首元——与既有宽松解析语义一致）。
     const doctorIdx = opts.positional.indexOf('doctor');
+    // V4 P5-1：wxnodus update 自升级子命令（用户权力——绝不自动安装）
+    //   update [--check]：查 feed 报告（默认即 check，安装需显式 --apply）
+    //   update --apply：下载→sha256→备份→安装→验证（失败自动恢复旧版）
+    //   update --file <zip>：气隙/私有部署本地包安装（同 apply 链路）
+    //   update --skip <ver>：跳过该版本（不再提示）/ update --rollback：回退上一版
+    const updateIdx = opts.positional.indexOf('update');
+    if (updateIdx >= 0) {
+      const subArgs = opts.positional.slice(updateIdx + 1).filter(a => a !== '--check');
+      const { fetchLatestRelease, markVersionSkipped, loadUpdateState, applyUpdate, rollbackUpdate } = await import('../kernel/selfUpdate.js');
+      const feed = (settings.updateFeed as string) || process.env.WXNODUS_UPDATE_FEED || null;
+      const currentVersion = WXNODUS_VERSION;
+
+      if (subArgs[0] === '--skip') {
+        const ver = subArgs[1];
+        if (!ver) { process.stderr.write('用法：wxnodus update --skip <版本号>\n'); process.exit(2); }
+        markVersionSkipped(dataDir, ver);
+        process.stdout.write(`已跳过 ${ver}（该版本不再提示新版本可用）\n`);
+        process.exit(0);
+      }
+      // 安装目录上探（zip 渠道：install-meta.json 所在目录；找不到 null）
+      const findInstallTarget = (): string | null => {
+        let d = dirname(import.meta.url);
+        for (let i = 0; i < 5; i++) {
+          if (existsSync(join(d, 'install-meta.json'))) return d;
+          const p = dirname(d);
+          if (p === d) break;
+          d = p;
+        }
+        return null;
+      };
+      if (subArgs[0] === '--rollback') {
+        const targetDir = findInstallTarget();
+        if (!targetDir) { process.stdout.write('仅离线 zip 安装渠道支持 --rollback（git/npm 渠道用各自包管理器回退）\n'); process.exit(1); }
+        const r = await rollbackUpdate(targetDir);
+        process.stdout.write([...r.steps, ...(r.ok ? [] : [r.error!])].join('\n') + '\n');
+        process.exit(r.ok ? 0 : 1);
+      }
+      if (subArgs[0] === '--apply' || subArgs[0] === '--file') {
+        // 安装链：--file <zip> 本地字节；--apply 从 feed 下载（须有 sha256 或明确无校验提示）
+        let zipBuffer: Buffer;
+        let expectedSha256: string | null = null;
+        try {
+          if (subArgs[0] === '--file') {
+            const p = subArgs[1];
+            if (!p || !existsSync(resolve(startupCwd, p))) { process.stderr.write(`本地包不存在：${p}\n`); process.exit(2); }
+            zipBuffer = readFileSync(resolve(startupCwd, p));
+          } else {
+            const info = await fetchLatestRelease(feed, currentVersion);
+            if (!info.updateAvailable || !info.downloadUrl) {
+              process.stdout.write(`无可升级版本（${info.notes ?? `当前 ${currentVersion} 已是最新`}）\n`);
+              process.exit(0);
+            }
+            process.stdout.write(`下载 ${info.downloadUrl} …\n`);
+            const res = await fetch(info.downloadUrl, { signal: AbortSignal.timeout(300_000) });
+            if (!res.ok) { process.stderr.write(`下载失败：HTTP ${res.status}\n`); process.exit(1); }
+            zipBuffer = Buffer.from(await res.arrayBuffer());
+            expectedSha256 = info.sha256;
+            if (!expectedSha256) process.stdout.write('⚠ feed 未提供 sha256——将跳过完整性校验（私有通道文件请自行核对）\n');
+          }
+          const targetDir = findInstallTarget();
+          if (!targetDir) { process.stdout.write('当前运行产物不在 zip 安装目录内（install-meta.json 未找到）——--apply/--file 仅支持离线 zip 渠道；git/npm 渠道请用 /update 指引的包管理器命令\n'); process.exit(1); }
+          const r = await applyUpdate({
+            zipBuffer,
+            expectedSha256,
+            targetDir,
+            extract: async (buf, dest) => {
+              const { readZip } = await import('../application/release/zipArchive.js');
+              const parsed = readZip(buf);
+              if (!parsed.ok) throw new Error(`zip 解析失败：${parsed.error.code}`);
+              for (const [path, content] of parsed.value) {
+                const out = join(dest, path);
+                mkdirSync(dirname(out), { recursive: true });
+                writeFileSync(out, content);
+              }
+            },
+            runInstaller: async (zipDir, target) => {
+              const { execFile } = await import('node:child_process');
+              const { promisify } = await import('node:util');
+              const execFileAsync = promisify(execFile);
+              try {
+                const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(zipDir, 'install.ps1'), '-TargetDir', target], { windowsHide: true, timeout: 300_000 });
+                return { ok: true, output: String(stdout) };
+              } catch (e: any) { return { ok: false, output: String(e?.message ?? e) }; }
+            },
+            verifyInstalled: async (target) => {
+              try {
+                const { execFile } = await import('node:child_process');
+                const { promisify } = await import('node:util');
+                const { stdout } = await promisify(execFile)(process.execPath, [join(target, 'cli', 'index.js'), '--version'], { windowsHide: true, timeout: 30_000 });
+                const m = /(\d+\.\d+\.\d+)/.exec(String(stdout));
+                return m ? m[1]! : null;
+              } catch { return null; }
+            },
+          });
+          process.stdout.write(r.steps.join('\n') + '\n' + (r.ok ? `\n升级完成——重启 wxnodus 生效（如需回退：wxnodus update --rollback）\n` : `\n${r.error}\n`));
+          process.exit(r.ok ? 0 : 1);
+        } catch (e: any) {
+          process.stderr.write(`更新失败：${String(e?.message ?? e).slice(0, 300)}\n`);
+          process.exit(1);
+        }
+      }
+      // 默认/--check：诚实报告（渠道/版本/feed 比对/跳过状态）
+      const info = await fetchLatestRelease(feed, currentVersion);
+      const state = loadUpdateState(dataDir);
+      const skippedNote = info.latest && state.skipped.includes(info.latest) ? `（已 --skip 跳过）` : '';
+      process.stdout.write([
+        `当前版本：wxnodus ${currentVersion}`,
+        `更新源：${feed ?? '未配置（settings.updateFeed 或 WXNODUS_UPDATE_FEED；气隙部署用 update --file <zip>）'}`,
+        info.latest ? `远程最新：${info.latest}${skippedNote}` : `远程探测：${info.notes ?? '不可用'}`,
+        info.updateAvailable && !skippedNote
+          ? `有新版本可用——wxnodus update --apply 升级（绝不自动安装；sha256 校验+失败自动恢复）/ update --skip ${info.latest} 跳过该版本`
+          : `已是最新（或已跳过）`,
+      ].join('\n') + '\n');
+      process.exit(0);
+    }
     if (doctorIdx >= 0) {
       const { openDB } = await import('../store/db.js');
       const db = openDB(dataDir);
@@ -141,7 +256,8 @@ if (pre.mode === 'error') {
         network: opts.positional[doctorIdx + 1] !== 'local',
       });
       db.close();
-      if (opts.json) {
+      // --json 可出现在子命令命名空间内（doctor local --json——透传后 opts.json 不置位，查 positional）
+      if (opts.json || opts.positional.includes('--json')) {
         process.stdout.write(JSON.stringify({ ok: report.exitCode === 0, ...report }, null, 2) + '\n');
       } else {
         process.stdout.write(renderDoctorText(report));
@@ -190,6 +306,22 @@ if (pre.mode === 'error') {
   let commandBus: any = null;
 
   const { createCliComposition } = await import('../bootstrap/cliComposition.js');
+  // V4 P5-1：启动单次新版本检查——与组合根装配并行（零额外启动延迟；未配 feed 零网络），
+  // 结果在 TUI 启动前一行输出（banner 在首帧之前——不与渲染交错）。绝不自动安装。
+  const feedUrl = (settings.updateFeed as string) || process.env.WXNODUS_UPDATE_FEED || null;
+  const updateBanner = feedUrl
+    ? (async () => {
+        try {
+          const { fetchLatestRelease, loadUpdateState } = await import('../kernel/selfUpdate.js');
+          const info = await fetchLatestRelease(feedUrl, WXNODUS_VERSION, fetch, 4000);
+          const skipped = info.latest && loadUpdateState(dataDir).skipped.includes(info.latest);
+          if (info.updateAvailable && !skipped) {
+            return `↻ 新版本 ${info.latest} 可用：wxnodus update --apply 升级（绝不自动安装）· update --skip ${info.latest} 跳过提示`;
+          }
+        } catch { /* banner 检查失败静默 */ }
+        return null;
+      })()
+    : null;
   const composition = await createCliComposition({
     dataDir,
     config,
@@ -896,6 +1028,12 @@ if (pre.mode === 'error') {
   if (!process.stdout.isTTY) {
     console.log('wxnodus: 非 TTY 环境，请使用 -p 非交互模式');
     await exitAfterShutdown(0, 'non-tty-without-input');
+  }
+
+  // V4 P5-1：新版本 banner（TUI 首帧之前一行输出；组合根期间并行查询的结果）
+  if (updateBanner) {
+    const banner = await updateBanner;
+    if (banner) process.stdout.write(`${banner}\n`);
   }
 
   // Windows cmd 编码修复：默认代码页 936(GBK) 下 UTF-8 边框/中文会乱码——

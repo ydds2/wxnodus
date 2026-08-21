@@ -69,6 +69,12 @@ export function parseArgs(argv: string[]): CliOptions {
   };
   while (i < argv.length) {
     const tok = argv[i]!;
+    // V4 P5-1/P4-3：子命令命名空间（update|doctor）——后续 token 原样进 positional
+    //（子命令旗标如 --skip/--apply/--file/--rollback 不属顶层旗标面，宽松解析器会丢弃）
+    if (tok === 'update' || tok === 'doctor') {
+      out.positional.push(...argv.slice(i));
+      break;
+    }
     const hit = findSpec(tok);
     if (!hit) {
       if (tok.startsWith('-')) { /* 未知 flag 忽略（保持宽松） */ i++; continue; }
@@ -120,6 +126,8 @@ export const USAGE = `WxNodus V3 — Windows 本地 AI agent CLI
   wxnodus --mcp-server              incoming MCP stdio 服务器（双工 discovery/tools）
   wxnodus --serve                   本地 AI 网关（HTTP，Bearer 认证）
   wxnodus doctor [local]            全链路自诊断（exit 0=健康/1=有故障；local 跳过网络项）
+  wxnodus update [--check|--apply|--file <zip>|--skip <ver>|--rollback]
+                                     自升级（绝不自动安装；--apply 失败自动恢复旧版；--file 气隙包）
 
 选项：
   -p, --prompt <text>  非交互单次执行
