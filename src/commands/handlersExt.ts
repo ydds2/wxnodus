@@ -81,6 +81,33 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // ── 档案/记忆/构建/安全/系统类已迁至 ext/profileMemoryBuildCommands.ts（拆分第 3 块 audit §13.46）──
   registerProfileMemoryBuildCommands(bus, ctx);
 
+  // /migrate [status|run]：用户产物迁移框架（V4 P5-2——约束四·迁移兼容权）
+  //   status：产物清单兼容状态（ok/missing/corrupt）+ 迁移历史 + 待执行迁移器
+  //   run：detects→备份→原子应用→失败整体回滚（绝不半迁移）
+  bus.register('/migrate', async (args) => {
+    const { artifactStatus, runMigrations, migrationHistory, ARTIFACT_MIGRATORS } = await import('../kernel/artifactMigration.js');
+    const sub = args[0] ?? 'status';
+    if (sub === 'run') {
+      const r = runMigrations(ctx.dataDir);
+      return lines(' 迁移执行 ', [
+        ...r.steps.map(s => ` ${s}`),
+        ...(r.applied.length ? [` 已应用：${r.applied.join('、')}`] : []),
+        ...(r.ok ? [] : [` ✗ ${r.error}`]),
+        ...(r.backupDir ? [` 备份：${r.backupDir}（回滚出口）`] : []),
+      ]);
+    }
+    if (sub !== 'status') return '用法：/migrate status（产物兼容状态）｜ /migrate run（执行迁移——自动备份+失败整体回滚）';
+    const st = artifactStatus(ctx.dataDir);
+    const hist = migrationHistory(ctx.dataDir);
+    const pending = ARTIFACT_MIGRATORS.filter(m => { try { return m.detects(ctx.dataDir); } catch { return false; } });
+    return lines(' 产物迁移 ', [
+      ...st.map(s => ` ${s.state === 'ok' ? '✓' : s.state === 'missing' ? '·' : '✗'} ${s.spec.id}（${s.spec.path}）${s.state === 'ok' ? `——${s.note}` : s.state === 'missing' ? '——未创建（新装合法）' : `——${s.note}`}`),
+      ` 待执行迁移：${pending.length ? pending.map(m => m.id).join('、') : '无（形态均已是当前版本）'}`,
+      ` 迁移历史：${hist.length ? `${hist.length} 条（最近 ${new Date(hist[hist.length - 1]!.at).toLocaleString('zh-CN', { hour12: false })}）` : '无'}`,
+      ' 说明：升级绝不丢用户资产——/migrate run 自动备份到 migrations/backups/，任一步失败整体回滚',
+    ]);
+  });
+
   // /eco —— Windows 生态互依状态面板（真实探测、结果缓存——反复打开不反复 spawn）
   bus.register('/eco', async () => {
     const { renderEcosystem } = await import('../application/ecosystemStatus.js');

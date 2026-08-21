@@ -42,7 +42,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/build': 'confirm', '/forge': 'confirm', '/skill': 'confirm', '/skill new': 'confirm',
   '/learn': 'confirm', '/assimilate': 'confirm', '/gate': 'confirm', '/fdr': 'confirm',
   '/flow': 'confirm', '/import': 'confirm', '/consent': 'confirm', '/encrypt': 'confirm',
-  '/backup': 'confirm', '/export': 'confirm', '/workspace': 'safe', '/workspace set': 'confirm', '/workspace reset': 'confirm', '/vim': 'safe', '/diff': 'safe', '/diff revert': 'confirm',
+  '/backup': 'confirm', '/export': 'confirm', '/migrate': 'confirm', '/migrate status': 'safe', '/workspace': 'safe', '/workspace set': 'confirm', '/workspace reset': 'confirm', '/vim': 'safe', '/diff': 'safe', '/diff revert': 'confirm',
   '/theme dark': 'confirm', '/theme light': 'confirm',
   '/theme wxnodus': 'confirm', '/lang zh': 'confirm', '/lang en': 'confirm', '/config set': 'confirm',
   '/init': 'confirm', '/render': 'confirm', '/capture': 'confirm', '/input': 'confirm',

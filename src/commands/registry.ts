@@ -14,7 +14,7 @@ export const SLASH: string[] = [
   // 安全（合规红线）
   '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt', '/yolo', '/afk', '/security', '/offline',
   // 系统
-  '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init', '/voice', '/fortune', '/workspace', '/vim', '/diff',
+  '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init', '/voice', '/fortune', '/workspace', '/vim', '/diff', '/migrate',
   // 视觉与媒体（可视化 AI 技能）
   '/vision', '/img', '/video', '/render', '/capture', '/input', '/computer',
   // 网络与集成
@@ -35,6 +35,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆', '/assimilate': '◆',
   '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨', '/offline': '⬇',
+  '/migrate': '◉',
   '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉', '/voice': '◉', '/fortune': '◉', '/workspace': '◉', '/vim': '◉', '/diff': '◉',
   '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿', '/computer': '⛭',
   '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/download': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭', '/remote': '⛭', '/eco': '⛭',
@@ -100,6 +101,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/consent': '授权存证',
   '/audit': '审计导出',
   '/encrypt': '加密工具',
+  '/migrate': '用户产物迁移（升级兼容——自动备份+失败整体回滚）',
   '/backup': '备份',
   '/export': '导出',
   '/theme': '主题切换',
