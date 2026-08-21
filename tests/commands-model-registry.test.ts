@@ -102,3 +102,39 @@ describe('applyModelKey 密钥写入（原 /key set 迁入）', () => {
     expect(s['keyProvider']).toBe('zhipu');
   });
 });
+
+// V4 P4-6（W-5 品类痛点 15）：会话中切模型 → 缓存前缀失效——切换点统一附注
+describe('模型切换缓存提示（P4-6）', () => {
+  it('addCustomModel 自动切换消息含缓存失效提示', () => {
+    const s: Record<string, unknown> = {};
+    const cfg = {
+      get: () => s,
+      getKey: (_p: string, k: string) => s[k],
+      setKey: (_p: string, k: string, v: unknown) => { s[k] = v },
+    } as any;
+    const r = addCustomModel(cfg, { modelIds: ['m1'], baseURL: 'https://relay/v1', name: 'R' });
+    expect(r.message).toContain('缓存前缀失效');
+    expect(r.message).toContain('首次响应会变慢');
+  });
+  it('/model 目录命中切换输出含缓存失效提示（handler 接线）', async () => {
+    const { createCommandBus } = await import('../src/app/CommandBus.js');
+    const { registerCoreHandlers } = await import('../src/commands/handlers.js');
+    const setCalls: Array<[string, string]> = [];
+    const ctx = {
+      dataDir: process.cwd(),
+      cwd: process.cwd(),
+      db: { prepare: () => ({ get: () => undefined, all: () => [] }) },
+      config: { get: () => ({}), getKey: () => undefined, setKey: () => undefined },
+      setModel: (m: string, b: string) => { setCalls.push([m, b]) },
+      openModelPicker: () => {},
+    } as any;
+    const bus = createCommandBus();
+    registerCoreHandlers(bus, ctx);
+    const r = await bus.execute('/model deepseek-chat');
+    expect(r.ok).toBe(true);
+    expect(setCalls.length).toBe(1);
+    expect(setCalls[0]![0]).toBe('deepseek-chat');
+    expect(r.output).toContain('已切换模型');
+    expect(r.output).toContain('缓存前缀失效');
+  });
+});

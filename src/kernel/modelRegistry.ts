@@ -87,9 +87,17 @@ export function addCustomModel(
   audit?.('model.add', { id, baseURL: parsed.baseURL, models: parsed.modelIds });
   return {
     id,
-    message: `已添加自定义接口「${parsed.name}」（档案 ${id}）：${parsed.modelIds.join('、')} @ ${parsed.baseURL}，已切换为 ${parsed.modelIds[0]}${parsed.key ? '（密钥已加密存储）' : '——未配密钥：/model set-key 或选择器内 ^k 配置'}`,
+    message: `已添加自定义接口「${parsed.name}」（档案 ${id}）：${parsed.modelIds.join('、')} @ ${parsed.baseURL}，已切换为 ${parsed.modelIds[0]}${parsed.key ? '（密钥已加密存储）' : '——未配密钥：/model set-key 或选择器内 ^k 配置'}\n${MODEL_SWITCH_CACHE_NOTICE}`,
   };
 }
+
+/**
+ * V4 P4-6（W-5 品类痛点 15）：会话中切换模型的缓存代价提示。
+ * 切模型 → provider 前缀缓存全失效 + 输出分布漂移——首次响应变慢且上下文
+ * 按未命中价重计（缓存节省归零）。切换点统一附注（目录命中/档案命中/add 自动切换）；
+ * 状态栏缓存节省展示已有（保持）。
+ */
+export const MODEL_SWITCH_CACHE_NOTICE = '⚠ 切换模型后缓存前缀失效：首次响应会变慢（上下文按未命中价重新计费，缓存节省从零累积）';
 
 /** 密钥写入选项：profileId=档案密钥槽（并激活）；provider=目录厂商槽位（apiKeys 归属） */
 export interface ModelKeyOptions {

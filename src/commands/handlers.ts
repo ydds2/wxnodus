@@ -10,7 +10,7 @@ import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias, CORE_COMMANDS } from './registry.js';
 import { capabilityBadges, decryptKey, filterModels, maskKey, MODEL_CATALOG, resolveApiKey } from '../kernel/providers.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
-import { parseModelAddArgs, addCustomModel, applyModelKey } from '../kernel/modelRegistry.js';
+import { parseModelAddArgs, addCustomModel, applyModelKey, MODEL_SWITCH_CACHE_NOTICE } from '../kernel/modelRegistry.js';
 import { priceForModel } from '../kernel/cost.js';
 import { sessionCost, costText } from '../kernel/costQuery.js';
 import { snippet } from '../kernel/truncate.js';
@@ -437,7 +437,8 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         if (pHit) {
           ctx.config.setKey('settings', 'activeProvider', pHit.id);
           ctx.setModel(clean, pHit.baseURL);
-          return `已切换档案模型：${clean}（档案 ${pHit.id} · ${pHit.name}）`;
+          return `已切换档案模型：${clean}（档案 ${pHit.id} · ${pHit.name}）
+${MODEL_SWITCH_CACHE_NOTICE}`;
         }
         const filtered = filterModels(q);
         const list = filtered.length ? filtered : MODEL_CATALOG;
@@ -451,7 +452,8 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         return lines(' 模型目录 ', [`未找到「${q}」${filtered.length || profileRows.length ? '，相近模型：' : '，可用模型：'}`, ...list.map(m => ` ${m.name}（${m.provider}）${capabilityBadges(m.capabilities)}${priceSuffix(m.modelId)}`), ...profileRows.slice(0, 8)]);
       }
       ctx.setModel(hit.modelId, hit.baseURL);
-      return `已切换模型：${hit.name}（${hit.provider}）${capabilityBadges(hit.capabilities)}`;
+      return `已切换模型：${hit.name}（${hit.provider}）${capabilityBadges(hit.capabilities)}
+${MODEL_SWITCH_CACHE_NOTICE}`;
     }
     ctx.openModelPicker();
     // 诚实回退：无 TUI 时选择器不可用——给出文本用法而非空输出（TUI 内由本地 slash 拦截，不会到达此处）
