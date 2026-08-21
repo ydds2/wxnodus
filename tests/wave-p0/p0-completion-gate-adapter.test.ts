@@ -147,6 +147,6 @@ describe('completion gate adapter', () => {
   });
 
   it('reports incomplete when no run id is supplied', async () => {
-    expect(await runCompletionGate([])).toBe(3);
+    expect(await runCompletionGate([])).toBe(53);
   });
 });

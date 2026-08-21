@@ -103,8 +103,8 @@ describe('release eligibility adapter', () => {
     }
   });
 
-  it('returns incomplete exit 3 when no gate outcomes file exists', async () => {
-    expect(checkReleaseEligibility(['--gates', 'C:/nonexistent/does-not-exist/gates.json'])).toBe(3);
+  it('returns incomplete exit 53 when no gate outcomes file exists', async () => {
+    expect(checkReleaseEligibility(['--gates', 'C:/nonexistent/does-not-exist/gates.json'])).toBe(53);
   });
 });
 

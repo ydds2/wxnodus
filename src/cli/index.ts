@@ -829,12 +829,12 @@ if (pre.mode === 'error') {
               if (violations.length) {
                 process.stderr.write(`wxnodus: 输出不符合 --output-schema：\n${violations.slice(0, 5).map(v => `  ${v.path || '(根)'}：${v.message}`).join('\n')}\n`);
                 cleanupEphemeral();
-                await exitAfterShutdown(1, 'output-schema-invalid');
+                await exitAfterShutdown(42, 'output-schema-invalid'); // V4 L0-5：输入类错误 42（gemini 语义对齐）
               }
             } catch (e: any) {
               process.stderr.write(`wxnodus: --output-schema 校验异常：${String(e?.message ?? e).slice(0, 120)}\n`);
               cleanupEphemeral();
-              await exitAfterShutdown(1, 'output-schema-error');
+              await exitAfterShutdown(42, 'output-schema-error');
             }
           }
           console.log(JSON.stringify({

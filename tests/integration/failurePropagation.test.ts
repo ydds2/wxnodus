@@ -20,7 +20,7 @@ describe('completion transport propagation', () => {
       succeeded: { processExit: 0, httpStatus: 200, wireFinal: 'succeeded' },
       failed: { processExit: 1, httpStatus: 422, wireFinal: 'failed' },
       blocked: { processExit: 2, httpStatus: 409, wireFinal: 'blocked' },
-      incomplete: { processExit: 3, httpStatus: 424, wireFinal: 'incomplete' },
+      incomplete: { processExit: 53, httpStatus: 424, wireFinal: 'incomplete' }, // V4 L0-5：CLI 退出码品类对齐（gemini 轮次上限语义）
       inconclusive: { processExit: 4, httpStatus: 503, wireFinal: 'inconclusive' },
       cancelled: { processExit: 130, httpStatus: 499, wireFinal: 'cancelled' },
     });

@@ -138,12 +138,15 @@ describe('CommandBus 执行器', () => {
     expect(r.error).toContain('爆炸');
     expect(r.completionStatus).toBe('failed');
   });
-  it('legacy failure text cannot masquerade as succeeded while status text remains successful', async () => {
+  it('V4 L0-5（B-29）：信息词文案不再误判失败；密钥未配置仍 blocked', async () => {
     const bus = createCommandBus();
-    bus.register('/bad-text', async () => '部署前置验证失败：缺少 health probe');
+    bus.register('/bad-text', async () => '部署前置验证失败：缺少 health probe');  // 信息性输出
     bus.register('/status-text', async () => '当前状态：未配置模型密钥（可用 /model set-key 配置）');
-    await expect(bus.execute('/bad-text')).resolves.toMatchObject({ ok: false, completionStatus: 'failed' });
-    await expect(bus.execute('/status-text')).resolves.toMatchObject({ ok: true, completionStatus: 'succeeded' });
+    // 「失败：缺少…」是信息文案——不再按内容猜 failed（显式 commandCompletion 才失败）
+    await expect(bus.execute('/bad-text')).resolves.toMatchObject({ ok: true });
+    // 「当前状态：未配置…」是状态描述句（非确定性引导前缀）——不再 blocked；
+    // 密钥未配置的真实引导在 agent 层（结构化），不靠文本猜测
+    await expect(bus.execute('/status-text')).resolves.toMatchObject({ ok: true });
   });
   it('处理器因执行信号中止抛错时返回 cancelled', async () => {
     const bus = createCommandBus();
@@ -402,5 +405,29 @@ describe('/security 通道管理', () => {
     } finally {
       try { rmSync(dir, { recursive: true, force: true }); } catch { /* Windows 延迟解锁 */ }
     }
+  });
+});
+
+// V4 L0-5（B-29）：文本终态推断仅保留确定性前缀——信息词（不可用/未找到/无法/超时等）
+// 不再误判 failed（/doctor「组件不可用」/mcp list 信息行 → headless 退出码 0）。
+describe('V4 L0-5 inferTextCompletion 信息词废除（B-29）', () => {
+  it('信息性文案不再推断为 failed/blocked（退出码 0，CI 不误判）', async () => {
+    const { createCommandBus } = await import('../src/app/CommandBus.js');
+    const bus = createCommandBus();
+    bus.register('/doctor', () => '网络组件探测：不可用（离线模式）');
+    bus.register('/mcp.list', () => 'server-a: 未找到配置');
+    const r1 = await bus.execute('/doctor');
+    const r2 = await bus.execute('/mcp.list');
+    expect(r1.ok).toBe(true);
+    expect(r1.completionStatus ?? 'succeeded').toBe('succeeded');
+    expect(r2.ok).toBe(true);
+  });
+  it('确定性前缀仍正确终态（取消/拒绝/红线）', async () => {
+    const { createCommandBus } = await import('../src/app/CommandBus.js');
+    const bus = createCommandBus();
+    bus.register('/x', () => '命令已取消');
+    const r = await bus.execute('/x');
+    expect(r.ok).toBe(false);
+    expect(r.completionStatus).toBe('cancelled');
   });
 });

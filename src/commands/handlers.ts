@@ -564,7 +564,11 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const destDir = outArg ? (isAbsolute(outArg) ? outArg : join(root, outArg)) : join(root, 'downloads');
     if (!ctx.download) return '下载服务未装配（fail-closed，不回退）';
     const r = await ctx.download(url, destDir);
-    if (!r.ok) return `下载失败：${r.error.code}${r.error.details ? ` ${JSON.stringify(r.error.details)}` : ''}`;
+    if (!r.ok) {
+      // V4 L0-5（B-29）：显式失败终态——文本推断已删信息词，handler 结构化声明
+      const { commandCompletion } = await import('../app/CommandBus.js');
+      return commandCompletion(`下载失败：${r.error.code}${r.error.details ? ` ${JSON.stringify(r.error.details)}` : ''}`, 'failed', '下载被 SSRF 策略拒绝或失败');
+    }
     return `已下载：${r.value.filePath}（${r.value.bytes} 字节 · sha256=${r.value.sha256}）`;
   });
 

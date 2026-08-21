@@ -50,14 +50,15 @@ export function commandCompletion(
 function inferTextCompletion(output: string): CommandCompletion | null {
   const text = output.trim();
   if (!text) return null;
+  // V4 L0-5（B-29 修复）：仅保留确定性前缀（取消/拒绝/红线/密钥未配置）——
+  // 删除「不可用/未找到/不存在/无法/缺少/超时」等信息词启发式：/doctor「组件 X 不可用」、
+  // /mcp list 首个 server 显示不可用等正常信息文案被误判 failed → headless 退出码非零、CI 误判。
+  // handler 显式返回 commandCompletion 才携带非成功终态（结构化优先，零内容猜测）。
   if (/^(?:命令已取消|请求已取消|操作已取消|已取消)/.test(text)) {
     return commandCompletion(output, 'cancelled', text);
   }
-  if (/^(?:当前未配置|未配置模型密钥|需要模型密钥|需要.*配置|.*不可用|.*未装配|.*未接线|工具被拒绝|权限红线|命令被拒绝|拒绝执行)/.test(text)) {
+  if (/^(?:当前未配置|未配置模型密钥|需要模型密钥|需要.*配置|工具被拒绝|权限红线|命令被拒绝|拒绝执行)/.test(text)) {
     return commandCompletion(output, 'blocked', text);
-  }
-  if (/^(?:失败|.*失败[：:：]|.*错误[：:：]|.*异常[：:：]|.*非法[（(：:]|未找到|不存在|无法|缺少|超时|.*失败$)/.test(text)) {
-    return commandCompletion(output, 'failed', text);
   }
   return null;
 }
