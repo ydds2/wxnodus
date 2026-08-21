@@ -1078,7 +1078,18 @@ export function createAgent(opts: AgentOptions) {
       // 否则模型把新提问当作全新任务，丢失被打断的上下文
       const lastH = history.at(-1);
       if (lastH && (lastH.role === 'tool' || lastH.role === 'user')) {
-        msgs.push({ role: 'system', content: '（上回合任务被打断——请基于以上进度继续完成，而不是重新开始）' });
+        // V4 P2-7：被打断回合的工具产出回放（gemini functionResponse 跨轮可见对标——
+        // 此前 tool 消息被上方循环过滤，「基于以上进度继续」注记与实际不可见的工具产出矛盾）。
+        // DB 无 assistant(tool_calls) 配对消息——原生 tool role 回放会破 OpenAI 协议配对，
+        // 故以聚合块注入（协议安全 + 信息可见性等价）：尾部连续工具结果，有界最近 6 条、每条 300 字。
+        const tailTools: string[] = [];
+        for (let hi = history.length - 1; hi >= 0 && history[hi]!.role === 'tool' && tailTools.length < 6; hi--) {
+          tailTools.unshift(labelTruncate(String(history[hi]!.content ?? ''), 300));
+        }
+        const toolBlock = tailTools.length
+          ? '\n[上回合工具产出（被打断前最近 ' + tailTools.length + ' 条）]\n' + tailTools.join('\n---\n')
+          : '';
+        msgs.push({ role: 'system', content: `（上回合任务被打断——请基于以上进度继续完成，而不是重新开始）${toolBlock}` });
       }
     } catch { /* 历史加载失败不阻断 */ }
     // 召回注入（黑洞引擎：FTS 命中历史上下文；限定当前会话防串记忆）

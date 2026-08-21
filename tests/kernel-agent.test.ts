@@ -1512,3 +1512,33 @@ describe('V4 P2-3 压缩工程', () => {
     } finally { off(); }
   });
 });
+
+// V4 P2-7：被打断后「继续」能看到此前工具产出（gemini functionResponse 跨轮可见对标）。
+describe('V4 P2-7 中断回放工具结果', () => {
+  it('历史尾部 tool 消息 → 继续注记携带工具产出聚合块（模型可见、协议配对安全）', async () => {
+    const sid = 'p207-replay';
+    mem.append(sid, 'user', '查一下这个文件');
+    mem.append(sid, 'assistant', '好的，开始读取');
+    mem.append(sid, 'tool', 'fs_read: 文件内容关键结论 X=42');
+    mem.append(sid, 'tool', 'bash: 测试输出全部通过 12/12');
+    const seen: any[] = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: sid,
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req): Promise<any> => {
+        seen.push(req.messages);
+        return { type: 'text', content: '继续完成' };
+      },
+    });
+    const r = await agent.run('继续');
+    expect(r.text).toBe('继续完成');
+    // 消息序列含工具产出回放（非 tool role——OpenAI 协议配对安全）
+    const flat = JSON.stringify(seen[0]);
+    expect(flat).toContain('上回合工具产出');
+    expect(flat).toContain('X=42');
+    expect(flat).toContain('12/12');
+    expect(flat).toContain('被打断');
+    // 不注入原生 tool role（无 tool_calls 配对——协议 400 风险）
+    expect((seen[0] as any[]).some(m => m.role === 'tool')).toBe(false);
+  });
+});
