@@ -82,21 +82,16 @@ export interface WxGatewayKernel {
 // ── P3 图片附加链路：附件目录 + 待注入图片（pending.json）持久化 ──
 // 共享事实源：kernel/imagePending.ts（命令层 /capture --attach 与 UI 层共用同一契约）
 
-interface PendingApproval {
-  resolve: (choice: string) => void
-}
-
-interface PendingClarify {
-  resolve: (answer: string) => void
-}
-
 export class GatewayClient extends EventEmitter {
   private kernel: WxGatewayKernel
   private subscribed = false
   private bufferedEvents: GatewayEvent[] = []
   private logs: string[] = []
-  private pendingApproval: PendingApproval | null = null
-  private pendingClarify: PendingClarify | null = null
+  // V4 P2-4：审批/澄清多路化（对齐同文件 pendingSecrets/pendingForms 形态）——
+  // 单槽覆盖不解决旧 Promise → 并发审批（并行工具/子代理叠加）被覆盖方永久挂起回合卡死。
+  // request_id 路由 + 超时 fail-closed（审批 deny / 澄清空串）。
+  private pendingApprovals = new Map<string, { resolve: (choice: string) => void; timer: NodeJS.Timeout }>()
+  private pendingClarifies = new Map<string, { resolve: (answer: string) => void; timer: NodeJS.Timeout }>()
   // delegation.status 数据源（活跃子代理集合，agent.subagent 事件驱动）
   private activeSubagents = new Set<string>()
   /** A25：活跃子代理详情（subagent_id → goal/status，subagent.start/complete 事件维护）——
@@ -179,8 +174,17 @@ export class GatewayClient extends EventEmitter {
     }
     this.foregroundAdmission++
     this.running = false
-    this.pendingApproval?.resolve('deny')
-    this.pendingApproval = null
+    // V4 P2-4：全表 fail-closed（此前漏清 pendingClarify——会话切换后无人应答悬挂）
+    for (const [id, p] of this.pendingApprovals) {
+      clearTimeout(p.timer)
+      p.resolve('deny')
+      this.pendingApprovals.delete(id)
+    }
+    for (const [id, c] of this.pendingClarifies) {
+      clearTimeout(c.timer)
+      c.resolve('')
+      this.pendingClarifies.delete(id)
+    }
     return true
   }
 
@@ -463,7 +467,10 @@ export class GatewayClient extends EventEmitter {
       // P1-3 错误码体系：WxError 带 code，其余归 INTERNAL——客户端可区分处理
       const code = e?.code ?? 5001
       const out = { ok: false, code, message: String(e?.message ?? e).slice(0, 300) }
-      this.publish({ type: 'error', payload: out })
+      // V4 P2-5：RPC 失败标 scope='rpc'——UI 侧降级处理（不动 busy/不打断直播；
+      // 此前任意后台 RPC 失败（补全轮询/switcher 1.5s 轮询/paste.collapse）被当回合核心
+      // 错误：recordError 复位 busy + 转写插入 error 行 + setStatus ready——「错误刷屏」根因）
+      this.publish({ type: 'error', payload: { ...out, scope: 'rpc' } })
       return out as T
     }
   }
@@ -1867,9 +1874,14 @@ export class GatewayClient extends EventEmitter {
   private approvalRespond(params: Record<string, unknown>): unknown {
     const choice = String(params.choice ?? 'deny')
 
-    if (this.pendingApproval) {
-      this.pendingApproval.resolve(choice)
-      this.pendingApproval = null
+    // V4 P2-4：按 request_id 路由（并发审批各自独立）；旧 UI 不带 id 时单 pending 兼容
+    const id = String(params.request_id ?? '')
+    const entry = (id && this.pendingApprovals.get(id)) ?? (this.pendingApprovals.size === 1 ? [...this.pendingApprovals.values()][0] : undefined)
+    if (entry) {
+      if (id) this.pendingApprovals.delete(id)
+      else this.pendingApprovals.clear()
+      clearTimeout(entry.timer)
+      entry.resolve(choice)
     }
 
     return { ok: true }
@@ -1878,10 +1890,16 @@ export class GatewayClient extends EventEmitter {
   // C6 修复：clarify 文字提问（独立 pending——不占用审批通道；激活 UI clarify 死分支）
   requestClarify(question: string, choices?: string[]): Promise<string> {
     return new Promise((resolve) => {
-      this.pendingClarify = { resolve }
+      // V4 P2-4：多路 Map + 60s 超时 fail-closed（空串——不悬挂工具调用）
+      const requestId = `clr-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+      const timer = setTimeout(() => {
+        this.pendingClarifies.delete(requestId)
+        resolve('')
+      }, 60_000)
+      this.pendingClarifies.set(requestId, { resolve, timer })
       this.publish({
         type: 'clarify.request',
-        payload: { choices: choices ?? null, question, request_id: `clr-${Date.now().toString(36)}` },
+        payload: { choices: choices ?? null, question, request_id: requestId },
       })
     })
   }
@@ -1889,12 +1907,15 @@ export class GatewayClient extends EventEmitter {
   private clarifyRespond(params: Record<string, unknown>): unknown {
     const answer = String(params.answer ?? '')
 
-    if (this.pendingClarify) {
-      this.pendingClarify.resolve(answer)
-      this.pendingClarify = null
-    } else if (this.pendingApproval) {
-      this.pendingApproval.resolve(answer !== '' ? 'allow' : 'deny')
-      this.pendingApproval = null
+    // V4 P2-4：按 request_id 路由（并发澄清各自独立）。
+    // 删除旧 else-if 审批复用分支——迟到的 clarify.respond 误答进行中 bash 审批（危险死代码）
+    const id = String(params.request_id ?? '')
+    const entry = (id && this.pendingClarifies.get(id)) ?? (this.pendingClarifies.size === 1 ? [...this.pendingClarifies.values()][0] : undefined)
+    if (entry) {
+      if (id) this.pendingClarifies.delete(id)
+      else this.pendingClarifies.clear()
+      clearTimeout(entry.timer)
+      entry.resolve(answer)
     }
 
     return { ok: true }
@@ -2619,7 +2640,14 @@ export class GatewayClient extends EventEmitter {
   // 返回用户选择：'allow'（一次）/ 'session'（本会话）/ 'deny'（拒绝）——Kimi auto_approve_actions 同款
   requestApproval(name: string, args: Record<string, any>): Promise<'allow' | 'session' | 'deny'> {
     return new Promise((resolve) => {
-      this.pendingApproval = { resolve: (choice: string) => resolve(choice === 'deny' ? 'deny' : choice === 'session' ? 'session' : 'allow') }
+      // V4 P2-4：request_id 多路 + 120s 超时 fail-closed（deny——面板未答不悬挂回合）
+      const requestId = `apr-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+      const wrappedResolve = (choice: string) => resolve(choice === 'deny' ? 'deny' : choice === 'session' ? 'session' : 'allow')
+      const timer = setTimeout(() => {
+        this.pendingApprovals.delete(requestId)
+        wrappedResolve('deny')
+      }, 120_000)
+      this.pendingApprovals.set(requestId, { resolve: wrappedResolve, timer })
       const cls = classifyToolAction(name, args)
       // P1 脱敏：审批回显前对疑似凭据形状打码（sk-xxx/Bearer/JWT/KEY=值 等），
       // 防止命令中的密钥在审批面板/日志中明文出现（Hermes _redact_approval_command 同思路）
@@ -2631,6 +2659,7 @@ export class GatewayClient extends EventEmitter {
       this.publish({
         type: 'approval.request',
         payload: {
+          request_id: requestId,
           command: name,
           description: redacted.text,
           allow_permanent: false,

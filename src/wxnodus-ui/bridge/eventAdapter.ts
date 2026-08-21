@@ -922,7 +922,14 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'error':
+      case 'error': {
+        // V4 P2-5：作用域分流——rpc/transient（后台 RPC 失败）只记活动区，不复位 busy、
+        // 不打打断直播、不进转写（agent 仍在跑时 UI 提前 ready/流式段丢失根治）
+        const scope = String(ev.payload?.scope ?? 'core') as 'core' | 'rpc' | 'transient'
+        if (scope !== 'core') {
+          turnController.pushActivity(`rpc: ${String(ev.payload?.message || 'unknown error')}`.slice(0, 120), 'error')
+          return
+        }
         turnController.recordError()
         feed({ type: 'turn.phase', phase: 'failed' })
 
@@ -941,6 +948,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           sys(`error: ${message}`)
           setStatus('ready')
         }
+      }
     }
   }
 }

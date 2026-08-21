@@ -590,7 +590,7 @@ export type GatewayEvent =
       type: 'clarify.request'
     }
   | {
-      payload: { allow_permanent?: boolean; command: string; description: string; tool?: string; category?: string; icon?: string }
+      payload: { request_id?: string; allow_permanent?: boolean; command: string; description: string; tool?: string; category?: string; icon?: string }
       session_id?: string
       type: 'approval.request'
     }
@@ -622,4 +622,4 @@ export type GatewayEvent =
       session_id?: string
       type: 'message.complete'
     }
-  | { payload?: { message?: string }; session_id?: string; type: 'error' }
+  | { payload?: { message?: string; scope?: 'core' | 'rpc' | 'transient' }; session_id?: string; type: 'error' }
