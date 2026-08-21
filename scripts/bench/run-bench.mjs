@@ -17,7 +17,7 @@ const loadTs = async (entry) => {
   const out = buildSync({
     entryPoints: [join(root, entry)],
     bundle: true, platform: 'node', format: 'esm', write: false,
-    external: ['@wxnodus/ink', 'better-sqlite3', 'onnxruntime-node', '@huggingface/transformers', 'sharp'],
+    external: ['@wxnodus/ink', 'better-sqlite3', 'onnxruntime-node', '@huggingface/transformers', 'sharp', 'node-screenshots-win32-x64-msvc', 'robotjs'],
   }).outputFiles[0].text;
   const path = join(tmpDir, entry.replace(/[\\/.]/g, '_') + '.mjs');
   requireCjs('node:fs').mkdirSync(tmpDir, { recursive: true });
@@ -26,6 +26,9 @@ const loadTs = async (entry) => {
 };
 
 const hashMod = await loadTs('src/kernel/hash.ts');
+// V4 P3-7：注入开销审计对象（每轮 system prompt + 工具 schema）
+const sysPromptMod = await loadTs('src/kernel/systemPrompt.ts');
+const toolsMod = await loadTs('src/kernel/tools.ts');
 const { shortHash } = hashMod;
 const diffMod = await loadTs('src/wxnodus-ui/lib/diffHighlight.ts');
 const { diffLines } = diffMod;
@@ -79,4 +82,19 @@ const keyOf = (name) => name.startsWith('shortHash') ? 'shortHash' : name.includ
 console.log('── wxnodus 微基准（确定性纯函数，Windows · Node ' + process.versions.node + '）──');
 for (const r of results) console.log(` ${r.name.padEnd(46)} ${String(r.opsPerSec).padStart(9)} ops/s（${r.elapsed}ms）`);
 console.log('基线：首次运行记录（本表为 2026-08-18 首跑）——后续运行打印相对比率，±20% 视为噪声带。');
+
+// ── V4 P3-7：注入开销基准（每轮固定成本——对照 opencode 7k 档；超档即压减注入）──
+{
+  const rough = (s) => { let t = 0; for (const ch of s) t += ch.charCodeAt(0) > 0x7f ? 1 : 0.25; return Math.round(t); };
+  const sys = sysPromptMod.buildSystemPrompt({ mode: 'smart', cwd: root, model: 'gpt-4o-mini', sessionId: 'bench', hasImageIn: false, lang: 'zh' });
+  const all = toolsMod.coreTools();
+  const schemaTokens = rough(JSON.stringify(toolsMod.toolsToOpenAI(all)));
+  const sysTokens = rough(sys);
+  const total = sysTokens + schemaTokens;
+  const OPENCODE_BASELINE = 7000;
+  console.log('── 注入开销基准（每轮固定成本 · V4 P3-7）──');
+  console.log(` system prompt   ${String(sysTokens).padStart(6)} tokens（${sys.length} chars）`);
+  console.log(` 工具 schema ×${String(Object.keys(all).length).padStart(2)}  ${String(schemaTokens).padStart(6)} tokens`);
+  console.log(` 合计            ${String(total).padStart(6)} tokens（opencode 档 ${OPENCODE_BASELINE}——${total <= OPENCODE_BASELINE ? '✓ 档内' : '✗ 超档需压减'}）`);
+}
 console.log('BENCH_OK');

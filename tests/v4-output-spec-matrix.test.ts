@@ -108,3 +108,18 @@ describe('V4 L0-1 行为断言', () => {
     expect(OUTPUT_SPEC_VERSION).toBeGreaterThanOrEqual(1)
   })
 })
+
+// V4 P3-7：注入开销守卫——每轮固定成本（system prompt + 工具 schema）不超 opencode 7k 档。
+import { buildSystemPrompt } from '../src/kernel/systemPrompt.js';
+import { coreTools, toolsToOpenAI } from '../src/kernel/tools.js';
+
+describe('V4 P3-7 注入开销守卫', () => {
+  it('system prompt + 全量工具 schema ≤ 7000 tokens（opencode 档）——新增工具须压减或按需', () => {
+    const rough = (s: string) => { let t = 0; for (const ch of s) t += ch.charCodeAt(0) > 0x7f ? 1 : 0.25; return Math.round(t); };
+    const sys = buildSystemPrompt({ mode: 'smart', cwd: process.cwd(), model: 'gpt-4o-mini', sessionId: 'guard', hasImageIn: false, lang: 'zh' } as any);
+    const schemas = toolsToOpenAI(coreTools());
+    const total = rough(sys) + rough(JSON.stringify(schemas));
+    // 7k 档 + 10% 容差（架构演进缓冲）；超限即失败——防止悄悄膨胀回 Claude Code 33k
+    expect(total).toBeLessThanOrEqual(7_700);
+  });
+});
