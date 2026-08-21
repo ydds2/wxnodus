@@ -1412,3 +1412,28 @@ describe('V4 P0-9 重试语义双修', () => {
     }
   });
 });
+
+// V4 L0-2 / A-5：连续失败判定确定性化——正常执行但输出含「失败/异常」字样的工具
+// 连续 5+ 次不再误杀回合（grep 中文代码库/读含失败字样日志场景）；真实 failed 仍计数终止。
+describe('V4 L0-2 结构化 outcome：连续失败判定（A-5 误杀根治）', () => {
+  it('连续 6 次输出含「失败」字样但执行成功的工具调用 → 回合不终止、走到最终文本', async () => {
+    // fixture：内容天然含「失败/异常」字样（正常文件——非错误）
+    const d = mkdtempSync(join(tmpdir(), 'wx-a5-'));
+    try {
+      writeFileSync(join(d, 'changelog.txt'), '修复：登录失败重试。已知异常处理。\n', 'utf8');
+      // 每轮不同参数（避开同参 ×5 循环检测护栏——那道护栏行为正确，不在本用例范围）
+      const script: Array<any> = [];
+      for (let i = 0; i < 6; i++) {
+        writeFileSync(join(d, `changelog-${i}.txt`), `第${i}条：登录失败重试修复。已知异常处理。
+`, 'utf8');
+        script.push({ type: 'tool_call', name: 'fs_read', args: { path: join(d, `changelog-${i}.txt`) } });
+      }
+      script.push({ type: 'text', content: '全部读完，回合正常收束' });
+      const agent = makeAgent(script);
+      const r = await agent.run('读六遍');
+      // 修复前（includes 启发式）：第 5 次后 consecutiveFail>=5 → 「同工具连续失败 5 次，已终止」
+      expect(r.text).toBe('全部读完，回合正常收束');
+      expect(String(r.text)).not.toMatch(/连续失败/);
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch { /* EBUSY */ } }
+  });
+});

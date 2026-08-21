@@ -133,6 +133,10 @@ export interface Msg {
   panelData?: PanelData
   role: Role
   text: string
+  /** V4 L0-2：工具结果结构化结局（渲染着色唯一依据——禁止内容正则猜测；未标注一律 dim） */
+  toolOutcome?: 'ok' | 'failed' | 'denied' | 'cached' | 'timeout'
+  /** V4 L0-2：timeline 事件结构化类型（'error'|'ok'|'accent'|具体事件名）——着色映射依据 */
+  eventType?: string
   thinking?: string
   thinkingTokens?: number
   toolTokens?: number

@@ -207,11 +207,13 @@ export const MessageLine = memo(function MessageLine({
 
   // A12：timeline 事件消息（◈ 会话切换/委派完成等）——dim 单行
   if (msg.kind === 'event') {
-    const evColor = /失败|错误|异常|拒绝|无法|未成功|中断/.test(msg.text)
+    // V4 L0-2：事件着色按结构化 type 映射（spec.sessionEventColor 同源语义）；
+    // 旧消息无 type 时统一 muted——渲染侧零正则（三段内容猜测废除）
+    const evColor = msg.eventType === 'error' || msg.eventType === 'job.failed'
       ? t.color.error
-      : /完成|成功|已保存|已删除|已切换|已恢复|已启动|就绪/.test(msg.text)
+      : msg.eventType === 'ok' || msg.eventType === 'job.completed'
         ? t.color.ok
-        : /开始|切换|加载|连接|等待|恢复|构建/.test(msg.text)
+        : msg.eventType === 'accent' || msg.eventType === 'session.switched' || msg.eventType === 'session.restored'
           ? t.color.accent
           : t.color.muted
 
@@ -301,8 +303,9 @@ export const MessageLine = memo(function MessageLine({
       )
     }
     const preview = compactPreview(stripped, Math.max(24, cols - 10)) || '(no output)'
-    // 结果按失败信号着色（失败红色一眼定位；其余 dim）
-    const failed = /失败|错误|异常|不存在|无权限|error|failed|exception/i.test(stripped.slice(0, 200))
+    // V4 L0-2：着色由结构化 toolOutcome 决定（live 链/回放装载填充；规范 docs/output-spec-v1.md）。
+    // 此前按内容正则猜「失败/错误/异常」——中文项目正常输出被误标红（渲染侧零正则禁则）
+    const failed = msg.toolOutcome === 'failed' || msg.toolOutcome === 'timeout' || msg.toolOutcome === 'denied'
 
     return (
       <Box marginLeft={2}>

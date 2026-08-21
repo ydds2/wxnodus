@@ -1276,7 +1276,7 @@ export function createAgent(opts: AgentOptions) {
         const batch = res.calls?.length
           ? res.calls.map(c => ({ id: c.id ?? `call_${Date.now().toString(36)}${turns}`, name: c.name, args: c.args ?? {}, reasoning: c.reasoning, reasoningField: c.reasoningField }))
           : [{ id: res.id ?? `call_${Date.now().toString(36)}${turns}`, name: res.name, args: res.args ?? {}, reasoning: res.reasoning, reasoningField: res.reasoningField }];
-        const executed: Array<{ id: string; name: string; args: Record<string, any>; out: string; reasoning?: string; reasoningField?: string; images?: Array<{ type: 'image_url'; image_url: { url: string } }> | null }> = [];
+        const executed: Array<{ id: string; name: string; args: Record<string, any>; out: string; reasoning?: string; reasoningField?: string; images?: Array<{ type: 'image_url'; image_url: { url: string } }> | null; outcome?: 'verified' | 'failed' | 'other' | 'cached' }> = [];
         let anyFail = false;
         // gap P1-1 落地（2026-08-18）：并行工具调度（gemini scheduler 同款语义）——
         // 批次含任一 danger（写/执行/外联）→ 整批严格串行（保证写后读顺序与审批链）；
@@ -1286,10 +1286,14 @@ export function createAgent(opts: AgentOptions) {
           if (!tools[c.name]) {
             // 未知工具：跳过该调用（计入阈值防模型空转），其余调用继续执行
             unknownRounds++;
-            return { id: c.id, name: c.name, args: c.args, out: `工具 ${c.name} 不存在`, reasoning: c.reasoning, reasoningField: c.reasoningField };
+            return { id: c.id, name: c.name, args: c.args, out: `工具 ${c.name} 不存在`, reasoning: c.reasoning, reasoningField: c.reasoningField, outcome: 'failed' as const };
           }
           unknownRounds = 0;
           const cacheKey = `${c.name}:${JSON.stringify(c.args ?? {})}`;
+          // V4 L0-2：调用级结构化结局（verified/failed/other/cached）——anyFail、消息 parts、
+          // executed 轨迹三处消费同一确定性信号，废除「输出含『失败/异常』子串」内容猜测
+          // （A-5 误杀根治：grep 中文代码库/读含『失败』字样日志不再触发连续失败终止）
+          let callOutcome: 'verified' | 'failed' | 'other' | 'cached' = 'other';
           let out: string;
           let fromCache = false;
           let images: Array<{ type: 'image_url'; image_url: { url: string } }> | null = null;
@@ -1297,10 +1301,12 @@ export function createAgent(opts: AgentOptions) {
             // 同参重复读调用：合并返回缓存（提示模型无需重跑）
             out = `${toolCache.get(cacheKey)}\n（结果已缓存——同参重复调用已合并，无需重跑）`;
             fromCache = true;
+            callOutcome = 'cached';
           } else {
             const imgSlot: { images: Array<{ type: 'image_url'; image_url: { url: string } }> | null } = { images: null };
             out = await executeTool(c.name, c.args, imgSlot);
             const outcome = lastToolOutcome; // 立即捕获本调用的确定性结局（并行下防串扰）
+            callOutcome = outcome;
             // ③ 波 1：图片输入通道——extractImages 在执行现场收集（imgOut 出参，并行安全）；
             // 仅视觉模型会话附加进 msgs（纯文本模型绝不收 dataUrl）
             images = imgSlot.images;
@@ -1336,10 +1342,10 @@ export function createAgent(opts: AgentOptions) {
             // KF-023/024：确定性结局累计——只有真实执行成功（postcondition 通过）的工具计入验证副作用
             if (!fromCache && outcome === 'verified') rs.verifiedEffects++;
           }
-          if (out.includes('失败') || out.includes('异常')) anyFail = true;
+          if (callOutcome === 'failed') anyFail = true; // V4 L0-2：确定性结局（A-5 子串启发式废除）
           // 架构 P4：工具消息写 parts 分段（错误标记/截断标记独立 part——消息粒度可审计）
           try {
-            const failed = out.includes('失败') || out.includes('异常');
+            const failed = callOutcome === 'failed'; // V4 L0-2：结构化结局（消息 parts 错误标记）
             const truncated = out.includes('已截断');
             const parts = [
               { kind: 'tool', name: c.name, ok: !failed },
@@ -1347,7 +1353,7 @@ export function createAgent(opts: AgentOptions) {
             ];
             opts.mem.append(sessionId, 'tool', `${c.name}: ${out.slice(0, 900)}`, undefined, parts);
           } catch { /* 忽略 */ }
-          return { id: c.id, name: c.name, args: c.args, out, reasoning: c.reasoning, reasoningField: c.reasoningField, images };
+          return { id: c.id, name: c.name, args: c.args, out, reasoning: c.reasoning, reasoningField: c.reasoningField, images, outcome: callOutcome };
         };
         const hasWrite = batch.some(c => tools[c.name]?.danger === true);
         if (!hasWrite && mode !== 'manual') {
