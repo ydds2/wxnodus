@@ -2229,22 +2229,37 @@ export const commands = {
     return '用法：/plan on｜off｜save [需求]｜view｜clear';
   });
 
-  // /import <文件>：导入消息（JSON [{role,content}] 或纯文本 → user 消息）回填会话
-  bus.register('/import', (args) => {
+  // /import <文件>：导入消息回填会话。V4 P4-4 增强竞品会话格式嗅探
+  // （kimi /import-from-cc-codex 实证有效——降低 Claude Code/Codex 用户切换成本）：
+  //   ① 竞品 JSONL 自动识别（claude projects / codex rollout——结构特征判定）
+  //   ② 自有 JSON [{role,content}] / /export --jsonl
+  //   ③ 纯文本 → user 消息兜底
+  bus.register('/import', async (args) => {
     const path = args[0];
-    if (!path) return '用法：/import <文件路径>（JSON [{role,content}] 或 JSONL/文本）';
-    // 审查修复：会话统一——导入到当前会话（此前硬编码 default）
+    if (!path) return '用法：/import <文件路径>（自有 JSON/JSONL、Claude Code/Codex 会话 JSONL、纯文本）';
+    // 审计修复：会话统一——导入到当前会话（此前硬编码 default）
     const sid = ctx.agent?.getSessionId?.() ?? 'default';
     let text = '';
     try { text = readFileSync(resolve(process.cwd(), path), 'utf8'); } catch { return `无法读取文件：${path}`; }
     let imported = 0;
     const ins = ctx.db.prepare(`INSERT INTO messages (session_id, role, content, tool_call_id, ts) VALUES (?,?,?,?,?)`);
     const now = Date.now();
-    const push = (role: string, content: string) => {
+    const push = (role: string, content: string, ts?: number) => {
       if (!['user', 'assistant', 'system'].includes(role)) return;
-      ins.run(sid, role, content, null, now + imported);
+      ins.run(sid, role, content, null, ts ?? now + imported);
       imported++;
     };
+    // V4 P4-4：竞品 JSONL 嗅探先行（整体 JSON.parse 对 JSONL 必然失败——先于旧路径判定，
+    // claude/codex 的行结构 {message|payload} 与自有 {role,content} 由引擎统一识别）
+    try {
+      const { parseExternalSessionJsonl } = await import('../kernel/sessionImport.js');
+      const parsed = parseExternalSessionJsonl(text);
+      if (parsed.kind !== 'unknown' && parsed.messages.length) {
+        for (const m of parsed.messages) push(m.role, m.content, m.ts);
+        const kindLabel = { claude: 'Claude Code', codex: 'Codex', wxnodus: 'wxnodus' }[parsed.kind];
+        return `已识别 ${kindLabel} 会话格式——导入 ${imported} 条消息到当前会话（/resume 或直接继续对话）`;
+      }
+    } catch { /* 嗅探失败走旧路径 */ }
     try {
       const data = JSON.parse(text);
       if (Array.isArray(data)) {
@@ -2268,7 +2283,7 @@ export const commands = {
           } catch { /* 坏行跳过 */ }
         }
       }
-      if (!imported) { ctx.mem.append('default', 'user', text); imported = 1; }
+      if (!imported) { ctx.mem.append(sid, 'user', text); imported = 1; }
     }
     return `已导入 ${imported} 条消息到当前会话（/resume 或直接继续对话）`;
   });

@@ -1035,8 +1035,20 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       writeFileSync(out, rows.map(r => JSON.stringify({ ...r, content: redact(r.content), session_id: sid })).join('\n') + '\n', 'utf8');
       return `已导出会话 ${sid} 的 ${rows.length} 条消息（JSONL${sanitize ? '，已脱敏' : ''}）→ ${out}`;
     }
+    // V4 P4-4：--md Markdown 导出（人读/分享/入文档——与 --jsonl 机读互补双格式）
+    if (args[0] === '--md' || args[0] === '--markdown') {
+      const sid = args.find((a, i) => i > 0 && !a.startsWith('--')) ?? ctx.agent?.getSessionId?.() ?? 'default';
+      const rows = ctx.db.prepare(`SELECT role, content, tool_call_id, ts FROM messages WHERE session_id=? ORDER BY id`).all(sid) as any[];
+      if (!rows.length) return '该会话无消息';
+      const { renderSessionMarkdown } = await import('../kernel/sessionImport.js');
+      const title = (ctx.db.prepare(`SELECT title FROM sessions WHERE id=?`).get(sid) as { title?: string } | undefined)?.title;
+      const md = renderSessionMarkdown(sid, rows.map(r => ({ role: String(r.role), content: redact(r.content), tool_call_id: r.tool_call_id, ts: r.ts })), { title });
+      const out = join(ctx.dataDir, `session-${sid.replace(/[^\w-]/g, '').slice(0, 10)}-${Date.now().toString(36)}.md`);
+      writeFileSync(out, md, 'utf8');
+      return `已导出会话 ${sid} 的 ${rows.length} 条消息（Markdown${sanitize ? '，已脱敏' : ''}）→ ${out}`;
+    }
     const q = args.filter(a => a !== '--sanitize').join(' ');
-    if (!q) return '用法：/export <关键词> [--sanitize]（导出匹配的历史消息） ｜ /export --jsonl [会话ID] [--sanitize]（完整会话导出，脱敏可分享）';
+    if (!q) return '用法：/export <关键词> [--sanitize]（导出匹配的历史消息） ｜ /export --jsonl [会话ID] [--sanitize]（完整会话 JSONL） ｜ /export --md [会话ID] [--sanitize]（完整会话 Markdown）';
     const hits = searchMessages(ctx.db, q, { limit: 50 });
     if (!hits.length) return '无匹配';
     const out = join(ctx.dataDir, `export-${Date.now().toString(36)}.json`);
