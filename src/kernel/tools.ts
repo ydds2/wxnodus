@@ -296,7 +296,8 @@ export function coreTools(): Record<string, ToolDef> {
         const afterStart = idx + hit.length;
         const lineEnd = content.indexOf('\n', afterStart);
         const after = lineEnd < 0 ? content.slice(afterStart) : content.slice(afterStart, lineEnd);
-        return `已替换 ${path} 中 1 处\n${renderUnifiedDiff({ newLine, oldText: needle, newText: replacement, before, after })}`;
+        // V4 P2-8：编辑成功后 LSP 诊断回灌（settings.lspFeedback 默认 off；无服务器/超时/空诊断零附加）
+        return `已替换 ${path} 中 1 处\n${renderUnifiedDiff({ newLine, oldText: needle, newText: replacement, before, after })}` + await feedbackDiagnostics(p, ctx);
       } catch (e: any) { return `编辑失败：${e.message}`; }
     },
   };
@@ -1478,12 +1479,41 @@ export function coreTools(): Record<string, ToolDef> {
       if (!text) return '参数错误：patch 不能为空';
       const { applyPatch } = await import('./applyPatch.js');
       const r = await applyPatch(text, { cwd: ctx.cwd, dataDir: ctx.dataDir });
-      return r.text;
+      if (!r.ok) return r.text;
+      // V4 P2-8：补丁成功后对首个被改文件回灌 LSP 诊断（settings.lspFeedback 默认 off）
+      const firstFile = /^diff --git a\/(\S+)/m.exec(r.text)?.[1] ?? '';
+      return r.text + (firstFile ? await feedbackDiagnostics(firstFile, ctx) : '');
     },
   };
   // ── gap P2「LSP 集成」落地（2026-08-18）：诊断/hover/定义三工具 ──
   // settings.lsp.servers 可配任意语言服务器；内置 typescript-language-server 探测
   // （PATH 或 cwd/node_modules/.bin）——缺失时诚实给安装指引，绝不假装诊断。
+  // V4 P2-8：编辑后 LSP 诊断自动回灌（opencode edit.ts touchFile+diagnostics 同族；
+  // crush v0.46 300ms 超时兜底同款）——settings.lspFeedback 默认 off（gemini 文档警告
+  // LSP 内存/失同步成本——两家立场折衷）；无语言服务器零开销；非空诊断截断附工具结果尾。
+  const feedbackDiagnostics = async (path: string, ctx: ToolCtx): Promise<string> => {
+    try {
+      const settings = ctx.getSettings?.() as Record<string, any> | undefined;
+      if (settings?.lspFeedback !== true) return '';
+      const mod = await import('./lspClient.js');
+      const specs = mod.discoverLspServers(settings, ctx.cwd);
+      const spec = mod.serverForFile(specs, resolve(ctx.cwd, path));
+      if (!spec) return ''; // 语言服务器不可用——不拉（零开销诚实省略）
+      const session = await mod.lspSessionFor(spec, ctx.cwd);
+      const abs = resolve(ctx.cwd, path);
+      const { readFileSync: rf } = await import('node:fs');
+      const text = rf(abs, 'utf8');
+      const diags = await Promise.race([
+        session.diagnostics(abs, text),
+        new Promise<Array<never>>(resolve => setTimeout(() => resolve([]), 300)), // 超时兜底：编辑主路径不被 LSP 拖慢
+      ]);
+      if (!diags.length) return '';
+      const shown = diags.slice(0, 10);
+      const head = '\n[LSP 诊断反馈（编辑后自动回灌，settings.lspFeedback 可关）——' + diags.length + ' 条' + (diags.length > 10 ? '（前 ' + shown.length + ' 条）' : '') + ']\n';
+      return head + shown.map(d => '  ' + (d.severity === 'error' ? '✗' : d.severity === 'warning' ? '!' : '·') + ' ' + path + ':' + d.line + ':' + d.col + ' ' + d.message).join('\n');
+    } catch { return ''; } // 回灌失败不影响编辑结果
+  };
+
   const lspRun = async (kind: 'diagnostics' | 'hover' | 'definition', pathArg: unknown, line?: unknown, col?: unknown, ctx?: ToolCtx): Promise<string> => {
     const p = String(pathArg ?? '').trim();
     if (!p) return '参数错误：path 不能为空';
