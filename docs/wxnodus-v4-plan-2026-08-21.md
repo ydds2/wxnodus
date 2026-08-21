@@ -183,6 +183,7 @@ M-1~M-6 照【V3 计划】（黑洞记忆/build/UIA/合规/ACP/语音——含 v
 | V4-M5 对齐+权力 | L4 全部 | 升级/回退/迁移端到端；AGENTS.md 分层生效；doctor 全链路 | 2 周 |
 | > **M5 执行记录（2026-08-21）**：波 4 七卡+波 5 四卡全部落地——AGENTS.md 分层（全局>子目录>仓库根 4 层+projectDocMaxBytes+@file 导入）/stream-json 退出码/doctor 全链路（14 项+CLI exit code）/会话互操作（export --md+竞品 JSONL 嗅探）/vim 接线修复（A-23 Esc 死代码根因+接线层集成测试）/模型切换缓存提示/B 级一揽子九项/wxnodus update 自升级（三原则）/产物迁移框架（清单+dry-run+原子+整体回滚）/只收不出收口（发布侧物理删除+bundle 版本指纹）/P5-4 清理批九项。version **4.0.0-rc.1**，3441 测试全绿+lint 绿。 | | | |
 | 发布 | 4.0.0-rc（内测分发，复用 S-01 私有 release 通道）→ 4.0.0 | §5 全门禁 + 发布链自校验 | — |
+| > **发布门禁执行记录（2026-08-21，rc.1 阶段）**：§5.2 机检门禁全过——`npm run ci` 九命令 exit 0（typecheck/typecheck:tests/build/test:all/known-failures/test-discovery/requirement-coverage/lint/cycles；其中 typecheck:tests 九处历史类型债本批清零）+ `npm run bench` BENCH_OK（四基准 + 注入开销 6689 tokens ≤ opencode 档 7000）。§5.3 手动电池（中文路径/长任务/鲁棒/渲染/升级五组——需真人交互终端）与发布链打包自校验留待 4.0.0 正式发布前人工执行。 | | | |
 
 **总计约 7-9 周**。并行：L0 与 L1 的波 0 可部分并行（不同文件面）；L3 与 L2 可并行；裁撤轨 D 在波 0 后立即启动。
 
