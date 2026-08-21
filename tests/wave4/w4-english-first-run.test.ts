@@ -72,7 +72,7 @@ describeWithDist('DX-05 first-run process contract', () => {
     const r = await run(['--lang', 'en', '--version'], cwd);
     expect(r).not.toBeInstanceOf(Error);
     const out = (r as { stdout: string }).stdout.trim();
-    expect(out).toMatch(/^wxnodus \d+\.\d+\.\d+$/);
+    expect(out).toMatch(/^wxnodus \d+\.\d+\.\d+(-[\w.]+)?$/); // 预发布后缀（4.0.0-rc.1）容纳
   });
 
   it('non-TTY first run never hangs and does not prompt', async () => {

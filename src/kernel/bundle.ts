@@ -228,8 +228,10 @@ export async function useBundle(
 
 /** V4 P5-3：当前 wxnodus 版本 ≥ 最低要求（x.y.z 数值比较；非法声明视为兼容——不误拒旧包） */
 export function bundleVersionOk(minVersion: string, current: string = WXNODUS_VERSION): boolean {
-  const a = String(minVersion).replace(/^[vV]/, '').split('.').map(Number);
-  const b = current.replace(/^[vV]/, '').split('.').map(Number);
+  // 预发布后缀（-rc.1/-alpha 等）剥除后按主三段比较（4.0.0-rc.1 ≥ 4.0.0 语义）
+  const seg = (v: string) => String(v).replace(/^[vV]/, '').split('-')[0]!.split('.').map(Number);
+  const a = seg(minVersion);
+  const b = seg(current);
   if (a.some(n => !Number.isFinite(n)) || b.some(n => !Number.isFinite(n))) return true;
   for (let i = 0; i < 3; i++) {
     if ((a[i] ?? 0) !== (b[i] ?? 0)) return (b[i] ?? 0) > (a[i] ?? 0);
