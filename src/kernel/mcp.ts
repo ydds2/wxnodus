@@ -525,6 +525,8 @@ export async function connectAllMcp(dataDir: string, opts: { cwd?: string; stric
 export function mcpClientsToTools(clients: McpClient[]): Record<string, ToolDef> {
   const out: Record<string, ToolDef> = {};
   for (const c of clients) {
+    // V4 P2-6：per-server 可变槽（respawn 替换 client 后续调用复用）
+    const clientState = { client: c, cooldownUntil: 0 };
     for (const t of c.tools) {
       const full = `mcp__${c.server.name}__${t.name}`;
       out[full] = {
@@ -539,7 +541,7 @@ export function mcpClientsToTools(clients: McpClient[]): Record<string, ToolDef>
         danger: c.server.toolDanger?.[t.name] === true,
         canonical: { namespace: 'mcp', source: c.server.name },
         async run(args, ctx) {
-          return c.callTool(t.name, args, ctx.signal);
+          return callToolWithRespawn(clientState, t.name, args, ctx.signal);
         },
       };
     }
@@ -547,9 +549,48 @@ export function mcpClientsToTools(clients: McpClient[]): Record<string, ToolDef>
   return out;
 }
 
+// ── V4 P2-6：lazy-respawn 自愈（crush lifecycle.go reconcile 同族语义）─────────
+// server 退出后调用失败持续（需手动 /mcp connect）→ 调用时发现已关闭自动重连一次；
+// 重连失败 30s 冷却（防重连风暴——opencode MCP SSE 重连循环教训）；失败诚实回
+// 「server 已退出：<原因>」。重连产物全局追踪，closeAllMcp 统一回收（不泄漏子进程）。
+const RESPAWN_COOLDOWN_MS = 30_000;
+const RESPAWNED = new Set<McpClient>();
+
+async function callToolWithRespawn(
+  state: { client: McpClient; cooldownUntil: number },
+  toolName: string,
+  args: Record<string, any>,
+  signal: AbortSignal | undefined,
+): Promise<string> {
+  try {
+    return await state.client.callTool(toolName, args, signal);
+  } catch (error) {
+    const reason = String((error as { message?: unknown })?.message ?? error);
+    // 非关闭类错误（工具自身失败/超时）不触发重连
+    if (!/已关闭|进程退出|连接关闭|closed/i.test(reason)) throw error;
+    const now = Date.now();
+    if (now < state.cooldownUntil) {
+      const wait = Math.ceil((state.cooldownUntil - now) / 1000);
+      return `MCP ${state.client.server.name} server 已退出：${reason}——重连冷却中（${wait}s 后自动重试，或 /mcp connect ${state.client.server.name} 手动重连）`;
+    }
+    state.cooldownUntil = now + RESPAWN_COOLDOWN_MS;
+    const fresh = await connectMcp(state.client.server).catch(() => null);
+    if (!fresh || !fresh.connected) {
+      return `MCP ${state.client.server.name} server 已退出：${reason}——自动重连失败（${RESPAWN_COOLDOWN_MS / 1000}s 后自动重试，或 /mcp connect 手动重连 / /mcp test 诊断）`;
+    }
+    // 重连成功：复位冷却、槽位替换、旧 client 已死无需 close；新 client 进追踪集
+    state.cooldownUntil = 0;
+    RESPAWNED.add(fresh);
+    state.client = fresh;
+    return await fresh.callTool(toolName, args, signal);
+  }
+}
+
 // 关闭全部客户端；全部尝试后再报告失败。
 export async function closeAllMcp(clients: readonly McpClient[]): Promise<void> {
-  const results = await Promise.allSettled(clients.map(client => Promise.resolve().then(() => client.close())));
+  const all = [...clients, ...RESPAWNED];
+  RESPAWNED.clear();
+  const results = await Promise.allSettled(all.map(client => Promise.resolve().then(() => client.close())));
   const failures = results.filter(result => result.status === 'rejected');
   if (failures.length > 0) throw new Error(`${failures.length} 个 MCP 客户端关闭失败`);
 }
