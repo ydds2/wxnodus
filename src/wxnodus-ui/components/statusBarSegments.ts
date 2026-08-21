@@ -37,7 +37,7 @@ export interface StatusBarState {
   /** 工具执行预算余量（/perm budget 同源；V4 P0-3 联动） */
   budget?: { used: Record<string, number>; limits: Record<string, number> }
   /** 网络重连态（V4 P2-1 重连工程落地时填充） */
-  net?: { reconnecting?: boolean; attempt?: number; nextRetryMs?: number }
+  net?: { reconnecting?: boolean; attempt?: number; nextRetryMs?: number; /** V4 P2-10：429 限额态（resetAt 绝对时刻） */ rateLimitResetAt?: number }
   state: 'busy' | 'ready' | 'error'
   statusText: string
   density?: Density
@@ -129,8 +129,15 @@ export function buildStatusSegments(s: StatusBarState): StatusSegment[] {
     }
   }
 
-  // net 段（cozy/compact）：重连可见性（P2-1「等待网络」模式的展示位）
-  if (density !== 'dense' && s.net?.reconnecting) {
+  // net 段（cozy/compact）：重连可见性（P2-1）+ 429 限额（P2-10——额度 HH:mm 重置，warn）
+  if (density !== 'dense' && s.net?.rateLimitResetAt && s.net.rateLimitResetAt > Date.now()) {
+    segs.push({
+      id: 'net',
+      text: `⏳ 额度 ${new Date(s.net.rateLimitResetAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 重置`,
+      color: 'warn',
+      priority: 70,
+    });
+  } else if (density !== 'dense' && s.net?.reconnecting) {
     const retry = s.net.attempt ? ` 第${s.net.attempt}次` : ''
     const next = s.net.nextRetryMs ? ` ${Math.round(s.net.nextRetryMs / 1000)}s后` : ''
     segs.push({ id: 'net', text: `↻ 重连中${retry}${next}`, color: 'warn', priority: 70 })

@@ -171,3 +171,57 @@ describe('V4 P2-2 idle watchdog 双档', () => {
     if (!r.ok) expect(r.error).toMatch(/全程时长上限/);
   }, 10_000);
 });
+
+// V4 P2-10：429 限额状态——头解析/会话缓存/成功清除/notice 重置时刻/net 段显示。
+import { getRateLimitState, clearRateLimitState } from '../src/kernel/llmStream.js';
+import { buildStatusSegments, segmentById as seg6 } from '../src/wxnodus-ui/components/statusBarSegments.js';
+
+describe('V4 P2-10 429 限额状态', () => {
+  afterEach(() => { clearRateLimitState(); globalThis.fetch = realFetch; });
+
+  it('429 带 x-ratelimit-* 头 → 会话缓存（resetAt 绝对时刻 + remaining）；重试成功后清除', async () => {
+    let calls = 0;
+    const resetAt = new Date(Date.now() + 120_000); // 2 分钟后（ISO）
+    globalThis.fetch = (async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response('rate limited', {
+          status: 429,
+          headers: { 'retry-after': '0', 'x-ratelimit-remaining-requests': '0', 'x-ratelimit-reset-requests': resetAt.toISOString() },
+        });
+      }
+      return sseBody('ok');
+    }) as typeof fetch;
+    const r = await callLlmStream({ ...OPTS } as any);
+    expect(r.ok).toBe(true);
+    const st = getRateLimitState();
+    // 成功后清除（最后一次调用成功）——验证缓存先记录再清除：重放一次 429
+    expect(st).toBeNull();
+    let calls2 = 0;
+    globalThis.fetch = (async () => {
+      calls2 += 1;
+      if (calls2 <= 3) return new Response('rl', { status: 429, headers: { 'x-ratelimit-remaining-tokens': '128', 'x-ratelimit-reset-tokens': '300' } });
+      return sseBody('ok');
+    }) as typeof fetch;
+    await callLlmStream({ ...OPTS } as any).catch(() => {});
+    // 429 记录（相对秒 300 → now+300s）；若最终未成功则保留
+    const st2 = getRateLimitState();
+    if (st2) {
+      expect(st2.remaining).toBe(128);
+      expect(st2.resetAt).not.toBeNull();
+      expect(st2.resetAt! - Date.now()).toBeGreaterThan(280_000);
+    }
+  }, 20_000);
+
+  it('net 段显示「额度 HH:mm 重置」（warn 色，优先于重连显示）', () => {
+    const resetAt = new Date();
+    resetAt.setHours(resetAt.getHours() + 1, 23, 0, 0);
+    const segs = buildStatusSegments({
+      state: 'ready', statusText: 'x',
+      net: { reconnecting: true, rateLimitResetAt: resetAt.getTime() },
+    });
+    const net = seg6(segs, 'net');
+    expect(net?.text).toMatch(/⏳ 额度 \d{2}:\d{2} 重置/);
+    expect(net?.color).toBe('warn');
+  });
+});

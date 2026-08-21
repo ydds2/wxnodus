@@ -156,6 +156,41 @@ const FIRST_CHUNK_DEFAULT_MS = 30_000;
 const CHUNK_GAP_DEFAULT_MS = 60_000;
 const HARD_CAP_DEFAULT_MS = 30 * 60_000;
 
+// ── V4 P2-10：429 限额状态（会话级缓存——状态栏/notice 同源）──────────────
+// codex turn.rs update_rate_limits 同族：x-ratelimit-* 头子集 → 限流状态；
+// 用户分得清「额度用尽」（HH:mm 重置）与「网络故障」（重连）。
+export interface RateLimitState {
+  limitedAt: number;
+  resetAt: number | null;
+  remaining: number | null;
+}
+let rateLimitState: RateLimitState | null = null;
+export function getRateLimitState(): RateLimitState | null { return rateLimitState; }
+export function clearRateLimitState(): void { rateLimitState = null; }
+
+/** x-ratelimit-reset-requests/tokens：ISO 时刻或相对秒数 → 绝对时刻 */
+function parseRateLimitReset(value: string | null, now: number): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    const secs = Number(trimmed);
+    return secs > 0 && secs < 86_400 ? now + secs * 1000 : null; // 相对秒（>24h 视为无效）
+  }
+  const date = Date.parse(trimmed);
+  return Number.isFinite(date) ? date : null;
+}
+
+function recordRateLimit(headers: Headers): void {
+  const now = Date.now();
+  const remainingRaw = headers.get('x-ratelimit-remaining-requests') ?? headers.get('x-ratelimit-remaining-tokens');
+  const resetRaw = headers.get('x-ratelimit-reset-requests') ?? headers.get('x-ratelimit-reset-tokens');
+  rateLimitState = {
+    limitedAt: now,
+    resetAt: parseRateLimitReset(resetRaw, now),
+    remaining: remainingRaw !== null && /^\d+$/.test(remainingRaw) ? Number(remainingRaw) : null,
+  };
+}
+
 function createIdleWatchdog(opts: LlmStreamOpts, external: AbortSignal): {
   signal: AbortSignal;
   feed(): void;
@@ -461,6 +496,7 @@ async function attemptModel(model: string, opts: LlmStreamOpts, signal: AbortSig
   }
   if (!response.ok) {
     wd.dispose();
+    if (response.status === 429) recordRateLimit(response.headers as Headers); // V4 P2-10
     return classifyHttp(response.status, parseRetryAfter(response.headers?.get('retry-after') ?? null, Date.now()));
   }
   try {
@@ -521,15 +557,24 @@ export async function callLlmStream(opts: LlmStreamOpts): Promise<LlmStreamResul
       if (!waited) return { ok: false, error: '请求已中止' };
       waitNetworkSpentMs += delay;
       result = await attemptModel(model, opts, signal);
-      if (result.ok) return { ...result, model };
+      if (result.ok) {
+        clearRateLimitState(); // V4 P2-10：成功响应解除限流态
+        return { ...result, model };
+      }
     }
-    if (result.ok) return { ...result, model };
+    if (result.ok) {
+      clearRateLimitState(); // V4 P2-10：成功响应解除限流态
+      return { ...result, model };
+    }
     lastFailure = result;
 
     // 非-connect 类重试：可见信号（限流/过载/流损坏）
     if (result.kind === 'http-429' || result.kind === 'http-529' || result.kind === 'http-500' || result.kind === 'http-503') {
       const delay = retryDelayMs(result, attempt + 1);
-      const label = result.kind === 'http-429' ? `限流中（${result.retryAfterMs !== undefined ? `Retry-After ${Math.round(result.retryAfterMs / 1000)}s` : '指数退避'}）` : result.kind === 'http-529' ? '服务端过载（更长退避）' : '服务端错误';
+      // V4 P2-10：限流 notice 携带额度重置时刻（x-ratelimit-* 解析——用户分得清额度与故障）
+      const rl = getRateLimitState();
+      const resetTxt = rl?.resetAt ? `，额度 ${new Date(rl.resetAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 重置` : '';
+      const label = result.kind === 'http-429' ? `限流中（${result.retryAfterMs !== undefined ? `Retry-After ${Math.round(result.retryAfterMs / 1000)}s` : '指数退避'}${resetTxt}）` : result.kind === 'http-529' ? '服务端过载（更长退避）' : '服务端错误';
       opts.onRetryNotice?.(`${label}，第 ${attempt + 1} 次重试（${Math.round(delay / 1000)}s 后）`);
     }
     if (result.kind === 'abort' || result.semanticDelta || !isRetryable(result) || attempt === models.length - 1) break;
