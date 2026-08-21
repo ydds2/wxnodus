@@ -504,6 +504,9 @@ export function createAgent(opts: AgentOptions) {
       onToken: streamCtx?.onToken,
       onReasoning: streamCtx?.onReasoning,
       onDegrade: (from, to, status) => bus.emit('system.notice', { text: `模型 ${from} 不可用（HTTP ${status}）——降级到 ${to} 重试` }),
+      // V4 P2-1：重试可见信号（断网/限流/过载——「网络中断，第 n 次重连…」直达状态栏 notice）
+      onRetryNotice: (text) => bus.emit('system.notice', { text }),
+      waitNetworkMs: Number(settingsAny?.waitNetworkMs) > 0 ? Number(settingsAny?.waitNetworkMs) : undefined,
     });
     if (!r.ok) {
       const err = new Error(r.error) as Error & { status?: number };

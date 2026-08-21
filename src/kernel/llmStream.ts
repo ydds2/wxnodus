@@ -6,6 +6,10 @@ const MAX_ATTEMPTS = 4;
 const MAX_TOOL_CALLS = 64;
 const BASE_BACKOFF_MS = 250;
 const MAX_BACKOFF_MS = 10_000;
+// V4 P2-1：等待网络模式（codex UnboundedConnectionRetries 同族语义）——connect 类失败
+// 退避 60s 封顶、总时长上限默认 10min（settings.waitNetworkMs 可配）；Esc（abort signal）随时中止
+const CONNECT_BACKOFF_CAP_MS = 60_000;
+const WAIT_NETWORK_DEFAULT_MS = 10 * 60_000;
 
 type FailureKind =
   | 'http-401'
@@ -15,6 +19,7 @@ type FailureKind =
   | 'http-429'
   | 'http-500'
   | 'http-503'
+  | 'http-529'
   | 'connect'
   | 'abort'
   | 'malformed-sse'
@@ -60,6 +65,10 @@ export interface LlmStreamOpts {
   onReasoning?: (t: string) => void;
   /** Called before an attempt switches to a fallback model. */
   onDegrade?: (from: string, to: string, status: number) => void;
+  /** V4 P2-1：重试可见信号（「网络中断，第 n 次重连…」——agent 侧接 system.notice） */
+  onRetryNotice?: (text: string) => void;
+  /** V4 P2-1：等待网络模式——connect 类失败总时长上限（默认 10min；settings.waitNetworkMs） */
+  waitNetworkMs?: number;
 }
 
 export type LlmStreamResult =
@@ -83,6 +92,7 @@ function classifyHttp(status: number, retryAfterMs?: number): StreamFailure {
     429: 'http-429',
     500: 'http-500',
     503: 'http-503',
+    529: 'http-529', // Anthropic 平台过载（非账户限流——更长退避，可考虑跨 provider 降级）
   };
   return {
     ok: false,
@@ -119,14 +129,17 @@ function failureFromException(error: unknown, signal: AbortSignal, semanticDelta
 }
 
 function isRetryable(failure: StreamFailure): boolean {
-  return failure.kind === 'http-429' || failure.kind === 'http-500' || failure.kind === 'http-503' ||
+  return failure.kind === 'http-429' || failure.kind === 'http-500' || failure.kind === 'http-503' || failure.kind === 'http-529' ||
     failure.kind === 'connect' || failure.kind === 'malformed-sse' || failure.kind === 'premature-eof';
 }
 
 function retryDelayMs(failure: StreamFailure, retryNumber: number): number {
   if (failure.retryAfterMs !== undefined) return failure.retryAfterMs;
-  const exponential = Math.min(BASE_BACKOFF_MS * (2 ** (retryNumber - 1)), MAX_BACKOFF_MS);
-  return Math.min(Math.round(exponential * (1 + Math.random())), MAX_BACKOFF_MS);
+  const cap = failure.kind === 'http-529' ? MAX_BACKOFF_MS * 3 : MAX_BACKOFF_MS; // 529 更长退避（平台级过载）
+  const exponential = Math.min(BASE_BACKOFF_MS * (2 ** (retryNumber - 1)), cap);
+  // V4 P2-1：对称 jitter ±25%（防重试风暴——同刻失败的客户端错峰重试）
+  const jittered = exponential * (0.75 + Math.random() * 0.5);
+  return Math.min(Math.round(jittered), cap);
 }
 
 async function abortableWait(ms: number, signal: AbortSignal): Promise<boolean> {
@@ -392,14 +405,42 @@ export async function callLlmStream(opts: LlmStreamOpts): Promise<LlmStreamResul
   const models = [opts.model, opts.model, ...fallbackModels(opts.model)].slice(0, MAX_ATTEMPTS);
   let lastFailure: StreamFailure | undefined;
 
+  // V4 P2-1：等待网络预算（connect 类专用——不占 MAX_ATTEMPTS 槽位；Esc 经 signal 全程可中止）
+  const waitNetworkBudgetMs = opts.waitNetworkMs ?? WAIT_NETWORK_DEFAULT_MS;
+  let waitNetworkSpentMs = 0;
+  let waitNetworkTries = 0;
+
   for (let attempt = 0; attempt < models.length; attempt++) {
     const model = models[attempt]!;
     if (attempt > 1) {
       opts.onDegrade?.(opts.model, model, lastFailure?.status ?? 0);
     }
-    const result = await attemptModel(model, opts, signal);
+    let result = await attemptModel(model, opts, signal);
+
+    // V4 P2-1：connect 类失败 → 等待网络模式（指数退避 60s 封顶，直至总预算耗尽）
+    while (!result.ok && result.kind === 'connect' && !result.semanticDelta && !signal.aborted
+           && waitNetworkSpentMs < waitNetworkBudgetMs) {
+      waitNetworkTries += 1;
+      const delay = Math.min(
+        Math.min(BASE_BACKOFF_MS * (2 ** (waitNetworkTries - 1)), CONNECT_BACKOFF_CAP_MS),
+        Math.max(0, waitNetworkBudgetMs - waitNetworkSpentMs),
+      );
+      opts.onRetryNotice?.(`网络中断，第 ${waitNetworkTries} 次重连（${Math.round(delay / 1000)}s 后）——Esc 可中止，期间消息不丢失`);
+      const waited = await abortableWait(delay, signal);
+      if (!waited) return { ok: false, error: '请求已中止' };
+      waitNetworkSpentMs += delay;
+      result = await attemptModel(model, opts, signal);
+      if (result.ok) return { ...result, model };
+    }
     if (result.ok) return { ...result, model };
     lastFailure = result;
+
+    // 非-connect 类重试：可见信号（限流/过载/流损坏）
+    if (result.kind === 'http-429' || result.kind === 'http-529' || result.kind === 'http-500' || result.kind === 'http-503') {
+      const delay = retryDelayMs(result, attempt + 1);
+      const label = result.kind === 'http-429' ? `限流中（${result.retryAfterMs !== undefined ? `Retry-After ${Math.round(result.retryAfterMs / 1000)}s` : '指数退避'}）` : result.kind === 'http-529' ? '服务端过载（更长退避）' : '服务端错误';
+      opts.onRetryNotice?.(`${label}，第 ${attempt + 1} 次重试（${Math.round(delay / 1000)}s 后）`);
+    }
     if (result.kind === 'abort' || result.semanticDelta || !isRetryable(result) || attempt === models.length - 1) break;
     const waited = await abortableWait(retryDelayMs(result, attempt + 1), signal);
     if (!waited) {

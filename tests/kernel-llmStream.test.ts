@@ -276,20 +276,20 @@ describe('callLlmStream failure policy', () => {
 })
 
 describe('callLlmStream backoff and isolation', () => {
-  it('uses capped exponential backoff with jitter', async () => {
+  it('uses capped exponential backoff with jitter (V4 P2-1: symmetric ±25%)', async () => {
     vi.useFakeTimers()
-    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    vi.spyOn(Math, 'random').mockReturnValue(0.5) // 对称 jitter 中值 ×1.0（旧乘性为 ×1.5——行为变更显式化）
     const fetchMock = vi.fn(async () => httpResponse(503))
     vi.stubGlobal('fetch', fetchMock)
 
     const pending = callLlmStream({ ...deps, model: 'deepseek-reasoner', messages: [MSG] })
-    await vi.advanceTimersByTimeAsync(374)
+    await vi.advanceTimersByTimeAsync(249)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(1)
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    await vi.advanceTimersByTimeAsync(750)
+    await vi.advanceTimersByTimeAsync(500)
     expect(fetchMock).toHaveBeenCalledTimes(3)
-    await vi.advanceTimersByTimeAsync(1500)
+    await vi.advanceTimersByTimeAsync(1000)
     const result = await pending
 
     expectFailure(result, '503', 503)
