@@ -1032,13 +1032,20 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   });
 
   // 备份
-  bus.register('/backup', () => {
+  bus.register('/backup', async () => {
     const dest = join(ctx.dataDir, 'backups', `backup-${Date.now().toString(36)}`);
     try {
       mkdirSync(dest, { recursive: true });
       for (const f of readdirSync(ctx.dataDir)) {
         if (f === 'backups' || f === 'projects') continue;
-        cpSync(join(ctx.dataDir, f), join(dest, f), { recursive: true });
+        // V4 P3-6（B-7）：nodus.db 改在线备份 API（db.backup 快照一致性——cpSync 复制活动
+        // 库+wal 非同时刻快照，恢复时一致性无保障）；其余文件保持 cpSync
+        if (f === 'nodus.db') {
+          // ctx.db 为已打开连接——直接 backup()（在线快照一致性，无需二次 open）
+          ctx.db.backup(join(dest, f));
+        } else {
+          cpSync(join(ctx.dataDir, f), join(dest, f), { recursive: true });
+        }
       }
       return `备份完成 → ${dest}`;
     } catch (e: any) {

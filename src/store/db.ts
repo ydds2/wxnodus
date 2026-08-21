@@ -5,7 +5,7 @@
 //  - audit 审计哈希链（合规红线：prev_hash 连续，可校验篡改）
 //  - checkpoints 会话快照（差距补齐 #6：限 10 份）
 import { join } from 'node:path';
-import { mkdirSync, renameSync } from 'node:fs';
+import { mkdirSync, renameSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
 import { migrateMemory } from '../infrastructure/sqlite/memoryMigrations.js';
@@ -51,7 +51,16 @@ function openDBUnchecked(dataDir: string, dbFile: string): Db {
   if (settingsCols.length > 0 && !settingsCols.some(c => c.name === 'value')) {
     try { db.close(); } catch { /* 忽略 */ }
     const legacy = join(dataDir, `nodus-legacy-${Date.now()}.db`);
-    try { renameSync(dbFile, legacy); } catch { /* 备份失败仍继续 */ }
+    // V4 P3-6（B-4）：WAL 卫生 + rename 失败显式终止（此前吞掉后无限递归直至栈溢出，
+    // 被包装成误导性「数据库不可用：Maximum call stack…」）
+    for (const suffix of ['-wal', '-shm']) {
+      try { rmSync(dbFile + suffix, { force: true }); } catch { /* 清理失败继续 */ }
+    }
+    try {
+      renameSync(dbFile, legacy);
+    } catch (cause) {
+      throw new Error(`数据库重建失败（旧库改名失败——可能被占用）：${String((cause as Error)?.message ?? cause)}；恢复指引：关闭占用进程后重试，或手动删除 ${dbFile}`);
+    }
     return openDB(dataDir); // 重建
   }
 

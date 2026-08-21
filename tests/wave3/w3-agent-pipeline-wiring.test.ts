@@ -129,9 +129,10 @@ describe('C3 agent 工具经生产 pipeline 分层复用', () => {
     const result = await runner.execute('fs_write', { path: target, content: 'hello' }, toolCtx());
     expect(result).toMatchObject({ ok: true });
     expect(existsSync(target)).toBe(true);
-    // grant 生命周期为 issued→consumed（committed 记入 effect_journal 哈希链，不覆盖 grants.status）
+    // grant 生命周期为 issued→consumed→committed（V4 P3-6/B-6 状态机迁移——committed 记入
+    // effect_journal 哈希链且 grants.status 同步迁移：commit 后不可再 release，双退封死）
     expect(db.prepare('SELECT COUNT(*) c FROM approval_grants').get()).toEqual({ c: 1 });
-    expect(db.prepare("SELECT status FROM approval_grants").get()).toEqual({ status: 'consumed' });
+    expect(db.prepare("SELECT status FROM approval_grants").get()).toEqual({ status: 'committed' });
     const authorization = JSON.parse((db.prepare('SELECT context_json FROM approval_grants').get() as { context_json: string }).context_json);
     expect(authorization).toMatchObject({ actorId: 'actor:test', sessionId: 's1', runId: 'r1' });
     expect(pipeline.uow.verifyJournal()).toMatchObject({ ok: true });

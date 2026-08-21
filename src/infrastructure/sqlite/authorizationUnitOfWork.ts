@@ -94,6 +94,9 @@ export class SqliteAuthorizationUnitOfWork {
         const grant = this.db.prepare(`SELECT status FROM approval_grants WHERE id=?`).get(reservationId) as { status: string } | undefined;
         if (!grant || grant.status !== 'consumed') throw new Rollback(fail('APPROVAL_REPLAYED'));
         this.appendJournal(reservationId, 'committed', { value }, createdAt);
+        // V4 P3-6（B-6）：状态机迁移 committed——此前不迁移：同一 reservation 可 commit 后再
+        // release（预算双退）或 release 两次（进程内 Map 防重，进程重启后 grant 表仍在）
+        this.db.prepare(`UPDATE approval_grants SET status='committed' WHERE id=?`).run(reservationId);
       })();
       return { ok: true, value: undefined };
     } catch (error) { return error instanceof Rollback ? error.result : fail('POLICY_UNAVAILABLE'); }
@@ -103,6 +106,7 @@ export class SqliteAuthorizationUnitOfWork {
     try {
       this.db.transaction(() => {
         const grant = this.db.prepare(`SELECT status FROM approval_grants WHERE id=?`).get(reservationId) as { status: string } | undefined;
+        // V4 P3-6（B-6）：仅 consumed 可 release（committed 的不可再退——双退窗口封死）
         if (!grant || grant.status !== 'consumed') throw new Rollback(fail('APPROVAL_REPLAYED'));
         const budget = this.db.prepare('SELECT id,used_json FROM budget_snapshots WHERE active=1').get() as { id: string; used_json: string } | undefined;
         if (!budget) throw new Rollback(fail('BUDGET_SNAPSHOT_CHANGED'));
@@ -114,6 +118,7 @@ export class SqliteAuthorizationUnitOfWork {
         }
         this.db.prepare('UPDATE budget_snapshots SET used_json=? WHERE id=?').run(JSON.stringify(used), budget.id);
         this.appendJournal(reservationId, 'released', { reservation }, createdAt);
+        this.db.prepare(`UPDATE approval_grants SET status='released' WHERE id=?`).run(reservationId); // V4 P3-6（B-6）
       })();
       return { ok: true, value: undefined };
     } catch (error) { return error instanceof Rollback ? error.result : fail('POLICY_UNAVAILABLE'); }

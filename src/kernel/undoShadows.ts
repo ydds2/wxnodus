@@ -141,10 +141,17 @@ export function snapshotDir(dataDir: string, dir: string, opts: { maxBytes?: num
 export function restoreDirShadows(dataDir: string, dir: string): { ok: number; failed: string[] } {
   const norm = (p: string) => p.replace(/\\/g, '/');
   const target = norm(dir);
-  const shadows = listShadows(dataDir).filter(s => norm(s.path).startsWith(target + '/'));
+  // V4 P3-6（B-1）：按 path 分组取 ts 最大——此前 ts 降序逐份覆盖最终落盘最旧版本（回退方向错误）
+  const newest = new Map<string, UndoShadow>();
+  for (const s of listShadows(dataDir)) {
+    const p = norm(s.path);
+    if (!p.startsWith(target + '/')) continue;
+    const prev = newest.get(p);
+    if (!prev || s.ts > prev.ts) newest.set(p, s);
+  }
   let ok = 0;
   const failed: string[] = [];
-  for (const s of shadows) {
+  for (const s of newest.values()) {
     try {
       if (!existsSync(s.path)) mkdirSync(dirname(s.path), { recursive: true });
       writeFileSync(s.path, s.content, 'utf8');

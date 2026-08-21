@@ -257,14 +257,20 @@ export function createAgent(opts: AgentOptions) {
 
   // 阶段 2（AI 自主触发）：会话首轮自动注入仓库地图 + 技能清单（仅一次）——
   // 模型先看项目结构再动手、自主 skill_load，减少人工 /map 与 /skill list
-  let autoInjectDone = false;
-  let budgetWarned = false;
-  let budgetExceeded = false;
+  // V4 P3-6（B-2）：回合级标志按 sessionId Map 化——agent 经 setSessionId 复用切换会话后，
+  // 旧实例级标志使会话 B 直接继承会话 A 的告警/硬停/水位状态（B 被误硬停或永无水位提示）
+  const sessionFlags = new Map<string, { autoInjectDone: boolean; budgetWarned: boolean; budgetExceeded: boolean; ctxWarned: boolean }>();
+  const flagsFor = (sid: string) => {
+    let f = sessionFlags.get(sid);
+    if (!f) {
+      f = { autoInjectDone: false, budgetWarned: false, budgetExceeded: false, ctxWarned: false };
+      sessionFlags.set(sid, f);
+    }
+    return f;
+  };
   // V4 P2-3：真实 usage 水位源 + 字符估算校准系数（会话级滚动——真实/估算比例的 EMA）
   let lastRealPromptTokens: number | null = null;
   let estCalibration = 1;
-  // 上下文水位预警标记（会话级一次——阈值-10pp 提示主动压缩）
-  let ctxWarned = false;
   // 波 1 ⑤：摘要失败护栏（gemini chatCompressionService.ts:287-321 对标）——按会话隔离
   // （agent 实例可经 setSessionId 复用多会话，失败标记绝不跨会话污染）：失败一次 →
   // 该会话后续压缩直接确定性截断（不再烧 LLM）。summarizeRef 每回合指向当轮
@@ -378,13 +384,14 @@ export function createAgent(opts: AgentOptions) {
   }
 
   function checkBudget(): void {
-    if (!budgetTokens || budgetWarned) return;
+    const flags = flagsFor(sessionId); // V4 P3-6（B-2）：会话隔离标志
+    if (!budgetTokens || flags.budgetWarned) return;
     try {
       const row = opts.db.prepare(`SELECT COALESCE(SUM(input_tokens + output_tokens),0) t FROM usage_stats WHERE session_id=?`).get(sessionId) as { t: number } | undefined;
       const total = row?.t ?? 0;
       if (total > budgetTokens) {
-        budgetWarned = true;
-        budgetExceeded = true;
+        flags.budgetWarned = true;
+        flags.budgetExceeded = true;
         bus.emit('system.notice', {
           text: budgetStop
             ? `会话 token 预算已达上限（${total}/${budgetTokens}）——已硬停（settings.budgetStop=true）；/compact 压缩或 /new 新会话后继续`
@@ -1034,8 +1041,9 @@ export function createAgent(opts: AgentOptions) {
     // ① 顶层结构一行（几十字符：模型有方向感，细节按需 repo_map，不挤占上下文）
     // ② 技能名称清单（一行：模型自主 skill_load）
     // ③ autoRepoMap=true 显式开启时，才注入完整仓库地图（≤400 token，默认关闭）
-    if (!autoInjectDone) {
-      autoInjectDone = true;
+    const flags = flagsFor(sessionId); // V4 P3-6（B-2）
+    if (!flags.autoInjectDone) {
+      flags.autoInjectDone = true;
       try {
         const { scanProject } = await import('./projectScan.js');
         const profile = scanProject(ctxCwd);
@@ -1157,7 +1165,7 @@ export function createAgent(opts: AgentOptions) {
       // （finishEarly 保证 agent.message + agent.end 事件可见，绝不静默空输出）。
       // 同步检查置于门控之前——本回合开始即生效（首个调用也不放过）
       if (budgetStop && budgetTokens) checkBudget();
-      if (budgetExceeded && budgetStop) {
+      if (flagsFor(sessionId).budgetExceeded && budgetStop) {
         return finishEarly(`会话 token 预算已达上限（${budgetTokens}）——settings.budgetStop=true 已停止对话；/compact 压缩上下文或 /new 新会话后继续（/config set budgetStop false 取消硬停）`);
       }
       // 余额耗尽自动停（余额监控实测 0）——同样走 finishEarly 显式失败闭环
@@ -1202,8 +1210,9 @@ export function createAgent(opts: AgentOptions) {
       const compactAt = clampN(settingsAny?.compactionThreshold, 0.75, 0.5, 0.95);
       // 水位预警（会话级一次）：75% 阈值提前告知——用户可主动 /compact，
       // 避免 85% 自动压缩「被动发生」（压缩会丢中间细节，主动压缩可选保留策略）
-      if (used > ctxLimit * (compactAt - 0.10) && !ctxWarned) {
-        ctxWarned = true;
+      const flags = flagsFor(sessionId); // V4 P3-6（B-2）
+      if (used > ctxLimit * (compactAt - 0.10) && !flags.ctxWarned) {
+        flags.ctxWarned = true;
         bus.emit('system.notice', { text: `上下文已用 ${Math.round((used / ctxLimit) * 100)}%（${used.toLocaleString()} token${lastRealPromptTokens !== null ? ' · 真实用量' : ''}）——达到 ${Math.round(compactAt * 100)}% 将自动压缩，可提前 /compact 主动压缩` });
       }
       if (used > ctxLimit * compactAt && msgs.length > 10) {
