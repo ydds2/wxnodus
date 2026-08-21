@@ -2,7 +2,9 @@
 // 每个会话一个 JSONL 事件流文件（data/session-streams/<id>.jsonl）——用户消息/模型回复/
 // 工具执行/审批裁决/压缩时间线完整落盘：审计友好、可重放、可导出分享（含脱敏选项）。
 // 写入失败静默（事件流是增强，不阻断主流程）；渐进式——messages 表仍是查询主源。
-import { appendFileSync, mkdirSync, readdirSync, readFileSync, existsSync } from 'node:fs';
+import { appendFile as appendFileCb, mkdirSync, readdirSync, readFileSync, existsSync, statSync, renameSync, unlinkSync } from 'node:fs';
+import { promisify } from 'node:util';
+const appendFile = promisify(appendFileCb);
 import { join } from 'node:path';
 
 export type SessionEvent =
@@ -27,8 +29,20 @@ function streamFile(dataDir: string, sessionId: string): string {
 export function appendSessionEvent(dataDir: string, sessionId: string, ev: SessionEvent): void {
   try {
     const f = streamFile(dataDir, sessionId);
-    mkdirSync(streamDir(dataDir), { recursive: true });
-    appendFileSync(f, JSON.stringify(ev) + '\n', 'utf8');
+    const dir = streamDir(dataDir);
+    mkdirSync(dir, { recursive: true });
+    // V4 P3-3：同步 appendFileSync 改异步 appendFile（高频事件不阻塞事件循环）+
+    // 5MB 轮转（.1 保留上一代，共 ~10MB 上限；轮转检查在 append 完成后——避免竞争）
+    const line = JSON.stringify(ev) + '\n';
+    void appendFile(f, line, 'utf8').then(() => {
+      try {
+        if (statSync(f).size >= 5 * 1024 * 1024) {
+          const rotated = `${f}.1`;
+          try { unlinkSync(rotated); } catch { /* 无旧档 */ }
+          renameSync(f, rotated);
+        }
+      } catch { /* 轮转失败静默 */ }
+    }).catch(() => { /* 异步落盘失败静默 */ });
   } catch { /* 静默 */ }
 }
 

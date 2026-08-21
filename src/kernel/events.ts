@@ -2,7 +2,7 @@
 // 设计：类型化事件 + 发布订阅 + append-only jsonl 持久化（审计/回放）
 // 参考业界 gateway 事件流（31 种事件映射）与 hook 事件体系
 import { join } from 'node:path';
-import { mkdirSync, appendFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, renameSync, unlinkSync } from 'node:fs';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { RunContext } from '../protocol/runs.js';
 
@@ -57,7 +57,9 @@ export function createEventBus(dataDir: string): EventBus {
   const listeners = new Map<string, Set<Listener>>();
   const history: WxEvent[] = [];
   const runScopes = new WeakMap<RunContext, RunEventScope>();
-  const HISTORY_MAX = 5000; // 内存回放上限，磁盘无上限
+  const HISTORY_MAX = 5000; // 内存回放上限
+  // V4 P3-3：磁盘轮转状态（自上次轮转累计字节；4MB 触发翻卷——.1 保留上一代共 ~8MB 上限）
+  let writtenBytes = 0;
 
   const publish = (type: EventType | string, payload: any, context?: RunContext): WxEvent => {
     const e: WxEvent = {
@@ -72,7 +74,25 @@ export function createEventBus(dataDir: string): EventBus {
         actorId: context.actorId,
       } : {}),
     };
-    try { appendFileSync(file, JSON.stringify(e) + '\n', 'utf8'); } catch { /* 落盘失败不阻断 */ }
+    // V4 P3-3：事件流落盘分级——高频流式事件（agent.token/reasoning.delta：一次长回复
+    // 数千次同步 open/write/close，Windows 上拖慢流式渲染且 events.jsonl 单日数百 MB）
+    // 不落盘（内存 history 与订阅者不受影响；重放完整性由低频事件承载——message/tool/
+    // stage/end 全保留）+ 4MB 轮转（.1 保留上一代——低频事件全量、重放语义完整）。
+    if (type !== 'agent.token' && type !== 'reasoning.delta') {
+      try {
+        const line = JSON.stringify(e) + '\n';
+        appendFileSync(file, line, 'utf8');
+        writtenBytes += line.length;
+        if (writtenBytes >= 4 * 1024 * 1024) {
+          writtenBytes = 0;
+          try {
+            const rotated = `${file}.1`;
+            try { unlinkSync(rotated); } catch { /* 无旧档 */ }
+            renameSync(file, rotated);
+          } catch { /* 轮转失败不阻断 */ }
+        }
+      } catch { /* 落盘失败不阻断 */ }
+    }
     history.push(e);
     if (history.length > HISTORY_MAX) history.shift();
     for (const fn of listeners.get(type) ?? []) {
