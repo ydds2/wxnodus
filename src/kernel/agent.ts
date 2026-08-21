@@ -1035,8 +1035,16 @@ export function createAgent(opts: AgentOptions) {
     }) });
     // 项目规范注入（生态规范文件链）：AGENTS.md/CLAUDE.md/GEMINI.md/.cursorrules 等
     // 首个存在者进系统提示（多工具共存——一套项目规范多 CLI 消费）
-    const projectRules = loadProjectRules(ctxCwd);
-    if (projectRules) msgs.push({ role: 'system', content: `（项目规范 ${projectRules.file}）\n${projectRules.text}` });
+    // V4 P4-1：分层加载（全局 dataDir > 向上 4 层——子目录覆盖仓库根）+ 上限可配（projectDocMaxBytes）
+    const settingsForRules = (opts.config?.settings as any) ?? {};
+    const projectRules = loadProjectRules(ctxCwd, {
+      dataDir: agentDataDir,
+      maxBytes: Number(settingsForRules.projectDocMaxBytes) > 0 ? Number(settingsForRules.projectDocMaxBytes) : undefined,
+    });
+    if (projectRules) {
+      const layerLabel = projectRules.layer === 'global' ? '全局规范' : projectRules.layer === 'subdir' ? '子目录规范' : '仓库规范';
+      msgs.push({ role: 'system', content: `（${layerLabel} ${projectRules.file}——AGENTS.md 项目层与跨会话记忆互补）\n${projectRules.text}` });
+    }
     // 阶段 2（AI 自主触发）：会话首轮极轻量注入（仅一次，防 token 浪费）——
     // ① 顶层结构一行（几十字符：模型有方向感，细节按需 repo_map，不挤占上下文）
     // ② 技能名称清单（一行：模型自主 skill_load）
