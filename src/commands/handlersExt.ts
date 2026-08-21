@@ -7,7 +7,7 @@
 const lines = (title: string, body: string[]): string =>
   [title, ...body.map(l => `  ${l}`)].join('\n');
 import { basename, join, resolve, relative, normalize, sep } from 'node:path';
-import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, renameSync } from 'node:fs';
+import { existsSync, statSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, renameSync } from 'node:fs';
 import { appendAudit } from '../store/db.js';
 import { isCompletionClaim } from '../kernel/completionClaim.js';
 import { parseCronExpr, describeCronExpr } from '../kernel/cronExpr.js';
@@ -2104,7 +2104,14 @@ export const commands = {
     const guardNote = `（护栏：余额 auto-stop ${autoStop ? '开 ✓' : '关'}｜token 预算 ${budget ? `${budget}${hardStop ? ' 硬停 ✓' : ''}` : '未设'}${autoStop || (budget && hardStop) ? '' : '——/balance auto-stop on 或 /config set budgetTokens N budgetStop true 防超支'}）`;
     const rounds: string[] = [];
     const notes: string[] = [];
+    // V4 P2-9：产物基线——任务开始前 projects/ 的最新目录名。验证只认本轮新建/变更项目
+    // （此前取「任意最新旧项目」：模型带 ✅ 输出 + 恰有旧可启动项目 → 假完成 succeeded）
+    const projectsDirBase = join(ctx.dataDir, 'projects');
+    const baselineProject = existsSync(projectsDirBase)
+      ? readdirSync(projectsDirBase).filter(n => n.startsWith('p')).sort().at(-1) ?? null
+      : null;
     const cap = Math.min(maxIter, 8);
+    const goalStartedAt = Date.now(); // V4 P2-9：产物变更判定基准
     let done = false;
     let finalStatus: RunFinalStatus = 'incomplete';
     for (let i = 1; i <= cap; i++) {
@@ -2117,12 +2124,22 @@ export const commands = {
       const runStatus = normalizeAgentRunStatus(r);
       // 中断（Ctrl+C/Esc×2）：如实 cancelled 结束，不空转剩余轮次
       if (runStatus === 'cancelled') { finalStatus = 'cancelled'; break; }
-      const completionClaim = isCompletionClaim(r.text) || r.text.includes('✓ 已完成') || r.text.includes('✅');
+      // V4 P2-9（假完成根治）：仅行首完成声明触发验证——裸 includes('✅') 已删（模型输出
+      // 清单/引用/表情里任意位置的 ✅ 均触发假验证）；prompt 约定「以 ✓ 已完成 开头」故行首匹配
+      const completionClaim = isCompletionClaim(r.text) || /^✓ 已完成/m.test(r.text);
       if (completionClaim) {
         // A22 诚实交付：声称完成 ≠ 完成——有构建产物（projects/ 有项目）才跑真实验证
         // （启动→探活→重启→读回）；验证通过才判完成，无产物/验证失败均不判完成（KF-023 语义）
         const projectsDir = join(ctx.dataDir, 'projects');
         const proj = existsSync(projectsDir) ? readdirSync(projectsDir).filter(n => n.startsWith('p')).sort().at(-1) : null;
+        // V4 P2-9：本轮无新产物（最新项目 == 基线且未变更）→ 不验证不判完成（诚实 incomplete）
+        const projectChanged = proj !== null && (proj !== baselineProject
+          || statSync(join(projectsDir, proj)).mtimeMs > goalStartedAt);
+        if (proj && !projectChanged) {
+          notes.push('⚠ 声称完成但本轮无新建/变更产物（最新项目为任务前基线）——不判完成，诚实 incomplete');
+          finalStatus = 'incomplete';
+          break;
+        }
         if (!proj) {
           notes.push('⚠ 声称完成但无产物可验证（未验证）——不判完成，诚实 incomplete');
           finalStatus = 'incomplete';
