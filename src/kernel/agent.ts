@@ -34,8 +34,9 @@ import { layeredSettings } from './projectConfig.js';
 import type { SubagentDefinition, SubagentRunOptions } from './subagentTypes.js';
 import { createRunContext, type RunContext } from '../protocol/runs.js';
 
-export interface ModelCall { type: 'text'; content: string; reasoning?: string; reasoningField?: string }
-export interface ToolCallMsg { type: 'tool_call'; name: string; args: Record<string, any>; id?: string; reasoning?: string; reasoningField?: string; calls?: Array<{ id: string; name: string; args: Record<string, any>; reasoning?: string; reasoningField?: string }> }
+export interface ModelCall { type: 'text'; content: string; reasoning?: string; reasoningField?: string; usage?: LlmTurnUsage }
+export interface LlmTurnUsage { promptTokens: number; completionTokens: number }
+export interface ToolCallMsg { type: 'tool_call'; name: string; args: Record<string, any>; id?: string; reasoning?: string; reasoningField?: string; usage?: LlmTurnUsage; calls?: Array<{ id: string; name: string; args: Record<string, any>; reasoning?: string; reasoningField?: string }> }
 
 export interface AgentOptions {
   db: Db;
@@ -259,7 +260,10 @@ export function createAgent(opts: AgentOptions) {
   let autoInjectDone = false;
   let budgetWarned = false;
   let budgetExceeded = false;
-  // 上下文水位预警标记（会话级一次——75% 阈值提示主动压缩）
+  // V4 P2-3：真实 usage 水位源 + 字符估算校准系数（会话级滚动——真实/估算比例的 EMA）
+  let lastRealPromptTokens: number | null = null;
+  let estCalibration = 1;
+  // 上下文水位预警标记（会话级一次——阈值-10pp 提示主动压缩）
   let ctxWarned = false;
   // 波 1 ⑤：摘要失败护栏（gemini chatCompressionService.ts:287-321 对标）——按会话隔离
   // （agent 实例可经 setSessionId 复用多会话，失败标记绝不跨会话污染）：失败一次 →
@@ -517,6 +521,8 @@ export function createAgent(opts: AgentOptions) {
       err.status = r.status;
       throw err;
     }
+    // V4 P2-3：真实 usage 回传（水位触发与校准的单一真实源——Anthropic compaction 同族）
+    const turnUsage = r.usage ? { promptTokens: r.usage.promptTokens, completionTokens: r.usage.completionTokens } : undefined;
     // B2 真实用量统计：异步写库（失败静默，不阻断对话）——model 用实际调用模型（降级后）
     // 端点未上报 usage 时记 0 token 行（调用计数仍诚实；/usage unmeasured 单独口径，成本绝不虚高）
     // 成本五维（supremacy 1.4）：输入/输出/缓存命中/缓存未命中/推理 token（端点未上报字段为 0）
@@ -544,9 +550,9 @@ export function createAgent(opts: AgentOptions) {
         reasoningField: r.reasoningField,
       }));
       const first = calls[0]!;
-      return { type: 'tool_call', id: first.id, name: first.name, args: first.args, reasoning: first.reasoning, reasoningField: first.reasoningField, calls };
+      return { type: 'tool_call', id: first.id, name: first.name, args: first.args, reasoning: first.reasoning, reasoningField: first.reasoningField, calls, usage: turnUsage };
     }
-    return { type: 'text', content: r.content, reasoning: r.reasoning, reasoningField: r.reasoningField };
+    return { type: 'text', content: r.content, reasoning: r.reasoning, reasoningField: r.reasoningField, usage: turnUsage };
   };
   const callModel = opts.callModel ?? defaultCallModel;
 
@@ -1103,6 +1109,7 @@ export function createAgent(opts: AgentOptions) {
     const toolList = opts2.subagent ? toolsToOpenAI(Object.fromEntries(Object.entries(toolSource).filter(([n]) => !['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate'].includes(n)))) : toolsToOpenAI(toolSource);
     let turns = 0;
     let consecutiveFail = 0;
+    let compactedThisTurn = false; // V4 P2-3：413 强压重发仅一次（防压缩后仍超限的循环）
     // 深度：签名级循环检测缓冲（最近 EFF.loopSigWindow 轮工具调用签名——含输出短哈希）
     const recentToolSigs: string[] = [];
     // 循环提醒已注入标记（gap P1-2：分级响应——提醒只注入一次防刷屏，硬停阈值后置）
@@ -1170,14 +1177,45 @@ export function createAgent(opts: AgentOptions) {
         ? Math.min(modelCtx ?? FALLBACK_CTX_TOKENS, FALLBACK_CTX_TOKENS)
         : (opts.maxContextTokens ?? modelCtx ?? FALLBACK_CTX_TOKENS);
       const ctxLimit = Math.max(4_000, ctxBase - outReserve);
-      const used = estimateMessagesTokens(msgs);
+      // V4 P2-3：真实 usage 优先（Anthropic compaction 口径——服务端 token 计数为准）；
+      // 估算经校准系数修正（真实/估算 EMA）；无真实值时退化为校准估算。保守取大值。
+      const estRaw = estimateMessagesTokens(msgs);
+      if (lastRealPromptTokens !== null && estRaw > 0) {
+        estCalibration = estCalibration * 0.7 + (lastRealPromptTokens / estRaw) * 0.3;
+      }
+      const used = lastRealPromptTokens !== null
+        ? Math.max(lastRealPromptTokens, Math.round(estRaw * estCalibration))
+        : estRaw;
+      // V4 P2-3：阈值可配（默认 0.75 提早压缩——Anthropic 60-80% 口径；95% 后再压已迟：
+      // 大请求反复超限连环失败 5-15min。settings.compactionThreshold 对齐 gemini compressionThreshold）
+      const compactAt = clampN(settingsAny?.compactionThreshold, 0.75, 0.5, 0.95);
       // 水位预警（会话级一次）：75% 阈值提前告知——用户可主动 /compact，
       // 避免 85% 自动压缩「被动发生」（压缩会丢中间细节，主动压缩可选保留策略）
-      if (used > ctxLimit * 0.75 && !ctxWarned) {
+      if (used > ctxLimit * (compactAt - 0.10) && !ctxWarned) {
         ctxWarned = true;
-        bus.emit('system.notice', { text: `上下文已用 ${Math.round((used / ctxLimit) * 100)}%（${used.toLocaleString()} token）——达到 85% 将自动压缩，可提前 /compact 主动压缩` });
+        bus.emit('system.notice', { text: `上下文已用 ${Math.round((used / ctxLimit) * 100)}%（${used.toLocaleString()} token${lastRealPromptTokens !== null ? ' · 真实用量' : ''}）——达到 ${Math.round(compactAt * 100)}% 将自动压缩，可提前 /compact 主动压缩` });
       }
-      if (used > ctxLimit * 0.85 && msgs.length > 10) {
+      if (used > ctxLimit * compactAt && msgs.length > 10) {
+        // V4 P2-3：micro-compaction 先行——旧工具结果裁剪（尾部 6 条消息外 tool 内容截断
+        // 到 500 字；kimi 0.12 默认开启同族语义）。轻裁后若已降到阈值下，跳过全量压缩
+        // （保近轮完整 + 省一次摘要 LLM 调用与前缀缓存）。
+        let freed = 0;
+        const keepRecent = 6;
+        for (let mi = 0; mi < msgs.length - keepRecent; mi++) {
+          const mm = msgs[mi] as { role?: string; content?: unknown };
+          if (mm?.role !== 'tool') continue;
+          const text = typeof mm.content === 'string' ? mm.content : '';
+          if (text.length > 800) {
+            mm.content = `${text.slice(0, 500)}\n[micro-compaction：旧工具结果已裁剪（原 ${text.length} 字）]`;
+            freed += text.length - 500;
+          }
+        }
+        if (freed > 0) {
+          const afterMicro = estimateMessagesTokens(msgs);
+          if (afterMicro <= ctxLimit * compactAt) {
+            bus.emit('system.notice', { text: `micro-compaction：裁剪旧工具结果腾出空间（${used} → ${afterMicro} token）——保留近轮完整，未触发全量压缩` });
+          }
+        }
         // P1-1：preCompact hook 可阻止压缩（输出 BLOCK）
         if (hooks?.preCompact?.(`auto: ${used}/${ctxLimit}`)) {
           bus.emit('system.notice', { text: '压缩被 hook 阻止（preCompact BLOCK）' });
@@ -1233,6 +1271,21 @@ export function createAgent(opts: AgentOptions) {
         res = await callWithAbort({ messages: msgs, tools: toolList });
       } catch (e: any) {
         if (st.aborted) { st.interrupted = true; break; }
+        // V4 P2-3：413/context-length 语义捕获 → 强制压缩后自动重发一次
+        // （kimi 0.20.2 同族；此前只提示手动 /compact——超限回合直接报废）
+        const overLimit = e?.status === 413 || /context length|maximum context|context_window|too many tokens/i.test(String(e?.message ?? ''));
+        if (overLimit && !compactedThisTurn) { // 超限是服务端事实——不受 msgs>10 门槛（水位压缩的门槛不适用于救场）
+          compactedThisTurn = true;
+          bus.emit('system.notice', { text: '上下文超限（413/context length）——强制压缩后自动重发…' });
+          const condensed2 = await compactMessages(msgs as any, sessionSummarizeFor(sessionId), {});
+          msgs.splice(0, msgs.length, ...condensed2);
+          try {
+            const { appendSessionEvent } = await import('./sessionStream.js');
+            appendSessionEvent(agentDataDir, sessionId, { type: 'compact', summary: 'over-limit forced', before: used, after: estimateMessagesTokens(msgs), ts: Date.now() });
+          } catch { /* 静默 */ }
+          try { res = await callWithAbort({ messages: msgs, tools: toolList }); } catch { /* 重发仍失败落入下方常规错误路径 */ }
+          if (res) { lastRealPromptTokens = res.usage?.promptTokens ?? lastRealPromptTokens; continue; }
+        }
         // 4xx 确定性错误（密钥无效/模型不存在/请求非法等）：不重试，立即反馈——
         // 否则无效 key 会空转 ~6s（3 次退避重试）才显示错误，被误判为「卡死」。
         // 429 限流除外：mapHttpError 语义为稍后重试，保留退避重试。
@@ -1262,6 +1315,8 @@ export function createAgent(opts: AgentOptions) {
         // 重试成功的 res 直接落入下方正常处理（text/tool_call 分支）。
         if (!res) continue; // definite-assignment 防御（理论不可达：interrupted 已 break、耗尽已 return）
       }
+      // V4 P2-3：捕获本轮真实 usage（下一轮水位触发的单一真实源）
+      if (res.usage) lastRealPromptTokens = res.usage.promptTokens;
       if (res.type === 'text') {
         finalText = res.content;
         // 架构 P3：模型文本回复入事件流

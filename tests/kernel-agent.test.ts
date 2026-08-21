@@ -1452,3 +1452,63 @@ describe('V4 P1-6 参数 JSON 坏回喂自纠', () => {
     expect(r.text).toBe('收到错误后自纠完成');
   });
 });
+
+// V4 P2-3：Anthropic 式压缩工程——真实 usage 水位 / micro-compaction / 413 强压重发。
+describe('V4 P2-3 压缩工程', () => {
+  const seedHistory = (sid: string, n = 8): void => {
+    for (let i = 0; i < n; i++) mem.append(sid, i % 2 === 0 ? 'user' : 'assistant', `历史消息 ${i}：内容`.repeat(4));
+  };
+
+  it('真实 usage 优先：tool_call 回传 usage.promptTokens 驱动次轮水位（触发压缩/micro）', async () => {
+    const sid = 'p203-real';
+    seedHistory(sid);
+    let call = 0;
+    const notices: string[] = [];
+    const off = bus.on('system.notice', (e: any) => notices.push(String(e?.payload?.text ?? '')));
+    try {
+      const agent = createPipelineAgent({
+        db, bus, mem, sessionId: sid,
+        config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+        maxContextTokens: 4_000,
+        callModel: async (): Promise<any> => {
+          call += 1;
+          if (call === 1) return { type: 'tool_call', name: 'fs_read', args: { path: 'package.json' }, usage: { promptTokens: 9_000, completionTokens: 5 } };
+          return { type: 'text', content: 'ok' };
+        },
+      });
+      const r = await agent.run('hi');
+      expect(r.text).toBe('ok');
+      // 真实 9000 > 4000×0.75 → 次轮前触发（真实用量驱动——字符估算此时远低于 9000）
+      expect(notices.some(n => /压缩|micro-compaction/.test(n))).toBe(true);
+    } finally { off(); }
+  });
+
+  it('413 超限 → 强制压缩后自动重发（不再只提示手动 /compact）', async () => {
+    const sid = 'p203-413';
+    seedHistory(sid);
+    let call = 0;
+    const notices: string[] = [];
+    const off = bus.on('system.notice', (e: any) => notices.push(String(e?.payload?.text ?? '')));
+    try {
+      const agent = createPipelineAgent({
+        db, bus, mem, sessionId: sid,
+        config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+        maxContextTokens: 4_000,
+        callModel: async (): Promise<any> => {
+          call += 1;
+          if (call === 1) return { type: 'tool_call', name: 'fs_read', args: { path: 'package.json' }, usage: { promptTokens: 60_000, completionTokens: 5 } };
+          if (call === 2) return { type: 'text', content: '<state_snapshot>摘要</state_snapshot>' }; // 水位压缩 summarize 独立调用
+          if (call === 3) {
+            const err = new Error('requested context length exceeds the maximum context length') as Error & { status?: number };
+            err.status = 413;
+            throw err;
+          }
+          return { type: 'text', content: '压缩后重发成功' };
+        },
+      });
+      const r = await agent.run('任务');
+      expect(r.text).toContain('压缩后重发成功');
+      expect(notices.some(n => /强制压缩/.test(n))).toBe(true);
+    } finally { off(); }
+  });
+});
