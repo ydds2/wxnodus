@@ -219,9 +219,9 @@ export function renderEvent(ev: OutputEvent, density: Density): RenderBlock[] {
     }
     case 'turn-summary': {
       const parts = [
-        `${ev.turns} 轮`,
+        `${ev.turns} 调用`,   // turns 语义=回合内工具调用次数（flowController 按 tool start 计）
         `${fmtKTokens(ev.tokens)} tokens`,
-        ev.costUsd > 0 ? `$${ev.costUsd < 0.01 ? ev.costUsd.toFixed(4) : ev.costUsd.toFixed(2)}` : null,
+        ev.costUsd > 0 ? `$${ev.costUsd < 1 ? ev.costUsd.toFixed(4) : ev.costUsd.toFixed(2)}` : null,
         fmtDuration(ev.durationMs),
       ].filter((p): p is string => p !== null)
       return [{ kind: 'summary', glyph: '◦ ', text: parts.join(' · '), color: 'muted', dim: true, indent: 1 }]

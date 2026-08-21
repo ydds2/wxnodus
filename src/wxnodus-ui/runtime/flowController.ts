@@ -131,6 +131,9 @@ export class TurnController {
   pendingSegmentTools: string[] = []
   statusTimer: Timer = null
   toolTokenAcc = 0
+  // V4 L0-3：turn-summary 数据源——本回合工具批次数与回合起点（收官时写入 trail 消息）
+  turnToolRounds = 0
+  turnStartedAt = Date.now()
   turnTools: string[] = []
 
   private activeTools: ActiveTool[] = []
@@ -564,6 +567,13 @@ export class TurnController {
   }
 
   recordMessageComplete(payload: { rendered?: string; reasoning?: string; text?: string; todos?: unknown }) {
+    // V4 L0-3：捕获本回合 turn-summary 数据（收官写入 trail 消息；随后重置供下回合）
+    const turnSummary = {
+      turns: this.turnToolRounds,
+      tokens: this.toolTokenAcc,
+      costUsd: 0, // 回合级成本暂不可得（usage.cost_usd 为会话累计）——spec 规则 cost>0 才显示
+      durationMs: Math.max(0, Date.now() - this.turnStartedAt),
+    }
     // A22：回合收官清单（骨架让位后为空则清空，避免纯文本回答归档假骨架）
     if (payload.todos !== undefined) {
       this.recordTodos(payload.todos)
@@ -618,8 +628,12 @@ export class TurnController {
       thinking: finalThinking || undefined,
       thinkingTokens: finalThinking ? estimateTokensRough(finalThinking) : undefined,
       toolTokens: savedToolTokens || undefined,
+      turnSummary, // V4 L0-3：回合尾摘要行（◦ N 调用 · X tokens · Zs）
       ...(tools.length && { tools })
     }
+    // V4 L0-3：回合计数归零、起点重置（下回合从 0 计）
+    this.turnToolRounds = 0
+    this.turnStartedAt = Date.now()
 
     // Archive prepended so the trail msg anchors under the user prompt,
     // not between thinking/tools and final assistant text.
@@ -845,6 +859,7 @@ export class TurnController {
     const sample = `${name} ${context}`.trim()
 
     this.toolTokenAcc += sample ? estimateTokensRough(sample) : 0
+    this.turnToolRounds += 1 // V4 L0-3：turn-summary 回合工具计数
     this.activeTools = [...this.activeTools, { context, id: toolId, name, startedAt: Date.now(), verboseArgs }]
 
     patchTurnState({ toolTokens: this.toolTokenAcc, tools: this.activeTools })

@@ -21,8 +21,6 @@ import { transcriptBodyWidth, transcriptGutterWidth } from '../lib/inputMetrics.
 import {
   boundedLiveRenderText,
   compactPreview,
-  estimateTokensRough,
-  fmtK,
   hasAnsi,
   isPasteBackedText,
   sanitizeAnsiForRender,
@@ -41,6 +39,9 @@ import { getTuiDensity } from '../config/density.js'
 import type { ActiveTool, DetailsMode, Msg, Role, SectionVisibility } from '../types.js'
 
 import { Md } from './markdown.js'
+import { msgToOutputEvents } from '../output/bridge.js'
+import { renderEvent } from '../output/spec.js'
+import { BlockListView } from '../output/tui.js'
 import { StreamingMd } from './streamingMarkdown.js'
 import { PeerToolTrail } from './peerTrail.js'
 import { DiffRenderer } from './diffRenderer.js'
@@ -146,8 +147,6 @@ export const MessageLine = memo(function MessageLine({
   // Collapse toggle for long system messages
   const systemIsLong = msg.role === 'system' && msg.text.length > SYSTEM_COLLAPSE_CHARS
   const [systemOpen, setSystemOpen] = useState(false)
-  // finalDetails 推理折叠态（默认折叠——对标 Claude Code 推理不可见、按需展开）
-  const [reasoningOpen, setReasoningOpen] = useState(false)
 
   // ── A19：鼠标点选辅助 ────────────────────────────────────────────────
   // 消息行只订阅 $selectedMessage（hint 变化不重渲染全部消息行）。
@@ -207,23 +206,16 @@ export const MessageLine = memo(function MessageLine({
 
   // A12：timeline 事件消息（◈ 会话切换/委派完成等）——dim 单行
   if (msg.kind === 'event') {
-    // V4 L0-2：事件着色按结构化 type 映射（spec.sessionEventColor 同源语义）；
-    // 旧消息无 type 时统一 muted——渲染侧零正则（三段内容猜测废除）
-    const evColor = msg.eventType === 'error' || msg.eventType === 'job.failed'
-      ? t.color.error
-      : msg.eventType === 'ok' || msg.eventType === 'job.completed'
-        ? t.color.ok
-        : msg.eventType === 'accent' || msg.eventType === 'session.switched' || msg.eventType === 'session.restored'
-          ? t.color.accent
-          : t.color.muted
-
-    return (
-      <Box flexDirection="column" marginTop={1}>
-        <Text color={evColor} wrap="truncate-end">
-          {' '}{icon('diamond')} {msg.text}
-        </Text>
-      </Box>
-    )
+    // V4 L0-3：走 spec 渲染（形态/着色出自 output/spec.ts 单一事实源；
+    // eventType 结构化映射零内容正则——L0-2 已删三段猜测，此版收敛到 renderEvent）
+    const events = msgToOutputEvents(msg)
+    if (events.length) {
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <BlockListView blocks={events.flatMap(ev => renderEvent(ev, 'cozy'))} t={t} />
+        </Box>
+      )
+    }
   }
 
   // 全面替换：Todo 面板不再渲染（对标 Claude Code——清单不占对话流）
@@ -243,41 +235,25 @@ export const MessageLine = memo(function MessageLine({
   // 推理默认折叠为一行「▸ 推理 (N tokens)」（点击展开 dim 全文，≤4000 字符）；
   // token 摘要 dim 一行——对标 Claude Code 回合尾部用量行
   if (msg.kind === 'trail') {
-    const thinking = (msg.thinking ?? '').trim()
-    const tokens = (msg.toolTokens ?? 0) + (msg.thinkingTokens ?? 0)
-
-    if (!thinking && !tokens) {
+    // V4 L0-3：trail 走 spec（推理统一 FoldHeader 折叠 + turn-summary 回合尾行
+    // 「◦ N 调用 · X tokens · Zs」——形态出自 output/spec.ts，废除本组件内联格式）
+    const events = msgToOutputEvents(msg)
+    if (!events.length) {
       return null
     }
-
     return (
       <Box flexDirection="column" marginTop={leadGap ? 1 : 0}>
-        {thinking ? (
-          <Box flexDirection="column">
-            <Box onClick={() => setReasoningOpen(v => !v)}>
-              <Text color={t.color.muted}>
-                {reasoningOpen ? '▾ ' : '▸ '}
-                推理
+        <BlockListView
+          blocks={events.flatMap(ev => renderEvent(ev, 'cozy'))}
+          foldedBodies={events.map(ev =>
+            ev.kind === 'reasoning' ? (
+              <Text color={t.color.muted} dimColor wrap="truncate-end">
+                {boundedLiveRenderText(ev.text, { maxChars: 4000, maxLines: 12 })}
               </Text>
-              <Text color={t.color.muted} dimColor>
-                {' '}
-                ({fmtK(msg.thinkingTokens ?? estimateTokensRough(thinking))} tokens)
-              </Text>
-            </Box>
-            {reasoningOpen && (
-              <Box marginLeft={2}>
-                <Text color={t.color.muted} dimColor wrap="truncate-end">
-                  {boundedLiveRenderText(thinking, { maxChars: 4000, maxLines: 12 })}
-                </Text>
-              </Box>
-            )}
-          </Box>
-        ) : null}
-        {tokens > 0 ? (
-          <Text color={t.color.muted} dimColor>
-            {icon('toolCall')} {fmtK(tokens)} tokens
-          </Text>
-        ) : null}
+            ) : undefined
+          )}
+          t={t}
+        />
       </Box>
     )
   }
@@ -302,14 +278,26 @@ export const MessageLine = memo(function MessageLine({
         </Box>
       )
     }
+    // V4 L0-3：工具结果行走 spec 渲染（⎿ + outcome 结构化着色 + 超阈值统一折叠；
+    // 零正则——规范 docs/output-spec-v1.md，形态出自 output/spec.ts 单一事实源）
+    const toolEvents = msgToOutputEvents(msg)
+    if (toolEvents.length) {
+      return (
+        <Box marginLeft={2}>
+          <BlockListView
+            blocks={toolEvents.flatMap(ev => renderEvent(ev, 'cozy'))}
+            foldedBodies={toolEvents.map(() => (
+              <Text color={t.color.muted} dimColor>{stripped}</Text>
+            ))}
+            t={t}
+          />
+        </Box>
+      )
+    }
     const preview = compactPreview(stripped, Math.max(24, cols - 10)) || '(no output)'
-    // V4 L0-2：着色由结构化 toolOutcome 决定（live 链/回放装载填充；规范 docs/output-spec-v1.md）。
-    // 此前按内容正则猜「失败/错误/异常」——中文项目正常输出被误标红（渲染侧零正则禁则）
-    const failed = msg.toolOutcome === 'failed' || msg.toolOutcome === 'timeout' || msg.toolOutcome === 'denied'
-
     return (
       <Box marginLeft={2}>
-        <Text color={failed ? t.color.error : t.color.muted} dimColor wrap="truncate-end">
+        <Text color={t.color.muted} dimColor wrap="truncate-end">
           {preview}
         </Text>
       </Box>

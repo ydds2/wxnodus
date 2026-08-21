@@ -324,7 +324,7 @@ exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） >
     "glyph": "◦ ",
     "indent": 1,
     "kind": "summary",
-    "text": "3 轮 · 8.4k tokens · $0.01 · 24.5s",
+    "text": "3 调用 · 8.4k tokens · $0.0123 · 24.5s",
   },
 ]
 `;
@@ -337,7 +337,7 @@ exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） >
     "glyph": "◦ ",
     "indent": 1,
     "kind": "summary",
-    "text": "3 轮 · 8.4k tokens · $0.01 · 24.5s",
+    "text": "3 调用 · 8.4k tokens · $0.0123 · 24.5s",
   },
 ]
 `;
@@ -350,7 +350,7 @@ exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） >
     "glyph": "◦ ",
     "indent": 1,
     "kind": "summary",
-    "text": "3 轮 · 8.4k tokens · $0.01 · 24.5s",
+    "text": "3 调用 · 8.4k tokens · $0.0123 · 24.5s",
   },
 ]
 `;

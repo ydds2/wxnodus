@@ -137,6 +137,8 @@ export interface Msg {
   toolOutcome?: 'ok' | 'failed' | 'denied' | 'cached' | 'timeout'
   /** V4 L0-2：timeline 事件结构化类型（'error'|'ok'|'accent'|具体事件名）——着色映射依据 */
   eventType?: string
+  /** V4 L0-3：回合尾摘要（turn-summary 行数据源——flowController 回合收官时填充） */
+  turnSummary?: { turns: number; tokens: number; costUsd: number; durationMs: number }
   thinking?: string
   thinkingTokens?: number
   toolTokens?: number
