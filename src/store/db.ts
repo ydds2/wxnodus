@@ -194,7 +194,8 @@ function openDBUnchecked(dataDir: string, dbFile: string): Db {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, created_at)`);
   } catch { /* 迁移失败不阻断（新库已含全列） */ }
 
-  // FTS5 消息全文索引（content='' 外部内容表，rowid 对齐 messages.id）
+  // FTS5 消息全文索引（普通 fts5 表，rowid 对齐 messages.id——V4 P5-4 修正注释：
+  // 此前注释声称 content='' 外部内容表与 DDL 不符；行删除不级联，删除侧手动清）
   try {
     db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -319,11 +320,17 @@ export function forkSession(db: Db, srcId: string, newId: string, titleSuffix = 
 }
 
 
-/** A21：物理删除消息（FTS 外部内容表随行删除自动同步；向量索引手动清）。 */
+/** A21：物理删除消息（向量索引手动清）。
+ * V4 P5-4（C 级）修正：messages_fts 建表为普通 fts5 表（DDL 无 content=''——199 行注释
+ * 与实际不符），行删除不级联——此前孤儿 FTS 行永留（存储泄漏 + replaceSessionMessages
+ * 同 rowid 重插时触发器与孤儿行约束冲突）。删除时显式清 FTS 行。 */
 export function deleteMessage(db: Db, id: number): boolean {
   try {
     db.prepare(`DELETE FROM archival_vec WHERE id=?`).run(id);
   } catch { /* 向量表缺失忽略 */ }
+  try {
+    db.prepare(`DELETE FROM messages_fts WHERE rowid=?`).run(id);
+  } catch { /* FTS5 不可用（降级环境）忽略 */ }
   const r = db.prepare(`DELETE FROM messages WHERE id=?`).run(id);
   return r.changes > 0;
 }

@@ -107,6 +107,10 @@ describe('updateMessage/deleteMessage（P0-2 记忆删改索引同步）', () =>
 
     expect(deleteMessage(db, id)).toBe(true);
     expect(searchMessages(db, 'xyz789', { limit: 5 }).some(h => h.id === id)).toBe(false);
+    // V4 P5-4：FTS 行显式清理——messages_fts 为普通 fts5 表（非 content='' 外部内容表），
+    // 行删除不级联；此前孤儿行永留（存储泄漏 + 同 rowid 重插触发器约束冲突）
+    const orphan = (db.prepare(`SELECT COUNT(*) c FROM messages_fts WHERE rowid=?`).get(id) as { c: number }).c;
+    expect(orphan).toBe(0);
     expect(updateMessage(db, 999999999, 'x')).toBe(false);
     expect(deleteMessage(db, 999999999)).toBe(false);
   });

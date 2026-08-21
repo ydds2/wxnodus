@@ -212,3 +212,25 @@ describe('A21 diagnoseSpec 分级诊断', () => {
     expect(validateSpec(s).ok).toBe(false);
   });
 });
+
+// V4 P5-4：scaffold 注入转义——title（用户需求/LLM Spec 不可信文本）进生成代码前消毒
+describe('scaffold 注入转义（P5-4）', () => {
+  it('恶意 title 消毒：JSX 表达式/标签/字符串逃逸/注释换行全剥，生成物无注入残片', () => {
+    const p = join(dir, 'proj-evil');
+    const evil = "测试</h1><script>alert(1)</script>{require('child_process')}` + process.exit(1) + `\n// EVIL";
+    const r = instantiate({ title: evil, summary: 'y', scaffold: 'todo', acceptance: ['a', 'b', 'c'] }, p, FIXED_PLAN);
+    expect(r.ok).toBe(true);
+    const html = readFileSync(join(p, 'public', 'index.html'), 'utf8');
+    const app = readFileSync(join(p, 'public', 'src', 'App.jsx'), 'utf8');
+    const server = readFileSync(join(p, 'server', 'index.js'), 'utf8');
+    for (const artifact of [html, app, server]) {
+      // 契约：定界符全剥——注入载荷退化为惰性文本（单词残留无害，危险的是可执行形态）
+      expect(artifact).not.toContain('<script>alert'); // HTML 标签注入阻断（模板自带合法 script 除外）
+      expect(artifact).not.toContain('{require'); // JSX 表达式逃逸阻断（{} 剥离）
+      expect(artifact).not.toContain("require('child_process')"); // 字符串逃逸阻断（引号剥离）
+      expect(artifact).not.toContain('EVIL'); // 换行注释逃逸阻断（单行化）
+    }
+    // server.js 语法完好（消毒绝不破坏生成物——new Function 仅解析不执行）
+    expect(() => new Function(server)).not.toThrow();
+  });
+});

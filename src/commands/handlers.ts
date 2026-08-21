@@ -600,8 +600,11 @@ ${MODEL_SWITCH_CACHE_NOTICE}`;
   });
 
   bus.register('/memory', async (args) => {
-    const rec = ctx.mem.recall(ctx.agent?.getSessionId?.() ?? 'default');
-    const absorbed = ctx.mem.absorbCount('default');
+    // V4 P5-4（C 级）：会话 id 化残余——absorbCount 此前硬编码 'default'（recall 已会话化），
+    // 非 default 会话的已吸附计数错位显示
+    const memSession = ctx.agent?.getSessionId?.() ?? 'default';
+    const rec = ctx.mem.recall(memSession);
+    const absorbed = ctx.mem.absorbCount(memSession);
     const sub = args[0];
 
     // W3 Memory 影子观察：/memory shadow —— 两模型计数 + 影子健康 + 召回来源诚实声明

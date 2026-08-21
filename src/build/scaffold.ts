@@ -769,11 +769,21 @@ export function checkLeftover(projectDir: string): boolean {
   return true;
 }
 
+/**
+ * V4 P5-4：注入转义——title 来自用户需求/LLM Spec（不可信文本），进生成代码前统一消毒：
+ *   ① 单行化（CR/LF → 空格）——防 JS 行注释逃逸与 HTML 结构破坏；
+ *   ② 去 引号/反引号/反斜杠——防 JS 字符串字面量逃逸（fallback innerHTML '<h1>TITLE</h1>'）；
+ *   ③ 去 花括号——防 JSX 文本位被替换成 {expression} 执行任意代码；
+ *   ④ 去 尖括号——防 HTML/JSX 标签注入；截 80 字符防超长。
+ */
+const sanitizeTitle = (t: string): string =>
+  String(t ?? '').replace(/[\r\n`'"\\{}<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || '项目';
+
 export function instantiate(spec: Spec, projectDir: string, plan: BuildPlan): InstantiateResult {
   try {
     for (const sub of ['server', 'public', 'public/src']) mkdirSync(join(projectDir, sub), { recursive: true });
     const mold = spec.scaffold === 'todo' || spec.scaffold === 'ledger' || spec.scaffold === 'note' || spec.scaffold === 'anim' ? spec.scaffold : 'generic';
-    const title = spec.title || '项目';
+    const title = sanitizeTitle(spec.title || '项目'); // P5-4：注入转义（三语境消毒）
     // KF-022：scaffold 由 BuildPlan（模块拓扑）驱动——文件按拓扑序落位，绝不绕过计划只消费 Spec；
     // plan 必传（规则脑兜底已移除，调用方固定构造单模块计划）
     const effective = plan;

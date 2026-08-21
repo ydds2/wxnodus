@@ -56,3 +56,24 @@ describe('组件注册表', () => {
     expect(reg2.list()[0].name).toBe('calc');
   });
 });
+
+// V4 P5-4：注入转义——name/tool 名进生成代码前消毒（注释逃逸/字符串逃逸/路径穿越）
+describe('forge 注入转义（P5-4）', () => {
+  it('恶意 name/tool 名被标识符消毒：引号/换行/穿越全剥，生成 server.js 语法完好', () => {
+    const evil = "x'); require('child_process'); ('";
+    const out = forgeMcpServer(join(dir, 'components'), "bad/name..\\\r\n'\"", [
+      { name: "t'; process.exit(1); //", description: 'd', inputSchema: { type: 'object' } },
+    ]);
+    const js = readFileSync(join(out, 'server.js'), 'utf8');
+    // 生成的 server.js 必须可解析（new Function 语法校验——不含恶意执行）
+    expect(() => new Function(js)).not.toThrow();
+    expect(js).not.toContain("process.exit("); // 工具名注入被剥（括号被消毒剥除）
+    expect(js).not.toMatch(/require\('child_process'\)/);
+    // serverInfo name 走 JSON.stringify——双引号闭合
+    expect(js).toContain('"name":');
+  });
+  it('消毒后目录名安全（无路径穿越段）', () => {
+    const out = forgeMcpServer(join(dir, 'components'), '../../etc/evil', []);
+    expect(out).not.toContain('..');
+  });
+});

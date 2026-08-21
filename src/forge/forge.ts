@@ -15,10 +15,16 @@ export interface ToolSignature {
 const componentDir = (outDir: string, name: string): string => (basename(outDir) === name ? outDir : join(outDir, name));
 
 // 生成可运行 MCP Server（stdio JSON-RPC——@modelcontextprotocol/sdk 协议兼容，零外部依赖）
-export function forgeMcpServer(outDir: string, name: string, tools: ToolSignature[]): string {
+export function forgeMcpServer(outDir: string, rawName: string, tools: ToolSignature[]): string {
+  // V4 P5-4：注入转义——name/tool 名进 JS 注释、单引号字符串（serverInfo/占位提示）与
+  // 目录名。① 标识符消毒（仅 \w.-，防注释换行逃逸/字符串引号逃逸/路径穿越）；
+  // ② 字符串位一律 JSON.stringify 注入（双引号转义闭环）。
+  const sanitizeIdent = (v: string): string => String(v ?? '').replace(/[^\w.-]/g, '').replace(/\.{2,}/g, '.').replace(/^\.+/, '').slice(0, 64);
+  const name = sanitizeIdent(rawName) || 'component';
+  const safeToolName = (t: ToolSignature): string => sanitizeIdent(t.name) || 'tool';
   const dir = componentDir(outDir, name);
   mkdirSync(dir, { recursive: true });
-  const toolList = tools.map(t => `  ${JSON.stringify({ name: t.name, description: t.description, inputSchema: t.inputSchema })}`).join(',\n');
+  const toolList = tools.map(t => `  ${JSON.stringify({ name: safeToolName(t), description: String(t.description ?? '').slice(0, 300), inputSchema: t.inputSchema ?? { type: 'object', properties: {} } })}`).join(',\n');
   const server = `// ${name} — WxNodus forge 锻造的 MCP Server（stdio JSON-RPC，零依赖）
 // AI 生成标注：本文件由 WxNodus 自动生成（深度合成办法 第二十条）
 const readline = require('node:readline');
@@ -26,13 +32,13 @@ const tools = [
 ${toolList},
 ];
 const handlers = {
-${tools.map(t => `  ${JSON.stringify(t.name)}: (args) => { return { ok: false, error: '占位工具：${t.name} 尚未实现——编辑 server.js 中 handlers['${t.name}'] 填入真实逻辑后使用（严禁伪造成功）' }; }`).join(',\n')}
+${tools.map(t => `  ${JSON.stringify(safeToolName(t))}: (args) => { return { ok: false, error: ${JSON.stringify(`占位工具：${safeToolName(t)} 尚未实现——编辑 server.js 中 handlers 填入真实逻辑后使用（严禁伪造成功）`)} }; }`).join(',\n')}
 };
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 function send(o) { process.stdout.write(JSON.stringify(o) + '\\n'); }
 rl.on('line', line => {
   let msg; try { msg = JSON.parse(line); } catch { return; }
-  if (msg.method === 'initialize') return send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: '${name}', version: '1.0.0' } } });
+  if (msg.method === 'initialize') return send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: ${JSON.stringify(name)}, version: '1.0.0' } } });
   if (msg.method === 'tools/list') return send({ jsonrpc: '2.0', id: msg.id, result: { tools } });
   if (msg.method === 'tools/call') {
     const h = handlers[msg.params.name];
