@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCliFrontend } from '../../src/bootstrap/createCliFrontend.js';
 import { createWireFrontend } from '../../src/bootstrap/createWireFrontend.js';
 import { createHttpFrontend } from '../../src/bootstrap/createHttpFrontend.js';
-import { createTuiFrontend } from '../../src/bootstrap/createTuiFrontend.js';
 import { createCommandBus } from '../../src/app/CommandBus.js';
 import { createBuiltinVerifierRegistry } from '../../src/application/quality/verifierRegistry.js';
 import { EvidenceService } from '../../src/application/quality/evidenceService.js';
@@ -29,7 +28,7 @@ describe('wave3 headless e2e', () => {
       request: vi.fn(async () => ({ ok: true as const, value: undefined })),
       subscribe: handler => { handlers.add(handler); return () => { handlers.delete(handler); }; },
     };
-    const fronts = [createCliFrontend(port), createWireFrontend(port), createHttpFrontend(port), createTuiFrontend(port)];
+    const fronts = [createCliFrontend(port), createWireFrontend(port), createHttpFrontend(port)];
     const emit = (event: GatewayEvent) => { for (const handler of [...handlers]) handler(event); };
 
     emit(envelope('run.started', 'r1', {}));

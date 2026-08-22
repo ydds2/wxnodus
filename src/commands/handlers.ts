@@ -15,7 +15,6 @@ import { priceForModel } from '../kernel/cost.js';
 import { sessionCost, costText } from '../kernel/costQuery.js';
 import { snippet } from '../kernel/truncate.js';
 import { WXNODUS_VERSION } from '../kernel/version.js';
-import { themePresetNames, themeByName, loadUserThemes } from '../wxnodus-ui/theme.js';
 import { hooksFromConfig, HOOK_EVENTS } from '../kernel/hooks.js';
 import { instantiate } from '../build/scaffold.js';
 import { writeEvidence, fingerprint } from '../build/evidence.js';
@@ -57,13 +56,9 @@ export interface HandlerCtx {
   getModel: () => string;
   getMode: () => string;
   setMode: (m: string) => void;
-  setTheme: (t: string) => void;
-  getThemeName: () => string;
   requestExit: () => void;
   clearHistory: () => void;
   setModel: (modelId: string, baseURL?: string) => void;
-  openModelPicker: () => void;
-  openSessions: () => void;
   setThinking: (on: boolean) => void;
   /** MCP 热重载（/mcp add/remove 后自动接通，无需重启） */
   reloadMcp?: () => Promise<{ ok: boolean; count: number; message: string }>;
@@ -455,9 +450,8 @@ ${MODEL_SWITCH_CACHE_NOTICE}`;
       return `已切换模型：${hit.name}（${hit.provider}）${capabilityBadges(hit.capabilities)}
 ${MODEL_SWITCH_CACHE_NOTICE}`;
     }
-    ctx.openModelPicker();
-    // 诚实回退：无 TUI 时选择器不可用——给出文本用法而非空输出（TUI 内由本地 slash 拦截，不会到达此处）
-    return '模型选择器需交互界面——文本模式：/model <关键词> 模糊搜索切换 · /model list 目录 · /model add <名> <baseURL> 自定义接口 · /model set-key <密钥> 配置';
+    // 交互 TUI 已移除：文本模式直接给用法（无选择器可开）
+    return '文本模式：/model <关键词> 模糊搜索切换 · /model list 目录 · /model add <名> <baseURL> 自定义接口 · /model set-key <密钥> 配置';
   });
 
   bus.register('/thinking', (args) => {
@@ -467,29 +461,7 @@ ${MODEL_SWITCH_CACHE_NOTICE}`;
       ctx.setThinking(on);
       return `推理显示：${on ? '开' : '关'}`;
     }
-    return '用法：/thinking on|off（模型选择器中 [←→] 也可切换）';
-  });
-
-  bus.register('/theme', (args) => {
-    const name = args[0];
-    if (name) {
-      // 2026-08-19 用户主题（opencode themeSource.discover 对标）：解析含 dataDir/themes/*.json；
-      // 未知主题诚实拒绝——绝不「已切换」假反馈（此前未知名也报切换成功）
-      const user = loadUserThemes(ctx.dataDir);
-      const resolved = themeByName(name, process.env, user.presets);
-      if (!resolved) {
-        const userNames = Object.keys(user.presets).join(' / ');
-        return `未知主题：${name}（内置 dark/light/${themePresetNames().filter(n => n !== 'dark' && n !== 'light').join('/')}${userNames ? `；用户 ${userNames}` : ''}）——未切换`;
-      }
-      ctx.setTheme(name);
-      // 事件携带已解析主题对象——UI 侧直接应用（用户主题三元组随事件到达），不再二次解析
-      ctx.bus.emit('theme.changed', { name, theme: resolved });
-      return `主题已切换：${name}`;
-    }
-    const user = loadUserThemes(ctx.dataDir);
-    const extras = Object.keys(user.presets);
-    return `当前主题：${ctx.getThemeName()}
-可选预设：dark / light / ${themePresetNames().filter(n => n !== 'dark' && n !== 'light').join(' / ')}${extras.length ? `\n用户主题：${extras.join(' / ')}` : ''}${user.warnings.length ? `\n主题加载警告：${user.warnings.slice(0, 3).join('；')}${user.warnings.length > 3 ? ' …' : ''}` : ''}`;
+    return '用法：/thinking on|off';
   });
 
   // W7-00：主工作区切换涉及 MCP/plugin/tool/Agent 整个 workspace scope。

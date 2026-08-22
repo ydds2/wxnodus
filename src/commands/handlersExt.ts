@@ -358,7 +358,7 @@ export function registerExtHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     if (!target) return '用法：/render <Markdown 文本>（真实渲染：标题/列表/代码块/表格/引用/公式——与 TUI 同源解析器）';
     // 2026-08-19「不真实修」：此前仅行级前缀变换却挂「Markdown 排版预览」——现复用
     // 成熟解析器（micromark+GFM+math，与 TUI 渲染同源）真实渲染为文本
-    const { renderMarkdownText } = await import('../wxnodus-ui/lib/markdown/renderText.js');
+    const { renderMarkdownText } = await import('../lib/markdown/renderText.js');
     const out = renderMarkdownText(target);
     if (!out.length) return '（空输入或无内容）';
     return lines(' Markdown 预览 ', out);

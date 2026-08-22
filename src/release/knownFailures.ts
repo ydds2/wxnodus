@@ -15,6 +15,13 @@ export type KnownFailureEntry =
       regressionFile: `tests/regressions/known-failures/${string}.regression.test.ts`;
       resolvedBy: string;
       timeoutMs: number;
+    }
+  | {
+      /** 2026-08-22 新增终态：守护对象随功能整体移除（如 TUI 删除）——编号保留占位，
+       *  回归文件随之删除；retired 不是「修复」，是「对象不复存在」的显式留痕。 */
+      id: KnownFailureId;
+      status: 'retired';
+      reason: string;
     };
 
 export const REQUIRED_KNOWN_FAILURE_IDS = Array.from(
@@ -24,7 +31,7 @@ export const REQUIRED_KNOWN_FAILURE_IDS = Array.from(
 
 export const KNOWN_FAILURES: readonly KnownFailureEntry[] = [
   { id: 'KF-001', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-001-offline-precheck.regression.test.ts', resolvedBy: '离线预检前置：无 key 但 offline: 模型已就绪 → 走本地 LLM 通道（绝不输出 /key set 引导）；未就绪 → 引导 /offline pack download；推理加载 env.allowRemoteModels=false 快速失败不联网（下载通道显式重开）', timeoutMs: 15000 },
-  { id: 'KF-002', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-002-config-full-unreachable.regression.test.ts', resolvedBy: 'GatewayClient config.get key=full 返回完整配置快照（settings+dataDir+cwd）——绝不 undefined 包装', timeoutMs: 15000 },
+  { id: 'KF-002', status: 'retired', reason: '守护对象 GatewayClient config.get 快照语义随交互 TUI 整体移除（2026-08-22 删除全部 UI）——回归测试与注册项同步退役' },
   { id: 'KF-003', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-003-setup-wizard.regression.test.ts', resolvedBy: 'R13 bootstrap 真实入口：src/bootstrap/setupWizard.ts（runSetupWizard 唯一向导决策入口，CLI 只经其决策）——首跑 TTY 真实进入 onboarding-required 并持久化 locale；已有 locale/非交互 continue；--help/--version 零副作用保持', timeoutMs: 15000 },
   { id: 'KF-004', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-004-personality-persistence.regression.test.ts', resolvedBy: 'personality 白名单化 + 真实消费：SETTINGS_KEYS 加 personality；buildSystemPrompt 新增 persona 段（settings.personality → 系统提示，CLI/agent 两处接线）——不再假成功（写入即消费）', timeoutMs: 15000 },
   { id: 'KF-005', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-005-wav-header.regression.test.ts', resolvedBy: 'WavWriter 双层修复：finalize 分别回填 RIFF size(4-7)/data size(40-43) 不覆盖 WAVE 标识；header 顺序写（Windows 上 position 写入不推进指针——追加数据覆盖头部的第二层根因）', timeoutMs: 15000 },
@@ -50,7 +57,7 @@ export const KNOWN_FAILURES: readonly KnownFailureEntry[] = [
   { id: 'KF-025', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-025-task-kill-effect-fence.regression.test.ts', resolvedBy: 'task kill aborts the agent line effect fence; subagent side effects and late results are dropped', timeoutMs: 15000 },
   { id: 'KF-026', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-026-hook-fail-closed.regression.test.ts', resolvedBy: 'security-critical hook decision is structured and fail-closed (crash/timeout/missing/non-zero exit deny)', timeoutMs: 15000 },
   { id: 'KF-027', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-027-wire-readiness.regression.test.ts', resolvedBy: 'W3: wire stdin RPC 帧在 gateway/frontend/订阅全部装配后（wireReady）才分发；ready 前返回 WIRE_GATEWAY_NOT_READY', timeoutMs: 15000 },
-  { id: 'KF-028', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-028-session-restore-defaulted.regression.test.ts', resolvedBy: '会话恢复经 agent.getSessionId() 绑定（boundSessionId）——Gateway/UI 不回落 default（假恢复消除）', timeoutMs: 15000 },
+  { id: 'KF-028', status: 'retired', reason: '守护对象「TUI 启动自动恢复会话」随交互 TUI 整体移除（2026-08-22 删除全部 UI）——无交互启动路径，回归测试同步退役' },
   { id: 'KF-029', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-029-english-system-prompt.regression.test.ts', resolvedBy: 'systemPrompt.ts 零中文重写：全部控制文本迁入 i18n catalog（zh-CN/en 同 key 30+ 条）；lang=en 整段提示无 CJK（源文件级断言）', timeoutMs: 15000 },
   { id: 'KF-030', status: 'resolved-with-green-regression', regressionFile: 'tests/regressions/known-failures/kf-030-schema-version.regression.test.ts', resolvedBy: 'W0-06 db migration registry (schema_version=4 + migration_history)', timeoutMs: 15000 },
 ] as const;
@@ -81,6 +88,11 @@ export function validateKnownFailureRegistry(
           typeof row.resolvedBy !== 'string' || row.resolvedBy.length === 0 ||
           typeof row.timeoutMs !== 'number' || 'caseFile' in row || 'expectedFailureCode' in row) {
         issues.push(`KF_RESOLVED_SHAPE_INVALID:${id}`);
+      }
+    } else if (row.status === 'retired') {
+      if (typeof row.reason !== 'string' || row.reason.length === 0 ||
+          'regressionFile' in row || 'caseFile' in row || 'resolvedBy' in row || 'timeoutMs' in row) {
+        issues.push(`KF_RETIRED_SHAPE_INVALID:${id}`);
       }
     } else {
       issues.push(`KF_STATUS_INVALID:${id}`);

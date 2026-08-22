@@ -8,11 +8,10 @@
     "wxn": "dist/cli/index.js"
   },
   "scripts": {
-    "build": "npm run clean && npm run build:ink && tsc",
+    "build": "npm run clean && tsc",
     "build:vscode-ext": "npm --prefix packages/vscode-ext run build",
     "test:vscode-ext": "npm --prefix packages/vscode-ext run typecheck && npm --prefix packages/vscode-ext run test",
     "package:vscode-ext": "npm --prefix packages/vscode-ext run package",
-    "build:ink": "npm --prefix packages/wxnodus-ink run build",
     "dev": "tsx src/cli/index.ts",
     "start": "tsx src/cli/index.ts",
     "test": "npm run test:all",
@@ -108,7 +107,6 @@
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
-    "@wxnodus/ink": "file:packages/wxnodus-ink",
     "better-sqlite3": "^11.10.0",
     "mdast-util-from-markdown": "^2.0.3",
     "mdast-util-gfm": "^3.1.0",
@@ -133,7 +131,6 @@
     "@types/nodemailer": "^8.0.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.4",
-    "ink-testing-library": "^4.0.0",
     "madge": "^8.0.0",
     "postject": "^1.0.0-alpha.6",
     "tsx": "^4.19.0",
@@ -149,21 +146,8 @@
   "license": "Apache-2.0",
   "files": [
     "dist",
-    "packages/wxnodus-ink/dist",
-    "packages/wxnodus-ink/index.js",
-    "packages/wxnodus-ink/index.d.ts",
-    "packages/wxnodus-ink/text-input.js",
-    "packages/wxnodus-ink/text-input.d.ts",
-    "packages/wxnodus-ink/package.json",
-    "packages/wxnodus-ink/LICENSE",
     "README.md",
     "LICENSE"
   ],
-  "bundledDependencies": [
-    "@wxnodus/ink"
-  ],
-  "prepack": "npm run build",
-  "bundleDependencies": [
-    "@wxnodus/ink"
-  ]
+  "prepack": "npm run build"
 }

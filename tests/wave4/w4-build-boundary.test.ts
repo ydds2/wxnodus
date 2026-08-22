@@ -1,6 +1,6 @@
 // tests/wave4/w4-build-boundary.test.ts — DX-02 构建边界契约（干净 checkout 可复现全绿）
-// 锁定：root build 必须链入 ink dist（@wxnodus/ink 的 index.js 是 export * from './dist/entry-exports.js'，
-// dist 缺失时全部 UI suites 挂）；clean 不得删除 ink dist（否则 build 链断裂）。
+// 2026-08-22 TUI/ink 移除后：构建为单级（clean + tsc）——不再链入任何子包构建；
+// bin 直接指向 tsc 产物。本测试锁定「单级、无链式依赖、入口正确」三要点。
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -9,20 +9,22 @@ const root = resolve(__dirname, '../..');
 const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8'));
 
 describe('DX-02 build boundary', () => {
-  it('root build chains the ink dist build before tsc', () => {
+  it('root build is single-stage: clean + tsc, no chained package builds', () => {
     const pkg = readJson(join(root, 'package.json'));
-    expect(pkg.scripts.build).toContain('build:ink');
-    expect(pkg.scripts.build).toContain('tsc');
-    expect(pkg.scripts['build:ink']).toContain('packages/wxnodus-ink');
-  });
-
-  it('ink entry resolves through its bundled dist (why the chain exists)', () => {
-    const entry = readFileSync(join(root, 'packages/wxnodus-ink/index.js'), 'utf8');
-    expect(entry).toContain('dist/entry-exports.js');
+    expect(pkg.scripts.build).toBe('npm run clean && tsc');
+    // 反弹回（防再引入链式子包构建）：除显式独立的 vscode-ext 打包入口外，
+    // build 类脚本不再链入 workspace 子包，root build 也不得引用 vscode-ext 入口
+    for (const [name, script] of Object.entries(pkg.scripts) as Array<[string, string]>) {
+      if (name === 'build:vscode-ext') continue; // 独立显式入口（用户手动触发），不入 root 链
+      if (!name.startsWith('build')) continue;
+      expect(script, name).not.toMatch(/--prefix packages\//);
+      expect(script, name).not.toContain('build:vscode-ext');
+    }
   });
 
   it('root bin still points at the tsc output', () => {
     const pkg = readJson(join(root, 'package.json'));
     expect(pkg.bin.wxnodus).toBe('dist/cli/index.js');
+    expect(pkg.bin.wxn).toBe('dist/cli/index.js');
   });
 });

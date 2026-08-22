@@ -27,7 +27,7 @@ describe('命令注册表（单一事实来源）', () => {
   it('核心命令全覆盖', () => {
     for (const c of ['/help', '/clear', '/undo', '/quit', '/sessions', '/model', '/profile', '/status', '/doctor',
       '/memory', '/hole', '/compact', '/build', '/deploy', '/forge', '/skill', '/gate', '/perm', '/sandbox',
-      '/compliance', '/consent', '/backup', '/export', '/theme', '/lang', '/vision', '/img', '/video',
+      '/compliance', '/consent', '/backup', '/export', '/lang', '/vision', '/img', '/video',
       '/claw', '/mcp', '/calc', '/hash', '/base64', '/uuid', '/json', '/timer', '/sql', '/fs', '/version']) {
       expect(SLASH).toContain(c);
     }

@@ -3,13 +3,14 @@
 Windows 本地 AI agent CLI：数据不出机（会话/记忆/密钥全本地），无账号无订阅，任意 OpenAI 兼容端点接入。
 
 > V4.0 变更（2026-08-21）：离线运行能力（离线模型/离线看图/无 key 确定性层）已裁撤——运行需网络与模型密钥，数据仍全部本地存储；临时续用设 `WXNODUS_LEGACY_OFFLINE=1`。语音与本地记忆向量保留。
+>
+> V4.0 变更（2026-08-22）：交互 TUI 已整体移除（含 @wxnodus/ink 渲染器）——产品仅保留非交互入口（`-p` / stdin 管道 / `--serve` / `--wire` / `--mcp-server` / ACP）。
 
 ## 快速开始
 
 ```bash
 npm install && npm run build
 npm link            # 全局安装 wxnodus / wxn 命令
-wxnodus             # 交互 TUI
 wxnodus -p "帮我做一个待办系统"   # 非交互单次执行
 wxnodus -p "你好" --json         # agent 结果 JSON
 wxnodus -p "你好" --wire         # 总线事件流 JSONL
@@ -26,7 +27,7 @@ cat 文件.txt | wxnodus -p "总结内容"   # stdin 管道（-p 为指令、std
 | `/build` | 自然语言需求 → 可运行项目（AI 规格化 + 启动级验证 + 证据） |
 | `/hole` `/memory` | 黑洞引擎记忆检索（FTS5 中文 + 向量，会话隔离） |
 | `/calc` `/hash` `/sql` … | 确定性工具（毫秒级，不走模型） |
-| `/cost` `/usage` `/balance` | 成本估算 / token 用量 / 余额监控（状态栏 💰📊$） |
+| `/cost` `/usage` `/balance` | 成本估算 / token 用量 / 余额监控 |
 | `/doctor` `/help` | 体检 / 命令总览 |
 
 > 黑洞引擎记忆容量 ≠ 模型上下文窗口：每轮送入模型的上下文受 64k token 上限约束，超压自动压缩。
