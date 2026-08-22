@@ -32,6 +32,7 @@ const COMPONENT_LINE_BUDGET = 400;
 const COMPONENT_RATCHET = {
   'src/wxnodus-ui/components/textInput.tsx': 1138,
   'src/wxnodus-ui/components/thinking.tsx': 735,
+  'src/wxnodus-ui/components/subagentAccordion.tsx': 516,
   'src/wxnodus-ui/components/markdown.tsx': 1185,
   'src/wxnodus-ui/components/agentsOverlay.tsx': 1158,
   'src/wxnodus-ui/components/activeSessionSwitcher.tsx': 1095,
