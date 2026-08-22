@@ -290,6 +290,12 @@ const ComposerPane = memo(function ComposerPane({
 
       <StatusRulePane actions={actions} at="top" composer={composer} status={status} />
 
+      {/* V4 UI 闭环（kimi 像素复刻）：输入区分隔头 ── input ────（kimi prompt.py
+          _build_top_border 同形态——标题分隔线式而非框式；线宽铺满列） */}
+      <Text color={ui.theme.color.border}>
+        {'─'.repeat(2)} input {'─'.repeat(Math.max(0, composer.cols - 10))}
+      </Text>
+
       <Box flexDirection="column" marginTop={ui.statusBar === 'top' ? 0 : 1} position="relative">
         <FloatingOverlays
           cols={composer.cols}

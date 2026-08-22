@@ -35,6 +35,7 @@ import { COMMAND_CAT, COMMAND_DESC, SLASH } from '../commands/registry.js'
 import { PersonalizationService } from '../application/personalization/personalizationService.js'
 import { ConfigRepository } from '../infrastructure/config/configRepository.js'
 import { createPersonalizationRpcHandlers } from '../protocol/personalization.js'
+import { keyArgumentOf } from './lib/keyArg.js'
 import type { GatewayEvent } from './gatewayTypes.js'
 import { ZERO } from './domain/usage.js'
 import type { SessionInfo, TodoItem } from './types.js'
@@ -298,7 +299,9 @@ export class GatewayClient extends EventEmitter {
             payload: {
               tool_id: toolId,
               name,
-              context: String(p?.ctx ?? ''),
+              // V4 UI 闭环（kimi 式工具行）：ctx 缺省时用关键参数提取
+              //（path/command/query 首个——整段 JSON 平铺是噪声来源）
+              context: String(p?.ctx ?? '') || (keyArgumentOf(p?.args ? JSON.stringify(p.args) : undefined) ?? ''),
               args_text: p?.args ? JSON.stringify(p.args).slice(0, 400) : undefined,
               todos: this.turnTodos,
             },

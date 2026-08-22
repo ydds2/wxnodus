@@ -539,6 +539,13 @@ export const THEME_PRESETS: Record<string, ThemePreset> = {
   catppuccin: { name: 'catppuccin', base: 'dark', trio: { primary: '#89B4FA', accent: '#F38BA8', border: '#585B70' } },
   everforest: { name: 'everforest', base: 'dark', trio: { primary: '#A7C080', accent: '#E69875', border: '#4B565C' } },
   synthwave: { name: 'synthwave', base: 'dark', trio: { primary: '#F92AAD', accent: '#00F9FF', border: '#262335' } },
+  // V4 UI 闭环（kimi-cli theme.py 色板参考）：GitHub Dark 预设——kimi 默认视觉系
+  //（青 #67e8f9 高亮 × 蓝链 #58a6ff × GitHub 暗边框 #30363d；浅变体对齐其 light 主题）
+  github: {
+    name: 'github', base: 'dark',
+    trio: { primary: '#67e8f9', accent: '#58a6ff', border: '#30363d' },
+    light: { primary: '#0e7490', accent: '#2563eb', border: '#d1d5db' },
+  },
 }
 
 /** 预设名列表（/theme 命令与帮助展示） */

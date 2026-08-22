@@ -6,12 +6,12 @@ import { join } from 'node:path'
 import { themeByName, themePresetNames, loadUserThemes, THEME_PRESETS, DARK_THEME, LIGHT_THEME } from '../src/wxnodus-ui/theme.js'
 
 describe('主题预设（themeByName）', () => {
-  it('预设名列表：dark/light + 10 命名预设', () => {
+  it('预设名列表：dark/light + 11 命名预设（github 新增——kimi 色板）', () => {
     const names = themePresetNames()
     expect(names[0]).toBe('dark')
     expect(names[1]).toBe('light')
-    expect(names).toHaveLength(12)
-    expect(Object.keys(THEME_PRESETS)).toHaveLength(10)
+    expect(names).toHaveLength(13)
+    expect(Object.keys(THEME_PRESETS)).toHaveLength(11)
   })
 
   it('dark/light → 基底主题；命名预设 → 三元组覆盖且语义色继承基底', () => {
