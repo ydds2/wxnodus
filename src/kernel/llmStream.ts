@@ -74,6 +74,8 @@ export interface LlmStreamOpts {
   idleFirstChunkMs?: number;
   /** V4 P2-2：chunk 间隔空闲超时（默认 60s；settings.llmIdleChunkMs）——有数据即续命，慢端点长流式不断 */
   idleChunkGapMs?: number;
+  /** 输出 token 钳制（C——kimi 机制对齐）：透传 buildChatRequest.maxTokens（不传不写字段） */
+  maxTokens?: number;
 }
 
 export type LlmStreamResult =
@@ -485,6 +487,7 @@ async function attemptModel(model: string, opts: LlmStreamOpts, signal: AbortSig
     messages: opts.messages,
     stream: true,
     tools: opts.tools,
+    maxTokens: opts.maxTokens,
   });
   // V4 P2-2：idle watchdog（双档+硬顶）接管超时——外部 signal 仅为用户 Esc
   const wd = createIdleWatchdog(opts, signal);

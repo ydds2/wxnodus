@@ -248,6 +248,10 @@ export function buildChatRequest(opts: {
   responseFormat?: 'json_object';
   /** 缺省按 MODEL_CATALOG 能力自动判定；显式传参可覆盖（测试/自定义端点） */
   cacheControl?: boolean;
+  /** 输出 token 钳制（kimi max_completion_tokens 机制对齐）：输入+预估输出溢出窗口的
+   *  413 在请求侧预防；o 系/gpt-5 不采样族写 max_completion_tokens（同 B-18 分支）。
+   *  不传或 ≤0 不写字段——对离线/自定义端点零破坏。 */
+  maxTokens?: number;
 }) {
   const base = opts.baseURL.replace(/\/+$/, '');
   // image_url 终极闸门（纵深防御第四层）：上游已有能力门注入/历史 contentToText/描述通道
@@ -267,6 +271,11 @@ export function buildChatRequest(opts: {
   // B-18（V4 P4-7）：不采样模型族省略 temperature——OpenAI o 系/gpt-5 类 reasoning
   // 模型对采样参数直接 400（unsupported_parameter）；其余模型维持缺省 0.7 不变。
   if (!modelRejectsTemperature(opts.model)) body.temperature = opts.temperature ?? 0.7;
+  // 输出钳制（C）：仅显式传入时写——字段名按模型族分流（o 系/gpt-5 用 max_completion_tokens）
+  if (opts.maxTokens && opts.maxTokens > 0) {
+    if (modelRejectsTemperature(opts.model)) body.max_completion_tokens = opts.maxTokens;
+    else body.max_tokens = opts.maxTokens;
+  }
   if (opts.tools?.length) body.tools = opts.tools;
   if (opts.responseFormat) body.response_format = { type: opts.responseFormat };
   return {

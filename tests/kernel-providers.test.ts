@@ -259,3 +259,33 @@ describe('resolveApiKey per-provider 槽位', () => {
     expect(res.source).toBe('env');
   });
 });
+
+describe('输出 token 钳制（C——kimi 机制对齐）', () => {
+  it('maxTokens → body.max_tokens（常规模型）', () => {
+    const req = buildChatRequest({
+      baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash', key: 'sk-x',
+      messages: [{ role: 'user', content: '你好' }], stream: true, maxTokens: 1234,
+    });
+    const body = JSON.parse(req.body as string);
+    expect(body.max_tokens).toBe(1234);
+    expect(body.max_completion_tokens).toBeUndefined();
+  });
+  it('o 系不采样族 → body.max_completion_tokens（同 B-18 分支）', () => {
+    const req = buildChatRequest({
+      baseURL: 'https://x.com/v1', model: 'o3-mini', key: 'k',
+      messages: [{ role: 'user', content: 'hi' }], stream: true, maxTokens: 999,
+    });
+    const body = JSON.parse(req.body as string);
+    expect(body.max_completion_tokens).toBe(999);
+    expect(body.max_tokens).toBeUndefined();
+  });
+  it('未传 maxTokens 不写字段（对离线/自定义端点零破坏）', () => {
+    const req = buildChatRequest({
+      baseURL: 'https://x.com/v1', model: 'm', key: 'k',
+      messages: [{ role: 'user', content: 'hi' }], stream: true,
+    });
+    const body = JSON.parse(req.body as string);
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.max_completion_tokens).toBeUndefined();
+  });
+});

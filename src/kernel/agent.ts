@@ -17,6 +17,7 @@ import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
 import { resolveDataDir } from './paths.js';
 import { estimateMessagesTokens, compactMessages, contentToText, COMPRESSOR_SYSTEM_PROMPT, summarizeOnce } from './memory.js';
+import { mergeAdjacentMessages } from './historyNormalize.js';
 import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx, type ToolDef } from './tools.js';
 import { labelTruncate } from './truncate.js';
 import { resolveModelForChat } from './profiles.js';
@@ -44,7 +45,7 @@ export interface AgentOptions {
   mem: Memory;
   sessionId: string;
   config: { settings: { apiKeyEnc?: string | null; baseURL?: string; model?: string } };
-  callModel?: ((req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[] }, streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal }) => Promise<ModelCall | ToolCallMsg>) | null;
+  callModel?: ((req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[]; maxTokens?: number }, streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal }) => Promise<ModelCall | ToolCallMsg>) | null;
   mode?: Mode;
   onApproval?: (tool: string, args: Record<string, any>) => Promise<boolean>;
   /** C6：文字提问回调（clarify 工具）——返回用户文本答案 */
@@ -58,6 +59,9 @@ export interface AgentOptions {
   maxContextTokens?: number;
   /** 排除的工具名（子代理收窄工具集用） */
   excludeTools?: string[];
+  /** B：后台任务通知回流（jobs.complete → 模型上下文，kimi 通知投递机制对齐）。
+   *  默认 true；子代理传 false——通知只进主线，防子代理上下文污染。 */
+  backgroundNotify?: boolean;
   /** P0-2：自定义 agent 指令覆盖（.wxnodus/agents/*.md 定义）——存在时整体替换内置 system prompt */
   systemPromptOverride?: string;
   /** P3 安全注入通道：vault=内存保险库；sudoInjection/secretInjection=通道开关（/security 控制，默认关闭） */
@@ -194,6 +198,7 @@ export function createAgent(opts: AgentOptions) {
   const makeToolSearchTool = (): ToolDef => ({
       schema: { type: 'function', function: { name: 'tool_search', description: '检索高级工具（按关键词，如 "图片" "网络" "视频"）——命中后该工具立即可用', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
       danger: false,
+      cacheable: true,
       async run({ query }) {
         const hits = searchTools(String(query ?? ''), tools);
         if (!hits.length) return '未找到匹配工具（可用核心工具：' + [...CORE_TOOL_NAMES].filter(n => n !== 'tool_search').join('、') + '）';
@@ -440,7 +445,7 @@ export function createAgent(opts: AgentOptions) {
   }
 
   const defaultCallModel = async (
-    req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[] },
+    req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[]; maxTokens?: number },
     streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal },
   ): Promise<ModelCall | ToolCallMsg> => {
     const s = opts.config.settings;
@@ -511,6 +516,7 @@ export function createAgent(opts: AgentOptions) {
       baseURL, model, key,
       messages: req.messages as any,
       tools: req.tools,
+      maxTokens: req.maxTokens,
       signal: streamCtx?.signal,
       onToken: streamCtx?.onToken,
       onReasoning: streamCtx?.onReasoning,
@@ -603,6 +609,7 @@ export function createAgent(opts: AgentOptions) {
         },
       },
       sessionId: childSessionId,
+      backgroundNotify: false, // B：后台通知只回流主线（子代理上下文防污染）
       onToolTableUpdate: undefined,
       maxTurns: Math.min(opts.maxTurns ?? MAX_TURNS_EFFECTIVE, 8),
       // P0-2：自定义 agent 定义生效——mode/指令覆盖/工具白名单（缺省保持只读子代理）
@@ -718,6 +725,37 @@ export function createAgent(opts: AgentOptions) {
     steerQueue.push(text.trim());
     return true;
   };
+
+  // B（kimi 通知投递 2e.1 机制对齐·实现原创）：后台任务（/jobs、cron、模型经 cron_create
+  // 自建任务）完成结果回流模型上下文——loop 顶部与 steer 同位注入，主线模型下一步可见，
+  // 不再依赖用户手动 /jobs show（「主线+支线并行」设计闭环）。jobs.complete payload 自带
+  // 结果全文（≤4000 字），零查库。子代理不回流（spawnSub 传 backgroundNotify:false——
+  // 通知只进主线防污染）。队列上限 50（无运行中 loop 时丢最旧防无界增长）。
+  const noticeQueue: string[] = [];
+  const seenJobIds = new Set<string>();
+  if (opts.backgroundNotify !== false) {
+    bus.on('jobs.complete', (e: any) => {
+      try {
+        if ((settingsAny?.agentNotify ?? true) === false) return; // settings.agentNotify=false 关闭回流
+        // 事件信封：任务字段在 e.payload 下（e.id 是事件 uuid——去重键必须用任务自身 id）
+        const ev = (e?.payload ?? e) as Record<string, any>;
+        const id = String(ev?.id ?? '');
+        if (id && seenJobIds.has(id)) return; // 幂等：同一任务只回流一次
+        if (id) {
+          seenJobIds.add(id);
+          if (seenJobIds.size > 256) seenJobIds.delete(seenJobIds.values().next().value!);
+        }
+        const status = String(ev?.status ?? 'unknown');
+        const kind = String(ev?.kind ?? 'task');
+        const output = String(ev?.output ?? '').trim();
+        const error = String(ev?.error ?? '').trim();
+        const head = output.length > 800 ? output.slice(0, 800) + '…（已截断——/jobs show ' + id + ' 查看全部）' : output;
+        const body = status === 'success' ? head : (error || head || '（无输出）');
+        noticeQueue.push('[后台任务通知] 任务 #' + id + '（' + kind + '）' + (status === 'success' ? '已完成' : '结束（' + status + '）') + '：' + body);
+        if (noticeQueue.length > 50) noticeQueue.shift();
+      } catch { /* 通知回流失败静默 */ }
+    });
+  }
 
   // KF-023/024：单次工具调用的确定性结局（loop 据此累计 verifiedEffects——成功侧记 verified，
   // 拒绝/参数错/未知工具记 other，异常记 failed）；字符串启发式（「失败」/「异常」）仍用于模型回填
@@ -1011,10 +1049,14 @@ export function createAgent(opts: AgentOptions) {
     if (opts2.subagent) {
       bus.emit('agent.subagent', { goal: prompt, phase: 'start', session_id: sessionId, subagent_id: sessionId });
     }
-    const callWithAbort = (req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[] }) => {
+    const callWithAbort = (req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[]; maxTokens?: number }) => {
+      // D（kimi normalize_history 机制对齐·实现原创）：发送前合并相邻同角色消息
+      //（user+user / system+system——steer 注入、首轮多条 system、DB 连续同角色行造成的
+      // 碎片会打断前缀缓存）。浅拷贝发送——不动原数组/DB；纯函数确定性幂等，前缀字节稳定。
+      // 永不合并 tool 消息与带 tool_calls 的 assistant（OpenAI 配对唯一性）。
       // 修复 F3：abort 信号同时传入 fetch（真中断流式读取）与 race（吞 late rejection）
       // C5：onReasoning 实时转发思考分片（UI reasoning.delta）
-      const racing = callModel(req, {
+      const racing = callModel({ ...req, messages: mergeAdjacentMessages(req.messages) }, {
         onToken: (t) => bus.emit('agent.token', { text: t }),
         // A25：reasoning 带 session_id 标记（子代理 → gateway 分流 subagent.thinking）
         onReasoning: (r) => bus.emit('reasoning.delta', { text: r, session_id: sessionId }),
@@ -1155,8 +1197,9 @@ export function createAgent(opts: AgentOptions) {
     let loopReminded = false;
     // 读工具结果缓存（回合内）：模型探索型任务常见同参重读/重搜（实测 35 次工具调用
     // 大量重复浪费）——重复读调用合并返回缓存省时省 token；任何写/执行类工具
-    // （bash/fs_write/fs_edit…）执行后整体清空——缓存绝不跨写失效
-    const READ_TOOL_CACHE = new Set(['ls', 'grep', 'find_files', 'fs_read', 'web_search', 'http_get', 'repo_map', 'memory_search', 'command_search', 'tool_search']);
+    // （bash/fs_write/fs_edit…）执行后整体清空——缓存绝不跨写失效。
+    // E：可缓存判定从内核硬编码名单改为 ToolDef.cacheable 字段（tools.ts 声明）——
+    // MCP/插件工具可自主声明纯度；缺省 false（fail-closed，绝不复用未声明工具）。
     const toolCache = new Map<string, string>();
     let unknownRounds = 0;
     let finalText = '';
@@ -1201,6 +1244,13 @@ export function createAgent(opts: AgentOptions) {
         msgs.push({ role: 'user', content: s });
         bus.emit('agent.token', { text: `\n[steer] ${s}\n` });
       }
+      // B：后台任务通知回流——与 steer 同位注入（模型下一次调用前可见；独立 user 消息，
+      // 注入点在 tool 配对之后不破坏协议）。此后 mergeAdjacentMessages 会把它与相邻 user
+      // 合并成单条（缓存友好）。
+      while (noticeQueue.length) {
+        const n = noticeQueue.shift()!;
+        msgs.push({ role: 'user', content: n });
+      }
       // 自动压缩触发（机制补强）：每轮调用前估算上下文，超过模型窗口阈值
       // （真实窗口×0.85 或 +reserved>=窗口）→ 自动压缩内存消息后继续当前回合
       // gap 硬编码修复（2026-08-18）：64k 不再写死——压缩阈值 = 模型目录真实窗口
@@ -1225,6 +1275,16 @@ export function createAgent(opts: AgentOptions) {
       const used = lastRealPromptTokens !== null
         ? Math.max(lastRealPromptTokens, Math.round(estRaw * estCalibration))
         : estRaw;
+      // C（kimi 输出钳制机制对齐·实现原创）：每请求 max_tokens = min(用户上限 ?? 输出预留,
+      // 窗口−已用)——输入+预估输出溢出窗口的 413 在请求侧预防（413 强压重发保留为估算
+      // 偏差/未知窗口兜底）。仅窗口已知时钳制（未知模型不写 max_tokens——自定义端点零破坏）。
+      const maxTokSetting = Number(settingsAny?.maxTokens);
+      const outputMaxTokens = (modelCtx !== undefined || opts.maxContextTokens !== undefined)
+        ? Math.max(1_024, Math.min(
+            Number.isFinite(maxTokSetting) && maxTokSetting > 0 ? maxTokSetting : outReserve,
+            ctxBase - used,
+          ))
+        : undefined;
       // V4 P2-3：阈值可配（默认 0.75 提早压缩——Anthropic 60-80% 口径；95% 后再压已迟：
       // 大请求反复超限连环失败 5-15min。settings.compactionThreshold 对齐 gemini compressionThreshold）
       const compactAt = clampN(settingsAny?.compactionThreshold, 0.75, 0.5, 0.95);
@@ -1308,7 +1368,7 @@ export function createAgent(opts: AgentOptions) {
       // A22：实时状态一句话——LLM 推理期（动态文本，UI 状态行显示）
       bus.emit('agent.stage', { stage: turns > 0 ? '正在推理下一步…' : '正在思考分析需求…' });
       try {
-        res = await callWithAbort({ messages: msgs, tools: toolList });
+        res = await callWithAbort({ messages: msgs, tools: toolList, maxTokens: outputMaxTokens });
       } catch (e: any) {
         if (st.aborted) { st.interrupted = true; break; }
         // V4 P2-3：413/context-length 语义捕获 → 强制压缩后自动重发一次
@@ -1410,7 +1470,7 @@ export function createAgent(opts: AgentOptions) {
           let out: string;
           let fromCache = false;
           let images: Array<{ type: 'image_url'; image_url: { url: string } }> | null = null;
-          if (READ_TOOL_CACHE.has(c.name) && toolCache.has(cacheKey)) {
+          if (tools[c.name]?.cacheable === true && toolCache.has(cacheKey)) {
             // 同参重复读调用：合并返回缓存（提示模型无需重跑）
             out = `${toolCache.get(cacheKey)}\n（结果已缓存——同参重复调用已合并，无需重跑）`;
             fromCache = true;
@@ -1442,7 +1502,7 @@ export function createAgent(opts: AgentOptions) {
                 }
               } catch { /* 蒸馏失败保持原输出（诚实降级，不阻断） */ }
             }
-            if (READ_TOOL_CACHE.has(c.name)) {
+            if (tools[c.name]?.cacheable === true) {
               if (toolCache.size >= EFF.toolCacheSize) {
                 const oldest = toolCache.keys().next().value;
                 if (oldest !== undefined) toolCache.delete(oldest);
@@ -1469,13 +1529,29 @@ export function createAgent(opts: AgentOptions) {
           return { id: c.id, name: c.name, args: c.args, out, reasoning: c.reasoning, reasoningField: c.reasoningField, images, outcome: callOutcome };
         };
         const hasWrite = batch.some(c => tools[c.name]?.danger === true);
+        // E（kimi 同步去重机制对齐·实现原创）：同批 cacheable 工具相同 (name,args) 只执行
+        // 一次、结果按槽位 fan-out——补 Promise.all 下「同批两同参同时 miss 都真实执行」的
+        // 竞态洞。各槽位保留自身 tool_call_id（OpenAI 配对唯一性绝不共享）；重复槽位
+        // 输出带「已合并」标记（诚实——模型知道未重跑）。
+        const batchInflight = new Map<string, Promise<typeof executed[number]>>();
+        const runSlot = (c: (typeof batch)[number]): Promise<typeof executed[number]> => {
+          if (tools[c.name]?.cacheable !== true) return runOneCall(c);
+          const key = c.name + ':' + JSON.stringify(c.args ?? {});
+          const existing = batchInflight.get(key);
+          if (existing) {
+            return existing.then(r => ({ ...r, id: c.id, out: r.out + '\n（同批同参重复调用已合并——复用首个结果，未重跑）' }));
+          }
+          const p = runOneCall(c);
+          batchInflight.set(key, p);
+          return p;
+        };
         if (!hasWrite && mode !== 'manual') {
           // 纯只读批次并行（slot 保序——结果顺序与模型 tool_calls 完全一致）
           const slot: Array<typeof executed[number]> = new Array(batch.length);
-          await Promise.all(batch.map(async (c, i) => { slot[i] = await runOneCall(c); }));
+          await Promise.all(batch.map(async (c, i) => { slot[i] = await runSlot(c); }));
           for (let i = 0; i < batch.length; i++) executed.push(slot[i]!);
         } else {
-          for (const c of batch) executed.push(await runOneCall(c));
+          for (const c of batch) executed.push(await runSlot(c));
         }
         if (unknownRounds >= EFF.maxUnknownToolRounds) {
           bus.emit('agent.error', { message: `连续 ${EFF.maxUnknownToolRounds} 轮未知工具，终止` });

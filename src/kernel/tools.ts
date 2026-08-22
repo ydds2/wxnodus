@@ -104,6 +104,9 @@ export interface ToolDef {
     function: { name: string; description: string; parameters: { type: 'object'; properties: Record<string, any>; required?: string[] } };
   };
   danger: boolean;
+  /** E（kimi 同步去重机制对齐）：声明「同参必然同果」（纯读工具）——可入回合缓存 +
+   *  同批去重 fan-out。绝不给副作用工具打标（复用即谎报副作用）；MCP/插件缺省 false（fail-closed）。 */
+  cacheable?: boolean;
   /** canonical pipeline 注册元数据；动态来源必须显式声明命名空间，不能靠工具名反向猜测。 */
   canonical?: {
     namespace: 'agent' | 'mcp' | 'plugin';
@@ -137,6 +140,7 @@ export function coreTools(): Record<string, ToolDef> {
   const fsRead: ToolDef = {
     schema: { type: 'function', function: { name: 'fs_read', description: '读取文件内容（可按行分页：offset 起始行 / limit 行数——超长文件用分页续读，勿一次性读全部）', parameters: { type: 'object', properties: { path: { type: 'string', description: '文件路径（工作区内）' }, offset: { type: 'number', description: '起始行（从 0 开始，缺省 0）' }, limit: { type: 'number', description: '读取行数（缺省读全文，最多 20000 字）' } }, required: ['path'] } } },
     danger: false,
+    cacheable: true, // E：同参必然同果（纯读——danger 与 cacheable 正交：审批门照走，结果可复用）
     async run({ path, offset, limit }, ctx) {
       try {
         const p = resolve(ctx.cwd, path);
@@ -559,6 +563,7 @@ export function coreTools(): Record<string, ToolDef> {
       },
     },
     danger: false,
+    cacheable: true, // E：同参必然同果（纯读——danger 与 cacheable 正交：审批门照走，结果可复用）
     async run(args, ctx) {
       const pattern = String(args?.pattern ?? '').trim();
       if (!pattern) return '参数错误：pattern 不能为空';
@@ -602,6 +607,7 @@ export function coreTools(): Record<string, ToolDef> {
   const ls: ToolDef = {
     schema: { type: 'function', function: { name: 'ls', description: '列出目录内容（head 限制条目数——大目录分段查看）。路径限工作区内。', parameters: { type: 'object', properties: { path: { type: 'string', description: '工作区内目录路径' }, head: { type: 'number', description: '最多返回条目数（缺省 200）' } }, required: [] } } },
     danger: false,
+    cacheable: true, // E：同参必然同果（纯读——danger 与 cacheable 正交：审批门照走，结果可复用）
     async run({ path = '.', head }, ctx) {
       try {
         // V4 P0-5：工作区边界——此前 resolve 直读，绝对路径/../ 可零确认列任意本机目录
@@ -623,6 +629,7 @@ export function coreTools(): Record<string, ToolDef> {
   const grep: ToolDef = {
     schema: { type: 'function', function: { name: 'grep', description: '在工作区内文件中搜索文本（head 限制结果行数——命中过多时收窄或加 head）', parameters: { type: 'object', properties: { pattern: { type: 'string' }, path: { type: 'string', description: '工作区内搜索路径' }, head: { type: 'number', description: '最多返回行数（缺省 200）' } }, required: ['pattern'] } } },
     danger: false,
+    cacheable: true, // E：同参必然同果（纯读——danger 与 cacheable 正交：审批门照走，结果可复用）
     async run({ pattern, path = '.', head }, ctx) {
       // 修复 F14：execFileSync 参数数组（不经 shell），消除命令注入
       // A25：Windows 无 grep 时诚实报错——此前 ENOENT 被 catch 成「（无匹配）」，
@@ -657,6 +664,7 @@ export function coreTools(): Record<string, ToolDef> {
   const httpGet: ToolDef = {
     schema: { type: 'function', function: { name: 'http_get', description: 'GET 请求（SSRF 防护：内网/IPv6 私网/DNS 重绑定/重定向逐跳拦截）。HTML 页面自动提取正文文本；API/JSON 响应返回原始内容。', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
     danger: true, // 外联/写库/调度/敏感输入——需确认
+    cacheable: true, // E：同参必然同果（纯读——danger 与 cacheable 正交：审批门照走，结果可复用）
     async run({ url }, ctx) {
       // 最小间隔节流（800ms）：与 web_search 同款自保护——连发抓取不触发站点限流
       const wait = minIntervalSince(lastHttpGetTs, 800);
@@ -704,6 +712,7 @@ export function coreTools(): Record<string, ToolDef> {
       },
     },
     danger: true, // 外联——需确认
+    cacheable: true, // E：同参必然同果（纯读——danger 与 cacheable 正交：审批门照走，结果可复用）
     async run({ query, max_results, engine }) {
       const { searchWeb } = await import('./search.js');
       const q = String(query ?? '').trim();
@@ -776,6 +785,7 @@ export function coreTools(): Record<string, ToolDef> {
       },
     },
     danger: false,
+    cacheable: true, // E：同参必然同果（纯读——danger 与 cacheable 正交：审批门照走，结果可复用）
     async run(args, ctx) {
       const q = String(args?.query ?? '').trim();
       if (!q) return '参数错误：query 不能为空';
@@ -1150,6 +1160,7 @@ export function coreTools(): Record<string, ToolDef> {
       },
     },
     danger: false,
+    cacheable: true, // E：同参必然同果（纯读——danger 与 cacheable 正交：审批门照走，结果可复用）
     async run(args, ctx) {
       const { buildRepoMap } = await import('./repoMap.js');
       const r = buildRepoMap(ctx.cwd, { budgetTokens: Number(args?.budgetTokens) || 2000 });
@@ -1279,6 +1290,7 @@ export function coreTools(): Record<string, ToolDef> {
       },
     },
     danger: false,
+    cacheable: true, // E：同参必然同果（纯读——danger 与 cacheable 正交：审批门照走，结果可复用）
     async run({ query }) {
       const { searchCommandCatalog } = await import('../commands/registry.js');
       const hits = searchCommandCatalog(String(query ?? ''), 8);

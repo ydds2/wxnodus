@@ -1542,3 +1542,229 @@ describe('V4 P2-7 中断回放工具结果', () => {
     expect((seen[0] as any[]).some(m => m.role === 'tool')).toBe(false);
   });
 });
+
+// ══════════ 内核完善批次 1（kimi-cli 差距对齐）══════════
+
+describe('B：后台任务通知回流（kimi 通知投递对齐）', () => {
+  it('run 期间 jobs.complete → 下一次模型调用可见通知（含结果全文）', async () => {
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-notify-b1',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any) => {
+        seen.push(req);
+        if (seen.length === 1) {
+          bus.emit('jobs.complete', { id: 'job-9', kind: 'shell', status: 'success', output: '构建成功，产物 dist/' });
+          return { type: 'tool_call', id: 'c1', name: 'ls', args: { path: '.' } } as ToolCallMsg;
+        }
+        return { type: 'text', content: '收到通知' } as ModelCall;
+      },
+    });
+    const r = await agent.run('开始任务');
+    expect(r.ok).toBe(true);
+    expect(seen.length).toBe(2);
+    const flat = JSON.stringify(seen[1].messages);
+    expect(flat).toContain('[后台任务通知]');
+    expect(flat).toContain('job-9');
+    expect(flat).toContain('构建成功，产物 dist/');
+  });
+
+  it('同一任务重复事件只回流一次（幂等）', async () => {
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-notify-b2',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any) => {
+        seen.push(req);
+        if (seen.length === 1) {
+          bus.emit('jobs.complete', { id: 'dup-1', kind: 'agent', status: 'success', output: '一次' });
+          bus.emit('jobs.complete', { id: 'dup-1', kind: 'agent', status: 'success', output: '一次' });
+          return { type: 'tool_call', id: 'c1', name: 'ls', args: { path: '.' } } as ToolCallMsg;
+        }
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('查重');
+    const flat = JSON.stringify(seen[1].messages);
+    expect(flat.match(/\[后台任务通知\]/g)?.length).toBe(1);
+  });
+
+  it('settings.agentNotify=false 关闭回流', async () => {
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-notify-b3',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', agentNotify: false } } as any,
+      callModel: async (req: any) => {
+        seen.push(req);
+        if (seen.length === 1) {
+          bus.emit('jobs.complete', { id: 'off-1', kind: 'shell', status: 'success', output: '不应出现' });
+          return { type: 'tool_call', id: 'c1', name: 'ls', args: { path: '.' } } as ToolCallMsg;
+        }
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('关闭态');
+    expect(JSON.stringify(seen[1].messages)).not.toContain('[后台任务通知]');
+  });
+
+  it('失败任务回流含 error 语义', async () => {
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-notify-b4',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any) => {
+        seen.push(req);
+        if (seen.length === 1) {
+          bus.emit('jobs.complete', { id: 'f-1', kind: 'shell', status: 'failed', error: 'exit 1：编译错误' });
+          return { type: 'tool_call', id: 'c1', name: 'ls', args: { path: '.' } } as ToolCallMsg;
+        }
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('失败通知');
+    const flat = JSON.stringify(seen[1].messages);
+    expect(flat).toContain('结束（failed）');
+    expect(flat).toContain('编译错误');
+  });
+});
+
+describe('C：输出 token 钳制（kimi max_completion_tokens 对齐）', () => {
+  it('窗口已知时钳制 maxTokens = min(输出预留, 窗口−已用)（默认 outReserve）', async () => {
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-clamp-1',
+      maxContextTokens: 8192,
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any) => {
+        seen.push(req);
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('钳制');
+    expect(typeof seen[0].maxTokens).toBe('number');
+    // 钳制值 = min(outReserve, 窗口−已用)：mock 模型无目录 → outReserve 由 FALLBACK 64k 派生
+    //（min(20k, max(4k, 64k×0.25=16k)) = 16000），used≈2k → 钳制 ≈ 6k——恒 < 窗口 8192 且 > 下限
+    expect(seen[0].maxTokens).toBeLessThan(8192);
+    expect(seen[0].maxTokens).toBeGreaterThan(1024);
+  });
+
+  it('settings.maxTokens 用户上限生效（下限 1024 保护）', async () => {
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-clamp-2',
+      maxContextTokens: 8192,
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', maxTokens: 500 } } as any,
+      callModel: async (req: any) => {
+        seen.push(req);
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('下限保护');
+    expect(seen[0].maxTokens).toBe(1024); // max(1024, min(500, 余量)) —— 下限保护
+  });
+
+  it('窗口未知（无目录且未配置 maxContextTokens）不钳制——自定义端点零破坏', async () => {
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-clamp-3',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any) => {
+        seen.push(req);
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('未知窗口');
+    expect(seen[0].maxTokens).toBeUndefined();
+  });
+});
+
+describe('D：发送层历史归一化（kimi normalize_history 对齐）', () => {
+  it('DB 连续同角色 user 行 → 模型请求中合并为单条 user（不合并则应为两条）', async () => {
+    const seen: Array<any> = [];
+    // 铺垫以 assistant 收尾（避免「上回合被打断」注记插在中间隔断合并——那是独立正确行为）
+    mem.append('t-merge-1', 'user', '第一问');
+    mem.append('t-merge-1', 'user', '第二问');
+    mem.append('t-merge-1', 'assistant', '已回答');
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-merge-1',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any) => {
+        seen.push(req);
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('继续');
+    const users = seen[0].messages.filter((m: any) => m.role === 'user');
+    // 无归一化应为 3 条 user（第一问/第二问/继续）；合并后 = 2 条（第一问+第二问 合并，继续独立在后）
+    expect(users).toHaveLength(2);
+    expect(users[0].content as string).toContain('第一问\n第二问');
+    expect(users[1].content as string).toContain('继续');
+  });
+});
+
+describe('E：同批工具去重 fan-out（kimi 同步去重对齐）', () => {
+  it('同批两同参 cacheable 工具只执行一次，重复槽位带「已合并」标记', async () => {
+    let runs = 0;
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-dedup-1',
+      extraTools: {
+        echo_read: {
+          schema: { type: 'function', function: { name: 'echo_read', description: '测试用纯读工具', parameters: { type: 'object', properties: { q: { type: 'number' } }, required: ['q'] } } },
+          danger: false,
+          cacheable: true,
+          canonical: { namespace: 'agent', effectKind: 'filesystem.read' },
+          run: async () => { runs++; return `第${runs}次结果`; },
+        },
+      },
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any) => {
+        seen.push(req);
+        if (seen.length === 1) {
+          return { type: 'tool_call', id: 'a', name: 'echo_read', args: { q: 1 }, calls: [
+            { id: 'a', name: 'echo_read', args: { q: 1 } },
+            { id: 'b', name: 'echo_read', args: { q: 1 } },
+          ] } as ToolCallMsg;
+        }
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('去重');
+    expect(runs).toBe(1); // 只真实执行一次
+    const tools = seen[1].messages.filter((m: any) => m.role === 'tool');
+    expect(tools).toHaveLength(2); // 两个槽位结果都回填（tool_call_id 各自配对）
+    expect(tools[0].tool_call_id).toBe('a');
+    expect(tools[1].tool_call_id).toBe('b');
+    expect(tools[0].content).toContain('第1次结果');
+    expect(tools[1].content).toContain('同批同参重复调用已合并');
+  });
+
+  it('非 cacheable 工具同批同参不去重（副作用工具绝不复用）', async () => {
+    let runs = 0;
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-dedup-2',
+      extraTools: {
+        side_effect: {
+          schema: { type: 'function', function: { name: 'side_effect', description: '副作用工具', parameters: { type: 'object', properties: {}, required: [] } } },
+          danger: false,
+          canonical: { namespace: 'agent', effectKind: 'extension.manage' },
+          run: async () => { runs++; return `副作用${runs}`; },
+        },
+      },
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any) => {
+        seen.push(req);
+        if (seen.length === 1) {
+          return { type: 'tool_call', id: 'a', name: 'side_effect', args: {}, calls: [
+            { id: 'a', name: 'side_effect', args: {} },
+            { id: 'b', name: 'side_effect', args: {} },
+          ] } as ToolCallMsg;
+        }
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('不去重');
+    expect(runs).toBe(2); // 副作用工具各执行各的
+  });
+});

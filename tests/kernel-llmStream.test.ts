@@ -399,3 +399,17 @@ describe('callLlmStream backoff and isolation', () => {
     expect(attempts.get('kimi-k2.7')).toBe(2)
   })
 })
+
+describe('输出 token 钳制透传（C）', () => {
+  it('opts.maxTokens 真实进入请求 body（端到端）', async () => {
+    const bodies: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body?: string }) => {
+      bodies.push(String(init?.body ?? ''))
+      return successfulResponse()
+    }))
+    const result = await callLlmStream({ ...deps, messages: [MSG], maxTokens: 777 })
+    expect(result.ok).toBe(true)
+    const body = JSON.parse(bodies[0]!)
+    expect(body.max_tokens).toBe(777)
+  })
+})
