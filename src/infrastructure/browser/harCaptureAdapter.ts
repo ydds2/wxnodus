@@ -117,7 +117,8 @@ export class HarCaptureAdapter {
     const sha256 = createHash('sha256').update(body).digest('hex');
     try {
       mkdirSync(dirname(`${outDir}/x`), { recursive: true });
-      const path = join(outDir, `session-${session.sessionId}.har`);
+      // SESSION_ID 放行冒号后（旧子会话 :sub 兼容）文件名侧必须消毒——Windows 冒号非法
+      const path = join(outDir, `session-${String(session.sessionId).replace(/[^\w.-]/g, '_')}.har`);
       const tmp = `${path}.tmp`;
       writeFileSync(tmp, body, 'utf8');
       try {

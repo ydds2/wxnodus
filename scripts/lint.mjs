@@ -30,7 +30,7 @@ let todoCount = 0;
 // 新组件 ≤400 行；既有超限组件进 ratchet 名单（只能降不能升——降至 ≤400 后移除条目）。
 const COMPONENT_LINE_BUDGET = 400;
 const COMPONENT_RATCHET = {
-  'src/wxnodus-ui/components/textInput.tsx': 1540,
+  'src/wxnodus-ui/components/textInput.tsx': 1138,
   'src/wxnodus-ui/components/thinking.tsx': 1243,
   'src/wxnodus-ui/components/markdown.tsx': 1185,
   'src/wxnodus-ui/components/agentsOverlay.tsx': 1158,

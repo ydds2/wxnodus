@@ -23,7 +23,11 @@ export interface RunContextInput {
 }
 
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const SESSION_ID = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9_-])?$/;
+// 兼容修复（2026-08-21 用户实战）：旧 3.2 子会话形态「<sid>:sub」含冒号——正则曾排除
+// 冒号防 Windows 路径非法字符，但全仓 sessionId 落盘点均已有独立 sanitize
+//（sessionStream streamFile/imagePending/toolOutput 的 [^\w.-]→_；harCaptureAdapter 本批补齐），
+// id 本体放行冒号安全。TUI 恢复旧会话时在接纳点炸 SESSION_ID_INVALID → 全命令无输出的根因。
+const SESSION_ID = /^[a-z0-9](?:[a-z0-9._:-]{0,126}[a-z0-9_-])?$/;
 const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 
 export function isRunIdentifier(value: unknown): value is string {

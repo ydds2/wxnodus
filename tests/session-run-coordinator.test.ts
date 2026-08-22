@@ -380,9 +380,12 @@ describe('Run protocol', () => {
     expect(() => createRunContext({ runId: 'bad id', sessionId: 'session' })).toThrow('RUN_ID_INVALID');
     expect(() => createRunContext({ runId: 'run', correlationId: '', sessionId: 'session' })).toThrow('CORRELATION_ID_INVALID');
     expect(() => createRunContext({ runId: 'run', sessionId: '../session' })).toThrow('SESSION_ID_INVALID');
-    for (const sessionId of ['.', '..', 'CON', 'nul.txt', 'a:b', 'session.', 'SessionA']) {
+    for (const sessionId of ['.', '..', 'CON', 'nul.txt', 'session.', 'SessionA']) {
       expect(() => createRunContext({ runId: 'run', sessionId })).toThrow('SESSION_ID_INVALID');
     }
     expect(createRunContext({ runId: 'run', sessionId: 'session-safe_1' }).sessionId).toBe('session-safe_1');
+    // 2026-08-21 兼容修复：旧 3.2 子会话「<sid>:sub」含冒号——放行（落盘路径均有独立
+    // sanitize；此前 a:b 在负例，恢复旧会话即炸 SESSION_ID_INVALID → 全命令无输出）
+    expect(createRunContext({ runId: 'run', sessionId: 's17871837097201:sub' }).sessionId).toBe('s17871837097201:sub');
   });
 });
