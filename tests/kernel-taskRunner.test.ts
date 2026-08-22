@@ -448,7 +448,13 @@ describe('生命周期管理', () => {
   });
 
   it('shell 终止无法在截止时间内确认时有界返回 failed，而非虚假 cancelled', async () => {
-    const tr = makeRunner();
+    // HC-4：注入 50ms 终止确认截止——「无法确认」从负载竞态变确定性
+    // （此前 5s 硬编码：负载下 taskkill 偶尔真在期内确认 → cancelled，全量跑 flaky）
+    const tr = createTaskRunner({
+      db, bus, dataDir: dir,
+      spawnSubagent: async (goal) => ({ ok: true, output: `子代理完成：${goal.slice(0, 40)}`, turns: 1 }),
+      terminationDeadlineMs: 50,
+    });
     const id = tr.run({ goal: `node -e "setTimeout(()=>{},10000)"`, kind: 'shell' });
     expect(await waitFor(() => (tr.get(id)?.pid ?? 0) > 0)).toBe(true);
     const startedAt = Date.now();

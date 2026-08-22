@@ -74,6 +74,8 @@ export interface TaskRunnerOptions {
   spawnSubagent: (goal: string, signal: AbortSignal, context: RunContext) => Promise<TaskAgentResult>;
   /** 并发线数上限（默认 2） */
   maxConcurrent?: number;
+  /** 进程树终止确认截止（默认 5s；HC-4 测试注入——负载下竞态确定性根治） */
+  terminationDeadlineMs?: number;
 }
 
 export interface TaskRunner {
@@ -251,7 +253,7 @@ export function createTaskRunner(opts: TaskRunnerOptions): TaskRunner {
     terminationPromise?: Promise<ShellTermination>;
     onTermination?: (result: ShellTermination) => void;
   };
-  const TERMINATION_DEADLINE_MS = 5_000;
+  const TERMINATION_DEADLINE_MS = opts.terminationDeadlineMs ?? 5_000;
 
   function bounded<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
     return new Promise(resolve => {
