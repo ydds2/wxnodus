@@ -245,11 +245,15 @@ export function buildStatusRows(s: StatusBarStateV2, cols = 80): StatusRows {
   if (s.usage) {
     const parts: string[] = []
     if (typeof s.usage.context_percent === 'number') {
-      const pct = s.usage.context_percent
-      parts.push(`context: ${(pct / 100).toFixed(1).replace(/^0/, '')}${pct >= 1000 ? '' : ''} %`.replace(' %', '%'))
+      parts.push(`context: ${s.usage.context_percent}%`)
     }
     if (s.usage.context_max) parts.push(`(${fmtK(s.usage.context_used ?? 0)}/${fmtK(s.usage.context_max)})`)
     if (typeof s.usage.cost_usd === 'number' && s.usage.cost_usd > 0) parts.push(`$${s.usage.cost_usd < 1 ? s.usage.cost_usd.toFixed(4) : s.usage.cost_usd.toFixed(2)}`)
+    if (!parts.length && (s.usage.total ?? 0) > 0) {
+      // 兜底段：context 数据未到（目录外模型/端点未上报）时退化为会话累计 token——
+      // 行2 恒有内容（静默消失让用户以为 UI 未更新——2026-08-22 真机反馈根因）
+      parts.push(`session: ${fmtK(s.usage.total ?? 0)} tok`)
+    }
     if (parts.length) {
       const pct = s.usage.context_percent
       line2.push({

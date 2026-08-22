@@ -290,10 +290,10 @@ const ComposerPane = memo(function ComposerPane({
 
       <StatusRulePane actions={actions} at="top" composer={composer} status={status} />
 
-      {/* V4 UI 闭环（kimi 像素复刻）：输入区分隔头 ── input ────（kimi prompt.py
-          _build_top_border 同形态——标题分隔线式而非框式；线宽铺满列） */}
-      <Text color={ui.theme.color.border}>
-        {'─'.repeat(2)} input {'─'.repeat(Math.max(0, composer.cols - 10))}
+      {/* V4 UI 闭环（kimi 像素复刻）：输入区分隔头 ── input ────。宽度按容器内宽
+          （cols-2 paddingX）+ truncate-end——溢出会按词换行拆出「put」碎行（真机残影根因） */}
+      <Text color={ui.theme.color.border} wrap="truncate-end">
+        {'─'.repeat(2)} input {'─'.repeat(Math.max(0, composer.cols - 12))}
       </Text>
 
       <Box flexDirection="column" marginTop={ui.statusBar === 'top' ? 0 : 1} position="relative">

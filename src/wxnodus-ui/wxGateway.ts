@@ -384,14 +384,23 @@ export class GatewayClient extends EventEmitter {
           this.turnTodos = []
         }
         // 状态栏 $ 成本段即时刷新（此前要等下次 session.info——回合结束后成本数字陈旧）：
-        // 会话 usage 实时重查（含 cost_usd——全部模型有定价才给），回合结算后 UI 立即可见
-        let liveUsage: { calls: number; input: number; output: number; total: number; cost_usd?: number; context_used?: number; context_max?: number } | undefined
+        // 会话 usage 实时重查（含 cost_usd——全部模型有定价才给），回合结算后 UI 立即可见。
+        // context 段独立于聚合行注入（usage.get 空/失败不得连坐吞掉 context——
+        // 2026-08-22 用户真机行2 恒空根因之一）；percent 在此算好（UI 不重复推导）
+        let liveUsage: { calls: number; input: number; output: number; total: number; cost_usd?: number; context_used?: number; context_max?: number; context_percent?: number } | undefined
         try {
           const row = this.kernel.adapter.data.usage.get(this.currentSessionId)
           if (row) liveUsage = { calls: row.calls ?? 0, input: row.input ?? 0, output: row.output ?? 0, total: (row.input ?? 0) + (row.output ?? 0), ...(typeof row.cost_usd === 'number' ? { cost_usd: row.cost_usd } : {}) }
           const ctxUsed = this.kernel.adapter.agent.getLastPromptTokens()
           const ctxMax = maxContextFor(this.kernel.settings.model ?? null)
-          if (liveUsage && ctxMax && ctxUsed > 0) liveUsage = { ...liveUsage, context_used: ctxUsed, context_max: ctxMax }
+          if (ctxMax) {
+            liveUsage = {
+              ...(liveUsage ?? { calls: 0, input: 0, output: 0, total: 0 }),
+              context_used: ctxUsed,
+              context_max: ctxMax,
+              context_percent: Math.max(0, Math.min(999, Math.round((ctxUsed / ctxMax) * 100))),
+            }
+          }
         } catch { /* 用量读取失败不阻断回合收尾 */ }
         this.publish({ type: 'message.complete', payload: { text: this.finalText, todos: this.turnTodos, ...(liveUsage ? { usage: liveUsage } : {}) } })
         this.finalText = ''
