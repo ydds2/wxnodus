@@ -158,3 +158,110 @@ export function buildStatusSegments(s: StatusBarState): StatusSegment[] {
 export function segmentById(segs: StatusSegment[], id: StatusSegmentId): StatusSegment | undefined {
   return segs.find(s => s.id === id)
 }
+
+// ── V4 UI 闭环（kimi-cli 双行状态栏规格参考·实现原创）────────────────────────
+// 规格来源（机制参考，非代码抄写）：kimi-cli ui/shell/prompt.py _render_bottom_toolbar：
+//   行1：状态旗标(yolo/afk/plan) + agent(model ●thinking) + cwd+git 徽章 + ⚙后台任务
+//        + 30s 轮换 tips 填行尾；窄终端 full→mid→bare 逐级降级
+//   行2：左 toast（通知）+ 右 context: %（used/max）
+// wxnodus 内容置换：旗标=yolo/afk（wxnodus 既有模式）、模型点=busy thinking、
+// cwd+git/⚙jobs=tuiPresentationAdapter 既有数据位、tips=wxnodus 快捷键轮换。
+
+export interface StatusBarFlags { yolo?: boolean; afk?: boolean }
+export interface StatusBarGit { branch: string; dirty?: boolean }
+export interface StatusBarBgJobs { bash?: number; agents?: number }
+
+/** kimi 式扩展状态位（缺省全部省略——向后兼容六段旧调用方） */
+export interface StatusBarStateV2 extends StatusBarState {
+  flags?: StatusBarFlags
+  thinking?: boolean
+  cwd?: string
+  git?: StatusBarGit
+  bgJobs?: StatusBarBgJobs
+}
+
+export interface StatusRow { segments: StatusSegment[] }
+export interface StatusRows { line1: StatusRow; line2: StatusRow }
+
+const WX_TIPS = [
+  'ctrl-j: 换行', 'tab: 补全', 'esc×2: 中断', '/help: 全部命令',
+  '@: 引用文件', '/theme: 换主题', 'ctrl-r: 历史', '双击: 复制消息',
+]
+
+/** 30s 轮换取两条 tips（kimi 同语义；now 可注入测试） */
+export function rotatingTips(now: number): string {
+  const i = Math.floor(now / 30_000) % WX_TIPS.length
+  return `${WX_TIPS[i]} | ${WX_TIPS[(i + 1) % WX_TIPS.length]!}`
+}
+
+/** cwd 左截断（保尾部路径——kimi _truncate_left 同语义） */
+export function truncateCwdLeft(cwd: string, maxCols: number): string {
+  if (cwd.length <= maxCols) return cwd
+  return '…' + cwd.slice(-(maxCols - 1))
+}
+
+/**
+ * kimi 式双行构建（纯函数）：
+ * line1 = state旗标·model(●/○thinking)·cwd+git·⚙jobs·tips
+ * line2 = notice(toast 左) + context%(used/max 右) + $cost·§budget
+ * 宽度紧张降级：tips 先丢 → git 徽章丢 → cwd 截断 → flags 保留（安全语义优先）
+ */
+export function buildStatusRows(s: StatusBarStateV2, cols = 80): StatusRows {
+  const line1: StatusSegment[] = []
+  // 状态旗标（kimi：yolo 黄粗/afk 橙粗——语义色映射 warn/error 系）
+  if (s.flags?.yolo) line1.push({ id: 'state', text: 'yolo', color: 'warn', priority: 95 })
+  if (s.flags?.afk) line1.push({ id: 'state', text: 'afk', color: 'error', priority: 95 })
+  // model 段 + thinking 点（kimi agent (model ●)——busy 实心）
+  if (s.model) {
+    let text = shortModel(s.model)
+    if (s.modelFast) text += '·fast'
+    text += s.thinking ? ' ●' : ' ○'
+    line1.push({ id: 'model', text, color: 'accent', priority: 90 })
+  }
+  // cwd + git 徽章（kimi：cwd 左截断 + branch±dirty）
+  if (s.cwd) {
+    let cwdText = truncateCwdLeft(s.cwd, Math.min(s.cwd.length, 28))
+    if (s.git?.branch) cwdText += ` ${s.git.branch.slice(0, 16)}${s.git.dirty ? '*' : ''}`
+    line1.push({ id: 'session', text: cwdText, color: 'muted', priority: 40 })
+  }
+  // ⚙ 后台任务徽章（kimi：⚙ bash: N / agent: N）
+  if (s.bgJobs) {
+    if ((s.bgJobs.bash ?? 0) > 0) line1.push({ id: 'net', text: `⚙ bash: ${s.bgJobs.bash}`, color: 'muted', priority: 30 })
+    if ((s.bgJobs.agents ?? 0) > 0) line1.push({ id: 'net', text: `⚙ agent: ${s.bgJobs.agents}`, color: 'muted', priority: 29 })
+  }
+  // tips 填行尾（宽度允许时）
+  const used = line1.reduce((n, seg) => n + seg.text.length + 2, 0)
+  const tip = rotatingTips(Date.now())
+  if (used + tip.length <= cols - 2) {
+    line1.push({ id: 'budget', text: tip, color: 'muted', priority: 1 })
+  }
+
+  // line2：notice（toast 左）+ context%（右）+ cost/budget
+  const line2: StatusSegment[] = []
+  if (s.net?.reconnecting) line2.push({ id: 'net', text: '↻ 重连中', color: 'warn', priority: 70 })
+  else if (s.net?.rateLimitResetAt && s.net.rateLimitResetAt > Date.now()) {
+    line2.push({ id: 'net', text: `⏳ 额度 ${new Date(s.net.rateLimitResetAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 重置`, color: 'warn', priority: 70 })
+  }
+  if (s.usage) {
+    const parts: string[] = []
+    if (typeof s.usage.context_percent === 'number') {
+      const pct = s.usage.context_percent
+      parts.push(`context: ${(pct / 100).toFixed(1).replace(/^0/, '')}${pct >= 1000 ? '' : ''} %`.replace(' %', '%'))
+    }
+    if (s.usage.context_max) parts.push(`(${fmtK(s.usage.context_used ?? 0)}/${fmtK(s.usage.context_max)})`)
+    if (typeof s.usage.cost_usd === 'number' && s.usage.cost_usd > 0) parts.push(`$${s.usage.cost_usd < 1 ? s.usage.cost_usd.toFixed(4) : s.usage.cost_usd.toFixed(2)}`)
+    if (parts.length) {
+      const pct = s.usage.context_percent
+      line2.push({
+        id: 'cost',
+        text: parts.join(' '),
+        color: pct !== undefined && pct >= 85 ? 'error' : pct !== undefined && pct >= 75 ? 'warn' : 'muted',
+        priority: 60,
+      })
+    }
+  }
+  if (s.balance?.label) {
+    line2.push({ id: 'cost', text: s.balance.label, color: s.balance.low ? 'error' : 'muted', priority: 50 })
+  }
+  return { line1: { segments: line1 }, line2: { segments: line2 } }
+}

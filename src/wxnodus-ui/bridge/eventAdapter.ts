@@ -25,7 +25,7 @@ import { getUiState, patchUiState } from '../runtime/viewStore.js'
 // W3-02：事件流接入纯投影管线（run 生命周期 → presentation 纯层 reducer/projector）
 import { feedTuiProjection } from '../runtime/tuiProjection.js'
 // 阶段 2b：presentation read-model 喂入（与既有 side effect 路径平行，纯投影不动 operational stores）
-import { dispatchPresentationEvent } from '../runtime/presentationStore.js'
+import { dispatchBatched } from '../runtime/deltaBatcher.js'
 import type { PresentationEventBody } from '../runtime/presentationReducer.js'
 
 // 审查修复：匹配中文「未配置模型密钥」——内核 agent.ts 返回中文文案（非英文 provider 错误），
@@ -97,8 +97,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   // reducer + store 的会话切换重置承担；本 adapter 外层已按 session_id 过滤）。
   // generation 恒为 0：跨会话由 store 的「会话切换 → 重置投影」承接，
   // 同会话迟到事件由 adapter 的 session_id 过滤 + reducer 的守卫双重丢弃。
+  // V4 UI 闭环（症状A 闪屏根治）：message.delta 经 deltaBatcher 50ms 微批——
+  // 每 token 一帧全量 diff 是闪屏根因（deepseek 流速每秒几十帧）；其余事件即时透传
+  //（批内顺序等价：非 delta 事件先冲刷批）。
   const feed = (body: PresentationEventBody): void =>
-    dispatchPresentationEvent({ sessionId: getUiState().sid ?? '', generation: 0, ...body })
+    dispatchBatched({ sessionId: getUiState().sid ?? '', generation: 0, ...body } as Parameters<typeof dispatchBatched>[0])
 
   const feedTodos = (raw: unknown): void => {
     if (!Array.isArray(raw)) {

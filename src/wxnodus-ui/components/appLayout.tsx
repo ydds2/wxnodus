@@ -1,5 +1,7 @@
 // src/wxnodus-ui/components/appLayout.tsx — 四层布局装配（状态栏/转录流/输入区/浮层 + P2 面板右分栏）
 import { AlternateScreen, Box, NoSelect, ScrollBox, Text } from '@wxnodus/ink'
+import { buildStatusRows, type StatusBarUsage } from './statusBarSegments.js'
+import type { Theme } from '../theme.js'
 import { useAtom as useStore } from '../../app/stores/engine.js'
 import { Fragment, memo, useRef } from 'react'
 
@@ -463,6 +465,32 @@ const StatusRulePane = memo(function StatusRulePane({
         usageNextRefreshAt={ui.usageRange?.nextRefreshAt}
         voiceLabel={status.voiceLabel}
       />
+      {/* V4 UI 闭环（kimi 式第二行）：左 toast / 右 context%（水位着色）——
+          buildStatusRows.line2 纯函数产段，数据位全部来自既有 ui state */}
+      <StatusBarLine2 notice={ui.notice} t={ui.theme} usage={ui.usage as StatusBarUsage | undefined} />
+    </Box>
+  )
+})
+
+/** kimi 式状态栏第二行（薄渲染壳）：左 toast / 右 context%（纯函数段直渲） */
+const StatusBarLine2 = memo(function StatusBarLine2(props: {
+  notice?: { text?: string; level?: string } | null
+  t: Theme
+  usage?: StatusBarUsage
+}) {
+  const rows = buildStatusRows({ state: 'ready', statusText: '', usage: props.usage }, 80)
+  const segs = rows.line2.segments
+  if (!segs.length && !props.notice?.text) return null
+  const semanticColor: Record<string, string> = {
+    error: props.t.color.error, warn: props.t.color.warn, muted: props.t.color.muted, accent: props.t.color.accent,
+  }
+  return (
+    <Box>
+      {props.notice?.text ? <Text color={props.t.color.warn}>{props.notice.text.slice(0, 60)}</Text> : null}
+      <Box flexGrow={1} />
+      {segs.map((seg, i) => (
+        <Text key={i} color={semanticColor[seg.color] ?? ''}>{i > 0 ? '  ' : ''}{seg.text}</Text>
+      ))}
     </Box>
   )
 })

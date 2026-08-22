@@ -70,7 +70,7 @@ describe('V4 L0-3 tui 渲染器：RenderBlock → ink', () => {
   it('统一折叠头：▸ 标题 (badge)', () => {
     const blocks = renderEvent({ kind: 'reasoning', text: '思考全文……', tokens: 2048 }, 'cozy')
     const frame = render(<BlockListView blocks={blocks} t={t} />).lastFrame?.() ?? ''
-    expect(frame).toContain('▸ 推理 (2.0k tokens)')
+    expect(frame).toContain('▸ 思考 (· 2.0k tokens)')
   });
 });
 
@@ -95,12 +95,12 @@ describe('V4 L0-3 messageLine 切片行为（spec 驱动三分支）', () => {
     expect(frame).toContain('◦ 4 调用 · 6.2k tokens · 8.5s')
   });
 
-  it('trail 含思考：统一折叠头 ▸ 推理 (N tokens)', () => {
+  it('trail 含思考：统一折叠头 ▸ 思考 (· N tokens)——kimi 式单行摘要', () => {
     const frame = line({
       role: 'system', kind: 'trail', text: '',
       thinking: '先看入口文件……', thinkingTokens: 512,
     })
-    expect(frame).toContain('▸ 推理 (512 tokens)')
+    expect(frame).toContain('▸ 思考 (· 512 tokens)')
   });
 
   it('空 trail（无思考无数据）不渲染', () => {
@@ -108,3 +108,39 @@ describe('V4 L0-3 messageLine 切片行为（spec 驱动三分支）', () => {
     expect((frame ?? '').trim()).toBe('')
   });
 });
+
+// V4 UI 闭环（kimi 式双行状态栏）：buildStatusRows 纯函数规格
+import { buildStatusRows, rotatingTips, truncateCwdLeft, type StatusBarStateV2 } from '../src/wxnodus-ui/components/statusBarSegments.js';
+describe('kimi 式双行状态栏（buildStatusRows）', () => {
+  const base: StatusBarStateV2 = { state: 'ready', statusText: '' };
+  it('行1：旗标 + model(thinking ●/idle ○) + cwd·git 徽章 + ⚙后台 + tips', () => {
+    const rows = buildStatusRows({
+      ...base, model: 'deepseek-reasoner', thinking: true,
+      flags: { yolo: true }, cwd: 'C:\proj\wxnodus', git: { branch: 'main', dirty: true },
+      bgJobs: { bash: 2, agents: 1 },
+    }, 200)
+    const l1 = rows.line1.segments.map(s => s.text).join('  ')
+    expect(l1).toContain('yolo')
+    expect(l1).toContain('deepseek-reasoner ●')
+    expect(l1).toContain('wxnodus main*')
+    expect(l1).toContain('⚙ bash: 2')
+    expect(l1).toContain('⚙ agent: 1')
+    expect(l1).toContain('|') // tips 轮换在列
+  })
+  it('行2：context% 水位着色（≥85 error / ≥75 warn）+ 余额', () => {
+    const rows = buildStatusRows({ ...base, usage: { context_percent: 90, context_used: 172_000, context_max: 192_000 } }, 80)
+    const ctx = rows.line2.segments.find(s => s.id === 'cost')!
+    expect(ctx.text).toContain('context:')
+    expect(ctx.text).toContain('(172.0k/192.0k)')
+    expect(ctx.color).toBe('error')
+  })
+  it('宽度降级：tips 让位（窄列不挤核心段）', () => {
+    const rows = buildStatusRows({ ...base, model: 'deepseek-reasoner', cwd: 'C:\p' }, 30)
+    expect(rows.line1.segments.some(s => s.text.includes('|'))).toBe(false)
+  })
+  it('tips 30s 轮换确定性 + cwd 左截断保尾', () => {
+    expect(rotatingTips(0)).toBe(rotatingTips(0))
+    expect(rotatingTips(31_000)).not.toBe(rotatingTips(0))
+    expect(truncateCwdLeft('/aaaaaa/bb/cc/dd', 8)).toBe('…b/cc/dd')
+  })
+})

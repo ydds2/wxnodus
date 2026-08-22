@@ -155,14 +155,14 @@ exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） >
   {
     "color": "muted",
     "fold": {
-      "badge": "1.0k tokens",
+      "badge": "· 1.0k tokens",
       "collapsed": true,
-      "title": "推理",
+      "title": "思考",
     },
     "glyph": "▸ ",
     "indent": 1,
     "kind": "fold",
-    "text": "推理 (1.0k tokens)",
+    "text": "思考 (· 1.0k tokens)",
   },
 ]
 `;
@@ -172,14 +172,14 @@ exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） >
   {
     "color": "muted",
     "fold": {
-      "badge": "1.0k tokens",
+      "badge": "· 1.0k tokens",
       "collapsed": true,
-      "title": "推理",
+      "title": "思考",
     },
     "glyph": "▸ ",
     "indent": 1,
     "kind": "fold",
-    "text": "推理 (1.0k tokens)",
+    "text": "思考 (· 1.0k tokens)",
   },
 ]
 `;
@@ -190,14 +190,14 @@ exports[`V4 L0-1 输出规范 v1：规格层快照矩阵（10 × 3 = 30 格） >
     "color": "muted",
     "dim": true,
     "fold": {
-      "badge": "1.0k tokens",
+      "badge": "· 1.0k tokens",
       "collapsed": true,
-      "title": "推理",
+      "title": "思考",
     },
     "glyph": "▸ ",
     "indent": 1,
     "kind": "fold",
-    "text": "推理 (1.0k tokens)",
+    "text": "思考 (· 1.0k tokens)",
   },
 ]
 `;

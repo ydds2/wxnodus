@@ -49,6 +49,9 @@ import { icon } from '../glyphs.js'
 
 // Collapse threshold for long system messages (system prompt etc.)
 const SYSTEM_COLLAPSE_CHARS = 400
+// V4 UI 闭环（症状B）：长 assistant 终稿默认折叠阈值——超 1,200 字符（约 30+ 行）
+// 折叠为首段 + 计数指示；竞品调研类长回答全量平铺是用户实测投诉（信息淹没问题）
+const ASSISTANT_COLLAPSE_CHARS = 1200
 
 // A19：悬停提示文案（onMouseLeave 据此识别并清除，避免误伤选中/复制反馈）
 const HOVER_HINT = '单击选中 · 双击复制'
@@ -147,6 +150,9 @@ export const MessageLine = memo(function MessageLine({
   // Collapse toggle for long system messages
   const systemIsLong = msg.role === 'system' && msg.text.length > SYSTEM_COLLAPSE_CHARS
   const [systemOpen, setSystemOpen] = useState(false)
+  // V4 UI 闭环（症状B）：长 assistant 终稿折叠（点击展开——与 system 折叠同款交互）
+  const assistantIsLong = msg.role === 'assistant' && !isStreaming && msg.text.length > ASSISTANT_COLLAPSE_CHARS
+  const [assistantOpen, setAssistantOpen] = useState(false)
 
   // ── A19：鼠标点选辅助 ────────────────────────────────────────────────
   // 消息行只订阅 $selectedMessage（hint 变化不重渲染全部消息行）。
@@ -353,11 +359,30 @@ export const MessageLine = memo(function MessageLine({
     if (msg.role === 'assistant') {
       const bodyWidth = transcriptBodyWidth(cols, msg.role, t.brand.prompt, TERMUX_TUI_MODE)
 
-      return isStreaming ? (
-        <StreamingMd cols={bodyWidth} compact={compact} t={t} text={boundedLiveRenderText(msg.text)} />
-      ) : (
-        <Md cols={bodyWidth} compact={compact} t={t} text={msg.text} />
-      )
+      if (isStreaming) {
+        return <StreamingMd cols={bodyWidth} compact={compact} t={t} text={boundedLiveRenderText(msg.text)} />
+      }
+      if (assistantIsLong) {
+        // 折叠态：首段（前 ~500 字符按段落边界截）+ 计数；点击头部展开全文
+        const full = msg.text
+        const cut = full.slice(0, 500)
+        const nl2 = cut.lastIndexOf('\n\n')
+        const nl1 = cut.lastIndexOf('\n')
+        const head = cut.slice(0, Math.max(nl2, nl1)) || cut
+        return (
+          <Box flexDirection="column">
+            <Md cols={bodyWidth} compact={compact} t={t} text={head} />
+            <Box onClick={() => setAssistantOpen(v => !v)}>
+              <Text color={t.color.accent}>{assistantOpen ? '▾ ' : '▸ '}</Text>
+              <Text color={t.color.muted} dimColor>
+                {assistantOpen ? '收起' : `展开全文 — ${full.length.toLocaleString()} 字符 / ${full.split('\n').length} 行`}
+              </Text>
+            </Box>
+            {assistantOpen && <Md cols={bodyWidth} compact={compact} t={t} text={full} />}
+          </Box>
+        )
+      }
+      return <Md cols={bodyWidth} compact={compact} t={t} text={msg.text} />
     }
 
     if (msg.role === 'user' && msg.text.length > LONG_MSG && isPasteBackedText(msg.text)) {

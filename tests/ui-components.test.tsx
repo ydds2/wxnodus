@@ -37,7 +37,7 @@ describe('消息行渲染（V3 MessageLine）', () => {
     const { lastFrame } = render(<MessageLine cols={80} msg={{ id: '3', role: 'system', text: '出错了' } as any} t={t} />);
     expect(lastFrame()).toContain('出错了');
   });
-  it('finalDetails 轨迹渲染推理折叠行 + token 摘要（2026-08-19 更完善）', () => {
+  it('finalDetails 轨迹渲染思考折叠行 + token 摘要（2026-08-19 更完善）', () => {
     const { lastFrame } = render(
       <MessageLine
         cols={80}
@@ -46,9 +46,9 @@ describe('消息行渲染（V3 MessageLine）', () => {
       />
     );
     const frame = lastFrame();
-    expect(frame).toContain('推理');
+    expect(frame).toContain('思考');
     expect(frame).toContain('tokens');
-    // 默认折叠——推理正文不可见
+    // 默认折叠——思考正文不可见
     expect(frame).not.toContain('先分析再动手');
   });
   it('无内容的 trail 不渲染', () => {

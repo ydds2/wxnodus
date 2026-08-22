@@ -61,7 +61,8 @@ function fmtDuration(ms: number): string {
 export function collapsePolicy(ev: OutputEvent, density: Density): FoldPolicy | null {
   switch (ev.kind) {
     case 'reasoning':
-      return { collapsed: true, title: '推理', badge: `${fmtKTokens(ev.tokens)} tokens` }
+      // V4 UI 闭环（kimi 式单行摘要）：灰斜体一行「思考 · N tokens」——不渲染推理原文
+      return { collapsed: true, title: '思考', badge: `· ${fmtKTokens(ev.tokens)} tokens` }
     case 'tool-result': {
       const lines = ev.preview.split('\n').length
       const threshold = density === 'cozy' ? 3 : density === 'compact' ? 1 : 1

@@ -37,9 +37,9 @@ const COMPONENT_RATCHET = {
   'src/wxnodus-ui/components/activeSessionSwitcher.tsx': 1095,
   'src/wxnodus-ui/components/statusBar.tsx': 728,
   'src/wxnodus-ui/components/modelPicker.tsx': 970,
-  'src/wxnodus-ui/components/appLayout.tsx': 565,
-  'src/wxnodus-ui/components/branding.tsx': 502,
-  'src/wxnodus-ui/components/messageLine.tsx': 449,
+  'src/wxnodus-ui/components/appLayout.tsx': 593,
+  'src/wxnodus-ui/components/branding.tsx': 520,
+  'src/wxnodus-ui/components/messageLine.tsx': 474,
   'src/wxnodus-ui/components/appOverlays.tsx': 410,
 };
 for (const f of files) {

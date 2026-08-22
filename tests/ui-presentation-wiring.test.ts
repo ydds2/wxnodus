@@ -52,6 +52,7 @@ afterEach(() => {
 })
 
 const fire = (ev: GatewayEvent) => handler(ev)
+import { flushDeltaBatch } from '../src/wxnodus-ui/runtime/deltaBatcher.js'
 
 describe('eventAdapter → presentation read-model 喂入', () => {
   it('message.start/delta/complete 投影 turn 生命周期', () => {
@@ -60,6 +61,8 @@ describe('eventAdapter → presentation read-model 喂入', () => {
 
     fire({ type: 'message.delta', session_id: 's1', payload: { text: '你' } })
     fire({ type: 'message.delta', session_id: 's1', payload: { text: '好' } })
+    // V4 UI 闭环：delta 经 50ms 微批（deltaBatcher——闪屏根治）——测试显式冲刷后断言
+    flushDeltaBatch()
     expect(getPresentationState().streaming).toBe('你好')
 
     fire({ type: 'message.complete', session_id: 's1', payload: { text: '你好，完成' } })

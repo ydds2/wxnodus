@@ -187,8 +187,10 @@ export function SessionPanel({ info, maxWidth, onCommand, sid, t }: SessionPanel
   const [skillsOpen, setSkillsOpen] = useState(false)
   const [systemOpen, setSystemOpen] = useState(false)
   const [mcpOpen, setMcpOpen] = useState(false)
-  // A24：特色能力（启动即见 WxNodus 优势——默认展开）
-  const [featuresOpen, setFeaturesOpen] = useState(true)
+  // V4 UI 闭环（症状C）：特色能力默认收起（首屏仅「环境概览」一行摘要——10 条全铺过载）
+  const [featuresOpen, setFeaturesOpen] = useState(false)
+  // 环境概览总控（默认收起——首屏降噪主开关）
+  const [overviewOpen, setOverviewOpen] = useState(false)
 
   const truncLine = (pfx: string, items: string[]) => {
     let line = ''
@@ -332,7 +334,21 @@ export function SessionPanel({ info, maxWidth, onCommand, sid, t }: SessionPanel
 
       <Box flexDirection="column" width={w} marginTop={1}>
 
-        {/* ── Tools (expanded by default) ── */}
+        {/* ── V4 UI 闭环（症状C 首屏降噪）：环境信息两级折叠 ──
+            默认仅一行摘要（工具/技能/特色/MCP 计数）——首屏从 ~18 行降到 1 行；
+            展开后才出现原五分区（工具/技能/特色/System Prompt/MCP）。
+            用户实测反馈：启动面板信息过载（10 条特色全铺 + System Prompt 头行噪声）。 */}
+        <CollapseToggle
+          onToggle={() => setOverviewOpen(v => !v)}
+          open={overviewOpen}
+          suffix={`工具 ${toolsTotal} · 技能 ${skillsTotal} · 特色 ${FEATURE_SPOTLIGHTS.length}${info.mcp_servers?.length ? ` · MCP ${info.mcp_servers.length}` : ''} · /help 全览`}
+          t={t}
+          title="环境概览"
+        />
+        {overviewOpen && (
+          <>
+
+        {/* ── Tools ── */}
         <Box flexDirection="column" marginTop={1}>
           <CollapseToggle
             onToggle={() => setToolsOpen(v => !v)}
@@ -442,6 +458,8 @@ export function SessionPanel({ info, maxWidth, onCommand, sid, t }: SessionPanel
               to update
             </Text>
           </Text>
+        )}
+          </>
         )}
       </Box>
     </Box>

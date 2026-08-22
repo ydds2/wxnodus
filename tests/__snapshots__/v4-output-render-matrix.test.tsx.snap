@@ -72,17 +72,17 @@ exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/�
 
 exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > notice @ dense @ light 1`] = `" ⚠ 上下文已用 75%"`;
 
-exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ compact @ dark 1`] = `"▸ 推理 (1.0k tokens)"`;
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ compact @ dark 1`] = `"▸ 思考 (· 1.0k tokens)"`;
 
-exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ compact @ light 1`] = `"▸ 推理 (1.0k tokens)"`;
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ compact @ light 1`] = `"▸ 思考 (· 1.0k tokens)"`;
 
-exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ cozy @ dark 1`] = `"▸ 推理 (1.0k tokens)"`;
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ cozy @ dark 1`] = `"▸ 思考 (· 1.0k tokens)"`;
 
-exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ cozy @ light 1`] = `"▸ 推理 (1.0k tokens)"`;
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ cozy @ light 1`] = `"▸ 思考 (· 1.0k tokens)"`;
 
-exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ dense @ dark 1`] = `"▸ 推理 (1.0k tokens)"`;
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ dense @ dark 1`] = `"▸ 思考 (· 1.0k tokens)"`;
 
-exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ dense @ light 1`] = `"▸ 推理 (1.0k tokens)"`;
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ dense @ light 1`] = `"▸ 思考 (· 1.0k tokens)"`;
 
 exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > session-event @ compact @ dark 1`] = `"◈ 已切换到会话 s2"`;
 
