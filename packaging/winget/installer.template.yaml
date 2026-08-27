@@ -1,0 +1,17 @@
+# winget installer manifest 模板（scripts/generate-package-manifests.mjs 渲染；winget-pkgs 多文件形态之二）
+# 占位符：__VERSION__ / __INSTALLER_URL__ / __INSTALLER_SHA256__。
+# 提交前须知：zip 型 portable 安装器在 winget-pkgs 校验器（winget validate / 在线校验）下
+# 可能需要补 NestedInstallerType/NestedInstallerFiles（按校验输出调整，见发布指南）。
+PackageIdentifier: yyds2.wxnodus
+PackageVersion: __VERSION__
+InstallerLocale: zh-CN
+InstallerType: portable
+Commands:
+  - wxnodus
+  - wxn
+Installers:
+  - Architecture: x64
+    InstallerUrl: __INSTALLER_URL__
+    InstallerSha256: __INSTALLER_SHA256__
+ManifestType: installer
+ManifestVersion: 1.6.0

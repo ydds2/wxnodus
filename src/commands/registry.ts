@@ -138,7 +138,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/webhook': 'Webhook 配置',
   '/a2a': 'A2A 跨 agent 协议',
   '/acp': 'ACP server',
-  '/remote': '远程执行（ssh 通道：目标/运行/状态——远端未沙盒诚实口径）',
+  '/remote': '远程执行（ssh 通道 + exec-server：远端未沙盒/双机链路未真机验证，诚实口径）',
   '/eco': 'Windows 生态依赖探测（状态与能力）',
   '/swarm': '同种子代理多开',
   '/duo': '双脑协作',

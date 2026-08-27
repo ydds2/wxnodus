@@ -3,6 +3,7 @@
 import { join } from 'node:path';
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync } from 'node:fs';
 import { appendAudit, restoreCheckpoint } from '../../store/db.js';
+import { verifyAudit } from '../../kernel/audit.js';
 import { parseSinceArg } from '../../kernel/memory.js';
 import { estimateTokens } from '../../kernel/memory.js';
 import { settingsLayers } from '../../kernel/projectConfig.js';
@@ -810,6 +811,7 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
         '      /remote run <命令>（优先 exec-server（远端可沙盒）；否则 ssh）',
         '      /remote off（清除全部）   /remote status',
         ' 安全面：exec-server 默认 127.0.0.1；Bearer=HMAC(secret)；远端可经 OS 沙盒 profile 执行',
+        ' 验证状态：单测 + 本机 loopback 已覆盖；双机真机链路未验证（已裁决不做双机电池）——跨机部署请先小步验证',
       ]);
     }
     if (args[0] === 'server') {
@@ -957,6 +959,49 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
   });
 
   bus.register('/audit', (args) => {
+    const [sub] = args;
+    // A3 / P1-4（2026-08-27）：审计哈希链完整性校验——防篡改证据（可反复验证）
+    if (sub === 'verify') {
+      const r = verifyAudit(ctx.db as unknown as Parameters<typeof verifyAudit>[0]);
+      if (r.ok) return `审计哈希链完整：${r.count} 条事件全部可验证（GENESIS 起无断裂、无篡改）`;
+      return `审计哈希链断裂：第 #${r.brokenAtId} 条事件校验失败（prev 链或 hash 不符——可能存在篡改或并发分叉，见 kernel-eval B-5 修复说明）`;
+    }
+    // A3 / P1-4（2026-08-27）：审计导出——JSONL（机读）/ Markdown（人读）落盘（可指向网络共享/日志收集器）
+    if (sub === 'export') {
+      const flag = (name: string) => {
+        const i = args.indexOf(name);
+        return i >= 0 ? args[i + 1] : undefined;
+      };
+      const format = flag('--format') === 'md' ? 'md' : 'jsonl';
+      const out = flag('--out');
+      if (!out) return '用法：/audit export --out <路径> [--format jsonl|md] [--since <时间>] [--event <类型>]——目标路径必填（支持网络共享/收集器路径）';
+      const since = (() => {
+        const i = args.indexOf('--since');
+        return i >= 0 ? parseSinceArg(args[i + 1]) ?? undefined : undefined;
+      })();
+      const event = flag('--event');
+      const where = [
+        event ? 'AND event = ?' : '',
+        since ? `AND ts >= ${Math.floor(since)}` : '',
+      ].join(' ');
+      const params = event ? [event] : [];
+      const rows = ctx.db.prepare(
+        `SELECT id, prev_hash, event, payload, hash, ts FROM audit WHERE 1=1 ${where} ORDER BY id ASC`
+      ).all(...params) as Array<{ id: number; prev_hash: string; event: string; payload: string; hash: string; ts: number }>;
+      if (!rows.length) return '审计无记录可导出';
+      const body = format === 'jsonl'
+        ? rows.map(r => JSON.stringify({ id: r.id, prev_hash: r.prev_hash, event: r.event, payload: r.payload, hash: r.hash, ts: new Date(r.ts).toISOString() })).join('\n') + '\n'
+        : ['# 审计导出（哈希链）', '', '| id | 时间 | 事件 | 内容 | hash |', '|---|---|---|---|---|',
+          ...rows.map(r => `| #${r.id} | ${new Date(r.ts).toISOString()} | ${r.event} | ${String(r.payload).slice(0, 80).replace(/\|/g, '\\|')} | ${r.hash.slice(0, 12)}… |`),
+        ].join('\n') + '\n';
+      try {
+        writeFileSync(out, body, 'utf8');
+        appendAudit(ctx.db, 'audit.export', { format, count: rows.length, path: out });
+        return `审计已导出：${rows.length} 条 → ${out}（${format.toUpperCase()}，哈希链字段全量保留）`;
+      } catch (e) {
+        return `审计导出失败：${String((e as Error)?.message ?? e).slice(0, 200)}`;
+      }
+    }
     // A21：过滤查询（--event 事件类型 / --limit N / --since 时间）——默认尾部 20 条
     const event = (() => {
       const i = args.indexOf('--event');

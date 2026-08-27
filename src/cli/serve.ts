@@ -2,6 +2,7 @@
 // 路由：
 //   GET  /health/live   最小存活探针（无认证、不泄漏 dataDir/cwd/model/统计）
 //   GET  /health        完整状态（需 Bearer）
+//   GET  /flow          管线流图可视化（静态零数据页，无认证；实时模式页内凭 token 走 /events）
 //   POST /rpc           { method, params }——method 见 RpcMethods（需 Bearer；跨源被 CSRF 拒绝）
 //   GET  /events        SSE 事件流（需 Bearer）
 // 绑定 127.0.0.1（仅本机）；端口 WXNODUS_SERVE_PORT ?? 4789；token WXNODUS_SERVE_TOKEN（未配置时除 /health/live 外全部 401）
@@ -16,6 +17,7 @@ import { isRunIdentifier, isSessionIdentifier, type RunFinalStatus } from '../pr
 import type { RunInvocationHandle, RunInvocationPort } from '../application/runs/runInvocationPort.js';
 import { resolveAlias } from '../kernel/commandLevels.js';
 import { evaluateCsrf } from '../presentation/http/csrfPolicy.js';
+import { renderFlowHtml, FLOW_CSP } from '../presentation/http/flowPage.js';
 import { WXNODUS_VERSION } from '../kernel/version.js';
 
 export interface ServeKernel {
@@ -455,6 +457,20 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
         return;
       }
 
+      // 管线流图可视化：纯静态零数据页（无认证、不注入任何请求参数）；实时模式由页面内
+      // 凭用户输入的 token 经同源 fetch 流式读取 /events——网关认证面不变
+      if (req.method === 'GET' && url.pathname === '/flow') {
+        const html = renderFlowHtml({ version: WXNODUS_VERSION });
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Security-Policy': FLOW_CSP,
+          'Cache-Control': 'no-store',
+          ...corsHeaders(req, allowlist),
+        });
+        res.end(html);
+        return;
+      }
+
       // 状态修改请求：跨源 CSRF 判定先于认证（跨源携带有效 token 也拒绝）
       if (!csrf.ok) {
         json(res, req, 403, { ok: false, error: { code: csrf.code } }, allowlist);
@@ -788,7 +804,7 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
         return;
       }
 
-      json(res, req, 404, { ok: false, error: `未找到路由：${req.method} ${url.pathname}（GET /health/live、GET /health、POST /rpc、GET /events）` }, allowlist);
+      json(res, req, 404, { ok: false, error: `未找到路由：${req.method} ${url.pathname}（GET /health/live、GET /health、GET /flow、POST /rpc、GET /events）` }, allowlist);
     } catch (e: any) {
       if (canRespond(res)) {
         if (e?.code === 'SERVE_OWNERSHIP_STORE_FAILED' || e?.message === 'SERVE_OWNERSHIP_STORE_FAILED') {

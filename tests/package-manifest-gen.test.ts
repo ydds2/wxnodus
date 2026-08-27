@@ -4,11 +4,13 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderWingetManifest, renderScoopManifest, zipSha256 } from '../src/application/release/manifestGen.js';
 
 const WINGET_TPL = 'PackageVersion: __VERSION__\nShortDescription: __DESCRIPTION__\nInstallerUrl: __INSTALLER_URL__\nInstallerSha256: __INSTALLER_SHA256__\n';
 const SCOOP_TPL = JSON.stringify({ version: '__VERSION__', description: '__DESCRIPTION__', homepage: '__HOMEPAGE__', url: '__INSTALLER_URL__', hash: '__INSTALLER_SHA256__' });
+const PKG_ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), '..'));
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) { try { rmSync(d, { recursive: true, force: true }); } catch { /* 静默 */ } } });
@@ -40,6 +42,34 @@ describe('renderScoopManifest', () => {
   it('缺 hash → __SHA256_REQUIRED__（JSON 仍合法）', () => {
     const out = renderScoopManifest(SCOOP_TPL, { version: '3.1.0', description: '测试' });
     expect(JSON.parse(out).hash).toBe('__SHA256_REQUIRED__');
+  });
+});
+
+describe('winget 多文件 manifest（winget-pkgs 发布形态）', () => {
+  const complete = { version: '4.0.0-rc.1', description: '测试描述', url: 'https://x/w.zip', sha256: 'a'.repeat(64) };
+  const required: Record<string, string[]> = {
+    'version.template.yaml': ['PackageIdentifier: yyds2.wxnodus', 'PackageVersion: __VERSION__', 'DefaultLocale: zh-CN', 'ManifestType: version', 'ManifestVersion: 1.6.0'],
+    'installer.template.yaml': ['InstallerType: portable', 'InstallerUrl: __INSTALLER_URL__', 'InstallerSha256: __INSTALLER_SHA256__', 'Commands:', 'ManifestType: installer'],
+    'locale.zh-CN.template.yaml': ['PackageLocale: zh-CN', 'Publisher: yyds2', 'PackageName: WxNodus', 'License: Apache-2.0', 'ShortDescription: __DESCRIPTION__', 'ManifestType: defaultLocale'],
+  };
+  it('三份模板含发布必填字段；ctx 齐全时渲染无占位符残留', () => {
+    for (const [file, musts] of Object.entries(required)) {
+      const tpl = readFileSync(join(PKG_ROOT, 'packaging', 'winget', file), 'utf8');
+      for (const m of musts) expect(tpl).toContain(m);
+      const out = renderWingetManifest(tpl, complete);
+      expect(out).not.toContain('__');
+      expect(out).toContain('4.0.0-rc.1');
+      if (file === 'installer.template.yaml') expect(out).toContain('https://x/w.zip');
+      if (file === 'locale.zh-CN.template.yaml') expect(out).toContain('测试描述');
+    }
+  });
+  it('scoop 模板 license 为 Apache-2.0（与 package.json 一致）', () => {
+    const tpl = readFileSync(join(PKG_ROOT, 'packaging', 'scoop', 'wxnodus.template.json'), 'utf8');
+    const out = JSON.parse(renderScoopManifest(tpl, complete));
+    expect(out.license).toBe('Apache-2.0');
+    expect(out.version).toBe('4.0.0-rc.1');
+    expect(out.architecture['64bit'].url).toBe('https://x/w.zip');
+    expect(out.architecture['64bit'].hash).toBe('a'.repeat(64));
   });
 });
 

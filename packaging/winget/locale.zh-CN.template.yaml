@@ -1,0 +1,19 @@
+# winget defaultLocale manifest 模板（scripts/generate-package-manifests.mjs 渲染；winget-pkgs 多文件形态之三）
+# 占位符：__VERSION__ / __DESCRIPTION__。
+PackageIdentifier: yyds2.wxnodus
+PackageVersion: __VERSION__
+PackageLocale: zh-CN
+Publisher: yyds2
+PublisherUrl: https://github.com/yyds2/wxnodus
+PackageName: WxNodus
+License: Apache-2.0
+ShortDescription: __DESCRIPTION__
+Moniker: wxnodus
+Tags:
+  - cli
+  - ai
+  - agent
+  - windows
+  - local-first
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
