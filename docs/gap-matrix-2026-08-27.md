@@ -9,7 +9,7 @@
 
 | 维度 | wxnodus | codex | gemini-cli | opencode | kimi-cli | crush | aider | 差异判定 |
 |---|---|---|---|---|---|---|---|---|
-| 交互 TUI | ✅ 薄层重建（wire→ANSI，审批复用 wire 契约） | ✅ ratatui | ✅ Ink | ✅ @opentui | ✅ kosong | ✅ bubbletea | ✅ REPL | 已补齐（唯一缺过 TUI 的短板消除） |
+| 交互 TUI | ✅ 薄层重建（wire→ANSI，审批复用 wire 契约）+ **kimi 风格化（2026-08-28）**：思考折叠动画/生成 spinner+Markdown 增量提交/Using-Used 工具行/severity 通知/底栏（模式+模型○+cwd 分支+轮换提示）/Ctrl+C 中断 | ✅ ratatui | ✅ Ink | ✅ @opentui | ✅ kosong | ✅ bubbletea | ✅ REPL | 已补齐并风格对齐（机制参考 kimi、行式投影实现原创） |
 | headless 入口 | ✅ 6 入口（-p/wire/serve/stdin/mcp-server/ACP） | ✅ exec+json | ✅ -p+pipe | ✅ run+pipe | ✅ 四态+wire | 🟡 run+serve（无 -p） | ✅ --message | 与 kimi/codex 持平 |
 | IDE 集成 | 🟡 VS Code 0.2.0（wire 桥+诊断+diff） | ✅ app-server+双 SDK | ✅ IDE 伴生包 | ✅ VS Code+Zed+GH Action | ✅ web+vis | 🟡 — | ❌ | 生态面仍薄于 codex/opencode（定位已收窄为协议开放面） |
 | Web/桌面 UI | 裁决不做 | ✅ desktop_app | ❌ | ✅ Electron+Web+Slack | ✅ web UI | 🟡 — | ✅ --gui | 裁决 |

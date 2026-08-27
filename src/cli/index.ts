@@ -1031,6 +1031,7 @@ if (pre.mode === 'error') {
     runInvocation,
     commandBus,
     routeInput,
+    cwd: process.cwd(),
     setOnRequest: fn => { requestRelay = fn; },
     onExit: () => { void shutdown('tui-exit'); },
   });

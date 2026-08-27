@@ -136,7 +136,7 @@
 
 | 卡片 | 内容 | 状态 |
 |---|---|---|
-| P2-11 | 薄层 TUI 重建 | ✅ 已落地（见 Q1） |
+| P2-11 | 薄层 TUI 重建 | ✅ 已落地（见 Q1）；**kimi 风格化完善（2026-08-28，用户指定）**：思考折叠动画（0.13s×6 点帧+耗时+token 估算+tok/s 心跳→"Thought for Xs · N tokens"）、生成 spinner + Markdown 增量提交（行状态机，完整块才落盘）、工具行 "Using X (关键参数)"→绿/红 bullet 结果、通知 severity 着色、底栏（─ 分隔线 + 模式(model ●/○) + cwd 分支徽标 + 30s 轮换提示 + 窄终端降级）、Ctrl+C 中断；修复 `reasoning.delta` 死接线（C1 模式再现）；theme/keyArg/markdownStreamer/gitStatus 四模块 + 39 TUI 测试 + conpty 真机冒烟绿；参考锚点与实现差异见 `docs/kimi-gap-alignment-ledger.md` T1–T7 |
 | P2-14 | durable queue（codex 对齐） | ✅ **已落地**：`kernel/durableQueue.ts` + db-v12 迁移——入队先于模型处理/终态收口 done/崩溃恢复 stale→interrupted + system.notice（每会话一次）/子代理不入队；agent.run 包裹接线；4 单测 |
 | P2-13 | 任务级评测 harness | ✅ **已落地**：`scripts/eval/task-eval.mjs` + 3 任务（fibonacci/csv-sum/anagram，零模型依赖评分脚本）——真实端点 env 供给 × N 轮 → artifacts/task-eval.{md,json} 通过率报告；未配置诚实 skip（exit 2）；评分路径实测 PASS。**B3 扩充（2026-08-27）**：任务库 3→10（json-merge/url-query/roman/md-links/days-between/top-words/arith-eval 七领域）+ 每任务 golden 参考解 + `eval:tasks:selftest` 双向评分路径门禁（golden PASS / 无解 FAIL）入 ci |
 | P2-15 | `/btw` 旁路问答 + Notification hook | ✅ **已落地**：①/btw 核对——**已有真实实现**（`handlersExt.ts:2111` 只读子代理隔离问答，不打断主对话——原差距评估有误，已更正台账）；②**Notification hook 接线补齐**——hooks.ts 契约早已存在但 agent 从未调用（死接线同类），noticeQueue 注入前触发 `hooks.notification('jobs', text)`，hook 异常绝不阻断注入；2 测试 |
