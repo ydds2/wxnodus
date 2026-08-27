@@ -9,6 +9,8 @@
 //   错误归因：describeImageStatus 区分 无 key / 本地不可用 / 网络失败（不再一律 null）
 import { decryptKey } from './providers.js';
 import { createHash } from 'node:crypto';
+// A2（2026-08-27）：出站统一 fetch（env 代理 + 私网段默认直连）——静态导入保证请求同步发出
+import { createOutboundFetch } from '../infrastructure/http/outboundFetch.js';
 
 interface VisionSettings { baseURL?: string; model?: string; key?: string; local?: boolean; ocr?: boolean }
 
@@ -100,7 +102,8 @@ async function remoteVision(target: string, key: string, prompt: string | undefi
     }
     const base = (settings.baseURL ?? visionBase()).replace(/\/+$/, '');
     const model = settings.model ?? visionModel();
-    const resp = await fetch(`${base}/chat/completions`, {
+    // A2（2026-08-27）：出站统一 fetch（env 代理 + 私网段默认直连）
+    const resp = await createOutboundFetch().fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
       body: JSON.stringify({
@@ -205,7 +208,8 @@ export async function analyzeText(prompt: string, apiKeyEnc: string | null): Pro
   const key = visionKey(apiKeyEnc);
   if (!key) return null;
   try {
-    const resp = await fetch(`${visionBase().replace(/\/+$/, '')}/chat/completions`, {
+    // A2（2026-08-27）：出站统一 fetch（env 代理 + 私网段默认直连）
+    const resp = await createOutboundFetch().fetch(`${visionBase().replace(/\/+$/, '')}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
       body: JSON.stringify({

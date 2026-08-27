@@ -42,15 +42,18 @@ export function isNewerVersion(latest: string, current: string): boolean {
 export async function fetchLatestRelease(
   feedUrl: string | null | undefined,
   currentVersion: string = WXNODUS_VERSION,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl?: typeof fetch,
   timeoutMs = 6000,
 ): Promise<UpdateFeedInfo> {
   if (!feedUrl) {
     return { updateAvailable: false, latest: null, downloadUrl: null, sha256: null, notes: '未配置更新源（settings.updateFeed 或 WXNODUS_UPDATE_FEED）' };
   }
+  // A2（2026-08-27）：缺省走出站统一 fetch（env 代理 + 私网段默认直连）——内网 feed 可用；
+  // 测试注入的 fetchImpl 仍优先（契约不变）。
+  const doFetch = fetchImpl ?? (await import('../infrastructure/http/outboundFetch.js')).createOutboundFetch().fetch;
   let raw: any;
   try {
-    const res = await fetchImpl(feedUrl, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+    const res = await doFetch(feedUrl, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return { updateAvailable: false, latest: null, downloadUrl: null, sha256: null, notes: `更新源响应 ${res.status}` };
     raw = await res.json();
   } catch (e: any) {

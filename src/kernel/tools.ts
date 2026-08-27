@@ -3,7 +3,7 @@
 //      危险工具结果包裹 <untrusted_tool_result>（防提示注入——模型把工具输出当指令）
 // 参考：Claude Code tools-reference（15 工具）、aider 工具集、Codex function call
 import { execFileSync, spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { safeWorkspaceRead, safeWorkspaceWrite, workspaceSha256 } from '../infrastructure/fs/safeWorkspaceFs.js';
 import { validateWorkspaceTarget } from '../infrastructure/fs/pathBoundary.js';
@@ -16,12 +16,34 @@ import { resolveSubagentDef, type SubagentDefinition, type SubagentRunOptions } 
 import { detectImageType, readImageDimensions, estimateVisionTokens } from './imageMeta.js';
 
 /** A25：grep 存在性探测（Windows 默认无 grep——缺失时工具诚实报错而非假阴性）
- * W3-11：进程探测集中到 kernel/processProbe（入口层不直接执行进程） */
+ * W3-11：进程探测集中到 kernel/processProbe（入口层不直接执行进程）
+ * P1-6（2026-08-27）：解析升级——PATH 之外探测 Git for Windows 常见安装路径与注册表
+ * InstallPath（用户机器装了 Git 但没进 PATH 时 grep 仍可用；测试环境同理，不再依赖 PATH）。 */
 let grepChecked: boolean | null = null;
-function hasGrep(): boolean {
-  if (grepChecked !== null) return grepChecked;
+let grepBinary: string | null = null;
+function resolveGrepBinary(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (grepChecked !== null) return grepBinary;
   grepChecked = probeProcessAvailable('grep', ['--version'], 5000);
-  return grepChecked;
+  if (grepChecked) { grepBinary = 'grep'; return grepBinary; }
+  if (process.platform === 'win32') {
+    const candidates = [
+      'C:\\Program Files\\Git\\usr\\bin\\grep.exe',
+      'C:\\Program Files (x86)\\Git\\usr\\bin\\grep.exe',
+      env.LOCALAPPDATA ? join(env.LOCALAPPDATA, 'Programs', 'Git', 'usr', 'bin', 'grep.exe') : '',
+    ].filter(Boolean);
+    for (const p of candidates) {
+      if (existsSync(p)) { grepBinary = p; return grepBinary; }
+    }
+    try {
+      const out = execFileSync('reg.exe', ['query', 'HKLM\\SOFTWARE\\GitForWindows', '/v', 'InstallPath'], { encoding: 'utf8', windowsHide: true, timeout: 4000, stdio: ['ignore', 'pipe', 'ignore'] }) as unknown as string;
+      const m = /REG_SZ\s+(.+?)\s*$/m.exec(String(out));
+      if (m?.[1]) {
+        const p = join(m[1].trim(), 'usr', 'bin', 'grep.exe');
+        if (existsSync(p)) { grepBinary = p; return grepBinary; }
+      }
+    } catch { /* 注册表不可读 → 无 grep（诚实报错路径不变） */ }
+  }
+  return null;
 }
 
 /** fs_edit 多处出现反馈的行号换算（O(n + k·log n)；纯函数可单测）
@@ -634,7 +656,8 @@ export function coreTools(): Record<string, ToolDef> {
       // 修复 F14：execFileSync 参数数组（不经 shell），消除命令注入
       // A25：Windows 无 grep 时诚实报错——此前 ENOENT 被 catch 成「（无匹配）」，
       // 模型拿到假阴性结论（工具假装可用）
-      if (!hasGrep()) {
+      const grepBin = resolveGrepBinary();
+      if (!grepBin) {
         return 'grep 工具不可用：未找到 grep 二进制（Windows 请安装 Git for Windows 或配置 PATH；或改用 find_files）';
       }
       try {
@@ -642,7 +665,7 @@ export function coreTools(): Record<string, ToolDef> {
         // 越权搜索工作区外敏感文件（danger:false + smart 模式前置链放行 + 审批桥 mark 短路三重叠加）
         const boundary = await validateWorkspaceTarget(ctx.cwd, resolve(ctx.cwd, path), { allowRoot: true });
         if (!boundary.ok) return `搜索路径越界（仅允许工作区内）：${path}`;
-        const out = execFileSync('grep', ['-rn', String(pattern), boundary.target], { encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
+        const out = execFileSync(grepBin, ['-rn', String(pattern), boundary.target], { encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
         const lines = out.split('\n').filter(l => l.trim());
         const cap = Math.max(1, Math.floor(Number(head) || 200));
         // 诚实截断：超行数结果显式标注（模型知道后面还有匹配——收窄 pattern/限定 path/加 head 续查）

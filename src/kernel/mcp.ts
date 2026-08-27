@@ -686,7 +686,9 @@ export async function connectMcpHttp(cfg: McpServerConfig & { url: string }, opt
     };
     if (sessionId) headers['Mcp-Session-Id'] = sessionId;
     const id = notification ? undefined : nextId++;
-    const resp = await fetch(base, {
+    // A2（2026-08-27）：出站统一 fetch（env 代理 + 私网段默认直连）；SSRF 判定已在前完成
+    const { createOutboundFetch } = await import('../infrastructure/http/outboundFetch.js');
+    const resp = await createOutboundFetch().fetch(base, {
       method: 'POST',
       headers,
       body: JSON.stringify({ jsonrpc: '2.0', ...(id === undefined ? {} : { id }), method, params }),
@@ -736,7 +738,9 @@ export async function connectMcpHttp(cfg: McpServerConfig & { url: string }, opt
       closed = true;
       if (!sessionId) return;
       const headers: Record<string, string> = { 'Mcp-Session-Id': sessionId };
-      const resp = await fetch(base, {
+      // A2（2026-08-27）：出站统一 fetch（env 代理 + 私网段默认直连）
+      const { createOutboundFetch } = await import('../infrastructure/http/outboundFetch.js');
+      const resp = await createOutboundFetch().fetch(base, {
         method: 'DELETE',
         headers,
         signal: AbortSignal.timeout(requestTimeoutMs),

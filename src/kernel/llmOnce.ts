@@ -2,6 +2,9 @@
 // 此前 /compact summarize 与 llmSpec.aiMakeSpec 各有一份「buildChatRequest → fetch →
 // json → content」+ 错误处理 + JSON 抽取——融合为单一事实源，错误映射统一走 mapHttpError。
 import { buildChatRequest, mapHttpError, type ChatMessage } from './providers.js';
+// A2（2026-08-27）：出站统一 fetch（env 代理 + 私网段默认直连）——静态导入保证请求同步发出
+//（调用方测试同步读取 requestSignal；动态 import 的微任务延迟会破坏该契约）
+import { createOutboundFetch } from '../infrastructure/http/outboundFetch.js';
 
 export interface LlmOnceOpts {
   baseURL: string;
@@ -43,7 +46,8 @@ export async function callModelOnce(opts: LlmOnceOpts): Promise<LlmOnceResult> {
   const signal = opts.signal ? AbortSignal.any([timeoutSignal, opts.signal]) : timeoutSignal;
   let resp: Response;
   try {
-    resp = await fetch(httpReq.url, {
+    // A2（2026-08-27）：出站统一 fetch（env 代理 + 私网段默认直连）
+    resp = await createOutboundFetch().fetch(httpReq.url, {
       method: 'POST',
       headers: httpReq.headers,
       body: httpReq.body,

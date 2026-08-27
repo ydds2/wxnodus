@@ -300,6 +300,14 @@ if (pre.mode === 'error') {
   let gateway: any = null;
   let commandBus: any = null;
 
+  // A2 Phase2（2026-08-27）：预取 WinINET 系统代理（无 env 代理时）——企业 Windows 的代理
+  // 多为系统级配置；bootstrap 阶段异步预取、同步消费（createOutboundFetch 保持同步契约）。
+  // 失败诚实降级直连，绝不阻塞启动。
+  try {
+    const { loadSystemProxy } = await import('../infrastructure/http/outboundFetch.js');
+    await loadSystemProxy();
+  } catch { /* 系统代理预取失败 → 直连（doctor 会如实展示） */ }
+
   const { createCliComposition } = await import('../bootstrap/cliComposition.js');
   const composition = await createCliComposition({
     dataDir,
@@ -1005,16 +1013,28 @@ if (pre.mode === 'error') {
     await exitAfterShutdown(0, 'non-tty-without-input');
   }
 
-  // 2026-08-22 交互 TUI 已整体移除（用户指令「删除全部UI」）：
-  // 无 -p/--serve/--wire/--mcp-server 且无管道输入到达此处——诚实指引后退出，
-  // 产品仅保留非交互入口（-p / stdin 管道 / --serve / --wire / --mcp-server / acp）。
-  const { translate } = await import('../application/i18n/i18nService.js');
-  process.stdout.write(`交互 TUI 已移除——请使用非交互模式：
-wxnodus -p "<指令>"
-
-${translate(locale, 'cli.usage')}
-`);
-  await exitAfterShutdown(0, 'interactive-tui-removed');
+  // P2 / Q1（2026-08-27）：薄层 TUI——wire 事件→ANSI 纯函数渲染（无 React/Ink）；
+  // 审批/澄清/密码复用 wire 网关契约（headlessGateway 广播 + *.respond 应答，与 --wire 同协议）。
+  // 此前（2026-08-22）交互 TUI 整体移除；本次重建为薄投影层，不恢复旧 UI 巨件。
+  const { createHeadlessWireGateway } = await import('./headlessGateway.js');
+  const { startInteractiveLoop } = await import('../presentation/tui/interactiveLoop.js');
+  let requestRelay: ((ev: { type: string } & Record<string, unknown>) => void) | null = null;
+  const tuiSessionId = agent.getSessionId?.() ?? 'default';
+  gateway = createHeadlessWireGateway({ sessionId: tuiSessionId, onRequest: ev => { requestRelay?.(ev); } });
+  const { routeInput } = await import('../commands/intent.js');
+  const modelLabel = String((config.get('settings') as Record<string, any>)?.model ?? '未配置（/model 配置）');
+  await startInteractiveLoop({
+    sessionId: tuiSessionId,
+    modelLabel,
+    gateway,
+    bus,
+    runInvocation,
+    commandBus,
+    routeInput,
+    setOnRequest: fn => { requestRelay = fn; },
+    onExit: () => { void shutdown('tui-exit'); },
+  });
+  await exitAfterShutdown(0, 'tui-exit');
 }
 
 main().catch(async e => {

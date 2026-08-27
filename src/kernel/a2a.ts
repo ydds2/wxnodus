@@ -87,11 +87,15 @@ const artifactOf = (r: A2ARunResult): A2ATask['artifact'] => ({
   parts: [{ text: r.text || (r.ok ? '（空回复）' : '模型未配置——/model set-key <密钥> 配置后使用') }],
 });
 
+/** A2（2026-08-27）：出站统一 fetch（env 代理 + 私网段默认直连）——agent 间协议同享代理语义 */
+const fetchOut = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+  (await import('../infrastructure/http/outboundFetch.js')).createOutboundFetch().fetch(input, init);
+
 /** 客户端：拉取对端 agent card（10s 超时；解析失败诚实报错）。 */
 export async function fetchAgentCard(url: string): Promise<{ ok: boolean; card?: A2AAgentCard; error?: string }> {
   try {
     const base = url.endsWith('/') ? url : `${url}/`;
-    const resp = await fetch(`${base}.well-known/agent.json`, { signal: AbortSignal.timeout(10_000) });
+    const resp = await fetchOut(`${base}.well-known/agent.json`, { signal: AbortSignal.timeout(10_000) });
     if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
     const j = await resp.json() as A2AAgentCard;
     if (!j || typeof j.name !== 'string') return { ok: false, error: '卡片格式非法（缺 name）' };
@@ -105,7 +109,7 @@ export async function fetchAgentCard(url: string): Promise<{ ok: boolean; card?:
 export async function a2aCall(url: string, text: string, opts: { timeoutMs?: number; token?: string } = {}): Promise<A2AResponse> {
   const timeout = opts.timeoutMs ?? 120_000;
   try {
-    const resp = await fetch(url, {
+    const resp = await fetchOut(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}) },
       body: JSON.stringify({
@@ -135,7 +139,7 @@ export async function a2aTaskSend(
   try {
     const params: Record<string, unknown> = { message: { role: 'user', parts: [{ text }] } };
     if (opts.pushUrl) params.pushNotificationConfig = { url: opts.pushUrl };
-    const resp = await fetch(url, {
+    const resp = await fetchOut(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}) },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tasks/send', params }),
@@ -147,7 +151,7 @@ export async function a2aTaskSend(
     if (!taskId) return { ok: false, text: '', taskId: '', state: '', error: '对端未返回任务 id' };
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
-      const g = await fetch(url, {
+      const g = await fetchOut(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}) },
         body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tasks/get', params: { id: taskId } }),
@@ -222,7 +226,7 @@ export async function a2aServe(
     if (!task.pushUrl) return;
     // M-5（V4 维护轨）：notification 回包协议修正——与 tasks/send 同族 JSON-RPC 2.0 信封
     //（此前裸 {taskId,state} 对象——对端 JSON-RPC 分发器无法路由）
-    void fetch(task.pushUrl, {
+    void fetchOut(task.pushUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', method: 'tasks/notification', params: { taskId: task.id, state: task.state, error: task.error } }),

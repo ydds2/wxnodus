@@ -93,7 +93,11 @@ export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): P
     try {
       const timeoutSignal = AbortSignal.timeout(timeoutMs);
       const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-      const resp = await fetch(current, {
+      // A2（2026-08-27）：出站统一 fetch——env 代理 + 私网段默认直连。
+      // SSRF 判定已在本跳前完成（URL 层），代理只是传输；私网目标经 no_proxy 直连，
+      // 到达前仍被 authorizeOutboundUrl 拒绝（策略不因代理打折）。
+      const { createOutboundFetch } = await import('../infrastructure/http/outboundFetch.js');
+      const resp = await createOutboundFetch().fetch(current, {
         redirect: 'manual', // 手动跟随以逐跳校验
         signal: requestSignal,
         method,

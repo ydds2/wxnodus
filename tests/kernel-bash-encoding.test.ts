@@ -112,12 +112,15 @@ describe('V4 P1-2 bash 超时可调（win32 真实执行）', { skip: process.pl
     } finally { try { rmSync(d, { recursive: true, force: true }); } catch { /* */ } }
   }, 15_000);
 
-  it('间歇输出续命：每 800ms 输出一次共 3 次（总 2.4s > 1.5s 预算）不被误杀', async () => {
+  it('间歇输出续命：每 800ms 输出一次共 3 次（总 2.4s > 2s 预算）不被误杀', async () => {
+    // P1-6（2026-08-27）：预算 1.5s→2s——高负载下 PowerShell 子进程调度抖动曾使 800ms
+    // 间隔偶发超 1.5s 预算误杀（全量并发 flaky）；2s 预算对 800ms 节奏保留 2.5 倍裕度，
+    // 「静默才杀」语义不变（总时长仍 > 预算，续命断言依然有效）。
     const tools = _coreToolsForP12();
     const d = mkdtempSync(join(tmpdir(), 'wx-p12c-'));
     try {
       const r = await tools.bash!.run(
-        { command: '1..3 | ForEach-Object { Start-Sleep -Milliseconds 800; Write-Output "tick $_" }', timeout_ms: 1500 },
+        { command: '1..3 | ForEach-Object { Start-Sleep -Milliseconds 800; Write-Output "tick $_" }', timeout_ms: 2000 },
         { cwd: d } as any,
       );
       expect(String(r)).toContain('tick 3');

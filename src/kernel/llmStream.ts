@@ -76,6 +76,12 @@ export interface LlmStreamOpts {
   idleChunkGapMs?: number;
   /** 输出 token 钳制（C——kimi 机制对齐）：透传 buildChatRequest.maxTokens（不传不写字段） */
   maxTokens?: number;
+  /** 流式中途工具就绪信号（批次2——kimi on_tool_call 机制参考·实现原创）：
+   *  OpenAI 流式下「index N+1 首 fragment 出现 ⇒ index N 已完整」（arguments JSON 闭合
+   *  不可靠——转义/分片边界任意，不作判定依据）。kind='index-advanced'（新 index 出现）
+   *  或 'final'（finish_reason/[DONE] 后剩余槽位）。回调幂等（每 index 至多一次）；
+   *  不影响 toolCalls 全量返回（向后兼容）。失败路径不补发 final（消费方自弃）。 */
+  onToolCallReady?: (call: { index: number; id: string; name: string; arguments: string }, kind: 'index-advanced' | 'final') => void;
 }
 
 export type LlmStreamResult =
@@ -320,6 +326,19 @@ async function parseSse(response: Response, opts: LlmStreamOpts, signal: AbortSi
   let doneSeen = false;
   let semanticDelta = false;
   const toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
+  // 批次2：流式中途就绪信号状态——maxToolIndex 已见最大 index；emittedIdx 保证每 index 至多回调一次
+  let maxToolIndex = -1;
+  const emittedIdx = new Set<number>();
+  const emitToolReady = (uptoExclusive: number, kind: 'index-advanced' | 'final') => {
+    if (!opts.onToolCallReady) return;
+    for (let i = 0; i < uptoExclusive; i++) {
+      const call = toolCalls[i];
+      if (call && (call.id || call.name || call.arguments) && !emittedIdx.has(i)) {
+        emittedIdx.add(i);
+        opts.onToolCallReady({ index: i, id: call.id, name: call.name, arguments: call.arguments }, kind);
+      }
+    }
+  };
 
   const processFrame = (rawFrame: string): StreamFailure | undefined => {
     const frame = rawFrame.replace(/\r\n/g, '\n');
@@ -417,6 +436,12 @@ async function parseSse(response: Response, opts: LlmStreamOpts, signal: AbortSi
         if (!hasFragment) continue;
         const index = typeof fragment.index === 'number' ? fragment.index : 0;
         semanticDelta = true;
+        // 批次2：新 index 首个 fragment 到达 ⇒ 更小 index 的槽位已完整（OpenAI 流式事实）
+        // ——立即回调（不等流尾）。提前派发窗口 = 该工具执行与剩余 token 流出并行。
+        if (index > maxToolIndex) {
+          emitToolReady(index, 'index-advanced');
+          maxToolIndex = index;
+        }
         toolCalls[index] ??= { id: '', name: '', arguments: '' };
         if (typeof fragment.id === 'string') toolCalls[index]!.id += fragment.id;
         if (typeof fn?.name === 'string') toolCalls[index]!.name += fn.name;
@@ -469,6 +494,7 @@ async function parseSse(response: Response, opts: LlmStreamOpts, signal: AbortSi
   if (!semanticDelta) {
     return { ok: false, kind: 'stream-error', error: '模型返回空响应', semanticDelta: false };
   }
+  emitToolReady(MAX_TOOL_CALLS, 'final'); // 流尾扫尾：剩余槽位（最后一个/唯一工具）就绪
   return {
     ok: true,
     content,
@@ -494,7 +520,10 @@ async function attemptModel(model: string, opts: LlmStreamOpts, signal: AbortSig
   const combined = AbortSignal.any([signal, wd.signal]);
   let response: Response;
   try {
-    response = await fetch(request.url, { method: 'POST', headers: request.headers, body: request.body, signal: combined });
+    // A2（2026-08-27）：模型调用走出站统一 fetch——env 代理 + 私网段默认直连
+    //（企业代理环境可用；内网私有端点绝不外发）
+    const { createOutboundFetch } = await import('../infrastructure/http/outboundFetch.js');
+    response = await createOutboundFetch().fetch(request.url, { method: 'POST', headers: request.headers, body: request.body, signal: combined });
   } catch (error) {
     wd.dispose();
     if (wd.firedKind()) return watchdogFailure(wd.firedKind()!, false);

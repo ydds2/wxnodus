@@ -413,3 +413,64 @@ describe('输出 token 钳制透传（C）', () => {
     expect(body.max_tokens).toBe(777)
   })
 })
+
+describe('流式中途工具就绪信号（批次2——kimi on_tool_call 对齐）', () => {
+  it('index N+1 首个 fragment 到达 ⇒ index N 以 index-advanced 就绪（arguments 完整）', async () => {
+    const ready: Array<{ index: number; name: string; arguments: string; kind: string }> = []
+    const payload = [
+      // index 0：arguments 分三片
+      'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'fs_r', arguments: '{"p' } }] } }] }) + '\n\n',
+      'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '":"a' } }] } }] }) + '\n\n',
+      'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '.txt"}' } }] } }] }) + '\n\n',
+      // index 1 首个 fragment 到达 ⇒ index 0 完成
+      'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 1, id: 'c2', function: { name: 'ls', arguments: '{}' } }] } }] }) + '\n\n',
+      'data: [DONE]\n\n',
+    ].join('')
+    vi.stubGlobal('fetch', vi.fn(async () => streamResponse([payload.slice(0, 60), payload.slice(60)])))
+    const result = await callLlmStream({
+      ...deps,
+      messages: [MSG],
+      onToolCallReady: (call, kind) => ready.push({ ...call, kind }),
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // index-advanced 在流中途即发，arguments 已完整累积
+    expect(ready).toHaveLength(2)
+    expect(ready[0]).toMatchObject({ index: 0, id: 'c1', name: 'fs_r', arguments: '{"p":"a.txt"}', kind: 'index-advanced' })
+    expect(ready[1]).toMatchObject({ index: 1, id: 'c2', name: 'ls', arguments: '{}', kind: 'final' })
+    // 全量返回不受影响（向后兼容）
+    expect(result.toolCalls).toEqual([
+      { id: 'c1', name: 'fs_r', arguments: '{"p":"a.txt"}' },
+      { id: 'c2', name: 'ls', arguments: '{}' },
+    ])
+  })
+
+  it('单工具调用：仅流尾 final 一次（幂等——不重复回调）', async () => {
+    const ready: Array<{ index: number; kind: string }> = []
+    const payload = [
+      'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'ls', arguments: '{}' } }] } }] }) + String.fromCharCode(10, 10),
+      'data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }) + String.fromCharCode(10, 10),
+      'data: [DONE]' + String.fromCharCode(10, 10),
+    ].join('')
+    vi.stubGlobal('fetch', vi.fn(async () => streamResponse([payload])))
+    const result = await callLlmStream({
+      ...deps,
+      messages: [MSG],
+      onToolCallReady: (call, kind) => ready.push({ index: call.index, kind }),
+    })
+    expect(result.ok).toBe(true)
+    expect(ready).toEqual([{ index: 0, kind: 'final' }])
+  })
+
+  it('不提供回调时零影响（向后兼容）', async () => {
+    const payload = [
+      'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'ls', arguments: '{}' } }] } }] }) + '\n\n',
+      'data: [DONE]\n\n',
+    ].join('')
+    vi.stubGlobal('fetch', vi.fn(async () => streamResponse([payload])))
+    const result = await callLlmStream({ ...deps, messages: [MSG] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.toolCalls).toHaveLength(1)
+  })
+})

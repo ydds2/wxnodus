@@ -151,6 +151,26 @@ export async function runDoctor(input: DoctorInput): Promise<DoctorReport> {
   }
   checks.push({ item: '原生依赖', status: nativeStatus, detail: nativeParts.join(' · ') });
 
+  // ⑥¼ A3 / P1-4（2026-08-27）：三层策略面——全局/用户/项目加载状态与诊断（损坏如实报 fail）
+  try {
+    const { loadMergedPolicyRules } = await import('../infrastructure/policy/policyLayers.js');
+    const policy = loadMergedPolicyRules({ dataDir: input.dataDir, workspaceRoot: input.cwd });
+    const layerBits = policy.layers.map(l => `${l.name}:${l.missing ? '无' : l.loadError ? '损坏' : `${l.rules.length} 条`}`).join(' / ');
+    checks.push({ item: '策略层', status: policy.diagnostics.length ? 'fail' : 'ok', detail: layerBits + (policy.diagnostics.length ? `；警告：${policy.diagnostics.join('；')}` : '') });
+  } catch { /* 策略探测失败不污染体检 */ }
+
+  // ⑥½ A2（2026-08-27）：网络代理面——env 或系统代理生效时如实展示（私网段默认直连红线一并说明）
+  try {
+    const { createOutboundFetch, loadSystemProxy } = await import('../infrastructure/http/outboundFetch.js');
+    await loadSystemProxy();
+    const outbound = createOutboundFetch();
+    if (outbound.proxyDescription) {
+      checks.push({ item: '网络代理', status: 'ok', detail: outbound.proxyDescription });
+    } else {
+      checks.push({ item: '网络代理', status: 'info', detail: '未配置（HTTP(S)_PROXY 环境变量 / WinINET 系统代理）——直连' });
+    }
+  } catch { /* 代理探测失败不污染体检 */ }
+
   // ⑦ 磁盘余量（dataDir 所在卷）
   try {
     const st = statfsSync(input.dataDir);

@@ -158,7 +158,9 @@ export async function runRemoteExecServer(
 ): Promise<RemoteExecResult & { transportError: string | null }> {
   const timeoutMs = opts.timeoutMs ?? 60_000;
   try {
-    const resp = await fetch(`http://${target.host}:${target.port}/exec`, {
+    // A2（2026-08-27）：出站统一 fetch（env 代理 + 私网段默认直连）——内网 exec-server 端点不经代理
+    const { createOutboundFetch } = await import('../infrastructure/http/outboundFetch.js');
+    const resp = await createOutboundFetch().fetch(`http://${target.host}:${target.port}/exec`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${target.token}` },
       body: JSON.stringify({ command, timeoutMs }),
