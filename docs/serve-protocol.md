@@ -1,4 +1,4 @@
-# Serve 协议（`--serve` 本地 HTTP 网关）
+﻿# Serve 协议（`--serve` 本地 HTTP 网关）
 
 > 版本：V1 · 与源码同步（契约面：`src/cli/serve.ts`、`src/presentation/http/`——csrfPolicy/httpSecurity/httpSessionIsolation/httpTokenStore）。
 > 定位：本地桌面端/面板/第三方集成的开放面；**仅本机监听，绝不暴露公网**。

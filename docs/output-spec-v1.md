@@ -1,4 +1,4 @@
-# WxNodus 输出规范 v1（Output Spec）
+﻿# WxNodus 输出规范 v1（Output Spec）
 
 > **单一事实源**：`src/wxnodus-ui/output/spec.ts`（`OUTPUT_SPEC_VERSION = 1`）。
 > 本文档是规范的书面形态；两者不一致时以 spec.ts 为准并当日修正文档。

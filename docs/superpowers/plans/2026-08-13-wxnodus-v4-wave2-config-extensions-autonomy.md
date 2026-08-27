@@ -1,4 +1,4 @@
-# WxNodus V4 Wave 2 配置、扩展与自主运行实施计划
+﻿# WxNodus V4 Wave 2 配置、扩展与自主运行实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 逐任务实施；步骤使用 `- [ ]` 跟踪。
 >

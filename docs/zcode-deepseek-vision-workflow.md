@@ -1,4 +1,4 @@
-# ZCode + DeepSeek 纯文本模型视觉工作流
+﻿# ZCode + DeepSeek 纯文本模型视觉工作流
 
 > 事故锚点：2026-08-17 ZCode 切 `deepseek-v4-pro` 后回合 400——`messages[678]: unknown variant image_url, expected text`（纯文本模型收到多模态内容块）。
 > 本文档记录：会话工作流规则（人） + 代码侧纵深防御（机器），两者互为兜底。

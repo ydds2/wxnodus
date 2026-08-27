@@ -1,4 +1,4 @@
-# WxNodus V4.0 计划（2026-08-21 · 新仓库起点）
+﻿# WxNodus V4.0 计划（2026-08-21 · 新仓库起点）
 
 > **文档定位**：wxnodus 4.0 的版本级总计划。以**输出体系重设计**为龙头主线，继承 V3.x 计划（`wxnodus-master-upgrade-plan-2026-08-21.md`，下称【V3 计划】）的全部缺陷修复与机制对齐任务，在全新仓库（本目录 `Desktop/wxnodus4.0`）组织为 4.0 版本目标。
 > **输入源**（本会话全部上下文）：①纯源码审计【V3 计划】之底册 `production-readiness-plan-2026-08-21.md`（8S/26A/42B/30C，全带 file:line）；②6 家竞品本地源码机制取证；③5 路网络调研（Codex+Claude Code / Gemini+Kimi / OpenCode+Crush / Aider+品类痛点 / 可靠性最佳实践）；④用户战略约束（四条 + 离线裁撤二次裁决）；⑤输出体系现状侦察（本日）。

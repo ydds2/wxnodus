@@ -1,4 +1,4 @@
-# AI 接入层开放 + 余额监控 + UI 简约趣味改版 实现计划
+﻿# AI 接入层开放 + 余额监控 + UI 简约趣味改版 实现计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task（本会话子代理额度已耗尽，禁用 subagent-driven）。Steps use checkbox (`- [ ]`) syntax for tracking.
 

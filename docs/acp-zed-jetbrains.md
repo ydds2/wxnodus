@@ -1,4 +1,4 @@
-# ACP 接入（Zed / JetBrains）
+﻿# ACP 接入（Zed / JetBrains）
 
 > 版本：V1 · 契约面：`src/kernel/acp.ts`（Agent Client Protocol stdio JSON-RPC 服务器）。
 > 定位：编辑器内嵌入口——ACP 是长驻 stdio transport，自身不占用 Agent Run；每个 prompt 经 runInvocation 独立接纳、按 session 精确取消。

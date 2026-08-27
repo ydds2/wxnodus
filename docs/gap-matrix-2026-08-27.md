@@ -1,4 +1,4 @@
-# wxnodus CLI 与同类 CLI 全量差距矩阵（终版 · 2026-08-27）
+﻿# wxnodus CLI 与同类 CLI 全量差距矩阵（终版 · 2026-08-27）
 
 > **基线**：本会话 6 轮实施**之后**的当前状态（P0 7 卡 + P1 4 卡 + P2 6 卡 + 生态 3 项全部落地，全量 2584 测试绿）。
 > **取证口径**：7 路源码深潜（codex `9dd3d6a` / gemini-cli 0.56.0-nightly / opencode `a97fec8` / kimi-cli 1.49.0 / crush `ed15da4` / aider 0.86.3.dev / wxnodus 独立复核），全部带 file:line 锚点。

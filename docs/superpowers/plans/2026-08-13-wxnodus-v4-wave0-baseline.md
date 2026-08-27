@@ -1,4 +1,4 @@
-# WxNodus V4 Wave 0 验收基线实施计划
+﻿# WxNodus V4 Wave 0 验收基线实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 按任务执行；使用复选框跟踪步骤。
 >

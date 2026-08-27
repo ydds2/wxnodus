@@ -1,4 +1,4 @@
-# 私有端点接入指南与兼容矩阵（A5 / P1-3）
+﻿# 私有端点接入指南与兼容矩阵（A5 / P1-3）
 
 > 版本：V1（2026-08-27）· 证据来源：`scripts/evidence-private-endpoints.mjs`（mock 五类差异实测 + 真实端点探针）。
 > 定位：私有化部署的模型端点开箱即用验收面——wxnodus 只要求 OpenAI 兼容 `/chat/completions`，

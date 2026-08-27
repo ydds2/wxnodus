@@ -85,5 +85,7 @@ const md = [
   '',
 ].join('\n') + '\n';
 
-writeFileSync(join(ROOT, 'docs', 'user-guide.md'), md, 'utf8');
+// UTF-8 BOM 前置（docs/*.md 统一 BOM 口径——无 BOM 的 UTF-8 中文在部分 Windows 查看器按 ANSI/GBK 显示成乱码；
+// ci 有 check:docs-encoding 门禁强制该口径，生成器必须同口径输出）
+writeFileSync(join(ROOT, 'docs', 'user-guide.md'), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(md, 'utf8')]));
 console.log(`USER_GUIDE_OK: docs/user-guide.md（${SLASH.length} 条命令 · ${categories.length} 分类 · v${version}）`);

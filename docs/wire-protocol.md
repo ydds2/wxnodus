@@ -1,4 +1,4 @@
-# Wire 协议（`--wire` / `--stream-json` 事件流）
+﻿# Wire 协议（`--wire` / `--stream-json` 事件流）
 
 > 版本：V1 · 与源码同步（契约单一事实源：`src/protocol/events.ts`、`src/cli/headlessGateway.ts`、`src/protocol/runs.ts`）。
 > 可运行示例：`examples/wire-events.mjs`（最小消费者）、`examples/wire-approval-responder.mjs`（审批应答者）。

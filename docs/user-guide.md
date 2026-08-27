@@ -1,4 +1,4 @@
-# wxnodus 用户手册（离线版）
+﻿# wxnodus 用户手册（离线版）
 
 > 版本 4.0.0-rc.1 · 由命令注册表确定性生成（`npm run docs:user-guide`）· 气隙/内网机器零网可查。
 
