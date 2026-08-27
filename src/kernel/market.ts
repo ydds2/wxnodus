@@ -174,7 +174,12 @@ const immutableVersion = (value: unknown): string => {
   return version;
 };
 
-export async function installMcpFromNpm(pkg: string, cwd: string, deps: MarketDeps = {}): Promise<{ ok: boolean; message: string }> {
+/** npm 包 tarball 下载（registry → SRI 校验 → 字节）——MCP/技能/插件三类安装的共用下载面 */
+export type NpmTarballResult =
+  | { ok: true; bytes: Buffer; name: string; version: string; digestLabel: string }
+  | { ok: false; message: string };
+
+export async function downloadNpmTarball(pkg: string, deps: MarketDeps = {}): Promise<NpmTarballResult> {
   const name = pkg.trim();
   if (!validNpmPackage(name)) return { ok: false, message: '包名非法' };
   try {
@@ -185,11 +190,23 @@ export async function installMcpFromNpm(pkg: string, cwd: string, deps: MarketDe
     const expected = expectedNpmDigest(meta.dist);
     const downloaded = await fetchBounded(tarball, ARCHIVE_BYTES, 'application/octet-stream', 60_000, deps);
     const observed = verifyDigest(downloaded.bytes, expected);
-    const installed = await installDownloadedMcp(downloaded.bytes, cwd, name, version, {
-      source: `npm:${name}`,
-      resolvedIdentity: `${name}@${version}`,
-      expectedDigest: expected.label,
-      observedDigest: observed,
+    return { ok: true, bytes: downloaded.bytes, name, version, digestLabel: observed };
+  } catch (error: any) {
+    return { ok: false, message: String(error?.message ?? error).slice(0, 240) };
+  }
+}
+
+export async function installMcpFromNpm(pkg: string, cwd: string, deps: MarketDeps = {}): Promise<{ ok: boolean; message: string }> {
+  const name = pkg.trim();
+  if (!validNpmPackage(name)) return { ok: false, message: '包名非法' };
+  try {
+    const dl = await downloadNpmTarball(name, deps);
+    if (!dl.ok) throw new Error(dl.message);
+    const installed = await installDownloadedMcp(dl.bytes, cwd, dl.name, dl.version, {
+      source: `npm:${dl.name}`,
+      resolvedIdentity: `${dl.name}@${dl.version}`,
+      expectedDigest: dl.digestLabel,
+      observedDigest: dl.digestLabel,
       timestamp: new Date().toISOString(),
     });
     if (!installed.ok || !installed.entrypoint) return installed;

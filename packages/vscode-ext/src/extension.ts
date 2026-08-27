@@ -12,6 +12,7 @@ import {
   parseWireLine, encodeWireFrame, approvalModalText, approvalAnswer, textAnswer,
   isTerminalEvent, type WireEvent,
 } from './wireBridge.js';
+import { collectWorkspaceDiff } from './gitDiff.js';
 
 let output: vscode.OutputChannel;
 let currentChild: import('node:child_process').ChildProcessWithoutNullStreams | null = null;
@@ -104,17 +105,30 @@ async function handleRequest(ev: WireEvent) {
   }
 }
 
-/** 事件 → webview 渲染（agent.token 增量 / message 整段 / tool 状态行） */
+/** 事件 → webview 渲染（agent.token 增量 / message 整段 / tool 状态行 / 失败诊断） */
 function renderEvent(ev: WireEvent) {
   switch (ev.type) {
     case 'agent.start': post({ kind: 'start', prompt: ev.prompt }); return;
     case 'agent.token': post({ kind: 'token', text: ev.text }); return;
     case 'agent.message': post({ kind: 'message', content: ev.content }); return;
-    case 'agent.tool': post({ kind: 'tool', name: ev.name, phase: ev.phase, ok: ev.ok }); return;
+    case 'agent.tool':
+      post({ kind: 'tool', name: ev.name, phase: ev.phase, ok: ev.ok });
+      // P2-12：失败诊断列表——结构化失败（ok===false）进诊断区（与对话流分离，可定位）
+      if (ev.phase === 'complete' && ev.ok === false) post({ kind: 'diag', name: ev.name });
+      return;
     case 'system.notice': post({ kind: 'notice', text: ev.text }); return;
     case 'agent.error': post({ kind: 'error', text: ev.message }); return;
     case 'wire.response': return; // 应答确认——不打扰用户
-    case 'agent.result': post({ kind: 'result', ok: ev.ok, wireFinal: ev.wireFinal, text: ev.text }); return;
+    case 'agent.result': {
+      post({ kind: 'result', ok: ev.ok, wireFinal: ev.wireFinal, text: ev.text });
+      // P2-12：终态后收集工作区 diff（git 仓库且本轮有改动才显示——诚实降级带理由）
+      const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+      void collectWorkspaceDiff(cwd).then(r => {
+        if ('unavailable' in r) post({ kind: 'diffUnavailable', reason: r.unavailable });
+        else post({ kind: 'diffs', files: r.files });
+      }).catch((e: unknown) => post({ kind: 'diffUnavailable', reason: `diff 收集失败：${String((e as Error)?.message ?? e).slice(0, 120)}` }));
+      return;
+    }
     default: return;
   }
 }
@@ -168,12 +182,34 @@ body{font-family:var(--vscode-font-family);padding:12px;color:var(--vscode-foreg
 .tool{color:var(--vscode-textLink-foreground);font-size:12px}
 .error{color:var(--vscode-errorForeground)}
 .result{border-top:1px solid var(--vscode-panel-border);margin-top:10px;padding-top:8px}
+.diag{color:var(--vscode-errorForeground);font-size:12px;margin:2px 0}
+.diff-file{color:var(--vscode-textLink-foreground);font-size:12px;margin-top:8px;font-weight:600}
+.diff{background:var(--vscode-editor-background);padding:6px;margin:4px 0;font-family:var(--vscode-editor-font-family);font-size:11px;white-space:pre;overflow-x:auto;border-radius:4px}
+.diff .a{color:var(--vscode-diffEditor-removedTextBackground);background:var(--vscode-diffEditor-removedLineBackground)}
+.diff .b{color:var(--vscode-diffEditor-insertedTextBackground);background:var(--vscode-diffEditor-insertedLineBackground)}
+.diff .h{color:var(--vscode-descriptionForeground)}
 </style></head>
-<body><div id="log"></div>
+<body><div id="log"></div><div id="diag"></div><div id="diffs"></div>
 <script>
 const vscode = acquireVsCodeApi();
 const log = document.getElementById('log');
+const diag = document.getElementById('diag');
+const diffs = document.getElementById('diffs');
 const add = (cls, text) => { const d = document.createElement('div'); d.className = cls; d.textContent = text; log.appendChild(d); };
+const addDiag = (text) => { const d = document.createElement('div'); d.className = 'diag'; d.textContent = text; diag.appendChild(d); };
+const renderDiff = (file, text) => {
+  const head = document.createElement('div'); head.className = 'diff-file'; head.textContent = file;
+  const pre = document.createElement('div'); pre.className = 'diff';
+  for (const line of text.split('\\n')) {
+    const span = document.createElement('span');
+    span.textContent = line + '\\n';
+    if (line.startsWith('+') && !line.startsWith('+++')) span.className = 'b';
+    else if (line.startsWith('-') && !line.startsWith('---')) span.className = 'a';
+    else if (line.startsWith('@@') || line.startsWith('diff ') || line.startsWith('index ')) span.className = 'h';
+    pre.appendChild(span);
+  }
+  diffs.appendChild(head); diffs.appendChild(pre);
+};
 window.addEventListener('message', (e) => {
   const m = e.data || {};
   switch (m.kind) {
@@ -182,9 +218,12 @@ window.addEventListener('message', (e) => {
     case 'token': { const d = document.getElementById('current'); if (d) d.textContent += (m.text || ''); break; }
     case 'message': { const d = document.getElementById('current'); if (d) { d.textContent = m.content || ''; d.id = 'done'; } else add('msg', m.content || ''); break; }
     case 'tool': add('tool', '⚙ ' + m.name + ' ' + (m.phase || '') + (m.ok === false ? ' ✗' : '')); break;
+    case 'diag': addDiag('⚠ 工具失败：' + m.name); break;
     case 'notice': add('notice', m.text || ''); break;
     case 'error': add('error', m.text || ''); break;
     case 'result': add('result', '终态：' + (m.wireFinal || m.ok) ); break;
+    case 'diffs': if (m.files && m.files.length) { for (const f of m.files) renderDiff(f.file, f.diff); } break;
+    case 'diffUnavailable': add('notice', 'diff 视图：' + (m.reason || '不可用')); break;
     case 'log': add('notice', m.text || ''); break;
     case 'done': break;
   }

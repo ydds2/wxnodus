@@ -4,9 +4,37 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { installPluginPackage } from '../src/application/extensions/pluginInstaller.js';
+import { installPluginPackage, installPluginFromNpmTarball } from '../src/application/extensions/pluginInstaller.js';
 import { buildZip } from '../src/application/release/zipArchive.js';
+
+/** 极简 ustar tar.gz 构造（测试专用——与 kernel-market.test 同构） */
+const tarGzOf = (entries: Array<{ name: string; body: string }>): Buffer => {
+  const chunks: Buffer[] = [];
+  for (const e of entries) {
+    const body = Buffer.from(e.body, 'utf8');
+    const header = Buffer.alloc(512);
+    header.write(e.name, 0, 100, 'utf8');
+    header.write('0000644', 100, 8, 'ascii');
+    header.write('0000000', 108, 7, 'ascii');
+    header.write('0000000', 116, 7, 'ascii');
+    header.write(body.length.toString(8).padStart(11, '0'), 124, 11, 'ascii');
+    header.write('00000000000', 136, 11, 'ascii');
+    header.write('        ', 148, 8, 'ascii');
+    header.write('0', 156, 1, 'ascii');
+    header.write('ustar', 257, 5, 'ascii');
+    header.write('00', 263, 2, 'ascii');
+    let sum = 0; for (const b of header) sum += b;
+    header.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148, 8, 'ascii');
+    chunks.push(header);
+    chunks.push(body);
+    const pad = (512 - (body.length % 512)) % 512;
+    if (pad) chunks.push(Buffer.alloc(pad));
+  }
+  chunks.push(Buffer.alloc(1024));
+  return gzipSync(Buffer.concat(chunks));
+};
 
 let root: string;
 let dataDir: string;
@@ -145,5 +173,40 @@ describe('/plugin install 第三方接收', () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.enabled).toBe(true);
     expect(calls).toEqual([join(dataDir, 'plugins', 'ena')]);
+  });
+});
+
+// P2-生态（2026-08-27）：npm 插件包消费链路（market SRI 下载 → 安全解包 → 安装器落位）
+describe('installPluginFromNpmTarball（npm 插件消费链）', () => {
+  it('标准 npm tarball（package/ 根目录惯例）→ 安装落位 + SRI 标注', async () => {
+    const tarball = tarGzOf([
+      { name: 'package/plugin.json', body: manifest('npmplug') },
+      { name: 'package/index.js', body: indexJs },
+    ]);
+    const r = await installPluginFromNpmTarball({ bytes: tarball, dataDir, digestLabel: 'sha512-abc=' });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.name).toBe('npmplug');
+      expect(r.toolCount).toBe(1);
+      expect(r.note).toContain('npm SRI 下载校验：sha512-abc=');
+    }
+    expect(existsSync(join(dataDir, 'plugins', 'npmplug', 'plugin.json'))).toBe(true);
+  });
+
+  it('缺 plugin.json 的包 → fail-closed（不残留半装目录）', async () => {
+    const tarball = tarGzOf([{ name: 'package/index.js', body: indexJs }]);
+    const r = await installPluginFromNpmTarball({ bytes: tarball, dataDir });
+    expect(r.ok).toBe(false);
+    expect(existsSync(join(dataDir, 'plugins'))).toBe(false);
+  });
+
+  it('路径穿越条目 → 安全解包拒绝（safeTarArchive 兜底）', async () => {
+    const tarball = tarGzOf([
+      { name: 'package/plugin.json', body: manifest('evil') },
+      { name: 'package/../../evil.js', body: 'x' },
+    ]);
+    const r = await installPluginFromNpmTarball({ bytes: tarball, dataDir });
+    expect(r.ok).toBe(false);
+    expect(existsSync(join(root, 'evil.js'))).toBe(false);
   });
 });

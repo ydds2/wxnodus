@@ -1,6 +1,8 @@
-# WxNodus — VS Code 伴侣插件（supremacy 2.1）
+# WxNodus — VS Code 伴侣插件（supremacy 2.1 → 0.2.0）
 
-WxNodus CLI 的 VS Code 插件：`--wire` 事件流桥接 + 对话面板 webview + 审批/澄清/密码原生模态。
+WxNodus CLI 的 VS Code 插件：`--wire` 事件流桥接 + 对话面板 webview + 审批/澄清/密码原生模态
++ **失败诊断列表**（结构化失败工具 ⚠ 分离展示）+ **git diff 视图**（回合终态后自动收集工作区改动，
++/- 行着色；无 git/无改动诚实降级带理由——绝不假装有 diff）。
 
 ## 原理
 
@@ -35,3 +37,4 @@ npm run all          # typecheck + node:test 单测 + esbuild + vsce 打包
 
 - 提问走无头 `--wire` 单发模式（交互 TUI 的键位/语音在 VS Code 内不适用——用内置终端跑 `wxnodus`）。
 - 审批模态是真阻塞模态（modal:true）——与 CLI 审批链同一语义（红线/规则/会话授权先行，未放行的才弹模态）。
+- diff 视图只读展示（`git diff HEAD` 相对），**绝不自动 commit**（用户裁决权）；非 git 仓库/无 git 时诚实提示不可用。

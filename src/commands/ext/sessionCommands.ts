@@ -691,10 +691,10 @@ ${d}
     if (!sub) {
       return lines(' 市场（开放生态目录聚合·只收不出） ', [
         ' 搜索：/market search <关键词> [--type skill|mcp|plugin]（npm + GitHub 双源）',
-        ' 安装：/market install <npm包名> [--type mcp|skill]  或  /market install github:<owner>/<repo> --type skill',
+        ' 安装：/market install <npm包名> [--type mcp|skill|plugin]  或  /market install github:<owner>/<repo> --type skill',
         '       MCP → 项目 .mcp.json（npx 命令形式，Claude Code 生态兼容）',
         '       技能 → data/skills/<name>/SKILL.md（/reload-skills 后即刻可用）',
-        '       插件 → 请走 /plugin install（既有管线：SSRF 防护 + 校验 + staging）',
+        '       插件 → data/plugins/<name>/（npm SRI 校验 + 安全解包；/plugin enable 启用）',
         ' 只收不出：本工具只消费开源生态（无发布侧/无自托管市场）；自制插件仅本地自用，',
         '       对外分享唯一通道 /bundle export <名称>（整包 tar.gz 离线分发 → 对方 /bundle import 装回）',
       ]);
@@ -727,7 +727,7 @@ ${d}
     }
     if (sub === 'install') {
       const target = cleanArgs(args)[1] ?? '';
-      if (!target) return '用法：/market install <npm包名|github:owner/repo> --type mcp|skill';
+      if (!target) return '用法：/market install <npm包名|github:owner/repo> --type mcp|skill|plugin';
       const { installMcpFromNpm, installSkillFromNpm, installSkillFromGithub } = await import('../../kernel/market.js');
       if (target.startsWith('github:')) {
         if (t && t !== 'skill') return 'GitHub 仓库安装当前仅支持技能（--type skill）';
@@ -742,9 +742,20 @@ ${d}
         const r = await installSkillFromNpm(target, ctx.dataDir);
         return r.message;
       }
-      return '需指定类型：--type mcp（写入 .mcp.json）或 --type skill（落位 data/skills）；插件请走 /plugin install';
+      if (t === 'plugin') {
+        // P2-生态（2026-08-27）：npm 插件包消费链路补全——此前 market 声明 plugin 类型但无安装链路
+        //（插件只能 /plugin install 目录/zip/https）。SRI 下载校验（market）→ 安全解包 → 安装器落位。
+        const { downloadNpmTarball } = await import('../../kernel/market.js');
+        const { installPluginFromNpmTarball } = await import('../../application/extensions/pluginInstaller.js');
+        const dl = await downloadNpmTarball(target);
+        if (!dl.ok) return `npm 插件下载失败：${dl.message}`;
+        const r = await installPluginFromNpmTarball({ bytes: dl.bytes, dataDir: ctx.dataDir, digestLabel: dl.digestLabel });
+        if (!r.ok) return `[${r.code}] ${r.message}`;
+        return `插件已安装：${r.name} v${r.version}（工具 ${r.toolCount} 个）——未自动启用：/plugin enable ${r.name}${r.note ? `\n  ${r.note}` : ''}`;
+      }
+      return '需指定类型：--type mcp（写入 .mcp.json）｜--type skill（落位 data/skills）｜--type plugin（落位 data/plugins）';
     }
-    return '未知子命令——/market search <词> 或 /market install <包> --type mcp|skill';
+    return '未知子命令——/market search <词> 或 /market install <包> --type mcp|skill|plugin';
   });
 
   // /bundle：场景整合包（Modpack 对标——skill/MCP/插件/配置规整为一个资源包：

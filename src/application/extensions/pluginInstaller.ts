@@ -8,8 +8,9 @@
 //   - 可选 --sha256 来源完整性校验（不符拒绝）；未提供时诚实提示未校验
 //   - staging 原子 rename 落位；enable 失败回滚（绝不残留半装插件）
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
+import { tmpdir } from 'node:os';
 import { readZip } from '../release/zipArchive.js';
 import { parsePluginManifest } from '../../kernel/plugins.js';
 
@@ -173,4 +174,34 @@ export async function installPluginPackage(input: PluginInstallInput): Promise<P
       ? (enableNote ?? undefined)
       : `来源完整性未校验（未提供 --sha256，包 sha256=${sourceSha256 ?? 'N/A'}）——建议提供发布方哈希后重装校验${enableNote ? `；${enableNote}` : ''}`,
   };
+}
+
+/** npm tarball 插件安装（生态消费面补全 P2-生态，2026-08-27）：
+ *  npm registry SRI 校验（market.downloadNpmTarball）→ 安全解包（safeTarArchive）→ installPluginPackage。
+ *  校验口径：下载时 SRI（sha512/sha256）已闭环；包内 sha256 仍按安装器口径如实标注。 */
+export async function installPluginFromNpmTarball(input: {
+  bytes: Buffer;
+  dataDir: string;
+  /** 下载侧 SRI 校验标签（provenance 展示用） */
+  digestLabel?: string;
+  enable?: PluginInstallInput['enable'];
+}): Promise<PluginInstallOutcome> {
+  const tmp = mkdtempSync(join(tmpdir(), 'wxn-plugin-npm-'));
+  try {
+    const { extractSafeTarGz } = await import('../../infrastructure/extensions/safeTarArchive.js');
+    const extractDir = join(tmp, 'pkg');
+    await extractSafeTarGz(input.bytes, extractDir, undefined, null); // requiredFile=null——plugin.json 由安装器校验
+    // npm tarball 惯例根目录 package/（扁平发布例外直接取解包根）
+    const sourceDir = existsSync(join(extractDir, 'package')) ? join(extractDir, 'package') : extractDir;
+    const r = await installPluginPackage({ source: sourceDir, dataDir: input.dataDir, enable: input.enable });
+    if (r.ok && input.digestLabel) {
+      return { ...r, note: `npm SRI 下载校验：${input.digestLabel}${r.note ? `；${r.note}` : ''}` };
+    }
+    return r;
+  } catch (e) {
+    // 安全解包对穿越/超限条目是抛错拒绝——转换为安装契约（绝不把拒绝当成功）
+    return { ok: false, code: 'PLUGIN_INSTALL_EXTRACT_FAILED', message: `npm 插件解包失败：${String((e as Error)?.message ?? e).slice(0, 200)}` };
+  } finally {
+    try { rmSync(tmp, { recursive: true, force: true }); } catch { /* 忽略 */ }
+  }
 }

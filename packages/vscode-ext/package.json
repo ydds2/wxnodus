@@ -1,8 +1,8 @@
 {
   "name": "wxnodus-vscode",
   "displayName": "WxNodus — Windows 本地 AI agent（VS Code 伴侣）",
-  "version": "0.1.0",
-  "description": "WxNodus CLI 的 VS Code 伴侣插件：--wire 事件流桥接 + 对话面板 + 审批模态（数据不出机）。",
+  "version": "0.2.0",
+  "description": "WxNodus CLI 的 VS Code 伴侣插件：--wire 事件流桥接 + 对话面板 + 审批模态 + 失败诊断 + git diff 视图（数据不出机）。",
   "license": "Apache-2.0",
   "private": true,
   "publisher": "wxnodus",
@@ -43,7 +43,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.mjs",
-    "test": "node --test tests/wireBridge.test.mjs",
+    "test": "node --test tests/wireBridge.test.mjs tests/gitDiff.test.mjs",
     "package": "npm run build && vsce package --no-dependencies -o wxnodus-vscode.vsix",
     "all": "npm run typecheck && npm run test && npm run package"
   },
