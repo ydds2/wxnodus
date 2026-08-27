@@ -160,6 +160,8 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     }
     const extCount = SLASH.length - CORE_COMMANDS.size;
     rows.push('', `${c(' ◈ 提示', '1;33')}：/help <命令> 查看单个命令详情 · /map 生成仓库地图`);
+    // P2-16（2026-08-27）：离线手册指引——安装包内 docs/user-guide.md（气隙机器零网可查）
+    rows.push(`${c(' ◈ 离线手册', '1;33')}：docs/user-guide.md（随安装包分发——命令总览/退出码/权限模式/协议入口）`);
     if (!showAll && extCount > 0) {
       rows.push(`${c(` ◈ 扩展命令 ${extCount} 个（进阶/别名/低频——照常可用）——/help all 查看全部`, '2')}`);
     }

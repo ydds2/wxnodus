@@ -29,7 +29,6 @@
  tests/
  tsconfig.json
  vitest.config.ts
- wxdbg.log
 ```
 
 ## README 摘要
@@ -89,4 +88,4 @@ Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器 · better-s
 1. **抄「机制与语义」、不抄「代码与文案」**——竞品源码只作为思路来源与证据锚点（docs 中 file:line 引用属引用标注），实现一律按 wxnodus 自身架构/命名/注释风格重写；
 2. **互通性契约不算抄袭**（工具调用格式如 apply_patch 补丁语法、LSP/OpenAI 协议、Win32 沙盒 API——遵循标准契约是兼容性要求），但解析器/匹配器/调度器等实现逻辑必须原创；
 3. 每个「对齐某竞品」的落地项，文档必须注明：参考了什么机制（引用锚点）+ 本仓实现位置 + 与竞品的实现差异（如：winSandbox 受限令牌路径经本机实测证伪后改 Low IL——机制校准结果与竞品不同，如实记录）；
-4. 审计（docs/audit-deep.md）如实记录参考来源与差异，禁止整段移植竞品注释/错误文案/变量命名。
+4. 审计（docs/production-readiness-plan-2026-08-21.md 审计底册 + docs/eval-vs-competitors-2026-08-27.md 竞品对比）如实记录参考来源与差异，禁止整段移植竞品注释/错误文案/变量命名。
