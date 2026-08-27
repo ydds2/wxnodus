@@ -125,6 +125,11 @@ describe('安装器 manifest（雏形）', () => {
     });
     if (!manifest.ok) return;
     expect(manifest.value.entrySha256).toBe(createHash('sha256').update(entry).digest('hex'));
+    // 版本门禁：x.y.z 与预发布后缀（路径安全字符集）通过；缺位/裸后缀拒绝
+    expect(buildInstallerManifest({ appName: 'x', version: '4.0.0-rc.1', icon: null, entryPath: 'bin/x.js', entryBytes: entry })).toMatchObject({ ok: true });
+    expect(buildInstallerManifest({ appName: 'x', version: '4.0.0-beta.2+meta', icon: null, entryPath: 'bin/x.js', entryBytes: entry })).toMatchObject({
+      ok: false, error: { code: 'INSTALLER_VERSION_INVALID' }, // build metadata 含 '+' 不在路径安全集
+    });
     expect(buildInstallerManifest({ appName: 'x', version: '4.0', icon: null, entryPath: 'bin/x.js', entryBytes: entry })).toMatchObject({
       ok: false, error: { code: 'INSTALLER_VERSION_INVALID' },
     });

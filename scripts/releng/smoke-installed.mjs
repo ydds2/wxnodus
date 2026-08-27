@@ -1,7 +1,7 @@
 // W6「装上能跑对」冒烟自校验脚本（V4 P3-5）——干净安装树冒烟：
 // 1) 根 package.json 存在且 version 非 0.0.0、type=module
 // 2) node <entry> --version 输出非 0.0.0
-// 3) manifest buildAbi 与当前 ABI 一致
+// 3) manifest ABI 与本机一致（或本机 ABI 在 nativeAbis 侧车清单内——V4 C1 多 ABI 安装合法态）
 // 用法：node smoke-installed.mjs <安装根目录> <entry相对路径>
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,11 +18,16 @@ catch { fail('NO_ROOT_PKG', '安装树缺根 package.json——--version 将恒 
 if (pkg.type !== 'module') fail('PKG_NOT_ESM', `type=${pkg.type}（须 module）`);
 if (!pkg.version || pkg.version === '0.0.0') fail('VERSION_ZERO', `version=${pkg.version}`);
 
-// ② manifest ABI
+// ② manifest ABI（V4 C1：侧车安装允许「本机 ABI ∈ manifest.nativeAbis」——Node 24 装 127 打包 + 137 侧车是合法态）
 try {
   const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'));
-  if (manifest.buildAbi && manifest.buildAbi !== Number(process.versions.modules)) {
-    fail('ABI_MISMATCH', `manifest ${manifest.buildAbi} vs local ${process.versions.modules}`);
+  const localAbi = Number(process.versions.modules);
+  const sidecarHit = Array.isArray(manifest.nativeAbis) && manifest.nativeAbis.some(s => Number(s.abi) === localAbi);
+  if (manifest.buildAbi && manifest.buildAbi !== localAbi && !sidecarHit) {
+    fail('ABI_MISMATCH', `manifest ${manifest.buildAbi} vs local ${localAbi}（且无 ${localAbi} 侧车）`);
+  }
+  if (manifest.buildAbi && manifest.buildAbi !== localAbi && sidecarHit) {
+    console.log(`SMOKE_ABI_SIDECAR: manifest ${manifest.buildAbi} vs local ${localAbi}（${localAbi} 侧车已声明）`);
   }
 } catch (e) { if (String(e.code) !== 'ENOENT') fail('MANIFEST_BAD', String(e.message)); }
 

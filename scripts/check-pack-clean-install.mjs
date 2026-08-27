@@ -38,9 +38,11 @@ try {
   // 注意：calc 用 node 直调（shell:true 会把「算一下 2+3*4」拆成两个 argv token）
   const binShim = join(stage, 'node_modules', '.bin', process.platform === 'win32' ? 'wxnodus.cmd' : 'wxnodus');
   const version = sh(binShim, ['--version'], { cwd: stage, timeout: 60_000, windowsHide: true, env }).trim();
-  if (!/^wxnodus \d+\.\d+\.\d+$/.test(version)) throw new Error(`unexpected version output: ${version}`);
+  if (!/^wxnodus \d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error(`unexpected version output: ${version}`);
   const bin = join(stage, 'node_modules', 'wxnodus', 'dist', 'cli', 'index.js');
-  const calc = sh('node', [bin, '-p', '算一下 2+3*4'], { cwd: stage, timeout: 120_000, windowsHide: true, shell: false, env }).trim();
+  // V4 裁撤轨 D-3：无 key 确定性层默认禁用（A-8 中文句被 base64 劫持随裁撤消失）；
+  // 逃生开关 WXNODUS_LEGACY_OFFLINE=1 保留——本检查经开关验证「安装包内确定性层 + 参数转发」接线
+  const calc = sh('node', [bin, '-p', '算一下 2+3*4'], { cwd: stage, timeout: 120_000, windowsHide: true, shell: false, env: { ...env, WXNODUS_LEGACY_OFFLINE: '1' } }).trim();
   if (!calc.includes('14')) throw new Error(`rule-brain calc failed: ${calc}`);
   console.log(`[run] version=${version}  calc=${calc.split('\n').pop()}`);
 

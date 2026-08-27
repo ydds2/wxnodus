@@ -12,8 +12,8 @@ const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : undefined; };
 const version = flag('version');
 const notes = flag('notes') ?? `wxnodus ${version} 发布`;
-if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
-  console.error('usage: publish-release.mjs --version <x.y.z> [--notes <text>]');
+if (!version || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+  console.error('usage: publish-release.mjs --version <x.y.z[-prerelease]> [--notes <text>]');
   process.exit(2);
 }
 const run = (cmd) => { execSync(cmd, { cwd: ROOT, stdio: 'inherit', windowsHide: true }); };

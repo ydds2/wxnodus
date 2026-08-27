@@ -21,7 +21,8 @@ const isUnsafeNameChar = (char: string) =>
 const PATH_SEPARATORS = new Set(['/', '\\', ':']);
 const isUnsafeEntryPathChar = (char: string) =>
   !PATH_SEPARATORS.has(char) && isUnsafeNameChar(char);
-const SEMVER = /^\d+\.\d+\.\d+$/;
+// semver 主版本+可选预发布后缀（package.json 版本 4.0.0-rc.1 必须可打包；字符集限路径安全集）
+const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 /** 应用名净化：剥离 Windows 非法字符，空/纯非法 → INSTALLER_NAME_INVALID */
 export function sanitizeAppName(name: string): OperationResult<string> {

@@ -11,6 +11,15 @@ import { buildZip, readZip, zipSha256, type ZipEntryInput } from './zipArchive.j
 import { psSingleQuotedLiteral } from './powershellLiteral.js';
 import { validateInstallerPaths } from './installerPathPolicy.js';
 
+/** V4 C1：多 ABI 原生二进制侧车输入——本机 ABI 与打包 ABI 不同时，install.ps1 按 abi 选择应用。 */
+export interface NativeAbiSidecarInput {
+  /** Node ABI（process.versions.modules），如 Node 22 = 127、Node 24 = 137 */
+  abi: number;
+  /** 安装树内目标路径（如 node_modules/better-sqlite3/build/Release/better_sqlite3.node） */
+  targetPath: string;
+  bytes: Buffer;
+}
+
 export interface InstallerPackageInput {
   appName: string;
   version: string;
@@ -19,6 +28,8 @@ export interface InstallerPackageInput {
   /** 相对路径 → 内容（含入口文件） */
   files: Map<string, Buffer>;
   outDir: string;
+  /** V4 C1：多 ABI 原生二进制侧车（可选）——解决 zip 安装链与用户 Node 版本绑死的兼容问题 */
+  nativeAbis?: NativeAbiSidecarInput[];
 }
 
 export interface InstallerPackageResult {
@@ -30,7 +41,7 @@ export interface InstallerPackageResult {
 }
 
 export interface InstallerPackageManifest {
-  schemaVersion: 2;
+  schemaVersion: 3;
   appName: string;
   version: string;
   icon: string | null;
@@ -39,9 +50,12 @@ export interface InstallerPackageManifest {
   files: Array<{ path: string; sha256: string; bytes: number }>;
   /** V4 P3-5：打包机 Node ABI（process.versions.modules）——install.ps1 预检比对 */
   buildAbi?: number;
+  /** V4 C1：多 ABI 原生二进制侧车（abi → 安装树路径 + sha256 绑定） */
+  nativeAbis?: Array<{ abi: number; path: string; sha256: string; bytes: number }>;
 }
 
-const SEMVER = /^\d+\.\d+\.\d+$/;
+// semver 主版本+可选预发布后缀（package.json 版本 4.0.0-rc.1 必须可打包；字符集限路径安全集）
+const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
@@ -80,7 +94,7 @@ try {
   }
 } catch { }
 if (-not $NodeOk) {
-  Write-Error "INSTALLER_NODE_MISSING: Node.js 18+ required (22 recommended). Install: https://nodejs.org/ (CN mirror: https://npmmirror.com/mirrors/node/) then re-run this script."
+  Write-Error "INSTALLER_NODE_MISSING: Node.js 22.7+ required (22/24 LTS recommended). Install: https://nodejs.org/ (CN mirror: https://npmmirror.com/mirrors/node/) then re-run this script."
   exit 1
 }
 # Pure .NET sha256: Get-FileHash is not resolvable on some hosts (verified: GitHub
@@ -99,12 +113,19 @@ $ManifestPath = Join-Path $Root 'manifest.json'
 # V4 P3-5: read builder ABI from manifest (single field read - full manifest validated later)
 $Manifest = [System.IO.File]::ReadAllText($ManifestPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
 $ManifestAbi = $Manifest.buildAbi
-# V4 P3-5: ABI check (after Node gate) - native modules compiled for builder ABI;
-# mismatch means NODE_MODULE_VERSION crash at require time
+# V4 C1（运行时兼容）：原生模块 ABI 三路裁决——本机 ABI == 打包 ABI 直接装；
+# 否则查 manifest.nativeAbis 侧车（多 ABI 预编译二进制，sha256 绑定）；都没有 → 诚实拒绝。
+# 只收窄不放松：better-sqlite3 等 V8 ABI 原生模块跨 Node 大版本必崩（NODE_MODULE_VERSION），
+# NAPI 模块（robotjs/node-pty/node-screenshots）与 SQLite 扩展（vec0.dll）不在此列。
 $LocalAbi = (& node -p "process.versions.modules" 2>$null)
+$AbiSidecar = $null
 if ($NodeOk -and $LocalAbi -and $ManifestAbi -and [int]$LocalAbi -ne [int]$ManifestAbi) {
-  Write-Output "FAIL: Node ABI mismatch (local $LocalAbi vs built $ManifestAbi) - native modules require the builder Node line"
-  $NodeOk = $false
+  Write-Output "ABI mismatch (local $LocalAbi vs built $ManifestAbi) - looking for bundled native sidecar..."
+  $AbiSidecar = @($Manifest.nativeAbis) | Where-Object { [int]$_.abi -eq [int]$LocalAbi } | Select-Object -First 1
+  if (-not $AbiSidecar) {
+    Write-Error "INSTALLER_ABI_UNSUPPORTED: local Node ABI $LocalAbi has no bundled native binary (package built for ABI $ManifestAbi). Install Node 22.x or 24.x LTS (https://nodejs.org/ - CN mirror: https://npmmirror.com/mirrors/node/) then re-run; or use the npm link route (compiles against local Node)."
+    exit 1
+  }
 }
 $entryRelative = $Manifest.entryPath -replace '/', '\\'
 $JournalName = '.wxnodus-journal.json'
@@ -152,13 +173,32 @@ $Parent = Split-Path -Parent $TargetDir
 New-Item -ItemType Directory -Force -Path $Parent | Out-Null
 $Staging = Join-Path $Parent ('.wxnodus-staging-' + [System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Force -Path $Staging | Out-Null
-# robocopy：字面路径 + 长路径（>260）安全（Copy-Item 在深路径下失败）；/XF 排除安装器工具本身（不属安装物）
-& robocopy $Root $Staging /E /NFL /NDL /NJH /NJS /NP /XF install.ps1 install.bat | Out-Null
+# robocopy：字面路径 + 长路径（>260）安全（Copy-Item 在深路径下失败）；/XF 排除安装器工具本身（不属安装物）。
+# /XD 排除 staging 自身与旧安装树：robocopy 不自动排除位于源树内的目标目录——实测曾把空
+# staging 目录拷进自身（卸载后残留空目录）、reinstall 时把旧安装树（含旧 journal）整体拷进新树。
+$RobocopyExclude = @($Staging)
+if (Test-Path $TargetDir) { $RobocopyExclude += $TargetDir }
+& robocopy $Root $Staging /E /NFL /NDL /NJH /NJS /NP /XF install.ps1 install.bat /XD $RobocopyExclude | Out-Null
 if ($LASTEXITCODE -ge 8) {
   Remove-Item $Staging -Recurse -Force -ErrorAction SilentlyContinue
   Write-Error "INSTALLER_STAGING_FAILED: robocopy exit $LASTEXITCODE"
   exit 1
 }
+# V4 C1：ABI 侧车应用——sha256 校验后覆盖 staging 内打包 ABI 的原生二进制；
+# native-abis 是安装器辅助目录，绝不落入安装树（用完即删，journal 不记录）
+$SidecarDir = Join-Path $Staging 'native-abis'
+if ($AbiSidecar) {
+  $SidecarSrc = Join-Path $Root ('native-abis' + '\\' + $AbiSidecar.abi + '\\' + ($AbiSidecar.path -replace '/', '\\'))
+  $SidecarActual = Get-WxSha256 $SidecarSrc
+  if ($SidecarActual -ne $AbiSidecar.sha256) {
+    Remove-Item $Staging -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Error "INSTALLER_NATIVE_SIDECAR_SHA256_MISMATCH: $($AbiSidecar.path) expected $($AbiSidecar.sha256) got $SidecarActual"
+    exit 1
+  }
+  Copy-Item -LiteralPath $SidecarSrc -Destination (Join-Path $Staging ($AbiSidecar.path -replace '/', '\\')) -Force
+  Write-Output "NATIVE_ABI_SIDECAR_APPLIED: ABI $($AbiSidecar.abi) -> $($AbiSidecar.path)"
+}
+if (Test-Path $SidecarDir) { Remove-Item $SidecarDir -Recurse -Force }
 Set-Content -Path (Join-Path $Staging (${appNameLiteral} + '.cmd')) -Encoding ASCII -Value "@echo off\`r\`nset \`"WXNODUS_DATA_DIR=%LOCALAPPDATA%\\wxnodus\`"\`r\`nnode \`"%~dp0$entryRelative\`" %*"
 # wxn 别名（npm bin 双命令契约对齐——winget/scoop manifest 均声明 wxn，安装器必须真实产出）
 Set-Content -Path (Join-Path $Staging 'wxn.cmd') -Encoding ASCII -Value "@echo off\`r\`nset \`"WXNODUS_DATA_DIR=%LOCALAPPDATA%\\wxnodus\`"\`r\`nnode \`"%~dp0$entryRelative\`" %*"
@@ -230,7 +270,7 @@ const installBat = Buffer.from(
   'set "DIR=%~dp0"\r\n' +
   'where node >nul 2>nul\r\n' +
   'if errorlevel 1 (\r\n' +
-  '  echo [x] Node.js not found. Install Node 18+ (recommended 22):\r\n' +
+  '  echo [x] Node.js not found. Install Node 22.7+ (22/24 LTS recommended):\r\n' +
   '  echo     https://nodejs.org/  (CN mirror: https://npmmirror.com/mirrors/node/)\r\n' +
   '  pause\r\n' +
   '  exit /b 1\r\n' +
@@ -254,18 +294,37 @@ export async function buildInstallerPackage(input: InstallerPackageInput): Promi
     return { ok: false, error: configError('INSTALLER_VERSION_INVALID', 'installer.version.invalid', { version: input.version }) };
   }
   // P0-03：候选树必须先通过路径策略（../ 逃逸、绝对路径、保留名、重复/大小写冲突、entry 闭包）
-  const paths = validateInstallerPaths(input.files.keys(), input.entryPath);
+  // V4 C1：侧车 zip 路径（native-abis/<abi>/<targetPath>）与业务文件一并送检——冲突/越界 fail-closed
+  const sidecars = (input.nativeAbis ?? []).map(s => ({
+    abi: Number(s.abi),
+    targetPath: String(s.targetPath),
+    bytes: s.bytes,
+    zipPath: `native-abis/${Number(s.abi)}/${String(s.targetPath)}`,
+  }));
+  for (const s of sidecars) {
+    if (!Number.isInteger(s.abi) || s.abi <= 0) {
+      return { ok: false, error: configError('INSTALLER_NATIVE_ABI_INVALID', 'installer.nativeAbi.invalid', { abi: s.abi }) };
+    }
+    if (!Buffer.isBuffer(s.bytes) || s.bytes.length === 0) {
+      return { ok: false, error: configError('INSTALLER_NATIVE_ABI_INVALID', 'installer.nativeAbi.invalid', { targetPath: s.targetPath }) };
+    }
+  }
+  const paths = validateInstallerPaths([...input.files.keys(), ...sidecars.map(s => s.zipPath)], input.entryPath);
   if (!paths.ok) return paths;
   if (!input.files.has(input.entryPath)) {
     return { ok: false, error: configError('INSTALLER_ENTRY_INVALID', 'installer.entry.invalid', { entryPath: input.entryPath }) };
   }
   const fileList = [...input.files.entries()].map(([path, bytes]) => ({ path, sha256: sha256(bytes), bytes: bytes.length }))
     .sort((a, b) => a.path.localeCompare(b.path));
-  // V4 P3-5：manifest 记录打包机 ABI（原生模块 better-sqlite3/robotjs 按此编译——
+  // V4 P3-5：manifest 记录打包机 ABI（原生模块 better-sqlite3 按此编译——
   // install.ps1 预检比对，不匹配即 NODE_MODULE_VERSION 崩）
   const buildAbi = Number(process.versions.modules);
+  // V4 C1：多 ABI 侧车清单（abi 升序、path 升序——确定性）
+  const nativeAbis = sidecars
+    .map(s => ({ abi: s.abi, path: s.targetPath, sha256: sha256(s.bytes), bytes: s.bytes.length }))
+    .sort((a, b) => a.abi - b.abi || a.path.localeCompare(b.path));
   const manifest: InstallerPackageManifest = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     appName: name.value,
     version: input.version,
     icon: input.icon,
@@ -273,6 +332,7 @@ export async function buildInstallerPackage(input: InstallerPackageInput): Promi
     entrySha256: sha256(input.files.get(input.entryPath)!),
     files: fileList,
     buildAbi, // V4 P3-5：打包机 Node ABI（install.ps1 预检比对——原生模块版本一致性）
+    nativeAbis, // V4 C1：多 ABI 原生二进制侧车（install.ps1 三路裁决）
   };
   const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   const installerBytes = installScript(manifest);
@@ -281,6 +341,7 @@ export async function buildInstallerPackage(input: InstallerPackageInput): Promi
     { path: 'install.ps1', content: installerBytes },
     { path: 'install.bat', content: installBat },
     ...fileList.map(file => ({ path: file.path, content: input.files.get(file.path)! })),
+    ...sidecars.map(s => ({ path: s.zipPath, content: s.bytes })),
   ];
   const zip = buildZip(entries);
   const zipName = `${name.value}-${input.version}.zip`;

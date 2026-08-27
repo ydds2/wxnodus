@@ -15,9 +15,10 @@
     "dev": "tsx src/cli/index.ts",
     "start": "tsx src/cli/index.ts",
     "test": "npm run test:all",
-    "ci": "npm run typecheck && npm run typecheck:tests && npm run build && npm run test:all && npm run test:known-failures && npm run check:test-discovery && npm run check:requirement-coverage && npm run lint && npm run check:cycles",
+    "ci": "npm run typecheck && npm run typecheck:tests && npm run build && npm run test:all && npm run test:known-failures && npm run check:test-discovery && npm run check:requirement-coverage && npm run lint && npm run check:cycles && npm run check:docs-links && npm run eval:tasks:selftest",
     "lint": "node scripts/lint.mjs",
     "check:cycles": "node scripts/check-cycles.mjs",
+    "check:docs-links": "node scripts/check-docs-links.mjs",
     "bench": "node scripts/bench/run-bench.mjs",
     "test:all": "vitest run --config vitest.config.ts",
     "test:watch": "vitest",
@@ -100,14 +101,17 @@
     "evidence:windows-ecosystem": "node scripts/evidence-windows-ecosystem.mjs",
     "evidence:multimonitor-math": "node scripts/evidence-multimonitor-math.mjs",
     "eval": "node scripts/eval-report.mjs",
-    "eval:full": "node scripts/eval-report.mjs --full"
+    "eval:full": "node scripts/eval-report.mjs --full",
+    "eval:tasks": "node scripts/eval/task-eval.mjs",
+    "eval:tasks:selftest": "node scripts/eval/task-selftest.mjs",
+    "docs:user-guide": "npm exec -- tsx scripts/generate-user-guide.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
-    "better-sqlite3": "^11.10.0",
+    "better-sqlite3": "^12.11.1",
     "mdast-util-from-markdown": "^2.0.3",
     "mdast-util-gfm": "^3.1.0",
     "mdast-util-math": "^3.0.0",
@@ -138,7 +142,7 @@
     "vitest": "^2.1.0"
   },
   "engines": {
-    "node": ">=22.0.0 <24"
+    "node": ">=22.7.0"
   },
   "os": [
     "win32"
