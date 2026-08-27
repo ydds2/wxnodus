@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { coreTools, isDangerous, type ToolDef } from '../src/kernel/tools.js';
-import { modeVerdict, HARD_REDLINES, classifyBashCommand, classifyToolAction, createApprovalCache, unwrapCommand, loadPermRules, savePermRules, applyRules, type Verdict } from '../src/kernel/permissions.js';
+import { modeVerdict, HARD_REDLINES, classifyBashCommand, classifyToolAction, createApprovalCache, unwrapCommand, loadPermRules, savePermRules, applyRules, type Verdict, type PermRule } from '../src/kernel/permissions.js';
 
 describe('工具表', () => {
   it('核心工具存在且带危险分级', () => {
@@ -309,5 +309,27 @@ describe('modeVerdict 双速权限试点（M-3）', () => {
   it('敏感写红线不受 fastPath 影响；默认（无 opts）行为零变化', () => {
     expect(modeVerdict('yolo', 'fs_write', { path: 'config/.env' }, true, { sandboxFastPath: { cwd } })).toBe('reject');
     expect(modeVerdict('smart', 'fs_write', { path: 'src/a.ts' }, true)).toBe('confirm');
+  });
+});
+
+// P1-4（2026-08-27）：applyRules 判定平局裁决——deny > ask > allow（同 priority 时 deny 不再被 allow 抢跑）
+describe('applyRules 平局裁决（deny>ask>allow）', () => {
+  it('同 key 同 priority：deny 胜 allow（跨层合并后同 key 并存的保底语义）', () => {
+    const rules: PermRule[] = [
+      { tool: 'fs_write', pattern: 'src/**', decision: 'allow', priority: 0 },
+      { tool: 'fs_write', pattern: 'src/**', decision: 'deny', priority: 0 },
+    ];
+    const hit = applyRules('fs_write', { path: 'src/a.ts' }, rules);
+    expect(hit?.decision).toBe('deny');
+  });
+  it('同 priority：ask 胜 allow；高 priority allow 仍胜低 priority deny（priority 是第一序）', () => {
+    expect(applyRules('fs_write', { path: 'src/a.ts' }, [
+      { tool: 'fs_write', decision: 'allow', priority: 0 },
+      { tool: 'fs_write', decision: 'ask', priority: 0 },
+    ])?.decision).toBe('ask');
+    expect(applyRules('fs_write', { path: 'src/a.ts' }, [
+      { tool: 'fs_write', decision: 'deny', priority: 1 },
+      { tool: 'fs_write', pattern: 'src/**', decision: 'allow', priority: 10 },
+    ])?.decision).toBe('allow');
   });
 });

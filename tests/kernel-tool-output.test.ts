@@ -8,8 +8,7 @@ import { join } from 'node:path';
 import {
   offloadToolOutput, promoteOffloadFile, maskOldToolOutputs, maskNote,
   resolveWrapLimit, resolveOffloadThreshold, resolveMaskWindow, resolveDistillThreshold,
-  readHeadTail,
-} from '../src/kernel/toolOutput.js';
+  readHeadTail, clampFloat,} from '../src/kernel/toolOutput.js';
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'wxn-out-')); });
@@ -106,5 +105,26 @@ describe('阈值解析（settings 覆盖 + 夹取防误配）', () => {
     expect(resolveOffloadThreshold({ toolOutputOffloadBytes: 123_456 })).toBe(123_456);
     expect(resolveMaskWindow(undefined)).toEqual({ protectTokens: 50_000, triggerTokens: 30_000 });
     expect(resolveDistillThreshold(undefined)).toBe(8000);
+  });
+});
+
+// R-1（kernel-remediation-2026-08-27）：浮点档位夹取——clampInt 的 floor 会把 (0,1)
+// 区间比例阈值静默回退默认（compactionThreshold=0.8 → floor 0 → 默认 0.75，配置失效）
+describe('clampFloat（浮点阈值夹取）', () => {
+  it('核心回归：0.8 生效为 0.8（clampInt 语义下被静默回退 0.75）', () => {
+    expect(clampFloat(0.8, 0.75, 0.5, 0.95)).toBe(0.8);
+    expect(clampFloat(0.75, 0.75, 0.5, 0.95)).toBe(0.75);
+  });
+  it('越界夹取：低于 min 取 min、高于 max 取 max；整数 1 夹到 0.95（不再经 floor 通道）', () => {
+    expect(clampFloat(0.3, 0.75, 0.5, 0.95)).toBe(0.5);
+    expect(clampFloat(2, 0.75, 0.5, 0.95)).toBe(0.95);
+    expect(clampFloat(1, 0.75, 0.5, 0.95)).toBe(0.95);
+  });
+  it('非法值回退默认：undefined/NaN/0/负数/非数值字符串', () => {
+    expect(clampFloat(undefined, 0.75, 0.5, 0.95)).toBe(0.75);
+    expect(clampFloat(NaN, 0.75, 0.5, 0.95)).toBe(0.75);
+    expect(clampFloat(0, 0.75, 0.5, 0.95)).toBe(0.75);
+    expect(clampFloat(-0.6, 0.75, 0.5, 0.95)).toBe(0.75);
+    expect(clampFloat('abc', 0.75, 0.5, 0.95)).toBe(0.75);
   });
 });

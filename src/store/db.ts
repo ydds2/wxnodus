@@ -18,7 +18,7 @@ const requireCjs = createRequire(import.meta.url);
 
 export type Db = InstanceType<typeof Database>;
 
-const SCHEMA_VERSION = 11; // v11: HTTP serve principal/session ownership; v10: usage_stats.reasoning_tokens
+const SCHEMA_VERSION = 12; // v12: durable_prompts 用户消息持久队列（P2-14）; v11: HTTP serve principal/session ownership; v10: usage_stats.reasoning_tokens
 
 export { bigramZh };
 // 审计追加已迁至 kernel/audit.ts（分层泄漏修复 audit §13.45）——store 仅再导出（infra→kernel 合法方向）

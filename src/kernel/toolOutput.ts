@@ -28,6 +28,17 @@ function clampInt(v: unknown, def: number, min: number, max: number): number {
 
 export { clampInt };
 
+/**
+ * 浮点档位夹取（R-1 / kernel-eval 3-7 修复，2026-08-27）：clampInt 的 floor 会把
+ * (0,1) 区间的比例阈值（如 compactionThreshold=0.8）floor 为 0 → 触发「n<=0 回退默认」
+ * 被静默忽略。本函数不做整数化：非法（非有限数）或 <=0 回退默认，其余夹取 [min,max]。
+ */
+export function clampFloat(v: unknown, def: number, min: number, max: number): number {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return def;
+  return Math.min(Math.max(n, min), max);
+}
+
 /** untrusted 包裹面阈值（settings.untrustedWrapLimit，1k..100k） */
 export function resolveWrapLimit(settings?: Record<string, any> | undefined): number {
   return clampInt(settings?.untrustedWrapLimit, UNTRUSTED_WRAP_LIMIT_DEFAULT, 1000, 100_000);

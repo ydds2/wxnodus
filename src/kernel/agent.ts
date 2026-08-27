@@ -26,7 +26,9 @@ import { checkSessionGrant, grantSession } from './sessionGrants.js';
 import { providerPromptFor, resolveProviderForPrompt } from './providerPrompts.js';
 import { trimToolsForModel } from './toolTrim.js';
 import { buildExecPolicyIndex, applyExecPolicy } from './execPolicy.js';
-import { modeVerdict, loadPermRules, applyRules, type Mode } from './permissions.js';
+import { modeVerdict, applyRules, type Mode, type ModeVerdictOpts } from './permissions.js';
+import { loadMergedPolicyRules } from '../infrastructure/policy/policyLayers.js';
+import { enqueueDurablePrompt, markDurableRunning, markDurableDone, recoverStalePrompts } from './durableQueue.js';
 import { isCompletionClaim, GOAL_DONE_MARK } from './completionClaim.js';
 import type { HookRunner } from './hooks.js';
 import { resolve, relative, isAbsolute } from 'node:path';
@@ -45,7 +47,7 @@ export interface AgentOptions {
   mem: Memory;
   sessionId: string;
   config: { settings: { apiKeyEnc?: string | null; baseURL?: string; model?: string } };
-  callModel?: ((req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[]; maxTokens?: number }, streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal }) => Promise<ModelCall | ToolCallMsg>) | null;
+  callModel?: ((req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[]; maxTokens?: number }, streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal; onToolCallReady?: (call: { index: number; id: string; name: string; arguments: string }, kind: 'index-advanced' | 'final') => void }) => Promise<ModelCall | ToolCallMsg>) | null;
   mode?: Mode;
   onApproval?: (tool: string, args: Record<string, any>) => Promise<boolean>;
   /** C6：文字提问回调（clarify 工具）——返回用户文本答案 */
@@ -158,12 +160,35 @@ const CHANT_REMIND_AT = 3;           // goal 轮间相同结论 ≥N 注入换�
 const CHANT_STOP_AT = 5;             // goal 轮间相同结论 ≥N 终止（gemini 内容重复对齐）
 const TOOL_CACHE_SIZE = 32;          // 读工具结果缓存上限（settings.toolCacheSize）
 
-/** 数值设置解析（生产级：夹取防误配 + 非法值回退默认）——复用 toolOutput.clampInt 单一事实源 */
-import { clampInt as clampN } from './toolOutput.js';
+/** 数值设置解析（生产级：夹取防误配 + 非法值回退默认）——复用 toolOutput.clampInt 单一事实源；
+ * 比例/浮点阈值用 clampFloat（R-1 修复：clampInt 的 floor 会把 0.8 这类档位静默回退默认） */
+import { clampInt as clampN, clampFloat } from './toolOutput.js';
 
 // supremacy 3.5：shortHash 下沉 kernel/hash.ts 叶子（微基准直连 + 分层去重）
 import { shortHash } from './hash.js';
 export { shortHash };
+
+/** C3（2026-08-27）：工具参数 canonical 化——递归键序排序后序列化。
+ *  机制参考 kimi `_canonical_tool_arguments`（toolset.py:184-202，JSON 值排序；实现原创）。
+ *  三个消费点（提前执行池 / 回合缓存 / 批内去重）共用同一 canonical 形态：
+ *  同语义不同键序的重复调用命中同一 key（此前键序敏感致纯读工具重复执行——kernel-eval 3-5）。 */
+const sortKeysDeep = (v: unknown): unknown => {
+  if (Array.isArray(v)) return v.map(sortKeysDeep);
+  if (v && typeof v === 'object' && !Buffer.isBuffer(v)) {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+      out[k] = sortKeysDeep((v as Record<string, unknown>)[k]);
+    }
+    return out;
+  }
+  return v;
+};
+export const canonicalToolArgs = (args: unknown): string => {
+  try { return JSON.stringify(sortKeysDeep(args ?? {})); }
+  catch {
+    try { return JSON.stringify(args ?? {}); } catch { return String(args ?? ''); }
+  }
+};
 
 
 
@@ -230,6 +255,12 @@ export function createAgent(opts: AgentOptions) {
   // 前缀稳定化（DeepSeek 上下文缓存命中，audit §13.43）：系统提示时间戳每回合变化会让
   // 整个历史前缀缓存永久 miss——按会话冻结首次时间（会话跨天后时间不再刷新，换取缓存命中）。
   const sessionClocks = new Map<string, Date>();
+  // R-5 修复（2026-08-27，kernel-eval 3-9）：会话级 Map 插入序淘汰（长驻进程多会话防无界
+  // 增长——淘汰仅丢冻结时钟，下次访问等价重建，前缀缓存正确性不变；summarizeGuards 同款）
+  const SESSION_STATE_MAX = 64;
+  const evictSessionState = <K, V>(m: Map<K, V>) => {
+    if (m.size > SESSION_STATE_MAX) { const oldest = m.keys().next().value; if (oldest !== undefined) m.delete(oldest); }
+  };
 
   // 会话 token 预算（Gemini general.budget 对齐）：settings.budgetTokens>0 时，
   // 会话累计用量超预算 → system.notice 告警一次（防刷屏）；0/缺省 = 不设限；
@@ -270,6 +301,7 @@ export function createAgent(opts: AgentOptions) {
     if (!f) {
       f = { autoInjectDone: false, budgetWarned: false, budgetExceeded: false, ctxWarned: false };
       sessionFlags.set(sid, f);
+      evictSessionState(sessionFlags); // R-5：一次性标志淘汰——重置态重建，语义等价
     }
     return f;
   };
@@ -446,7 +478,7 @@ export function createAgent(opts: AgentOptions) {
 
   const defaultCallModel = async (
     req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[]; maxTokens?: number },
-    streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal },
+    streamCtx?: { onToken?: (t: string) => void; onReasoning?: (t: string) => void; signal?: AbortSignal; onToolCallReady?: (call: { index: number; id: string; name: string; arguments: string }, kind: 'index-advanced' | 'final') => void },
   ): Promise<ModelCall | ToolCallMsg> => {
     const s = opts.config.settings;
     const configuredModel = String(s.model ?? '');
@@ -517,6 +549,7 @@ export function createAgent(opts: AgentOptions) {
       messages: req.messages as any,
       tools: req.tools,
       maxTokens: req.maxTokens,
+      onToolCallReady: streamCtx?.onToolCallReady,
       signal: streamCtx?.signal,
       onToken: streamCtx?.onToken,
       onReasoning: streamCtx?.onReasoning,
@@ -667,16 +700,26 @@ export function createAgent(opts: AgentOptions) {
   let ctxCwd = opts.workspaceRoot ?? process.cwd();
   const agentDataDir = opts.dataDir ?? resolveDataDir(ctxCwd);
   // M-3（V4 维护轨·W-4 双速权限试点，默认关灰度）：沙盒启用 + settings.sandboxFastPath===true
-  // 时工作区内低危写免审批（Claude「沙盒内即免审批」对齐）；沙盒外维持现状强审批
-  const modeVerdictOpts = (() => {
+  // 时工作区内低危写免审批（Claude「沙盒内即免审批」对齐）；沙盒外维持现状强审批。
+  // C1 修复（2026-08-27）：原 require('./winSandbox.js') 在 NodeNext ESM 下抛 ReferenceError
+  // 被 try/catch 吞——双速权限静默永不生效（kernel-eval 3-1）。改惰性 await import，
+  // 仅当开关开启时加载一次并缓存；加载失败诚实降级为无选项（沙盒外强审批语义）。
+  let modeVerdictOpts: ModeVerdictOpts | undefined;
+  let modeVerdictOptsResolved = false;
+  const resolveModeVerdictOpts = async (): Promise<ModeVerdictOpts | undefined> => {
+    if (modeVerdictOptsResolved) return modeVerdictOpts;
+    modeVerdictOptsResolved = true;
     const s = opts.config?.settings as Record<string, any> | undefined;
     if (s?.sandboxFastPath !== true) return undefined;
     try {
-      const { sandboxEnabled } = require('./winSandbox.js') as typeof import('./winSandbox.js');
+      const { sandboxEnabled } = await import('./winSandbox.js');
       if (!sandboxEnabled(s)) return undefined;
-      return { sandboxFastPath: { cwd: ctxCwd } };
-    } catch { return undefined; }
-  })();
+      modeVerdictOpts = { sandboxFastPath: { cwd: ctxCwd } };
+    } catch {
+      // 加载失败静默降级——绝不阻塞工具执行；沙盒外强审批语义不变
+    }
+    return modeVerdictOpts;
+  };
 
 
   const toolCtx: ToolCtx = {
@@ -713,15 +756,28 @@ export function createAgent(opts: AgentOptions) {
   const onApproval = opts.onApproval ?? (async () => false);
 
   // P0-2 审批规则文件：启动加载 data/permissions.json，工具执行前应用（deny>allow>ask）
-  const permRules = loadPermRules(agentDataDir);
+  // A3 / P1-4（2026-08-27）：三层策略——全局（管理员 %ProgramData%）> 用户 > 项目（.wxnodus/）。
+  // 全局 deny 不可被下层放宽；allow/ask 同 key 具体层优先；层损坏 → 诊断 notice（绝不静默）。
+  const policy = loadMergedPolicyRules({ dataDir: agentDataDir, workspaceRoot: ctxCwd });
+  const permRules = policy.rules;
+  for (const d of policy.diagnostics) {
+    bus.emit('system.notice', { text: `策略层警告：${d}` });
+  }
   // supremacy 1.7：execpolicy 首词索引（codex first-token 机制）——bash 规则按命令首词
   // 预筛候选（pattern 锚定保证与全量 applyRules 等价），装配一次、逐工具调用复用
   const execPolicyIndex = buildExecPolicyIndex(permRules);
 
   // F7：steer 注入队列（运行中向当前回合注入用户消息）
+  // R-4 修复（2026-08-27，kernel-eval 3-8）：上限 50（与 noticeQueue 同档）——无界队列在
+  // 长回合+程序化高频注入下无终止增长；满时丢最旧并诚实 notice（用户消息不静默丢）。
+  const STEER_QUEUE_MAX = 50;
   const steerQueue: string[] = [];
   const steer = (text: string): boolean => {
     if (!text.trim()) return false;
+    if (steerQueue.length >= STEER_QUEUE_MAX) {
+      const dropped = steerQueue.shift();
+      bus.emit('system.notice', { text: `steer 队列已满（${STEER_QUEUE_MAX} 条未消费）——最早的一条注入消息被丢弃：「${(dropped ?? '').slice(0, 40)}…」` });
+    }
     steerQueue.push(text.trim());
     return true;
   };
@@ -832,10 +888,10 @@ export function createAgent(opts: AgentOptions) {
           cmdForceManual = true;
         } else {
           // confirm 级：走模式语义（smart/manual/auto/goal→确认、plan→计划审批、yolo→放行）
-          verdict = modeVerdict(mode, name, args, tool.danger || tool.canonical?.namespace === 'mcp' || tool.canonical?.namespace === 'plugin', modeVerdictOpts);
+          verdict = modeVerdict(mode, name, args, tool.danger || tool.canonical?.namespace === 'mcp' || tool.canonical?.namespace === 'plugin', await resolveModeVerdictOpts());
         }
       } else {
-        verdict = modeVerdict(mode, name, args, tool.danger || tool.canonical?.namespace === 'mcp' || tool.canonical?.namespace === 'plugin', modeVerdictOpts);
+        verdict = modeVerdict(mode, name, args, tool.danger || tool.canonical?.namespace === 'mcp' || tool.canonical?.namespace === 'plugin', await resolveModeVerdictOpts());
       }
       // A21：权限裁决留痕（工具/裁决/命令级别/参数摘要）
       auditTool('tool.verdict', {
@@ -1049,6 +1105,10 @@ export function createAgent(opts: AgentOptions) {
     if (opts2.subagent) {
       bus.emit('agent.subagent', { goal: prompt, phase: 'start', session_id: sessionId, subagent_id: sessionId });
     }
+    // 批次2：流式中途派发钩子（kimi on_tool_call 机制参考·实现原创）——只读先行：
+    // cacheable 工具在 token 流中途即执行（与剩余流出并行），danger/写工具等流尾原路径
+    //（副作用零风险——fail-closed 审批链不并发）。每次模型调用前重挂、调用间隔离。
+    let earlyDispatchHook: ((call: { index: number; id: string; name: string; arguments: string }, kind: 'index-advanced' | 'final') => void) | null = null;
     const callWithAbort = (req: { messages: Array<{ role: string; content: string | Array<Record<string, any>> | null }>; tools?: unknown[]; maxTokens?: number }) => {
       // D（kimi normalize_history 机制对齐·实现原创）：发送前合并相邻同角色消息
       //（user+user / system+system——steer 注入、首轮多条 system、DB 连续同角色行造成的
@@ -1060,6 +1120,8 @@ export function createAgent(opts: AgentOptions) {
         onToken: (t) => bus.emit('agent.token', { text: t }),
         // A25：reasoning 带 session_id 标记（子代理 → gateway 分流 subagent.thinking）
         onReasoning: (r) => bus.emit('reasoning.delta', { text: r, session_id: sessionId }),
+        // 批次2：流式中途就绪信号透传（earlyDispatchHook 每次模型调用前重挂——见 loop）
+        onToolCallReady: (call, kind) => earlyDispatchHook?.(call, kind),
         signal: st.signal.abortController.signal,
       });
       racing.catch(() => { /* race 输家静默（abort 后模型 reject 不再 unhandled） */ });
@@ -1076,6 +1138,7 @@ export function createAgent(opts: AgentOptions) {
     // 使 DeepSeek 上下文缓存从第一段消息起永久 miss。
     const sessionClock = sessionClocks.get(sessionId) ?? new Date();
     sessionClocks.set(sessionId, sessionClock);
+    evictSessionState(sessionClocks); // R-5：淘汰仅丢冻结时钟（下次访问等价重建，正确性不变）
     msgs.push({ role: 'system', content: opts.systemPromptOverride ?? buildSystemPrompt({
       mode, cwd: ctxCwd, model: modelName, hasImageIn: hasImageIn(modelName), sessionId,
       // 开放兼容：/lang 设置生效（输出语言）+ dataDir 支持外部 prompts/system.md 覆盖
@@ -1249,6 +1312,10 @@ export function createAgent(opts: AgentOptions) {
       // 合并成单条（缓存友好）。
       while (noticeQueue.length) {
         const n = noticeQueue.shift()!;
+        // P2-15（2026-08-27）：Notification hook 事件（kimi hooks Notification 对齐）——
+        // hooks.ts 契约早已存在（HookRunner.notification + 'notification' 事件）但接线缺失
+        // （死接线同类）；此处补齐调用——hook 可观测/记录后台通知（BLOCK 过滤语义见 hooks 文档）。
+        try { hooks?.notification?.('jobs', n); } catch { /* hook 异常绝不阻断通知注入 */ }
         msgs.push({ role: 'user', content: n });
       }
       // 自动压缩触发（机制补强）：每轮调用前估算上下文，超过模型窗口阈值
@@ -1287,7 +1354,9 @@ export function createAgent(opts: AgentOptions) {
         : undefined;
       // V4 P2-3：阈值可配（默认 0.75 提早压缩——Anthropic 60-80% 口径；95% 后再压已迟：
       // 大请求反复超限连环失败 5-15min。settings.compactionThreshold 对齐 gemini compressionThreshold）
-      const compactAt = clampN(settingsAny?.compactionThreshold, 0.75, 0.5, 0.95);
+      // R-1 修复（2026-08-27，kernel-eval 3-7）：clampFloat——clampInt(floor) 会把 (0,1) 区间
+      // 的小数档位（如 0.8）静默回退默认 0.75，配置项形同虚设。
+      const compactAt = clampFloat(settingsAny?.compactionThreshold, 0.75, 0.5, 0.95);
       // 水位预警（会话级一次）：75% 阈值提前告知——用户可主动 /compact，
       // 避免 85% 自动压缩「被动发生」（压缩会丢中间细节，主动压缩可选保留策略）
       const flags = flagsFor(sessionId); // V4 P3-6（B-2）
@@ -1367,9 +1436,33 @@ export function createAgent(opts: AgentOptions) {
       let res: ModelCall | ToolCallMsg | undefined;
       // A22：实时状态一句话——LLM 推理期（动态文本，UI 状态行显示）
       bus.emit('agent.stage', { stage: turns > 0 ? '正在推理下一步…' : '正在思考分析需求…' });
+      // 批次2：本次模型调用的提前执行池——流式中途就绪的 cacheable 工具即刻执行，
+      // runOneCall 命中直接复用（不重跑）。key = name:args（与批内去重同构）。
+      const earlyRuns = new Map<string, Promise<string>>();
+      let earlyDispatched = 0;
+      earlyDispatchHook = (call) => {
+        try {
+          const name = String(call?.name ?? '');
+          const def = tools[name];
+          if (!def || def.cacheable !== true) return; // 只读先行；其余等流尾（原路径）
+          // R-2 修复（2026-08-27，kernel-eval 3-3）：tool_search 带激活副作用（activeToolNames
+          // 变更），且当轮 toolList 已定（中途激活只影响下轮）——不满足「只读先行零残留」
+          // 宣称，等流尾原路径执行；cacheable 保留（回合缓存语义成立：同查询→同命中→激活幂等）。
+          if (name === 'tool_search') return;
+          const args = safeJson(String(call?.arguments ?? '{}'));
+          const key = name + ':' + canonicalToolArgs(args);
+          if (earlyRuns.has(key) || toolCache.has(key)) return; // 在途/已有缓存
+          earlyDispatched++;
+          earlyRuns.set(key, executeTool(name, args));
+        } catch { /* 提前派发失败静默——流尾走原路径 */ }
+      };
       try {
         res = await callWithAbort({ messages: msgs, tools: toolList, maxTokens: outputMaxTokens });
       } catch (e: any) {
+        // 批次2：流失败/中断时已提前执行的只读结果被丢弃——诚实标注（无副作用，安全）
+        if (earlyDispatched > 0) {
+          bus.emit('system.notice', { text: `模型流中断：${earlyDispatched} 个流式中途提前执行的只读工具结果被丢弃（只读无副作用）` });
+        }
         if (st.aborted) { st.interrupted = true; break; }
         // V4 P2-3：413/context-length 语义捕获 → 强制压缩后自动重发一次
         // （kimi 0.20.2 同族；此前只提示手动 /compact——超限回合直接报废）
@@ -1448,8 +1541,7 @@ export function createAgent(opts: AgentOptions) {
         // Promise.all 并行执行，结果按原始槽位回填（assistant.tool_calls 顺序不变）。
         const runOneCall = async (c: (typeof batch)[number]): Promise<typeof executed[number]> => {
           if (!tools[c.name]) {
-            // 未知工具：跳过该调用（计入阈值防模型空转），其余调用继续执行
-            unknownRounds++;
+            // 未知工具：跳过该调用（计数在批级——见下方 R-6），其余调用继续执行
             return { id: c.id, name: c.name, args: c.args, out: `工具 ${c.name} 不存在`, reasoning: c.reasoning, reasoningField: c.reasoningField, outcome: 'failed' as const };
           }
           // V4 P1-6：参数 JSON 哨兵——不执行，结构化错误回喂模型自纠（码+解释+建议）
@@ -1461,8 +1553,7 @@ export function createAgent(opts: AgentOptions) {
               out: `参数 JSON 无效（工具 ${c.name} 未执行）：模型输出的 arguments 不是合法 JSON——原文片段：${raw.slice(0, 80)}。请整体重新调用该工具，并确保 arguments 为合法 JSON（检查引号/括号闭合/换行转义）。`,
             };
           }
-          unknownRounds = 0;
-          const cacheKey = `${c.name}:${JSON.stringify(c.args ?? {})}`;
+          const cacheKey = `${c.name}:${canonicalToolArgs(c.args)}`;
           // V4 L0-2：调用级结构化结局（verified/failed/other/cached）——anyFail、消息 parts、
           // executed 轨迹三处消费同一确定性信号，废除「输出含『失败/异常』子串」内容猜测
           // （A-5 误杀根治：grep 中文代码库/读含『失败』字样日志不再触发连续失败终止）
@@ -1475,6 +1566,24 @@ export function createAgent(opts: AgentOptions) {
             out = `${toolCache.get(cacheKey)}\n（结果已缓存——同参重复调用已合并，无需重跑）`;
             fromCache = true;
             callOutcome = 'cached';
+          } else if (earlyRuns.has(cacheKey)) {
+            // 批次2：本调用在模型流式输出期间已提前执行——直接复用（不重跑）。
+            // 结局计量说明：executeTool 的 lastToolOutcome 无法在事后可靠归属（并发串扰），
+            // 记 'other'（不计 verified/fail——结果文本本身模型可见，诚实无欺）。
+            // C2 修复（2026-08-27，kernel-eval 3-2）：缓存入库的是裸结果——标注文案只加在
+            // 本轮回填上，绝不随缓存传播（此前下一轮同参命中会叠加两条时序矛盾的标注）。
+            const early = earlyRuns.get(cacheKey)!;
+            const earlyRaw = await early;
+            out = `${earlyRaw}\n（本结果在模型流式输出期间已提前执行——直接复用，未重跑）`;
+            fromCache = true;
+            callOutcome = 'other';
+            if (tools[c.name]?.cacheable === true) {
+              if (toolCache.size >= EFF.toolCacheSize) {
+                const oldest = toolCache.keys().next().value;
+                if (oldest !== undefined) toolCache.delete(oldest);
+              }
+              toolCache.set(cacheKey, earlyRaw); // C2：裸结果入库（不含标注）
+            }
           } else {
             const imgSlot: { images: Array<{ type: 'image_url'; image_url: { url: string } }> | null } = { images: null };
             out = await executeTool(c.name, c.args, imgSlot);
@@ -1536,7 +1645,7 @@ export function createAgent(opts: AgentOptions) {
         const batchInflight = new Map<string, Promise<typeof executed[number]>>();
         const runSlot = (c: (typeof batch)[number]): Promise<typeof executed[number]> => {
           if (tools[c.name]?.cacheable !== true) return runOneCall(c);
-          const key = c.name + ':' + JSON.stringify(c.args ?? {});
+          const key = c.name + ':' + canonicalToolArgs(c.args);
           const existing = batchInflight.get(key);
           if (existing) {
             return existing.then(r => ({ ...r, id: c.id, out: r.out + '\n（同批同参重复调用已合并——复用首个结果，未重跑）' }));
@@ -1553,6 +1662,11 @@ export function createAgent(opts: AgentOptions) {
         } else {
           for (const c of batch) executed.push(await runSlot(c));
         }
+        // R-6 修复（2026-08-27，kernel-eval 3-6）：未知工具按「轮」（模型一次调用的整批）计数——
+        // 本批含任一未知工具 → 计数 +1；本批全为已知 → 清零。废除调用级计数：此前同批混入
+        // 1 个已知工具即清零（模型可借混批永远规避终止）、同批多个未知又叠加（「轮」被当「次」）。
+        const batchHasUnknown = executed.some(e => !tools[e.name]);
+        unknownRounds = batchHasUnknown ? unknownRounds + 1 : 0;
         if (unknownRounds >= EFF.maxUnknownToolRounds) {
           bus.emit('agent.error', { message: `连续 ${EFF.maxUnknownToolRounds} 轮未知工具，终止` });
           return finishEarly('模型连续调用未知工具，已终止');
@@ -1761,18 +1875,53 @@ export function createAgent(opts: AgentOptions) {
     }
   };
 
+  // P2-14（2026-08-27）：崩溃恢复 notice 每会话只报一次（跨进程重启后每次新实例首轮必报）
+  const durableRecoveredNotified = new Set<string>();
+  // 注意：run 方法的参数 opts（AgentRunOptions）遮蔽外层 AgentOptions——队列 DB 用外层捕获
+  const agentDb = opts.db;
+
   return {
     async run(prompt: string, opts?: AgentRunOptions): Promise<AgentResult> {
       resetDegradeIfNeeded();
-      const context = opts?.runContext ?? createRunContext({
-        sessionId,
-        actorId: 'actor:embedded',
-        source: 'kernel',
-      });
-      return agentRunContext.run(context, () => agentSessionContext.run(
-        { activeSessionId: context.sessionId },
-        () => runWithGoalLoop(prompt, opts?.images, opts?.goalLoop, opts?.signal),
-      ));
+      // P2-14（2026-08-27）：用户消息持久队列（codex durable queue 机制对齐·实现原创）
+      //   ① 入队先于模型处理——prompt 落盘后才进回合循环（进程崩溃不丢用户消息）；
+      //   ② 终态收口——任何结局都标记 done（队列保消息不保结局——结局归 RunContext 六终态
+      //      + checkpoint 中断回放，不双写第二套结局）；
+      //   ③ 崩溃恢复——stale 行标记 interrupted + system.notice 如实告知（每会话一次）；
+      //   ④ 子代理（会话 <主>:sub）不入队——队列只保用户消息（子代理目标属父上下文）。
+      const db = agentDb;
+      const durableOn = settingsAny?.durableQueue !== false && !sessionId.endsWith(':sub');
+      let dqId: number | null = null;
+      if (durableOn) {
+        try {
+          const recovered = recoverStalePrompts(db, sessionId);
+          if (recovered.length && !durableRecoveredNotified.has(sessionId)) {
+            durableRecoveredNotified.add(sessionId);
+            // R-5：一次性通知去重集上限（seenJobIds 同款）——防无界增长
+            if (durableRecoveredNotified.size > 256) durableRecoveredNotified.delete(durableRecoveredNotified.values().next().value!);
+            bus.emit('system.notice', {
+              text: `检测到上次中断的 ${recovered.length} 条未完成请求（已标记 interrupted——checkpoint 已保留上下文，/rewind 回滚或重新提问继续）`,
+            });
+          }
+          dqId = enqueueDurablePrompt(db, sessionId, prompt, null);
+          markDurableRunning(db, dqId);
+        } catch { /* 队列表不可用 → 静默降级（不影响回合本身） */ }
+      }
+      try {
+        const context = opts?.runContext ?? createRunContext({
+          sessionId,
+          actorId: 'actor:embedded',
+          source: 'kernel',
+        });
+        return await agentRunContext.run(context, () => agentSessionContext.run(
+          { activeSessionId: context.sessionId },
+          () => runWithGoalLoop(prompt, opts?.images, opts?.goalLoop, opts?.signal),
+        ));
+      } finally {
+        if (dqId !== null) {
+          try { markDurableDone(db, dqId); } catch { /* 收口失败静默（行保持 running → 下次恢复标记 interrupted） */ }
+        }
+      }
     },
     spawnSubagent: spawnSub,
     // C1：abort 只作用于当前回合（若在跑）；空闲时置位无副作用

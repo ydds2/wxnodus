@@ -8,7 +8,7 @@
 //    plan 计划模式：只读放行、非只读计划审批
 //    yolo 完全访问：除红线全放
 //  硬红线：任何模式不可绕过——扩展自 hermes 的 HARDLINE/DANGEROUS_PATTERNS 结构
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import type { NormativeRedlineCategory, PolicyMatcher } from '../policy/schema.js';
 
@@ -128,10 +128,19 @@ export function savePermRules(dataDir: string, rules: PermRule[]): void {
 /** 规则判定：返回 decision 或 null（无规则命中）。mode 传入时按 modes 过滤（Gemini policy modes 对齐） */
 export function applyRules(tool: string, args: Record<string, any>, rules: PermRule[], mode?: string): { decision: 'allow' | 'deny' | 'ask'; rule: PermRule } | null {
   if (!rules?.length) return null;
-  // priority 降序（同优先按文件序稳定）；modes 过滤
+  // 排序裁决（P1-4 2026-08-27 精化）：
+  //   ① priority 降序（大者先，主序）；
+  //   ② 具体度降序（有 pattern 的规则先于 catch-all——B-06 语义：收编兜底 deny 不遮蔽
+  //      具体 allow；同 priority 下 `git *` allow 先于无 pattern deny 匹配）；
+  //   ③ decision 平局裁决 deny > ask > allow（同 priority 同具体度——修复此前
+  //      注释宣称但从未实现的 deny 优先语义）。
+  const DECISION_RANK = { deny: 2, ask: 1, allow: 0 } as const;
   const hit = rules
     .filter(r => r.tool === tool && (!r.modes?.length || (mode && r.modes.includes(mode))))
-    .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+    .sort((a, b) =>
+      ((b.priority ?? 0) - (a.priority ?? 0))
+      || (Number(Boolean(b.pattern)) - Number(Boolean(a.pattern)))
+      || (DECISION_RANK[b.decision] - DECISION_RANK[a.decision]));
   if (!hit.length) return null;
   // 路径/命令过滤：pattern 对 bash 匹配命令前缀（精确授权「git push 特定分支」），
   // 其余工具匹配 path 参数 glob（缺省匹配全部）
@@ -298,8 +307,10 @@ export interface ModeVerdictOpts {
 
 /** 路径在工作区内（resolve 归一后前缀判定；越界/绝对外路径 false） */
 function isWithinDir(cwd: string, p: string): boolean {
+  // C1 修复（2026-08-27）：原 require('node:path') 在 NodeNext ESM 下抛 ReferenceError
+  // 被 try/catch 吞 → 恒 false → fastPath 放行分支静默失效（与 agent.ts:676 同病根）。
+  // node:path 内置改为顶层静态导入。
   try {
-    const { resolve, sep } = require('node:path') as typeof import('node:path');
     const abs = resolve(cwd, p);
     const root = resolve(cwd);
     return abs === root || abs.startsWith(root + sep);

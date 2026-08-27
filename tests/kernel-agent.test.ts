@@ -1,13 +1,17 @@
 // tests/kernel-agent.test.ts — L2-4 agent 循环：流式/工具执行/权限/重试/中断/子代理
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDB, closeDB } from '../src/store/db.js';
 import { createEventBus } from '../src/kernel/events.js';
 import { createMemory } from '../src/kernel/memory.js';
-import { type ModelCall, type ToolCallMsg } from '../src/kernel/agent.js';
+import { type ModelCall, type ToolCallMsg, canonicalToolArgs } from '../src/kernel/agent.js';
 import { createPipelineAgent } from './support/createPipelineAgent.js';
+// C1 接线回归（2026-08-27）：agent.ts 惰性 await import winSandbox——mock 掉原生模块，
+// 让「沙盒开启 + sandboxFastPath=true → 低危工作区写免审批」的接线真实生效可测
+// （kernel-eval 3-1：原 require() 死接线被绿测试掩盖，正是缺这条 agent 级接线测试）。
+vi.mock('../src/kernel/winSandbox.js', () => ({ sandboxEnabled: () => true }));
 
 let dir: string;
 let db: ReturnType<typeof openDB>;
@@ -1713,7 +1717,7 @@ describe('E：同批工具去重 fan-out（kimi 同步去重对齐）', () => {
           schema: { type: 'function', function: { name: 'echo_read', description: '测试用纯读工具', parameters: { type: 'object', properties: { q: { type: 'number' } }, required: ['q'] } } },
           danger: false,
           cacheable: true,
-          canonical: { namespace: 'agent', effectKind: 'filesystem.read' },
+          canonical: { namespace: 'agent' as const, effectKind: 'filesystem.read' as const },
           run: async () => { runs++; return `第${runs}次结果`; },
         },
       },
@@ -1766,5 +1770,275 @@ describe('E：同批工具去重 fan-out（kimi 同步去重对齐）', () => {
     });
     await agent.run('不去重');
     expect(runs).toBe(2); // 副作用工具各执行各的
+  });
+});
+
+describe('批次2：流式中途派发只读工具（kimi on_tool_call 对齐·只读先行）', () => {
+  it('cacheable 工具流式中途就绪即执行——runOneCall 命中直接复用（不重跑）', async () => {
+    let runs = 0;
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-early-1',
+      extraTools: {
+        echo_read: {
+          schema: { type: 'function', function: { name: 'echo_read', description: '测试纯读', parameters: { type: 'object', properties: { q: { type: 'number' } }, required: ['q'] } } },
+          danger: false,
+          cacheable: true,
+          canonical: { namespace: 'agent' as const, effectKind: 'filesystem.read' as const },
+          run: async () => { runs++; return `第${runs}次结果`; },
+        },
+      },
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any, streamCtx: any) => {
+        seen.push(req);
+        if (seen.length === 1) {
+          // 模拟 llmStream 的 index-advanced 信号：工具参数在流中途完整
+          streamCtx?.onToolCallReady?.({ index: 0, id: 'c1', name: 'echo_read', arguments: '{"q":1}' }, 'index-advanced');
+          return { type: 'tool_call', id: 'c1', name: 'echo_read', args: { q: 1 }, calls: [
+            { id: 'c1', name: 'echo_read', args: { q: 1 } },
+          ] } as ToolCallMsg;
+        }
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('提前执行');
+    expect(runs).toBe(1); // 中途执行一次，runOneCall 复用不再跑
+    const tools = seen[1].messages.filter((m: any) => m.role === 'tool');
+    expect(tools).toHaveLength(1);
+    expect(tools[0].content).toContain('第1次结果');
+    expect(tools[0].content).toContain('已提前执行');
+  });
+
+  it('C2（kernel-eval 3-2）：提前执行入库为裸结果——同 run 内缓存命中不携带「已提前执行」标注', async () => {
+    let runs = 0;
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-c2-cache',
+      extraTools: {
+        echo_read: {
+          schema: { type: 'function', function: { name: 'echo_read', description: '测试纯读', parameters: { type: 'object', properties: { q: { type: 'number' } }, required: ['q'] } } },
+          danger: false,
+          cacheable: true,
+          canonical: { namespace: 'agent' as const, effectKind: 'filesystem.read' as const },
+          run: async () => { runs++; return `第${runs}次结果`; },
+        },
+      },
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any, streamCtx: any) => {
+        seen.push(req);
+        if (seen.length === 1) {
+          streamCtx?.onToolCallReady?.({ index: 0, id: 'c1', name: 'echo_read', arguments: '{"q":1}' }, 'index-advanced');
+          return { type: 'tool_call', id: 'c1', name: 'echo_read', args: { q: 1 }, calls: [
+            { id: 'c1', name: 'echo_read', args: { q: 1 } },
+          ] } as ToolCallMsg;
+        }
+        if (seen.length === 2) {
+          // 同 run 下一轮同参调用：无提前派发信号——应命中回合缓存
+          return { type: 'tool_call', id: 'c2', name: 'echo_read', args: { q: 1 }, calls: [
+            { id: 'c2', name: 'echo_read', args: { q: 1 } },
+          ] } as ToolCallMsg;
+        }
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('同一 run 内两次调用');
+    expect(runs).toBe(1); // 第二轮纯缓存命中，不重跑
+    const lastTools = seen[2].messages.filter((m: any) => m.role === 'tool');
+    expect(lastTools).toHaveLength(2);
+    const cached = lastTools[1].content;
+    expect(cached).toContain('第1次结果');
+    expect(cached).toContain('结果已缓存');
+    expect(cached).not.toContain('已提前执行'); // 标注不随缓存传播到后续回合
+  });
+
+  it('非 cacheable 工具不提前派发（流尾原路径执行）', async () => {
+    let runs = 0;
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-early-2',
+      extraTools: {
+        side_effect: {
+          schema: { type: 'function', function: { name: 'side_effect', description: '副作用工具', parameters: { type: 'object', properties: {}, required: [] } } },
+          danger: false,
+          canonical: { namespace: 'agent', effectKind: 'extension.manage' },
+          run: async () => { runs++; return `副作用${runs}`; },
+        },
+      },
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any, streamCtx: any) => {
+        seen.push(req);
+        if (seen.length === 1) {
+          streamCtx?.onToolCallReady?.({ index: 0, id: 'c1', name: 'side_effect', arguments: '{}' }, 'index-advanced');
+          return { type: 'tool_call', id: 'c1', name: 'side_effect', args: {}, calls: [
+            { id: 'c1', name: 'side_effect', args: {} },
+          ] } as ToolCallMsg;
+        }
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('不提前');
+    // 提前派发被忽略（side_effect 非 cacheable）；流尾原路径执行
+    const tools = seen[1].messages.filter((m: any) => m.role === 'tool');
+    expect(tools[0].content).toContain('副作用1');
+    expect(tools[0].content).not.toContain('已提前执行');
+  });
+});
+
+// C1 接线回归（2026-08-27）：sandboxFastPath 双层死接线修复——开启开关且沙盒可用时，
+// manual 模式下工作区内低危写免审批真实放行；开关关闭时维持 fail-closed 强审批。
+// （manual 模式是判别器：smart/auto 的 lowRiskAutoApprove 会掩盖 fastPath 的增量效果）
+describe('C1 sandboxFastPath 接线（winSandbox 已 mock）', () => {
+  const lowRiskPath = join(process.cwd(), '.tmp', 'lowrisk-target.txt');
+
+  const runWith = async (sandboxFastPath: boolean) => {
+    rmSync(lowRiskPath, { force: true });
+    let calls = 0;
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: `t-c1-${sandboxFastPath ? 'on' : 'off'}`,
+      mode: 'manual',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', sandboxFastPath } } as any,
+      workspaceRoot: join(process.cwd(), '.tmp'),
+      callModel: async (): Promise<ModelCall | ToolCallMsg> => {
+        calls++;
+        if (calls === 1) {
+          return { type: 'tool_call', id: 'c1', name: 'fs_write', args: {}, calls: [
+            { id: 'c1', name: 'fs_write', args: { path: lowRiskPath, content: 'fastpath-probe' } },
+          ] } as ToolCallMsg;
+        }
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    const r = await agent.run('写个探测文件');
+    return { ok: r.ok, text: r.text, fileExists: existsSync(lowRiskPath) };
+  };
+
+  it('sandboxFastPath=true：低危工作区写免审批真实执行（文件写出）', async () => {
+    const r = await runWith(true);
+    expect(r.fileExists).toBe(true); // 双层接线生效——此前 require() 死接线会在此失败
+    expect(r.ok).toBe(true);
+  });
+
+  it('sandboxFastPath=false：维持 fail-closed 强审批（文件不写出，运行终态受阻）', async () => {
+    const r = await runWith(false);
+    expect(r.fileExists).toBe(false); // manual 模式确认链默认拒绝——fastPath 关闭时绝不静默放行
+    expect(r.ok).toBe(false); // headless 下审批不可得 → 运行诚实受阻（blocked/failed），绝不假装成功
+  });
+
+  afterAll(() => { rmSync(lowRiskPath, { force: true }); });
+});
+
+// C3（2026-08-27）：工具参数 canonical 化——键序不敏感的去重 key（kernel-eval 3-5）
+describe('C3 canonicalToolArgs（键序不敏感）', () => {
+  it('同语义不同键序 → 同 key；嵌套对象键序递归排序、数组顺序保持语义', () => {
+    expect(canonicalToolArgs({ b: 1, a: { d: 2, c: 3 } })).toBe(canonicalToolArgs({ a: { c: 3, d: 2 }, b: 1 }));
+    // 对象键序排序（含数组元素内的对象）；数组元素顺序是语义，保持
+    expect(canonicalToolArgs([{ b: 1, a: 2 }, 3])).toBe(canonicalToolArgs([{ a: 2, b: 1 }, 3]));
+    expect(canonicalToolArgs([3, { a: 2, b: 1 }])).not.toBe(canonicalToolArgs([{ a: 2, b: 1 }, 3]));
+    expect(canonicalToolArgs({ a: 1, b: 2 })).not.toBe(canonicalToolArgs({ a: 1, c: 2 }));
+  });
+
+  it('异常输入诚实回退不抛（undefined/循环引用）', () => {
+    expect(typeof canonicalToolArgs(undefined)).toBe('string');
+    const cyc: Record<string, unknown> = {};
+    (cyc as any).self = cyc;
+    expect(typeof canonicalToolArgs(cyc)).toBe('string'); // 环引用 → RangeError/TypeError 回退
+  });
+});
+
+// ──────────── 复评修复批（kernel-remediation-2026-08-27）────────────
+describe('R-2：earlyDispatch 跳过 tool_search（激活副作用——流尾原路径）', () => {
+  it('tool_search 流中途就绪不提前执行（结果无「已提前执行」标注——原路径执行）', async () => {
+    const seen: Array<any> = [];
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-r2-toolsearch',
+      toolLazyLoad: true,
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any, streamCtx: any) => {
+        seen.push(req);
+        if (seen.length === 1) {
+          streamCtx?.onToolCallReady?.({ index: 0, id: 'c1', name: 'tool_search', arguments: '{"query":"zzz不存在"}' }, 'index-advanced');
+          return { type: 'tool_call', id: 'c1', name: 'tool_search', args: { query: 'zzz不存在' }, calls: [
+            { id: 'c1', name: 'tool_search', args: { query: 'zzz不存在' } },
+          ] } as ToolCallMsg;
+        }
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    await agent.run('检索工具');
+    const tools1 = seen[1].messages.filter((m: any) => m.role === 'tool');
+    expect(tools1).toHaveLength(1);
+    expect(tools1[0].content).toContain('未找到匹配工具'); // 真实执行（流尾原路径）
+    expect(tools1[0].content).not.toContain('已提前执行'); // 未走提前池（R-2：激活副作用排除）
+  });
+});
+
+describe('R-3：未知工具按轮（批级）计数（kernel-eval 3-6）', () => {
+  const mk = (name: string) => ({
+    schema: { type: 'function' as const, function: { name, description: '测试纯读', parameters: { type: 'object' as const, properties: { q: { type: 'number' } }, required: ['q'] } } },
+    danger: false, cacheable: true,
+    canonical: { namespace: 'agent' as const, effectKind: 'filesystem.read' as const },
+    run: async () => 'ok',
+  });
+  it('混批 [已知,未知] 连续 3 轮 → 终止（旧调用级计数被已知工具清零，永不终止）', async () => {
+    let call = 0;
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-r3-mixed',
+      extraTools: { echo_read: mk('echo_read') },
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', maxConsecutiveFail: 10 } } as any,
+      callModel: async (): Promise<ModelCall | ToolCallMsg> => {
+        call++;
+        if (call <= 3) return { type: 'tool_call', name: 'echo_read', args: { q: 1 }, calls: [
+          { id: 'a' + call, name: 'echo_read', args: { q: 1 } },
+          { id: 'b' + call, name: 'no_such_xyz', args: {} },
+        ] } as ToolCallMsg;
+        return { type: 'text', content: '完成' } as ModelCall;
+      },
+    });
+    const r = await agent.run('混批循环');
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain('未知工具');
+    expect(call).toBe(3);
+  });
+  it('未知轮与纯净轮交替 → 批级清零不误杀（maxUnknownToolRounds=2 达不到）', async () => {
+    let call = 0;
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-r3-alt',
+      extraTools: { echo_read: mk('echo_read') },
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock', maxUnknownToolRounds: 2 } } as any,
+      callModel: async (): Promise<ModelCall | ToolCallMsg> => {
+        call++;
+        if (call === 1 || call === 3) return { type: 'tool_call', name: 'no_such_q', args: {}, calls: [
+          { id: 'u' + call, name: 'no_such_q', args: {} },
+        ] } as ToolCallMsg;
+        if (call === 2 || call === 4) return { type: 'tool_call', name: 'echo_read', args: { q: 1 }, calls: [
+          { id: 'e' + call, name: 'echo_read', args: { q: 1 } },
+        ] } as ToolCallMsg;
+        return { type: 'text', content: '交替完成' } as ModelCall;
+      },
+    });
+    const r = await agent.run('交替');
+    expect(r.ok).toBe(true);
+    expect(r.text).toBe('交替完成');
+    expect(call).toBe(5);
+  });
+});
+
+describe('R-4：steer 队列上限 50（满丢最旧 + 诚实 notice）', () => {
+  it('注入 60 条 → 仅 50 条进上下文，丢弃可见', async () => {
+    const seen: Array<any> = [];
+    const notices: string[] = [];
+    const off = bus.on('system.notice', (e: any) => { notices.push(String(e?.payload?.text ?? e?.text ?? '')); });
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-r4-steer',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (req: any) => { seen.push(req); return { type: 'text', content: '收到' } as ModelCall; },
+    });
+    for (let i = 0; i < 60; i++) agent.steer(`注入消息${i}`);
+    await agent.run('跑一轮');
+    off();
+    const userBlob = seen[0].messages.filter((m: any) => m.role === 'user').map((m: any) => String(m.content)).join('\n');
+    const injected = userBlob.split('\n').filter((l: string) => /^注入消息\d+$/.test(l.trim()));
+    expect(injected).toHaveLength(50); // 上限 50（丢最旧 10 条）
+    expect(notices.some(t => t.includes('steer 队列已满'))).toBe(true); // 丢弃不静默
   });
 });
