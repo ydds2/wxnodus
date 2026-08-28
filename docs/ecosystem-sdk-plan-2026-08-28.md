@@ -11,8 +11,8 @@
 
 | 产品 | ④本地服务面 | ⑤SDK/编程面 | ⑥扩展生态 | 锚点（本轮亲验） |
 |---|---|---|---|---|
-| **opencode** | `opencode serve --hostname --port`（SDK 默认 **127.0.0.1:4096**） | **两层**：`packages/sdk/js`（**OpenAPI 生成客户端** `gen/` + `openapi.json` 单一事实源）+ `createOpencodeServer()`（cross-spawn 拉起本地 serve，配置经 `OPENCODE_CONFIG_CONTENT` env 注入）；另有 `sdk-next`/`core`（进程内） | plugin/function/slack/desktop/web/storybook/enterprise… 40+ 包 | `packages/sdk/js/src/server.ts:20-40`（spawn+hostname/port/env）·`client.ts`/`gen/` |
-| **gemini-cli** | a2a-server 包 | **进程内 SDK**：`@google/gemini-cli-sdk` → `GeminiCliAgent` 类，`session()`/`resumeSession(id)`，`for await (chunk of session.sendStream(...))` 流迭代器；`SDK_DESIGN.md` 明示 hooks/skills/subagents/**ACP 尚未进 SDK**（分层交付） | vscode-ide-companion、devtools | `packages/sdk/SDK_DESIGN.md:1-33`（状态表+示例）·`src/agent.ts` |
+| **opencode** | `opencode serve --hostname --port`（SDK 默认 **127.0.0.1:4096**） | **两层**：`packages/sdk/js`（**OpenAPI 生成客户端** `gen/` + `openapi.json` 单一事实源）+ `createOpencodeServer()`（cross-spawn 拉起本地 serve，配置经 `OPENCODE_CONFIG_CONTENT` env 注入）；另有 `sdk-next`/`core`（进程内） | plugin/function/slack/desktop/web/storybook/enterprise… 40+ 包 | opencode sdk/js 的 server.ts（spawn+hostname/port/env）与 client/gen 模块 |
+| **gemini-cli** | a2a-server 包 | **进程内 SDK**：`@google/gemini-cli-sdk` → `GeminiCliAgent` 类，`session()`/`resumeSession(id)`，`for await (chunk of session.sendStream(...))` 流迭代器；`SDK_DESIGN.md` 明示 hooks/skills/subagents/**ACP 尚未进 SDK**（分层交付） | vscode-ide-companion、devtools | gemini sdk 包 SDK_DESIGN.md（状态表+示例）与 agent 模块 |
 | **codex** | `app-server`（Rust JSON-RPC 服务，IDE/桌面 App 集成面，30+ 模块：config_manager/command_exec/attestation…） | JSON-RPC 协议优先（app 客户端自实现）；`exec --json` headless 事件流 | IDE 扩展、skills 目录 | `codex-rs/app-server/src/`（模块清单） |
 | **kimi-cli** | acp 子包 | agentspec.py（agent 定义文件生态）、hooks 引擎、notifications | skills/agents 文件 + hooks | `src/kimi_cli/`（acp/agents/agentspec/hooks/notifications） |
 | **crush** | csync（会话同步）/dns | 无正式 SDK（charm 生态绑定） | theme/plugin 体系 | `internal/`（csync/dns/discover…） |

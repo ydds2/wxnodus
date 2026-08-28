@@ -10,6 +10,7 @@ import { gatewayError } from '../../protocol/errors.js';
 import { err } from '../../protocol/results.js';
 import { MCP_PROTOCOL_VERSION, mcpUnavailable, type McpRequestMeta } from '../../domain/mcp/mcpProtocol.js';
 import type { InMemoryMcpTranscriptStore } from './mcpTranscriptStore.js';
+import { WXNODUS_VERSION } from '../../kernel/version.js';
 
 const future = (id: 'build'|'verify'|'evidence'|'browser'|'computer'|'forge') => ({ id, delivered: false as const,
   stableStatus: 'NOT_DELIVERED' as const, reasonCode: 'NOT_DELIVERED' as const });
@@ -29,7 +30,7 @@ export class WxNodusMcpAdapter {
   constructor(private readonly ports: WxNodusMcpPorts) {}
   discovery(): DiscoverResult {
     const candidate = { supportedVersions: [MCP_PROTOCOL_VERSION], capabilities,
-      _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'wxnodus', version: '4.0.0' } } };
+      _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'wxnodus', version: WXNODUS_VERSION } } };
     const validated = specTypeSchemas.DiscoverResult['~standard'].validate(candidate);
     if (validated.issues) throw Object.assign(new Error('invalid SDK discover DTO'), { code: 'MCP_PROTOCOL_ERROR' });
     return validated.value;
@@ -63,7 +64,7 @@ export function createRegisteredServer(ports: WxNodusMcpPorts) {
     const expected = createHmac('sha256', requestStateKey).update(payload).digest(); const actual = Buffer.from(mac, 'base64url');
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new Error('invalid requestState');
     return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as unknown; };
-  const server = new McpServer({ name: 'wxnodus', version: '4.0.0' }, { capabilities,
+  const server = new McpServer({ name: 'wxnodus', version: WXNODUS_VERSION }, { capabilities,
     cacheHints: { 'server/discover': { ttlMs: 0, cacheScope: 'private' }, 'tools/list': { ttlMs: 0, cacheScope: 'private' },
       'resources/list': { ttlMs: 0, cacheScope: 'private' }, 'resources/templates/list': { ttlMs: 0, cacheScope: 'private' },
       'resources/read': { ttlMs: 0, cacheScope: 'private' }, 'prompts/list': { ttlMs: 0, cacheScope: 'private' } },

@@ -2,12 +2,13 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { MCP_PROTOCOL_VERSION } from '../../domain/mcp/mcpProtocol.js';
+import { WXNODUS_VERSION } from '../../kernel/version.js';
 
 export type McpClientConfig = { transport: 'stdio'; command: string; args: string[]; env: Record<string,string> } |
   { transport: 'streamable-http'; url: string; headers: Record<string,string> };
 
 export async function connectMcp(config: McpClientConfig, signal: AbortSignal) {
-  const client = new Client({ name: 'wxnodus', version: '4.0.0' }, {
+  const client = new Client({ name: 'wxnodus', version: WXNODUS_VERSION }, {
     capabilities: {}, // 此 era ClientCapabilities 为 experimental/extensions 泛形（core 能力由 SDK 注入请求 _meta）
     versionNegotiation: { mode: 'auto', probe: { timeoutMs: 5_000, maxRetries: 0 } },
     inputRequired: { autoFulfill: true, maxRounds: 4 },

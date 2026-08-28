@@ -1,3 +1,32 @@
+# CHANGELOG — wxnodus 4.0.0（2026-08-28 · 正式版）
+
+> 自 rc.1（08-21）以来：内核修复链收官 + 薄层 TUI kimi 风格化 + 体系参考自研批 + 发布链收口。
+> 基线：全量 2648+ 测试绿 · ci 九命令绿 · typecheck/lint/cycles 零错。
+
+## 内核收官（评估驱动修复链）
+- C1-C3：require() 死接线 ×2 根治（sandboxFastPath 复活）/缓存标注裸入库/参数 canonical 化三点统一
+- R-1~R-5：clampFloat（compactionThreshold 浮点生效）/批级未知工具计数/steer 上限/会话 Map 淘汰
+- durable queue v12（用户消息落盘先于处理，codex 语义）+ Notification hook 接线（kimi 语义）
+- 输出钳制 EMA 校准 + 批次2 流式中途派发（cacheable 只读先行，fail-closed）
+
+## 薄层 TUI 重建（kimi code 风格 T1-T12 台账全绿）
+- 交互循环（wire 契约审批/澄清/密码/表单 + Ctrl+C 中断 + 非 TTY 降级）
+- 思考折叠动画/生成 spinner/Markdown 增量提交/Using-Used 工具行/severity 通知/底栏
+- diff 红绿渲染（内核 preview 事件源）+ 词级高亮 + 底栏 token 段 + Tab 命令补全 + 续行输入
+
+## 体系参考自研批（kimi 完整体系目录化 → 原创）
+- P2-A hooks 声明式 matcher（event:matcher 键 + 通配锚定 + 多条 AND 决策）
+- P2-B MCP server 鉴权头（headers + env: 引用 fail-closed + 序列化回写；修审计 C 级「无鉴权头」）
+- MCP serverInfo/client 版本单一事实源化（去三处硬编码）
+
+## 生态与平台
+- npm 插件包消费链路 + VS Code 插件 0.2.0 + /flow 管线流图 + 评测任务库 3→10
+- 企业代理/私网直连红线/三层策略（全局>用户>项目，deny 不可放宽）+ winget/scoop 三文件预备
+- docs 门禁（UTF-8 BOM/链接）入 ci；Node 24 多 ABI 侧车；真实 feed 升级链
+
+## 发布
+- 版本 4.0.0-rc.1 → 4.0.0；打包链（manifest sha256/SBOM/ABI 预检）+ 干净安装冒烟
+
 # CHANGELOG — wxnodus 4.0.0-rc.1（2026-08-21）
 
 > V4.0 首个 rc：输出体系重建 + 六波对齐/止血/鲁棒/架构/权力全部落地。
