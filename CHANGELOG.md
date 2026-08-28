@@ -2,6 +2,7 @@
 
 > **08-28 增量**：SDK 成包（@wxnodus/sdk spawn-attach 零云端）· sys_package（Windows 软件自装，审批门）· 上架清单同步 4.0.0
 > **08-28 第二批**：A-S3 MCP surfaces 三面交付（build 清单/verify 读回校验/evidence 审计链——多语言 SDK 通道）· G-6 serve 审批闭环（*.respond 中转 + gateway.request SSE 广播）· A-S4 @wxnodus/core 进程内门面（WxnodusAgent/session/send 流迭代器）
+> **08-28 上架终态**：publish-npm workflow 修复落仓（"on" 键引号化+去 uses/working-directory 误配+PS 条件 dry-run，dispatch-only；master@adc60bc6）。远端 CI 阻塞于 GitHub 账户 Billing（付款/支出上限——Annotations 实证），非代码问题；npm 三包待 NPM_TOKEN secret 后手动触发 workflow（dry-run→正式）。
 > **08-28 上架（GitHub 侧完成）**：ydds2/wxnodus 推送 master@4504f190 → tag v4.0.0 → Release 附 wxnodus-4.0.0.zip（4551 文件，sha256 706EE81D…，双击安装器）→ winget/scoop 清单回填真实 URL+hash（commit e529f1e1）→ **winget-pkgs PR #425473**（四件套 en-US+zh-CN）。npm 三包待 NPM_TOKEN secret 后经 publish-npm workflow 发布。
 > **08-28 第三批**：A-S5 CI 配方（publish workflow/recipes/示例）· sys 三面兑现「完全操作 Windows」——sys_service（sc.exe 服务）/sys_registry（reg.exe，根前缀强校验）/sys_task（schtasks 计划任务），danger 审批门
 
