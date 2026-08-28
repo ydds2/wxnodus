@@ -10,13 +10,20 @@ Windows 本地 AI agent CLI：数据主权本机（会话/记忆/密钥全本地
 
 ## 快速开始
 
+```powershell
+# ① 一键安装（免 npm/免认证——GitHub Release 直装）
+irm https://raw.githubusercontent.com/ydds2/wxnodus/master/packaging/install.ps1 | iex
+
+# ② scoop
+scoop bucket add wxnodus https://github.com/ydds2/wxnodus-bucket
+scoop install wxnodus
+
+# ③ 手动：GitHub Release 下载 zip → 解压 → 双击 install.bat（Node ≥22.7；winget 审核中）
+```
+
 ```bash
-npm install && npm run build
-npm link            # 全局安装 wxnodus / wxn 命令
+wxnodus             # 交互 TUI（kimi code 风格）
 wxnodus -p "帮我做一个待办系统"   # 非交互单次执行
-wxnodus -p "你好" --json         # agent 结果 JSON
-wxnodus -p "你好" --wire         # 总线事件流 JSONL
-cat 文件.txt | wxnodus -p "总结内容"   # stdin 管道（-p 为指令、stdin 为素材）
 ```
 
 全量门禁（typecheck + 全量测试 + known-failures + 发现/覆盖检查 + 构建）：`npm run ci`
