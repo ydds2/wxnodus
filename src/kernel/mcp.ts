@@ -32,6 +32,12 @@ export interface McpServerConfig extends McpServerConfigBase {
   url?: string;
   args?: string[];
   env?: Record<string, string>;
+  /**
+   * P2-B（2026-08-28，kimi mcp_oauth.py 本地凭证思想·实现原创）：HTTP server 附加请求头。
+   * 值支持 `env:NAME` 引用（连接时从环境解析——密钥明文不落配置文件；缺失即 fail-closed 报错）。
+   * OAuth 授权流不做（云端交互，违背数据不出机定位）——仅静态头/令牌头。
+   */
+  headers?: Record<string, string>;
 }
 
 export interface McpStdioServerConfig extends McpServerConfig {
@@ -186,12 +192,36 @@ function parseServer(value: unknown, nameHint: string | undefined, file: string,
     if ((args?.length ?? 0) > 0 || (env && Object.keys(env).length > 0)) {
       configFailure(file, path, 'HTTP 配置不能包含非空 args 或 env');
     }
-    return { ...common, command: '', url };
+    const headers = optionalStringMap(value.headers, file, `${path}.headers`);
+    return { ...common, command: '', url, ...(headers ? { headers } : {}) };
   }
 
   const args = optionalStringArray(value.args, file, `${path}.args`);
   const env = optionalStringMap(value.env, file, `${path}.env`);
+  const headers = optionalStringMap(value.headers, file, `${path}.headers`);
+  if (headers && Object.keys(headers).length > 0) {
+    configFailure(file, path, 'stdio 配置不能包含非空 headers（headers 仅 HTTP server）');
+  }
   return { ...common, command: command!, ...(args ? { args } : {}), ...(env ? { env } : {}) };
+}
+
+/**
+ * P2-B：解析 MCP server 附加请求头——`env:NAME` 值从环境解析（密钥不落配置文件）；
+ * 引用的环境变量缺失 → 抛错（fail-closed：宁可不连也不发空鉴权头）。纯函数可测。
+ */
+export function resolveMcpHeaders(cfg: { headers?: Record<string, string>; name: string }, env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(cfg.headers ?? {})) {
+    if (v.startsWith('env:')) {
+      const name = v.slice(4);
+      const val = env[name];
+      if (!val) throw new Error(`MCP ${cfg.name} 请求头 ${k} 引用的环境变量 ${name} 未设置（env:${name}）——不发送空鉴权头`);
+      out[k] = val;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 function parseServerList(raw: string, file = 'MCP config'): McpServerConfig[] {
@@ -252,6 +282,7 @@ function serializeServer(server: McpServerConfig, file: string, path: string, in
     ...(includeName ? { name: normalized.name } : {}),
     ...(normalized.url ? { url: normalized.url } : { command: normalized.command, ...(normalized.args ? { args: normalized.args } : {}) }),
     ...(normalized.env ? { env: normalized.env } : {}),
+    ...(normalized.headers ? { headers: normalized.headers } : {}), // P2-B：回写鉴权头（/mcp 改写不丢配置）
     ...(normalized.startupTimeoutMs !== undefined ? { startupTimeoutMs: normalized.startupTimeoutMs } : {}),
     ...(normalized.timeoutMs !== undefined ? { timeoutMs: normalized.timeoutMs } : {}),
     ...(normalized.toolDanger ? { toolDanger: normalized.toolDanger } : {}),
@@ -667,6 +698,8 @@ export async function connectMcpHttp(cfg: McpServerConfig & { url: string }, opt
   let sessionId: string | null = null;
   let nextId = 1;
   let closed = false;
+  // P2-B：附加请求头连接时解析一次（env: 引用 fail-closed），全程随行
+  const extraHeaders = resolveMcpHeaders(cfg);
 
   const post = async (
     method: string,
@@ -683,6 +716,7 @@ export async function connectMcpHttp(cfg: McpServerConfig & { url: string }, opt
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream',
+      ...extraHeaders,
     };
     if (sessionId) headers['Mcp-Session-Id'] = sessionId;
     const id = notification ? undefined : nextId++;
@@ -737,7 +771,7 @@ export async function connectMcpHttp(cfg: McpServerConfig & { url: string }, opt
       if (closed) return;
       closed = true;
       if (!sessionId) return;
-      const headers: Record<string, string> = { 'Mcp-Session-Id': sessionId };
+      const headers: Record<string, string> = { 'Mcp-Session-Id': sessionId, ...extraHeaders };
       // A2（2026-08-27）：出站统一 fetch（env 代理 + 私网段默认直连）
       const { createOutboundFetch } = await import('../infrastructure/http/outboundFetch.js');
       const resp = await createOutboundFetch().fetch(base, {
