@@ -28,7 +28,9 @@ describe('W2-03 extends the W1-11 CapabilityRegistry', () => {
     const first = registry.snapshot();
     const second = registry.snapshot();
     expect(first.id).toBe(second.id);
-    for (const id of ['build','verify','evidence','browser','computer','forge'] as const) {
+    // A-S3（2026-08-28）：build/verify/evidence 解 fence——走 probe 路径（缺探针→诚实 CAPABILITY_UNAVAILABLE）；
+    // fence 只剩 browser/computer/forge
+    for (const id of ['browser','computer','forge'] as const) {
       expect(first.descriptors[id]).toMatchObject({ delivered: false, stableStatus: 'NOT_DELIVERED',
         requirement: 'unavailable', state: 'unavailable', reasonCode: 'NOT_DELIVERED',
         source: 'wave2-surface-fence', unlockGate: 'W3_OR_LATER_REQUIRED_GATE' });

@@ -1,0 +1,25 @@
+{
+  "name": "@wxnodus/core",
+  "version": "4.0.0",
+  "description": "wxnodus 进程内嵌入门面——WxnodusAgent/session/send 流迭代器（零云端零子进程，gemini-cli sdk 形态·实现原创）",
+  "type": "module",
+  "license": "Apache-2.0",
+  "os": [
+    "win32"
+  ],
+  "engines": {
+    "node": ">=22.7.0"
+  },
+  "main": "src/index.ts",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

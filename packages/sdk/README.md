@@ -32,7 +32,7 @@ await wxn.stop();
 ## RPC 方法面（当前）
 
 `chat` · `command` · `memory.search` · `memory.recall` · `sessions`（白名单外返回结构化 400）。
-**已知边界**：审批应答（`*.respond`）尚在 wire/in-process 通道，serve 面待扩展——SDK 先提供通用 rpc。
+**审批闭环（G-6 已收口 2026-08-28）**：pending 请求经 `/events` 以 `gateway.request` 事件广播（带 sessionId 所有权过滤）；应答走 `rpc("approval.respond", { request_id, answer: "allow"|"session"|"deny" })`（clarify/secret/form 同族）。
 
 ## 版本协商
 

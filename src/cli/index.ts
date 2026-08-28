@@ -404,11 +404,13 @@ if (pre.mode === 'error') {
   const { createMcpIncomingServer } = await import('../application/mcp/mcpServerWiring.js');
   const policySnapshotId = createHash('sha256').update(JSON.stringify(settings ?? {})).digest('hex');
   const makeMcpIncoming = () => createMcpIncomingServer({
-    capabilities: new Wave1CapabilityRegistry(policySnapshotId, () => new Date().toISOString()),
+    capabilities: new Wave1CapabilityRegistry(policySnapshotId, () => new Date().toISOString(),
+      // A-S3：MCP surfaces 交付面解锁（session 为既有 DELIVERED 声明的潜在失配一并修复）
+      ['session', 'build', 'verify', 'evidence'] as const),
     contextFactory: () => ({
       actorId: 'actor:cli', sessionId: opts.session ?? 'default', runId: null,
       correlationId: randomUUID(), policySnapshotId, locale: 'zh-CN', source: 'cli' as const,
-      capabilities: ['memory'], timestamp: new Date().toISOString(),
+      capabilities: ['memory', 'session', 'build', 'verify', 'evidence'], timestamp: new Date().toISOString(),
     }),
     pipeline: toolExecution.pipeline,
   });
@@ -719,6 +721,14 @@ if (pre.mode === 'error') {
     // A-S1：SDK 模式端口随机（除非显式 --port）；握手模式由 @wxnodus/sdk 拉起（stdout 单行 JSON）
     const sdk = opts.sdk === true;
     const port = sdk && opts.port == null ? 0 : (opts.port ?? Number(process.env.WXNODUS_SERVE_PORT ?? 4789));
+    // G-6（2026-08-28）：serve 面审批闭环——赋值组合根 bridges 依赖的 gateway（此前 serve 分支
+    // 从未赋值 → 审批恒 fail-closed deny）；pending 请求广播进 /events（gateway.request 事件，
+    // 携 sessionId 供所有权过滤）；*.respond 经 responder 中转结算。
+    const serveSessionId = agent.getSessionId?.() ?? 'default';
+    gateway = (await import('./headlessGateway.js')).createHeadlessWireGateway({
+      sessionId: serveSessionId,
+      onRequest: ev => { try { bus.emit('gateway.request', { ...ev, sessionId: agent.getSessionId?.() ?? serveSessionId }); } catch { /* 广播失败不阻断 pending */ } },
+    });
     // W3 MCP facade：incoming Streamable HTTP（/mcp）与 serve 共用生命周期——close 纳入统一 shutdown
     const mcpIncoming = makeMcpIncoming();
     const srv = startServeServer({
@@ -726,6 +736,7 @@ if (pre.mode === 'error') {
       commandBus,
       config,
       mcpHandler: (req, res) => mcpIncoming.httpHandler(req, res),
+      responder: (method, params) => gateway.request(method, params),
     }, port, sdk ? {
       sdkHandshake: true,
       onSdkHandshake: (info: { port: number; token: string; pid: number; version: string; protocolVersion: number }) => {

@@ -7,7 +7,7 @@ import type { CapabilityDescriptor, CapabilityId, CapabilityPort, CapabilitySnap
 
 const IDS: CapabilityId[] = ['command','memory','offline-model','session','build','verify','evidence','browser',
   'voice','computer','forge','distribution','mcp-client','mcp-server','skill','plugin','task','subagent'];
-const WAVE2_FENCED_SURFACES = new Set<CapabilityId>(['build','verify','evidence','browser','computer','forge']);
+const WAVE2_FENCED_SURFACES = new Set<CapabilityId>(['browser','computer','forge']); // A-S3：build/verify/evidence 解 fence（交付）
 
 /** 由 descriptors 生成确定性 snapshot id（key 序固定：policySnapshotId/profile/platform/descriptors） */
 function snapshotIdOf(input: { policySnapshotId: string; profile: CapabilitySnapshot['profile']; platform: NodeJS.Platform; descriptors: Record<CapabilityId, CapabilityDescriptor> }): string {
@@ -27,12 +27,13 @@ function fenced(options: { profile: CapabilitySnapshot['profile']; platform: Nod
  */
 export class Wave1CapabilityRegistry implements CapabilityPort {
   private readonly value: CapabilitySnapshot;
-  constructor(policySnapshotId: string, clock: () => string) {
+  constructor(policySnapshotId: string, clock: () => string, availableExtra: readonly CapabilityId[] = []) {
     const profile: CapabilitySnapshot['profile'] = 'standard';
     const platform: NodeJS.Platform = process.platform;
     const descriptors = {} as Record<CapabilityId, CapabilityDescriptor>;
+    const extra = new Set(availableExtra); // A-S3：调用方声明额外可用面（cli 注入 build/verify/evidence/session）
     for (const id of IDS) {
-      if (id === 'command' || id === 'memory' || id === 'offline-model') {
+      if (id === 'command' || id === 'memory' || id === 'offline-model' || extra.has(id)) {
         descriptors[id] = { id, profile, platform, requirement: 'required', state: 'available',
           delivered: true, stableStatus: 'DELIVERED', source: 'wave1-registry', checksum: '0'.repeat(64) };
       } else if (id === 'voice' || id === 'computer' || id === 'forge' || id === 'distribution') {

@@ -39,6 +39,8 @@ export interface ServeKernel {
   config: { get(p: string): Record<string, any> };
   /** W3 MCP facade：incoming Streamable HTTP handler（/mcp 挂载；Bearer/CSRF 前置后委托 SDK handler） */
   mcpHandler?: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
+  /** G-6（2026-08-28）审批应答中转：*.respond 方法经此转发表现层网关（headlessGateway pending 结算） */
+  responder?: (method: string, params: Record<string, unknown>) => Promise<unknown>;
 }
 
 export interface ServeSessionOwnershipStore {
@@ -554,7 +556,7 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
         client = { res, principalId, filter, close: cleanup };
         sseClients.add(client);
         if (!writeSse(client, 'ready', JSON.stringify({ connected: true }))) return;
-        for (const type of ['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'run.final', 'system.notice', 'voice.transcript']) {
+        for (const type of ['agent.start', 'agent.token', 'agent.message', 'agent.tool', 'agent.error', 'agent.end', 'run.final', 'system.notice', 'voice.transcript', 'gateway.request']) { // gateway.request=G-6 审批请求广播
           offs.push(k.bus.on(type, (e: any) => {
             const identity = admittedIdentity(principalId, {
               runId: e?.runId,
@@ -623,6 +625,24 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
           return completion;
         };
         switch (method) {
+          case 'approval.respond': case 'clarify.respond': case 'secret.respond':
+          case 'sudo.respond': case 'credential_form.respond': case 'form.respond': {
+            // G-6：审批/澄清/密码/表单应答——转发表现层网关结算 pending（SDK/HTTP 客户端闭环）
+            if (!k.responder) {
+              json(res, req, 501, { ok: false, error: { code: 'RESPONDER_UNAVAILABLE', message: '本 serve 实例未装配应答中转' } }, allowlist);
+              return;
+            }
+            try {
+              const result = await k.responder(method, params) as { ok?: boolean; value?: unknown } | null;
+              const handled = result && typeof result === 'object' && 'value' in result
+                ? (result.value as { handled?: boolean })?.handled === true
+                : result?.ok === true;
+              json(res, req, 200, { ok: true, responded: handled === true }, allowlist);
+            } catch (e) {
+              json(res, req, 500, { ok: false, error: { code: 'RESPONDER_FAILED', message: String((e as Error)?.message ?? e).slice(0, 200) } }, allowlist);
+            }
+            return;
+          }
           case 'chat': {
             const prompt = String(params.prompt ?? '');
             if (!prompt.trim()) { json(res, req, 400, { ok: false, error: 'prompt 必填' }, allowlist); return; }

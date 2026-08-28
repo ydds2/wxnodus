@@ -3,6 +3,7 @@
 // （P0-08 SSRF：DNS fail-closed/私网拒绝）、process.spawn 超时强杀、memory 走 MemoryService（session scope）。
 // 未接线的 toolId → TOOL_EXECUTOR_UNWIRED fail-closed（绝不假执行）。
 import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runSupervisedProcess } from '../../infrastructure/process/processSupervisor.js';
@@ -21,6 +22,9 @@ const workspacePath = (workspaceRoot: string, input: string): string => resolve(
 export interface ToolExecutorDeps {
   workspaceRoot: string;
   memoryRepository: MemoryRepository;
+  /** A-S3（2026-08-28）MCP surfaces 数据源（build/evidence 查询；缺省 → 诚实降级说明） */
+  db?: import('better-sqlite3').Database;
+  dataDir?: string;
 }
 
 export interface ToolExecuteValue {
@@ -33,6 +37,12 @@ export interface ToolExecuteValue {
   stdoutBytes?: number;
   stderrBytes?: number;
   records?: readonly unknown[];
+  /** A-S3 MCP surfaces 载荷 */
+  builds?: readonly unknown[];
+  note?: string;
+  chainOk?: boolean;
+  chainCount?: number;
+  recentEvidence?: readonly unknown[];
 }
 
 const workspaceFailure = (operation: 'read' | 'write', cause: unknown): OperationResult<never> => {
@@ -103,6 +113,54 @@ export async function executeToolId(toolId: ToolId, args: unknown, context: Oper
       const list = service.list({ limit: 20 });
       if (!list.ok) return list;
       return ok({ records: list.value.map(record => ({ id: record.id, role: record.role, content: record.content, salience: record.salience, updatedAt: record.updatedAt })) } satisfies ToolExecuteValue);
+    }
+    // ── A-S3（2026-08-28）MCP surfaces：build/verify/evidence 交付面（只读查询语义）──
+    case 'builtin:build': {
+      // 构建产物清单：dataDir/projects 目录（名称/mtime/文件数）——外部 agent 消费 wxnodus 构建体系产出
+      const dataDir = deps.dataDir;
+      if (!dataDir) return ok({ builds: [], note: 'dataDir 未注入——本执行器实例无构建产物可查' } satisfies ToolExecuteValue);
+      try {
+        const projectsRoot = resolve(dataDir, 'projects');
+        if (!existsSync(projectsRoot)) return ok({ builds: [] } satisfies ToolExecuteValue);
+        const builds = readdirSync(projectsRoot, { withFileTypes: true })
+          .filter(e => e.isDirectory())
+          .map(e => {
+            const dir = resolve(projectsRoot, e.name);
+            let fileCount = 0;
+            try { fileCount = readdirSync(dir, { recursive: true }).length; } catch { /* 无权限计 0 */ }
+            return { name: e.name, mtimeMs: statSync(dir).mtimeMs, fileCount };
+          })
+          .sort((a, b) => b.mtimeMs - a.mtimeMs)
+          .slice(0, 50);
+        return ok({ builds } satisfies ToolExecuteValue);
+      } catch (e) {
+        return err(gatewayError('TOOL_EXECUTE_FAILED', `构建产物清单读取失败：${String((e as Error)?.message ?? e).slice(0, 120)}`, 'tool.execute.failed'));
+      }
+    }
+    case 'builtin:verify': {
+      // 读回校验（verifyPostcondition 同族）：给定工作区相对路径 → bytes+sha256（产物完整性核对）
+      const path = typeof input.path === 'string' ? input.path : '';
+      if (!path) return err(gatewayError('TOOL_ARGS_INVALID', 'verify 需要 path（工作区相对路径）', 'tool.args.invalid'));
+      try {
+        // 边界契约：safeWorkspaceRead 期望绝对/已锚定路径——相对路径先锚定工作区根（resolve 独立于 root，防 cwd 逃逸）
+        const target = resolve(deps.workspaceRoot, path);
+        const content = await safeWorkspaceRead(deps.workspaceRoot, target);
+        return ok({ path, bytes: content.length, sha256: createHash('sha256').update(String(content), 'utf8').digest('hex') } satisfies ToolExecuteValue);
+      } catch (e) {
+        return err(gatewayError('TOOL_EXECUTE_FAILED', `读回校验失败：${String((e as Error)?.message ?? e).slice(0, 120)}`, 'tool.verify.failed'));
+      }
+    }
+    case 'builtin:evidence': {
+      // 审计哈希链证据：计数 + 最近 5 条事件 + 链完整性校验（tamper-evident 证明）
+      if (!deps.db) return ok({ records: [], note: 'db 未注入——本执行器实例无审计链可查' } satisfies ToolExecuteValue);
+      try {
+        const { verifyAudit } = await import('../../kernel/audit.js');
+        const chain = verifyAudit(deps.db);
+        const recent = (deps.db.prepare('SELECT id, event, ts FROM audit ORDER BY id DESC LIMIT 5').all() as Array<{ id: number; event: string; ts: number }>).reverse();
+        return ok({ chainOk: chain.ok, chainCount: chain.ok ? chain.count : -1, recentEvidence: recent } satisfies ToolExecuteValue);
+      } catch (e) {
+        return err(gatewayError('TOOL_EXECUTE_FAILED', `审计链查询失败：${String((e as Error)?.message ?? e).slice(0, 120)}`, 'tool.execute.failed'));
+      }
     }
     default:
       return unwired(toolId);

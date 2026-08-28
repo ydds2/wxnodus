@@ -23,7 +23,11 @@ describe('W2-06 current duplex MCP', () => {
     expect(WXNODUS_MCP_SURFACES.map(x => x.id)).toEqual([
       'session','memory','build','verify','evidence','browser','computer','forge',
     ]);
-    for (const id of ['build','verify','evidence','browser','computer','forge'] as const) {
+    // A-S3（2026-08-28）：build/verify/evidence 交付（DELIVERED）；browser/computer/forge 维持未交付
+    for (const id of ['build','verify','evidence'] as const) {
+      expect(WXNODUS_MCP_SURFACES.find(x => x.id === id)).toMatchObject({ delivered: true, stableStatus: 'DELIVERED' });
+    }
+    for (const id of ['browser','computer','forge'] as const) {
       expect(WXNODUS_MCP_SURFACES.find(x => x.id === id)).toMatchObject({ delivered: false,
         stableStatus: 'NOT_DELIVERED', reasonCode: 'NOT_DELIVERED' });
     }

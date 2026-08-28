@@ -12,12 +12,15 @@ import { MCP_PROTOCOL_VERSION, mcpUnavailable, type McpRequestMeta } from '../..
 import type { InMemoryMcpTranscriptStore } from './mcpTranscriptStore.js';
 import { WXNODUS_VERSION } from '../../kernel/version.js';
 
-const future = (id: 'build'|'verify'|'evidence'|'browser'|'computer'|'forge') => ({ id, delivered: false as const,
+const future = (id: 'browser'|'computer'|'forge') => ({ id, delivered: false as const,
   stableStatus: 'NOT_DELIVERED' as const, reasonCode: 'NOT_DELIVERED' as const });
 export const WXNODUS_MCP_SURFACES = Object.freeze([
   { id: 'session', delivered: true, stableStatus: 'DELIVERED' },
   { id: 'memory', delivered: true, stableStatus: 'DELIVERED' },
-  future('build'), future('verify'), future('evidence'), future('browser'), future('computer'), future('forge'),
+  { id: 'build', delivered: true, stableStatus: 'DELIVERED' },   // A-S3：构建产物清单查询
+  { id: 'verify', delivered: true, stableStatus: 'DELIVERED' },   // A-S3：读回校验（bytes+sha256）
+  { id: 'evidence', delivered: true, stableStatus: 'DELIVERED' }, // A-S3：审计哈希链证据
+  future('browser'), future('computer'), future('forge'),
 ] as const);
 const capabilities = { tools: { listChanged: true }, resources: { listChanged: true, subscribe: true },
   prompts: { listChanged: true }, subscriptions: {}, elicitation: { form: {} } } as const;

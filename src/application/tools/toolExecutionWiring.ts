@@ -188,7 +188,7 @@ export function createProductionToolExecution(options: ToolExecutionWiringOption
     execute: async (tool, args, context, signal) => {
       const agent = agentSurface.value;
       if (agent && tool.owner === agent.owner) return agent.execute(tool.id, args, context, signal);
-      return executeToolId(tool.id, args, context, { workspaceRoot: options.workspaceRoot, memoryRepository: options.memoryRepository }, signal);
+      return executeToolId(tool.id, args, context, { workspaceRoot: options.workspaceRoot, memoryRepository: options.memoryRepository, db: options.db, dataDir: options.dataDir }, signal);
     },
     appendJournal: async (state, payload, context) => {
       const effectId = String((payload as { effectId?: unknown } | undefined)?.effectId ?? context.correlationId);
