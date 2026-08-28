@@ -99,7 +99,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <div class="frame">
 <nav>
 <h1>WxNodus TUI</h1>
-<div class="sub">原型 v4 · 简洁版<br>26 场景 · 深空主题</div>
+<div class="sub">原型 v4 · 简洁版<br>32 场景 · 深空主题</div>
 <div class="grp">对话核心</div>
 <button data-s="idle" class="active">02 空闲对话</button>
 <button data-s="streaming">03 流式中</button>
@@ -131,6 +131,13 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <button data-s="richout">25 输出全谱</button>
 <button data-s="longsession">26 大转录</button>
 <button data-s="arena">27 竞技评审</button>
+<div class="grp">查漏补充</div>
+<button data-s="rewind">28 回滚时间线</button>
+<button data-s="inputplus">29 输入增强</button>
+<button data-s="keys">30 快捷键/退出</button>
+<button data-s="theme">31 主题预览</button>
+<button data-s="anomaly">32 异常态集</button>
+<button data-s="images">33 图片附件</button>
 <div class="grp">元</div>
 <button data-s="derivation">00 设计推导</button>
 </nav>
@@ -660,6 +667,174 @@ code_challenge 校验。其余同意。</pre>
 </div>
 </div>
 <div class="cap">00 —— 推导：产品 = 本地数据主权 agent <b>工作台</b>（非纯聊天）⇒ 对话流≠全部 ⇒ 四大工作区+对话核心 ⇒ 命令面映射（高频进状态栏，长尾进 /help）。</div>
+</section>
+
+
+<section class="scene" id="sc-rewind">
+<div class="msg u"><i></i><div class="c">（双击 Esc）回到我定义规格的那条消息重新来</div></div>
+<p class="block"><b class="accent">◆ 回滚时间线</b> <span class="dim">Esc Esc / /rewind —— 选任意历史 user 消息回到该点（/checkpoint restore 同引擎）</span></p>
+<table style="width:100%">
+<tr><th style="width:60px">#</th><th>消息</th><th style="width:110px">时间</th><th style="width:170px">回滚将丢弃</th></tr>
+<tr><td class="dim">28</td><td class="accent">▸ 定义待办系统规格…</td><td class="dim">14:22</td><td class="warn">12 回合 · 9 文件改动 · 2 checkpoint</td></tr>
+<tr><td class="dim">31</td><td>改用 sqlite 存储</td><td class="dim">14:41</td><td class="dim">7 回合 · 3 文件 · 1 checkpoint</td></tr>
+<tr><td class="dim">34</td><td>补一个导出功能</td><td class="dim">15:02</td><td class="dim">4 回合 · 2 文件</td></tr>
+<tr><td class="dim">36</td><td>跑全量测试</td><td class="dim">15:10</td><td class="dim">2 回合 · 0 文件</td></tr>
+</table>
+<div class="panel warn" style="margin-top:14px">
+<p class="pt warn">⚠ 回滚到 #28「定义待办系统规格」</p>
+<p class="muted" style="font-size:13px;line-height:1.9">将丢弃其后的 <b style="color:var(--fg)">12 回合对话</b>，恢复 <b style="color:var(--fg)">9 个文件</b>到 #28 时的状态（undoShadows 保留——/undo 可再撤销这次回滚）。</p>
+<div class="opt">确认回滚（对话+文件一起）</div>
+<div class="opt">仅回滚对话（文件保留现状）</div>
+<div class="opt"><span class="err">取消</span></div>
+</div>
+<div class="keys"><span><kbd>↑↓</kbd> 选择消息</span><span><kbd>F</kbd> 从该点 fork 分支（不动主线）</span><span><kbd>Enter</kbd> 确认</span><span><kbd>Esc</kbd> 取消</span></div>
+<div class="cap">28 —— 回滚时间线（gemini RewindViewer 模式 + opencode fork-from-timeline 融合）。只列 user 消息；<b>回滚影响统计</b>（回合/文件/checkpoint）先行告知；双路选择（含文件/仅对话）；fork 分支不动主线。wxnodus 锚：/checkpoint×10 + undoShadows + 中断回放。</div>
+</section>
+
+<section class="scene" id="sc-inputplus">
+<p class="block"><b class="accent">◆ 输入增强</b> <span class="dim">历史搜索 / 暂存 / @补全 / 多行 / vim —— 输入区五种武器</span></p>
+<div class="cols">
+<div class="col" style="flex:1.3">
+<h4>Ctrl+R 逆向历史搜索</h4>
+<pre><span class="cm">(reverse-search) mem</span>
+<span class="fn">▸</span> 帮我把内存泄漏修了          <span class="cm">3 天前</span>
+<span class="st">  </span> 记忆面板怎么打开            <span class="cm">昨天</span>
+<span class="cm">Enter 提交 · Tab 接受补全 · 再按 Ctrl+R 上一个</span></pre>
+<h4>@ 文件补全（frecency 排序）</h4>
+<pre><span class="cm">❯ 看看 @src/ke</span>
+<span class="fn">▸</span> src/kernel/agent.ts        <span class="st">高频·今天</span>
+<span class="st">  </span> src/kernel/permissions.ts   <span class="cm">3 天前</span>
+<span class="cm">频率 ÷ (1+间隔天数) —— 用得越近排越前</span></pre>
+</div>
+<div class="col">
+<h4>Prompt stash 暂存</h4>
+<pre><span class="cm">❯ 写一半切任务？Ctrl+S 先存草稿</span>
+<span class="fn">stash@1</span> 「帮我把认证改成PKCE然后…」 <span class="cm">2min 前</span>
+<span class="fn">stash@0</span> 「顺便看看竞态…」          <span class="cm">刚才</span>
+<span class="cm">Ctrl+L 列表 · Enter 恢复 · 最多 50 条持久化</span></pre>
+<h4>多行与 vim</h4>
+<ul class="cl">
+<li><b><kbd>{</kbd> … <kbd>}</kbd></b>多行块（aider 式：Enter 语义随模式翻转）</li>
+<li><b><kbd>Ctrl+↑↓</kbd></b>历史导航</li>
+<li><b><kbd>Ctrl+X Ctrl+E</kbd></b>外置编辑器回填</li>
+<li><b><kbd>/vim</kbd></b>NORMAL/INSERT 指示（wxnodus 已有 vimMode 配置）</li>
+</ul>
+</div>
+</div>
+<div class="cap">29 —— 输入增强。Ctrl+R 逆向搜索（gemini keyBindings.ts:335）；stash 草稿箱（opencode stash.tsx）；@ 补全按 frecency 衰减排序（frecency.tsx:37）；<kbd>{</kbd> 多行翻转（aider io.py:612）；vim 模式接 wxnodus 现有 /vim。</div>
+</section>
+
+<section class="scene" id="sc-keys">
+<div class="cols">
+<div class="col">
+<h4>? 快捷键速查（动态生成·双列）</h4>
+<pre><span class="cm">全局</span>
+<span class="fn">?</span>         速查      <span class="fn">Ctrl+X</span>    模式切换
+<span class="fn">Ctrl+R</span>     历史搜索  <span class="fn">Shift+Tab</span> 计划模式
+<span class="fn">Esc Esc</span>    回滚      <span class="fn">Ctrl+O</kbd></span>    外置编辑
+<span class="fn">Ctrl+S</span>     steer     <span class="fn">Ctrl+L</span>    stash 列表
+<span class="cm">输入区</span>
+<span class="fn">@</span>         文件引用  <span class="fn">/</span>        命令
+<span class="fn">{ }</span>       多行块    <span class="fn">Ctrl+↑↓</span>   历史
+<span class="cm">对话中</span>
+<span class="fn">Enter</span>      发送/排队 <span class="fn">Ctrl+T</span>    工具详情
+<span class="fn">Ctrl+G</span>     编排总览  <span class="fn">⌥K</span>       后台面板</span></pre>
+</div>
+<div class="col">
+<h4>退出保护（三层）</h4>
+<div class="note w">⚠ 对话框打开时首按 Ctrl+C——仅关闭当前面板，不退出<br><span class="dim">（审批中按 Ctrl+C = 拒绝审批，绝不含糊）</span></div>
+<div class="note i">ℹ 空闲首按：提示「再按一次退出」——1.5s 窗口</div>
+<pre><span class="cm">┌ 退出确认（运行中强制退出时） ──────────┐</span>
+<span class="cm">│</span>  后台还有 1 任务 + goal 4/10 循环    <span class="cm">│</span>
+<span class="cm">│</span>  <span class="fn">▸ 否（默认）</span>  是   <span class="cm">y/n</span>          <span class="cm">│</span>
+<span class="cm">└──────────────────────────────────────┘</span>
+<span class="cm">默认选中「否」（crush quit.go:20——防手滑）</span>
+<span class="cm">退出前：MCP 子进程/DB/UI 全回收（幂等 shutdown）</span></pre>
+</div>
+</div>
+<div class="cap">30 —— 快捷键速查 + 退出保护。速查 overlay 从键位配置动态生成（gemini ShortcutsHelp.tsx:21，宽屏双列第一列稳定）；退出三层防护：面板优先关闭→再按提示→运行中确认（默认否，后台任务如实清点）。</div>
+</section>
+
+<section class="scene" id="sc-theme">
+<div class="cols">
+<div class="col" style="flex:.8">
+<h4>/theme 深空 · 实时预览</h4>
+<div class="opt sel">深空（默认）</div>
+<div class="opt">晨昏（暖色低蓝）</div>
+<div class="opt">高对比（无障碍）</div>
+<div class="opt">纯单色（打印友好）</div>
+<p class="dim" style="font-size:11.5px;margin-top:10px">应用前即选即预览——取消恢复原样</p>
+</div>
+<div class="col">
+<h4>预览（右侧实时）</h4>
+<pre><span class="fn">❯</span> 示例输入
+<span class="ok">✓</span> <span class="accent">bash</span> npm test <span class="cm">3 passed</span>
+<span class="st">+ 新增行</span>   <span class="err">- 删除行</span>
+<span class="warn">⚠ 审批中</span>   <span class="violet">◆ 记忆命中 94%</span>
+<span class="cm">▎用户（蓝） ▎助手（绿） ◐运行 ·等待</span></pre>
+<p class="dim" style="font-size:11.5px">每主题一键可见：消息条/工具行/diff/面板四要素色板<br>设置持久化 settings.theme；高对比模式满足 WCAG AA</p>
+</div>
+</div>
+<div class="cap">31 —— 主题实时预览（gemini ThemeDialog.tsx:341 模式：左列表右 ColorsDisplay，所见即所得）。四主题覆盖：默认深空 / 暖色护眼 / 无障碍高对比 / 单色打印。</div>
+</section>
+
+<section class="scene" id="sc-anomaly">
+<p class="block"><b class="warn">◆ 异常态集</b> <span class="dim">循环检测 / 上下文超额 / 配额不足 —— 三个「系统比你先知道」的时刻</span></p>
+<div class="cols">
+<div class="col">
+<h4>循环检测确认（签名 3 连同）</h4>
+<div class="panel warn">
+<p class="pt warn">⭕ 检测到重复请求</p>
+<p class="muted" style="font-size:12.5px;line-height:1.8">最近 3 回合工具调用签名高度相似（fs_edit→bash→fs_edit…），可能在打转。<br><span class="dim">wxnodus 锚：签名+短哈希+LLM 辅助+doom_loop 分级</span></p>
+<div class="opt sel">保持检测，继续跑</div>
+<div class="opt">本轮禁用检测</div>
+<div class="opt">中断并让我看看</div>
+</div>
+</div>
+<div class="col">
+<h4>上下文超额（阈值 0.85 触发）</h4>
+<div class="panel vio">
+<p class="pt violet">⇤ 上下文 55.1k / 64k（86%）—— 已过阈值</p>
+<div class="opt sel">micro 压缩（推荐——摘要旧轮，原文可展开）</div>
+<div class="opt">全量压缩（更省——整段归档）</div>
+<div class="opt">不压缩（继续——413 强压兜底）</div>
+<p class="dim" style="font-size:11.5px;margin-top:8px">水印条变紫 + 状态栏百分比变色（gemini ContextUsageDisplay.tsx:26）</p>
+</div>
+<h4>配额不足</h4>
+<div class="note e">✗ deepseek 余额 ¥0.12（约 3 回合）<br><span class="dim">出路：/balance 充值 · /model 切免费档 · /offline on 转本地</span></div>
+</div>
+</div>
+<div class="cap">32 —— 异常态集。循环检测三选项（gemini LoopDetectionConfirmation.tsx:41 模式+wxnodus 自有引擎）；上下文超额三级选择（对齐三级压缩实现）；配额不足给三条出路而非死路。</div>
+</section>
+
+<section class="scene" id="sc-images">
+<div class="msg u"><i></i><div class="c">（粘贴截图）这个报错怎么修</div></div>
+<div class="msg u"><i></i><div class="c">
+<div class="fold"><span class="ch">🖼</span>截图粘贴 · PNG 1920×1080 · 340KB<span class="dim"> · Enter 预览 · Del 移除</span></div>
+</div></div>
+<div class="msg a"><i></i><div class="c">
+<p>已识别截图内容：`ECONNREFUSED 127.0.0.1:6379`（Redis 连接失败）…</p>
+<div class="note i">ℹ 当前模型 deepseek-chat 支持视觉——原图直入（inject 路径）<br><span class="dim">若切到纯文本模型：图片守卫自动文本化（GLM 多模态预识别→摘要入上下文，零 400——wxnodus 图片四层守卫）</span></div>
+</div></div>
+<div class="cols block">
+<div class="col">
+<h4>图片呈现分级</h4>
+<ul class="cl">
+<li><b><span class="ok">●</span> kitty 协议终端</b>内联渲染原图（crush image.go:159 缓存复用）</li>
+<li><b><span class="accent">◐</span> 六色块终端</b>半块字符降采样缩略图</li>
+<li><b><span class="dim">○</span> 纯文本终端</b>占位行+尺寸+预览提示（诚实降级）</li>
+</ul>
+</div>
+<div class="col">
+<h4>附件通道</h4>
+<ul class="cl">
+<li><b><kbd>Ctrl+V</kbd> 粘贴</b>剪贴板图直接捕获</li>
+<li><b>@ 路径</b>@img/error.png 引用本地文件</li>
+<li><b>剪贴板监听</b>空闲时自动提示捕获（aider 模式，默认关）</li>
+</ul>
+</div>
+</div>
+<div class="cap">33 —— 图片附件。粘贴折叠行（尺寸/大小/可移除）；呈现三级降级（kitty 内联→半块缩略→占位）；<b>纯文本模型自动文本化</b>是 wxnodus 独有守卫（四层：能力门/历史文本化/发送兜底/视觉降级）的 UI 呈现。</div>
 </section>
 
 </main>
