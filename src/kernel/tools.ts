@@ -1664,7 +1664,47 @@ ${r.output}`;
     },
   };
 
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, apply_patch: applyPatchTool, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, computer_observe: computerObserve, computer_uia_windows: uiaWindowsTool, computer_uia_tree: uiaTreeTool, computer_uia_find: uiaFindTool, computer_uia_click: uiaClickTool, computer_uia_type: uiaTypeTool, computer_uia_act: uiaActTool, lsp_diagnostics: lspDiagnostics, lsp_hover: lspHover, lsp_definition: lspDefinition, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch, view_image: viewImage, sys_package: sysPackage };
+  // ── sys 三面（2026-08-28 用户裁决：完全操作 Windows 整个系统）──
+  // 服务/注册表/计划任务：sc.exe/reg.exe/schtasks.exe execFile 直传；danger:true——写操作一律审批（B1）。
+  const sysService: ToolDef = {
+    schema: { type: 'function', function: { name: 'sys_service', description: 'Windows 服务管理（sc.exe）。action=list 全量|status/start/stop/restart/set-startup（需 name）；set-startup 需 startup=auto|demand|disabled。', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['list', 'status', 'start', 'stop', 'restart', 'set-startup'] }, name: { type: 'string', description: '服务名（如 wuauserv）' }, startup: { type: 'string', enum: ['auto', 'demand', 'disabled'] } }, required: ['action'] } } },
+    danger: true,
+    async run(args) {
+      const { sysServiceOp } = await import('./sysAdmin.js');
+      const r = await sysServiceOp({ action: String(args.action ?? ''), ...(args.name ? { name: String(args.name) } : {}), ...(args.startup ? { startup: String(args.startup) } : {}) });
+      return `${r.ok ? '✅' : '❌'} ${r.output}`;
+    },
+  };
+  const sysRegistry: ToolDef = {
+    schema: { type: 'function', function: { name: 'sys_registry', description: 'Windows 注册表读写（reg.exe）。key 必须以根开头（HKLM\…/HKCU\…）；action=list 子项与值|get（name 缺省查默认值）|set（name+value，type 可选 REG_SZ/DWORD/QWORD/BINARY/EXPAND_SZ/MULTI_SZ）|delete（name 或默认值）|delete-tree（整树）。', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['list', 'get', 'set', 'delete', 'delete-tree'] }, key: { type: 'string', description: '注册表键（如 HKLM\SOFTWARE\wxnodus）' }, name: { type: 'string' }, value: { type: 'string' }, type: { type: 'string', enum: ['REG_SZ', 'REG_DWORD', 'REG_QWORD', 'REG_BINARY', 'REG_EXPAND_SZ', 'REG_MULTI_SZ'] } }, required: ['action', 'key'] } } },
+    danger: true,
+    async run(args) {
+      const { sysRegistryOp } = await import('./sysAdmin.js');
+      const r = await sysRegistryOp({
+        action: String(args.action ?? ''), key: String(args.key ?? ''),
+        ...(args.name !== undefined ? { name: String(args.name) } : {}),
+        ...(args.value !== undefined ? { value: String(args.value) } : {}),
+        ...(args.type ? { type: String(args.type) } : {}),
+      });
+      return `${r.ok ? '✅' : '❌'} ${r.output}`;
+    },
+  };
+  const sysTask: ToolDef = {
+    schema: { type: 'function', function: { name: 'sys_task', description: 'Windows 计划任务管理（schtasks.exe）。action=list|query（需 name）|create（name+command+schedule——schedule 为 /sc 语法：MINUTE/HOURLY/DAILY/WEEKLY/ONSTART/ONLOGON 等）|delete（name）|run（name）。', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['list', 'query', 'create', 'delete', 'run'] }, name: { type: 'string', description: '任务名' }, command: { type: 'string', description: 'create 要执行的命令行' }, schedule: { type: 'string', description: 'create 的触发语法（schtasks /sc 值）' } }, required: ['action'] } } },
+    danger: true,
+    async run(args) {
+      const { sysTaskOp } = await import('./sysAdmin.js');
+      const r = await sysTaskOp({
+        action: String(args.action ?? ''),
+        ...(args.name ? { name: String(args.name) } : {}),
+        ...(args.command ? { command: String(args.command) } : {}),
+        ...(args.schedule ? { schedule: String(args.schedule) } : {}),
+      });
+      return `${r.ok ? '✅' : '❌'} ${r.output}`;
+    },
+  };
+
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, apply_patch: applyPatchTool, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, computer_observe: computerObserve, computer_uia_windows: uiaWindowsTool, computer_uia_tree: uiaTreeTool, computer_uia_find: uiaFindTool, computer_uia_click: uiaClickTool, computer_uia_type: uiaTypeTool, computer_uia_act: uiaActTool, lsp_diagnostics: lspDiagnostics, lsp_hover: lspHover, lsp_definition: lspDefinition, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch, view_image: viewImage, sys_package: sysPackage, sys_service: sysService, sys_registry: sysRegistry, sys_task: sysTask };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

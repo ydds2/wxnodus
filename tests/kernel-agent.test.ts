@@ -879,7 +879,7 @@ describe('工具延迟加载', () => {
     await agent.run('你好');
     const names = seenTools[0]!.map((t: any) => t.function.name);
     expect(names).not.toContain('tool_search');
-    expect(names.length).toBe(50); // 全表（44 内置 + apply_patch + lsp 三件 + view_image + sys_package）
+    expect(names.length).toBe(53); // 全表（44 内置 + apply_patch + lsp 三件 + view_image + sys_package + sys 三面）
   });
 });
 

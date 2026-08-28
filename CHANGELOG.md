@@ -2,6 +2,7 @@
 
 > **08-28 增量**：SDK 成包（@wxnodus/sdk spawn-attach 零云端）· sys_package（Windows 软件自装，审批门）· 上架清单同步 4.0.0
 > **08-28 第二批**：A-S3 MCP surfaces 三面交付（build 清单/verify 读回校验/evidence 审计链——多语言 SDK 通道）· G-6 serve 审批闭环（*.respond 中转 + gateway.request SSE 广播）· A-S4 @wxnodus/core 进程内门面（WxnodusAgent/session/send 流迭代器）
+> **08-28 第三批**：A-S5 CI 配方（publish workflow/recipes/示例）· sys 三面兑现「完全操作 Windows」——sys_service（sc.exe 服务）/sys_registry（reg.exe，根前缀强校验）/sys_task（schtasks 计划任务），danger 审批门
 
 > 自 rc.1（08-21）以来：内核修复链收官 + 薄层 TUI kimi 风格化 + 体系参考自研批 + 发布链收口。
 > 基线：全量 2648+ 测试绿 · ci 九命令绿 · typecheck/lint/cycles 零错。
