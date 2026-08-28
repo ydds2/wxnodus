@@ -1181,31 +1181,11 @@ if (pre.mode === 'error') {
   });
   gateway.start();
 
-  // hermes TUI 子进程（2026-08-28 迁移）：内嵌 hermes-gateway + spawn hermes-tui entry
-  const { createHermesGateway } = await import('../hermes-gateway/server.js');
-  const hg = await createHermesGateway({
-    db, bus, agent: agent as never, commandBus: commandBus as never,
-    config: { get: (p: string) => config.get(p), setKey: (sc: string, k: string, v: unknown) => config.setKey(sc, k, v as never) },
-  });
-  // 审批/澄清/密钥链路修通（断链根因）：bridges（onApproval/onClarify/onSecretRequest）经上方
-  // let gateway 中介在调用时求值——hermes 分支覆盖为 hg 后，内核 confirm/plan 工具的真实询问经
-  // approval.request/clarify.request/secret.request 事件到达 TUI 面板，*.respond 回流 resolve。
-  // 此前 gateway 停留为 GatewayClient（旧 UI 表现层，hermes 子进程下无人应答 → 恒 fail-closed 拒绝）。
-  gateway = hg as never;
-  const { spawn } = await import('node:child_process');
-  const { resolve: resolvePath } = await import('node:path');
-  const { fileURLToPath } = await import('node:url');
-  // TUI entry 定位：相对本模块（dist/cli/index.js → 安装根/packages/...）——开发态（src/cli）与
-  // zip 安装态（dist-installer 布局）统一解析。此前用 process.cwd()：安装后用户在任意目录运行
-  // wxnodus 时 cwd≠安装根 → spawn ENOENT 恒崩（开发态恰好 cwd=仓库根而掩盖）。
-  const tuiEntry = resolvePath(fileURLToPath(new URL('../../packages/hermes-tui/dist/entry.js', import.meta.url)));
-  const tui = spawn(process.execPath, [tuiEntry], {
-    stdio: 'inherit',
-    env: { ...process.env, HERMES_TUI_GATEWAY_URL: `ws://127.0.0.1:${hg.port}` },
-  });
-  disposers.push({ id: 'hermes-tui', dispose: () => { try { tui.kill(); } catch { /* 已退出 */ } } });
-  disposers.push({ id: 'hermes-gateway', dispose: () => { void hg.close(); } });
-  tui.on('exit', () => { void shutdown('tui-exit').finally(() => process.exit(0)); });
+  // TUI 路线切换（2026-08-29 用户裁决）：hermes 迁移版 UI 废弃——自研 TUI 设计中
+  // （设计稿 docs/ui-prototype/index.html · 13 场景全原型）。过渡期交互模式诚实降级：
+  // 提示 + 指向 -p 非交互通道，绝不留半死 UI。hermes-gateway 桥保留（新 UI 复用 WS 协议端）。
+  console.log('wxnodus: 交互 TUI 重构中（自研设计稿已定稿——docs/ui-prototype/）。');
+  console.log('  非交互通道可用：wxnodus -p "你的指令"  ·  命令帮助：wxnodus /help');
   await new Promise<void>(() => {});
   return;
 

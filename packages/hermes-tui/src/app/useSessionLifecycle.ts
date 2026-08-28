@@ -37,7 +37,7 @@ const statusFromLiveSession = (status?: string, running = false) => {
   }
 
   if (status === 'starting') {
-    return 'starting agent…'
+    return '正在启动 agent…'
   }
 
   return running || status === 'working' ? 'running…' : 'ready'
@@ -218,7 +218,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       patchUiState({
         info,
         sid: r.session_id,
-        status: info?.version ? 'ready' : 'starting agent…',
+        status: info?.version ? 'ready' : '正在启动 agent…',
         usage: usageFrom(info)
       })
 

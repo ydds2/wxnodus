@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WxNodus TUI 全场景原型 · v1 设计稿</title>
+<style>
+  /* ============================================================
+     WxNodus TUI 设计系统 —— 深空主题（黑洞引擎品牌意象）
+     语义 token 层：终端自适应（暗底为主，亮底反转由 token 派生）
+     ============================================================ */
+  :root {
+    --bg:        #0b0e1a;   /* 深空底 */
+    --bg-panel:  #11152a;   /* 面板底 */
+    --bg-input:  #0e1224;   /* 输入区底 */
+    --bg-user:   #161b30;   /* 用户消息背景块（bg blend 12% 白） */
+    --border:    #2a3050;   /* 一级边框 */
+    --border-dim:#1c2138;   /* 二级边框 */
+    --fg:        #dfe4f2;   /* 主文字 */
+    --fg-muted:  #8b93ad;   /* 次要文字 */
+    --fg-dim:    #5a6178;   /* 弱化文字 */
+    --accent:    #7c9eff;   /* 品牌蓝紫（吸积盘外缘） */
+    --accent2:   #b48cff;   /* 品牌紫（内缘） */
+    --success:   #4fd6be;   /* 青绿 */
+    --warn:      #ffcf6b;   /* 琥珀 */
+    --error:     #ff6b81;   /* 绯红 */
+    --diff-add:  #12261e;   /* diff 增块底 */
+    --diff-del:  #2d1214;   /* diff 删块底 */
+    --mono: "Cascadia Code", "Cascadia Mono", Consolas, "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #05070f; color: var(--fg); font-family: var(--mono); padding: 24px; min-height: 100vh; }
+
+  /* ── 原型工具框架（非终端 UI）── */
+  .frame { display: flex; gap: 20px; max-width: 1440px; margin: 0 auto; }
+  .sidenav { width: 230px; flex-shrink: 0; }
+  .sidenav h1 { font-size: 15px; color: var(--accent); letter-spacing: 1px; margin-bottom: 4px; }
+  .sidenav .sub { font-size: 11px; color: var(--fg-dim); margin-bottom: 16px; line-height: 1.6; }
+  .sidenav .group { font-size: 10px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 2px; margin: 14px 0 6px; }
+  .sidenav button {
+    display: block; width: 100%; text-align: left; background: none; border: 1px solid transparent;
+    color: var(--fg-muted); font-family: var(--mono); font-size: 12px; padding: 7px 10px;
+    border-radius: 6px; cursor: pointer; margin-bottom: 2px;
+  }
+  .sidenav button:hover { color: var(--fg); background: var(--bg-panel); }
+  .sidenav button.active { color: var(--accent); border-color: var(--border); background: var(--bg-panel); }
+  .sidenav button .k { color: var(--fg-dim); margin-right: 6px; }
+
+  /* ── 终端窗口模拟 ── */
+  .term-wrap { flex: 1; min-width: 0; }
+  .term {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.55);
+  }
+  .term-bar {
+    display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+    background: var(--bg-panel); border-bottom: 1px solid var(--border-dim);
+    font-size: 11px; color: var(--fg-muted);
+  }
+  .term-bar .dots { display: flex; gap: 6px; }
+  .term-bar .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
+  .term-bar .title { flex: 1; text-align: center; color: var(--fg-dim); }
+  .term-body { padding: 14px 18px 18px; font-size: 13.5px; line-height: 1.65; min-height: 640px; }
+
+  .scene { display: none; }
+  .scene.active { display: block; }
+  .scene-caption {
+    font-size: 11px; color: var(--fg-dim); border-left: 2px solid var(--border);
+    padding: 2px 0 2px 10px; margin: 18px 0 10px; line-height: 1.7;
+  }
+  .scene-caption b { color: var(--fg-muted); font-weight: normal; }
+
+  /* ── 通用终端元素 ── */
+  .row { display: flex; }
+  .bar { width: 2px; flex-shrink: 0; border-radius: 1px; margin-right: 10px; }
+  .bar-accent { background: var(--accent); }
+  .bar-success { background: var(--success); }
+  .bar-warn { background: var(--warn); }
+  .bar-dim { background: var(--border); }
+  .content { flex: 1; min-width: 0; }
+  .dim { color: var(--fg-dim); }
+  .muted { color: var(--fg-muted); }
+  .accent { color: var(--accent); }
+  .accent2 { color: var(--accent2); }
+  .ok { color: var(--success); }
+  .warn { color: var(--warn); }
+  .err { color: var(--error); }
+  .bold { font-weight: 700; }
+  .it { font-style: italic; }
+
+  /* banner */
+  .banner { margin: 6px 0 4px; line-height: 1.28; font-size: 12.5px; white-space: pre; }
+  .banner .l0 { color: var(--accent); } .banner .l1 { color: var(--accent); }
+  .banner .l2 { color: var(--accent2); } .banner .l3 { color: var(--accent2); }
+  .banner .l4 { color: #6d84c9; } .banner .l5 { color: #6d84c9; }
+  .tagline { font-size: 12px; color: var(--fg-muted); margin: 8px 0 2px; }
+  .tagline .dot { color: var(--accent2); }
+
+  /* 用户消息：左边条 + 背景块 */
+  .msg-user { background: var(--bg-user); border-radius: 4px; padding: 6px 10px 6px 0; margin: 10px 0; }
+  .msg-user .content { padding: 4px 8px 4px 0; }
+
+  /* 助手消息 */
+  .msg-assistant { margin: 10px 0; }
+  .msg-assistant .content { padding: 2px 4px; }
+
+  /* 代码块 */
+  .codeblock {
+    background: var(--bg-panel); border: 1px solid var(--border-dim); border-radius: 6px;
+    padding: 10px 12px; margin: 8px 0; font-size: 12.5px; line-height: 1.6; overflow-x: auto; white-space: pre;
+  }
+  .codeblock .cm { color: var(--fg-dim); } .codeblock .kw { color: var(--accent2); }
+  .codeblock .st { color: #a8d08d; } .codeblock .fn { color: var(--accent); }
+
+  /* 工具行 */
+  .tool-line { margin: 6px 0; font-size: 13px; }
+  .tool-line .glyph { margin-right: 8px; }
+  .tool-detail { font-size: 12px; color: var(--fg-dim); padding-left: 26px; margin-top: 2px; white-space: pre-wrap; }
+
+  /* diff */
+  .diff { border: 1px solid var(--border-dim); border-radius: 6px; margin: 8px 0; overflow: hidden; font-size: 12.5px; }
+  .diff-head { padding: 5px 12px; background: var(--bg-panel); color: var(--fg-muted); font-size: 11.5px; border-bottom: 1px solid var(--border-dim); }
+  .diff-body { padding: 6px 0; white-space: pre; line-height: 1.55; }
+  .diff .add { background: var(--diff-add); color: #9fd6a8; display: block; padding: 0 12px; }
+  .diff .del { background: var(--diff-del); color: #e8a0a8; display: block; padding: 0 12px; }
+  .diff .ctx { color: var(--fg-muted); display: block; padding: 0 12px; }
+
+  /* 思考行 */
+  .think { color: var(--fg-dim); font-size: 12.5px; margin: 8px 0; }
+  .think .dots { color: var(--accent2); letter-spacing: 2px; }
+
+  /* 排队消息 */
+  .queued { border: 1px dashed var(--border); border-radius: 6px; padding: 8px 12px; margin: 10px 0; font-size: 12.5px; }
+  .queued .qtitle { color: var(--warn); font-size: 11px; margin-bottom: 4px; }
+
+  /* 输入区 */
+  .composer { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; }
+  .composer .mode-prompt { display: flex; gap: 8px; align-items: flex-start; }
+  .prompt-sym { font-weight: 700; }
+  .prompt-sym .smart { color: var(--accent); }
+  .prompt-sym .plan { color: var(--accent2); }
+  .prompt-sym .yolo { color: var(--warn); }
+  .input-line { min-height: 22px; color: var(--fg); }
+  .input-line .placeholder { color: var(--fg-dim); font-style: italic; }
+  .input-line .caret { display: inline-block; width: 8px; height: 16px; background: var(--accent); vertical-align: -3px; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .keysrow { display: flex; gap: 14px; font-size: 11px; color: var(--fg-dim); margin-top: 8px; flex-wrap: wrap; }
+  .keysrow kbd { background: var(--bg-panel); border: 1px solid var(--border-dim); border-radius: 4px; padding: 0 5px; font-family: var(--mono); color: var(--fg-muted); }
+
+  /* 状态栏 */
+  .statusbar { display: flex; gap: 0; align-items: center; border-top: 1px solid var(--border); margin-top: 12px; padding-top: 9px; font-size: 12px; color: var(--fg-muted); flex-wrap: wrap; }
+  .statusbar .seg { margin-right: 16px; white-space: nowrap; }
+  .statusbar .seg .v { color: var(--fg); }
+  .statusbar .grow { flex: 1; }
+  .statusbar .tip { color: var(--fg-dim); font-size: 11.5px; }
+  .badge { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 10.5px; margin-left: 6px; }
+  .badge.mode-smart { background: rgba(124,158,255,.15); color: var(--accent); }
+  .badge.mode-plan { background: rgba(180,140,255,.15); color: var(--accent2); }
+  .badge.mode-yolo { background: rgba(255,207,107,.15); color: var(--warn); }
+  .badge.git { background: var(--bg-panel); color: var(--fg-muted); }
+
+  /* 浮层：审批（黄边框覆盖输入区） */
+  .overlay-approval {
+    border: 1px solid var(--warn); border-radius: 8px; background: var(--bg-panel);
+    padding: 12px 14px; margin-top: 12px; position: relative;
+  }
+  .overlay-approval .ttl { color: var(--warn); font-size: 12.5px; margin-bottom: 8px; }
+  .overlay-approval .cmdbox { background: var(--bg); border: 1px solid var(--border-dim); border-radius: 5px; padding: 8px 10px; font-size: 12.5px; margin-bottom: 10px; white-space: pre-wrap; }
+  .opt-list { font-size: 13px; }
+  .opt { padding: 4px 8px; border-radius: 5px; display: flex; gap: 8px; }
+  .opt.sel { background: rgba(255,207,107,.12); color: var(--warn); }
+  .opt .num { color: var(--fg-dim); }
+  .opt .hint { color: var(--fg-dim); margin-left: auto; font-size: 11px; }
+
+  /* 浮层：澄清/表单 */
+  .overlay-clarify { border: 1px solid var(--accent); border-radius: 8px; background: var(--bg-panel); padding: 12px 14px; margin-top: 12px; }
+  .overlay-clarify .ttl { color: var(--accent); font-size: 12.5px; margin-bottom: 8px; }
+
+  /* 斜杠命令菜单（输入框上方弹出） */
+  .slash-menu { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); margin: 12px 0 8px; overflow: hidden; }
+  .slash-menu .head { padding: 6px 12px; font-size: 11px; color: var(--fg-dim); border-bottom: 1px solid var(--border-dim); }
+  .slash-menu table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .slash-menu td { padding: 4px 12px; }
+  .slash-menu tr.sel td { background: rgba(124,158,255,.12); color: var(--accent); }
+  .slash-menu td.meta { color: var(--fg-muted); }
+  .slash-menu tr.sel td.meta { color: var(--accent); opacity: .8; }
+  .slash-menu td.kbdcol { color: var(--fg-dim); text-align: right; font-size: 11px; }
+
+  /* 模型选择器（居中模态） */
+  .modal-mask { position: relative; margin-top: 12px; }
+  .modal-mask::before { content: ""; position: absolute; inset: -8px -14px; background: rgba(5,7,15,.72); border-radius: 10px; }
+  .modal { position: relative; border: 1px solid var(--accent); border-radius: 10px; background: var(--bg-panel); padding: 14px 16px; max-width: 620px; margin: 0 auto; }
+  .modal .m-title { color: var(--accent); font-size: 13px; margin-bottom: 10px; }
+  .modal .m-row { display: flex; padding: 5px 8px; border-radius: 5px; font-size: 12.5px; gap: 10px; }
+  .modal .m-row.sel { background: rgba(124,158,255,.12); color: var(--accent); }
+  .modal .m-row .name { min-width: 200px; }
+  .modal .m-row .prov { color: var(--fg-muted); flex: 1; }
+  .modal .m-row .cur { color: var(--success); font-size: 11px; }
+  .modal .m-foot { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-dim); font-size: 11px; color: var(--fg-dim); }
+
+  /* 帮助全屏 */
+  .help-cols { display: flex; gap: 26px; margin-top: 10px; flex-wrap: wrap; }
+  .help-col { flex: 1; min-width: 260px; }
+  .help-col h4 { color: var(--accent); font-size: 12px; margin: 10px 0 6px; font-weight: 700; }
+  .help-item { font-size: 12.5px; padding: 2.5px 0; color: var(--fg-muted); }
+  .help-item b { color: var(--fg); font-weight: 400; min-width: 130px; display: inline-block; }
+
+  /* 错误块 */
+  .errbox { border: 1px solid var(--error); border-radius: 8px; background: rgba(255,107,129,.06); padding: 10px 14px; margin: 10px 0; font-size: 12.5px; }
+  .errbox .et { color: var(--error); margin-bottom: 4px; }
+
+  /* spinner 动画（原型演示用真实动画） */
+  .spin { display: inline-block; animation: spinframes 1.1s steps(4) infinite; color: var(--accent2); }
+  @keyframes spinframes { 0%{content:'⠋'} }
+  .spinner-dots::after { content: ""; animation: dots4 1.2s steps(4) infinite; color: var(--accent2); }
+  @keyframes dots4 { 0% { content: "·  "; } 25% { content: "·· "; } 50% { content: "···"; } 75% { content: "·· "; } 100% { content: "·  "; } }
+
+  /* 密钥输入 */
+  .secret-line { letter-spacing: 3px; color: var(--fg); }
+
+  /* todo 面板 */
+  .todo-box { border: 1px solid var(--border-dim); border-radius: 6px; background: var(--bg-panel); padding: 8px 12px; margin: 8px 0; font-size: 12.5px; }
+  .todo-box .t-head { color: var(--fg-muted); font-size: 11px; margin-bottom: 4px; }
+
+  /* 计划审批 */
+  .plan-box { border: 1px solid var(--accent2); border-radius: 8px; background: var(--bg-panel); padding: 12px 14px; margin: 10px 0; }
+  .plan-box .p-title { color: var(--accent2); margin-bottom: 8px; font-size: 12.5px; }
+
+  /* 首屏 onboarding */
+  .onboard { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); padding: 14px 16px; margin: 12px 0; max-width: 640px; }
+  .onboard .o-title { color: var(--accent); margin-bottom: 10px; }
+  .onboard .o-step { display: flex; gap: 10px; padding: 4px 0; font-size: 12.5px; color: var(--fg-muted); }
+  .onboard .o-step .n { color: var(--accent); }
+  .onboard .o-step.now { color: var(--fg); }
+  .onboard .o-step.now .n { color: var(--warn); }
+
+  .foot-note { text-align: center; color: var(--fg-dim); font-size: 11px; margin-top: 18px; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <nav class="sidenav">
+    <h1>WxNodus TUI</h1>
+    <div class="sub">全场景设计原型 v1<br>深空主题 · 120col 基准<br>双通道输入 · 左边条消息系</div>
+    <div class="group">核心流程</div>
+    <button data-s="welcome" class="active"><span class="k">01</span>首屏欢迎/引导</button>
+    <button data-s="idle"><span class="k">02</span>空闲对话</button>
+    <button data-s="streaming"><span class="k">03</span>思考/流式中</button>
+    <button data-s="tools"><span class="k">04</span>工具运行树</button>
+    <button data-s="approval"><span class="k">05</span>审批面板</button>
+    <button data-s="plan"><span class="k">06</span>计划模式</button>
+    <div class="group">浮层面板</div>
+    <button data-s="slash"><span class="k">07</span>斜杠命令菜单</button>
+    <button data-s="model"><span class="k">08</span>模型选择器</button>
+    <button data-s="clarify"><span class="k">09</span>澄清面板</button>
+    <button data-s="secret"><span class="k">10</span>密钥输入</button>
+    <button data-s="help"><span class="k">11</span>帮助页</button>
+    <div class="group">状态/异常</div>
+    <button data-s="error"><span class="k">12</span>错误与重试</button>
+    <button data-s="busy"><span class="k">13</span>后台任务/排队</button>
+  </nav>
+
+  <main class="term-wrap">
+    <div class="term">
+      <div class="term-bar">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <div class="title">wxnodus — C:\Users\20164\Desktop\demo-project</div>
+        <div class="dim">120×32</div>
+      </div>
+      <div class="term-body">
+
+      <!-- ═══════════ 01 首屏欢迎/引导 ═══════════ -->
+      <section class="scene active" id="sc-welcome">
+        <div class="banner"><span class="l0">██╗    █╗██╗  ██╗███╗   ██╗ ██████╗ ██████╗ ██╗   ██╗██╗   ██╗███████╗</span>
+<span class="l1">██║    ██║╚██╗██╔╝████╗  ██║██╔═══██╗██╔══██╗██║   ██║██║   ██║██╔════╝</span>
+<span class="l2">██║ █╗ ██║ ╚███╔╝ ██╔██╗ ██║██║   ██║██║  ██║██║   ██║██║   ██║███████╗</span>
+<span class="l2">██║███╗██║ ██╔██╗ ██║╚██╗██║██║   ██║██║  ██║██║   ██║██║   ██║╚════██║</span>
+<span class="l4">╚███╔███╔╝██╔╝ ██╗██║ ╚████║╚██████╔╝██████╔╝╚██████╔╝╚██████╔╝███████║</span>
+<span class="l4"> ╚═╝╚═╝ ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═════╝  ╚═════╝  ╚═════╝ ╚══════╝</span></div>
+        <div class="tagline"><span class="dot">●</span> Windows 本地 AI Agent · 数据不出机 · 三层记忆黑洞引擎 <span class="dim">v4.1.0</span></div>
+
+        <div class="onboard">
+          <div class="o-title">◆ 初始配置（3 步完成）</div>
+          <div class="o-step now"><span class="n">▸</span><span>1/3 · 语言已设为<b class="muted">中文</b></span></div>
+          <div class="o-step now"><span class="n">▸</span><span>2/3 · 模型密钥——输入你的 API Key（<span class="accent">粘贴后回车</span>，AES-256-GCM 本机加密，明文不落盘）</span></div>
+          <div class="o-step"><span class="n">·</span><span>3/3 · 自检（/doctor）</span></div>
+          <div style="margin-top:10px" class="row">
+            <div class="bar bar-warn"></div>
+            <div class="content">
+              <div class="input-line"><span class="muted">sk-·</span><span class="secret-line">••••••••••••••••</span><span class="caret" style="background:var(--warn)"></span></div>
+              <div class="keysrow"><span><kbd>Enter</kbd> 确认</span><span><kbd>Esc</kbd> 跳过（稍后 /model set-key）</span><span><kbd>↑↓</kbd> 切换提供方</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="statusbar">
+          <span class="seg"><span class="badge mode-smart">smart</span><span class="dim"> 模式</span> · <kbd>Ctrl+X</kbd> 切换</span>
+          <span class="seg"><span class="dim">模型</span> <span class="v">deepseek-chat</span> <span class="dim">○</span></span>
+          <span class="seg"><span class="dim">记忆</span> <span class="v">0</span><span class="dim"> 条</span></span>
+          <span class="grow"></span>
+          <span class="tip">tip: 离线可用 /offline on 一键拉取本地模型</span>
+        </div>
+        <div class="scene-caption">场景 01 —— 首次启动：banner + 品牌标语 + 三步引导。密钥输入框带 <b>●●● 掩码</b>与黄色聚焦条；状态栏常驻（模式徽章/模型/记忆计数/30s 轮换 tip）。</div>
+      </section>
+
+      <!-- ═══════════ 02 空闲对话 ═══════════ -->
+      <section class="scene" id="sc-idle">
+        <div class="row msg-user">
+          <div class="bar bar-accent"></div>
+          <div class="content"><span class="dim">▌</span> 帮我在 src/utils/ 下新增一个 dateFmt.ts，导出中文相对时间格式化函数，并配测试</div>
+        </div>
+
+        <div class="row msg-assistant">
+          <div class="bar bar-success"></div>
+          <div class="content">
+            <div class="tool-line"><span class="glyph ok">✓</span><span class="accent">fs_read</span> <span class="muted">src/utils/ 目录结构（4 文件）</span><span class="dim"> · 120ms</span></div>
+            <div class="tool-line"><span class="glyph ok">✓</span><span class="accent">fs_edit</span> <span class="muted">src/utils/dateFmt.ts</span><span class="dim"> · 新建 · 86ms</span></div>
+            <div class="diff">
+              <div class="diff-head">src/utils/dateFmt.ts <span class="dim">· +14 -0</span></div>
+              <div class="diff-body"><span class="add">+ export function relTime(d: Date | number): string {</span>
+<span class="add">+   const s = Math.floor((Date.now() - +d) / 1000)</span>
+<span class="add">+   if (s &lt; 60) return '刚刚'</span>
+<span class="add">+   if (s &lt; 3600) return `${Math.floor(s / 60)} 分钟前`</span>
+<span class="add">+   return `${Math.floor(s / 86400)} 天前`</span>
+<span class="add">+ }</span></div>
+            </div>
+            <div class="tool-line"><span class="glyph ok">✓</span><span class="accent">bash</span> <span class="muted">npm test -- dateFmt</span><span class="dim"> · 3 passed · 2.1s</span></div>
+            <div style="margin-top:8px">完成。`dateFmt.ts` 提供 <b>relTime()</b>（中文相对时间：刚刚/N 分钟前/N 天前），测试 <span class="ok">3 passed</span> 覆盖边界值（59s/3599s/跨日）。</div>
+          </div>
+        </div>
+
+        <div class="composer">
+          <div class="mode-prompt">
+            <span class="prompt-sym"><span class="smart">❯</span></span>
+            <div class="content">
+              <div class="input-line"><span class="placeholder">有问题尽管问，或直接派活 (Ready!)</span></div>
+              <div class="keysrow">
+                <span><kbd>Enter</kbd> 发送</span><span><kbd>Shift+Enter</kbd> 换行</span>
+                <span><kbd>/</kbd> 命令</span><span><kbd>@</kbd> 引用文件</span><span><kbd>Ctrl+O</kbd> 编辑器</span><span><kbd>Esc</kbd> 清空</span>
+              </div>
+            </div>
+          </div>
+          <div class="statusbar">
+            <span class="seg"><span class="badge mode-smart">smart</span><span class="dim">(deepseek-chat ●)</span></span>
+            <span class="seg"><span class="v">~\demo-project</span><span class="badge git">master ✓</span></span>
+            <span class="seg"><span class="dim">⚙ 后台</span> <span class="v">0</span></span>
+            <span class="grow"></span>
+            <span class="tip">tip: Shift+Tab 进入计划模式，先看方案再执行</span>
+          </div>
+        </div>
+        <div class="scene-caption">场景 02 —— 空闲对话。左边条体系：<b class="accent">▌蓝紫=用户</b> · <b class="ok">▌青绿=助手</b>；工具行 <b>✓ 名称 · 摘要 · 耗时</b>；diff 增删色块。输入区：模式化提示符 ❯ + 拟人化 placeholder + 快捷键行 + 状态栏。</div>
+      </section>
+
+      <!-- ═══════════ 03 思考/流式中 ═══════════ -->
+      <section class="scene" id="sc-streaming">
+        <div class="row msg-user">
+          <div class="bar bar-accent"></div>
+          <div class="content">分析这个项目的内存泄漏点，给出修复方案</div>
+        </div>
+
+        <div class="think"><span class="it">Thinking</span><span class="dots">···</span> <span class="dim">· 23s · 3.2k tokens · 41 tok/s</span></div>
+
+        <div class="row msg-assistant">
+          <div class="bar bar-success"></div>
+          <div class="content">
+            <div>排查了 3 个模块，定位到 <b>两处</b>泄漏：<span class="accent2">▍</span>事件监听器未注销（EventBus.ts:88）、定时器未清理（curator.ts:210）。修复方案如</span><span class="caret" style="width:7px;height:14px"></span></div>
+          </div>
+        </div>
+
+        <div class="tool-line" style="margin-top:10px"><span class="glyph spinner-dots"></span><span class="accent">grep</span> <span class="muted">setInterval|addEventListener 全仓扫描</span><span class="dim"> · 运行中 4.2s</span></div>
+
+        <div class="queued">
+          <div class="qtitle">⌛ 已排队 1 条（运行结束后自动发送 · ↑ 召回）</div>
+          <div class="muted">1. 顺便看看有没有同类问题</div>
+        </div>
+
+        <div class="composer">
+          <div class="mode-prompt">
+            <span class="prompt-sym"><span class="smart">❯</span></span>
+            <div class="content">
+              <div class="input-line"><span class="placeholder">Prrrrrr... 正在工作，Enter 排队 / Ctrl+S 立即插入</span></div>
+              <div class="keysrow">
+                <span><kbd>Enter</kbd> 排队</span><span><kbd>Ctrl+S</kbd> steer 即时注入</span><span><kbd>Esc</kbd> 中断当前回合</span>
+              </div>
+            </div>
+          </div>
+          <div class="statusbar">
+            <span class="seg"><span class="badge mode-smart">smart</span><span class="dim">(deepseek-chat ●</span> <span class="accent2">▍</span><span class="dim">)</span></span>
+            <span class="seg"><span class="dim">本回合</span> <span class="v">23s · 3.2k tok</span></span>
+            <span class="grow"></span>
+            <span class="tip">tip: Esc 中断不丢会话，队列保留</span>
+          </div>
+        </div>
+        <div class="scene-caption">场景 03 —— 流式中。Thinking 行带 <b>点动画+tok/s 心跳</b>；助手文本流式渐出（光标块）；工具运行 spinner。输入区切<b>双通道</b>：Enter 排队（上方虚线框展示）/ Ctrl+S steer。模型状态点 ●→▍ 动画。</div>
+      </section>
+
+      <!-- ═══════════ 04 工具运行树 ═══════════ -->
+      <section class="scene" id="sc-tools">
+        <div class="row msg-user">
+          <div class="bar bar-accent"></div>
+          <div class="content">执行 /build 待办系统，按需求编译流程走</div>
+        </div>
+
+        <div class="todo-box">
+          <div class="t-head">◆ 任务清单 <span class="dim">· /todo 编辑</span></div>
+          <div><span class="ok">☑</span> <span class="muted" style="text-decoration:line-through">规格解析：待办系统（增删改查+本地存储）</span></div>
+          <div><span class="ok">☑</span> <span class="muted" style="text-decoration:line-through">脚手架生成：todo-cli/（Node+TS）</span></div>
+          <div><span class="accent">◐</span> <b>验证：启动/探活/读回</b></div>
+          <div><span class="dim">☐ 证据链归档</span></div>
+        </div>
+
+        <div class="tool-line"><span class="glyph ok">✓</span><span class="accent">scaffold_build</span> <span class="muted">todo-cli/（9 文件）</span><span class="dim"> · 1.8s</span></div>
+        <div class="tool-line"><span class="glyph spinner-dots"></span><span class="accent">bash</span> <span class="muted">node todo-cli/dist/index.js add "买牛奶"</span><span class="dim"> · 运行中 0.8s</span></div>
+        <div class="tool-detail">└ 探活等待中（http://127.0.0.1:0 无端口模式——stdin 驱动）</div>
+        <div class="tool-line"><span class="glyph spinner-dots"></span><span class="accent">subagent</span> <span class="muted">verify-reader · 读回 todo.list 校验</span><span class="dim"> · 运行中 2.3s</span></div>
+        <div class="tool-detail">└ <span class="dim">子代理工具面收窄（无 fs_write/bash）· 2 工具调用</span></div>
+        <div class="tool-line"><span class="glyph" style="color:var(--fg-dim)">·</span><span class="muted">fs_edit</span> <span class="dim">等待中</span></div>
+
+        <div class="composer">
+          <div class="mode-prompt">
+            <span class="prompt-sym"><span class="smart">❯</span></span>
+            <div class="content">
+              <div class="input-line"><span class="placeholder">Brrrrr...（验证阶段 2/4）</span></div>
+              <div class="keysrow"><span><kbd>Esc</kbd> 中断</span><span><kbd>Enter</kbd> 排队</span><span><kbd>Ctrl+T</kbd> 展开/折叠工具详情</span></div>
+            </div>
+          </div>
+          <div class="statusbar">
+            <span class="seg"><span class="badge mode-smart">smart</span><span class="dim">(deepseek-chat ●)</span></span>
+            <span class="seg"><span class="dim">回合</span> <span class="v">7/32</span></span>
+            <span class="seg"><span class="dim">⚙ 后台</span> <span class="v">1</span><span class="dim"> 终端</span></span>
+            <span class="grow"></span>
+            <span class="tip">/build · 规格→分解→脚手架→验证→证据链</span>
+          </div>
+        </div>
+        <div class="scene-caption">场景 04 —— 工具运行树。<b>◐ 进行中 / ☑ 完成 / ☞ 待办</b> 三态；子工具 <b>└ 树形缩进</b> + 详情折叠；subagent 派发行标注<b>工具面收窄</b>。Todo 面板随 /build 流程实时刷新。</div>
+      </section>
+
+      <!-- ═══════════ 05 审批面板 ═══════════ -->
+      <section class="scene" id="sc-approval">
+        <div class="row msg-user">
+          <div class="bar bar-accent"></div>
+          <div class="content">清理 dist 并重新打包发布</div>
+        </div>
+        <div class="tool-line" style="margin-top:12px"><span class="glyph warn">⚠</span><span class="warn bold">需要确认</span><span class="muted"> · bash · 危险级（destructive）</span></div>
+
+        <div class="overlay-approval">
+          <div class="ttl">⚠ 审批请求 — 该命令将删除文件</div>
+          <div class="cmdbox"><span class="dim">$</span> rm -rf dist/ && rm -rf dist-installer/ && npm run pack:release</div>
+          <div class="opt-list">
+            <div class="opt"><span class="num">1</span><span>仅本次允许 <span class="muted">(Approve once)</span></span><span class="hint">回车</span></div>
+            <div class="opt sel"><span class="num">2</span><span>本会话内允许同类 <span class="muted">(Session)</span></span><span class="hint">←→ 移动</span></div>
+            <div class="opt"><span class="num">3</span><span>永久允许此命令模式 <span class="muted">(Always · 可 /perm 撤销)</span></span></div>
+            <div class="opt"><span class="num">4</span><span class="err">拒绝 (Deny)</span><span class="hint">Esc</span></div>
+          </div>
+          <div class="keysrow" style="margin-top:10px"><span><kbd>↑↓/←→</kbd> 选择</span><span><kbd>Enter</kbd> 确认</span><span><kbd>Esc</kbd> 拒绝</span><span><kbd>Ctrl+R</kbd> 查看 /perm 规则</span></div>
+        </div>
+
+        <div class="statusbar">
+          <span class="seg"><span class="badge mode-smart">smart</span><span class="dim">(deepseek-chat ●)</span></span>
+          <span class="seg"><span class="warn">⏸ 等待审批</span><span class="dim">· 超时 5:00 自动拒绝</span></span>
+          <span class="grow"></span>
+          <span class="tip">规则可持久化：/perm rule add bash "rm -rf *" deny</span>
+        </div>
+        <div class="scene-caption">场景 05 —— 审批面板。<b>黄色边框覆盖输入区</b>（非全屏——转录流仍可见）；命令预览盒 + 四级选项（once/session/always/deny）；倒计时超时 <b>fail-closed</b>；system-touch 级强制弹窗不认缓存。</div>
+      </section>
+
+      <!-- ═══════════ 06 计划模式 ═══════════ -->
+      <section class="scene" id="sc-plan">
+        <div class="row msg-user">
+          <div class="bar bar-accent"></div>
+          <div class="content">重构整个状态管理，去掉 Redux 换成原生信号</div>
+        </div>
+
+        <div class="plan-box">
+          <div class="p-title">◆ 执行计划（plan 模式——确认后开始，任意步骤可中止）</div>
+          <div style="font-size:13px; line-height:1.9">
+            <div><span class="accent2">1.</span> 盘点现有 store（src/stores/ · 11 文件 · 43 处 useSelector）<span class="dim">~2 回合</span></div>
+            <div><span class="accent2">2.</span> 设计 signals 层（createSignal/computed/effect 最小内核）</div>
+            <div><span class="accent2">3.</span> 逐 store 迁移（每步跑全量测试，红即回滚）<span class="dim">~6 回合</span></div>
+            <div><span class="accent2">4.</span> 删除 Redux 依赖 + 构建验证 + 性能对比</div>
+          </div>
+          <div class="keysrow" style="margin-top:10px"><span><kbd>Enter</kbd> 批准计划并执行</span><span><kbd>E</kbd> 编辑计划（外置编辑器）</span><span><kbd>Esc</kbd> 退回对话</span></div>
+        </div>
+
+        <div class="composer">
+          <div class="mode-prompt">
+            <span class="prompt-sym"><span class="plan">❯</span></span>
+            <div class="content">
+              <div class="input-line"><span class="placeholder">计划模式——先看方案，批准才动手</span></div>
+            </div>
+          </div>
+          <div class="statusbar">
+            <span class="seg"><span class="badge mode-plan">plan</span><span class="dim">(deepseek-chat ○)</span></span>
+            <span class="seg"><span class="dim">预计</span> <span class="v">8 回合</span></span>
+            <span class="grow"></span>
+            <span class="tip">Shift+Tab 切回 smart</span>
+          </div>
+        </div>
+        <div class="scene-caption">场景 06 —— 计划模式。紫罗兰色<b>计划卡</b>（步骤+预计回合数+可编辑）；提示符 ❯ 变<b>紫色</b>、状态徽章 plan；批准前零副作用（只读工具放行）。</div>
+      </section>
+
+      <!-- ═══════════ 07 斜杠命令菜单 ═══════════ -->
+      <section class="scene" id="sc-slash">
+        <div class="row msg-user" style="margin-top:4px">
+          <div class="bar bar-accent"></div>
+          <div class="content">好的，先看看有哪些命令</div>
+        </div>
+
+        <div class="slash-menu">
+          <div class="head">命令 · 63 个 · 输入过滤 · ↑↓ 选择 · Tab 补全</div>
+          <table>
+            <tr class="sel"><td><b>/model</b></td><td class="meta">模型目录与密钥管理（选择器「＋添加自定义接口」）</td><td class="kbdcol">⏎</td></tr>
+            <tr><td><b>/build</b></td><td class="meta">需求编译：规格→分解→脚手架→验证→证据链</td><td class="kbdcol"></td></tr>
+            <tr><td><b>/doctor</b></td><td class="meta">全组件自检（DB/记忆/MCP/沙盒/网络）</td><td class="kbdcol"></td></tr>
+            <tr><td><b>/memory</b></td><td class="meta">三层记忆：working/archival/recall 检索与管理</td><td class="kbdcol"></td></tr>
+            <tr><td><b>/perm</b></td><td class="meta">权限规则：rule add/list · session-revoke</td><td class="kbdcol"></td></tr>
+            <tr><td><b>/offline</b></td><td class="meta">离线模型一键拉取（本地推理，无 key 可用）</td><td class="kbdcol"></td></tr>
+            <tr><td><b>/theme</b></td><td class="meta">深空/晨昏/高对比 主题切换</td><td class="kbdcol"></td></tr>
+            <tr><td><b>/share</b></td><td class="meta">会话离线分享打包（.wxnshare · sha256 防篡改）</td><td class="kbdcol">↓</td></tr>
+          </table>
+        </div>
+
+        <div class="composer">
+          <div class="mode-prompt">
+            <span class="prompt-sym"><span class="smart">❯</span></span>
+            <div class="content">
+              <div class="input-line"><span class="accent">/mo</span><span class="caret"></span></div>
+              <div class="keysrow"><span><kbd>↑↓</kbd> 选择</span><span><kbd>Tab</kbd> 补全</span><span><kbd>Esc</kbd> 关闭菜单</span><span class="dim">菜单高度上限 8 行，超出滚动</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="scene-caption">场景 07 —— 自绘斜杠菜单（kimi 模式）：<b>命令 + 中文描述双列</b>，当前项蓝紫高亮；输入即过滤；高度上限防遮挡转录流。</div>
+      </section>
+
+      <!-- ═══════════ 08 模型选择器 ═══════════ -->
+      <section class="scene" id="sc-model">
+        <div class="modal-mask">
+          <div class="modal">
+            <div class="m-title">◆ 模型目录 <span class="dim">· ↑↓ 选择 · Enter 应用 · A 添加自定义接口</span></div>
+            <div class="m-row sel"><span class="name">deepseek-chat</span><span class="prov">DeepSeek · 64k 上下文</span><span class="cur">● 当前</span></div>
+            <div class="m-row"><span class="name">deepseek-reasoner</span><span class="prov">DeepSeek · 推理增强</span></div>
+            <div class="m-row"><span class="name">glm-4.7-flash</span><span class="prov">智谱 · 免费档</span></div>
+            <div class="m-row"><span class="name">qwen3-coder-plus</span><span class="prov">阿里 · 代码特化</span></div>
+            <div class="m-row"><span class="name">wxn-offline-7b</span><span class="prov">本地离线 · 无需 key · /offline on 拉取</span></div>
+            <div class="m-row"><span class="name" style="color:var(--accent2)">＋ 添加自定义接口</span><span class="prov">任意 OpenAI 兼容端点（baseURL + key）</span></div>
+            <div class="m-foot">密钥经 AES-256-GCM 本机加密存储，明文绝不落盘 · /model set-key &lt;key&gt; 命令行通道</div>
+          </div>
+        </div>
+        <div class="statusbar" style="opacity:.5">
+          <span class="seg"><span class="badge mode-smart">smart</span><span class="dim">(deepseek-chat ●)</span></span>
+          <span class="grow"></span>
+          <span class="tip">Esc 返回对话</span>
+        </div>
+        <div class="scene-caption">场景 08 —— 模型选择器。<b>居中模态 + 半透明遮罩</b>（转录流退焦保留上下文）；「＋添加自定义接口」入口内联表单（baseURL/key/模型名三字段）。</div>
+      </section>
+
+      <!-- ═══════════ 09 澄清面板 ═══════════ -->
+      <section class="scene" id="sc-clarify">
+        <div class="row msg-user">
+          <div class="bar bar-accent"></div>
+          <div class="content">给我做一个导出功能</div>
+        </div>
+        <div class="tool-line" style="margin-top:12px"><span class="glyph accent">?</span><span class="accent bold">agent 需要澄清</span><span class="muted"> · 回答后继续当前回合</span></div>
+
+        <div class="overlay-clarify">
+          <div class="ttl">◆ 导出功能——请补充两个信息</div>
+          <div style="font-size:13px; margin-bottom:8px"><span class="dim">1/2</span> 导出什么格式？</div>
+          <div class="opt-list">
+            <div class="opt"><span class="num">1</span><span>Markdown（轻量，可读性好）</span></div>
+            <div class="opt sel"><span class="num">2</span><span>JSON（结构化，可再导入）</span></div>
+            <div class="opt"><span class="num">3</span><span>两种都要（.md + .json 成对导出）</span></div>
+          </div>
+          <div class="keysrow" style="margin-top:10px"><span><kbd>↑↓</kbd> 选择</span><span><kbd>Enter</kbd> 确认</span><span class="dim">下一题：导出范围（当前会话/全部会话）</span></div>
+        </div>
+
+        <div class="statusbar">
+          <span class="seg"><span class="badge mode-smart">smart</span><span class="dim">(● 等待澄清)</span></span>
+          <span class="grow"></span>
+          <span class="tip">澄清超时 5 分钟 → 空答案继续（不阻塞）</span>
+        </div>
+        <div class="scene-caption">场景 09 —— 澄清面板（clarify 工具触发）。蓝紫边框；<b>批量问题逐题推进</b>（1/2 计数）；选项单选，自由输入型自动切文本框；与审批同为覆盖输入区形态。</div>
+      </section>
+
+      <!-- ═══════════ 10 密钥输入 ═══════════ -->
+      <section class="scene" id="sc-secret">
+        <div class="row msg-user">
+          <div class="bar bar-accent"></div>
+          <div class="content">帮我把这个项目的构建产物发布到我的私有 npm 源</div>
+        </div>
+        <div class="tool-line" style="margin-top:12px"><span class="glyph warn">🔑</span><span class="warn bold">需要你亲手输入密钥</span><span class="muted"> · npm publish token · 不会进入模型上下文</span></div>
+
+        <div class="overlay-approval" style="border-color: var(--accent2)">
+          <div class="ttl" style="color:var(--accent2)">🔑 敏感输入 — npm authToken（写入内存保险库，进程退出即焚）</div>
+          <div class="cmdbox" style="font-size:12px"><span class="dim">用途：</span>npm config set //registry.npm.internal/:_authToken <span class="accent2">•••</span><span class="dim">  · 仅注入子进程环境变量，绝不出现在命令行参数/日志/模型上下文</span></div>
+          <div class="row">
+            <div class="bar bar-accent2"></div>
+            <div class="content">
+              <div class="input-line"><span class="muted">npm_••••••••••••••••••••</span><span class="caret" style="background:var(--accent2)"></span></div>
+              <div class="keysrow"><span><kbd>Enter</kbd> 提交</span><span><kbd>Esc</kbd> 取消（工具收到 null 并停止）</span><span class="dim">安全注入通道 /security 控制，默认关闭</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="statusbar">
+          <span class="seg"><span class="badge mode-smart">smart</span><span class="dim">(● 等待密钥)</span></span>
+          <span class="seg"><span class="accent2">🔒 vault</span><span class="dim"> 内存保险库 0 项</span></span>
+          <span class="grow"></span>
+        </div>
+        <div class="scene-caption">场景 10 —— 密钥输入（secret.request）。紫罗兰边框；<b>掩码输入</b>；明示用途与安全边界（内存保险库/不进上下文/进程即焚）；Esc=取消（null → 工具 fail-closed）。</div>
+      </section>
+
+      <!-- ═══════════ 11 帮助页 ═══════════ -->
+      <section class="scene" id="sc-help">
+        <div class="row" style="margin:4px 0 6px">
+          <div class="bar bar-accent"></div>
+          <div class="content"><b class="accent">WxNodus 命令手册</b> <span class="dim">· Esc 返回对话 · 63 命令 8 分组</span></div>
+        </div>
+        <div class="help-cols">
+          <div class="help-col">
+            <h4>◆ 会话</h4>
+            <div class="help-item"><b>/new</b>新会话</div>
+            <div class="help-item"><b>/resume</b>恢复会话（列表选择）</div>
+            <div class="help-item"><b>/export</b>导出会话（md/json）</div>
+            <div class="help-item"><b>/share</b>离线分享包</div>
+            <h4>◆ 模型</h4>
+            <div class="help-item"><b>/model</b>目录/切换/自定义接口</div>
+            <div class="help-item"><b>/offline</b>本地离线模型</div>
+            <div class="help-item"><b>/thinking</b>思维链开关</div>
+          </div>
+          <div class="help-col">
+            <h4>◆ 记忆（黑洞引擎）</h4>
+            <div class="help-item"><b>/memory</b>检索·归档·召回</div>
+            <div class="help-item"><b>/hole</b>记忆黑洞（语义检索）</div>
+            <div class="help-item"><b>/checkpoint</b>检查点/回滚</div>
+            <h4>◆ 安全</h4>
+            <div class="help-item"><b>/perm</b>权限规则管理</div>
+            <div class="help-item"><b>/security</b>密钥注入通道开关</div>
+            <div class="help-item"><b>/sandbox</b>沙盒（Low IL 受限执行）</div>
+          </div>
+          <div class="help-col">
+            <h4>◆ 构建</h4>
+            <div class="help-item"><b>/build</b>需求编译全流程</div>
+            <div class="help-item"><b>/bundle</b>组件打包发布</div>
+            <div class="help-item"><b>/doctor</b>全组件自检</div>
+            <h4>◆ 系统</h4>
+            <div class="help-item"><b>/theme</b>主题</div>
+            <div class="help-item"><b>/config</b>配置项</div>
+            <div class="help-item"><b>/help</b>本页</div>
+          </div>
+        </div>
+        <div class="scene-caption" style="margin-top:14px">场景 11 —— 帮助页。三分栏全屏（终端窄时折叠单列）；分组标题 ◆；<b>命令 + 一句话说明</b>；Esc 即返。快捷键速查（Esc/Ctrl+X/Shift+Tab/Ctrl+O/@/Ctrl+S）常驻底部状态栏 tip 轮换。</div>
+      </section>
+
+      <!-- ═══════════ 12 错误与重试 ═══════════ -->
+      <section class="scene" id="sc-error">
+        <div class="row msg-user">
+          <div class="bar bar-accent"></div>
+          <div class="content">继续刚才的迁移任务</div>
+        </div>
+
+        <div class="errbox">
+          <div class="et">✗ 回合失败 — MODEL_TIMEOUT</div>
+          <div class="muted">上游 60s 无响应（deepseek-chat · 已重试 2/3 · 指数退避 8s 后第三次）</div>
+        </div>
+
+        <div class="row msg-assistant">
+          <div class="bar bar-dim"></div>
+          <div class="content dim">— 上次输出到此中断 —</div>
+        </div>
+
+        <div class="think"><span class="spinner-dots"></span> <span class="dim">重连上游 API… · 第 3 次尝试</span></div>
+
+        <div class="composer">
+          <div class="mode-prompt">
+            <span class="prompt-sym"><span class="smart">❯</span></span>
+            <div class="content">
+              <div class="input-line"><span class="placeholder">回车重试 · 或输入新指令</span></div>
+              <div class="keysrow"><span><kbd>Enter</kbd> 立即重试</span><span><kbd>/model</kbd> 切换模型</span><span><kbd>/offline on</kbd> 转离线模式</span></div>
+            </div>
+          </div>
+          <div class="statusbar">
+            <span class="seg"><span class="err">● 网络异常</span></span>
+            <span class="seg"><span class="dim">重试</span> <span class="v">2/3</span></span>
+            <span class="grow"></span>
+            <span class="tip">离线场景：/offline on 拉本地模型继续，会话与记忆不丢</span>
+          </div>
+        </div>
+        <div class="scene-caption">场景 12 —— 错误。绯红<b>错误盒</b>（错误码/人话原因/重试进度）；中断点 <b>dim 分隔行</b>；提供三条出路（重试/换模型/转离线）。状态栏红点常驻直至恢复。</div>
+      </section>
+
+      <!-- ═══════════ 13 后台任务/排队 ═══════════ -->
+      <section class="scene" id="sc-busy">
+        <div class="row msg-user">
+          <div class="bar bar-accent"></div>
+          <div class="content">跑全量测试，同时帮我看看 README 的措辞</div>
+        </div>
+
+        <div class="queued" style="border-style:solid">
+          <div class="qtitle" style="color:var(--accent)">⚙ 后台活动 · /tasks 浏览器 · ⌥K 面板</div>
+          <div><span class="ok">●</span> <span class="muted">bash</span> npm test <span class="dim">· 运行中 3m12s · 输出静默（完成自动回流通知）</span></div>
+          <div><span class="warn">◐</span> <span class="muted">goal</span> 循环 4/10 轮 <span class="dim">· 文案优化任务进行中</span></div>
+        </div>
+
+        <div class="row msg-assistant">
+          <div class="bar bar-success"></div>
+          <div class="content">README 措辞已优化——三处被动改主动、术语统一「黑洞引擎」。后台测试仍在跑（3m12s），完成后我会收到通知并汇报结果。</div>
+        </div>
+
+        <div class="composer">
+          <div class="mode-prompt">
+            <span class="prompt-sym"><span class="smart">❯</span></span>
+            <div class="content">
+              <div class="input-line"><span class="placeholder">输入不阻塞——后台任务照跑</span></div>
+            </div>
+          </div>
+          <div class="statusbar">
+            <span class="seg"><span class="badge mode-smart">smart</span><span class="dim">(deepseek-chat ●)</span></span>
+            <span class="seg"><span class="dim">⚙ bash:</span> <span class="v">1</span><span class="dim"> · goal:</span> <span class="v">4/10</span></span>
+            <span class="grow"></span>
+            <span class="tip">tip: ⌥K 展开后台面板 · 完成通知自动回流上下文</span>
+          </div>
+        </div>
+        <div class="scene-caption">场景 13 —— 后台任务。转录流内<b>后台活动卡</b>（●运行/◐循环 计数）；完成通知自动回流模型上下文（kimi 通知投递机制）；输入永不阻塞。</div>
+      </section>
+
+      </div>
+    </div>
+    <div class="foot-note">
+      WxNodus TUI 全场景原型 v1 · 13 场景 · 深空主题 · 左边条消息系 / 双通道输入 / 黄框审批 / 状态栏降级链<br>
+      设计参考：kimi-cli（双通道·命令菜单·状态栏）+ crush（左边条·聚焦态）+ codex（状态行三件套）——机制借鉴，视觉原创
+    </div>
+  </main>
+</div>
+
+<script>
+  const buttons = document.querySelectorAll('.sidenav button');
+  const scenes = document.querySelectorAll('.scene');
+  buttons.forEach(btn => btn.addEventListener('click', () => {
+    buttons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    scenes.forEach(s => s.classList.toggle('active', s.id === 'sc-' + btn.dataset.s));
+  }));
+  // 数字键快捷切换
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (/^[1-9]$/.test(e.key)) {
+      const idx = Number(e.key) - 1;
+      if (buttons[idx]) buttons[idx].click();
+    }
+  });
+</script>
+</body>
+</html>
