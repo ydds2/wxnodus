@@ -1,0 +1,16 @@
+# 预提交示例（A-S5）——本地 .pre-commit-config.yaml 片段（复制到目标仓库根）
+repos:
+  - repo: local
+    hooks:
+      - id: wxnodus-diff-review
+        name: wxnodus 变更审查（staged diff）
+        language: system
+        # 审查失败（退出码非 0）拦截提交；密钥经 WXNODUS_API_KEY 环境变量（不落盘）
+        entry: wxnodus -p "审查 git diff --cached：有逻辑缺陷/回归风险则输出问题清单并以退出码 1 结束；干净只输出 PASS"
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: wxnodus-commit-msg
+        name: 提交信息规范（conventional + 中文摘要）
+        language: system
+        entry: wxnodus -p "把 stdin 的提交信息草稿改写为 conventional commit（type(scope): 中文摘要，正文保留要点）。只输出结果。"
+        stages: [commit-msg]

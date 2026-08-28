@@ -1,0 +1,49 @@
+# npm 发布 workflow（A-S5）——零云端中心：发布到公共 npm registry（用户自有账号）
+# 前置（仓库 Settings → Secrets and variables → Actions）：
+#   NPM_TOKEN        —— npm access token（Automation 类型，发布 wxnodus / @wxnodus/sdk / @wxnodus/core）
+# 发布内容与顺序：根包 wxnodus（CLI 本体）→ @wxnodus/sdk → @wxnodus/core
+name: publish-npm
+on:
+  workflow_dispatch:
+    inputs:
+      dist-tag: { description: 'npm dist-tag', default: 'latest', required: false }
+      dry-run: { description: 'dry-run（不真实上传）', default: 'true', required: false }
+jobs:
+  publish:
+    runs-on: windows-latest
+    permissions: { contents: read, id-token: write } # id-token 供 npm provenance（可选）
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22.11.0', cache: npm, registry-url: 'https://registry.npmjs.org' }
+      - run: npm ci
+      - run: npm run ci
+      # npm pack 预检：三包产物清单落日志（files 字段核对，防泄漏/缺失）
+      - run: npm pack --dry-run
+      - run: npm pack --dry-run
+        working-directory: packages/sdk
+      - run: npm pack --dry-run
+        working-directory: packages/core
+      - name: publish root (wxnodus)
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: npm publish --access public --tag ${{ inputs.dist-tag }} ${{ inputs.dry-run == 'false' && '' || '--dry-run' }}
+        env: { NODE_AUTH_TOKEN: '${{ secrets.NPM_TOKEN }}' }
+      - name: publish @wxnodus/sdk
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: npm publish --access public --tag ${{ inputs.dist-tag }} ${{ inputs.dry-run == 'false' && '' || '--dry-run' }}
+        working-directory: packages/sdk
+        env: { NODE_AUTH_TOKEN: '${{ secrets.NPM_TOKEN }}' }
+      - name: publish @wxnodus/core
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: npm publish --access public --tag ${{ inputs.dist-tag }} ${{ inputs.dry-run == 'false' && '' || '--dry-run' }}
+        working-directory: packages/core
+        env: { NODE_AUTH_TOKEN: '${{ secrets.NPM_TOKEN }}' }

@@ -1,0 +1,23 @@
+name: wxnodus-review
+# 示例：PR 变更审查（A-S5 CI 配方样例——可直接复制到目标仓库 .github/workflows/）
+# 依赖仓库 secret：WXNODUS_API_KEY（任意 OpenAI 兼容端点密钥；厂商专属槽 WXNODUS_DEEPSEEK_KEY 等更高优先）
+on: { pull_request: { types: [opened, synchronize] } }
+jobs:
+  review:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22.11.0' }
+      - run: npm install -g wxnodus
+      - name: 变更审查（-p 非交互；退出码 0/1/42/53 语义化）
+        env:
+          WXNODUS_API_KEY: ${{ secrets.WXNODUS_API_KEY }}
+          WXNODUS_SERVE_TOKEN: ''
+        run: >-
+          git diff --name-only origin/master...HEAD > changed.txt;
+          wxnodus -p "审查以下变更文件（$(Get-Content changed.txt)）：找逻辑缺陷/回归风险，输出简表；无问题只输出 PASS"
+      - name: 未通过摘要
+        if: ${{ failure() }}
+        run: echo "::error title=wxnodus 审查未通过::详见上一步输出（42=输入错误 53=轮次上限）"
