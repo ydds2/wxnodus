@@ -2,6 +2,11 @@
   "name": "wxnodus",
   "version": "4.0.0",
   "type": "module",
+  "workspaces": [
+    "packages/hermes-tui",
+    "packages/hermes-shared",
+    "packages/hermes-ink"
+  ],
   "description": "WxNodus V3 — Windows 本地 AI agent CLI（Node22 + TypeScript）",
   "bin": {
     "wxnodus": "dist/cli/index.js",
@@ -113,6 +118,7 @@
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
+    "@types/ws": "^8.18.1",
     "@wxnodus/ink": "file:packages/wxnodus-ink",
     "better-sqlite3": "^12.11.1",
     "mdast-util-from-markdown": "^2.0.3",
@@ -130,6 +136,7 @@
     "sqlite-vec": "^0.1.9",
     "undici": "^7.0.0",
     "unicode-animations": "^1.0.3",
+    "ws": "^8.21.3",
     "yaml": "2.8.1"
   },
   "devDependencies": {
@@ -167,5 +174,8 @@
   "bundledDependencies": [
     "@wxnodus/ink"
   ],
-  "prepack": "npm run build"
+  "prepack": "npm run build",
+  "bundleDependencies": [
+    "@wxnodus/ink"
+  ]
 }

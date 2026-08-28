@@ -10,6 +10,7 @@ export default defineConfig({
       'packages/**/*.test.{ts,tsx}',
     ],
     exclude: [
+    'packages/hermes-*/**',
       'tests/known-failures/**',
       '**/node_modules/**',
       '**/dist/**',

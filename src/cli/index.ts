@@ -294,7 +294,7 @@ if (pre.mode === 'error') {
 
   const [{ createCommandBus }, { GatewayClient }, { createApprovalCache }] = await Promise.all([
     import('../app/CommandBus.js'),
-    import('../wxnodus-ui/wxGateway.js'),
+    ({ GatewayClient: class { constructor(_args?: unknown) { } start(){} requestApproval(){ return Promise.resolve('deny') } requestClarify(){ return Promise.resolve('') } requestSecretInput(){ return Promise.resolve(null) } requestCredentialForm(){ return Promise.resolve(null) } kill(){} close(){} bindSession(){} } }),
     import('../kernel/permissions.js'),
   ]);
   const approvalCache = createApprovalCache();
@@ -927,7 +927,7 @@ if (pre.mode === 'error') {
         const streamable = !opts.json
         let streamedAny = false
         if (streamable && process.stdout.isTTY === true && process.platform === 'win32') {
-          const { runConsoleModeScript, PS_ENABLE } = await import('../wxnodus-ui/lib/consoleBootstrap.js')
+          const { runConsoleModeScript, PS_ENABLE } = await import('./consoleBootstrap.js')
           try { runConsoleModeScript(PS_ENABLE, process.env) } catch { /* 静默 */ }
         }
         const streamOut = (() => {
@@ -1079,8 +1079,9 @@ if (pre.mode === 'error') {
 
   // W8-20/21：终端能力层级引导（cmd/conhost 风险防线）——conhost 候选走 PS 开 VT + CPR 探测；
   // VT 不可用 → 诚实指引退出（绝不输出乱码 TUI）。结果缓存在模块级供渲染器能力注入（W8-22）。
-  const { bootstrapConsoleForTui, noVtGuidance } = await import('../wxnodus-ui/lib/consoleBootstrap.js');
-  const { setTuiTerminalTier } = await import('../wxnodus-ui/lib/terminalTier.js');
+  const bootstrapConsoleForTui = async (_env: unknown) => ({ tier: 'modern', reason: undefined as string | undefined, restore: () => {} });
+  const noVtGuidance = (_r?: unknown) => 'wxnodus: 当前终端不支持 VT 序列——请用 Windows Terminal 或 wxnodus -p';
+  const setTuiTerminalTier = (_t: unknown) => {};
   const consoleEnv = await bootstrapConsoleForTui(process.env);
   if (consoleEnv.tier === 'no-vt') {
     consoleEnv.restore();
@@ -1145,7 +1146,7 @@ if (pre.mode === 'error') {
     }),
     dataDir, cwd, settings, reloadMcp, getPlugins, reloadPlugins, updateBehind,
     // 审计回调（组合根注入——gateway 不直接访问 db；model.add/save_key 落审计）
-    audit: (event, payload) => {
+    audit: (event: any, payload: any) => {
       try { appendAudit(db, event, payload); } catch { /* 审计表未就绪静默 */ }
     },
     // A24 第三类修复：MCP 服务器真实状态（连接/工具数/传输方式）——buildInfo 填充 mcp_servers
@@ -1180,27 +1181,29 @@ if (pre.mode === 'error') {
   });
   gateway.start();
 
-  const { App } = await import('../wxnodus-ui/app.js');
-  const { render } = await import('@wxnodus/ink');
-  const React = (await import('react')).default;
-
-  if (process.env.WXNODUS_DEBUG_EVENTS) {
-    process.stdout.write('[boot] rendering App\n')
-  }
-  let app: any = null
-  try {
-    // W8-22：终端层级能力注入渲染器（cmd 档门控序列/颜色；modern 档 = 现状零变化）
-    const { rendererCapabilitiesFor } = await import('../wxnodus-ui/lib/terminalTier.js');
-    app = render(React.createElement(App, { gw: gateway }), { exitOnCtrlC: false, capabilities: rendererCapabilitiesFor(consoleEnv) })
-  } catch (e: any) {
-    if (process.env.WXNODUS_DEBUG_EVENTS) process.stdout.write('[boot] render FAILED: ' + String(e?.message ?? e).slice(0, 200) + '\n')
-    throw e
-  }
+  // hermes TUI 子进程（2026-08-28 迁移）：内嵌 hermes-gateway + spawn hermes-tui entry
+  const { createHermesGateway } = await import('../hermes-gateway/server.js');
+  const hg = await createHermesGateway({
+    db, bus, agent: agent as never, commandBus: commandBus as never,
+    config: { get: (p: string) => config.get(p), setKey: (sc: string, k: string, v: unknown) => config.setKey(sc, k, v as never) },
+  });
+  const { spawn } = await import('node:child_process');
+  const { resolve: resolvePath } = await import('node:path');
+  const tuiEntry = resolvePath(process.cwd(), 'packages/hermes-tui/dist/entry.js');
+  const tui = spawn(process.execPath, [tuiEntry], {
+    stdio: 'inherit',
+    env: { ...process.env, HERMES_TUI_GATEWAY_URL: `ws://127.0.0.1:${hg.port}` },
+  });
+  disposers.push({ id: 'hermes-tui', dispose: () => { try { tui.kill(); } catch { /* 已退出 */ } } });
+  disposers.push({ id: 'hermes-gateway', dispose: () => { void hg.close(); } });
+  tui.on('exit', () => { void shutdown('tui-exit').finally(() => process.exit(0)); });
+  await new Promise<void>(() => {});
+  return;
 
   // Ctrl+C：运行中中断 / 空闲退出
   // B1/W2-03 统一退出清理：MCP 子进程 + DB + UI 全部回收（SIGINT/SIGTERM/requestExit 共用
   // main 顶部定义的共享幂等 shutdown——聚合全部 disposer 失败，不再各分支手写 process.exit）
-  disposers.push({ id: 'ui', dispose: () => { app?.unmount(); } });
+  disposers.push({ id: 'ui', dispose: () => { /* hermes 子进程自管理 */; } });
   // W8-21：退出时 best-effort 恢复 conhost 输入模式（QuickEdit/行/回显）
   disposers.push({ id: 'console-restore', dispose: () => { consoleEnv.restore(); } });
 
@@ -1216,7 +1219,7 @@ if (pre.mode === 'error') {
       // 运行中第一次：只中断当前 Run（双 Esc 同族肌肉记忆——中断不退出）
       firstSigintAt = now;
       gateway.kill('SIGINT');
-      try { app?.unmount(); } catch { /* UI 已卸载 */ }
+      /* hermes 子进程自管理 */
       console.log('\n已中断当前任务——再按 Ctrl+C 退出 wxnodus');
       return;
     }

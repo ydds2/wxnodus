@@ -1,4 +1,7 @@
-import { themePresetNames, themeByName, loadUserThemes } from '../wxnodus-ui/theme.js';
+// hermes 迁移（2026-08-28）：wxnodus 主题体系随旧 UI 移除——桩（hermes 皮肤体系独立）
+const themePresetNames = () => ['dark', 'light'];
+const themeByName = (name: string, _env?: unknown, _presets?: unknown) => (name === 'dark' || name === 'light' ? { name } : null);
+const loadUserThemes = (_d?: string) => ({ presets: {} as Record<string, unknown>, warnings: [] as string[] });
 // src/commands/handlers.ts — L6-2 核心命令处理器（注册到 CommandBus）
 // 设计：每个命令访问 kernel 上下文（config/db/mem/agent/bus）；输出字符串经消息流呈现
 import type { Config } from '../store/config.js';
