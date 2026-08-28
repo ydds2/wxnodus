@@ -99,10 +99,9 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <div class="frame">
 <nav>
 <h1>WxNodus TUI</h1>
-<div class="sub">原型 v4 · 简洁版<br>27 场景 · 深空主题</div>
+<div class="sub">原型 v4 · 简洁版<br>26 场景 · 深空主题</div>
 <div class="grp">对话核心</div>
-<button data-s="welcome" class="active">01 首屏引导</button>
-<button data-s="idle">02 空闲对话</button>
+<button data-s="idle" class="active">02 空闲对话</button>
 <button data-s="streaming">03 流式中</button>
 <button data-s="tools">04 工具运行树</button>
 <button data-s="approval">05 审批</button>
@@ -137,29 +136,9 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 </nav>
 <main>
 
-<section class="scene active" id="sc-welcome">
-<div class="banner"><span>██╗    █╗██╗  ██╗███╗   ██╗ ██████╗ ██████╗ ██╗   ██╗██╗   ██╗███████╗</span>
-<span>██║    ██║╚██╗██╔╝████╗  ██║██╔═══██╗██╔══██╗██║   ██║██║   ██║██╔════╝</span>
-<span>██║ █╗ ██║ ╚███╔╝ ██╔██╗ ██║██║   ██║██║  ██║██║   ██║██║   ██║███████╗</span>
-<span>██║███╗██║ ██╔██╗ ██║╚██╗██║██║   ██║██║  ██║██║   ██║██║   ██║╚════██║</span>
-<span>╚███╔███╔╝██╔╝ ██╗██║ ╚████║╚██████╔╝██████╔╝╚██████╔╝╚██████╔╝███████║</span>
-<span> ╚═╝╚═╝ ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═════╝  ╚═════╝  ╚═════╝ ╚══════╝</span></div>
-<p class="tagline"><span class="violet">●</span> Windows 本地 AI Agent · 数据不出机 · 三层记忆 <span class="dim">v4.1.0</span></p>
-<div class="block">
-<p class="muted" style="font-size:13px">初始配置 · 3 步</p>
-<ul class="cl">
-<li><b class="ok">✓ 1 语言</b>中文</li>
-<li><b class="warn">▸ 2 密钥</b>粘贴 API Key 回车（AES-256-GCM 本机加密）</li>
-<li><b class="dim">· 3 自检</b>/doctor</li>
-</ul>
-<p class="pline" style="margin-top:14px"><span class="warn" style="font-weight:700;margin-right:10px">❯</span><span class="muted">sk-</span><span style="letter-spacing:3px">••••••••••••••</span><span class="caret" style="background:var(--amber)"></span></p>
-<div class="keys"><span><kbd>Enter</kbd> 确认</span><span><kbd>Esc</kbd> 稍后 /model set-key</span></div>
-</div>
-<div class="status"><span><span class="badge smart">smart</span> deepseek-chat ○</span><span class="dim">记忆 0 条</span><span class="grow"></span><span class="tip">离线可用 /offline on</span></div>
-<div class="cap">01 —— 首屏：banner + 三步引导。密钥掩码输入，黄色聚焦提示符。</div>
-</section>
 
-<section class="scene" id="sc-idle">
+
+<section class="scene active" id="sc-idle">
 <div class="msg u"><i></i><div class="c">帮我在 src/utils/ 下新增 dateFmt.ts，导出中文相对时间函数，配测试</div></div>
 <div class="msg a"><i></i><div class="c">
 <div class="t"><span class="g ok">✓</span><span class="accent">fs_edit</span> src/utils/dateFmt.ts<span class="sub">新建 · 86ms</span></div>
