@@ -1194,7 +1194,11 @@ if (pre.mode === 'error') {
   gateway = hg as never;
   const { spawn } = await import('node:child_process');
   const { resolve: resolvePath } = await import('node:path');
-  const tuiEntry = resolvePath(process.cwd(), 'packages/hermes-tui/dist/entry.js');
+  const { fileURLToPath } = await import('node:url');
+  // TUI entry 定位：相对本模块（dist/cli/index.js → 安装根/packages/...）——开发态（src/cli）与
+  // zip 安装态（dist-installer 布局）统一解析。此前用 process.cwd()：安装后用户在任意目录运行
+  // wxnodus 时 cwd≠安装根 → spawn ENOENT 恒崩（开发态恰好 cwd=仓库根而掩盖）。
+  const tuiEntry = resolvePath(fileURLToPath(new URL('../../packages/hermes-tui/dist/entry.js', import.meta.url)));
   const tui = spawn(process.execPath, [tuiEntry], {
     stdio: 'inherit',
     env: { ...process.env, HERMES_TUI_GATEWAY_URL: `ws://127.0.0.1:${hg.port}` },

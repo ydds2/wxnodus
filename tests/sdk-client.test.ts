@@ -2,7 +2,7 @@
 // 真实链路：spawn dist/cli/index.js --serve --sdk → stdout 握手 → /rpc → /events → stop 托管退出。
 // 前置：dist 已构建（ci 顺序 build→test；独立跑请先 npm run build）。
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { launchWxnodus, type WxnodusHandle } from '../packages/sdk/src/index.js';
 
@@ -24,7 +24,7 @@ describe.skipIf(!existsSync(distEntry))('@wxnodus/sdk 集成（真实子进程�
     expect(h.port).toBeGreaterThan(0);
     expect(h.token.length).toBeGreaterThanOrEqual(20);
     expect(h.pid).toBeGreaterThan(0);
-    expect(h.version).toBe('4.0.0');
+    expect(h.version).toBe(JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')).version);
     expect(h.protocolVersion).toBe(1);
     expect(wxn.baseUrl).toBe(`http://127.0.0.1:${h.port}`);
   });
