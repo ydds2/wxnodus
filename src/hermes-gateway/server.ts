@@ -269,6 +269,21 @@ export function createHermesGateway(deps: HermesGatewayDeps): Promise<HermesGate
     'image.detach': () => ({ ok: true }),
     'completion.complete': () => ({ items: [] }),
     'history.search': () => ({ results: [] }),
+    // —— TUI 启动流程调用面（2026-08-29 空白屏修复补齐——此前「方法未实现」error 刷屏）——
+    // 语音唤醒：wxnodus 无语音后端——诚实拒绝（TUI wake.ts 按 reason 展示提示）
+    'wake.start': () => ({ started: false, reason: 'voice_unavailable', hint: 'wxnodus 未启用语音唤醒' }),
+    // slash 命令目录：真实 registry（SLASH + 中文描述 → canon 映射）
+    'commands.catalog': async () => {
+      const { SLASH, COMMAND_DESC } = await import('../commands/registry.js');
+      const canon: Record<string, string> = {};
+      for (const cmd of SLASH) canon[cmd] = COMMAND_DESC[cmd] ?? '';
+      return { canon, skill_count: 0 };
+    },
+    // 模型/密钥就绪检查：真实判定（有 baseURL 或已存密钥 = provider_configured）
+    'setup.status': () => {
+      const s = (deps.config.get('settings') ?? {}) as Record<string, unknown>;
+      return { provider_configured: Boolean(s.apiKeyEnc || s.baseURL || s.model) };
+    },
   };
 
   async function handleFrame(ws: WebSocket, raw: string): Promise<void> {

@@ -30,7 +30,7 @@ const buildUiState = (): UiState => ({
   sessionTitle: '',
   showReasoning: false,
   sid: null,
-  status: 'summoning hermes…',
+  status: '正在启动 WxNodus…',
   statusBar: 'top',
   streaming: true,
   timestamps: false,

@@ -723,7 +723,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     getFullConfigOnce()
       .then(cfg => {
         if (!cfg?.config?.display?.tui_auto_resume_recent) {
-          patchUiState({ status: 'forging session…' })
+          patchUiState({ status: '建立会话中…' })
           newSession()
           scheduleStartupPrompt()
 
@@ -741,13 +741,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
             return
           }
 
-          patchUiState({ status: 'forging session…' })
+          patchUiState({ status: '建立会话中…' })
           newSession()
           scheduleStartupPrompt()
         })
       })
       .catch(() => {
-        patchUiState({ status: 'forging session…' })
+        patchUiState({ status: '建立会话中…' })
         newSession()
         scheduleStartupPrompt()
       })
@@ -778,7 +778,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         patchUiState(state => ({
           ...state,
           info,
-          status: state.status === 'starting agent…' ? 'ready' : state.status,
+          status: state.status === '正在启动 agent…' ? 'ready' : state.status,
           usage: info.usage ? mergeUsageStable(state.usage, info.usage) : state.usage
         }))
 
