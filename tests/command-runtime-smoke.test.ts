@@ -59,20 +59,25 @@ describe('命令运行时冒烟（反虚假：注册即真实可执行）', () =
     expect(unresolved, `注册表有命令但无 handler（含别名目标）: ${unresolved.join(', ')}`).toEqual([]);
   });
 
-  it('SLASH 全量无参数执行：不抛异常、不假失败、不挂起（单命令 5s 上界）', async () => {
+  it('SLASH 全量无参数执行：不抛异常、不假失败、不挂起（分级上界：CPU 5s / 网络 20s）', async () => {
     const bus = buildBus();
     const problems: string[] = [];
+    // 分级上界（flaky 根治 2026-08-28）：/doctor 是唯一做真网络 I/O 的命令
+    //（A2 端点连通 + 系统代理预取）——全量并发（462 文件）下 5s 上界误判挂起（单跑 8s 通过）。
+    // 纯 CPU 命令维持 5s；网络命令放宽 20s（探测超时本身 4s×若干轴，20s 仍能捕真死锁）。
+    const NET_COMMANDS = new Set(['/doctor']);
     for (const cmd of SLASH) {
       if (SKIP_NO_ARG.has(cmd)) continue;
+      const cap = NET_COMMANDS.has(cmd) ? 20_000 : 5_000;
       const t0 = Date.now();
       let r: Awaited<ReturnType<ReturnType<typeof createCommandBus>['execute']>>;
       try {
         r = await Promise.race([
           bus.execute(cmd),
-          new Promise<never>((_, rej) => setTimeout(() => rej(new Error('HANG')), 5000)),
+          new Promise<never>((_, rej) => setTimeout(() => rej(new Error('HANG')), cap)),
         ]);
       } catch (e: any) {
-        problems.push(`${cmd} → ${e?.message === 'HANG' ? `挂起 >5s（${Date.now() - t0}ms）` : `throw: ${e?.message ?? e}`}`);
+        problems.push(`${cmd} → ${e?.message === 'HANG' ? `挂起 >${cap / 1000}s（${Date.now() - t0}ms）` : `throw: ${e?.message ?? e}`}`);
         continue;
       }
       if (!r.ok && (!r.completionStatus || r.completionStatus === 'failed' || r.completionStatus === 'cancelled')) {

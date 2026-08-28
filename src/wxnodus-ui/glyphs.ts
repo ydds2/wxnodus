@@ -12,7 +12,7 @@ export interface GlyphDef {
 
 export const GLYPHS = {
   brand: { modern: '◉', cmd: '◆', ascii: 'O' },
-  prompt: { modern: '❯', cmd: '>', ascii: '>' },
+  prompt: { modern: '✨', cmd: '>', ascii: '>' }, // kimi PROMPT_SYMBOL 对齐
   tool: { modern: '┊', cmd: '│', ascii: '|' },
   // 2026-08-19 工具调用行前缀（对标 Claude Code ⏺ / Codex 同族）
   toolCall: { modern: '⏺', cmd: '•', ascii: '*' },

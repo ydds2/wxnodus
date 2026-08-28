@@ -28,6 +28,7 @@ import { usageSegmentLabel } from '../lib/balanceStatus.js'
 import { AgentsOverlay } from './agentsOverlay.js'
 import { GoodVibesHeart, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { BlackHolePet, WelcomeCard, modeBadgeSpec, type PetMood } from './blackHolePet.js'
+import { KimiWelcomeCard, KimiInputHeader, KimiStatusZone, BgSummaryLine } from './kimiChrome.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { RightPanelPane } from './rightPanel.js'
 import { Banner, Panel, SessionPanel } from './branding.js'
@@ -40,6 +41,9 @@ import { StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
 import { getVimModeEnabled } from '../config/vimMode.js'
 import { icon } from '../glyphs.js'
+
+// kimi 视觉模式（2026-08-28 全面对齐）：默认开——隐藏自有装饰（BrandBar/宠物/心形），换 kimi 三件套；WXNODUS_UI_CLASSIC=1 回归
+const kimiStyle = process.env.WXNODUS_UI_CLASSIC !== '1'
 
 const PromptPrefix = memo(function PromptPrefix({
   bold = false,
@@ -73,27 +77,6 @@ const modelBarLabel = (model: string, profile: string) => {
   return parts.join(' · ')
 }
 
-// A24：后台活动摘要行——运行中任务/终端/goal 循环一览
-const BgSummaryLine = memo(function BgSummaryLine() {
-  const ui = useStore($uiState)
-  const bg = useBgSelector(s => s)
-  const terms = bg.terms.filter(x => x.status === 'running').length
-  const jobs = bg.jobs.filter(j => j.status === 'running' || j.status === 'queued').length
-  const parts: string[] = []
-  if (jobs) parts.push(`${jobs} 任务`)
-  if (terms) parts.push(`${terms} 终端`)
-  if (bg.goal?.active) parts.push(bg.goal.cancelled ? `goal 已取消（${bg.goal.round}/${bg.goal.maxRounds} 轮）` : `goal ${bg.goal.round}/${bg.goal.maxRounds} 轮`)
-  if (bgActiveCount(bg) === 0 || !parts.length) return null
-
-  return (
-    <Box>
-      <Text color={ui.theme.color.muted}>
-        <Text color={ui.theme.color.accent}>{icon('copy')} 后台：</Text>
-        {parts.join(' · ')}
-      </Text>
-    </Box>
-  )
-})
 
 const TranscriptPane = memo(function TranscriptPane({
   actions,
@@ -103,16 +86,13 @@ const TranscriptPane = memo(function TranscriptPane({
 }: Pick<AppLayoutProps, 'actions' | 'composer' | 'progress' | 'transcript'>) {
   const ui = useStore($uiState)
 
-  // 单栏布局（双栏已取消）：消息渲染宽度恒等于终端宽度。
+    // 单栏布局（双栏已取消）：消息渲染宽度恒等于终端宽度。
   const msgCols = composer.cols
 
   return (
     <>
-      {/* 品牌差异化：常驻品牌顶栏——不随消息滚动消失（黑洞引擎视觉锚点） */}
-      <BrandBar
-        rightLabel={modelBarLabel(ui.info?.model ?? '', ui.info?.profile_name ?? '')}
-        t={ui.theme}
-      />
+      {/* 品牌顶栏：kimi 模式隐藏（欢迎卡即品牌锚点） */}
+      {!kimiStyle && <BrandBar rightLabel={modelBarLabel(ui.info?.model ?? '', ui.info?.profile_name ?? '')} t={ui.theme} />}
       {/* 滚动条几何 row：只包 ScrollBox 与其右侧滚动条——滚动条横向占 1 列、高度
           跟随整行拉伸（无纵向反馈回路，±1 行取整翻转抖动不回归）；ScrollBox 独占
           剩余全宽（BrandBar 不在本 row 内——否则 transcript 被挤成右缘窄条）。 */}
@@ -290,11 +270,8 @@ const ComposerPane = memo(function ComposerPane({
 
       <StatusRulePane actions={actions} at="top" composer={composer} status={status} />
 
-      {/* V4 UI 闭环（kimi 像素复刻）：输入区分隔头 ── input ────。宽度按容器内宽
-          （cols-2 paddingX）+ truncate-end——溢出会按词换行拆出「put」碎行（真机残影根因） */}
-      <Text color={ui.theme.color.border} wrap="truncate-end">
-        {'─'.repeat(2)} input {'─'.repeat(Math.max(0, composer.cols - 12))}
-      </Text>
+      {/* kimi 输入区分隔头：灰实线/plan 蓝虚线/N queued */}
+      <KimiInputHeader cols={composer.cols - 2} plan={(ui.info?.perm ?? 'smart') === 'plan'} queued={composer.queuedDisplay?.length ?? 0} />
 
       <Box flexDirection="column" marginTop={ui.statusBar === 'top' ? 0 : 1} position="relative">
         <FloatingOverlays
@@ -376,7 +353,7 @@ const ComposerPane = memo(function ComposerPane({
             <Text color={status.voiceRecording ? ui.theme.color.error : ui.theme.color.accent}>
               {status.voiceRecording ? `${icon('rec')} ` : `${icon('mic')} `}
             </Text>
-            <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
+        {!kimiStyle && <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />}
           </Box>
         ) : (
           <Box onClick={actions.toggleVoiceMode}>
@@ -431,6 +408,9 @@ const StatusRulePane = memo(function StatusRulePane({
   const perm = modeBadgeSpec(ui.info?.perm ?? 'smart')
   const petMood: PetMood = ui.busy ? 'busy' : outcome === 'denied' || ui.notice?.level === 'error' ? 'error' : 'idle'
 
+  if (kimiStyle) return <KimiStatusZone model={ui.info?.model ?? ''} thinking={ui.busy} cwd={String(status.cwdLabel ?? '')} bgCount={bgActiveCount(useBgSelector(s => s))}
+    cols={composer.cols} perm={ui.info?.perm ?? 'smart'} top={at === 'top'} notice={ui.notice} usage={ui.usage as never} t={ui.theme} />
+
   return (
     <Box marginTop={at === 'top' ? 1 : 0}>
       <StatusRule
@@ -458,7 +438,7 @@ const StatusRulePane = memo(function StatusRulePane({
         onModelClick={() => pushOverlay({ kind: 'modelPicker' })}
         permLabel={perm.label}
         permTone={perm.tone}
-        pet={<BlackHolePet mood={petMood} t={ui.theme} />}
+        pet={kimiStyle ? undefined : <BlackHolePet mood={petMood} t={ui.theme} />}
         selectionHint={ui.selectionHint}
         sessionStartedAt={status.sessionStartedAt}
         showCost={ui.showCost}
@@ -531,7 +511,9 @@ export const AppLayout = memo(function AppLayout({
         <Box flexDirection="column" flexGrow={1} flexShrink={1}>
         {/* 启动欢迎卡片：吸积盘 6 帧（1.5s）后自消散——仅 full 动效档且
             WXNODUS_NO_INTRO 未设时出现（简约：只占启动一瞬，之后永不再现） */}
-        <WelcomeCard mode={ui.info?.perm ?? 'smart'} t={ui.theme} />
+        {kimiStyle
+          ? <KimiWelcomeCard model={ui.info?.model ?? ''} cwd={String(status.cwdLabel ?? '')} sessionId={ui.sessionTitle || 'default'} t={ui.theme} />
+          : <WelcomeCard mode={ui.info?.perm ?? 'smart'} t={ui.theme} />}
         {/* 单栏内容结构：主列直接放 transcript/agents——无外层 row 包装。
             （历史回归：row 包住整个 TranscriptPane 时 BrandBar 占满整行，
             ScrollBox 被挤成右缘 2 列窄条——即用户曾看到的「双栏」与
