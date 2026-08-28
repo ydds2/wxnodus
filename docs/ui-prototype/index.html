@@ -255,9 +255,21 @@
     <button data-s="clarify"><span class="k">09</span>澄清面板</button>
     <button data-s="secret"><span class="k">10</span>密钥输入</button>
     <button data-s="help"><span class="k">11</span>帮助页</button>
-    <div class="group">状态/异常</div>
+    <div class="group">wxnodus 工作区</div>
+    <button data-s="memory"><span class="k">14</span>记忆黑洞工作区</button>
+    <button data-s="build"><span class="k">15</span>需求编译全景</button>
+    <button data-s="doctor"><span class="k">16</span>系统自检矩阵</button>
+    <button data-s="security"><span class="k">17</span>安全中心</button>
+    <button data-s="eco"><span class="k">18</span>组件生态市场</button>
+    <div class="group">状态/扩展</div>
     <button data-s="error"><span class="k">12</span>错误与重试</button>
     <button data-s="busy"><span class="k">13</span>后台任务/排队</button>
+    <button data-s="offline"><span class="k">19</span>离线生存模式</button>
+    <button data-s="usage"><span class="k">20</span>用量与成本</button>
+    <button data-s="sessions"><span class="k">21</span>多会话血缘</button>
+    <button data-s="computer"><span class="k">22</span>计算机使用</button>
+    <div class="group">元</div>
+    <button data-s="derivation"><span class="k">00</span>设计推导（必读）</button>
   </nav>
 
   <main class="term-wrap">
@@ -723,10 +735,335 @@
         <div class="scene-caption">场景 13 —— 后台任务。转录流内<b>后台活动卡</b>（●运行/◐循环 计数）；完成通知自动回流模型上下文（kimi 通知投递机制）；输入永不阻塞。</div>
       </section>
 
+
+      <!-- ═══════════ 00 设计推导（必读） ═══════════ -->
+      <section class="scene" id="sc-derivation">
+        <div class="row" style="margin:4px 0 8px">
+          <div class="bar bar-accent"></div>
+          <div class="content"><b class="accent">TUI 设计推导</b> <span class="dim">· 从产品真实形态推导信息架构，而非通用聊天流贴皮（依据 docs/gap-matrix-2026-08-27.md · src/commands/registry.ts 100+ 命令 · KF-001~028）</span></div>
+        </div>
+        <div class="codeblock" style="font-size:12px; line-height:1.8"><span class="cm">┌─ 第一性推导链 ──────────────────────────────────────────────────────┐</span>
+<span class="cm">│</span> 产品本质：Windows 本地数据主权 agent <span class="kw">工作台</span>（非纯聊天 CLI）  <span class="cm">│</span>
+<span class="cm">│</span>   差异化领先（必须一等展示）          缺口（必须诚实呈现）      <span class="cm">│</span>
+<span class="cm">│</span>   ● 黑洞三层记忆（六家唯一检索式）    ○ 压缩弱于 codex 远程压缩  <span class="cm">│</span>
+<span class="cm">│</span>   ● 49 内置工具（最宽）               ○ 循环检测弱于 gemini      <span class="cm">│</span>
+<span class="cm">│</span>   ● computer use 12 工具（独有）      ○ D-Mail 时间旅行未对齐    <span class="cm">│</span>
+<span class="cm">│</span>   ● DeepSeek Harness（六家无等价）    ○ LSP 默认关（3 工具）     <span class="cm">│</span>
+<span class="cm">│</span>   ● AES-256-GCM 密钥（唯一本地加密）  ○ autoReview 默认关        <span class="cm">│</span>
+<span class="cm">│</span>   ● 三层审计哈希链（唯一）            ○ 沙箱弱于 codex WFP       <span class="cm">│</span>
+<span class="cm">│</span>   ● /bundle 离线整包分发（独有）      ○ repo map 弱于 aider      <span class="cm">│</span>
+<span class="cm">│</span>                                                          <span class="cm">│</span>
+<span class="cm">│</span> ⇒ 信息架构：对话流 ≠ 全部——TUI 主轴 = 四大工作区 + 对话核心  <span class="cm">│</span>
+<span class="cm">│</span>    [对话核心] 转录/流式/工具树/审批（场景 01-05）         <span class="cm">│</span>
+<span class="cm">│</span>    [记忆区]   三层记忆/检索/归档（14——差异化一等公民）     <span class="cm">│</span>
+<span class="cm">│</span>    [构建区]   需求编译管道/证据链（15——/build 独有流程）    <span class="cm">│</span>
+<span class="cm">│</span>    [安全区]   权限规则/审计链/保险库（17——合规红线可视化）  <span class="cm">│</span>
+<span class="cm">│</span>    [生态区]   MCP/Skill/市场消费/bundle（18——只收不出）     <span class="cm">│</span>
+<span class="cm">│</span>                                                          <span class="cm">│</span>
+<span class="cm">│</span> ⇒ 诚实原则：能力状态来自 /doctor 实测（16）——领先亮明、缺口     <span class="cm">│</span>
+<span class="cm">│</span>    可见并给引导（审批面板提示「AI 预审可开」等）              <span class="cm">│</span>
+<span class="cm">│</span> ⇒ 命令面映射：100+ 命令 ≠ 100 按钮——高频 8 条进状态栏/快捷键， <span class="cm">│</span>
+<span class="cm">│</span>    长尾进 /help 分栏目录（07/11）                            <span class="cm">│</span>
+<span class="cm">└──────────────────────────────────────────────────────────────┘</span></div>
+        <div class="help-cols" style="margin-top:12px">
+          <div class="help-col">
+            <h4>◆ v2 演化（+9 场景）</h4>
+            <div class="help-item"><b>+00 推导页</b>本页——设计可追溯</div>
+            <div class="help-item"><b>+14 记忆工作区</b>差异化一等公民</div>
+            <div class="help-item"><b>+15 需求编译</b>管道全景+证据链</div>
+            <div class="help-item"><b>+16 自检矩阵</b>能力诚实呈现</div>
+            <div class="help-item"><b>+17 安全中心</b>审计哈希链可视化</div>
+          </div>
+          <div class="help-col">
+            <h4>◆ 续</h4>
+            <div class="help-item"><b>+18 生态市场</b>MCP/Skill/bundle</div>
+            <div class="help-item"><b>+19 离线生存</b>无 key 模式全景</div>
+            <div class="help-item"><b>+20 用量成本</b>DS Harness 成本诚实</div>
+            <div class="help-item"><b>+21 会话血缘</b>fork 树+checkpoint</div>
+            <div class="help-item"><b>+22 计算机使用</b>UIA 元素级回显</div>
+          </div>
+          <div class="help-col">
+            <h4>◆ 不变的系统层</h4>
+            <div class="help-item"><b>左边条</b>▌用户/▌助手/工具三态</div>
+            <div class="help-item"><b>双通道</b>Enter 排队 / Ctrl+S steer</div>
+            <div class="help-item"><b>状态栏降级</b>模式(模型)·cwd·git·⚙</div>
+            <div class="help-item"><b>覆盖式浮层</b>审批黄/澄清蓝/密钥紫</div>
+            <div class="help-item"><b>语义 token</b>深空主题+终端自适应</div>
+          </div>
+        </div>
+        <div class="scene-caption">场景 00 —— 设计推导。四大工作区由 wxnodus 独有能力推导而来；缺口项在 UI 诚实呈现并给引导——<b>领先亮明、缺口可见、绿色谎言零容忍</b>。</div>
+      </section>
+
+      <!-- ═══════════ 14 记忆黑洞工作区 ═══════════ -->
+      <section class="scene" id="sc-memory">
+        <div class="row" style="margin:4px 0 8px">
+          <div class="bar bar-accent2"></div>
+          <div class="content"><b class="accent2">◆ 记忆黑洞</b> <span class="dim">· /memory · /hole · 三层记忆引擎（working / archival / recall）——六家 CLI 唯一检索式长期记忆</span></div>
+        </div>
+        <div class="help-cols">
+          <div class="help-col" style="flex:1.3">
+            <div class="codeblock" style="font-size:12px; line-height:1.75"><span class="cm">│ 检索（/hole "认证逻辑的坑"）</span>
+<span class="fn">hit 1</span> <span class="st">[archival·94%]</span> 2026-08-12 会话「JWT 刷新竞态」
+<span class="cm">      └ 刷新令牌轮换必须原子——旧 token 5 分钟宽限…</span>
+<span class="fn">hit 2</span> <span class="st">[recall·88%]</span> 2026-08-19 会话「SSO 接入」
+<span class="cm">      └ redirect_uri 白名单缺 https 强制…</span>
+<span class="fn">hit 3</span> <span class="st">[working·71%]</span> 当前会话 turn 12
+<span class="cm">      └ 用户偏好：改完必跑 npm test</span>
+<span class="cm">│ 混合检索：FTS5 中文 bigram + sqlite-vec 向量 KNN 融合</span></div>
+          </div>
+          <div class="help-col">
+            <div class="todo-box">
+              <div class="t-head">三层存量 <span class="dim">· /digest 手动 · curator 自动</span></div>
+              <div><span class="ok">●</span> working <span class="v">当前会话</span> <span class="dim">142 条消息</span></div>
+              <div><span class="accent">◐</span> archival <span class="v">12 会话归档</span> <span class="dim">1,208 条 · 压缩率 31%</span></div>
+              <div><span class="accent2">◇</span> recall <span class="v">高频召回 37 条</span> <span class="dim">跨会话复用</span></div>
+            </div>
+            <div class="todo-box">
+              <div class="t-head">curator 审查 <span class="dim">· 自动吸附/降权</span></div>
+              <div><span class="ok">☑</span> 全量 2,391 条索引完整（FTS 同步）</div>
+              <div><span class="ok">☑</span> 工作窗口 142 条 · 无越权（session 隔离）</div>
+              <div><span class="dim">☐ 建议归档：3 会话 &gt;30 天未活跃（/compact）</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="keysrow"><span><kbd>/hole</kbd> 语义检索</span><span><kbd>/memory</kbd> 管理面板</span><span><kbd>/digest</kbd> 手动摘要归档</span><span><kbd>/compact</kbd> 三级压缩（micro/全量/413 强压）</span><span><kbd>Ctrl+M</kbd> 当前话题快速检索</span></div>
+        <div class="scene-caption">场景 14 —— 记忆工作区（差异化一等公民）。左：混合检索命中（<b>来源层+相似度+摘要折叠</b>）；右：三层存量+curator 审查。压缩三级明示（缺口诚实：弱于 codex 服务端远程压缩——本地摘要替代）。</div>
+      </section>
+
+      <!-- ═══════════ 15 需求编译全景 ═══════════ -->
+      <section class="scene" id="sc-build">
+        <div class="row" style="margin:4px 0 8px">
+          <div class="bar bar-accent"></div>
+          <div class="content"><b class="accent">◆ 需求编译</b> <span class="dim">· /build —— 规格 → 分解 → 脚手架 → 验证 → 证据链（wxnodus 独有流程）</span></div>
+        </div>
+        <div class="codeblock" style="font-size:12.5px; line-height:1.9"><span class="ok">✓</span> <span class="fn">阶段 1/5 · 规格解析</span>  「做一个待办系统」→ 规格卡（功能 5/非功能 2/边界 3）  <span class="cm">1.2s</span>
+<span class="ok">✓</span> <span class="fn">阶段 2/5 · 任务分解</span>  9 任务 · 依赖图 DAG · 预估 6 回合
+<span class="accent">◐</span> <span class="fn">阶段 3/5 · 脚手架</span>  todo-cli/ 生成中 · 9/9 文件                    <span class="spinner-dots"></span>
+<span class="cm">·</span> <span class="fn">阶段 4/5 · 验证</span>    启动 / 探活 / 读回（三段式——产物必须可运行）     <span class="cm">等待</span>
+<span class="cm">·</span> <span class="fn">阶段 5/5 · 证据链</span>  规格卡→任务→工具→验证输出 全链归档             <span class="cm">等待</span>
+<span class="cm">──────────────────────────────────────────────────────────</span>
+<span class="cm">│ 证据链预览（阶段 5 产物——审计基石，hash 链防篡改）</span>
+<span class="cm">│ spec#1a4f → task#3 → fs_edit(dateFmt.ts) → bash(npm test)</span>
+<span class="cm">│           → verify[exit 0 · 3 passed] → evidence@sha256:9f2c…</span></div>
+        <div class="keysrow"><span><kbd>/build</kbd> 全流程</span><span><kbd>/evidence</kbd> 证据链浏览</span><span><kbd>/gate</kbd> 完成门</span><span><kbd>/plan</kbd> 仅生成不执行</span><span><kbd>Esc</kbd> 中止（已完成阶段不回滚）</span></div>
+        <div class="scene-caption">场景 15 —— 需求编译全景。<b>五阶段管道视图</b>（✓/◐/·）+ 耗时 + <b>证据链预览</b>（hash 锚定）。「需求→可运行产物→可审计证据」核心流程给专属全景，而非散落消息流。</div>
+      </section>
+
+      <!-- ═══════════ 16 系统自检矩阵 ═══════════ -->
+      <section class="scene" id="sc-doctor">
+        <div class="row" style="margin:4px 0 8px">
+          <div class="bar bar-success"></div>
+          <div class="content"><b class="ok">◆ 系统自检</b> <span class="dim">· /doctor —— 能力状态诚实呈现：领先亮明 · 缺口可见 · 绝不绿色谎言</span></div>
+        </div>
+        <div class="help-cols">
+          <div class="help-col">
+            <h4>核心通道</h4>
+            <div class="help-item"><b><span class="ok">●</span> 模型</b>deepseek-chat · 密钥已配</div>
+            <div class="help-item"><b><span class="ok">●</span> 记忆</b>FTS5+vec 索引完整 · 2,391 条</div>
+            <div class="help-item"><b><span class="ok">●</span> 工具</b>49 内置 · 12 依赖健康</div>
+            <div class="help-item"><b><span class="ok">●</span> 密钥库</b>AES-256-GCM · 3 提供方</div>
+            <div class="help-item"><b><span class="ok">●</span> 审计链</b>三层策略 · 哈希链校验 ✓</div>
+            <h4>差异化能力</h4>
+            <div class="help-item"><b><span class="ok">●</span> computer use</b>截图/UIA/robotjs ✓</div>
+            <div class="help-item"><b><span class="ok">●</span> 浏览器</b>系统浏览器+SSRF 三层 ✓</div>
+            <div class="help-item"><b><span class="ok">●</span> 语音</b>whisper+SAPI ✓</div>
+            <div class="help-item"><b><span class="ok">●</span> DS Harness</b>10 适配 · 4 不变量 ✓</div>
+          </div>
+          <div class="help-col">
+            <h4>可用但受限（诚实降级）</h4>
+            <div class="help-item"><b><span class="warn">◐</span> LSP</b>3 工具 · <span class="dim">默认关（/config lsp on）</span></div>
+            <div class="help-item"><b><span class="warn">◐</span> autoReview</b>AI 预审 · <span class="dim">默认关（/config autoReview on）</span></div>
+            <div class="help-item"><b><span class="warn">◐</span> 沙盒</b>Low IL 双态 · <span class="dim">弱于 codex WFP（无网络过滤）</span></div>
+            <div class="help-item"><b><span class="warn">◐</span> 远程执行</b>execServer · <span class="dim">未实测电池</span></div>
+            <h4>未交付（fence——如实标注）</h4>
+            <div class="help-item"><b><span class="dim">○</span> forge 视觉引擎</b>仅 /forge 骨架</div>
+            <div class="help-item"><b><span class="dim">○</span> MCP 出站面</b>build/verify/evidence fence（入站可用）</div>
+            <div class="help-item"><b><span class="dim">○</span> 评测任务库</b>3 任务（规模小）</div>
+            <div class="help-item" style="color:var(--fg-dim)">已知问题 28 项全部 resolved-with-regression（KF-001~028）</div>
+          </div>
+        </div>
+        <div class="statusbar">
+          <span class="seg"><span class="ok">● 21 绿</span><span class="warn"> ◐ 4 受限</span><span class="dim"> ○ 3 fence</span></span>
+          <span class="grow"></span>
+          <span class="tip">/doctor --fix 自动修可修项 · 全量报告 /logs/doctor-*.md</span>
+        </div>
+        <div class="scene-caption">场景 16 —— 自检矩阵。四档状态（<b class="ok">●绿</b>/<b class="warn">◐受限</b>/<b>○fence</b>/红故障）来自真实探测（ProbeRegistry），受限项附<b>开启命令</b>，fence 不假装存在。</div>
+      </section>
+
+      <!-- ═══════════ 17 安全中心 ═══════════ -->
+      <section class="scene" id="sc-security">
+        <div class="row" style="margin:4px 0 8px">
+          <div class="bar bar-warn"></div>
+          <div class="content"><b class="warn">◆ 安全中心</b> <span class="dim">· /perm · /audit · /security —— 三层策略+审计哈希链（六家唯一）+ 内存保险库</span></div>
+        </div>
+        <div class="help-cols">
+          <div class="help-col" style="flex:1.2">
+            <h4>权限规则（deny &gt; allow &gt; ask · 全局 deny 不可放宽）</h4>
+            <div class="codeblock" style="font-size:12px; line-height:1.7"><span class="cm"># /perm rule list</span>
+<span class="err">deny</span>  bash "rm -rf /|format|diskpart*"   <span class="cm">硬红线</span>
+<span class="err">deny</span>  fs_write "C:\Windows\**"            <span class="cm">系统路径</span>
+<span class="fn">ask</span>   bash "npm publish*"                  <span class="cm">外发</span>
+<span class="st">allow</span> bash "npm test*|git status"          <span class="cm">只读</span>
+<span class="st">session</span> fs_edit src/**  <span class="cm">本会话授权（session-revoke 撤销）</span></div>
+          </div>
+          <div class="help-col">
+            <h4>审计哈希链（/audit verify ✓）</h4>
+            <div class="codeblock" style="font-size:12px; line-height:1.7"><span class="cm">链尾 sha256:7e1f…（1,842 节点）</span>
+<span class="st">✓</span> 哈希链连续 · 无篡改
+<span class="cm">最新 3 节点：</span>
+<span class="cm">  tool.verdict fs_edit approve</span>
+<span class="cm">  tool.denied bash "curl evil.sh" <span class="err">规则命中</span></span>
+<span class="cm">  secret.access vault[npm] 注入子进程</span></div>
+            <h4>密钥保险库</h4>
+            <div class="todo-box">
+              <div><span class="ok">●</span> deepseek <span class="dim">AES-256-GCM · 归属校验 ✓</span></div>
+              <div><span class="ok">●</span> zhipu <span class="dim">加密存储 ✓</span></div>
+              <div><span class="accent2">🔒</span> npm token <span class="dim">内存保险库（进程即焚）</span></div>
+              <div class="dim" style="margin-top:4px">明文绝不落盘 · /security 注入通道（默认关）</div>
+            </div>
+          </div>
+        </div>
+        <div class="statusbar">
+          <span class="seg"><span class="dim">模式</span> <span class="v">smart</span><span class="dim"> · 六档（/yolo /afk 危险档警示）</span></span>
+          <span class="seg"><span class="ok">沙盒</span><span class="dim">Low IL 受限令牌</span></span>
+          <span class="grow"></span>
+        </div>
+        <div class="scene-caption">场景 17 —— 安全中心。规则按优先级着色（deny 红/ask 蓝/allow 绿/session 紫）；<b>审计哈希链可视化</b>；保险库区分<b>落盘加密 vs 内存即焚</b>两态。</div>
+      </section>
+
+      <!-- ═══════════ 18 组件生态市场 ═══════════ -->
+      <section class="scene" id="sc-eco">
+        <div class="row" style="margin:4px 0 8px">
+          <div class="bar bar-accent"></div>
+          <div class="content"><b class="accent">◆ 组件生态</b> <span class="dim">· /mcp · /plugin · /market · /bundle —— 市场消费「只收不出」+ 离线整包分发（独有）</span></div>
+        </div>
+        <div class="help-cols">
+          <div class="help-col">
+            <h4>MCP（双向）</h4>
+            <div class="help-item"><b><span class="ok">●</span> context7</b>文档检索 · stdio · 4 工具</div>
+            <div class="help-item"><b><span class="ok">●</span> playwright</b>浏览器 · http · 11 工具</div>
+            <div class="help-item"><b><span class="warn">◐</span> filesystem</b>重连中 · <span class="dim">指数退避 2/∞</span></div>
+            <div class="help-item"><b><span class="dim">＋</span> 添加</b>/mcp add（stdio/HTTP）</div>
+            <h4>插件（沙箱运行时）</h4>
+            <div class="help-item"><b><span class="ok">●</span> wxn-lint</b>v1.2 · 生命周期 ✓</div>
+            <div class="help-item"><b><span class="dim">○</span> 无更多</b>/plugin install</div>
+          </div>
+          <div class="help-col">
+            <h4>市场消费（npm + GitHub 双源——六家唯一）</h4>
+            <div class="codeblock" style="font-size:12px; line-height:1.7"><span class="cm">/market search skills "react"</span>
+<span class="fn">skill</span> react-19-patterns  <span class="st">⇩ 2.1k · MIT</span>
+<span class="fn">skill</span> react-testing     <span class="st">⇩ 890 · MIT</span>
+<span class="cm">安装 → ~/.wxnodus/skills/ 热重载</span></div>
+            <h4>/bundle 离线整包分发（独有）</h4>
+            <div class="help-item"><b>publish</b>推用户自有 git remote（主权 A1：出机=显式动作）</div>
+            <div class="help-item"><b>install</b>气隙机器整包装（.wxnshare sha256 防篡改）</div>
+          </div>
+        </div>
+        <div class="scene-caption">场景 18 —— 生态市场。MCP 连接态实时（●/◐+重试）；市场双源消费；<b>/bundle 发布流向用户自有 remote</b>（主权红线可视化）。</div>
+      </section>
+
+      <!-- ═══════════ 19 离线生存模式 ═══════════ -->
+      <section class="scene" id="sc-offline">
+        <div class="banner"><span class="l0" style="font-size:10px">██╗    █╗██╗  ██╗███╗   ██╗ ██████╗ ██████╗ ██╗   ██╗██╗   ██╗███████╗</span></div>
+        <div class="tagline"><span class="dot" style="color:var(--success)">●</span> <b class="ok">离线生存模式</b> —— 无 key · 无网 · 本地推理可用 <span class="dim">（KF-001：无 key 且离线模型就绪 → 绝不输出「请配密钥」引导）</span></div>
+        <div class="todo-box" style="max-width:560px">
+          <div class="t-head">本地模型 wxn-offline-7b <span class="dim">· /offline on 拉取（4.1GB · 断点续传）</span></div>
+          <div><span class="ok">●</span> 模型权重 <span class="v">已就绪</span> <span class="dim">Q4_K_M · CPU 推理 18 tok/s</span></div>
+          <div><span class="ok">●</span> FTS5+向量记忆 <span class="v">全功能</span> <span class="dim">（记忆从不依赖网络）</span></div>
+          <div><span class="ok">●</span> 确定性工具 49 <span class="v">全功能</span> <span class="dim">（calc/hash/sql/fs…本地执行）</span></div>
+          <div><span class="warn">◐</span> 联网工具 7 <span class="dim">降级——web/search/browser 显式拒绝（不假装成功）</span></div>
+        </div>
+        <div class="composer">
+          <div class="mode-prompt">
+            <span class="prompt-sym"><span class="smart">❯</span></span>
+            <div class="content">
+              <div class="input-line"><span class="placeholder">离线也活——本地模型+确定性工具+全量记忆（Ready!）</span></div>
+            </div>
+          </div>
+          <div class="statusbar">
+            <span class="seg"><span class="badge mode-smart">smart</span><span class="dim">(wxn-offline-7b ●)</span><span class="ok">离线</span></span>
+            <span class="seg"><span class="dim">18 tok/s · 内存 3.2G</span></span>
+            <span class="grow"></span>
+            <span class="tip">tip: /model 一键切回在线（key 保留）</span>
+          </div>
+        </div>
+        <div class="scene-caption">场景 19 —— 离线生存。首屏变体：能力卡<b>逐项标注在线依赖</b>（联网工具显式拒绝）；状态栏常驻离线徽章+本地吞吐。</div>
+      </section>
+
+      <!-- ═══════════ 20 用量与成本 ═══════════ -->
+      <section class="scene" id="sc-usage">
+        <div class="row" style="margin:4px 0 8px">
+          <div class="bar bar-accent2"></div>
+          <div class="content"><b class="accent2">◆ 用量与成本</b> <span class="dim">· /usage · /cost · /balance —— DS Harness「成本诚实」不变量</span></div>
+        </div>
+        <div class="help-cols">
+          <div class="help-col" style="flex:1.2">
+            <div class="codeblock" style="font-size:12px; line-height:1.8"><span class="cm">│ 今日（deepseek-chat · DS Harness 成本诚实不变量）</span>
+输入（缓存命中）  <span class="st">1.24M tok</span>  ¥0.62   <span class="cm">← 前缀缓存工程（六家唯一）</span>
+输入（未命中）    <span class="fn">86k tok</span>    ¥0.09
+输出            <span class="fn">203k tok</span>   ¥0.41
+<span class="cm">──────────────────────────────────────</span>
+本日合计 <span class="accent2 bold">¥1.12</span> · 本会话 ¥0.38 · 本月 ¥23.70
+缓存命中率 <span class="ok">93.5%</span>（字节稳定三件套生效——DSH-2）</div>
+          </div>
+          <div class="help-col">
+            <div class="todo-box">
+              <div class="t-head">上下文窗口 <span class="dim">· /context</span></div>
+              <div><span class="ok">●</span> 21.4k / 64k <span class="dim">（33%——压缩阈值 0.85 时尚早）</span></div>
+              <div class="dim">三级压缩待命：micro 增量 → 全量摘要 → 413 强压</div>
+            </div>
+            <div class="todo-box">
+              <div class="t-head">各提供方余额（/balance）</div>
+              <div><span class="ok">●</span> deepseek <span class="v">¥46.20</span></div>
+              <div><span class="ok">●</span> zhipu <span class="v">免费档</span></div>
+              <div><span class="dim">离线模型 ¥0（本地）</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="scene-caption">场景 20 —— 用量与成本。<b>缓存命中分账</b>（DS Harness 工程的可视化收益）+ 上下文水位（三级压缩待命）+ 多提供方余额。缺口诚实：本地计量，非账单直连。</div>
+      </section>
+
+      <!-- ═══════════ 21 多会话血缘 ═══════════ -->
+      <section class="scene" id="sc-sessions">
+        <div class="row" style="margin:4px 0 8px">
+          <div class="bar bar-accent"></div>
+          <div class="content"><b class="accent">◆ 会话与血缘</b> <span class="dim">· /sessions · /fork · /checkpoint —— sessions + forked_from_id 血缘树</span></div>
+        </div>
+        <div class="codeblock" style="font-size:12.5px; line-height:1.85"><span class="fn">●</span> <span class="st">当前</span> 待办系统构建        <span class="cm">today 14:22 · 142 msg · 21.4k tok</span>
+<span class="cm">├─</span> <span class="fn">⑂ fork</span> 竞态修复试验      <span class="cm">today 15:01 · 血缘 ↑ · 试错隔离</span>
+<span class="cm">│    └─</span> <span class="dim">checkpoint#3（npm test 3 passed 后）</span>
+<span class="cm">├─</span> SSO 接入方案评审       <span class="cm">yest 09:14 · 已归档 archival</span>
+<span class="cm">└─</span> JWT 刷新竞态（记忆源）  <span class="cm">08-12 · recall 高频引用</span></div>
+        <div class="keysrow"><span><kbd>↑↓</kbd> 选择</span><span><kbd>Enter</kbd> 恢复</span><span><kbd>F</kbd> fork</span><span><kbd>C</kbd> checkpoint</span><span><kbd>D</kbd> 导出</span><span><kbd>/undo</kbd> 撤销上一回合</span></div>
+        <div class="scene-caption">场景 21 —— 会话血缘树。<b>fork 分支可视化</b>（试错隔离）；checkpoint 节点内嵌；归档会话标注记忆去向（archival/recall）——会话与记忆引擎连接可见。</div>
+      </section>
+
+      <!-- ═══════════ 22 计算机使用 ═══════════ -->
+      <section class="scene" id="sc-computer">
+        <div class="row msg-user">
+          <div class="bar bar-accent"></div>
+          <div class="content">帮我看看微信窗口弹了什么通知，读出来</div>
+        </div>
+        <div class="row msg-assistant" style="margin-top:10px">
+          <div class="bar bar-success"></div>
+          <div class="content">
+            <div class="tool-line"><span class="glyph spinner-dots"></span><span class="accent">computer.screenshot</span> <span class="muted">主显示器 2560×1440</span><span class="dim"> · 320ms</span></div>
+            <div class="codeblock" style="font-size:12px; line-height:1.5"><span class="cm">│ UIA 元素树（computer.describe —— 独有 12 工具之元素级）</span>
+<span class="fn">Window</span> "微信" (WeChatMainWndForPC)
+<span class="cm">├─</span> Pane "聊天列表"
+<span class="cm">│   └─</span> ListItem <span class="st">"妈妈：晚上回家吃饭吗？"</span> <span class="cm">[未读 1]</span>
+<span class="cm">├─</span> Pane "消息区"</span>
+<span class="cm">│   └─</span> Text <span class="st">"张三：文档我改好了，在共享里"</span>
+<span class="cm">└─</span> Button "发送" <span class="cm">[自动化标注：clickable]</span></div>
+            <div style="margin-top:8px">微信有 <b>2 条未读</b>：「妈妈：晚上回家吃饭吗？」和「张三：文档我改好了，在共享里」。需要代你回复吗？（回复将走 <span class="warn">审批</span>——UIA 写操作属 danger 级）</div>
+          </div>
+        </div>
+        <div class="scene-caption">场景 22 —— 计算机使用（独有 12 工具）。<b>UIA 元素树回显</b>（窗口→面板→列表项，可交互元素标注）；读直接执行，<b>写预告审批</b>。</div>
+      </section>
       </div>
     </div>
     <div class="foot-note">
-      WxNodus TUI 全场景原型 v1 · 13 场景 · 深空主题 · 左边条消息系 / 双通道输入 / 黄框审批 / 状态栏降级链<br>
+      WxNodus TUI 全场景原型 v2 · 22 场景（含设计推导页） · 深空主题 · 左边条消息系 / 双通道输入 / 黄框审批 / 状态栏降级链<br>
       设计参考：kimi-cli（双通道·命令菜单·状态栏）+ crush（左边条·聚焦态）+ codex（状态行三件套）——机制借鉴，视觉原创
     </div>
   </main>
