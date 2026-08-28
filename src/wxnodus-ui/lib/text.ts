@@ -1,0 +1,409 @@
+import {
+  LIVE_RENDER_MAX_CHARS,
+  LIVE_RENDER_MAX_LINES,
+  THINKING_COT_MAX,
+  VERBOSE_TRAIL_MAX_CHARS,
+  VERBOSE_TRAIL_MAX_LINES
+} from '../config/limits.js'
+import { VERBS } from '../content/verbs.js'
+import type { ThinkingMode } from '../types.js'
+
+const ESC = String.fromCharCode(27)
+const BEL = String.fromCharCode(7)
+const ANSI_CSI_RE = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, 'g')
+const ANSI_CSI_WITH_CMD_RE = new RegExp(`${ESC}\\[[0-?]*[ -/]*([@-~])`, 'g')
+const ANSI_INCOMPLETE_CSI_RE = new RegExp(`${ESC}\\[[0-?]*[ -/]*(?=${ESC}|\\n|$)`, 'g')
+const ANSI_OSC_RE = new RegExp(`${ESC}\\][\\s\\S]*?(?:${BEL}|${ESC}\\\\)`, 'g')
+const ANSI_STRING_RE = new RegExp(`${ESC}[PX^_][\\s\\S]*?(?:${BEL}|${ESC}\\\\)`, 'g')
+const ANSI_NON_CSI_ESC_SEQ_RE = new RegExp(`${ESC}(?!\\[|\\]|P|X|\\^|_)[ -/]*[0-~]`, 'g')
+const ANSI_STRAY_ESC_RE = new RegExp(`${ESC}(?!\\[)[\\s\\S]?`, 'g')
+const CONTROL_RE = /[\x00-\x08\x0B\x0C\x0D\x0E-\x1A\x1C-\x1F\x7F]/g
+const WS_RE = /\s+/g
+
+export const stripAnsi = (s: string) =>
+  s
+    .replace(ANSI_OSC_RE, '')
+    .replace(ANSI_STRING_RE, '')
+    .replace(ANSI_INCOMPLETE_CSI_RE, '')
+    .replace(ANSI_CSI_RE, '')
+    .replace(ANSI_INCOMPLETE_CSI_RE, '')
+    .replace(ANSI_NON_CSI_ESC_SEQ_RE, '')
+    .replace(ANSI_STRAY_ESC_RE, '')
+    .replace(CONTROL_RE, '')
+
+export const sanitizeAnsiForRender = (s: string) =>
+  s
+    .replace(ANSI_OSC_RE, '')
+    .replace(ANSI_STRING_RE, '')
+    .replace(ANSI_INCOMPLETE_CSI_RE, '')
+    .replace(ANSI_CSI_WITH_CMD_RE, (seq, cmd: string) => (cmd === 'm' ? seq : ''))
+    .replace(ANSI_INCOMPLETE_CSI_RE, '')
+    .replace(ANSI_NON_CSI_ESC_SEQ_RE, '')
+    .replace(ANSI_STRAY_ESC_RE, '')
+    .replace(CONTROL_RE, '')
+
+export const hasAnsi = (s: string) => s.includes(ESC)
+
+const renderEstimateLine = (line: string) => {
+  const trimmed = line.trim()
+
+  if (trimmed.startsWith('|')) {
+    return trimmed
+      .split('|')
+      .filter(Boolean)
+      .map(cell => cell.trim())
+      .join('  ')
+  }
+
+  return line
+    .replace(/!\[(.*?)\]\(([^)\s]+)\)/g, '[image: $1]')
+    .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/(?<!\w)__(.+?)__(?!\w)/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/(?<!\w)_(.+?)_(?!\w)/g, '$1')
+    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/==(.+?)==/g, '$1')
+    .replace(/\[\^([^\]]+)\]/g, '[$1]')
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^\s*[-*+]\s+\[( |x|X)\]\s+/, (_m, checked: string) => `• [${checked.toLowerCase() === 'x' ? 'x' : ' '}] `)
+    .replace(/^\s*[-*+]\s+/, '• ')
+    .replace(/^\s*(\d+)\.\s+/, '$1. ')
+    .replace(/^\s*(?:>\s*)+/, '│ ')
+}
+
+export const compactPreview = (s: string, max: number) => {
+  const one = s.replace(WS_RE, ' ').trim()
+
+  return !one ? '' : one.length > max ? one.slice(0, max - 1) + '…' : one
+}
+
+export const estimateTokensRough = (text: string) => (!text ? 0 : (text.length + 3) >> 2)
+
+export const edgePreview = (s: string, head = 16, tail = 28) => {
+  const one = s.replace(WS_RE, ' ').trim().replace(/\]\]/g, '] ]')
+
+  return !one
+    ? ''
+    : one.length <= head + tail + 4
+      ? one
+      : `${one.slice(0, head).trimEnd()}.. ${one.slice(-tail).trimStart()}`
+}
+
+export const pasteTokenLabel = (text: string, lineCount: number) => {
+  const preview = edgePreview(text)
+
+  if (!preview) {
+    return `[[ [${fmtK(lineCount)} lines] ]]`
+  }
+
+  const [head = preview, tail = ''] = preview.split('.. ', 2)
+
+  return tail
+    ? `[[ ${head.trimEnd()}.. [${fmtK(lineCount)} lines] .. ${tail.trimStart()} ]]`
+    : `[[ ${preview} [${fmtK(lineCount)} lines] ]]`
+}
+
+// 思考状态行识别（中文为主）：匹配「思考中…」/「推理中…」等状态行并剔除——
+// 前缀字符类排除中英文字符（防止吞掉中文动词本身），行首锚定兼容无前缀情况
+const THINKING_STATUS_RE = new RegExp(`^(?:${VERBS.join('|')})\\.{0,3}$`, 'iu')
+const THINKING_STATUS_CHUNK_RE = new RegExp(`(?:^|[^\\u4e00-\\u9fa5A-Za-z\\n]+)(?:${VERBS.join('|')})\\.{0,3}\\s*`, 'giu')
+
+export const cleanThinkingText = (reasoning: string) =>
+  reasoning
+    .split('\n')
+    .map(line => line.replace(THINKING_STATUS_CHUNK_RE, '').trim())
+    .filter(line => line && !THINKING_STATUS_RE.test(line.replace(/\.\.\.$/, '').trim()))
+    .join('\n')
+    .replace(/([^\n])(?=\*\*[^*\n][^\n]*?\*\*)/g, '$1\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+export const thinkingPreview = (reasoning: string, mode: ThinkingMode, max: number = THINKING_COT_MAX) => {
+  const raw = cleanThinkingText(reasoning)
+
+  return !raw || mode === 'collapsed' ? '' : mode === 'full' ? raw : compactPreview(raw.replace(WS_RE, ' '), max)
+}
+
+export const boundedLiveRenderText = (
+  text: string,
+  { maxChars = LIVE_RENDER_MAX_CHARS, maxLines = LIVE_RENDER_MAX_LINES } = {}
+) => boundedRenderText(text, 'showing live tail', { maxChars, maxLines })
+
+const boundedRenderText = (
+  text: string,
+  labelPrefix: string,
+  { maxChars, maxLines }: { maxChars: number; maxLines: number }
+) => {
+  if (text.length <= maxChars && text.split('\n', maxLines + 1).length <= maxLines) {
+    return text
+  }
+
+  let start = 0
+  let idx = text.length
+
+  for (let seen = 0; seen < maxLines && idx > 0; seen++) {
+    idx = text.lastIndexOf('\n', idx - 1)
+    start = idx < 0 ? 0 : idx + 1
+
+    if (idx < 0) {
+      break
+    }
+  }
+
+  const lineStart = start
+  start = Math.max(lineStart, text.length - maxChars)
+
+  if (start > lineStart) {
+    const nextBreak = text.indexOf('\n', start)
+
+    if (nextBreak >= 0 && nextBreak < text.length - 1) {
+      start = nextBreak + 1
+    }
+  }
+
+  const tail = text.slice(start).trimStart()
+  const omittedLines = countNewlines(text, start)
+  const omittedChars = Math.max(0, text.length - tail.length)
+
+  const label =
+    omittedLines > 0
+      ? `[${labelPrefix}; omitted ${fmtK(omittedLines)} lines / ${fmtK(omittedChars)} chars]\n`
+      : `[${labelPrefix}; omitted ${fmtK(omittedChars)} chars]\n`
+
+  return `${label}${tail}`
+}
+
+const countNewlines = (text: string, end: number) => {
+  let count = 0
+
+  for (let i = 0; i < end; i++) {
+    if (text.charCodeAt(i) === 10) {
+      count++
+    }
+  }
+
+  return count
+}
+
+export const stripTrailingPasteNewlines = (text: string) => (/[^\n]/.test(text) ? text.replace(/\n+$/, '') : text)
+
+export const toolTrailLabel = (name: string) =>
+  name
+    .split('_')
+    .filter(Boolean)
+    .map(p => p[0]!.toUpperCase() + p.slice(1))
+    .join(' ') || name
+
+/** 2026-08-19 修复：参数为原始 JSON 时提取关键字段人类化（此前整串 JSON 直显，
+ * 如 Args:{"query":"...","max_results":8}——一行噪声且超宽）；非 JSON 走头尾截取。 */
+const humanizeToolContext = (context: string): string => {
+  const one = context.trim()
+  if (!one) return ''
+  if (one.startsWith('{') || one.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(one) as unknown
+      const obj = (Array.isArray(parsed) ? (parsed[0] as Record<string, unknown> | undefined) ?? {} : parsed) as Record<string, unknown>
+      const parts: string[] = []
+      for (const k of ['query', 'q', 'url', 'path', 'name', 'file', 'command', 'cmd', 'prompt', 'max_results', 'limit']) {
+        const v = obj?.[k]
+        if (v === undefined || v === null) continue
+        const s = typeof v === 'string' ? v : JSON.stringify(v)
+        parts.push(`${k}: ${s.length > 40 ? `${s.slice(0, 39)}…` : s}`)
+      }
+      if (parts.length) return parts.join(', ')
+    } catch { /* 非 JSON——走通用截取 */ }
+  }
+  return edgePreview(context, 24, 20)
+}
+
+export const formatToolCall = (name: string, context = '') => {
+  const label = toolTrailLabel(name)
+  // 2026-08-19 降噪：长命令（PowerShell 单行/长 URL 拼装）不再整串入行——
+  // 头尾截取（命令开头 + 结尾）保持信息量且行宽有界，超长单行不再撑爆
+  // 工具卡片（此前 64 字符全文截断仍是一整行噪声）
+  const preview = humanizeToolContext(context)
+
+  return preview ? `${label}("${preview}")` : label
+}
+
+export const buildToolTrailLine = (
+  name: string,
+  context: string,
+  error?: boolean,
+  note?: string,
+  duration?: number
+) => {
+  const detail = compactPreview(note ?? '', 72)
+  const took = duration !== undefined ? ` (${duration.toFixed(1)}s)` : ''
+
+  return `${formatToolCall(name, context)}${took}${detail ? ` :: ${detail}` : ''} ${error ? '✗' : '✓'}`
+}
+
+const verboseToolBlock = (label: string, text?: string) => {
+  const body = (text ?? '').trim()
+  if (!body) return ''
+
+  // 2026-08-19 修复：参数/结果块不再整串 JSON 直显（Args:{"query":"..."} 一行噪声且
+  // 超宽）——JSON 提取关键字段人类化单行；其余内容维持有界预览（防撑爆渲染树）
+  const one = body.startsWith('{') || body.startsWith('[')
+    ? (() => {
+        try {
+          const parsed = JSON.parse(body) as unknown
+          const obj = (Array.isArray(parsed) ? (parsed[0] as Record<string, unknown> | undefined) ?? {} : parsed) as Record<string, unknown>
+          const parts: string[] = []
+          for (const k of ['query', 'q', 'url', 'path', 'name', 'file', 'command', 'cmd', 'prompt', 'max_results', 'limit']) {
+            const v = obj?.[k]
+            if (v === undefined || v === null) continue
+            const s = typeof v === 'string' ? v : JSON.stringify(v)
+            parts.push(`${k}: ${s.length > 40 ? `${s.slice(0, 39)}…` : s}`)
+          }
+          return parts.length ? parts.join(', ') : ''
+        } catch { return '' }
+      })()
+    : ''
+
+  const rendered = one || boundedLiveRenderText(body, {
+    maxChars: VERBOSE_TRAIL_MAX_CHARS,
+    maxLines: VERBOSE_TRAIL_MAX_LINES
+  })
+
+  return `${label}: ${rendered}`
+}
+
+export const buildVerboseToolTrailLine = (
+  name: string,
+  context: string,
+  error?: boolean,
+  duration?: number,
+  argsText?: string,
+  resultText?: string
+) => {
+  const detail = [verboseToolBlock('Args', argsText), verboseToolBlock(error ? 'Error' : 'Result', resultText)]
+    .filter(Boolean)
+    .join('\n')
+  const took = duration !== undefined ? ` (${duration.toFixed(1)}s)` : ''
+
+  return `${formatToolCall(name, context)}${took}${detail ? ` :: ${detail}` : ''} ${error ? '✗' : '✓'}`
+}
+
+export const isToolTrailResultLine = (line: string) => line.endsWith(' ✓') || line.endsWith(' ✗')
+
+export const parseToolTrailResultLine = (line: string) => {
+  if (!isToolTrailResultLine(line)) {
+    return null
+  }
+
+  const mark = line.endsWith(' ✗') ? '✗' : '✓'
+  const body = line.slice(0, -2)
+  const sep = body.indexOf(' :: ')
+
+  if (sep >= 0) {
+    return { call: body.slice(0, sep), detail: body.slice(sep + 4), mark }
+  }
+
+  const legacy = body.indexOf(': ')
+
+  if (legacy > 0) {
+    return { call: body.slice(0, legacy), detail: body.slice(legacy + 2), mark }
+  }
+
+  return { call: body, detail: '', mark }
+}
+
+export const splitToolDuration = (call: string) => {
+  const match = call.match(/^(.*?)( \(\d+(?:\.\d)?s\))$/)
+
+  return match ? { label: match[1]!, duration: match[2]! } : { label: call, duration: '' }
+}
+
+export const isTransientTrailLine = (line: string) => line.startsWith('drafting ') || line === 'analyzing tool output…'
+
+export const sameToolTrailGroup = (label: string, entry: string) =>
+  entry === `${label} ✓` ||
+  entry === `${label} ✗` ||
+  entry.startsWith(`${label}(`) ||
+  entry.startsWith(`${label} ::`) ||
+  entry.startsWith(`${label}:`)
+
+export const lastCotTrailIndex = (trail: readonly string[]) => {
+  for (let i = trail.length - 1; i >= 0; i--) {
+    if (!isToolTrailResultLine(trail[i]!)) {
+      return i
+    }
+  }
+
+  return -1
+}
+
+export const estimateRows = (text: string, w: number, compact = false) => {
+  let fence: { char: '`' | '~'; len: number } | null = null
+  let rows = 0
+
+  for (const raw of text.split('\n')) {
+    const line = stripAnsi(raw)
+    const maybeFence = line.match(/^\s*(`{3,}|~{3,})(.*)$/)
+
+    if (maybeFence) {
+      const marker = maybeFence[1]!
+      const lang = maybeFence[2]!.trim()
+
+      if (!fence) {
+        fence = { char: marker[0] as '`' | '~', len: marker.length }
+
+        if (lang) {
+          rows += Math.ceil((`─ ${lang}`.length || 1) / w)
+        }
+      } else if (marker[0] === fence.char && marker.length >= fence.len) {
+        fence = null
+      }
+
+      continue
+    }
+
+    const inCode = Boolean(fence)
+    const trimmed = line.trim()
+
+    if (!inCode && trimmed.startsWith('|') && /^[|\s:-]+$/.test(trimmed)) {
+      continue
+    }
+
+    const rendered = inCode ? line : renderEstimateLine(line)
+
+    if (compact && !rendered.trim()) {
+      continue
+    }
+
+    rows += Math.ceil((rendered.length || 1) / w)
+  }
+
+  return Math.max(1, rows)
+}
+
+/**
+ * Render an unanswered clarify prompt (timed out, or cancelled with Esc/Ctrl+C)
+ * as a persistent transcript block.  The live `ClarifyPrompt` overlay is torn
+ * down the moment the turn settles, so without this the question + options
+ * vanish from the screen while the agent's follow-up still refers to "the
+ * options above".  Mirrors the option formatting in ClarifyPrompt (the same
+ * 1-based numbered list) so the persisted record reads identically to what was
+ * on screen.  `reason` states why the prompt ended ("timed out", "cancelled").
+ */
+export const formatAbandonedClarify = (question: string, choices: string[] | null, reason: string) => {
+  const head = `ask ${question.trim()}`
+  const opts = (choices ?? []).map((c, i) => `  ${i + 1}. ${c}`)
+
+  return [head, ...opts, `  (${reason} — no selection)`].join('\n')
+}
+
+export const flat = (r: Record<string, string[]>) => Object.values(r).flat()
+
+const COMPACT_NUMBER = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1, notation: 'compact' })
+
+export const fmtK = (n: number) => COMPACT_NUMBER.format(n).replace(/[KMBT]$/, s => s.toLowerCase())
+
+export const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)]!
+
+export const isPasteBackedText = (text: string) =>
+  /\[\[paste:\d+(?:[^\n]*?)\]\]|\[paste #\d+ (?:attached|excerpt)(?:[^\n]*?)\]/.test(text)

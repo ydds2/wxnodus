@@ -26,12 +26,39 @@ const files = walk(SRC);
 const violations = [];
 let todoCount = 0;
 
+// L4 UI 组件行数预算（V4 L0-6，docs/output-spec-v1.md 工程规范）：
+// 新组件 ≤400 行；既有超限组件进 ratchet 名单（只能降不能升——降至 ≤400 后移除条目）。
+const COMPONENT_LINE_BUDGET = 400;
+const COMPONENT_RATCHET = {
+  'src/wxnodus-ui/components/textInput.tsx': 1138,
+  'src/wxnodus-ui/components/thinking.tsx': 735,
+  'src/wxnodus-ui/components/subagentAccordion.tsx': 516,
+  'src/wxnodus-ui/components/markdown.tsx': 1185,
+  'src/wxnodus-ui/components/agentsOverlay.tsx': 1158,
+  'src/wxnodus-ui/components/activeSessionSwitcher.tsx': 1095,
+  'src/wxnodus-ui/components/statusBar.tsx': 728,
+  'src/wxnodus-ui/components/modelPicker.tsx': 970,
+  'src/wxnodus-ui/components/appLayout.tsx': 599,
+  'src/wxnodus-ui/components/branding.tsx': 520,
+  'src/wxnodus-ui/components/messageLine.tsx': 474,
+  'src/wxnodus-ui/components/appOverlays.tsx': 410,
+};
 for (const f of files) {
   const text = readFileSync(f, 'utf8');
   const rel = f.slice(root.length + 1).replace(/\\/g, '/');
   if (/^\s*debugger\s*;?/m.test(text)) violations.push(`L1 debugger 残留：${rel}`);
   const inKernelLayer = /^src\/(kernel|infrastructure|domain)\//.test(rel);
   if (inKernelLayer && /process\.exit\s*\(/.test(text)) violations.push(`L2 分层红线（内核层不得 process.exit）：${rel}`);
+  // L4：UI 组件行数预算（ratchet——allowlist 文件行数增长即失败；新组件超 400 即失败）
+  if (rel.startsWith('src/wxnodus-ui/components/') && rel.endsWith('.tsx')) {
+    const lines = text.split('\n').length;
+    const ratchet = COMPONENT_RATCHET[rel];
+    if (ratchet !== undefined) {
+      if (lines > ratchet) violations.push(`L4 组件行数超 ratchet 预算：${rel} ${lines}>${ratchet}（只降不升；≤400 后移除条目）`);
+    } else if (lines > COMPONENT_LINE_BUDGET) {
+      violations.push(`L4 组件行数超 400 行预算：${rel} ${lines}（拆纯函数模块）`);
+    }
+  }
   todoCount += (text.match(/\bTODO\b|\bFIXME\b/g) ?? []).length;
 }
 

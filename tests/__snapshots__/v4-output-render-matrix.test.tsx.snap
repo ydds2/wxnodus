@@ -1,0 +1,163 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > assistant @ compact @ dark 1`] = `" 已定位问题………"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > assistant @ compact @ light 1`] = `" 已定位问题………"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > assistant @ cozy @ dark 1`] = `" 已定位问题………"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > assistant @ cozy @ light 1`] = `" 已定位问题………"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > assistant @ dense @ dark 1`] = `" 已定位问题………"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > assistant @ dense @ light 1`] = `" 已定位问题………"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > command @ compact @ dark 1`] = `" ok"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > command @ compact @ light 1`] = `" ok"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > command @ cozy @ dark 1`] = `" ok"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > command @ cozy @ light 1`] = `" ok"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > command @ dense @ dark 1`] = `" ok"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > command @ dense @ light 1`] = `" ok"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > diff @ compact @ dark 1`] = `
+" @@ -1,2 +1,2 @@
+ -old
+ +new"
+`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > diff @ compact @ light 1`] = `
+" @@ -1,2 +1,2 @@
+ -old
+ +new"
+`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > diff @ cozy @ dark 1`] = `
+" @@ -1,2 +1,2 @@
+ -old
+ +new"
+`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > diff @ cozy @ light 1`] = `
+" @@ -1,2 +1,2 @@
+ -old
+ +new"
+`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > diff @ dense @ dark 1`] = `
+" @@ -1,2 +1,2 @@
+ -old
+ +new"
+`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > diff @ dense @ light 1`] = `
+" @@ -1,2 +1,2 @@
+ -old
+ +new"
+`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > notice @ compact @ dark 1`] = `" ⚠ 上下文已用 75%"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > notice @ compact @ light 1`] = `" ⚠ 上下文已用 75%"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > notice @ cozy @ dark 1`] = `" ⚠ 上下文已用 75%"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > notice @ cozy @ light 1`] = `" ⚠ 上下文已用 75%"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > notice @ dense @ dark 1`] = `" ⚠ 上下文已用 75%"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > notice @ dense @ light 1`] = `" ⚠ 上下文已用 75%"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ compact @ dark 1`] = `"▸ 思考 (· 1.0k tokens)"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ compact @ light 1`] = `"▸ 思考 (· 1.0k tokens)"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ cozy @ dark 1`] = `"▸ 思考 (· 1.0k tokens)"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ cozy @ light 1`] = `"▸ 思考 (· 1.0k tokens)"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ dense @ dark 1`] = `"▸ 思考 (· 1.0k tokens)"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > reasoning @ dense @ light 1`] = `"▸ 思考 (· 1.0k tokens)"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > session-event @ compact @ dark 1`] = `"◈ 已切换到会话 s2"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > session-event @ compact @ light 1`] = `"◈ 已切换到会话 s2"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > session-event @ cozy @ dark 1`] = `"◈ 已切换到会话 s2"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > session-event @ cozy @ light 1`] = `"◈ 已切换到会话 s2"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > session-event @ dense @ dark 1`] = `"◈ 已切换到会话 s2"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > session-event @ dense @ light 1`] = `"◈ 已切换到会话 s2"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-result @ compact @ dark 1`] = `" ⎿ 已替换 1 处 (850ms)"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-result @ compact @ light 1`] = `" ⎿ 已替换 1 处 (850ms)"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-result @ cozy @ dark 1`] = `" ⎿ 已替换 1 处"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-result @ cozy @ light 1`] = `" ⎿ 已替换 1 处"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-result @ dense @ dark 1`] = `" ⎿ 已替换 1 处 (850ms)"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-result @ dense @ light 1`] = `" ⎿ 已替换 1 处 (850ms)"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-start @ compact @ dark 1`] = `"⏺ fs_edit src/app.ts…"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-start @ compact @ light 1`] = `"⏺ fs_edit src/app.ts…"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-start @ cozy @ dark 1`] = `"⏺ fs_edit src/app.ts…"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-start @ cozy @ light 1`] = `"⏺ fs_edit src/app.ts…"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-start @ dense @ dark 1`] = `"⏺ fs_edit src/app.ts…"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > tool-start @ dense @ light 1`] = `"⏺ fs_edit src/app.ts…"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > turn-summary @ compact @ dark 1`] = `" ◦ 3 调用 · 8.4k tokens · $0.0123 · 24.5s"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > turn-summary @ compact @ light 1`] = `" ◦ 3 调用 · 8.4k tokens · $0.0123 · 24.5s"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > turn-summary @ cozy @ dark 1`] = `" ◦ 3 调用 · 8.4k tokens · $0.0123 · 24.5s"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > turn-summary @ cozy @ light 1`] = `" ◦ 3 调用 · 8.4k tokens · $0.0123 · 24.5s"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > turn-summary @ dense @ dark 1`] = `" ◦ 3 调用 · 8.4k tokens · $0.0123 · 24.5s"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > turn-summary @ dense @ light 1`] = `" ◦ 3 调用 · 8.4k tokens · $0.0123 · 24.5s"`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > user @ compact @ dark 1`] = `
+"❯ 帮我修这个 bug
+ 📎 截图.png"
+`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > user @ compact @ light 1`] = `
+"❯ 帮我修这个 bug
+ 📎 截图.png"
+`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > user @ cozy @ dark 1`] = `
+"❯ 帮我修这个 bug
+ 📎 截图.png"
+`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > user @ cozy @ light 1`] = `
+"❯ 帮我修这个 bug
+ 📎 截图.png"
+`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > user @ dense @ dark 1`] = `
+"❯ 帮我修这个 bug
+ 📎 截图.png"
+`;
+
+exports[`V4 L0-6 渲染器 60 格快照矩阵（10 kinds × 3 densities × 明/暗） > user @ dense @ light 1`] = `
+"❯ 帮我修这个 bug
+ 📎 截图.png"
+`;

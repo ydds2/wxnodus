@@ -1,3 +1,4 @@
+import { themePresetNames, themeByName, loadUserThemes } from '../wxnodus-ui/theme.js';
 // src/commands/handlers.ts — L6-2 核心命令处理器（注册到 CommandBus）
 // 设计：每个命令访问 kernel 上下文（config/db/mem/agent/bus）；输出字符串经消息流呈现
 import type { Config } from '../store/config.js';
@@ -27,6 +28,9 @@ import type { SubagentDefinition, SubagentRunOptions } from '../kernel/subagentT
 
 export interface HandlerCtx {
   dataDir: string;
+  /** 完整 TUI 恢复：主题切换（薄层/headless 语境缺省 undefined——?. 安全调用） */
+  setTheme?: (t: string) => void;
+  getThemeName?: () => string;
   cwd: string;
   db: Db;
   mem: Memory;
@@ -464,6 +468,26 @@ ${MODEL_SWITCH_CACHE_NOTICE}`;
       return `推理显示：${on ? '开' : '关'}`;
     }
     return '用法：/thinking on|off';
+  });
+
+  bus.register('/theme', (args) => {
+    const name = args[0];
+    if (name) {
+      const user = loadUserThemes(ctx.dataDir);
+      const resolved = themeByName(name, process.env, user.presets);
+      if (!resolved) {
+        const userNames = Object.keys(user.presets).join(' / ');
+        return `未知主题：${name}（内置 dark/light/${themePresetNames().filter(n => n !== 'dark' && n !== 'light').join('/')}${userNames ? `；用户 ${userNames}` : ''}）——未切换`;
+      }
+      ctx.setTheme?.(name);
+      ctx.bus.emit('theme.changed', { name, theme: resolved });
+      return `主题已切换：${name}`;
+    }
+    const user = loadUserThemes(ctx.dataDir);
+    const extras = Object.keys(user.presets);
+    return `当前主题：${ctx.getThemeName?.() ?? 'default'}
+可选预设：dark / light / ${themePresetNames().filter(n => n !== 'dark' && n !== 'light').join(' / ')}${extras.length ? `
+用户主题：${extras.join(' / ')}` : ''}`;
   });
 
   // W7-00：主工作区切换涉及 MCP/plugin/tool/Agent 整个 workspace scope。

@@ -8,11 +8,15 @@ import { format } from 'node:util';
 import { parseCronExpr, parseIntervalExpr, cronMatches } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { resolveDataDir } from '../kernel/paths.js';
+import { appendAudit } from '../store/db.js';
 import { isSharedAgentReentrantCommand } from '../application/runs/internalCommandGuard.js';
 // W3-01：完成终态 → 退出码共享映射（failure 不藏在 exit 0 后面）
 import { processExitForCompletion } from '../protocol/completionTransport.js';
 // W3-02：wire 入口前端——事件流经纯投影管线，终态走共享 completionTransport（headless，无 React）
 import { createWireFrontend } from '../bootstrap/createWireFrontend.js';
+// A24 第三类修复：buildInfo system_prompt 数据源（kernel 实时构建；ESM 静态引用缓存）
+import { buildSystemPrompt as buildSystemPromptRef } from '../kernel/systemPrompt.js';
+import { hasImageIn as hasImageInRef } from '../kernel/providers.js';
 import { WXNODUS_VERSION } from '../kernel/version.js';
 
 // 版本单一事实源：package.json（kernel/version.ts 运行时读取——改版本只动 package.json）
@@ -288,8 +292,9 @@ if (pre.mode === 'error') {
       heartbeatTimer.unref?.();
     }
 
-  const [{ createCommandBus }, { createApprovalCache }] = await Promise.all([
+  const [{ createCommandBus }, { GatewayClient }, { createApprovalCache }] = await Promise.all([
     import('../app/CommandBus.js'),
+    import('../wxnodus-ui/wxGateway.js'),
     import('../kernel/permissions.js'),
   ]);
   const approvalCache = createApprovalCache();
@@ -300,15 +305,23 @@ if (pre.mode === 'error') {
   let gateway: any = null;
   let commandBus: any = null;
 
-  // A2 Phase2（2026-08-27）：预取 WinINET 系统代理（无 env 代理时）——企业 Windows 的代理
-  // 多为系统级配置；bootstrap 阶段异步预取、同步消费（createOutboundFetch 保持同步契约）。
-  // 失败诚实降级直连，绝不阻塞启动。
-  try {
-    const { loadSystemProxy } = await import('../infrastructure/http/outboundFetch.js');
-    await loadSystemProxy();
-  } catch { /* 系统代理预取失败 → 直连（doctor 会如实展示） */ }
-
   const { createCliComposition } = await import('../bootstrap/cliComposition.js');
+  // V4 P5-1：启动单次新版本检查——与组合根装配并行（零额外启动延迟；未配 feed 零网络），
+  // 结果在 TUI 启动前一行输出（banner 在首帧之前——不与渲染交错）。绝不自动安装。
+  const feedUrl = (settings.updateFeed as string) || process.env.WXNODUS_UPDATE_FEED || null;
+  const updateBanner = feedUrl
+    ? (async () => {
+        try {
+          const { fetchLatestRelease, loadUpdateState } = await import('../kernel/selfUpdate.js');
+          const info = await fetchLatestRelease(feedUrl, WXNODUS_VERSION, fetch, 4000);
+          const skipped = info.latest && loadUpdateState(dataDir).skipped.includes(info.latest);
+          if (info.updateAvailable && !skipped) {
+            return `↻ 新版本 ${info.latest} 可用：wxnodus update --apply 升级（绝不自动安装）· update --skip ${info.latest} 跳过提示`;
+          }
+        } catch { /* banner 检查失败静默 */ }
+        return null;
+      })()
+    : null;
   const composition = await createCliComposition({
     dataDir,
     config,
@@ -354,7 +367,7 @@ if (pre.mode === 'error') {
   }
   const {
     db, codeIndex, memoryRepository, mem, bus, toolExecution, runInvocation, delegateManager, agent,
-    getPlugins, bindPluginRegistry, reloadPlugins, reloadMcp, secrets,
+    getPlugins, bindPluginRegistry, reloadPlugins, reloadMcp, secrets, getMcpClients,
   } = composition.value;
   // W2-03：统一幂等关闭——全部 disposer 尝试、聚合失败 id（bootstrapShutdown 语义）；
   // serve/keepalive/TUI/SIGINT/SIGTERM 共用同一条关闭路径（组合根资源 + CLI 层资源一并聚合）。
@@ -405,12 +418,11 @@ if (pre.mode === 'error') {
   const policySnapshotId = createHash('sha256').update(JSON.stringify(settings ?? {})).digest('hex');
   const makeMcpIncoming = () => createMcpIncomingServer({
     capabilities: new Wave1CapabilityRegistry(policySnapshotId, () => new Date().toISOString(),
-      // A-S3：MCP surfaces 交付面解锁（session 为既有 DELIVERED 声明的潜在失配一并修复）
       ['session', 'build', 'verify', 'evidence'] as const),
     contextFactory: () => ({
       actorId: 'actor:cli', sessionId: opts.session ?? 'default', runId: null,
       correlationId: randomUUID(), policySnapshotId, locale: 'zh-CN', source: 'cli' as const,
-      capabilities: ['memory', 'session', 'build', 'verify', 'evidence'], timestamp: new Date().toISOString(),
+      capabilities: ['memory'], timestamp: new Date().toISOString(),
     }),
     pipeline: toolExecution.pipeline,
   });
@@ -449,6 +461,8 @@ if (pre.mode === 'error') {
   }
   // 模式/主题状态
   let mode = (config.get('settings') as any).mode ?? 'smart';
+  let themeName = (config.get('settings') as any).theme ?? 'wxnodus';
+  let exitRequested = false;
 
   // 装配并行化（启动就绪路径去串行化）：组合根之后的子系统互不依赖——一次 Promise.all 完成
   // import（taskRunner/term/plugins/handlers/sessionStart/download/ssrf）；创建与注册顺序语义不变
@@ -575,7 +589,9 @@ if (pre.mode === 'error') {
     getModel: () => model,
     getMode: () => mode,
     setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
-    requestExit: () => { void shutdown('request-exit').finally(() => process.exit(0)); },
+    setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },
+    getThemeName: () => themeName,
+    requestExit: () => { exitRequested = true; void shutdown('request-exit').finally(() => process.exit(0)); },
     clearHistory: () => {
       // CLI 模式真实清空：当前会话非系统消息全部归档（archive 软清空——同 TUI /clear 语义，不物理删除）
       const sid = agent.getSessionId?.() ?? 'default';
@@ -585,6 +601,8 @@ if (pre.mode === 'error') {
       }
     },
     setModel: applyModel,
+    openModelPicker: () => { /* WxNodus UI: /model 打开选择器 */ },
+    openSessions: () => { /* WxNodus UI: /sessions 打开列表 */ },
     setThinking: (on: boolean) => { config.setKey('settings', 'thinking', on); },
     reloadMcp,
     getPlugins,
@@ -909,7 +927,7 @@ if (pre.mode === 'error') {
         const streamable = !opts.json
         let streamedAny = false
         if (streamable && process.stdout.isTTY === true && process.platform === 'win32') {
-          const { runConsoleModeScript, PS_ENABLE } = await import('./consoleBootstrap.js')
+          const { runConsoleModeScript, PS_ENABLE } = await import('../wxnodus-ui/lib/consoleBootstrap.js')
           try { runConsoleModeScript(PS_ENABLE, process.env) } catch { /* 静默 */ }
         }
         const streamOut = (() => {
@@ -1036,32 +1054,177 @@ if (pre.mode === 'error') {
     await exitAfterShutdown(0, 'non-tty-without-input');
   }
 
-  // P2 / Q1（2026-08-27）：薄层 TUI——wire 事件→ANSI 纯函数渲染（无 React/Ink）；
-  // 审批/澄清/密码复用 wire 网关契约（headlessGateway 广播 + *.respond 应答，与 --wire 同协议）。
-  // 此前（2026-08-22）交互 TUI 整体移除；本次重建为薄投影层，不恢复旧 UI 巨件。
-  const { createHeadlessWireGateway } = await import('./headlessGateway.js');
-  const { startInteractiveLoop } = await import('../presentation/tui/interactiveLoop.js');
-  let requestRelay: ((ev: { type: string } & Record<string, unknown>) => void) | null = null;
-  const tuiSessionId = agent.getSessionId?.() ?? 'default';
-  gateway = createHeadlessWireGateway({ sessionId: tuiSessionId, onRequest: ev => { requestRelay?.(ev); } });
-  const { routeInput } = await import('../commands/intent.js');
-  // T11（2026-08-28）：Tab 斜杠命令补全——候选源 = 注册表单一事实源（SLASH）
-  const { SLASH } = await import('../commands/registry.js');
-  const modelLabel = String((config.get('settings') as Record<string, any>)?.model ?? '未配置（/model 配置）');
-  await startInteractiveLoop({
-    sessionId: tuiSessionId,
-    modelLabel,
-    gateway,
-    bus,
-    runInvocation,
-    commandBus,
-    routeInput,
-    commands: () => SLASH,
-    cwd: process.cwd(),
-    setOnRequest: fn => { requestRelay = fn; },
-    onExit: () => { void shutdown('tui-exit'); },
+  // V4 P5-1：新版本 banner（TUI 首帧之前一行输出；组合根期间并行查询的结果）
+  if (updateBanner) {
+    const banner = await updateBanner;
+    if (banner) process.stdout.write(`${banner}\n`);
+  }
+
+  // 版本变更提示（升级后首启可见——落 scrollback 永久可查）：dataDir 记上次运行版本，
+  // 与当前不一致即提示「已更新 x→y」（此前升级后进 TUI 零版本反馈——用户实测报告）
+  {
+    const { detectVersionChange } = await import('../kernel/versionChange.js');
+    const changed = detectVersionChange(dataDir);
+    if (changed) process.stdout.write(`${changed}\n`);
+  }
+
+  // Windows cmd 编码修复：默认代码页 936(GBK) 下 UTF-8 边框/中文会乱码——
+  // 交互启动时切换到 UTF-8(65001) 并设置终端标题（Kimi/Claude Code 同款处理）
+  if (process.platform === 'win32') {
+    try {
+      const { execSync } = await import('node:child_process');
+      execSync('chcp 65001 >nul', { stdio: 'ignore' });
+    } catch { /* 无权限/非 cmd 时静默 */ }
+  }
+
+  // W8-20/21：终端能力层级引导（cmd/conhost 风险防线）——conhost 候选走 PS 开 VT + CPR 探测；
+  // VT 不可用 → 诚实指引退出（绝不输出乱码 TUI）。结果缓存在模块级供渲染器能力注入（W8-22）。
+  const { bootstrapConsoleForTui, noVtGuidance } = await import('../wxnodus-ui/lib/consoleBootstrap.js');
+  const { setTuiTerminalTier } = await import('../wxnodus-ui/lib/terminalTier.js');
+  const consoleEnv = await bootstrapConsoleForTui(process.env);
+  if (consoleEnv.tier === 'no-vt') {
+    consoleEnv.restore();
+    process.stderr.write(`${noVtGuidance(consoleEnv.reason)}\n`);
+    void shutdown('no-vt-console').finally(() => process.exit(2));
+    return;
+  }
+  setTuiTerminalTier(consoleEnv);
+
+  try { process.stdout.write('\x1b]0;WxNodus\x07'); } catch {}
+
+  // 简化人工操作（阶段 C）：启动自动恢复上次未完成会话（settings.autoResume=false 关闭）
+  if ((settings as any).autoResume !== false) {
+    const { pickResumeSession } = await import('../store/db.js');
+    const resumeId = pickResumeSession(db);
+    if (resumeId) {
+      agent.setSessionId(resumeId);
+      // KF-028：绑定恢复的会话——后续 Gateway/UI 一律经 agent.getSessionId() 读取，
+      // 绝不回落 'default'（恢复后仍指向默认会话 = 假恢复）
+      const boundSessionId = agent.getSessionId() ?? resumeId;
+      bus.emit('system.notice', { text: `已自动恢复上次未完成会话 ${boundSessionId.slice(0, 8)}…（/new 可开始新会话）` });
+    }
+  }
+
+  // A24 第三类修复：落后上游提交数——git rev-list 真实计算（无 git/无 upstream → null）
+  // 启动时一次计算（buildInfo 高频读取，避免每次 spawn git）；纯本地引用对比，不发起网络
+  let updateBehind: number | null = null
+  try {
+    const { execFileSync: gitExec } = await import('node:child_process');
+    const branch = String(gitExec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf8', windowsHide: true, timeout: 5000 })).trim()
+    if (branch && branch !== 'HEAD') {
+      const ahead = gitExec('git', ['rev-list', '--count', `HEAD..origin/${branch}`], { cwd, encoding: 'utf8', windowsHide: true, timeout: 5000 })
+      updateBehind = Number(String(ahead).trim()) || null
+    }
+  } catch { /* 非 git 仓库/无 origin 时保持 null——诚实降级 */ }
+
+  // W3 TUI 第 1 步：组合路由决策——modern/required 在 WxGatewayKernel 收缩完成前 fail-closed
+  {
+    const { decideTuiRoute } = await import('../bootstrap/tuiRouting.js');
+    const tuiRoute = decideTuiRoute({ env: process.env.WXNODUS_COMPOSITION_ROOT });
+    if (!tuiRoute.ok) {
+      console.error(`wxnodus: ${tuiRoute.error.message}`);
+      void shutdown('tui-route-denied').finally(() => process.exit(2));
+      return;
+    }
+  }
+
+  // WxNodus UI 装配
+  // W3 TUI facade：presentation adapter——db/agent/memory 原始句柄留在组合根，UI 只经窄端口；
+  // ensureSession 接真实 session 生命周期（sessionStartService.ensure——工件先行，失败 fail-closed）
+  const { createTuiPresentationAdapter } = await import('../presentation/tui/tuiPresentationAdapter.js');
+  gateway = new GatewayClient({
+    bus, config, commandBus, runInvocation, taskRunner, delegateManager,
+    adapter: createTuiPresentationAdapter({
+      db, agent,
+      settings,
+      dataDir,
+      ensureSession: async (sid) => {
+        const r = await sessionStartService.ensure(sid);
+        return r.ok ? { ok: true as const } : { ok: false as const, code: r.error.code };
+      },
+    }),
+    dataDir, cwd, settings, reloadMcp, getPlugins, reloadPlugins, updateBehind,
+    // 审计回调（组合根注入——gateway 不直接访问 db；model.add/save_key 落审计）
+    audit: (event, payload) => {
+      try { appendAudit(db, event, payload); } catch { /* 审计表未就绪静默 */ }
+    },
+    // A24 第三类修复：MCP 服务器真实状态（连接/工具数/传输方式）——buildInfo 填充 mcp_servers
+    mcpStatus: () => getMcpClients().map(c => ({
+      connected: c.connected,
+      name: c.server.name,
+      tools: c.tools.length,
+      transport: c.server.url ? 'http' : 'stdio',
+    })),
+    // A24 第三类修复：当前系统提示词（kernel buildSystemPrompt 实时构建，外部 system.md 热生效）——buildInfo 填充 system_prompt
+    systemPrompt: () => {
+      try {
+        return buildSystemPromptRef({
+          mode: mode as any,
+          cwd,
+          model: model || settings.model || '',
+          hasImageIn: hasImageInRef(model || settings.model || ''),
+          sessionId: agent.getSessionId?.() ?? 'default',
+          lang: (settings as any).lang,
+          locale,
+          dataDir,
+          // KF-004：settings.personality 真实消费——persona 段进入系统提示
+          persona: (settings as any).personality,
+        });
+      } catch { return undefined; }
+    },
+    applyModel,
+    setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
+    setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },
+    setThinking: (on: boolean) => { config.setKey('settings', 'thinking', on); },
+    requestExit: () => { exitRequested = true; void shutdown('request-exit').finally(() => process.exit(0)); },
   });
-  await exitAfterShutdown(0, 'tui-exit');
+  gateway.start();
+
+  const { App } = await import('../wxnodus-ui/app.js');
+  const { render } = await import('@wxnodus/ink');
+  const React = (await import('react')).default;
+
+  if (process.env.WXNODUS_DEBUG_EVENTS) {
+    process.stdout.write('[boot] rendering App\n')
+  }
+  let app: any = null
+  try {
+    // W8-22：终端层级能力注入渲染器（cmd 档门控序列/颜色；modern 档 = 现状零变化）
+    const { rendererCapabilitiesFor } = await import('../wxnodus-ui/lib/terminalTier.js');
+    app = render(React.createElement(App, { gw: gateway }), { exitOnCtrlC: false, capabilities: rendererCapabilitiesFor(consoleEnv) })
+  } catch (e: any) {
+    if (process.env.WXNODUS_DEBUG_EVENTS) process.stdout.write('[boot] render FAILED: ' + String(e?.message ?? e).slice(0, 200) + '\n')
+    throw e
+  }
+
+  // Ctrl+C：运行中中断 / 空闲退出
+  // B1/W2-03 统一退出清理：MCP 子进程 + DB + UI 全部回收（SIGINT/SIGTERM/requestExit 共用
+  // main 顶部定义的共享幂等 shutdown——聚合全部 disposer 失败，不再各分支手写 process.exit）
+  disposers.push({ id: 'ui', dispose: () => { app?.unmount(); } });
+  // W8-21：退出时 best-effort 恢复 conhost 输入模式（QuickEdit/行/回显）
+  disposers.push({ id: 'console-restore', dispose: () => { consoleEnv.restore(); } });
+
+  // V4 P2-11：SIGINT 双语义——第一次仅中断当前 Run（gateway 转发），提示「再按退出」；
+  // 第二次（或空闲态单击）才真正退出。此前 300ms 无条件强退：长任务中想中止任务
+  // （claude code 标准行为）却整个 CLI 退出，会话中断、后台任务未收尾（与注释宣称矛盾）。
+  let firstSigintAt = 0;
+  process.on('SIGINT', () => {
+    if (exitRequested) { void shutdown('sigint').finally(() => process.exit(0)); return; }
+    const now = Date.now();
+    const busy = gateway?.running === true;
+    if (busy && now - firstSigintAt > 1_500) {
+      // 运行中第一次：只中断当前 Run（双 Esc 同族肌肉记忆——中断不退出）
+      firstSigintAt = now;
+      gateway.kill('SIGINT');
+      try { app?.unmount(); } catch { /* UI 已卸载 */ }
+      console.log('\n已中断当前任务——再按 Ctrl+C 退出 wxnodus');
+      return;
+    }
+    // 第二次（1.5s 内）或空闲态单击：真正退出
+    exitRequested = true;
+    void shutdown('sigint').finally(() => process.exit(0));
+  });
+  process.on('SIGTERM', () => { void shutdown('sigterm').finally(() => process.exit(0)); });
 }
 
 main().catch(async e => {

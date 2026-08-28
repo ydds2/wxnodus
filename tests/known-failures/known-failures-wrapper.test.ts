@@ -53,11 +53,6 @@ describe('known V3 failure registry', () => {
         expect(report.failureId).toBe(failure.id);
         expect(report.failureCode).toBe(failure.expectedFailureCode);
       });
-    } else if (failure.status === 'retired') {
-      it(`${failure.id} retired: 守护对象已移除，回归文件不复存在（显式留痕）`, () => {
-        // retired 不执行任何回归——只断言磁盘上确无对应文件（防「退役」掩盖仍在的测试）
-        expect(entries.filter(e => e.id === failure.id)).toHaveLength(1);
-      });
     } else {
       it(`${failure.id} resolved regression is an ordinary green test`, () => {
         expect(existsSync(resolve(repoRoot, failure.regressionFile))).toBe(true);

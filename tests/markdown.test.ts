@@ -1,7 +1,7 @@
 // tests/markdown.test.ts — L6-1 Markdown 管线：解析（micromark→块模型）与流式增量切分
 import { describe, it, expect } from 'vitest';
-import { parseMd, type MdBlock } from '../src/lib/markdown/parse.js';
-import { splitStablePrefix, throttleStreaming } from '../src/lib/markdown/streaming.js';
+import { parseMd, type MdBlock } from '../src/wxnodus-ui/lib/markdown/parse.js';
+import { splitStablePrefix, throttleStreaming } from '../src/wxnodus-ui/lib/markdown/streaming.js';
 
 describe('parseMd 块模型', () => {
   it('标题/段落/列表/代码块', () => {

@@ -1,0 +1,1094 @@
+// src/wxnodus-ui/components/activeSessionSwitcher.tsx — 会话浏览器（live+历史列表、惰性预览、恢复/删除、/ 过滤搜索）
+import { Box, Text, useInput, useStdout } from '@wxnodus/ink'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+
+import { TUI_SESSION_MODEL_FLAG } from '../domain/slash.js'
+import type { GatewayClient } from '../gatewayClient.js'
+import type {
+  SessionActiveItem,
+  SessionActiveListResponse,
+  SessionCloseResponse,
+  SessionDeleteResponse,
+  SessionListItem,
+  SessionListResponse
+} from '../gatewayTypes.js'
+import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
+import type { Theme } from '../theme.js'
+
+import { ModelPicker } from './modelPicker.js'
+import { windowOffset } from './overlayControls.js'
+import { TextInput } from './textInput.js'
+import { icon } from '../glyphs.js'
+import { filterSessionRows } from '../lib/sessionFilter.js'
+import { topEntry } from '../runtime/overlayStack.js'
+import { getOverlayState } from '../runtime/promptStore.js'
+
+const VISIBLE = 12
+const MIN_WIDTH = 64
+const MAX_WIDTH = 128
+const TITLE_MAX = 64
+
+const STATUS_GLYPH: Record<string, string> = {
+  idle: icon('check'),
+  starting: '…',
+  waiting: '?',
+  working: '▶'
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  idle: 'idle',
+  starting: 'starting',
+  waiting: 'waiting',
+  working: 'working'
+}
+
+const CTRL_OFFSET = 96
+
+const shortModel = (model = '') => model.replace(/^.*\//, '') || 'model?'
+const ctrlChar = (letter: string) => String.fromCharCode(letter.charCodeAt(0) - CTRL_OFFSET)
+
+export const fixedSessionColumnStyle = () => ({ flexShrink: 0 })
+
+export const activeSessionCountLabel = (count: number) =>
+  `${count} live ${count === 1 ? 'session' : 'sessions'}`
+
+export const sessionsCountLabel = (liveCount: number, resumableCount: number) =>
+  `${liveCount} live · ${resumableCount} resumable`
+
+export type SessionRowKind = 'history' | 'live' | 'new'
+
+/**
+ * Map a flat row index into the merged Sessions list to its kind. Rows are
+ * ordered [new][live…][history…] — the "+ new" row is pinned first so it is
+ * always visible no matter how long the resumable history grows.
+ */
+export const sessionRowKindAt = (index: number, liveCount: number): SessionRowKind => {
+  if (index <= 0) {
+    return 'new'
+  }
+
+  return index - 1 < liveCount ? 'live' : 'history'
+}
+
+export const relativeSessionAge = (ts?: number) => {
+  if (!ts) {
+    return ''
+  }
+
+  const days = (Date.now() / 1000 - ts) / 86400
+
+  if (days < 1) {
+    return 'today'
+  }
+
+  if (days < 2) {
+    return 'yesterday'
+  }
+
+  return `${Math.floor(days)}d ago`
+}
+
+/** Drop already-live sessions from the resumable history list (dedupe by id). */
+export const resumableHistory = (history: readonly SessionListItem[], live: readonly SessionActiveItem[]) => {
+  const liveIds = new Set(live.map(s => s.id))
+
+  return history.filter(h => !liveIds.has(h.id))
+}
+
+export const resumeRowContextHintSegments: OrchestratorHintSegment[] = [
+  { role: 'label', text: '可恢复会话：' },
+  { role: 'text', text: ' ' },
+  { role: 'hotkey', text: 'Enter' },
+  { role: 'text', text: ' 恢复 · ' },
+  { role: 'hotkey', text: 'd' },
+  { role: 'text', text: ' 删除' }
+]
+
+export type OrchestratorHintRole = 'hotkey' | 'label' | 'text'
+
+export interface OrchestratorHintSegment {
+  role: OrchestratorHintRole
+  text: string
+}
+
+export const orchestratorContextHintSegments = (newSelected: boolean): OrchestratorHintSegment[] =>
+  newSelected
+    ? [
+        { role: 'label', text: '新行：' },
+        { role: 'text', text: ' 输入提示 · ' },
+        { role: 'hotkey', text: 'Enter' },
+        { role: 'text', text: ' 开始 · ' },
+        { role: 'hotkey', text: 'Tab' },
+        { role: 'text', text: ' 模型' }
+      ]
+    : [
+        { role: 'label', text: '会话行：' },
+        { role: 'text', text: ' ' },
+        { role: 'hotkey', text: 'Enter' },
+        { role: 'text', text: ' 切换 · ' },
+        { role: 'hotkey', text: '→' },
+        { role: 'text', text: ' 预览 · ' },
+        { role: 'hotkey', text: 'Ctrl+D' },
+        { role: 'text', text: ' 关闭' }
+      ]
+
+export const orchestratorGlobalHotkeyHintSegments: OrchestratorHintSegment[] = [
+  { role: 'hotkey', text: '↑↓' },
+  { role: 'text', text: ' 移动 · ' },
+  { role: 'hotkey', text: '/' },
+  { role: 'text', text: ' 搜索 · ' },
+  { role: 'hotkey', text: 'Ctrl+N' },
+  { role: 'text', text: ' 新建 · ' },
+  { role: 'hotkey', text: 'Ctrl+R' },
+  { role: 'text', text: ' 刷新 · ' },
+  { role: 'hotkey', text: 'Esc' },
+  { role: 'text', text: ' 关闭' }
+]
+
+const hintText = (segments: readonly OrchestratorHintSegment[]) => segments.map(segment => segment.text).join('')
+
+export const orchestratorContextHint = (newSelected: boolean) => hintText(orchestratorContextHintSegments(newSelected))
+
+export const orchestratorGlobalHotkeyHint = hintText(orchestratorGlobalHotkeyHintSegments)
+
+export const orchestratorHintSegmentColor = (t: Theme, role: OrchestratorHintRole) => {
+  if (role === 'hotkey') {
+    return t.color.accent
+  }
+
+  if (role === 'label') {
+    return t.color.label
+  }
+
+  return t.color.muted
+}
+
+export const selectedSessionRowStyle = (t: Theme) => ({
+  backgroundColor: t.color.selectionBg,
+  color: t.color.text
+})
+
+export const newSessionMarkerColor = (t: Theme, selected: boolean) =>
+  selected ? selectedSessionRowStyle(t).color : t.color.label
+
+export const newSessionRowIndex = (sessionCount: number) => Math.max(0, sessionCount)
+
+export const isNewSessionRow = (index: number, sessionCount: number) => index >= newSessionRowIndex(sessionCount)
+
+export const canTypeOrchestratorPrompt = (index: number, sessionCount: number) => isNewSessionRow(index, sessionCount)
+
+export const clampOrchestratorSelection = (index: number, sessionCount: number) =>
+  Math.max(0, Math.min(index, newSessionRowIndex(sessionCount)))
+
+export const currentSessionSelectionIndex = (
+  sessions: readonly SessionActiveItem[],
+  currentSessionId: null | string
+) => {
+  const index = sessions.findIndex(s => Boolean(s.current) || (!!currentSessionId && s.id === currentSessionId))
+
+  return index >= 0 ? index : 0
+}
+
+export const orchestratorVisibleRowIndexes = (sessionCount: number, selected: number, visible = VISIBLE) => {
+  const total = Math.max(0, sessionCount) + 1
+  const clamped = clampOrchestratorSelection(selected, sessionCount)
+  const offset = windowOffset(total, clamped, visible)
+  const count = Math.min(visible, total - offset)
+
+  return Array.from({ length: count }, (_, i) => offset + i)
+}
+
+export type CloseFallback = { action: 'activate'; sessionId: string } | { action: 'new' } | { action: 'stay' }
+
+export const closeFallbackAfterClose = (
+  closedId: string,
+  currentSessionId: null | string,
+  remaining: readonly SessionActiveItem[]
+): CloseFallback => {
+  if (!currentSessionId || closedId !== currentSessionId) {
+    return { action: 'stay' }
+  }
+
+  const next = remaining.find(s => s.id !== closedId)
+
+  return next ? { action: 'activate', sessionId: next.id } : { action: 'new' }
+}
+
+export const draftModelArgFromPickerValue = (value: string) => {
+  const parts = value.trim().split(/\s+/).filter(Boolean)
+  const kept: string[] = []
+
+  for (const part of parts) {
+    if (part === TUI_SESSION_MODEL_FLAG || part === '--global') {
+      continue
+    }
+
+    kept.push(part)
+  }
+
+  return kept.join(' ')
+}
+
+export const draftModelNameFromArg = (value: string) => {
+  const parts = draftModelArgFromPickerValue(value).split(/\s+/).filter(Boolean)
+  const modelParts: string[] = []
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]!
+
+    if (part === '--provider') {
+      i++
+      continue
+    }
+
+    if (part.startsWith('--')) {
+      continue
+    }
+
+    modelParts.push(part)
+  }
+
+  return modelParts.join(' ').trim()
+}
+
+export const draftModelDisplayLabel = (value: string) => {
+  const modelName = draftModelNameFromArg(value)
+
+  return modelName ? shortModel(modelName) : 'current/default'
+}
+
+export type OrchestratorRowClickAction = { action: 'activate'; sessionId: string } | { action: 'select-new' }
+
+export const orchestratorRowClickAction = (
+  index: number,
+  sessions: readonly SessionActiveItem[]
+): OrchestratorRowClickAction => {
+  const target = sessions[index]
+
+  return target && !isNewSessionRow(index, sessions.length)
+    ? { action: 'activate', sessionId: target.id }
+    : { action: 'select-new' }
+}
+
+export const draftTitleFromPrompt = (prompt: string, max = TITLE_MAX) => {
+  const compact = prompt.replace(/\s+/g, ' ').trim()
+
+  if (compact.length <= max) {
+    return compact
+  }
+
+  return `${compact.slice(0, Math.max(0, max - 1)).trimEnd()}…`
+}
+
+function OrchestratorHintSegments({ segments, t }: OrchestratorHintTextProps) {
+  return (
+    <>
+      {segments.map((segment, index) => (
+        <Text color={orchestratorHintSegmentColor(t, segment.role)} key={`${segment.role}-${index}`}>
+          {segment.text}
+        </Text>
+      ))}
+    </>
+  )
+}
+
+function OrchestratorHintText({ segments, t }: OrchestratorHintTextProps) {
+  return (
+    <Text color={orchestratorHintSegmentColor(t, 'text')} wrap="truncate-end">
+      <OrchestratorHintSegments segments={segments} t={t} />
+    </Text>
+  )
+}
+
+export function ActiveSessionSwitcher({
+  currentSessionId,
+  gw,
+  onCancel,
+  onClose,
+  onNew,
+  onNewPrompt,
+  onResume,
+  onSelect,
+  t
+}: ActiveSessionSwitcherProps) {
+  const [items, setItems] = useState<SessionActiveItem[]>([])
+  const [history, setHistory] = useState<SessionListItem[]>([])
+  const [err, setErr] = useState('')
+  const [sel, setSel] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [draft, setDraft] = useState('')
+  const [draftModel, setDraftModel] = useState('')
+  const [pickingModel, setPickingModel] = useState(false)
+  const [closingId, setClosingId] = useState('')
+  // When non-null, the user pressed `d` on this (history) session and we await
+  // a second `d` to confirm deletion. Tracked by session id (not row index) so
+  // the 1.5s live-status poll re-indexing rows can't redirect the delete to a
+  // different session. Any other key cancels the prompt.
+  const [confirmDelete, setConfirmDelete] = useState<null | string>(null)
+  const [deleting, setDeleting] = useState(false)
+  // 惰性展开预览（2026-08-19，codex resume_picker.rs:1854 对标）：→ 展开选中历史行的尾部消息
+  // （session.tail 按需取——不阻塞列表滚动）；← 或移动选择即收起
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  // P1 收尾：搜索过滤（/ 进入过滤态，键入即筛可恢复会话；过滤态吞键防误触发导航/删除）
+  const [filter, setFilter] = useState('')
+  const [filtering, setFiltering] = useState(false)
+  const [preview, setPreview] = useState<{ id: string; loading: boolean; lines: Array<{ role: string; text: string }> } | null>(null)
+  const initialSelectionAppliedRef = useRef(false)
+  // Holds the RAW `session.list` results (pre-dedupe). The quiet 1.5s poll
+  // re-derives the resumable list from this against the latest live set, so a
+  // session that was hidden while live reappears in history once it closes —
+  // without re-querying the DB. Only refreshed on a full (includeHistory) load.
+  const rawHistoryRef = useRef<SessionListItem[]>([])
+  // Mirror the displayed lists so the async poll can re-anchor the selection to
+  // the *same* row (by session id) after live sessions appear/disappear, rather
+  // than keeping a now-stale flat index.
+  const itemsRef = useRef<SessionActiveItem[]>([])
+  const historyDisplayRef = useRef<SessionListItem[]>([])
+  const { stdout } = useStdout()
+  const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, (stdout?.columns ?? 80) - 6))
+  const promptColumns = Math.max(20, width - 11)
+
+  // Rows are [new][live…][history…]: the "+ new" row is pinned first (index 0,
+  // always rendered) and the live+history list is windowed below it. `total`
+  // is the count of selectable rows (incl. the new row).
+  const liveCount = items.length
+  // P1 收尾：过滤后列表（搜索只作用于可恢复会话——live 会话常驻显示；索引计算一律走此表）
+  const activeHistory = filter.trim() ? filterSessionRows(history, filter) : history
+  const histCount = activeHistory.length
+  const listLen = liveCount + histCount
+  const total = listLen + 1
+  const rowKind = useCallback((index: number) => sessionRowKindAt(index, liveCount), [liveCount])
+
+  const load = useCallback(
+    // `quiet` skips the loading spinner (used by the live-status poll);
+    // `includeHistory` re-queries the resumable DB list (skipped on the 1.5s
+    // poll, which only needs fresh live-session status).
+    async (quiet = false, includeHistory = true) => {
+      if (!quiet) {
+        setLoading(true)
+      }
+
+      try {
+        // Fetch independently (allSettled) so a failing session.list can't
+        // wipe the live-session list: live sessions still render and the
+        // resumable history degrades on its own.
+        const [liveRes, histRes] = await Promise.allSettled([
+          gw.request<SessionActiveListResponse>('session.active_list', {
+            current_session_id: currentSessionId
+          }),
+          includeHistory ? gw.request<SessionListResponse>('session.list', { limit: 200 }) : Promise.resolve(null)
+        ])
+        const r = liveRes.status === 'fulfilled' ? asRpcResult<SessionActiveListResponse>(liveRes.value) : null
+
+        if (!r) {
+          setErr('invalid response: session.active_list')
+          setLoading(false)
+
+          return []
+        }
+
+        const next = r.sessions ?? []
+
+        // Surface a garbled/failed session.list rather than silently blanking
+        // the resumable section; keep the last good raw history so a transient
+        // failure doesn't wipe it.
+        let histError = ''
+
+        if (includeHistory) {
+          if (histRes.status === 'fulfilled') {
+            const parsedHist = asRpcResult<SessionListResponse>(histRes.value)
+
+            if (parsedHist) {
+              rawHistoryRef.current = parsedHist.sessions ?? []
+            } else {
+              histError = 'invalid response: session.list'
+            }
+          } else {
+            histError = 'could not load resumable sessions'
+          }
+        }
+
+        const hist = resumableHistory(rawHistoryRef.current, next)
+        const initializeSelection = !initialSelectionAppliedRef.current
+        initialSelectionAppliedRef.current = true
+        const maxSel = next.length + hist.length // == total - 1 (new row is index 0)
+
+        setItems(next)
+        setHistory(hist)
+        // Re-anchor selection to the same row by identity (the live list can
+        // grow/shrink between polls, which would otherwise drift a flat index).
+        setSel(s => {
+          if (initializeSelection) {
+            // Land on the current live session (shifted +1 past the pinned new
+            // row); with no live sessions, start on the new row itself.
+            return next.length ? Math.min(currentSessionSelectionIndex(next, currentSessionId) + 1, maxSel) : 0
+          }
+
+          if (s <= 0) {
+            return 0 // "+ new" row
+          }
+
+          const prevItems = itemsRef.current
+          const prevHist = historyDisplayRef.current
+          const clamp = () => Math.max(0, Math.min(s, maxSel))
+
+          if (s - 1 < prevItems.length) {
+            const id = prevItems[s - 1]?.id
+            const i = id ? next.findIndex(x => x.id === id) : -1
+
+            return i >= 0 ? i + 1 : clamp()
+          }
+
+          const id = prevHist[s - 1 - prevItems.length]?.id
+          const i = id ? hist.findIndex(x => x.id === id) : -1
+
+          return i >= 0 ? 1 + next.length + i : clamp()
+        })
+        setErr(histError)
+        setLoading(false)
+
+        return next
+      } catch (e: unknown) {
+        setErr(rpcErrorMessage(e))
+        setLoading(false)
+
+        return []
+      }
+    },
+    [currentSessionId, gw]
+  )
+
+  useEffect(() => {
+    itemsRef.current = items
+    historyDisplayRef.current = history
+  }, [items, history])
+
+  useEffect(() => {
+    void load()
+    const timer = setInterval(() => void load(true, false), 1500)
+
+    return () => clearInterval(timer)
+  }, [load])
+
+  const submitDraft = useCallback(
+    (value: string) => {
+      const prompt = value.trim()
+
+      if (!prompt) {
+        return
+      }
+
+      setDraft('')
+      onNewPrompt(prompt, draftModel || undefined)
+    },
+    [draftModel, onNewPrompt]
+  )
+
+  // A24：基于 id 的关闭（Ctrl+D 与行尾 ✕ 共用——真实 onClose RPC + 光标回退）
+  const closeSession = useCallback(
+    async (id: string) => {
+      if (!id || closingId) {
+        return
+      }
+
+      setErr('')
+      setClosingId(id)
+
+      try {
+        const result = await onClose(id)
+        const closed = Boolean(result?.closed ?? result?.ok)
+
+        if (!closed) {
+          setErr('session was already closed')
+
+          return
+        }
+
+        const remaining = await load(true)
+        const fallback = closeFallbackAfterClose(id, currentSessionId, remaining)
+
+        if (fallback.action === 'activate') {
+          onSelect(fallback.sessionId)
+        } else if (fallback.action === 'new') {
+          onNew()
+        } else {
+          setSel(s => Math.max(0, Math.min(s, remaining.length + history.length)))
+        }
+      } catch (e: unknown) {
+        setErr(rpcErrorMessage(e))
+      } finally {
+        setClosingId('')
+      }
+    },
+    [closingId, currentSessionId, history.length, load, onClose, onNew, onSelect]
+  )
+
+  const closeSelected = useCallback(() => {
+    const target = items[sel - 1]
+
+    if (!target || rowKind(sel) !== 'live') {
+      return
+    }
+
+    return closeSession(target.id)
+  }, [closeSession, items, rowKind, sel])
+
+  const performDelete = useCallback(
+    (id: string) => {
+      const target = history.find(h => h.id === id)
+
+      if (!target || deleting) {
+        return
+      }
+
+      setDeleting(true)
+      gw.request<SessionDeleteResponse>('session.delete', { session_id: target.id })
+        .then(raw => {
+          const r = asRpcResult<SessionDeleteResponse>(raw)
+
+          if (!r || r.deleted !== target.id) {
+            setErr('invalid response: session.delete')
+            setDeleting(false)
+
+            return
+          }
+
+          rawHistoryRef.current = rawHistoryRef.current.filter(h => h.id !== target.id)
+          setHistory(prev => prev.filter(h => h.id !== target.id))
+          setSel(s => Math.max(0, Math.min(s, items.length + history.length - 1)))
+          setErr('')
+          setDeleting(false)
+        })
+        .catch((e: unknown) => {
+          setErr(rpcErrorMessage(e))
+          setDeleting(false)
+        })
+    },
+    [deleting, gw, history, items.length]
+  )
+
+  // → 展开/收起选中历史行尾部消息预览（session.tail 惰性加载——不阻塞列表滚动）
+  const togglePreview = useCallback(
+    (id: string) => {
+      setExpandedId(prev => {
+        if (prev === id) {
+          setPreview(null)
+
+          return null
+        }
+
+        setPreview({ id, loading: true, lines: [] })
+        void gw
+          .request<{ messages?: Array<{ role: string; text: string }> }>('session.tail', { session_id: id, limit: 6 })
+          .then(r =>
+            setPreview(p => (p?.id === id
+              ? {
+                  id,
+                  loading: false,
+                  lines: (r?.messages ?? []).map(m => ({ role: m.role, text: String(m.text).replace(/\s+/g, ' ').trim().slice(0, Math.max(24, width - 8)) })),
+                }
+              : p))
+          )
+          .catch(() => setPreview(p => (p?.id === id ? { id, loading: false, lines: [] } : p)))
+
+        return id
+      })
+    },
+    [gw, width]
+  )
+
+  const handleRowClick = useCallback(
+    (index: number) => (event: { stopImmediatePropagation?: () => void }) => {
+      event.stopImmediatePropagation?.()
+      const kind = rowKind(index)
+      const clamped = Math.max(0, Math.min(index, total - 1))
+
+      if (kind === 'live') {
+        setSel(clamped)
+        onSelect(items[index - 1]!.id)
+
+        return
+      }
+
+      if (kind === 'history') {
+        setSel(clamped)
+        onResume(activeHistory[index - 1 - items.length]!.id)
+
+        return
+      }
+
+      setSel(0)
+    },
+    [activeHistory, items, onResume, onSelect, rowKind, total]
+  )
+
+  const selectedKind = rowKind(sel)
+  const newSelected = selectedKind === 'new'
+  const draftHasText = Boolean(draft.trim())
+
+  useInput((ch, key) => {
+    if (pickingModel || deleting) {
+      return
+    }
+
+    // Two-press history delete: once armed, only a second `d` deletes; any
+    // other key cancels the prompt (mirrors the standalone resume picker).
+    if (confirmDelete !== null) {
+      if (ch?.toLowerCase() === 'd') {
+        const id = confirmDelete
+        setConfirmDelete(null)
+        performDelete(id)
+      } else {
+        setConfirmDelete(null)
+      }
+
+      return
+    }
+
+    const lower = ch?.toLowerCase() ?? ''
+    const isCtrl = (letter: string) => key.ctrl && (lower === letter || ch === ctrlChar(letter))
+
+    // P1 收尾：Esc 仅当本选择器为栈顶时消费——pager/工作台盖在上方时 Esc 归顶层；
+    // P2：本组件亦作为工作台 sessions 标签渲染（栈顶 kind=workspace 且 ws=sessions）——同权
+    const top = topEntry(getOverlayState())
+    if (key.escape && !(top?.kind === 'sessions' || (top?.kind === 'workspace' && top.ws === 'sessions'))) {
+      return
+    }
+
+    // P1 收尾：/ 进入过滤态（键入即筛可恢复会话；选中归位 +new 行——索引安全优先）
+    if (ch === '/' && !key.ctrl && !key.meta && !key.alt) {
+      setFiltering(true)
+      setFilter('')
+      setSel(0)
+      setExpandedId(null)
+      setPreview(null)
+
+      return
+    }
+
+    // 过滤态：只消费过滤键（字符追加/退格删除/Enter 退出/Esc 清空再退）
+    if (filtering) {
+      if (key.escape) {
+        setFilter('')
+        setFiltering(false)
+        setSel(0)
+
+        return
+      }
+
+      if (key.return) {
+        setFiltering(false)
+
+        return
+      }
+
+      if (key.backspace) {
+        setFilter(f => f.slice(0, -1))
+        setSel(0)
+
+        return
+      }
+
+      if (ch && ch.length === 1 && !key.ctrl && !key.meta && !key.alt) {
+        setFilter(f => (f + ch).slice(0, 64))
+        setSel(0)
+
+        return
+      }
+
+      // 其余键（导航/删除/切换等）在过滤态吞掉——防止选中索引被静默改坏
+      return
+    }
+
+    if (key.escape) {
+      return onCancel()
+    }
+
+    if (isCtrl('n')) {
+      return onNew()
+    }
+
+    if (isCtrl('r')) {
+      void load()
+
+      return
+    }
+
+    if (key.tab) {
+      if (newSelected) {
+        setPickingModel(true)
+      }
+
+      return
+    }
+
+    if (isCtrl('d')) {
+      if (selectedKind === 'live') {
+        void closeSelected()
+      }
+
+      return
+    }
+
+    // `d` arms deletion on a resumable history row. (On the New row `d` is
+    // captured by the prompt's TextInput, so it never reaches here.)
+    if (lower === 'd' && !key.ctrl && selectedKind === 'history') {
+      setConfirmDelete(activeHistory[sel - 1 - items.length]?.id ?? null)
+
+      return
+    }
+
+    if (newSelected && draftHasText) {
+      return
+    }
+
+    if (key.upArrow && sel > 0) {
+      setExpandedId(null)
+      setPreview(null)
+
+      return setSel(s => Math.max(0, s - 1))
+    }
+
+    if (key.downArrow && sel < total - 1) {
+      setExpandedId(null)
+      setPreview(null)
+
+      return setSel(s => Math.min(total - 1, s + 1))
+    }
+
+    // →/←：展开/收起选中历史行尾部消息预览（codex 惰性展开对标）
+    if (key.rightArrow && selectedKind === 'history') {
+      const id = activeHistory[sel - 1 - items.length]?.id
+
+      if (id) togglePreview(id)
+
+      return
+    }
+
+    if (key.leftArrow && expandedId) {
+      setExpandedId(null)
+      setPreview(null)
+
+      return
+    }
+
+    if (key.return) {
+      if (newSelected) {
+        if (!draftHasText) {
+          return onNew()
+        }
+
+        return
+      }
+
+      if (selectedKind === 'live' && items[sel - 1]) {
+        return onSelect(items[sel - 1]!.id)
+      }
+
+      if (selectedKind === 'history' && activeHistory[sel - 1 - items.length]) {
+        return onResume(activeHistory[sel - 1 - items.length]!.id)
+      }
+    }
+  })
+
+  if (pickingModel) {
+    return (
+      <ModelPicker
+        allowPersistGlobal={false}
+        gw={gw}
+        onCancel={() => setPickingModel(false)}
+        onSelect={value => {
+          setDraftModel(draftModelArgFromPickerValue(value))
+          setPickingModel(false)
+        }}
+        sessionId={currentSessionId}
+        t={t}
+      />
+    )
+  }
+
+  if (loading) {
+    return <Text color={t.color.muted}>loading sessions…</Text>
+  }
+
+  // The "+ new" row (sel 0) is pinned at the top so it's always visible; the
+  // live + history list is windowed beneath it.
+  const listSel = sel > 0 ? sel - 1 : 0
+  const offset = windowOffset(listLen, listSel, VISIBLE)
+  const visibleCount = Math.max(0, Math.min(VISIBLE, listLen - offset))
+  const visibleRows = Array.from({ length: visibleCount }, (_, k) => offset + k + 1)
+
+  const newSelectedRow = sel === 0
+  const newRowStyle = newSelectedRow ? selectedSessionRowStyle(t) : null
+  const newRowTextColor = newRowStyle?.color
+  const newRowMarkerColor = newSessionMarkerColor(t, newSelectedRow)
+  const promptTitle = draftTitleFromPrompt(draft) || '开始新的实时会话'
+
+  return (
+    <Box flexDirection="column" width={width}>
+      <Text bold color={t.color.accent}>
+        Sessions
+      </Text>
+      <Text color={t.color.muted}>{sessionsCountLabel(items.length, history.length)}</Text>
+      {filtering && (
+        <Text color={t.color.accent}>
+          搜索：{filter || '（输入过滤词）'} · 命中 {activeHistory.length} · Esc 清空 / Enter 退出
+        </Text>
+      )}
+
+      {err && <Text color={t.color.label}>error: {err}</Text>}
+
+      <Box
+        backgroundColor={newRowStyle?.backgroundColor}
+        flexDirection="row"
+        onClick={handleRowClick(0)}
+        width="100%"
+      >
+        <Text bold={newSelectedRow} color={newRowTextColor ?? t.color.muted}>
+          {newSelectedRow ? '▸ ' : '  '}
+        </Text>
+
+        <Box {...fixedSessionColumnStyle()} width={5}>
+          <Text bold={newSelectedRow} color={newRowMarkerColor}>
+            {'+'.padStart(2)}
+          </Text>
+        </Box>
+
+        <Box {...fixedSessionColumnStyle()} width={11}>
+          <Text bold={newSelectedRow} color={newRowMarkerColor} wrap="truncate-end">
+            new
+          </Text>
+        </Box>
+
+        <Box {...fixedSessionColumnStyle()} width={11}>
+          <Text color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
+            ✎ draft
+          </Text>
+        </Box>
+
+        <Box {...fixedSessionColumnStyle()} width={18}>
+          <Text color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
+            {draftModelDisplayLabel(draftModel)}
+          </Text>
+        </Box>
+
+        <Box flexGrow={1} flexShrink={1} minWidth={0}>
+          <Text bold={newSelectedRow} color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
+            {promptTitle}
+          </Text>
+        </Box>
+      </Box>
+
+      {offset > 0 && <Text color={t.color.muted}> ↑ {offset} more</Text>}
+      {!listLen && <Text color={t.color.muted}>no other sessions — Enter on +new to start one</Text>}
+
+      {visibleRows.map(i => {
+        const selected = sel === i
+        const selectedStyle = selected ? selectedSessionRowStyle(t) : null
+        const rowTextColor = selectedStyle?.color
+        const kind = rowKind(i)
+
+        if (kind === 'history') {
+          const h = activeHistory[i - 1 - items.length]!
+          const pendingDelete = confirmDelete === h.id
+          const title = pendingDelete
+            ? 'press d again to delete'
+            : deleting && selected
+              ? 'deleting…'
+              : h.title || h.preview || '(untitled)'
+
+          return (
+            <Fragment key={h.id}>
+              <Box
+                backgroundColor={selectedStyle?.backgroundColor}
+                flexDirection="row"
+                onClick={handleRowClick(i)}
+                width="100%"
+              >
+              <Text bold={selected} color={rowTextColor ?? t.color.muted}>
+                {selected ? '▸ ' : '  '}
+              </Text>
+
+              <Box {...fixedSessionColumnStyle()} width={5}>
+                <Text bold={selected} color={rowTextColor ?? t.color.muted}>
+                  {String(i).padStart(2)}.
+                </Text>
+              </Box>
+
+              <Box {...fixedSessionColumnStyle()} width={11}>
+                <Text bold={selected} color={rowTextColor ?? t.color.muted} wrap="truncate-end">
+                  {h.id}
+                </Text>
+              </Box>
+
+              <Box {...fixedSessionColumnStyle()} width={11}>
+                <Text color={rowTextColor ?? t.color.muted} wrap="truncate-end">
+                  {relativeSessionAge(h.started_at)}
+                </Text>
+              </Box>
+
+              <Box {...fixedSessionColumnStyle()} width={18}>
+                <Text color={rowTextColor ?? t.color.muted} wrap="truncate-end">
+                  {h.message_count} msgs
+                </Text>
+              </Box>
+
+              <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                <Text
+                  bold={selected}
+                  color={pendingDelete ? t.color.label : rowTextColor ?? t.color.muted}
+                  wrap="truncate-end"
+                >
+                  {title}
+                </Text>
+              </Box>
+              </Box>
+
+              {expandedId === h.id && preview?.id === h.id && (
+                <Box flexDirection="column" paddingLeft={3}>
+                  {preview.loading
+                    ? <Text color={t.color.muted}>…</Text>
+                    : preview.lines.length
+                      ? preview.lines.map((m, k) => (
+                          <Text key={k} color={t.color.muted} wrap="truncate-end">
+                            {m.role === 'user' ? '▸ ' : '  '}{m.text || '(empty)'}
+                          </Text>
+                        ))
+                      : <Text color={t.color.muted}>（无消息）</Text>}
+                </Box>
+              )}
+            </Fragment>
+          )
+        }
+
+        const s = items[i - 1]!
+        const status = s.status ?? 'idle'
+        const current = s.current || s.id === currentSessionId
+        const title = closingId === s.id ? 'closing…' : s.title || s.preview || '(untitled)'
+
+        return (
+          <Box
+            backgroundColor={selectedStyle?.backgroundColor}
+            flexDirection="row"
+            key={s.id}
+            onClick={handleRowClick(i)}
+            width="100%"
+          >
+            <Text bold={selected} color={rowTextColor ?? t.color.muted}>
+              {selected ? '▸ ' : '  '}
+            </Text>
+
+            <Box {...fixedSessionColumnStyle()} width={5}>
+              <Text bold={selected} color={rowTextColor ?? t.color.muted}>
+                {String(i).padStart(2)}.
+              </Text>
+            </Box>
+
+            <Box {...fixedSessionColumnStyle()} width={11}>
+              <Text
+                bold={selected}
+                color={rowTextColor ?? (current ? t.color.label : t.color.muted)}
+                wrap="truncate-end"
+              >
+                {current ? 'current' : s.id}
+              </Text>
+            </Box>
+
+            <Box {...fixedSessionColumnStyle()} width={11}>
+              <Text
+                color={
+                  rowTextColor ??
+                  (status === 'working' ? t.color.ok : status === 'waiting' ? t.color.label : t.color.muted)
+                }
+                wrap="truncate-end"
+              >
+                {STATUS_GLYPH[status] ?? '·'} {STATUS_LABEL[status] ?? status}
+              </Text>
+            </Box>
+
+            <Box {...fixedSessionColumnStyle()} width={18}>
+              <Text color={rowTextColor ?? t.color.muted} wrap="truncate-end">
+                {shortModel(s.model)}
+              </Text>
+            </Box>
+
+            {/* 会话成本（估算——全部模型有定价才显示；未知省略，诚实不显示低估合计） */}
+            {typeof s.cost_usd === 'number' ? (
+              <Box {...fixedSessionColumnStyle()} width={12}>
+                <Text color={rowTextColor ?? t.color.accent} wrap="truncate-end">
+                  ${s.cost_usd.toFixed(4)}
+                </Text>
+              </Box>
+            ) : null}
+
+            <Box flexGrow={1} flexShrink={1} minWidth={0}>
+              <Text bold={selected} color={rowTextColor ?? t.color.muted} wrap="truncate-end">
+                {title}
+              </Text>
+            </Box>
+
+            {/* A24：行尾 ✕ 关闭会话（Ctrl+D 同语义——stopImmediatePropagation 防选中冒泡） */}
+            <Box
+              flexShrink={0}
+              onClick={(e: { stopImmediatePropagation?: () => void }) => {
+                e.stopImmediatePropagation?.()
+                void closeSession(s.id)
+              }}
+            >
+              <Text color={t.color.muted}> {icon('close')}</Text>
+            </Box>
+          </Box>
+        )
+      })}
+
+      {/* A24：N more 可点翻页（此前纯提示）——offset 由 listSel 派生，直接下移选中即滚动窗口 */}
+      {offset + VISIBLE < listLen && (
+        <Box onClick={() => setSel(s => Math.min(listLen, s + VISIBLE))}>
+          <Text color={t.color.muted}> ↓ {listLen - offset - VISIBLE} more</Text>
+        </Box>
+      )}
+
+      {newSelected ? (
+        <>
+          <Box marginTop={1}>
+            <Text color={t.color.label}>prompt › </Text>
+            <TextInput columns={promptColumns} onChange={setDraft} onSubmit={submitDraft} value={draft} />
+          </Box>
+          <OrchestratorHintText segments={orchestratorContextHintSegments(true)} t={t} />
+          <Text color={t.color.muted} wrap="truncate-end">
+            model: {draftModelDisplayLabel(draftModel)}
+          </Text>
+        </>
+      ) : (
+        <Box flexDirection="column" marginTop={1}>
+          <OrchestratorHintText
+            segments={selectedKind === 'history' ? resumeRowContextHintSegments : orchestratorContextHintSegments(false)}
+            t={t}
+          />
+          <Text color={t.color.muted} wrap="truncate-end">
+            Select <Text color={newSessionMarkerColor(t, false)}>+new</Text> to type a prompt
+          </Text>
+        </Box>
+      )}
+
+      <OrchestratorHintText segments={orchestratorGlobalHotkeyHintSegments} t={t} />
+    </Box>
+  )
+}
+
+interface OrchestratorHintTextProps {
+  segments: readonly OrchestratorHintSegment[]
+  t: Theme
+}
+
+interface ActiveSessionSwitcherProps {
+  currentSessionId: null | string
+  gw: GatewayClient
+  onCancel: () => void
+  onClose: (id: string) => Promise<null | SessionCloseResponse>
+  onNew: () => void
+  onNewPrompt: (prompt: string, modelArg?: string) => void
+  onResume: (id: string) => void
+  onSelect: (id: string) => void
+  t: Theme
+}

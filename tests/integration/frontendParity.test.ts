@@ -3,12 +3,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCliFrontend } from '../../src/bootstrap/createCliFrontend.js';
 import { createHttpFrontend } from '../../src/bootstrap/createHttpFrontend.js';
+import { createTuiFrontend } from '../../src/bootstrap/createTuiFrontend.js';
 import { createWireFrontend } from '../../src/bootstrap/createWireFrontend.js';
 import { completionTransport } from '../../src/protocol/completionTransport.js';
 import type { GatewayEvent } from '../../src/protocol/events.js';
 import type { GatewayPort } from '../../src/protocol/gateway.js';
 import { RUN_FINAL_STATUSES } from '../../src/protocol/runs.js';
 import type { TuiFrontend } from '../../src/presentation/tui/frontend.js';
+import { feedTuiProjection, getTuiProjection } from '../../src/wxnodus-ui/runtime/tuiProjection.js';
 
 const envelope = (type: string, runId: string, payload: unknown): GatewayEvent => ({
   schemaVersion: 1, type, producer: 'gateway', timestamp: '2026-08-13T00:00:00.000Z', locale: 'zh-CN',
@@ -25,7 +27,7 @@ function makeGateway(events: GatewayEvent[]) {
   return { port, emitAll: () => { for (const event of events) for (const handler of [...handlers]) handler(event); } };
 }
 
-const factories = { cli: createCliFrontend, wire: createWireFrontend, http: createHttpFrontend };
+const factories = { cli: createCliFrontend, wire: createWireFrontend, http: createHttpFrontend, tui: createTuiFrontend };
 
 describe('frontend parity', () => {
   const events = [envelope('run.started', 'r1', {}), envelope('run.completed', 'r1', { status: 'failed', reasons: ['criterion failed'] })];
@@ -37,7 +39,7 @@ describe('frontend parity', () => {
     const snapshots = Object.values(frontends).map(frontend => frontend.snapshot());
     for (const snapshot of snapshots.slice(1)) expect(snapshot).toEqual(snapshots[0]);
     expect(snapshots[0]).toMatchObject({ runs: { r1: { status: 'failed', reasons: ['criterion failed'] } }, lastError: null });
-    expect(new Set(Object.values(frontends).map(frontend => frontend.kind))).toEqual(new Set(['cli', 'wire', 'http']));
+    expect(new Set(Object.values(frontends).map(frontend => frontend.kind))).toEqual(new Set(['cli', 'wire', 'http', 'tui']));
   });
 
   it('propagates the exact shared transport triple for every run final status on every entry point', () => {
@@ -73,5 +75,18 @@ describe('frontend parity', () => {
     frontend.dispose();
     emitAll();
     expect(frontend.snapshot()).toEqual({ runs: {}, effects: [], lastError: null });
+  });
+
+  it('feeds the TUI projection store only with run lifecycle events', () => {
+    feedTuiProjection({ type: 'run.started', session_id: 's1', payload: {} });
+    feedTuiProjection({ type: 'message.delta', session_id: 's1', payload: { text: 'ignored' } });
+    feedTuiProjection({ type: 'run.completed', session_id: 's1', payload: { status: 'succeeded', reasons: [] } });
+    // sidecar 事件无 runId → 不落入 runs；message 事件不进纯管线
+    expect(Object.keys(getTuiProjection().runs)).toHaveLength(0);
+    // 经协议事件的投影（带 runId）才会落到 runs
+    const { port, emitAll } = makeGateway(events);
+    const frontend = createTuiFrontend(port);
+    emitAll();
+    expect(frontend.snapshot().runs).toMatchObject({ r1: { status: 'failed' } });
   });
 });

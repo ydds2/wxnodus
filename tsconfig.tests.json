@@ -15,6 +15,7 @@
     "tests/**/*.tsx",
     "src/**/*.ts",
     "src/**/*.tsx",
+    "packages/wxnodus-ink/**/*.ts",
     "packages/wxnodus-ink/**/*.tsx"
   ],
   "exclude": [

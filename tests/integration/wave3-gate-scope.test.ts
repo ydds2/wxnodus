@@ -23,6 +23,7 @@ it('forbids known direct legacy imports and direct executions', async () => {
     'src/commands/handlers.ts',
     'src/commands/handlersExt.ts',
     'src/kernel/tools.ts',
+    'src/wxnodus-ui/wxGateway.ts',
   ];
   for (const target of targets) {
     const source = await readFile(target, 'utf8');

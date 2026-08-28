@@ -9,7 +9,7 @@ const repoRoot = rootArg === -1 ? workspaceRoot : resolve(process.argv[rootArg +
 const roots = [
   { path: 'tests', required: true },
   { path: 'src', required: true },
-  // packages 根已移除：wxnodus-ink 随 TUI 删除；vscode-ext 测试经自身 npm 脚本（test:vscode-ext）运行
+  { path: 'packages', required: true },
 ];
 
 function walk(dir) {

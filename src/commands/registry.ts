@@ -14,7 +14,7 @@ export const SLASH: string[] = [
   // 安全（合规红线）
   '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt', '/yolo', '/afk', '/security', '/offline',
   // 系统
-  '/backup', '/export', '/lang', '/config', '/logs', '/bench', '/init', '/voice', '/fortune', '/workspace', '/vim', '/diff', '/migrate',
+  '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init', '/voice', '/fortune', '/workspace', '/vim', '/diff', '/migrate',
   // 视觉与媒体（可视化 AI 技能）
   '/vision', '/img', '/video', '/render', '/capture', '/input', '/computer',
   // 网络与集成
@@ -36,7 +36,7 @@ export const COMMAND_CAT: Record<string, string> = {
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆', '/assimilate': '◆',
   '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨', '/offline': '⬇',
   '/migrate': '◉',
-  '/backup': '◉', '/export': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉', '/voice': '◉', '/fortune': '◉', '/workspace': '◉', '/vim': '◉', '/diff': '◉',
+  '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉', '/voice': '◉', '/fortune': '◉', '/workspace': '◉', '/vim': '◉', '/diff': '◉',
   '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿', '/computer': '⛭',
   '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/download': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭', '/remote': '⛭', '/eco': '⛭',
   '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/arena': '◍', '/review': '◍', '/understand': '◍', '/session-stream': '◍', '/goal': '◍', '/btw': '◍', '/share': '◍',
@@ -115,6 +115,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/warp': '本地演示动效（不执行外部副作用）',
   '/rewind': '回滚到最近快照（Claude Code /rewind 同款，等价 /checkpoint restore）',
   '/market': '开放生态目录（npm/GitHub 搜索 + 安装 MCP/技能）',
+  '/theme': '主题切换（dark/light/预设/用户主题）',
   '/bundle': '场景整合包（skill/MCP/插件/配置规整打包，一键安装/导入/导出/应用）',
   '/reload-skills': '重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini）并汇报',
   '/init': '分析项目生成 AGENTS.md（本地扫描，--overwrite 覆盖）',
