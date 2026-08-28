@@ -1,4 +1,4 @@
-# CI 中使用 wxnodus（GitHub Action / 预提交 / SDK 密钥注入 · A-S5 2026-08-28）
+﻿# CI 中使用 wxnodus（GitHub Action / 预提交 / SDK 密钥注入 · A-S5 2026-08-28）
 
 > 三种姿势按需取用；全部**零云端中心**——密钥走平台 secret/env，数据不出仓库与 runner。
 
