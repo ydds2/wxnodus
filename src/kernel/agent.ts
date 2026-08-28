@@ -1018,7 +1018,10 @@ export function createAgent(opts: AgentOptions) {
       } else {
         out = safe;
       }
-      bus.emit('agent.tool', { name, phase: 'complete', ok: true, ms: Date.now() - t0, toolId, session_id: sessionId });
+      // T8（2026-08-28，kimi 编辑回显）：complete 事件携带有界 preview（600 字）——
+      // 薄层 TUI 据此渲染 fs_edit/apply_patch 的统一 diff 红绿块（事件原无输出文本，TUI 无从取数）。
+      // 低频事件、有界载荷（高频 token 事件不落盘纪律不受影响）。
+      bus.emit('agent.tool', { name, phase: 'complete', ok: true, ms: Date.now() - t0, toolId, session_id: sessionId, preview: out.slice(0, 600) });
       hooks?.postToolUse?.(name, out);
       // A21：工具执行结果留痕（耗时/成败）
       auditTool('tool.executed', { tool: name, ok: true, ms: Date.now() - t0 });

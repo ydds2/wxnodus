@@ -44,6 +44,8 @@ export interface InteractiveLoopDeps {
   cwd?: string;
   /** 非 slash 输入的命令意图路由（-p 同链路；kind 非 command/tool 一律按 agent 回合处理） */
   routeInput?: (text: string) => Promise<{ kind: 'command' | 'agent' | 'tool' | 'chat'; cmd?: string; value?: string }>;
+  /** T11（2026-08-28）：斜杠命令候选源（Tab 补全——kimi 命令补全体感；缺省不挂 completer） */
+  commands?: () => readonly string[];
   /** 应答广播挂载点：组合根在创建网关时经中转器注入（网关构造早于循环） */
   setOnRequest?: (handler: (ev: { type: string } & Record<string, unknown>) => void) => void;
   timeoutMs?: number;
@@ -76,6 +78,21 @@ const TIP_INTERVAL_MS = 30_000;
 
 const REDRAW = '\r\x1b[2K'; // 单行重绘（薄层行式投影的动画载体——无替代屏/Live 引擎）
 
+/**
+ * T11（2026-08-28）：斜杠命令 Tab 补全（readline completer 契约 [候选, 原行]）：
+ * 仅 '/'+前缀触发；唯一命中补全并附空格，多命中返回全列表（readline 自动列显 + 公共前缀推进）；
+ * 非 slash 输入零干预。纯函数可单测。
+ */
+export function slashCompleter(line: string, commands: readonly string[]): [string[], string] {
+  if (!line.startsWith('/')) return [[], line];
+  const hits = commands.filter(c => c.startsWith(line));
+  if (hits.length === 1) return [[hits[0]! + ' '], line];
+  return [hits, line];
+}
+
+/** T12（2026-08-28）：尾部单反斜杠 = 续行（偶数反斜杠为字面量——kimi 多行输入语义） */
+const isContinuation = (line: string): boolean => line === '\\' || /[^\\]\\$/.test(line);
+
 export async function startInteractiveLoop(deps: InteractiveLoopDeps): Promise<void> {
   const stdout = deps.stdout ?? process.stdout;
   const stdin = deps.stdin ?? process.stdin;
@@ -87,10 +104,19 @@ export async function startInteractiveLoop(deps: InteractiveLoopDeps): Promise<v
 
   stdout.write(R.renderBanner(deps.modelLabel, opts));
 
-  const rl: Interface = createInterface({ input: stdin, output: stdout, prompt: '❯ ', terminal: stdout.isTTY === true });
+  const rl: Interface = createInterface({
+    input: stdin,
+    output: stdout,
+    prompt: '❯ ',
+    terminal: stdout.isTTY === true,
+    // T11：命令候选源装配时挂 Tab 补全（非 TTY/未装配零影响）
+    completer: deps.commands ? (line: string) => slashCompleter(line, deps.commands!()) : undefined,
+  });
   let pending: PendingRequest | null = null;
   let busy = false;
   let tipIndex = 0;
+  let sessionTokens = 0; // T9：会话累计 token（底栏用量段——每回合收口累计）
+  let multiline = ''; // T12：续行缓冲（… 提示符期间累积，收口提交）
 
   // ── 底栏（TTY 专属；非 TTY 零输出——管道消费不被横幅外内容打扰） ──
   let branch: string | null = null;
@@ -103,6 +129,7 @@ export async function startInteractiveLoop(deps: InteractiveLoopDeps): Promise<v
       thinking,
       cwd,
       branch,
+      sessionTokens,
       tip: TIPS[tipIndex % TIPS.length],
       columns: (stdout as NodeJS.WriteStream & { columns?: number }).columns ?? 80,
     }, opts) + '\n');
@@ -241,6 +268,9 @@ export async function startInteractiveLoop(deps: InteractiveLoopDeps): Promise<v
             ? `${name} 完成 · ${p.ms ?? 0}ms`
             : `失败：${String(p.error ?? '').slice(0, 160) || '未知错误'}`;
           stdout.write(R.renderToolOutcomeLine(ok, brief, opts) + '\n');
+          // T8：编辑类工具的统一 diff 红绿块（事件携带有界 preview——fs_edit @@ 块 / apply_patch diff --git）
+          const pv = typeof p.preview === 'string' ? p.preview : '';
+          if (pv && R.hasUnifiedDiff(pv)) stdout.write(R.renderDiffPreview(pv, opts) + '\n');
         }
       }],
       ['system.notice', (e: any) => {
@@ -316,6 +346,7 @@ export async function startInteractiveLoop(deps: InteractiveLoopDeps): Promise<v
       }
       stdout.write('\n' + R.renderFinalLine(String(run.status), run.status === 'succeeded', opts) + '\n');
       const tokens = Math.round(ctx.thinkingTokens + ctx.contentTokens);
+      sessionTokens += tokens; // T9：底栏会话累计（下轮 printToolbar 可见）
       const summary = R.renderTurnSummaryLine({
         turns: ctx.turns,
         tokens: tokens > 0 ? tokens : undefined,
@@ -356,8 +387,18 @@ export async function startInteractiveLoop(deps: InteractiveLoopDeps): Promise<v
       rl.prompt();
       return;
     }
-    if (!input) { rl.prompt(); return; }
-    if (input === '/exit' || input === '/quit' || input === 'exit') {
+    // T12：续行——尾部单反斜杠入缓冲（提示符切 …），无续行符时与缓冲合并提交
+    if (isContinuation(line)) {
+      multiline += line.slice(0, -1).trimEnd() + '\n';
+      rl.setPrompt('… ');
+      rl.prompt();
+      return;
+    }
+    const fullInput = (multiline + input).trim();
+    multiline = '';
+    rl.setPrompt('❯ ');
+    if (!fullInput) { rl.prompt(); return; }
+    if (fullInput === '/exit' || fullInput === '/quit' || fullInput === 'exit') {
       rl.close();
       deps.onExit?.();
       return;
@@ -366,17 +407,17 @@ export async function startInteractiveLoop(deps: InteractiveLoopDeps): Promise<v
     busy = true;
     void (async () => {
       try {
-        if (input.startsWith('/')) {
-          await runCommandTurn(input);
+        if (fullInput.startsWith('/')) {
+          await runCommandTurn(fullInput);
         } else if (deps.routeInput) {
-          const routed = await deps.routeInput(input);
+          const routed = await deps.routeInput(fullInput);
           if (routed.kind === 'command' && routed.cmd) {
             await runCommandTurn(routed.cmd + (routed.value ? ' ' + routed.value : ''));
           } else {
-            await runAgentTurn(input);
+            await runAgentTurn(fullInput);
           }
         } else {
-          await runAgentTurn(input);
+          await runAgentTurn(fullInput);
         }
       } catch (e) {
         stdout.write(R.renderNoticeLine(`运行失败：${String((e as Error)?.message ?? e).slice(0, 200)}`, 'error', opts) + '\n');

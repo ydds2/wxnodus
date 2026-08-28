@@ -1022,6 +1022,8 @@ if (pre.mode === 'error') {
   const tuiSessionId = agent.getSessionId?.() ?? 'default';
   gateway = createHeadlessWireGateway({ sessionId: tuiSessionId, onRequest: ev => { requestRelay?.(ev); } });
   const { routeInput } = await import('../commands/intent.js');
+  // T11（2026-08-28）：Tab 斜杠命令补全——候选源 = 注册表单一事实源（SLASH）
+  const { SLASH } = await import('../commands/registry.js');
   const modelLabel = String((config.get('settings') as Record<string, any>)?.model ?? '未配置（/model 配置）');
   await startInteractiveLoop({
     sessionId: tuiSessionId,
@@ -1031,6 +1033,7 @@ if (pre.mode === 'error') {
     runInvocation,
     commandBus,
     routeInput,
+    commands: () => SLASH,
     cwd: process.cwd(),
     setOnRequest: fn => { requestRelay = fn; },
     onExit: () => { void shutdown('tui-exit'); },

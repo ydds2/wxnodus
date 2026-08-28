@@ -2,7 +2,7 @@
 // 覆盖：横幅 / agent 回合渲染（token 流式 + 终态行）/ 斜杠命令 / 审批应答（wire 同契约） / /exit 收口。
 import { describe, expect, it } from 'vitest';
 import { PassThrough } from 'node:stream';
-import { startInteractiveLoop } from '../src/presentation/tui/interactiveLoop.js';
+import { startInteractiveLoop, slashCompleter } from '../src/presentation/tui/interactiveLoop.js';
 
 const makeBus = () => {
   const handlers = new Map<string, Array<(e: any) => void>>();
@@ -45,7 +45,7 @@ const start = (deps: Record<string, unknown> = {}) => {
   const write = (line: string) => stdin.write(line + '\n');
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
   return {
-    write, sleep,
+    bus, write, sleep,
     text: () => out.join(''),
     gatewayCalls: () => gatewayCalls,
     getOnRequest: () => setOnRequest,
@@ -145,5 +145,111 @@ describe('薄层 TUI 交互循环', () => {
     expect(text).toContain('失败标题');          // 通知标题
     expect(text).toContain('你好，测试');
     expect(text).toContain('✓ 完成');
+  });
+});
+
+// T8（2026-08-28）：工具完成事件的 diff preview → 红绿块渲染（非 TTY 纯文本路径）
+
+describe('T8：工具 diff 回显（事件 preview 消费）', () => {
+  it('agent.tool complete 携带统一 diff preview → 渲染 @@/+/- 行', async () => {
+    let busRef: { emit(type: string, e: any): void } | null = null;
+    const t = start({
+      runInvocation: {
+        invoke(input: { runId?: string }) {
+          const runId = input.runId ?? 'run';
+          queueMicrotask(() => {
+            busRef?.emit('agent.tool', { runId, payload: { name: 'fs_edit', phase: 'complete', ok: true, ms: 4, preview: '已替换 src/x.ts 中 1 处\n@@ -3,1 +3,1 @@\n-旧内容\n+新内容' } });
+            busRef?.emit('agent.end', { runId });
+          });
+          return { completion: Promise.resolve({ status: 'succeeded', value: { ok: true } }), cancel() {} };
+        },
+      },
+    });
+    busRef = t.bus;
+    t.write('改一下');
+    await t.sleep(40);
+    const text = t.text();
+    expect(text).toContain('@@ -3,1 +3,1 @@');
+    expect(text).toContain('-旧内容');
+    expect(text).toContain('+新内容');
+    expect(text).toContain('fs_edit 完成');
+    await t.finish();
+  });
+  it('preview 无 diff 标记 → 不渲染块（普通输出不误判）', async () => {
+    let busRef: { emit(type: string, e: any): void } | null = null;
+    const t = start({
+      runInvocation: {
+        invoke(input: { runId?: string }) {
+          const runId = input.runId ?? 'run';
+          queueMicrotask(() => {
+            busRef?.emit('agent.tool', { runId, payload: { name: 'ls', phase: 'complete', ok: true, ms: 2, preview: 'file1.ts\nfile2.ts' } });
+            busRef?.emit('agent.end', { runId });
+          });
+          return { completion: Promise.resolve({ status: 'succeeded', value: { ok: true } }), cancel() {} };
+        },
+      },
+    });
+    busRef = t.bus;
+    t.write('列目录');
+    await t.sleep(40);
+    expect(t.text()).toContain('ls 完成');
+    expect(t.text()).not.toContain('@@');
+    await t.finish();
+  });
+});
+
+// T11（2026-08-28）：Tab 斜杠命令补全（纯函数契约）
+describe('T11：slashCompleter', () => {
+  const cmds = ['/help', '/memory', '/model', '/model set-key'];
+  it('唯一前缀命中 → 补全并附空格', () => {
+    const hea = cmds[0]!.slice(0, 4); // '/hel'——程序构造（字面量免疫隐形字符）
+    expect(slashCompleter(hea, cmds)).toEqual([['/help '], hea]);
+    const ms = cmds[3]!.slice(0, 10); // '/model set'
+    expect(slashCompleter(ms, cmds)).toEqual([['/model set-key '], ms]);
+  });
+  it('多命中 → 返回全列表（readline 列显 + 公共前缀推进）；非 slash 零干预', () => {
+    expect(slashCompleter('/m', cmds)).toEqual([['/memory', '/model', '/model set-key'], '/m']);
+    expect(slashCompleter('/zzz', cmds)).toEqual([[], '/zzz']);
+    expect(slashCompleter('普通输入', cmds)).toEqual([[], '普通输入']);
+  });
+});
+
+// T12（2026-08-28）：反斜杠续行多行输入（… 提示符 + 缓冲收口提交）
+describe('T12：续行多行输入', () => {
+  it('尾部单反斜杠续行——缓冲合并为单次提交（换行连接）', async () => {
+    const prompts: string[] = [];
+    const t = start({
+      runInvocation: {
+        invoke(input: { kind: string; prompt?: string; runId?: string }) {
+          prompts.push(String(input.prompt ?? ''));
+          queueMicrotask(() => busRef?.emit('agent.end', { runId: input.runId ?? 'run' }));
+          return { completion: Promise.resolve({ status: 'succeeded', value: { ok: true } }), cancel() {} };
+        },
+      },
+    });
+    var busRef = t.bus; // eslint-disable-line
+    t.write('第一行' + String.fromCharCode(92)); // 尾部单反斜杠（\）——heredoc 转义不可靠，显式构造
+    await t.sleep(20);
+    t.write('第二行');
+    await t.sleep(40);
+    expect(prompts).toEqual(['第一行\n第二行']); // 一次提交、换行连接、反斜杠剥离
+    await t.finish();
+  });
+  it('偶数反斜杠为字面量——不续行直接提交', async () => {
+    const prompts: string[] = [];
+    const t = start({
+      runInvocation: {
+        invoke(input: { kind: string; prompt?: string; runId?: string }) {
+          prompts.push(String(input.prompt ?? ''));
+          queueMicrotask(() => busRef2?.emit('agent.end', { runId: input.runId ?? 'run' }));
+          return { completion: Promise.resolve({ status: 'succeeded', value: { ok: true } }), cancel() {} };
+        },
+      },
+    });
+    var busRef2 = t.bus; // eslint-disable-line
+    t.write('路径 C:\\目录');
+    await t.sleep(40);
+    expect(prompts).toEqual(['路径 C:\\目录']);
+    await t.finish();
   });
 });

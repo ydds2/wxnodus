@@ -195,6 +195,8 @@ export interface ToolbarParts {
   cwd?: string;
   branch?: string | null;
   flags?: string[];
+  /** 会话累计 token（T9：kimi 底栏用量段——渲染为 dim 段，参与窄终端降级链） */
+  sessionTokens?: number;
   tip?: string;
   columns?: number;
 }
@@ -209,6 +211,11 @@ export function renderToolbar(parts: ToolbarParts, opts: RenderOpts): string {
   const sep = code(opts, t.dim, '─'.repeat(columns));
 
   const segs: Array<{ text: string; styled: string }> = [];
+  if (typeof parts.sessionTokens === 'number' && parts.sessionTokens > 0) {
+    const tok = `${formatTokenCount(parts.sessionTokens)} tok`;
+    segs.push({ text: tok, styled: code(opts, t.dim, tok) });
+  }
+  const flagSegs = segs.slice(parts.sessionTokens && parts.sessionTokens > 0 ? 1 : 0); // 极窄档只留 flags——token 段随 cwd 一起降级消失
   for (const flag of parts.flags ?? []) {
     const styled = code(opts, t.warn + t.bold, flag);
     segs.push({ text: flag, styled });
@@ -247,7 +254,73 @@ export function renderToolbar(parts: ToolbarParts, opts: RenderOpts): string {
   } else if (widthOf(modeFull, truncateRight(cwdText, Math.max(0, columns - displayWidth(modeFull) - 8)), undefined) <= columns) {
     line = assemble(modeFull, truncateRight(cwdText, Math.max(0, columns - displayWidth(modeFull) - 8)), undefined);
   } else {
-    line = assemble(parts.mode, '', undefined);
+    line = flagSegs.length
+      ? [...flagSegs.map(s => s.styled), code(opts, t.info, parts.mode)].join('  ')
+      : assemble(parts.mode, '', undefined);
   }
   return `${sep}\n${line}`;
+}
+
+// ── T8（2026-08-28）：工具编辑 diff 红绿渲染（kimi 编辑回显视觉）──────────
+
+/** 统一 diff 判定：fs_edit 的 @@ 锚块 / apply_patch 的 diff --git 块 */
+export function hasUnifiedDiff(text: string): boolean {
+  return /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/m.test(text) || /^diff --git /m.test(text);
+}
+
+/**
+ * diff 预览渲染：@@ 锚 → info 青、+ 行 → ok 绿、- 行 → error 红、上下文行 → dim；
+ * 从 @@/diff --git 进入 diff 态，遇非 diff 行（消息正文/LSP 诊断）收口；
+ * 上限 12 行（内核侧 MAX_DIFF_LINES=8 + 锚/省略行余量）。
+ * T10（2026-08-28）：相邻 -/+ 配对行做词级高亮——公共前后缀常规色、变更中段加粗
+ * （aider/opencode 行内词差语义，实现原创：字符级前后缀剥离，无分词依赖）。
+ */
+export function renderDiffPreview(text: string, opts: RenderOpts): string {
+  const t = themeTokens(opts.theme);
+  const out: string[] = [];
+  let inDiff = false;
+  let delRun: string[] = [];
+  const flushRuns = () => {
+    if (!delRun.length) return;
+    const adds = addRun;
+    addRun = [];
+    const pairs = Math.min(delRun.length, adds.length);
+    for (let i = 0; i < delRun.length; i++) {
+      if (i < pairs) out.push(styleInlinePair(`-${delRun[i]!}`, `+${adds[i]!}`, t, opts));
+      else out.push(code(opts, t.error, `-${delRun[i]!}`));
+    }
+    for (let i = pairs; i < adds.length; i++) out.push(code(opts, t.ok, `+${adds[i]!}`));
+    delRun = [];
+  };
+  let addRun: string[] = [];
+  for (const raw of text.split('\n')) {
+    if (raw.startsWith('diff --git')) { flushRuns(); inDiff = true; out.push(code(opts, t.bold, raw)); continue; }
+    if (/^@@ /.test(raw)) { flushRuns(); inDiff = true; out.push(code(opts, t.info, raw)); continue; }
+    if (!inDiff) continue;
+    if (raw.startsWith('+')) { addRun.push(raw.slice(1)); continue; }
+    if (raw.startsWith('-')) { if (addRun.length) flushRuns(); delRun.push(raw.slice(1)); continue; }
+    if (raw.startsWith(' ')) { flushRuns(); out.push(code(opts, t.dim, raw)); continue; }
+    if (raw.startsWith('…')) { flushRuns(); out.push(code(opts, t.dim, raw)); continue; }
+    break; // 其他内容（消息/LSP 诊断）——diff 块收口
+  }
+  flushRuns();
+  return out.slice(0, 12).join('\n');
+}
+
+/** 字符级公共前后缀剥离（词级高亮的几何基础——纯函数） */
+export function splitCommon(a: string, b: string): { pre: string; aMid: string; bMid: string; suf: string } {
+  let pre = 0;
+  const minLen = Math.min(a.length, b.length);
+  while (pre < minLen && a[pre] === b[pre]) pre++;
+  let suf = 0;
+  while (suf < minLen - pre && a[a.length - 1 - suf] === b[b.length - 1 - suf]) suf++;
+  return { pre: a.slice(0, pre), aMid: a.slice(pre, a.length - suf), bMid: b.slice(pre, b.length - suf), suf: a.slice(a.length - suf) };
+}
+
+/** -/+ 配对行的词级高亮：符号+公共前后缀常规色、中段加粗（红/绿各按本行色） */
+function styleInlinePair(delLine: string, addLine: string, t: ReturnType<typeof themeTokens>, opts: RenderOpts): string {
+  const { pre, aMid, bMid, suf } = splitCommon(delLine.slice(1), addLine.slice(1));
+  const half = (sign: string, color: string, mid: string, midColor: string) =>
+    code(opts, color, sign + pre) + code(opts, midColor, mid) + code(opts, color, suf);
+  return half('-', t.error, aMid, t.error + t.bold) + '\n' + half('+', t.ok, bMid, t.ok + t.bold);
 }

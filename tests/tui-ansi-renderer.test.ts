@@ -2,6 +2,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   COLORS,
+  hasUnifiedDiff,
+  splitCommon,
+  renderDiffPreview,
+  renderToolbar,
   renderBanner,
   renderFinalLine,
   renderNoticeLine,
@@ -17,7 +21,6 @@ import {
   renderComposingLive,
   renderThoughtFinal,
   renderNotification,
-  renderToolbar,
 } from '../src/presentation/tui/ansiRenderer.js';
 
 describe('TUI ansiRenderer（纯函数）', () => {
@@ -113,5 +116,66 @@ describe('kimi code 风格渲染（2026-08-28）', () => {
     const narrow = renderToolbar({ mode: 'agent', model: 'deepseek-chat', cwd: 'C:/very/long/path', tip: 'tip', columns: 24 }, { colors: false });
     expect(narrow.split('\n').pop()?.length).toBeLessThanOrEqual(24); // 降级后不超宽
     expect(narrow).toContain('agent'); // 至少保留模式名（kimi bare 语义）
+  });
+});
+
+// T8/T9（2026-08-28）：diff 红绿渲染 + 底栏会话 token 段
+describe('T8：统一 diff 红绿渲染', () => {
+  const sample = '已替换 src/a.ts 中 1 处\n@@ -10,2 +10,2 @@\n const x = 1;\n-const old = 2;\n+const next = 3;\n后续说明文字';
+  it('hasUnifiedDiff：@@ 块与 diff --git 双形态识别；普通文本不误判', () => {
+    expect(hasUnifiedDiff(sample)).toBe(true);
+    expect(hasUnifiedDiff('diff --git a/x b/x\n--- a/x')).toBe(true);
+    expect(hasUnifiedDiff('普通输出，无 diff')).toBe(false);
+  });
+  it('渲染：+ 行绿 / - 行红 / @@ 青 / 上下文 dim；消息与尾部说明不进块', () => {
+    const out = renderDiffPreview(sample, { colors: true });
+    expect(out).toContain('\x1b[36m@@ -10,2 +10,2 @@');
+    // T10 词级分段：公共前缀段（-const ）+ 加粗中段（old = 2）+ 独立后缀段（\x1b[31m;）
+    expect(out).toContain('\x1b[31m-const ');
+    expect(out).toContain('\x1b[31m\x1b[1mold = 2');
+    expect(out).toContain('\x1b[31m;');
+    expect(out).toContain('\x1b[32m+const ');
+    expect(out).toContain('\x1b[32m\x1b[1mnext = 3');
+    expect(out).toContain('\x1b[90m const x = 1;');
+    expect(out).not.toContain('已替换');
+    expect(out).not.toContain('后续说明');
+  });
+  it('colors:false 纯文本形态（管道零 ANSI）', () => {
+    const out = renderDiffPreview(sample, { colors: false });
+    expect(out.split('\n')).toEqual(['@@ -10,2 +10,2 @@', ' const x = 1;', '-const old = 2;', '+const next = 3;']);
+  });
+});
+describe('T9：底栏会话 token 段', () => {
+  it('sessionTokens>0 → dim 段可见（formatTokenCount 千分位）', () => {
+    const out = renderToolbar({ mode: 'agent', model: 'm', sessionTokens: 1234, columns: 120 }, { colors: true });
+    expect(out).toContain('1.2k tok');
+  });
+  it('sessionTokens 缺省/0 → 不出现段（首回合前不占宽）', () => {
+    expect(renderToolbar({ mode: 'agent', columns: 120 }, { colors: false })).not.toContain('tok');
+    expect(renderToolbar({ mode: 'agent', sessionTokens: 0, columns: 120 }, { colors: false })).not.toContain('tok');
+  });
+  it('窄终端降级链：tip 先让位，token 段保留且总宽受控', () => {
+    const out = renderToolbar({ mode: 'agent', sessionTokens: 99999, cwd: 'C:/very/long/path', tip: 'x'.repeat(40), columns: 30 }, { colors: false });
+    const line = out.split('\n')[1]!;
+    expect(line).not.toContain('xxxx'); // tip 已让位
+    expect(line).toContain('100k tok'); // token 段仍在（次于 tip 的降级序）
+    expect(line.length <= 30 + 12).toBe(true); // 宽度受控
+  });
+});
+
+// T10（2026-08-28）：词级 diff 高亮——配对行公共前后缀剥离、中段加粗
+describe('T10：词级 diff 高亮', () => {
+  it('splitCommon：公共前后缀剥离正确（纯函数几何）', () => {
+    expect(splitCommon('-const old = 2;', '-const next = 3;')).toEqual({ pre: '-const ', aMid: 'old = 2', bMid: 'next = 3', suf: ';' });
+    expect(splitCommon('abcXY', 'abXYZ')).toEqual({ pre: 'ab', aMid: 'cXY', bMid: 'XYZ', suf: '' }); // 末字符 Y/Z 不匹配 → 后缀为空，中段吞掉全部差异
+    expect(splitCommon('同头同尾', '同头x同尾')).toEqual({ pre: '同头', aMid: '', bMid: 'x', suf: '同尾' });
+  });
+  it('纯删行（无配对）保持整行红——不套词级', () => {
+    const out = renderDiffPreview('@@ -1,1 +1,0 @@\n-only line', { colors: true });
+    expect(out).toContain('\x1b[31m-only line');
+  });
+  it('colors:false 分段拼接 = 原行（管道纯文本不变）', () => {
+    const out = renderDiffPreview('@@ -1,1 +1,1 @@\n-old x\n+new x', { colors: false });
+    expect(out.split('\n')).toEqual(['@@ -1,1 +1,1 @@', '-old x', '+new x']);
   });
 });

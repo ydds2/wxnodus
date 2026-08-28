@@ -22,6 +22,13 @@
 | T7 | **Ctrl+C 中断当前回合** | kimi prompt_toolkit 键盘事件（Esc/Ctrl+C 语义） | `interactiveLoop.ts` SIGINT → `handle.cancel()`（与 --wire 同链路）+ warn 通知行；非 TTY 不挂 handler | ✅ 2026-08-28 |
 | — | reasoning 事件死接线 | kimi wire 思考流事件语义 | **修复（2026-08-28）**：agent 发 `reasoning.delta` 而 TUI 订阅 `agent.reasoning.delta`——折叠思考行静默永不触发（死接线同类，C1 模式再现）；已改正确订阅 + 测试锁定 | ✅ 2026-08-28 |
 
+| T8 | **工具编辑 diff 红绿渲染** | `_blocks.py:_EditBlock`（编辑回显 +/- 着色） | `ansiRenderer.renderDiffPreview/hasUnifiedDiff` + `interactiveLoop` complete 分支消费 + **内核 complete 事件新增有界 preview（600 字）**——事件原无输出文本，TUI 无从取数（2026-08-28 ZCode 补缺） | ✅ 2026-08-28 |
+| T9 | **底栏会话 token 段** | `prompt.py` 用量展示（`format_token_count` 语义） | `renderToolbar` sessionTokens dim 段（参与降级链：tip 先让位、token 随后、bare 档让净）+ `interactiveLoop` 每回合收口累计 | ✅ 2026-08-28 |
+
+| T10 | **词级 diff 高亮** | aider/opencode 行内词差（editblock perfect_or_whitespace / detectLineEnding 语义家族） | `ansiRenderer.splitCommon/styleInlinePair`——字符级公共前后缀剥离、配对中段加粗（连续删行/增行按位配对、孤立行保持整行着色；实现原创无分词依赖） | ✅ 2026-08-28 |
+| T11 | **Tab 斜杠命令补全** | kimi 命令补全（prompt_toolkit completer 语义） | `interactiveLoop.slashCompleter`（readline completer 契约：唯一命中补全附空格、多命中列显；候选源 = registry SLASH 单一事实源） | ✅ 2026-08-28 |
+| T12 | **反斜杠续行多行输入** | kimi 多行输入（尾部续行符语义） | `interactiveLoop` isContinuation（尾部单反斜杠入缓冲、… 提示符、偶数反斜杠字面量豁免、无续行符收口合并提交） | ✅ 2026-08-28 |
+
 ## 已修复缺陷链（同日）
 
 - **C1**（kernel-eval 3-1）：`agent.ts:676` 与 `permissions.ts:302` 双层 `require()` 死接线——sandboxFastPath 静默永不生效；且 vitest 注入 require 垫片使绿测试掩盖生产死接线（已取证：Node ESM `typeof require === undefined`）。修复：惰性 `await import` + 静态导入；agent 级接线测试（manual 模式判别器）。

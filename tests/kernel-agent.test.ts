@@ -2042,3 +2042,31 @@ describe('R-4：steer 队列上限 50（满丢最旧 + 诚实 notice）', () => 
     expect(notices.some(t => t.includes('steer 队列已满'))).toBe(true); // 丢弃不静默
   });
 });
+
+// T8（2026-08-28）：complete 事件携带有界 preview（600 字——薄层 TUI diff 渲染数据源）
+describe('T8：agent.tool complete 事件 preview 字段', () => {
+  it('成功执行 → preview 为输出前 600 字（有界，超长截断）', async () => {
+    const events: any[] = [];
+    const off = bus.on('agent.tool', (e: any) => { if (e?.payload?.phase === 'complete' || e?.payload === undefined) events.push(e); });
+    const big = 'y'.repeat(700);
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 't-t8-preview',
+      extraTools: { echo_read: {
+        schema: { type: 'function', function: { name: 'echo_read', description: '读', parameters: { type: 'object', properties: { q: { type: 'number' } }, required: ['q'] } } },
+        danger: false, cacheable: true,
+        canonical: { namespace: 'agent', effectKind: 'filesystem.read' },
+        run: async () => big,
+      } },
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async (): Promise<ModelCall | ToolCallMsg> => {
+        return { type: 'tool_call', id: 'c1', name: 'echo_read', args: { q: 1 } } as ToolCallMsg;
+      },
+    });
+    await agent.run('读');
+    off();
+    const complete = events.find((e: any) => e?.payload?.phase === 'complete' && e?.payload?.ok === true);
+    expect(complete).toBeTruthy();
+    expect(String(complete.payload.preview)).toHaveLength(600);
+    expect(String(complete.payload.preview)).toBe(big.slice(0, 600));
+  });
+});
