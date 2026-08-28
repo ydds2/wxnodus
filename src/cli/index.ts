@@ -1187,6 +1187,11 @@ if (pre.mode === 'error') {
     db, bus, agent: agent as never, commandBus: commandBus as never,
     config: { get: (p: string) => config.get(p), setKey: (sc: string, k: string, v: unknown) => config.setKey(sc, k, v as never) },
   });
+  // 审批/澄清/密钥链路修通（断链根因）：bridges（onApproval/onClarify/onSecretRequest）经上方
+  // let gateway 中介在调用时求值——hermes 分支覆盖为 hg 后，内核 confirm/plan 工具的真实询问经
+  // approval.request/clarify.request/secret.request 事件到达 TUI 面板，*.respond 回流 resolve。
+  // 此前 gateway 停留为 GatewayClient（旧 UI 表现层，hermes 子进程下无人应答 → 恒 fail-closed 拒绝）。
+  gateway = hg as never;
   const { spawn } = await import('node:child_process');
   const { resolve: resolvePath } = await import('node:path');
   const tuiEntry = resolvePath(process.cwd(), 'packages/hermes-tui/dist/entry.js');
