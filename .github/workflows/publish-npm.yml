@@ -29,14 +29,14 @@ jobs:
         with:
           timeout_minutes: 10
           max_attempts: 3
-          command: npm publish --access public --tag ${{ inputs.dist-tag }} ${{ inputs.dry-run == 'false' && '' || '--dry-run' }}
+          command: "npm publish --access public --tag ${{ inputs.dist-tag }} ${{ inputs.dry-run == 'false' && '' || '--dry-run' }}"
         env: { NODE_AUTH_TOKEN: '${{ secrets.NPM_TOKEN }}' }
       - name: publish @wxnodus/sdk
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 10
           max_attempts: 3
-          command: npm publish --access public --tag ${{ inputs.dist-tag }} ${{ inputs.dry-run == 'false' && '' || '--dry-run' }}
+          command: "npm publish --access public --tag ${{ inputs.dist-tag }} ${{ inputs.dry-run == 'false' && '' || '--dry-run' }}"
         working-directory: packages/sdk
         env: { NODE_AUTH_TOKEN: '${{ secrets.NPM_TOKEN }}' }
       - name: publish @wxnodus/core
@@ -44,6 +44,6 @@ jobs:
         with:
           timeout_minutes: 10
           max_attempts: 3
-          command: npm publish --access public --tag ${{ inputs.dist-tag }} ${{ inputs.dry-run == 'false' && '' || '--dry-run' }}
+          command: "npm publish --access public --tag ${{ inputs.dist-tag }} ${{ inputs.dry-run == 'false' && '' || '--dry-run' }}"
         working-directory: packages/core
         env: { NODE_AUTH_TOKEN: '${{ secrets.NPM_TOKEN }}' }
