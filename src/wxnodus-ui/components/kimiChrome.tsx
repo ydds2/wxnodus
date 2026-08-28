@@ -42,7 +42,7 @@ export interface KimiWelcomeInfo {
  * Panel 蓝框内 = 左块字 LOGO + 右「Welcome to … CLI!」两行 + info 行（Directory/Session/Model…）。
  * info level：info=grey50 / warn=yellow / error=red。首帧渲染后不再动画（kimi 无 intro 动画）。
  */
-export function KimiWelcomeCard({ model, cwd, sessionId, t }: {
+export const KimiWelcomeCard = memo(function KimiWelcomeCard({ model, cwd, sessionId, t }: {
   model: string
   cwd: string
   sessionId: string
@@ -94,11 +94,20 @@ export function KimiWelcomeCard({ model, cwd, sessionId, t }: {
       <Text color={KIMI_COLORS.logo}>{bottom}</Text>
     </Box>
   )
-}
+})
 
+// 修复（2026-08-28 真机反馈）：原实现恒返回 1（三元逻辑坏 + surrogate pair 未处理）——
+// 中文路径/全角字符宽度全错导致欢迎卡边框错位。内联正确实现（@wxnodus/ink stringWidth 同族简版：
+// CJK/全角区双宽、surrogate pair 计 2、组合标记计 0）。
+const WIDE_RE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/
 const visualWidth = (s: string): number => {
   let w = 0
-  for (const ch of s) w += ch.charCodeAt(0) > 0x1100 && (ch.charCodeAt(0) < 0x30 ? false : true) ? 1 : 1
+  for (const ch of s) {
+    const cp = ch.codePointAt(0)!
+    if (cp > 0xFFFF) { w += 2; continue }        // surrogate pair（emoji 等）计 2
+    if (cp >= 0x0300 && cp <= 0x036F) continue   // 组合标记计 0
+    w += WIDE_RE.test(ch) ? 2 : 1
+  }
   return w
 }
 
@@ -110,7 +119,7 @@ const visualWidth = (s: string): number => {
  *   plan:    ╌╌ input · plan ╌╌╌╌  （蓝虚线）
  *   queued:  ── input · N queued ──
  */
-export function KimiInputHeader({ cols, plan = false, queued = 0 }: {
+export const KimiInputHeader = memo(function KimiInputHeader({ cols, plan = false, queued = 0 }: {
   cols: number
   plan?: boolean
   queued?: number
@@ -127,7 +136,7 @@ export function KimiInputHeader({ cols, plan = false, queued = 0 }: {
       {dash}{dash}{title}{dash.repeat(borderFill)}
     </Text>
   )
-}
+})
 
 // ── ③ 双行底栏 ─────────────────────────────────────────────────────────
 
@@ -144,7 +153,7 @@ const TIP_INTERVAL_MS = 30_000
  * 第一行全宽 ─ 分隔线；第二行 = 状态标志（yolo/afk/plan 色）+ `agent (model ○)` +
  * cwd（左截）+ git 分支 + 后台任务数 + 30s 轮换 tip。窄终端降级 full→mid→bare。
  */
-export function KimiBottomBar({ mode = 'agent', model, thinking = false, cwd, branch, bgCount = 0, cols = 80, flags = [] }: {
+export const KimiBottomBar = memo(function KimiBottomBar({ mode = 'agent', model, thinking = false, cwd, branch, bgCount = 0, cols = 80, flags = [] }: {
   mode?: string
   model: string
   thinking?: boolean
@@ -198,10 +207,10 @@ export function KimiBottomBar({ mode = 'agent', model, thinking = false, cwd, br
       </Box>
     </Box>
   )
-}
+})
 
 // ── 组合件：kimi 底栏区（分隔线+状态行+line2 toast 槽）——appLayout 瘦身抽取 ──
-export function KimiStatusZone(props: {
+export const KimiStatusZone = memo(function KimiStatusZone(props: {
   model: string
   thinking: boolean
   cwd: string
@@ -227,7 +236,7 @@ export function KimiStatusZone(props: {
       )}
     </Box>
   )
-}
+})
 
 // ── 后台活动摘要行（appLayout 瘦身迁入——ratchet 收容）──
 // A24：后台活动摘要行——运行中任务/终端/goal 循环一览
