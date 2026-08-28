@@ -1,9 +1,9 @@
 # winget installer manifest 模板（scripts/generate-package-manifests.mjs 渲染；winget-pkgs 多文件形态之二）
-# 占位符：4.0.0-rc.1 / __RELEASE_URL_REQUIRED__ / __SHA256_REQUIRED__。
+# 占位符：4.0.0 / __RELEASE_URL_REQUIRED__ / __SHA256_REQUIRED__。
 # 提交前须知：zip 型 portable 安装器在 winget-pkgs 校验器（winget validate / 在线校验）下
 # 可能需要补 NestedInstallerType/NestedInstallerFiles（按校验输出调整，见发布指南）。
 PackageIdentifier: yyds2.wxnodus
-PackageVersion: 4.0.0-rc.1
+PackageVersion: 4.0.0
 InstallerLocale: zh-CN
 InstallerType: portable
 Commands:

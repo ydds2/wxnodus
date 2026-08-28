@@ -716,7 +716,9 @@ if (pre.mode === 'error') {
   // 多前端共享同一 agent/记忆/权限面（IDE 插件/浏览器/第二个终端等）
   if (opts.serve) {
     const { startServeServer } = await import('./serve.js');
-    const port = opts.port ?? Number(process.env.WXNODUS_SERVE_PORT ?? 4789);
+    // A-S1：SDK 模式端口随机（除非显式 --port）；握手模式由 @wxnodus/sdk 拉起（stdout 单行 JSON）
+    const sdk = opts.sdk === true;
+    const port = sdk && opts.port == null ? 0 : (opts.port ?? Number(process.env.WXNODUS_SERVE_PORT ?? 4789));
     // W3 MCP facade：incoming Streamable HTTP（/mcp）与 serve 共用生命周期——close 纳入统一 shutdown
     const mcpIncoming = makeMcpIncoming();
     const srv = startServeServer({
@@ -724,12 +726,22 @@ if (pre.mode === 'error') {
       commandBus,
       config,
       mcpHandler: (req, res) => mcpIncoming.httpHandler(req, res),
-    }, port);
+    }, port, sdk ? {
+      sdkHandshake: true,
+      onSdkHandshake: (info: { port: number; token: string; pid: number; version: string; protocolVersion: number }) => {
+        process.stdout.write(JSON.stringify({ 'wxnodus-sdk': 1, ...info }) + '\n');
+      },
+    } : {});
     disposers.push({ id: 'mcp-incoming', dispose: () => mcpIncoming.close() });
     disposers.push({ id: 'serve', dispose: async () => { await srv.close(); } });
-    console.log(`◉ WxNodus AI 网关已启动：http://127.0.0.1:${srv.port}`);
-    console.log(`  GET  /health/live  存活探针（无认证）｜ GET /health /rpc /events 需 Bearer（WXNODUS_SERVE_TOKEN）`);
-    console.log('  Ctrl+C 停止');
+    if (sdk) {
+      // SDK 模式：stdout 归握手行独占（父进程解析）；提示走 stderr 不污染协议
+      process.stderr.write(`◉ SDK 网关 pid=${process.pid} 端口由握手行回传（Ctrl+C 停止）\n`);
+    } else {
+      console.log(`◉ WxNodus AI 网关已启动：http://127.0.0.1:${srv.port}`);
+      console.log(`  GET  /health/live  存活探针（无认证）｜ GET /health /rpc /events 需 Bearer（WXNODUS_SERVE_TOKEN）`);
+      console.log('  Ctrl+C 停止');
+    }
     // W2-03：SIGINT/SIGTERM 走统一幂等关闭（不再分支各自 process.exit）
     process.on('SIGINT', () => { void shutdown('sigint').finally(() => process.exit(0)); });
     process.on('SIGTERM', () => { void shutdown('sigterm').finally(() => process.exit(0)); });

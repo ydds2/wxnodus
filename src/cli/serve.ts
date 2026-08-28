@@ -9,11 +9,12 @@
 // 客户端示例：curl -s http://127.0.0.1:4789/health/live
 //            curl -s -X POST http://127.0.0.1:4789/rpc -H "Authorization: Bearer <token>" \
 //                 -H 'Content-Type: application/json' -d '{"method":"chat","params":{"prompt":"你好"}}'
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual, randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 // W3-01：RPC 响应状态走共享 completionTransport 映射（failure 不藏在 HTTP 200 后面）
 import { httpStatusForCompletion } from '../protocol/completionTransport.js';
 import { isRunIdentifier, isSessionIdentifier, type RunFinalStatus } from '../protocol/runs.js';
+import { PROTOCOL_VERSION } from '../protocol/version.js';
 import type { RunInvocationHandle, RunInvocationPort } from '../application/runs/runInvocationPort.js';
 import { resolveAlias } from '../kernel/commandLevels.js';
 import { evaluateCsrf } from '../presentation/http/csrfPolicy.js';
@@ -77,6 +78,14 @@ export function createInMemoryServeSessionOwnershipStore(): ServeSessionOwnershi
 export interface ServeSecurityOptions {
   /** Legacy Bearer token, always mapped to stable principal `serve:local`. */
   token?: string;
+  /**
+   * A-S1（2026-08-28）SDK 握手模式：token 改为随机生成（忽略 env——不落盘不进环境变量），
+   * 监听就绪后经 onSdkHandshake 回传握手信息（单行 JSON 由调用方写 stdout——
+   * 父进程管道私有性即安全边界）。端口传 0 = 随机可用端口。
+   */
+  sdkHandshake?: boolean;
+  /** SDK 握手回调（listening 后恰一次；cli 层负责写 stdout） */
+  onSdkHandshake?: (info: { port: number; token: string; pid: number; version: string; protocolVersion: number }) => void;
   /** Runtime-only stable principal IDs mapped to plaintext bearer tokens. Tokens are never persisted. */
   principals?: Readonly<Record<string, string>>;
   /** CORS origin allowlist（默认 WXNODUS_SERVE_ORIGINS 逗号分隔） */
@@ -142,7 +151,10 @@ const json = (res: ServerResponse, req: IncomingMessage, code: number, obj: unkn
 };
 
 export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurityOptions = {}): { close(): Promise<void>; port: number } {
-  const legacyToken = opts.token ?? process.env.WXNODUS_SERVE_TOKEN ?? '';
+  // A-S1：SDK 握手模式——随机 token（覆盖 env/显式 token：SDK 会话凭据一次性，绝不落盘）
+  const legacyToken = opts.sdkHandshake === true
+    ? randomBytes(24).toString('base64url')
+    : (opts.token ?? process.env.WXNODUS_SERVE_TOKEN ?? '');
   const principalTokens = new Map<string, string>();
   for (const [principalId, principalToken] of Object.entries(opts.principals ?? {})) {
     if (!principalId.trim() || !principalToken) continue;
@@ -876,6 +888,24 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
     return closePromise;
   };
 
+  // A-S1：SDK 握手（listening 后恰一次——真实端口/随机 token/PID/版本回传父进程）
+  let listeningPort: number | null = null;
   server.listen(port, '127.0.0.1');
-  return { port, close };
+  if (opts.sdkHandshake === true && opts.onSdkHandshake) {
+    server.once('listening', () => {
+      const addr = server.address();
+      const actualPort = typeof addr === 'object' && addr ? addr.port : port;
+      listeningPort = actualPort;
+      try {
+        opts.onSdkHandshake!({
+          port: actualPort,
+          token: legacyToken,
+          pid: process.pid,
+          version: WXNODUS_VERSION,
+          protocolVersion: PROTOCOL_VERSION,
+        });
+      } catch { /* 握手回调异常不阻断服务 */ }
+    });
+  }
+  return { get port() { return listeningPort ?? port; }, close };
 }

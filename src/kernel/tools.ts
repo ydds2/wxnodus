@@ -1628,7 +1628,43 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
 
-  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, apply_patch: applyPatchTool, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, computer_observe: computerObserve, computer_uia_windows: uiaWindowsTool, computer_uia_tree: uiaTreeTool, computer_uia_find: uiaFindTool, computer_uia_click: uiaClickTool, computer_uia_type: uiaTypeTool, computer_uia_act: uiaActTool, lsp_diagnostics: lspDiagnostics, lsp_hover: lspHover, lsp_definition: lspDefinition, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch, view_image: viewImage };
+  // ── sys_package（2026-08-28 用户裁决：完全操作 Windows + 自行下载依赖/软件）──
+  // winget/scoop/choco 自适应；danger:true——安装走审批链（smart 弹窗/yolo 红线外放行）。
+  const sysPackage: ToolDef = {
+    schema: { type: 'function', function: { name: 'sys_package', description: 'Windows 软件包管理（winget/scoop/choco 自动探测）。action=search 按关键词搜包；action=install 按 ID 安装（需用户审批）；action=manager 探测可用管理器。安装系统软件/依赖首选此工具。', parameters: { type: 'object', properties: { action: { type: 'string', enum: ['search', 'install', 'manager'], description: 'search=搜包（只读）；install=安装（写系统，走审批）；manager=探测可用包管理器' }, query: { type: 'string', description: 'search 的关键词' }, id: { type: 'string', description: 'install 的包 ID（winget 用精确 Id 如 Git.Git；scoop/choco 用包名）' }, manager: { type: 'string', enum: ['winget', 'scoop', 'choco'], description: '显式指定管理器（缺省自动探测 winget>scoop>choco）' } }, required: ['action'] } } },
+    danger: true, // 系统级写（安装软件）——审批链必走（B1）
+    async run(args, ctx) {
+      const { searchPackages, installPackage, detectPackageManager } = await import('./sysPackage.js');
+      const action = String(args.action ?? '');
+      const settings = ctx.getSettings?.() ?? {};
+      const timeoutMs = Number(settings.sysPkgTimeoutMs) > 0 ? Number(settings.sysPkgTimeoutMs) : undefined;
+      try {
+        if (action === 'manager') {
+          const m = await detectPackageManager(args.manager ? String(args.manager) : undefined);
+          return m ? `可用包管理器：${m}（winget>scoop>choco 探测序）` : '未找到任何包管理器（winget/scoop/choco 均不在 PATH）——请先安装其一（推荐 winget：Windows 10+ 内置）';
+        }
+        if (action === 'search') {
+          const q = String(args.query ?? '').trim();
+          if (!q) return '缺少 query（search 关键词）';
+          const r = await searchPackages(q, { manager: args.manager ? String(args.manager) : undefined });
+          return `${r.manager} 搜索「${q}」结果：
+${r.output}`;
+        }
+        if (action === 'install') {
+          const id = String(args.id ?? '').trim();
+          if (!id) return '缺少 id（安装的包 ID）';
+          const r = await installPackage(id, { manager: args.manager ? String(args.manager) : undefined, timeoutMs });
+          return `${r.ok ? '✅ 已安装' : '❌ 安装失败'}（${r.manager} · ${id}）：
+${r.output}`;
+        }
+        return 'action 必须是 search / install / manager';
+      } catch (e: any) {
+        return `sys_package 失败：${String(e?.message ?? e).slice(0, 200)}`;
+      }
+    },
+  };
+
+  return { fs_read: fsRead, fs_write: fsWrite, fs_edit: fsEdit, apply_patch: applyPatchTool, bash, ls, grep, find_files: findFiles, http_get: httpGet, http_request: httpRequest, web_search: webSearch, browser_navigate: browserNavigate, browser_click: browserClick, browser_type: browserType, browser_screenshot: browserScreenshot, browser_snapshot: browserSnapshot, browser_wait: browserWait, browser_close: browserClose, computer_screenshot: computerScreenshot, computer_click: computerClick, computer_type: computerType, computer_open: computerOpen, computer_observe: computerObserve, computer_uia_windows: uiaWindowsTool, computer_uia_tree: uiaTreeTool, computer_uia_find: uiaFindTool, computer_uia_click: uiaClickTool, computer_uia_type: uiaTypeTool, computer_uia_act: uiaActTool, lsp_diagnostics: lspDiagnostics, lsp_hover: lspHover, lsp_definition: lspDefinition, notify, memory_write: memoryWrite, memory_update: memoryUpdate, memory_delete: memoryDelete, memory_search: memorySearch, scaffold_build: scaffoldBuild, delegate, ask_user: askUser, clarify, todo, skill_load: skillLoad, repo_map: repoMap, cron_create: cronCreate, credential_form: credentialForm, wx_cmd: wxCmd, command_search: commandSearch, view_image: viewImage, sys_package: sysPackage };
 }
 
 export function isDangerous(tools: Record<string, ToolDef>, name: string): boolean {

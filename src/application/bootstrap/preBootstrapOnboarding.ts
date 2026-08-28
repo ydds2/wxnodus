@@ -27,7 +27,7 @@ export interface PreBootstrapDecision {
 // 注意：新 CLI flag 必须在两处注册——args.ts CLI_FLAG_SPEC（主解析器）与本表（pre-bootstrap
 // 向导白名单，先于主解析执行）。遗漏会导致新 flag 被向导以 CONFIG_UNKNOWN_FLAG 拒绝（exit 2）。
 const VALUE_FLAGS = new Set(['--lang', '--data-dir', '--prompt', '-p', '--cwd', '-C', '--session', '-s', '--port', '--output-schema', '--workspace']);
-const BOOL_FLAGS = new Set(['--help', '-h', '--version', '-v', '--json', '--wire', '--stream-json', '--serve', '--strict-mcp-config', '--ephemeral', '--mcp-server']);
+const BOOL_FLAGS = new Set(['--help', '-h', '--version', '-v', '--json', '--wire', '--stream-json', '--serve', '--sdk', '--strict-mcp-config', '--ephemeral', '--mcp-server']);
 
 // V4 P5-1/P4-3：子命令命名空间——`wxnodus update|doctor` 后续 token 是子命令旗标
 // （update --skip/--apply/--file/--rollback、doctor local），不属顶层 CLI 旗标面；
@@ -43,7 +43,7 @@ export function parsePreBootstrapArgs(argv: string[]): OperationResult<PreBootst
     if (BOOL_FLAGS.has(flag)) {
       if (flag === '--help' || flag === '-h') out.help = true;
       if (flag === '--version' || flag === '-v') out.version = true;
-      if (['--json', '--wire', '--stream-json', '--serve', '--mcp-server'].includes(flag)) out.nonInteractive = true;
+      if (['--json', '--wire', '--stream-json', '--serve', '--sdk', '--mcp-server'].includes(flag)) out.nonInteractive = true;
       continue;
     }
     if (VALUE_FLAGS.has(flag)) {

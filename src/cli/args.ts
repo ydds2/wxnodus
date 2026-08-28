@@ -14,6 +14,8 @@ export interface CliOptions {
   strictMcpConfig: boolean;
   /** --serve：启动本地 AI 网关（HTTP 服务，多前端共享 agent/记忆/权限） */
   serve: boolean;
+  /** A-S1：SDK 握手模式（--sdk，配 --serve） */
+  sdk: boolean;
   /** --port：网关监听端口（默认 4789） */
   port: number | null;
   /** --ephemeral：临时会话（Codex 对齐——不加载历史，结束后清理，不污染会话列表） */
@@ -45,6 +47,7 @@ export const CLI_FLAG_SPEC: ReadonlyArray<{
   { long: '--session', short: '-s', key: 'session', takeValue: true, type: 'string' },
   { long: '--strict-mcp-config', key: 'strictMcpConfig', type: 'bool' },
   { long: '--serve', key: 'serve', type: 'bool' },
+  { long: '--sdk', key: 'sdk', type: 'bool' },  // A-S1：SDK 握手模式（随机 token+stdout 单行 JSON+随机端口——@wxnodus/sdk 专用）
   { long: '--port', key: 'port', takeValue: true, type: 'string' },
   { long: '--ephemeral', key: 'ephemeral', type: 'bool' },
   { long: '--mcp-server', key: 'mcpServer', type: 'bool' },
@@ -55,7 +58,7 @@ export const CLI_FLAG_SPEC: ReadonlyArray<{
 const SPEC = CLI_FLAG_SPEC;
 
 export function parseArgs(argv: string[]): CliOptions {
-  const out: CliOptions = { prompt: null, json: false, wire: false, streamJson: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, port: null, ephemeral: false, mcpServer: false, outputSchema: null, workspace: null, positional: [] };
+  const out: CliOptions = { prompt: null, json: false, wire: false, streamJson: false, help: false, version: false, cwd: null, session: null, strictMcpConfig: false, serve: false, sdk: false, port: null, ephemeral: false, mcpServer: false, outputSchema: null, workspace: null, positional: [] };
   let i = 0;
   const findSpec = (tok: string): { spec: (typeof SPEC)[number]; inline?: string } | null => {
     for (const spec of SPEC) {
@@ -137,6 +140,7 @@ export const USAGE = `WxNodus V3 — Windows 本地 AI agent CLI
       --strict-mcp-config 仅信任项目 .mcp.json 声明
       --mcp-server     incoming MCP stdio 服务器模式（需 WXNODUS_MCP_REQUEST_STATE_KEY）
       --serve          启动本地 AI 网关（--port 指定端口，默认 4789）
+      --sdk             SDK 握手模式（配 --serve：随机端口+随机 token，stdout 单行 JSON 回传——@wxnodus/sdk 拉起专用）
   -C, --cwd <dir>      工作目录
   -s, --session <id>   会话 ID
       --lang <zh-CN|en> 系统语言（首次启动选择；优先级 cli > env > workspace > user）
