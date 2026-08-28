@@ -1,6 +1,6 @@
 # WxNodus V4
 
-Windows 本地 AI agent CLI：数据不出机（会话/记忆/密钥全本地），无账号无订阅，任意 OpenAI 兼容端点接入。
+Windows 本地 AI agent CLI：数据主权本机（会话/记忆/密钥全本地；可由用户显式发布——/bundle publish 推送 Git/GitHub 等开源平台），无账号无订阅，任意 OpenAI 兼容端点接入。
 
 > V4.0 变更（2026-08-21）：离线运行能力（离线模型/离线看图/无 key 确定性层）已裁撤——运行需网络与模型密钥，数据仍全部本地存储；临时续用设 `WXNODUS_LEGACY_OFFLINE=1`。语音与本地记忆向量保留。
 >

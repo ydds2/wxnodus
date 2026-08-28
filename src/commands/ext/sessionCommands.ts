@@ -1,7 +1,8 @@
 // src/commands/ext/sessionCommands.ts — 会话/系统工具类命令（handlersExt 巨文件拆分第 2 块，audit §13.46）
 // /resume /new /title /offline /undo /versions /snapshot /script /fork /checkpoint /reload-skills /map /init /usage /cost
-import { join, resolve, dirname } from 'node:path';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve, dirname, basename } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { saveCheckpoint, replaceSessionMessages } from '../../store/db.js';
 import { snapshotMessagesUpTo, messagesAtCheckpoint } from '../../kernel/checkpoint.js';
 import { estimateTokens } from '../../kernel/memory.js';
@@ -803,6 +804,47 @@ ${d}
       const r = exportBundle(ctx.dataDir, name, args[2] || undefined);
       return r.message;
     }
+    if (sub === 'publish') {
+      // 数据主权修订（2026-08-28 用户裁决）：数据可出机——bundle 发布为 Git 仓库（用户自有 remote）
+      const flag = (k: string): string | undefined => {
+        const i = args.indexOf(k);
+        return i >= 0 && args[i + 1] ? args[i + 1] : undefined;
+      };
+      const name = args[1];
+      const remote = flag('--remote');
+      if (!name || !remote) return '用法：/bundle publish <名称> --remote <https://github.com/你/仓.git | git@…> [--branch main] [--msg 提交信息] [--local-remote]\n（发布为 README+清单+tar.gz 的 Git 仓库，推送到你的 remote；本地/内网 Git 服务加 --local-remote）';
+      const { exportBundle, loadBundle } = await import('../../kernel/bundle.js');
+      const lb = loadBundle(ctx.dataDir, name);
+      if (!lb.ok || !lb.manifest) return lb.message;
+      const tmp = join(tmpdir(), `wxn-pub-${Date.now().toString(36)}`);
+      mkdirSync(tmp, { recursive: true });
+      try {
+        const ex = exportBundle(ctx.dataDir, name, tmp);
+        if (!ex.ok || !ex.path) return `导出失败：${ex.message}`;
+        const m = lb.manifest;
+        writeFileSync(join(tmp, 'bundle.json'), JSON.stringify(m, null, 2), 'utf8');
+        writeFileSync(join(tmp, 'README.md'), [
+          `# ${m.name} v${m.version}`, '',
+          m.description || '', '',
+          '由 wxnodus `/bundle publish` 发布（数据主权本机——用户显式推送，wxnodus 绝不自动出机）。', '',
+          '- skills: ' + (m.skills.join(', ') || '无'), '- mcp: ' + (m.mcps.join(', ') || '无'), '- plugins: ' + (m.plugins.join(', ') || '无'), '',
+          '## 安装', '```', `wxnodus /bundle import ${basename(ex.path)}`, '```',
+          '（先下载本仓库中的 .bundle.tgz 到本地）', '',
+        ].join('\n'), 'utf8');
+        const { publishDirToGit } = await import('../../kernel/gitPublish.js');
+        const r = await publishDirToGit(tmp, {
+          remote,
+          branch: flag('--branch'),
+          message: flag('--msg') ?? `wxnodus bundle ${m.name} v${m.version}`,
+          localRemote: args.includes('--local-remote'),
+        });
+        if (!r.ok) return `发布失败：${r.error}`;
+        return lines(' Git 发布 ', [
+          ` ✅ 已推送 ${name} → ${remote}（${r.branch}${r.commit ? ' @' + r.commit : ''}${r.initialized ? ' · 新建仓库' : ''}${r.committed ? '' : ' · 无新变更'}）`,
+          ` 仓库内容：README.md / bundle.json / ${basename(ex.path)}`,
+        ]);
+      } finally { rmSync(tmp, { recursive: true, force: true }); }
+    }
     if (sub === 'import') {
       const file = args[1];
       if (!file) return '用法：/bundle import <文件.tgz>（导入导出的离线整合包：清单+技能落位，同名拒绝）';
@@ -819,7 +861,7 @@ ${d}
       const u = await useBundle(r.manifest, ctx.dataDir, ctx.cwd);
       return u.message;
     }
-    return '未知子命令——/bundle list|create|add|remove|install|import|export|use（无参数 = list）';
+    return '未知子命令——/bundle list|create|add|remove|install|import|export|publish|use（无参数 = list）';
   });
 
   // /reload-skills：重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini），汇报统计

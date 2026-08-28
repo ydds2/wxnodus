@@ -24,6 +24,11 @@
 - 企业代理/私网直连红线/三层策略（全局>用户>项目，deny 不可放宽）+ winget/scoop 三文件预备
 - docs 门禁（UTF-8 BOM/链接）入 ci；Node 24 多 ABI 侧车；真实 feed 升级链
 
+## 数据主权修订（2026-08-28 用户裁决）
+- 定位从「数据不出机」放宽为「数据主权本机」：默认全本地；出机=用户显式动作（上传 git / 自行发布 GitHub 等开源平台 / 自迭代），wxnodus 绝不自动推送
+- 新增 `/bundle publish <名称> --remote <url> [--branch] [--msg] [--local-remote]`：bundle 发布为 README+清单+tar.gz 的 Git 仓库，推送用户自有 remote（http(s)/ssh 恒可；本地/内网 Git 服务显式 --local-remote；提交身份 -c 每命令注入零配置污染；push 失败诚实回显鉴权指引）
+- 约束一同步修订：发布侧经用户 remote 解禁；/market 仍不建 wxnodus 托管/账号体系
+
 ## 发布
 - 版本 4.0.0-rc.1 → 4.0.0；打包链（manifest sha256/SBOM/ABI 预检）+ 干净安装冒烟
 
