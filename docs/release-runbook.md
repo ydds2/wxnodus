@@ -1,6 +1,6 @@
 ﻿# npm 发布 Runbook（v4.0.0 收尾 · 2026-08-28）
 
-> 工程侧 100% 就绪（三包 pack 预检过 / publish-npm workflow 修复落仓 / 发布命令预置）。
+> 工程侧 100% 就绪（三包 pack 预检过 / publish-npm workflow 修复落仓 / **本地直发脚本 `scripts/release/publish-local.mjs` 已 dry-run 实测三包清单通过**）。
 > 本手册覆盖剩余两步账号动作与触发验收——任何时刻 5 分钟完成，不依赖特定会话。
 
 ## 第 1 步：npm Granular token（约 2 分钟）
@@ -11,13 +11,24 @@
 4. 打开 https://github.com/ydds2/wxnodus/settings/secrets/actions → New repository secret
    - Name: `NPM_TOKEN`  - Value: 粘贴 token → Add secret
 
-## 第 2 步：GitHub Actions Billing（约 2 分钟）
+## 第 2 步（仅路径 B 需要）：GitHub Actions Billing（约 2 分钟）
 
 1. 打开 https://github.com/settings/billing
 2. 付款方式失效 → 更新卡片；Spending limit 过低 → 提高 Actions 上限
    （实测证据：run 被拦提示 "recent account payments have failed or your spending limit needs to be increased"）
 
-## 第 3 步：触发发布（两条命令）
+## 第 3 步：触发发布
+
+**路径 A（本地直发——推荐，无需修 GitHub Billing）**：
+
+```bash
+# dry-run 复核清单
+node scripts/release/publish-local.mjs --dry-run
+# 正式发布（仅此步需要 token）
+NPM_TOKEN=npm_xxx node scripts/release/publish-local.mjs
+```
+
+**路径 B（GitHub Actions——需 Billing 已修）**：
 
 ```bash
 # ① dry-run：复核三包产物清单（看 Actions 日志 npm pack 段——无泄漏无缺失）
