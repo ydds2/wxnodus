@@ -100,7 +100,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <div class="frame">
 <nav>
 <h1>WxNodus TUI</h1>
-<div class="sub">原型 v4 · 简洁版<br>32 场景 · 深空主题</div>
+<div class="sub">原型 v4 · 简洁版<br>44 场景 · 深空主题</div>
 <div class="grp">对话核心</div>
 <button data-s="idle" class="active">02 空闲对话</button>
 <button data-s="streaming">03 流式中</button>
@@ -139,6 +139,19 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <button data-s="theme">31 主题预览</button>
 <button data-s="anomaly">32 异常态集</button>
 <button data-s="images">33 图片附件</button>
+<div class="grp">生态全景</div>
+<button data-s="voice">34 语音对话</button>
+<button data-s="media">35 视觉媒体工坊</button>
+<button data-s="swarm">36 swarm 群蜂</button>
+<button data-s="duo">37 duo 结对</button>
+<button data-s="cron">38 定时生态</button>
+<button data-s="determ">39 确定性工具箱</button>
+<button data-s="learn">40 自学习进化</button>
+<button data-s="web">41 网络研究</button>
+<button data-s="init">42 初始化/仓库地图</button>
+<button data-s="serveface">43 服务面</button>
+<button data-s="data">44 数据主权</button>
+<button data-s="profiles">45 档案/工作区</button>
 <div class="grp">元</div>
 <button data-s="derivation">00 设计推导</button>
 </nav>
@@ -836,6 +849,236 @@ code_challenge 校验。其余同意。</pre>
 </div>
 </div>
 <div class="cap">33 —— 图片附件。粘贴折叠行（尺寸/大小/可移除）；呈现三级降级（kitty 内联→半块缩略→占位）；<b>纯文本模型自动文本化</b>是 wxnodus 独有守卫（四层：能力门/历史文本化/发送兜底/视觉降级）的 UI 呈现。</div>
+</section>
+
+
+<section class="scene" id="sc-voice">
+<p class="block"><b class="accent">◆ 语音对话</b> <span class="dim">/voice —— 录音 → whisper 转写 → 模型 → SAPI 合成播报（全链本地可离线）</span></p>
+<div class="cols">
+<div class="col">
+<h4>录音态</h4>
+<pre><span class="err">●</span> 录音中 00:12 ▂▃▅▂▇▃▂▅ ▂▇▅▃
+<span class="cm">说话即录——波形实时 · Esc 取消 · Ctrl+V 停止并发送</span></pre>
+<h4>转写中</h4>
+<pre><span class="violet">◐</span> whisper.cpp 本地转写… <span class="cm">2.1s</span>
+<span class="st">「帮我把昨天的会议纪要整理成待办」</span></pre>
+</div>
+<div class="col">
+<h4>播报态</h4>
+<pre><span class="ok">✓</span> 已整理 5 条待办（SAPI 播报中）
+<span class="cm">🔊 ▸▸▸────── 60% · Esc 停止播报</span>
+<span class="cm">音色 Huihui（zh-CN）· 语速 1.0 · 可 /config voice 调</span></pre>
+<h4>免打扰</h4>
+<ul class="cl">
+<li><b><kbd>Ctrl+V</kbd></b>按住说话（PTT）/ 切换开关</li>
+<li><b>自动播报</b>仅结果摘要（不读代码）</li>
+<li><b>静音会话</b>会议模式 /voice mute 1h</li>
+</ul>
+</div>
+</div>
+<div class="cap">34 —— 语音生态（wxnodus 领先项）。whisper 本地转写（KF-005/006 修复链）+ SAPI 合成；波形/进度/音色全可视；离线可用（模型本地）。</div>
+</section>
+
+<section class="scene" id="sc-media">
+<div class="msg u"><i></i><div class="c">/capture 截个图，把按钮位置标出来，再生成一张改进示意图</div></div>
+<div class="msg a"><i></i><div class="c">
+<div class="t"><span class="g ok">✓</span><span class="accent">capture.screen</span> 2560×1440<span class="sub">180ms</span></div>
+<div class="fold"><span class="ch">▸</span>截图 + UIA 标注 · 检出 3 个按钮 / 1 输入框<span class="dim"> · Enter 展开</span></div>
+<div class="t"><span class="g ok">✓</span><span class="accent">vision.annotate</span> 坐标映射<span class="sub">分辨率感知（KF-007：物理像素方法调用）</span></div>
+<div class="t"><span class="g ok">✓</span><span class="accent">img.generate</span> 改进示意 · 1024×640<span class="sub">图 3 选 1 · Enter 下一张</span></div>
+<pre><span class="cm">┌────────── 媒体工坊 ──────────┐</span>
+<span class="cm">│</span> <span class="fn">[原图]</span> <span class="st">[标注]</span> <span class="st">[生成1]</span> <span class="st">[生成2]</span> <span class="cm">Tab 切换 · D 下载  │</span>
+<span class="cm">└──────────────────────────────┘</span>
+<span class="cm">/video 帧分析 · /render 代码出图 · /input 键鼠回放——同一面板复用</span></pre>
+</div></div>
+<div class="cap">35 —— 视觉媒体工坊（/vision /img /video /render /capture /input 六命令一面板）。标注走 UIA 坐标；生成图可切换可下载；KF-007/008/009 修复链的 UI 呈现。</div>
+</section>
+
+<section class="scene" id="sc-swarm">
+<div class="msg u"><i></i><div class="c">/swarm 重构这个模块：三只蜂分工——探索、施工、评审</div></div>
+<div class="t block"><span class="g ok">✓</span><span class="accent">swarm</span> 3 角色并行 · 共享黑板 · 深度 1</div>
+<pre class="tree"><span class="violet">◐ explorer</span> 探索现结构     ──┐
+<span class="cm">  └ map src/core → 依赖图 12 节点</span>   │<span class="cm"> 黑板</span>
+<span class="violet">◐ builder</span>  施工新代码     ──┼<span class="cm">── 共享状态（只读面）</span>
+<span class="cm">  └ fs_edit core/v2.ts 68%</span>         │
+<span class="ok">✓ critic</span>   评审已完成 2 块 ──┘
+<span class="cm">  └ 「v2.ts:41 空指针风险——已回写黑板，builder 待读」</span></pre>
+<div class="note i">黑板模式：critic 发现的问题实时回写，builder 下一轮即见——非串行评审，边写边纠</div>
+<div class="status"><span class="dim">swarm 3 蜂 · 黑板 7 条 · 冲突 0</span><span class="grow"></span><span class="tip">Ctrl+G 总览 · Esc 收编</span></div>
+<div class="cap">36 —— swarm 群蜂。角色三列并行+<b>共享黑板</b>（critic 回写 → builder 即见，边写边纠）；与 23 子代理（主从汇总）互补——swarm 是对等协作。</div>
+</section>
+
+<section class="scene" id="sc-duo">
+<p class="block"><b class="accent">◆ duo 结对</b> <span class="dim">/duo —— 你和 AI 轮流驾驶（TDD 交替：你写测试它实现，它写测试你审）</span></p>
+<pre class="tree"><span class="cm">── 第 4 轮 · 你的驾驶位 ──</span>
+<span class="accent">你</span>  ✍ 写测试 dateFmt.edge.test.ts（+3 用例）
+<span class="ok">wxn</span>  ⏳ 等你保存——保存即接棒实现
+<span class="cm">── 历史节奏 ──</span>
+<span class="ok">wxn</span>  ✍ round 1-3 · 实现 + 重构（12 编辑 · 9 测试绿）
+<span class="accent">你</span>  ✍ round 4 · 边界用例注入
+<span class="cm">── 交接规则（可调）──</span>
+<span class="cm">保存接棒 / 回车抢棒 / idle 30s 提醒 · /duo swap 手动换位</span></pre>
+<div class="status"><span><span class="badge smart">duo</span> 你的驾驶位</span><span class="dim">比分 4 轮 · wxn 12 编辑 / 你 3 用例</span><span class="grow"></span><span class="tip">真结对编程——非一次生成</span></div>
+<div class="cap">37 —— duo 结对。轮流驾驶可视化（驾驶位徽章+回合历史+分工统计）；保存即接棒的轻交接；与 /review（事后审）互补——duo 是<b>事中协作</b>。</div>
+</section>
+
+<section class="scene" id="sc-cron">
+<p class="block"><b class="accent">◆ 定时生态</b> <span class="dim">/cron —— 代理的闹钟：定时任务带完整 agent 能力（非 dumb cron）</span></p>
+<table style="width:100%">
+<tr><th style="width:200px">任务</th><th>计划</th><th style="width:120px">下次</th><th style="width:130px">状态</th></tr>
+<tr><td class="accent">记忆整理 + digest</td><td class="dim">每日 09:00</td><td class="ok">明天 09:00</td><td class="dim">昨跑 ✓ 2.3k 条归档</td></tr>
+<tr><td class="accent">依赖巡检 audit</td><td class="dim">每周一 08:30</td><td class="ok">周一 08:30</td><td class="dim">上轮 ✓ 0 高危</td></tr>
+<tr><td class="accent">博客草稿助手</td><td class="dim">*/30 * * * *</td><td class="warn">14 分钟后</td><td class="warn">◐ 运行中 42%</td></tr>
+<tr><td class="accent">竞品周报编译</td><td class="dim">周五 17:00</td><td class="dim">—</td><td class="err">✗ 上轮失败（网络）· R 重试</td></tr>
+</table>
+<div class="keys"><span><kbd>Enter</kbd> 查看任务详情/历史</span><span><kbd>N</kbd> 新建（自然语言：「每周五帮我整理周报」）</span><span><kbd>P</kbd> 暂停</span><span><kbd>R</kbd> 立即跑一次</span></div>
+<div class="cap">38 —— 定时生态。每任务带<b>下轮时间+上轮结果</b>（成功带产出摘要、失败可重试）；新建走自然语言；跑时是完整 agent 回合（可用工具、可审批配置预设）。</div>
+</section>
+
+<section class="scene" id="sc-determ">
+<div class="msg u"><i></i><div class="c">/calc (1920*1080)/16 · 顺便算下 sha256 这个文件 · uuid 给我一个</div></div>
+<div class="msg a"><i></i><div class="c">
+<pre><span class="fn">calc</span>    (1920*1080)/16 = <span class="st">129,600</span>        <span class="cm">0ms · 本地</span>
+<span class="fn">hash</span>    sha256 dist/app.zip = <span class="st">9f2c…e8</span>  <span class="cm">12ms · 本地</span>
+<span class="fn">uuid</span>    <span class="st">3f8a1c2e-9b4d-4e7f-a1b2-5c6d7e8f9a0b</span> <span class="cm">0ms</span>
+<span class="cm">── 同族 11 件 ──</span>
+<span class="cm">/sql 内存库直查 · /json 格式化校验 · /base64 编解码 · /rand 随机</span>
+<span class="cm">/units 单位换算 · /csv 列统计 · /timer 计时 · /fs 文件操作 · /bench 基准</span></pre>
+<div class="note i">ℹ 确定性工具不走模型——零 token、零延迟、零幻觉（agent 可调，人也可直接敲）</div>
+</div></div>
+<div class="cap">39 —— 确定性工具箱（11 命令）。<b>本地即答</b>三零特性（token/延迟/幻觉）明示；输出带耗时与「本地」标——与模型回答的边界清晰。</div>
+</section>
+
+<section class="scene" id="sc-learn">
+<p class="block"><b class="accent">◆ 自学习进化</b> <span class="dim">/learn /assimilate /self-evolve —— 从会话沉淀技能 → 打包 → 发布生态</span></p>
+<div class="cols">
+<div class="col">
+<h4>从本次会话学习</h4>
+<pre><span class="cm">/learn 本次会话</span>
+检出可沉淀模式 3 个：
+<span class="ok">✓</span> 「JWT 轮换修复套路」<span class="cm">（工具序列+验证法）</span>
+<span class="ok">✓</span> 「本仓测试运行偏好」<span class="cm">（npm test -- 单文件）</span>
+<span class="dim">○ 「临时 debug 三连」——噪音，建议跳过</span>
+<span class="cm">→ 沉淀为 skill 草稿（skill/learned/*.md）</span></pre>
+</div>
+<div class="col">
+<h4>技能生命周期</h4>
+<ul class="cl">
+<li><b><span class="ok">●</span> 草稿</b>/learn 产出 → 人工审一遍</li>
+<li><b><span class="accent">◐</span> 验证</b>/skill verify 真实跑 3 遍</li>
+<li><b><span class="ok">●</span> 安装</b>~/.wxnodus/skills/ 热重载</li>
+<li><b><span class="violet">◇</span> 发布</b>/bundle publish → 你的 git remote</li>
+<li><b><span class="dim">·</span> 进化</b>/self-evolve 定期复盘低效技能</li>
+</ul>
+<div class="note w">⚠ /assimilate（同化外来会话）需要 /consent——学习他人对话先获同意</div>
+</div>
+</div>
+<div class="cap">40 —— 自学习闭环。会话→模式检出（含噪音过滤建议）→技能状态机（草稿→验证→安装→发布）→/self-evolve 定期淘汰；assimilate 有同意门（伦理红线）。</div>
+</section>
+
+<section class="scene" id="sc-web">
+<div class="msg u"><i></i><div class="c">调研一下 Node 24 的新特性，给我带来源的总结</div></div>
+<div class="msg a"><i></i><div class="c">
+<div class="t"><span class="g ok">✓</span><span class="accent">search.web</span> "Node 24 features"<span class="sub">3 源 · SSRF 防护三层（重绑定/NAT64/私网直连红线）</span></div>
+<div class="t"><span class="g ok">✓</span><span class="accent">web.fetch</span> ×3<span class="sub">nodejs.org · github changelog · 信息周刊</span></div>
+<div class="t"><span class="g ok">✓</span><span class="accent">browser.read</span> 系统浏览器渲染页 ×1<span class="sub">JS 重页面兜底</span></div>
+<p><b>Node 24 要点</b>（3 源交叉）：</p>
+<ul class="cl">
+<li><b>V8 13.6</b>支持 Float16Array<a class="dim">①</a><a class="dim">②</a></li>
+<li><b>权限模型</b>稳定<a class="dim">①</a></li>
+<li><b>test runner</b>覆盖率为默认<a class="dim">②</a></li>
+</ul>
+<pre><span class="cm">① nodejs.org/en/blog/release/v24  ② github/node/blob/main/CHANGELOG  ③ 周刊 2026-08 期</span>
+<span class="cm">SSRF：全部 http(s) 白名单域 · 私网/重绑定已拦 1 次（日志 /logs/ssrf.md）</span></pre>
+</div></div>
+<div class="cap">41 —— 网络研究（/web /search /browser /download /proxy）。<b>来源上标</b>逐条锚定；SSRF 三层防护在工具行明示（含拦截计数）；系统浏览器兜底 JS 页。</div>
+</section>
+
+<section class="scene" id="sc-init">
+<div class="cols">
+<div class="col">
+<h4>/init 项目初始化</h4>
+<pre><span class="cm">$ wxnodus /init</span>
+<span class="ok">✓</span> 扫描 217 文件 · 识别 Node/TS 严格 ESM
+<span class="ok">✓</span> 生成 <span class="fn">AGENTS.md</span><span class="cm">（命令/结构/约定——LLM 协作说明）</span>
+<span class="ok">✓</span> 生成 <span class="fn">.wxnodus/</span><span class="cm">（skills/ agents/ hooks/ 配置）</span>
+<span class="dim">--overwrite 幂等重生成 · 跨品牌通用（六家 CLI 同读）</span></pre>
+</div>
+<div class="col">
+<h4>/map 仓库地图（≤400 token）</h4>
+<pre><span class="fn">src/</span>
+├─ <span class="st">kernel/</span>      agent·llm·tools·memory（核心循环）
+├─ <span class="st">application/</span> 用例编排·runs·capabilities
+├─ <span class="st">infrastructure/</span> mcp·git·sandbox
+└─ <span class="st">cli/</span>         入口·serve·headless
+<span class="cm">tests/ 2894 · docs/ 证据链 · 入口 dist/cli</span>
+<span class="cm">诚实标注：轻量级——弱于 aider pagerank（裁决）</span></pre>
+</div>
+</div>
+<div class="cap">42 —— init + map。AGENTS.md 跨品牌通用（六家同读——wxnodus 参与的开放约定）；map 有 token 预算上限与竞品对照诚实标注。</div>
+</section>
+
+<section class="scene" id="sc-serveface">
+<p class="block"><b class="accent">◆ 服务面</b> <span class="dim">/gateway /webhook /a2a /acp /proxy —— wxnodus 不只客户端：可被调用的五种面</span></p>
+<table style="width:100%">
+<tr><th style="width:120px">面</th><th>说明</th><th style="width:200px">状态</th></tr>
+<tr><td class="accent">HTTP API</td><td class="dim">/gateway 127.0.0.1 · token 握手 · /rpc + /events SSE</td><td><span class="ok">● 运行中</span> <span class="dim">:8437 · 2 连接</span></td></tr>
+<tr><td class="accent">ACP</td><td class="dim">Agent Client Protocol——IDE/编辑器接入（VS Code 0.2.0）</td><td><span class="ok">● 可用</span> <span class="dim">wire 桥</span></td></tr>
+<tr><td class="accent">A2A</td><td class="dim">代理间协作——远程 wxnodus/他牌 agent 互调</td><td><span class="ok">● 可用</span> <span class="dim">局域网 1 节点</span></td></tr>
+<tr><td class="accent">Webhook</td><td class="dim">GitHub/CI 事件触发会话（PR 审查自动跑）</td><td><span class="warn">◐ 已配 1</span> <span class="dim">/webhook test 验证</span></td></tr>
+<tr><td class="accent">SDK</td><td class="dim">@wxnodus/sdk——spawn-attach 嵌入你的程序</td><td><span class="ok">● v1</span> <span class="dim">npm 直装</span></td></tr>
+</table>
+<div class="note i">ℹ 服务面默认仅 127.0.0.1——对外暴露需显式 --host + token（红线：密钥绝不随响应外发）</div>
+<div class="cap">43 —— 服务面。wxnodus 的<b>被调用侧</b>全景（HTTP/ACP/A2A/Webhook/SDK 五面）；本机回环默认+显式开放；VS Code 扩展经 ACP 接入。</div>
+</section>
+
+<section class="scene" id="sc-data">
+<p class="block"><b class="accent">◆ 数据主权</b> <span class="dim">/backup /export /migrate /encrypt —— 你的数据：看得见、带得走、锁得住</span></p>
+<div class="cols">
+<div class="col">
+<h4>数据清单（~/.wxnodus）</h4>
+<ul class="cl">
+<li><b>会话 DB</b>wxnodus.db · 1,842 节点审计链</li>
+<li><b>记忆库</b>archival 12 会话 + recall 37</li>
+<li><b>密钥库</b>AES-256-GCM · 3 提供方</li>
+<li><b>技能/插件</b>skills 8 · plugins 1</li>
+<li><b>配置</b>settings + 权限规则</li>
+</ul>
+</div>
+<div class="col">
+<h4>操作</h4>
+<ul class="cl">
+<li><b>/backup</b>全量快照 → zip · sha256 校验</li>
+<li><b>/export</b>会话→md/json（脱敏开关）</li>
+<li><b>/migrate</b>换机迁移（含密钥安全转移向导）</li>
+<li><b>/encrypt</b>库级二次加密（气隙场景）</li>
+<li><b>/share</b>.wxnshare 单文件（可选加密）</li>
+</ul>
+<div class="note ok" style="border-color:var(--green)">✓ 全部动作本地完成——出机仅在你显式 push 时发生（A1）</div>
+</div>
+</div>
+<div class="cap">44 —— 数据主权。先<b>盘点有什么</b>（五类数据+体量）再给操作；备份/迁移/加密三保障；绿色底线常驻：本地优先，出机显式。</div>
+</section>
+
+<section class="scene" id="sc-profiles">
+<div class="cols">
+<div class="col">
+<h4>/profile 多档案</h4>
+<div class="opt sel">▸ 工作（default）<span class="dim" style="margin-left:10px">正式语气 · 权限严格 · 记忆全开</span></div>
+<div class="opt">学习<span class="dim" style="margin-left:10px">耐心模式 · 多解释 · 记忆高频</span></div>
+<div class="opt">极简<span class="dim" style="margin-left:10px">短答 · 免审批记忆 · /yolo 预设</span></div>
+<p class="dim" style="font-size:11.5px;margin-top:8px">切换即换整套：模型/权限/人格( personnality→系统提示)/记忆策略<br>锚：KF-004 personality 白名单真实消费</p>
+</div>
+<div class="col">
+<h4>/workspace 多工作区</h4>
+<pre><span class="fn">● 当前</span> ~/Desktop/wxnodus4.0   <span class="cm">主仓 · 记忆关联</span>
+<span class="dim">○</span> ~/Desktop/demo-project    <span class="cm">独立记忆域</span>
+<span class="dim">○</span> ~/Documents/notes        <span class="cm">只读挂载</span>
+<span class="cm">每工作区独立：会话/记忆/权限规则/数据目录</span>
+<span class="cm">跨区检索需显式授权（记忆不出域——session 隔离 KF-013）</span></pre>
+</div>
+</div>
+<div class="cap">45 —— 档案+工作区双维度隔离。档案=同一人不同姿态（模型/权限/人格/记忆策略联动）；工作区=不同项目的硬隔离（跨域检索需授权）。</div>
 </section>
 
 </main>
