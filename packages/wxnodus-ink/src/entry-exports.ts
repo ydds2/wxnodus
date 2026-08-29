@@ -1,3 +1,4 @@
+export type { Color } from './ink/styles.js'
 export { default as useStderr } from './hooks/use-stderr.js'
 export { default as useStdout } from './hooks/use-stdout.js'
 export { Ansi } from './ink/Ansi.js'

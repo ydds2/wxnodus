@@ -1181,11 +1181,22 @@ if (pre.mode === 'error') {
   });
   gateway.start();
 
-  // TUI 路线切换（2026-08-29 用户裁决）：hermes 迁移版 UI 废弃——自研 TUI 设计中
-  // （设计稿 docs/ui-prototype/index.html · 13 场景全原型）。过渡期交互模式诚实降级：
-  // 提示 + 指向 -p 非交互通道，绝不留半死 UI。hermes-gateway 桥保留（新 UI 复用 WS 协议端）。
-  console.log('wxnodus: 交互 TUI 重构中（自研设计稿已定稿——docs/ui-prototype/）。');
-  console.log('  非交互通道可用：wxnodus -p "你的指令"  ·  命令帮助：wxnodus /help');
+  // 自研 TUI（2026-08-29 用户裁决：基于 docs/ui-prototype/wxn-tui-LIVE.html 原型制作，全自研）。
+  // 进程内 React+@wxnodus/ink 渲染——零 WS 零子进程（hermes 子进程模式的版本矩阵教训）。
+  // bridges（onApproval/onClarify/onSecretRequest）经 let gateway 中介直连 TUI 浮层。
+  const { createWxnodusTui } = await import('../tui/index.js');
+  const { execSync } = await import('node:child_process');
+  const tui = await createWxnodusTui({
+    bus, agent: agent as never,
+    commandBus: commandBus as never,
+    config: { get: (p: string) => config.get(p) },
+    cwd,
+    gitBranch: () => { try { return execSync('git branch --show-current', { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null } catch { return null } },
+    onRequestExit: () => { exitRequested = true; void shutdown('tui-exit').finally(() => process.exit(0)); },
+  });
+  gateway = tui as never;
+  tui.start();
+  disposers.push({ id: 'wxnodus-tui', dispose: () => { try { tui.unmount(); } catch { /* 已卸载 */ } } });
   await new Promise<void>(() => {});
   return;
 
