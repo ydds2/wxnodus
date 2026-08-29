@@ -161,6 +161,10 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <button data-s="understand">51 内容理解</button>
 <button data-s="network">52 下载与网络</button>
 <button data-s="index">53 命令全景索引</button>
+<div class="grp">落地保障</div>
+<button data-s="cmdsafe">55 cmd 可实现性</button>
+<button data-s="linkage">56 命令联动图谱</button>
+<button data-s="journey">57 旅程剧场</button>
 <div class="grp">元</div>
 <button data-s="quiet">54 输出降噪</button>
 <button data-s="derivation">00 设计推导</button>
@@ -195,7 +199,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <p class="dim block" style="font-size:12.5px;font-style:italic">Thinking··· · 23s · 3.2k tokens · 41 tok/s</p>
 <div class="msg a"><i></i><div class="c">定位到两处泄漏：EventBus.ts:88 监听器未注销、curator.ts:210 定时器未清理。修复方案如<span class="tk-caret"></span></div></div>
 <div class="t"><span class="g violet">◐</span><span class="accent">grep</span> setInterval|addEventListener 全仓<span class="sub">运行中 4.2s</span></div>
-<div class="fold"><span class="ch">⌛</span>已排队 1 条（运行完自动发 · ↑ 召回）<br><span class="muted" style="margin-left:20px">1. 顺便看看有没有同类问题</span></div>
+<div class="fold"><span class="ch">◷</span>已排队 1 条（运行完自动发 · ↑ 召回）<br><span class="muted" style="margin-left:20px">1. 顺便看看有没有同类问题</span></div>
 <div class="composer">
 <p class="pline"><span class="sym">❯</span><span class="ph">Prrrrr... Enter 排队 · Ctrl+S 即时插入</span></p>
 <div class="keys"><span><kbd>Enter</kbd> 排队</span><span><kbd>Ctrl+S</kbd> steer 注入</span><span><kbd>Esc</kbd> 中断回合</span></div>
@@ -218,7 +222,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <div class="t"><span class="g violet">◐</span><span class="accent">subagent</span> verify-reader · 读回校验<span class="sub">运行中 · 工具面收窄（无写无 bash）</span></div>
 <div class="composer">
 <p class="pline"><span class="sym">❯</span><span class="ph">Brrrrr...（验证阶段 2/4）</span></p>
-<div class="status"><span><span class="badge smart">smart</span> deepseek-chat ●</span><span class="dim">回合 7/32 · ⚙ 1 终端</span><span class="grow"></span><span class="tip">Ctrl+T 展开/折叠详情</span></div>
+<div class="status"><span><span class="badge smart">smart</span> deepseek-chat ●</span><span class="dim">回合 7/32 · ▣ 1 终端</span><span class="grow"></span><span class="tip">Ctrl+T 展开/折叠详情</span></div>
 </div>
 <div class="cap">04 —— 工具树。✓/◐/· 三态；子级 └ 缩进折叠；subagent 收窄标注。</div>
 </section>
@@ -234,7 +238,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <div class="opt"><span class="dim">4</span> <span class="err">拒绝</span></div>
 <div class="keys" style="margin-top:12px"><span><kbd>↑↓</kbd> 选择</span><span><kbd>Enter</kbd> 确认</span><span><kbd>Esc</kbd> 拒绝</span></div>
 </div>
-<div class="status"><span><span class="badge smart">smart</span> deepseek-chat ●</span><span class="warn">⏸ 等待审批</span><span class="dim">超时 5:00 自动拒绝</span><span class="grow"></span></div>
+<div class="status"><span><span class="badge smart">smart</span> deepseek-chat ●</span><span class="warn">‖ 等待审批</span><span class="dim">超时 5:00 自动拒绝</span><span class="grow"></span></div>
 <div class="cap">05 —— 审批。黄框覆盖输入区；四级选项；fail-closed 倒计时。</div>
 </section>
 
@@ -299,7 +303,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 
 <section class="scene" id="sc-secret">
 <div class="msg u"><i></i><div class="c">把构建产物发布到我的私有 npm 源</div></div>
-<p class="block"><span class="violet">🔑 需要你亲手输入密钥</span> <span class="dim">npm token · 不进模型上下文</span></p>
+<p class="block"><span class="violet">⚿ 需要你亲手输入密钥</span> <span class="dim">npm token · 不进模型上下文</span></p>
 <div class="panel vio">
 <p class="pt violet">npm authToken → 内存保险库（进程退出即焚）</p>
 <p class="pline"><span class="violet" style="font-weight:700;margin-right:10px">❯</span><span class="muted">npm_</span><span style="letter-spacing:3px">••••••••••••••••••</span><span class="caret" style="background:var(--violet)"></span></p>
@@ -342,7 +346,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <div class="msg a"><i></i><div class="c">README 三处被动改主动、术语统一「黑洞引擎」。后台测试完成后我会收到通知并汇报。</div></div>
 <div class="composer">
 <p class="pline"><span class="sym">❯</span><span class="ph">输入不阻塞——后台照跑</span></p>
-<div class="status"><span><span class="badge smart">smart</span> deepseek-chat ●</span><span class="dim">⚙ bash:1 · goal:4/10</span><span class="grow"></span><span class="tip">⌥K 后台面板</span></div>
+<div class="status"><span><span class="badge smart">smart</span> deepseek-chat ●</span><span class="dim">▣ bash:1 · goal:4/10</span><span class="grow"></span><span class="tip">A+K 后台面板</span></div>
 </div>
 <div class="cap">13 —— 后台任务。活动计数常驻状态栏；完成通知回流上下文。</div>
 </section>
@@ -523,7 +527,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <section class="scene" id="sc-sessions">
 <p class="block"><b class="accent">◆ 会话血缘</b> <span class="dim">/sessions · fork 试错隔离 · checkpoint 内嵌</span></p>
 <pre class="tree"><span class="accent">●</span> <span class="ok">当前</span> 待办系统构建              today 14:22 · 142 msg
-├─ <span class="accent">⑂ fork</span> 竞态修复试验            today 15:01 · 试错隔离
+├─ <span class="accent">↳ fork</span> 竞态修复试验            today 15:01 · 试错隔离
 │   └─ checkpoint#3（npm test 3 passed 后）
 ├─ SSO 接入方案评审               yest 09:14 · → archival
 └─ JWT 刷新竞态                   08-12 · → recall 高频引用</pre>
@@ -582,7 +586,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <li><b><span class="ok">●</span> 会话「JWT 竞态」</b>archival 08-12 · 不出机 ✓</li>
 <li><b><span class="ok">●</span> 会话「SSO 接入」</b>archival 08-19 · 不出机 ✓</li>
 <li><b><span class="ok">●</span> 联合检索</b>/hole 5 命中 · 本地 ✓</li>
-<li><b><span class="violet">⇣</span> 汇总分析</b>当前 working 层 · 本地 ✓</li>
+<li><b><span class="violet">↓</span> 汇总分析</b>当前 working 层 · 本地 ✓</li>
 </ul>
 <div class="panel warn">
 <p class="pt warn">⚠ 远程代理调用（A2A）——数据出机边界</p>
@@ -617,7 +621,7 @@ code_challenge 校验。其余同意。</pre>
 <li><b><span class="dim">☐</span></b>native commit 白名单</li>
 </ul>
 <div class="fold"><span class="ch">▸</span>npm audit 完整输出（3,412 行）<span class="dim"> · Enter 展开</span></div>
-<div class="note i">ℹ 信息通知（后台完成/记忆吸附）</div>
+<div class="note i">i 信息通知（后台完成/记忆吸附）</div>
 </div></div>
 <div class="cap">25 —— 输出全谱。标题/表格/引用/清单/行内码/三级通知/超长折叠。</div>
 </section>
@@ -625,7 +629,7 @@ code_challenge 校验。其余同意。</pre>
 <section class="scene" id="sc-longsession">
 <div class="daysep">昨天 · 86 条消息</div>
 <div class="fold"><span class="ch">▸</span>昨日段：架构讨论 + 三轮迭代（86 条 → 1 行 · Enter 展开）</div>
-<div class="note i" style="border-color:var(--violet)">⇤ micro 压缩（自动）——turn 3~28 → 摘要 1.2k tok（/undo 展开 · /context 详情）</div>
+<div class="note i" style="border-color:var(--violet)">« micro 压缩（自动）——turn 3~28 → 摘要 1.2k tok（/undo 展开 · /context 详情）</div>
 <div class="msg u"><i></i><div class="c">继续，按方案 v2 做剩余迁移</div></div>
 <div class="msg a"><i></i><div class="c">从方案 v2 继续（压缩摘要携带上下文）。剩余 3 点：会话流 / 通知回流 / 工具去重…</div></div>
 <p class="tree block"><span class="meter">████████████████░░░░░░░░░░░░░░░<span class="rest">░</span></span> <span class="muted">27.4k / 64k · 43%</span></p>
@@ -684,13 +688,13 @@ code_challenge 校验。其余同意。</pre>
 <ul class="cl">
 <li><b>左边条</b>▎用户 / ▎助手</li>
 <li><b>双通道</b>排队 / steer</li>
-<li><b>状态栏降级</b>模式(模型)·cwd·⚙</li>
+<li><b>状态栏降级</b>模式(模型)·cwd·▣</li>
 <li><b>覆盖浮层</b>审批黄/澄清蓝/密钥紫</li>
 <li><b>诚实原则</b>领先亮明·缺口可见·零绿色谎言</li>
 </ul>
 </div>
 </div>
-<div class="cap">00 —— 推导：产品 = 本地数据主权 agent <b>工作台</b>（非纯聊天）⇒ 对话流≠全部 ⇒ 四大工作区+对话核心 ⇒ 命令面映射（高频进状态栏，长尾进 /help）。</div>
+<div class="cap">00 —— 推导：产品 = 本地数据主权 agent <b>工作台</b>（非纯聊天）=> 对话流≠全部 => 四大工作区+对话核心 => 命令面映射（高频进状态栏，长尾进 /help）。</div>
 </section>
 
 
@@ -762,12 +766,12 @@ code_challenge 校验。其余同意。</pre>
 <span class="fn">{ }</span>       多行块    <span class="fn">Ctrl+↑↓</span>   历史
 <span class="cm">对话中</span>
 <span class="fn">Enter</span>      发送/排队 <span class="fn">Ctrl+T</span>    工具详情
-<span class="fn">Ctrl+G</span>     编排总览  <span class="fn">⌥K</span>       后台面板</span></pre>
+<span class="fn">Ctrl+G</span>     编排总览  <span class="fn">A+K</span>       后台面板</span></pre>
 </div>
 <div class="col">
 <h4>退出保护（三层）</h4>
 <div class="note w">⚠ 对话框打开时首按 Ctrl+C——仅关闭当前面板，不退出<br><span class="dim">（审批中按 Ctrl+C = 拒绝审批，绝不含糊）</span></div>
-<div class="note i">ℹ 空闲首按：提示「再按一次退出」——1.5s 窗口</div>
+<div class="note i">i 空闲首按：提示「再按一次退出」——1.5s 窗口</div>
 <pre><span class="cm">┌ 退出确认（运行中强制退出时） ──────────┐</span>
 <span class="cm">│</span>  后台还有 1 任务 + goal 4/10 循环    <span class="cm">│</span>
 <span class="cm">│</span>  <span class="fn">▸ 否（默认）</span>  是   <span class="cm">y/n</span>          <span class="cm">│</span>
@@ -818,7 +822,7 @@ code_challenge 校验。其余同意。</pre>
 <div class="col">
 <h4>上下文超额（阈值 0.85 触发）</h4>
 <div class="panel vio">
-<p class="pt violet">⇤ 上下文 55.1k / 64k（86%）—— 已过阈值</p>
+<p class="pt violet">« 上下文 55.1k / 64k（86%）—— 已过阈值</p>
 <div class="opt sel">micro 压缩（推荐——摘要旧轮，原文可展开）</div>
 <div class="opt">全量压缩（更省——整段归档）</div>
 <div class="opt">不压缩（继续——413 强压兜底）</div>
@@ -834,11 +838,11 @@ code_challenge 校验。其余同意。</pre>
 <section class="scene" id="sc-images">
 <div class="msg u"><i></i><div class="c">（粘贴截图）这个报错怎么修</div></div>
 <div class="msg u"><i></i><div class="c">
-<div class="fold"><span class="ch">🖼</span>截图粘贴 · PNG 1920×1080 · 340KB<span class="dim"> · Enter 预览 · Del 移除</span></div>
+<div class="fold"><span class="ch">▣</span>截图粘贴 · PNG 1920×1080 · 340KB<span class="dim"> · Enter 预览 · Del 移除</span></div>
 </div></div>
 <div class="msg a"><i></i><div class="c">
 <p>已识别截图内容：`ECONNREFUSED 127.0.0.1:6379`（Redis 连接失败）…</p>
-<div class="note i">ℹ 当前模型 deepseek-chat 支持视觉——原图直入（inject 路径）<br><span class="dim">若切到纯文本模型：图片守卫自动文本化（GLM 多模态预识别→摘要入上下文，零 400——wxnodus 图片四层守卫）</span></div>
+<div class="note i">i 当前模型 deepseek-chat 支持视觉——原图直入（inject 路径）<br><span class="dim">若切到纯文本模型：图片守卫自动文本化（GLM 多模态预识别→摘要入上下文，零 400——wxnodus 图片四层守卫）</span></div>
 </div></div>
 <div class="cols block">
 <div class="col">
@@ -876,7 +880,7 @@ code_challenge 校验。其余同意。</pre>
 <div class="col">
 <h4>播报态</h4>
 <pre><span class="ok">✓</span> 已整理 5 条待办（SAPI 播报中）
-<span class="cm">🔊 ▸▸▸────── 60% · Esc 停止播报</span>
+<span class="cm">♪ ▸▸▸────── 60% · Esc 停止播报</span>
 <span class="cm">音色 Huihui（zh-CN）· 语速 1.0 · 可 /config voice 调</span></pre>
 <h4>免打扰</h4>
 <ul class="cl">
@@ -954,7 +958,7 @@ code_challenge 校验。其余同意。</pre>
 <span class="cm">── 同族 11 件 ──</span>
 <span class="cm">/sql 内存库直查 · /json 格式化校验 · /base64 编解码 · /rand 随机</span>
 <span class="cm">/units 单位换算 · /csv 列统计 · /timer 计时 · /fs 文件操作 · /bench 基准</span></pre>
-<div class="note i">ℹ 确定性工具不走模型——零 token、零延迟、零幻觉（agent 可调，人也可直接敲）</div>
+<div class="note i">i 确定性工具不走模型——零 token、零延迟、零幻觉（agent 可调，人也可直接敲）</div>
 </div></div>
 <div class="cap">39 —— 确定性工具箱（11 命令）。<b>本地即答</b>三零特性（token/延迟/幻觉）明示；输出带耗时与「本地」标——与模型回答的边界清晰。</div>
 </section>
@@ -1038,7 +1042,7 @@ code_challenge 校验。其余同意。</pre>
 <tr><td class="accent">Webhook</td><td class="dim">GitHub/CI 事件触发会话（PR 审查自动跑）</td><td><span class="warn">◐ 已配 1</span> <span class="dim">/webhook test 验证</span></td></tr>
 <tr><td class="accent">SDK</td><td class="dim">@wxnodus/sdk——spawn-attach 嵌入你的程序</td><td><span class="ok">● v1</span> <span class="dim">npm 直装</span></td></tr>
 </table>
-<div class="note i">ℹ 服务面默认仅 127.0.0.1——对外暴露需显式 --host + token（红线：密钥绝不随响应外发）</div>
+<div class="note i">i 服务面默认仅 127.0.0.1——对外暴露需显式 --host + token（红线：密钥绝不随响应外发）</div>
 <div class="cap">43 —— 服务面。wxnodus 的<b>被调用侧</b>全景（HTTP/ACP/A2A/Webhook/SDK 五面）；本机回环默认+显式开放；VS Code 扩展经 ACP 接入。</div>
 </section>
 
@@ -1138,7 +1142,7 @@ code_challenge 校验。其余同意。</pre>
 </div>
 <div class="col">
 <h4>/version /update</h4>
-<div class="note i">ℹ wxnodus 4.0.2 · Node 22.18 · win32/amd64<br><span class="dim">/status：DB v12 · 记忆 2,391 条 · MCP 2 · 插件 1</span></div>
+<div class="note i">i wxnodus 4.0.2 · Node 22.18 · win32/amd64<br><span class="dim">/status：DB v12 · 记忆 2,391 条 · MCP 2 · 插件 1</span></div>
 <div class="note w">↻ 新版本 4.0.3 可用（feed 检查）<br><span class="dim">wxnodus update --apply 升级（绝不自动装）· --skip 跳过提示</span></div>
 <h4>/fortune 彩蛋</h4>
 <p class="dim" style="font-size:12px">黑洞说：被记住的知识不会真正消失。——每日一条</p>
@@ -1210,7 +1214,7 @@ code_challenge 校验。其余同意。</pre>
 <p class="block"><b class="accent">◆ 终端与任务面板</b> <span class="dim">/term /task /agent /jobs /session-stream /btw /clear /title —— 后台世界的驾驶舱</span></p>
 <div class="cols">
 <div class="col" style="flex:1.3">
-<h4>/term 后台终端（⌥K）</h4>
+<h4>/term 后台终端（A+K）</h4>
 <pre><span class="fn">term#1 npm run dev</span>  <span class="ok">● 运行 4m12s</span>  <span class="cm">输出静默</span>
   <span class="cm">└ 尾行：ready on :5173（探活通过）</span>
 <span class="fn">term#2 npm test</span>     <span class="violet">◐ 刚启动</span>
@@ -1347,6 +1351,108 @@ code_challenge 校验。其余同意。</pre>
 <div class="cap">54 —— 输出降噪（竞品实证版）。十条规则全部带源码锚点与具体数字（kimi N=4/tail5 · codex head5+tail5/1MB · crush 三态/30KB · gemini 15 行配额）；「未取证项」如实标注（三家均无 LLM 提炼路径）；运行时演示见上方动画。</div>
 </section>
 
+<section class="scene" id="sc-cmdsafe">
+<p class="block"><b class="accent">◆ cmd 环境可实现性对照</b> <span class="dim">原型全部视觉元素 → Windows 终端三档能力映射（已按安全集替换）</span></p>
+<div class="cols">
+<div class="col">
+<h4>字符三档</h4>
+<table>
+<tr><th>元素</th><th>Cascadia</th><th>传统 conhost</th></tr>
+<tr><td>制表线 ─│└├╭╮</td><td class="ok">✓</td><td class="ok">✓</td></tr>
+<tr><td>状态符 ●◐○✓✗☑</td><td class="ok">✓</td><td class="ok">✓</td></tr>
+<tr><td>块条 █░▂▃▅▇ + 左边条▎</td><td class="ok">✓</td><td class="ok">✓（新宋体）</td></tr>
+<tr><td>spinner ◐◓◑◒（本原型已采用）</td><td class="ok">✓</td><td class="ok">✓</td></tr>
+<tr><td>braille ⠋⠙⠹（增强档可选）</td><td class="ok">✓</td><td class="err">豆腐→禁用</td></tr>
+<tr><td>①②③ 上标 / ♪▣◷⌚</td><td class="ok">✓</td><td class="warn">字体相关</td></tr>
+<tr><td>emoji ⚙🔊🖼（已全部替换）</td><td class="dim">—</td><td class="dim">—（宽度不稳，弃用）</td></tr>
+</table>
+</div>
+<div class="col">
+<h4>效果 → 终端实现方式</h4>
+<table>
+<tr><th>原型效果</th><th>cmd 实现</th></tr>
+<tr><td>CSS 淡入浮升</td><td class="dim">分帧逐行打印（ink 分帧渲染，等价观感）</td></tr>
+<tr><td>光标闪烁动画</td><td class="dim">ANSI 光标显隐序列 ?25l/h + 定时重绘</td></tr>
+<tr><td>spinner/倒计时</td><td class="dim">单行重绘（CR 回行首覆盖——终端标准做法）</td></tr>
+<tr><td>diff 底色</td><td class="dim">ANSI 256 色背景（Win10 1703+ conhost 原生支持 VT）</td></tr>
+<tr><td>主题色板</td><td class="dim">24bit truecolor（Win10+ 默认；降级 256 色映射）</td></tr>
+<tr><td>点击展开折叠</td><td class="dim">Enter 键展开（鼠标 SGR 可选增强——Windows Terminal 支持）</td></tr>
+<tr><td>面板边框</td><td class="dim">Box 字符（ink 原生）</td></tr>
+</table>
+<div class="note i">i 兜底：启动时终端能力探测（VT 支持/字体/truecolor）→ 自动选档；不支持 VT 的远古环境诚实降级为纯 ASCII 行式（不崩不花屏）</div>
+</div>
+</div>
+<div class="cap">55 —— cmd 可实现性。全部元素已按「Cascadia + 传统 conhost」双档安全集替换（spinner 四相圆/emoji 清零）；CSS 效果均有 ANSI 等价实现；远古环境纯 ASCII 兜底。</div>
+</section>
+
+<section class="scene" id="sc-linkage">
+<p class="block"><b class="accent">◆ 命令联动图谱</b> <span class="dim">面板不是孤岛——命令 → 面板 → 回对话的完整状态机</span></p>
+<pre class="tree"><span class="fn">[对话 02]</span> ←—————————— 一切面板的出发与归宿 ——————————→
+   │
+   ├─ <span class="accent">/model</span> → [08 模型选择] ──选完──→ 回 02（状态栏模型名即变 ●）
+   │      └─ A 添加接口 → 表单 → set-key → [10 密钥输入] → 回 08 → 回 02
+   │
+   ├─ <span class="accent">/build</span> → [15 编译管道] ─阶段4 验证失败─→ [12 错误] ─R 重试─→ 回 15
+   │      ├─ 危险命令 → [05 审批] ─allow─→ 回 15 继续
+   │      └─ 完成 → 证据链入 [14 记忆] archival · [21 会话] 标记
+   │
+   ├─ agent 运行 → [03 流式] ─Enter 排队/Ctrl+S 注入─→ 自身
+   │      ├─ clarify 工具 → [09 澄清] ─答─→ 回 03 续跑
+   │      ├─ secret 工具 → [10 密钥] ─值─→ 回 03 续跑（null=停）
+   │      └─ Esc → 中断 → [02]（队列保留 ↑ 召回）
+   │
+   ├─ <span class="accent">/delegate</span> → [23 子代理] ─全部终态─→ 汇总代理 → 回 02
+   │      └─ 某代理失败 → R 重试 / 规则建议 → [17 安全中心] 加规则 → 回 23
+   │
+   ├─ Esc Esc → [28 回滚] ─确认─→ [02]（对话+文件双路）或 fork → [21 会话树]
+   │
+   ├─ <span class="accent">/hole</span> → [14 记忆] ─Enter 取用─→ 命中内容注入输入框 → 回 02
+   │
+   └─ <span class="accent">/arena</span> → [27 竞技] ─采纳─→ 胜者方案落盘 → 失败反例入 [14] recall
+          └─ /review → 逐轮回放（[48 日志] 溯源）</pre>
+<div class="cols" style="margin-top:12px">
+<div class="col">
+<h4>联动规则（实现约束）</h4>
+<ul class="cl">
+<li><b>单面板原则</b>同时至多一个浮层——新面板开则旧面板决断（防栈溢出）</li>
+<li><b>决断必回主</b>面板关闭后焦点必回输入区（无失焦死角）</li>
+<li><b>数据即通</b>面板选择直接改状态（模型/规则/密钥）——不经「确认页」</li>
+<li><b>跨面板事件</b>build 完成→记忆/会话/状态栏三处同步（单一事件源）</li>
+</ul>
+</div>
+<div class="col">
+<h4>面板优先级（同时触发时）</h4>
+<pre class="tree"><span class="err">1</span> 密钥输入（安全阻塞一切）
+<span class="warn">2</span> 审批（危险动作门）
+<span class="accent">3</span> 澄清（agent 等待中）
+<span class="dim">4</span> 计划确认 / 命令菜单
+<span class="dim">5</span> 信息面板（随时可 Esc）</span></pre>
+</div>
+</div>
+<div class="cap">56 —— 命令联动图谱。7 条主链（model/build/运行/委托/回滚/记忆/竞技）+ 四条联动规则（单面板/决断必回主/数据即通/单一事件源）+ 面板优先级栈——面板体系的状态机规格。</div>
+</section>
+
+<section class="scene" id="sc-journey">
+<p class="block"><b class="accent">◆ 旅程剧场</b> <span class="dim">按 P 或点侧栏「▶ 旅程」——自动走完一条真实用户旅程（场景间联动实况）</span></p>
+<div class="panel acc">
+<p class="pt" id="jr-title">▶ 待播放 —— 旅程：修复一个线上 bug 的完整 8 幕</p>
+<p class="muted" style="font-size:13px; line-height:1.9" id="jr-desc">从空闲对话出发：提问 → 流式分析 → 工具排查 → 危险命令审批 → 后台验证 → 用量结算 → 记忆沉淀 → 回到对话。每幕 4 秒自动切换。</p>
+<div class="keys"><span><kbd>P</kbd> 播放/暂停</span><span><kbd>Esc</kbd> 停止剧场回手动</span></div>
+</div>
+<h4>本旅程的 8 幕（联动解說）</h4>
+<table style="width:100%">
+<tr><th style="width:50px">幕</th><th style="width:130px">场景</th><th>解说</th></tr>
+<tr><td class="accent">1</td><td>02 空闲对话</td><td class="dim">用户提问「线上 500 了，帮我查」——出发</td></tr>
+<tr><td class="accent">2</td><td>03 流式中</td><td class="dim">Thinking 心跳 + 打字机——分析日志切入点</td></tr>
+<tr><td class="accent">3</td><td>04 工具树</td><td class="dim">grep 日志 → fs_read 配置——双工具并行展开</td></tr>
+<tr><td class="accent">4</td><td>05 审批</td><td class="dim">定位到要改生产配置文件——fs_edit 触发危险级审批</td></tr>
+<tr><td class="accent">5</td><td>13 后台任务</td><td class="dim">批准后改完——验证测试后台跑，状态栏 ⚙ 计数</td></tr>
+<tr><td class="accent">6</td><td>20 用量</td><td class="dim">回合结束——成本 0.03（缓存命中 91%）一目了然</td></tr>
+<tr><td class="accent">7</td><td>14 记忆</td><td class="dim">curator 自动吸附「生产配置热修套路」入 recall</td></tr>
+<tr><td class="accent">8</td><td>02 回到对话</td><td class="dim">闭环——队列无残留，状态栏归位，随时下一轮</td></tr>
+</table>
+<div class="cap">57 —— 旅程剧场。8 幕自动轮播把孤立场景串成<b>真实使用流</b>——每幕的进入原因和退出去向即 56 号图谱的状态机实况验证。</div>
+</section>
 </main>
 </div>
 <script>
@@ -1378,7 +1484,7 @@ window.addEventListener('load',()=>{const act=document.querySelector('nav button
   const set = (el, txt) => { if (el) el.textContent = txt; };
 
   /* braille spinner：替换 ◐ */
-  const FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+  const FRAMES = ['◐','◓','◑','◒'];
   const spin = () => {
     const marks = document.querySelectorAll('.scene.active .g.violet');
     every(90, () => {
@@ -1535,7 +1641,7 @@ window.addEventListener('load',()=>{const act=document.querySelector('nav button
 <script>
 /* 54 运行时演示：Using→Used 收拢 + 三态展开循环 */
 (function () {
-  const FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+  const FRAMES = ['◐','◓','◑','◒'];
   const box = () => document.getElementById('qdemo');
   const PHASE_RUN = 0, PHASE_DONE = 1;
   let phase = PHASE_RUN, tick = 0, outLines = 0;
@@ -1582,7 +1688,7 @@ window.addEventListener('load',()=>{const act=document.querySelector('nav button
   const every = (ms, fn) => { fn(); timers.push(setInterval(fn, ms)); };
   const stopAll = () => { while (timers.length) clearInterval(timers.pop()); };
   const q = (sel, root) => (root || document).querySelector(sel);
-  const FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+  const FRAMES = ['◐','◓','◑','◒'];
 
   /* 1) 逐行浮现：场景激活时块级元素按序画入（ink 逐行渲染感） */
   const reveal = (sc) => {
@@ -1788,5 +1894,54 @@ window.addEventListener('load',()=>{const act=document.querySelector('nav button
 })();
 </script>
 
+
+<script>
+/* 57 旅程剧场：自动轮播核心场景序列 */
+(function () {
+  const SEQ = [
+    ['idle', '第 1/8 幕 · 空闲对话', '用户提问「线上 500 了，帮我查」——旅程出发'],
+    ['streaming', '第 2/8 幕 · 流式分析', 'Thinking 心跳 + 打字机逐字——切入日志分析'],
+    ['tools', '第 3/8 幕 · 工具排查', 'grep 日志 → fs_read 配置，双工具并行'],
+    ['approval', '第 4/8 幕 · 危险审批', '要改生产配置——fs_edit 触发审批面板'],
+    ['busy', '第 5/8 幕 · 后台验证', '批准后验证测试后台跑，状态栏▣计数'],
+    ['usage', '第 6/8 幕 · 用量结算', '回合结束——成本 0.03 · 缓存命中 91%'],
+    ['memory', '第 7/8 幕 · 记忆沉淀', 'curator 吸附「生产配置热修套路」入 recall'],
+    ['idle', '第 8/8 幕 · 回到对话', '闭环——队列无残留，随时下一轮'],
+  ];
+  let timer = null, idx = 0;
+  const title = () => document.getElementById('jr-title');
+  const desc = () => document.getElementById('jr-desc');
+  const go = (i) => {
+    const [name, t, d] = SEQ[i % SEQ.length];
+    const btn = document.querySelector('nav button[data-s="' + name + '"]');
+    if (btn) btn.click();
+    if (title()) title().textContent = (timer ? '▶ ' : '‖ ') + t;
+    if (desc()) desc().textContent = d;
+  };
+  window.__journeyToggle = function () {
+    if (timer) { clearInterval(timer); timer = null; if (title()) title().textContent = '‖ 已暂停 · 再按 P 继续'; return; }
+    go(idx); idx++;
+    timer = setInterval(() => { go(idx); idx++; }, 4000);
+  };
+  document.addEventListener('keydown', e => {
+    if (e.key === 'p' || e.key === 'P') {
+      if (!document.getElementById('sc-journey').classList.contains('active')) return;
+      window.__journeyToggle();
+    }
+  });
+  // 剧场场景内即点即播
+  document.getElementById('sc-journey').addEventListener('click', e => {
+    if (e.target.closest('.panel')) window.__journeyToggle();
+  });
+})();
+</script>
+<script>document.addEventListener('DOMContentLoaded', () => {
+  const jb = document.getElementById('btn-journey');
+  if (jb) jb.addEventListener('click', () => {
+    const b57 = document.querySelector('nav button[data-s="journey"]');
+    if (b57) b57.click();
+    if (window.__journeyToggle) window.__journeyToggle();
+  });
+});</script>
 </body>
 </html>
