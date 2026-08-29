@@ -11,6 +11,8 @@ const PLACEHOLDER_BUSY = 'Prrrrr... Enter 排队 · Ctrl+S 即时注入 · Esc �
 export function Composer({ store, runtime }: { store: TuiStore; runtime: TuiRuntime }): React.ReactElement {
   const s = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const [value, setValue] = useState('')
+  // 终端宽（静态帧——resize 重挂载场景由 ink 重建；与 HTML 原型 border-top 等价的无角细线）
+  const cols = (process.stdout.columns ?? 80)
   const disabled = s.overlay.kind !== 'none'
   const slashOpen = value.startsWith('/')
   const slashMatches = slashOpen ? filterCommands(value) : []
@@ -41,7 +43,8 @@ export function Composer({ store, runtime }: { store: TuiStore; runtime: TuiRunt
 
   const symColor = s.running ? DEEP_SPACE.violet : DEEP_SPACE.accent
   return (
-    <Box flexDirection="column" borderTop borderStyle="single" borderColor="#1e2440" paddingTop={0} marginTop={1}>
+    <Box flexDirection="column" marginTop={1}>
+      <Text color="#2a3050">{'─'.repeat(Math.max(0, cols - 1))}</Text>
       {s.queue.length > 0 ? (
         <Box paddingLeft={1}>
           <Text color={DEEP_SPACE.warn}>⌛ 已排队 {s.queue.length} 条（运行结束自动发 · Esc 中断不丢）</Text>
