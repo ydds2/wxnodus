@@ -100,7 +100,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <div class="frame">
 <nav>
 <h1>WxNodus TUI</h1>
-<div class="sub">原型 v4 · 简洁版<br>44 场景 · 深空主题</div>
+<div class="sub">原型 v4 · 简洁版<br>52 场景 · 深空主题</div>
 <div class="grp">对话核心</div>
 <button data-s="idle" class="active">02 空闲对话</button>
 <button data-s="streaming">03 流式中</button>
@@ -152,6 +152,15 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <button data-s="serveface">43 服务面</button>
 <button data-s="data">44 数据主权</button>
 <button data-s="profiles">45 档案/工作区</button>
+<div class="grp">体系收尾</div>
+<button data-s="modes">46 模式与安全档</button>
+<button data-s="config">47 配置中心</button>
+<button data-s="diag">48 日志与快照</button>
+<button data-s="pipeline">49 高阶构建流</button>
+<button data-s="termtask">50 终端与任务</button>
+<button data-s="understand">51 内容理解</button>
+<button data-s="network">52 下载与网络</button>
+<button data-s="index">53 命令全景索引</button>
 <div class="grp">元</div>
 <button data-s="derivation">00 设计推导</button>
 </nav>
@@ -1079,6 +1088,214 @@ code_challenge 校验。其余同意。</pre>
 </div>
 </div>
 <div class="cap">45 —— 档案+工作区双维度隔离。档案=同一人不同姿态（模型/权限/人格/记忆策略联动）；工作区=不同项目的硬隔离（跨域检索需授权）。</div>
+</section>
+
+
+<section class="scene" id="sc-modes">
+<p class="block"><b class="warn">◆ 模式与安全档位</b> <span class="dim">/yolo /afk /sandbox /compliance —— 六档权限全景 · 危险档警示 · 沙盒双态</span></p>
+<table style="width:100%">
+<tr><th style="width:90px">档位</th><th>语义</th><th style="width:150px">确认策略</th><th style="width:110px">状态</th></tr>
+<tr><td class="ok">smart</td><td>默认 · 工作区内低危自动放行</td><td class="dim">危险项弹审批</td><td><span class="ok">● 当前</span></td></tr>
+<tr><td class="accent">plan</td><td>先计划后执行 · 零副作用</td><td class="dim">计划批准门</td><td class="dim">Shift+Tab</td></tr>
+<tr><td class="violet">manual</td><td>全部确认（学习观察用）</td><td class="dim">每工具弹窗</td><td class="dim">Ctrl+X 循环</td></tr>
+<tr><td class="warn">yolo</td><td><b>跳过审批</b>（红线/规则仍拦）</td><td class="warn">硬红线不可越</td><td class="dim">/yolo 切换</td></tr>
+<tr><td class="warn">afk</td><td>无人值守 · AI 预审接管</td><td class="warn">autoReview 必开</td><td class="dim">/afk on 时长</td></tr>
+<tr><td class="dim">goal</td><td>循环自主（N 轮预算内）</td><td class="dim">轮次+红线双闸</td><td class="dim">/goal</td></tr>
+</table>
+<div class="cols" style="margin-top:14px">
+<div class="col">
+<h4>/sandbox 沙盒执行</h4>
+<pre><span class="cm">$ sandbox run npm test</span>
+<span class="ok">✓</span> Low IL 受限令牌 · 文件系统白名单（cwd）
+<span class="cm">实测校准：受限令牌路径本机证伪 → 改 Low IL（与竞品不同，如实记录）</span>
+<span class="dim">弱于 codex WFP（无网络过滤）——诚实标注</span></pre>
+</div>
+<div class="col">
+<h4>/compliance 合规红线</h4>
+<ul class="cl">
+<li><b>硬红线</b>rm -rf 系统盘 · 凭据外发 · 越权提权</li>
+<li><b>软红线</b>出机动作 · 大额删除 · 注册表写</li>
+<li><b>不可放宽</b>全局 deny 任何人不可覆盖</li>
+</ul>
+</div>
+</div>
+<div class="cap">46 —— 六档模式全景表（当前档高亮+每档确认策略）；yolo/afk 危险档橙色警示（yolo 红线仍拦、afk 预审必开）；沙盒带实测校准差异说明；合规三级。</div>
+</section>
+
+<section class="scene" id="sc-config">
+<p class="block"><b class="accent">◆ 配置中心</b> <span class="dim">/config /status /version /update /thinking /lang /fortune</span></p>
+<div class="cols">
+<div class="col">
+<h4>/config 配置项</h4>
+<pre><span class="cm">mode</span>            <span class="st">smart</span>          <span class="cm">六档</span>
+<span class="cm">thinking</span>        <span class="st">on</span>            <span class="cm">思维链可见（/thinking 切换）</span>
+<span class="cm">autoReview</span>      <span class="st">off</span>           <span class="cm">AI 预审（afk 档自动开）</span>
+<span class="cm">lsp</span>             <span class="st">off</span>           <span class="cm">3 工具诊断回灌</span>
+<span class="cm">approveForSession</span> <span class="st">off</span>        <span class="cm">会话授权持久化</span>
+<span class="cm">lang</span>            <span class="st">zh-CN</span>         <span class="cm">/lang 切换 UI+回答语言</span>
+<span class="cm">personality</span>     <span class="st">default</span>       <span class="cm">白名单人格（KF-004 真实消费）</span></pre>
+</div>
+<div class="col">
+<h4>/version /update</h4>
+<div class="note i">ℹ wxnodus 4.0.2 · Node 22.18 · win32/amd64<br><span class="dim">/status：DB v12 · 记忆 2,391 条 · MCP 2 · 插件 1</span></div>
+<div class="note w">↻ 新版本 4.0.3 可用（feed 检查）<br><span class="dim">wxnodus update --apply 升级（绝不自动装）· --skip 跳过提示</span></div>
+<h4>/fortune 彩蛋</h4>
+<p class="dim" style="font-size:12px">黑洞说：被记住的知识不会真正消失。——每日一条</p>
+</div>
+</div>
+<div class="cap">47 —— 配置中心。配置项带<b>当前值+一句话语义+切换命令</b>；版本/更新绝不自动安装；thinking/lang/personality 均为真实消费项（KF-004 锚）。</div>
+</section>
+
+<section class="scene" id="sc-diag">
+<p class="block"><b class="accent">◆ 日志与快照</b> <span class="dim">/logs /bench /script /snapshot /versions /diff</span></p>
+<div class="cols">
+<div class="col">
+<h4>/logs 分级浏览</h4>
+<pre><span class="cm">级别筛选 · tail 模式 · 时间区间</span>
+<span class="dim">[09:14:02]</span> <span class="err">ERR</span>  llm 上游 604（第 2 次 · 退避 8s）
+<span class="dim">[09:14:10]</span> <span class="warn">WRN</span>  ssrf 拦截私网直连 10.0.0.8
+<span class="dim">[09:14:32]</span> <span class="ok">OK </span>  回合完成 · 12 工具 · ¥0.03
+<span class="cm">audit.log 哈希链独立 · doctor-*.md 自检报告</span></pre>
+<h4>/bench 基准</h4>
+<pre><span class="cm">首字延迟 p50 412ms · p95 1.8s</span>
+<span class="cm">工具执行 p50 88ms · 记忆检索 p95 210ms</span></pre>
+</div>
+<div class="col">
+<h4>/snapshot /versions /diff</h4>
+<pre><span class="fn">snap#7</span> 09:14  回合前 · 9 文件  <span class="st">当前</span>
+<span class="fn">snap#6</span> 09:02  归档点 · 9 文件
+<span class="fn">snap#5</span> 昨天   /build 前
+<span class="cm">/versions 列全部 · /diff snap#7 snap#6</span>
+<span class="cm">── diff 预览 ──</span>
+<span class="st">+ src/api.ts  +18 -2</span>
+<span class="err">- src/old.ts  全删</span>
+<span class="cm">回滚即 /warp snap#6（文件级，对话另走 /rewind）</span></pre>
+</div>
+</div>
+<div class="cap">48 —— 日志/快照。日志分级+真实样例（含 SSRF 拦截/退避重试）；快照栈带 diff 预览与文件级回滚（/warp）——与 28 对话级回滚（/rewind）成对。</div>
+</section>
+
+<section class="scene" id="sc-pipeline">
+<p class="block"><b class="accent">◆ 高阶构建流</b> <span class="dim">/deploy /forge /fdr /flow /import /warp —— /build 之后的进阶管线</span></p>
+<div class="cols">
+<div class="col">
+<h4>/deploy 部署</h4>
+<pre><span class="ok">✓</span> 构建 → 产物校验（sha256）
+<span class="ok">✓</span> 目标：本地服务 / 用户 remote
+<span class="warn">◐</span> 预检：端口占用 · 环境变量齐全
+<span class="cm">绝不静默覆盖——旧版本快照后替换</span></pre>
+<h4>/flow 流程编排</h4>
+<pre><span class="cm">flow "发版"</span>
+  1. test → 2. build → 3. pack
+  → 4. publish（<span class="warn">审批点</span>）
+<span class="cm">DAG 可视化 · 断点续跑 · /flow run 发版 --from 3</span></pre>
+</div>
+<div class="col">
+<h4>/forge 视觉引擎（fence 诚实）</h4>
+<pre><span class="dim">○ 骨架就绪 · 渲染后端未交付</span>
+<span class="cm">目录组合幂等（KF-016）· 状态机 verified 需证据（KF-017）</span>
+<span class="cm">→ UI 呈现：灰态+「未交付」标签——不假装可用</span></pre>
+<h4>/fdr /import</h4>
+<ul class="cl">
+<li><b>/fdr</b>失效域分析——模块故障传播图</li>
+<li><b>/import</b>导入 Claude/Codex 会话（JSONL 嗅探）</li>
+</ul>
+</div>
+</div>
+<div class="cap">49 —— 高阶构建流。deploy 预检+不静默覆盖；flow 的 DAG 带<b>审批点</b>与断点续跑；forge fence 灰态呈现（KF-016/017 修复锚）；import 跨品牌会话迁移。</div>
+</section>
+
+<section class="scene" id="sc-termtask">
+<p class="block"><b class="accent">◆ 终端与任务面板</b> <span class="dim">/term /task /agent /jobs /session-stream /btw /clear /title —— 后台世界的驾驶舱</span></p>
+<div class="cols">
+<div class="col" style="flex:1.3">
+<h4>/term 后台终端（⌥K）</h4>
+<pre><span class="fn">term#1 npm run dev</span>  <span class="ok">● 运行 4m12s</span>  <span class="cm">输出静默</span>
+  <span class="cm">└ 尾行：ready on :5173（探活通过）</span>
+<span class="fn">term#2 npm test</span>     <span class="violet">◐ 刚启动</span>
+<span class="cm">Enter 附加到终端 · K 关闭 · 输出不污染会话</span></pre>
+<h4>/task /agent</h4>
+<ul class="cl">
+<li><b>/task</b>任务详情（进度/依赖/产物路径）</li>
+<li><b>/agent</b>agent 实例面（主/子代理清单+资源）</li>
+</ul>
+</div>
+<div class="col">
+<h4>/session-stream</h4>
+<pre><span class="cm">实时流镜像：另一终端可 tail 本会话</span>
+<span class="cm">wxnodus /session-stream · 只读 · 调试用</span></pre>
+<h4>/btw 顺便提醒</h4>
+<pre><span class="cm">下次回合顺带告诉agent的事：</span>
+<span class="st">▸ 「部署记得用新证书」</span>
+<span class="cm">回合结束自动注入 · 用完即焚 · 最多 3 条</span></pre>
+<h4>/clear /title</h4>
+<ul class="cl">
+<li><b>/clear</b>清屏（会话保留）</li>
+<li><b>/title</b>会话改名（列表友好）</li>
+</ul>
+</div>
+</div>
+<div class="cap">50 —— 终端/任务驾驶舱。后台终端尾行+探活；task/agent 两级详情；session-stream 他端只读镜像；btw 异步捎话（用完即焚）；clear/title 杂项。</div>
+</section>
+
+<section class="scene" id="sc-understand">
+<p class="block"><b class="accent">◆ 内容理解</b> <span class="dim">/understand /claw /eco /download /proxy —— 读世界：代码·网页·生态</span></p>
+<div class="cols">
+<div class="col">
+<h4>/understand 代码理解报告</h4>
+<pre><span class="cm">目标：src/kernel/agent.ts（1,887 行）</span>
+<b>职责</b> 回合循环 · 工具调度 · 权限链
+<b>关键路径</b> run() → callModel → executeTool
+<b>坑位</b> opts 遮蔽（L1883 注释已记）
+<b>测试覆盖</b> 12 文件 · 高
+<span class="cm">输出为结构化卡片——可直接被 /map 吸收</span></pre>
+</div>
+<div class="col">
+<h4>/claw 爬取 · /download</h4>
+<pre><span class="fn">claw</span>  抓页面 → markdown（SSRF 同 41）
+<span class="fn">download</span> 管理器：
+  <span class="ok">✓</span> model-7b.gguf  4.1G  <span class="st">██████████ 100%</span>
+  <span class="violet">◐</span> docs.pdf       2.3M  <span class="st">███░░░░░░░ 34%</span>
+<span class="cm">断点续传 · sha256 校验 · 并发 3</span></pre>
+<h4>/proxy /eco</h4>
+<ul class="cl">
+<li><b>/proxy</b>企业代理（env/WinINET/PAC·私网直连红线）</li>
+<li><b>/eco</b>生态总览（MCP/插件/技能/市场一页）</li>
+</ul>
+</div>
+</div>
+<div class="cap">51 —— 内容理解+网络基建。understand 结构化报告（可被 map 吸收）；download 进度条+断点续传+校验；proxy 含 PAC 诚实降级说明。</div>
+</section>
+
+<section class="scene" id="sc-network">
+<div class="msg u"><i></i><div class="c">公司内网有个 Nexus，帮我配好代理再下载依赖</div></div>
+<div class="msg a"><i></i><div class="c">
+<div class="t"><span class="g ok">✓</span><span class="accent">proxy.detect</span> WinINET 系统代理 nexus.corp:8080<span class="sub">PAC 未发现 · env 未设——系统层命中</span></div>
+<div class="note w">⚠ 私网直连红线：nexus.corp 解析 10.0.0.8 → 走代理白名单通道（绝不因代理绕过 SSRF 检查）</div>
+<div class="t"><span class="g ok">✓</span><span class="accent">download</span> 依赖包 ×12<span class="sub">经代理 · 并发 3 · sha256 全过</span></div>
+<p>完成。代理配置已存 settings（仅本仓生效）；Nexus 白名单加入 /perm。NTLM 认证不支持——<span class="dim">诚实降级：请用网关令牌（已配置 ✓）</span></p>
+</div></div>
+<div class="cap">52 —— 代理网络实战。检测链（WinINET→PAC→env）+<b>私网直连红线与 SSRF 联动</b>+NTLM 诚实降级——企业环境全流程。</div>
+</section>
+
+<section class="scene" id="sc-index">
+<p class="block"><b class="accent">◆ 命令全景索引</b> <span class="dim">100+ 命令 → 场景映射 · 完整性闭环（缺一可见）</span></p>
+<table style="width:100%">
+<tr><th style="width:110px">命令组</th><th>命令 → 场景</th></tr>
+<tr><td class="accent">对话</td><td class="dim">help→11 · clear/title→50 · undo/rewind/fork/checkpoint→28 · sessions/resume/new→21 · usage/cost/balance→20 · context→26 · versions/snapshot/script/diff→48 · self-evolve→40 · export/share→44 · script→48</td></tr>
+<tr><td class="accent">模型</td><td class="dim">model→08 · profile→45 · status/version/update/thinking/lang/fortune→47 · doctor→16 · hooks→47（配置） · offline→19</td></tr>
+<tr><td class="accent">记忆</td><td class="dim">memory/hole/digest/curator→14 · compact→26/32</td></tr>
+<tr><td class="accent">构建</td><td class="dim">build/gate/evidence/plan→15 · deploy/flow/fdr/import/warp→49 · forge→49（fence） · skill/learn/assimilate→40</td></tr>
+<tr><td class="accent">安全</td><td class="dim">perm/audit→17 · sandbox/compliance/yolo/afk→46 · consent→40 · encrypt/security→44/10 · security→10</td></tr>
+<tr><td class="accent">系统</td><td class="dim">backup/migrate→44 · theme→31 · config/logs/bench→47/48 · init/map→42 · vim→29 · workspace→45 · diff→48</td></tr>
+<tr><td class="accent">视觉媒体</td><td class="dim">vision/img/video/render/capture/input→35 · computer→22</td></tr>
+<tr><td class="accent">网络集成</td><td class="dim">web/search/browser→41 · claw/download/proxy→51/52 · mcp/plugin/market/bundle→18 · gateway/webhook/a2a/acp/remote→43 · eco→51</td></tr>
+<tr><td class="accent">协作</td><td class="dim">swarm→36 · duo→37 · cron→38 · jobs/term/task/agent/session-stream/btw→50 · delegate→23 · arena/review→27 · understand→51 · goal→13 · share→44</td></tr>
+<tr><td class="accent">工具(11)</td><td class="dim">calc/hash/base64/uuid/rand/json/timer/sql/fs/units/csv→39</td></tr>
+<tr><td class="accent">上下文</td><td class="dim">map→42 · warp→49 · rewind→28 · reload-skills→40 · market/bundle→18</td></tr>
+</table>
+<div class="note ok" style="border-color:var(--green)">✓ 闭环核对：registry 十一组全部命令均有场景映射——无孤儿命令（映射缺失即在此表裸露）</div>
+<div class="cap">53 —— 全景索引。每个命令 → 场景号映射；<b>无孤儿命令</b>自证——这张表本身就是完整性验收单，新命令落地时在此登记。</div>
 </section>
 
 </main>
