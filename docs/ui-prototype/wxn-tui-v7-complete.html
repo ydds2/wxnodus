@@ -162,6 +162,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <button data-s="network">52 下载与网络</button>
 <button data-s="index">53 命令全景索引</button>
 <div class="grp">元</div>
+<button data-s="quiet">54 输出降噪</button>
 <button data-s="derivation">00 设计推导</button>
 </nav>
 <main>
@@ -1296,6 +1297,73 @@ code_challenge 校验。其余同意。</pre>
 </table>
 <div class="note ok" style="border-color:var(--green)">✓ 闭环核对：registry 十一组全部命令均有场景映射——无孤儿命令（映射缺失即在此表裸露）</div>
 <div class="cap">53 —— 全景索引。每个命令 → 场景号映射；<b>无孤儿命令</b>自证——这张表本身就是完整性验收单，新命令落地时在此登记。</div>
+</section>
+
+
+<section class="scene" id="sc-quiet">
+<p class="block"><b class="accent">◆ 输出降噪体系</b> <span class="dim">/config verbosity —— 默认最少，逐级可挖：只给结论，过程可查</span></p>
+
+<div class="cols">
+<div class="col">
+<h4>compact 极简（扫一眼）</h4>
+<pre><span class="ok">✓</span> dateFmt.ts 完成 · 测试 3 绿
+<span class="cm">工具 3 · 4.2s · ¥0.01 · 详情 Ctrl+T</span></pre>
+</div>
+<div class="col">
+<h4>normal 标准（默认）</h4>
+<pre><span class="ok">✓</span> <span class="fn">fs_edit</span> dateFmt.ts <span class="cm">86ms</span>
+<span class="fold" style="border:0;padding:0;margin:0"><span class="ch">▸</span>diff +14 -0 · Enter 展开</span>
+<span class="ok">✓</span> <span class="fn">bash</span> npm test -- dateFmt <span class="cm">3 绿 · 2.1s</span>
+完成：relTime() 三档相对时间。
+边界值 59s/3599s/跨日已测。</pre>
+</div>
+<div class="col">
+<h4>verbose 全展开（调试）</h4>
+<pre><span class="ok">✓</span> <span class="fn">fs_read</span> 目录 <span class="cm">4 文件 120ms</span>
+<span class="ok">✓</span> <span class="fn">fs_edit</span> <span class="cm">86ms</span>
+<span class="st">+ export function relTime(...)</span>
+<span class="st">+   const s = ...</span>
+<span class="st">+   if (s &lt; 60) return '刚刚'</span>
+<span class="st">+   ...共 14 行</span>
+<span class="ok">✓</span> <span class="fn">bash</span> <span class="cm">2.1s · 退出 0</span>
+<span class="cm">  └ stdout 12 行 · stderr 0</span>
+<span class="cm">审计：verdict=low-risk auto</span></pre>
+</div>
+</div>
+
+<h4 style="margin-top:20px">信息分级规则（什么默认藏）</h4>
+<table style="width:100%">
+<tr><th style="width:150px">信息类型</th><th>compact</th><th>normal（默认）</th><th>verbose</th></tr>
+<tr><td class="accent">最终结论</td><td>1 行</td><td>结论+关键要点</td><td>同左</td></tr>
+<tr><td class="accent">工具调用</td><td class="dim">计数汇总</td><td>每工具 1 行（名+关键结果+耗时）</td><td>1 行+展开详情</td></tr>
+<tr><td class="accent">代码 diff</td><td class="dim">藏</td><td class="dim">折叠（+N -N · Enter 展开）</td><td>直接展开</td></tr>
+<tr><td class="accent">工具原始输出</td><td class="dim">藏</td><td class="dim">藏（超 8 行必折叠）</td><td>尾部 8 行</td></tr>
+<tr><td class="accent">Thinking 链</td><td class="dim">藏</td><td>1 行心跳（耗时+tok/s）</td><td>心跳+摘要段</td></tr>
+<tr><td class="accent">来源/引用</td><td class="dim">藏</td><td>上标 ①②（悬停/Enter 见）</td><td>完整列表</td></tr>
+<tr><td class="accent">系统事件<br><span class="dim" style="font-size:11px">SSRF 拦截/重试/心跳</span></td><td class="dim">藏</td><td class="dim">藏（仅计数进状态栏）</td><td>1 行事件</td></tr>
+<tr><td class="accent">警告/错误</td><td colspan="3">三档全显——警告永不静默，只降级为单行</td></tr>
+</table>
+
+<div class="cols" style="margin-top:14px">
+<div class="col">
+<h4>临时调密（不改配置）</h4>
+<ul class="cl">
+<li><b><kbd>Ctrl+T</kbd></b>本回合 全展开 ↔ 默认 切换</li>
+<li><b><kbd>Enter</kbd></b>单个折叠条 展开（diff/输出/来源）</li>
+<li><b><kbd>Ctrl+↑</kbd></b>跳到上一折叠段（大量折叠时穿行）</li>
+</ul>
+</div>
+<div class="col">
+<h4>规则锚点</h4>
+<ul class="cl">
+<li><b>kimi</b>子代理&gt;4 条折叠为「N more…」</li>
+<li><b>codex</b>工具详情树形限 3 行</li>
+<li><b>crush</b>失焦双态（降噪渲染）</li>
+<li><b>wxnodus 增补</b>系统事件仅计数——SSRF/重试属 /logs 世界，不占转录流</li>
+</ul>
+</div>
+</div>
+<div class="cap">54 —— 输出降噪。三档密度（极简/标准默认/调试）同一回合对比；分级规则表——<b>结论全显、过程折叠、系统事件只计数、警告永不静默</b>；Ctrl+T 临时切换不绑死配置。</div>
 </section>
 
 </main>
