@@ -1,6 +1,7 @@
 // src/tui/runtime.ts — TUI 运行时：bus 事件→store、bridges 回调面（审批/澄清/密钥）、
 // 回合发送（agent.run）、双通道队列、退出保护。全自研（原型 56 联动图谱的实现侧）。
 import { TuiStore, type PendingApproval, type PendingClarify, type PendingSecret } from './store.js'
+import { glyphs } from './termcap.js'
 
 export interface TuiRuntimeDeps {
   store: TuiStore
@@ -123,7 +124,7 @@ export class TuiRuntime {
     if (input.startsWith('/')) { void this.runCommand(input); return }
     if (s.running) {
       this.store.patch({ queue: [...s.queue, input] })
-      this.store.push({ kind: 'notice', text: `⌛ 已排队（${this.store.getSnapshot().queue.length} 条）——运行结束自动发送 · ↑ 召回` })
+      this.store.push({ kind: 'notice', text: `${glyphs().queued} 已排队（${this.store.getSnapshot().queue.length} 条）——运行结束自动发送 · ↑ 召回` })
       return
     }
     void this.send(input)
@@ -184,7 +185,7 @@ export class TuiRuntime {
     if (s.running) {
       this.ac?.abort()
       this.deps.agent.abort()
-      this.store.push({ kind: 'notice', text: '‖ 已中断当前回合（会话保留，队列保留）' })
+      this.store.push({ kind: 'notice', text: '|| 已中断当前回合（会话保留，队列保留）' })
       return true
     }
     return false

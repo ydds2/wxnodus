@@ -4,9 +4,10 @@ import React from 'react'
 import { Box, Text } from '@wxnodus/ink'
 import type { ChatEntry, ToolEntry } from '../store.js'
 import { DEEP_SPACE } from '../theme.js'
+import { glyphs } from '../termcap.js'
 
 const ToolLine = ({ tool }: { tool: ToolEntry }): React.ReactElement => {
-  const glyph = tool.phase === 'run' ? DEEP_SPACE.spinnerFrames[Math.floor(Date.now() / 120) % DEEP_SPACE.spinnerFrames.length]!
+  const glyph = tool.phase === 'run' ? glyphs().spinner[Math.floor(Date.now() / 120) % glyphs().spinner.length]!
     : tool.phase === 'fail' ? '✗' : '✓'
   const color = tool.phase === 'run' ? DEEP_SPACE.violet : tool.phase === 'fail' ? DEEP_SPACE.error : DEEP_SPACE.success
   return (
@@ -38,14 +39,14 @@ export function Transcript({ entries, thinking }: {
           case 'user':
             return (
               <Box key={i} borderLeft={false} paddingLeft={0} marginY={0}>
-                <Box width={1}><Text color={DEEP_SPACE.accent}>▎</Text></Box>
+                <Box width={1}><Text color={DEEP_SPACE.accent}>{glyphs().bar}</Text></Box>
                 <Text wrap="wrap">{e.text}</Text>
               </Box>
             )
           case 'assistant':
             return (
               <Box key={i}>
-                <Box width={1}><Text color={DEEP_SPACE.success}>▎</Text></Box>
+                <Box width={1}><Text color={DEEP_SPACE.success}>{glyphs().bar}</Text></Box>
                 <Text wrap="wrap" color={DEEP_SPACE.fg}>{e.text}</Text>
               </Box>
             )
@@ -58,7 +59,7 @@ export function Transcript({ entries, thinking }: {
           case 'thinking':
             return <Text key={i} color={DEEP_SPACE.dim}>{e.text}</Text>
           case 'fold':
-            return <Text key={i} color={DEEP_SPACE.dim}>▸ {e.fold?.label}</Text>
+            return <Text key={i} color={DEEP_SPACE.dim}>{glyphs().fold} {e.fold?.label}</Text>
           default:
             return null
         }

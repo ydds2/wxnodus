@@ -5,6 +5,7 @@ import { Box, Text, useInput } from '@wxnodus/ink'
 import { TuiStore } from '../store.js'
 import { TuiRuntime } from '../runtime.js'
 import { DEEP_SPACE } from '../theme.js'
+import { glyphs } from '../termcap.js'
 
 const panel = (color: string) => ({
   borderStyle: 'round' as const,
@@ -50,7 +51,7 @@ function ApprovalPanel({ store }: { store: TuiStore }): React.ReactElement {
       <Text color={DEEP_SPACE.muted}>$ {p.command}</Text>
       {p.choices.map((c, i) => (
         <Text key={c.key} color={i === p.selected ? DEEP_SPACE.warn : DEEP_SPACE.muted}>
-          {i === p.selected ? '▸ ' : '  '}{i + 1} {c.label}{c.key === 'deny' ? '' : ''}
+          {i === p.selected ? glyphs().pointer + ' ' : '  '}{i + 1} {c.label}{c.key === 'deny' ? '' : ''}
         </Text>
       ))}
       <Text color={DEEP_SPACE.dim}>↑↓ 选择 · Enter 确认 · Esc 拒绝 · 超时 5:00 自动拒绝（fail-closed）</Text>
@@ -99,13 +100,13 @@ function SecretPanel({ store }: { store: TuiStore }): React.ReactElement {
     if (key.return) { p.resolve(p.masked || null); return }
     if (key.escape) { p.resolve(null); return }
     if (key.backspace || key.delete) { store.patch({ overlay: { kind: 'secret', pending: { ...p, masked: p.masked.slice(0, -1) } } }); return }
-    if (!key.ctrl && !key.meta && input) store.patch({ overlay: { kind: 'secret', pending: { ...p, masked: p.masked + '•' } } })
+    if (!key.ctrl && !key.meta && input) store.patch({ overlay: { kind: 'secret', pending: { ...p, masked: p.masked + glyphs().mask } } })
   })
   return (
     <Box {...panel(DEEP_SPACE.violet)}>
       <Text color={DEEP_SPACE.violet} bold>{p.kind === 'sudo' ? '🔑 sudo 密码' : '🔑 敏感输入'}</Text>
       <Text color={DEEP_SPACE.muted}>{p.prompt}</Text>
-      <Text>  {p.masked}<Text color={DEEP_SPACE.violet}>▏</Text></Text>
+      <Text>  {p.masked}<Text color={DEEP_SPACE.violet}>{glyphs().caret}</Text></Text>
       <Text color={DEEP_SPACE.dim}>掩码输入 · 仅入内存保险库（进程即焚）· Enter 提交 · Esc 取消（null → 工具停止）</Text>
     </Box>
   )

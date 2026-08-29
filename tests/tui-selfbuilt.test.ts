@@ -214,3 +214,33 @@ describe('斜杠命令菜单', () => {
     expect(filterCommands('/zzz')).toHaveLength(0)
   })
 })
+
+// ── termcap：cmd 兼容三档（原型场景 55 可实现性的代码侧）──
+import { detectTermTier, glyphsFor, type TermTier } from '../src/tui/termcap.js'
+
+describe('termcap 终端分档', () => {
+  it('Windows Terminal / ConEmu / CI → full（完整字形）', () => {
+    expect(detectTermTier({ WT_SESSION: 'x' } as never)).toBe('full')
+    expect(detectTermTier({ ConEmuANSI: 'ON' } as never)).toBe('full')
+    expect(detectTermTier({ CI: '1', TERM: 'xterm-256color' } as never)).toBe('full')
+  })
+
+  it('裸 cmd（无信号）→ basic：豆腐高危字符（▎❯▏◐◷）零出现', () => {
+    expect(detectTermTier({} as never)).toBe('basic')
+    const g = glyphsFor('basic' as TermTier)
+    const all = [g.bar, g.prompt, g.caret, g.pointer, g.running, g.queued, ...g.spinner]
+    expect(all.some(c => /[▎❯▏◐◓◑◒◷▸•]/.test(c))).toBe(false)
+  })
+
+  it('三档 spinner：full 四相圆 / basic+ascii 经典转轮', () => {
+    expect(glyphsFor('full').spinner).toEqual(['◐', '◓', '◑', '◒'])
+    const classic = ['-', String.fromCharCode(92), '|', '/']
+    expect(glyphsFor('basic').spinner).toEqual(classic)
+    expect(glyphsFor('ascii').spinner).toEqual(classic)
+  })
+
+  it('强制覆盖：WXNODUS_TUI_TERM=full/ascii', () => {
+    expect(detectTermTier({ WXNODUS_TUI_TERM: 'full' } as never)).toBe('full')
+    expect(detectTermTier({ WT_SESSION: 'x', WXNODUS_TUI_TERM: 'ascii' } as never)).toBe('ascii')
+  })
+})

@@ -5,6 +5,7 @@ import { Box, Text, useInput } from '@wxnodus/ink'
 import { TuiStore } from '../store.js'
 import { TuiRuntime } from '../runtime.js'
 import { DEEP_SPACE } from '../theme.js'
+import { glyphs } from '../termcap.js'
 
 const PLACEHOLDER_BUSY = 'Prrrrr... Enter 排队 · Ctrl+S 即时注入 · Esc 中断'
 
@@ -47,23 +48,23 @@ export function Composer({ store, runtime }: { store: TuiStore; runtime: TuiRunt
       <Text color="#2a3050">{'─'.repeat(Math.max(0, cols - 1))}</Text>
       {s.queue.length > 0 ? (
         <Box paddingLeft={1}>
-          <Text color={DEEP_SPACE.warn}>⌛ 已排队 {s.queue.length} 条（运行结束自动发 · Esc 中断不丢）</Text>
+          <Text color={DEEP_SPACE.warn}>{glyphs().queued} 已排队 {s.queue.length} 条（运行结束自动发 · Esc 中断不丢）</Text>
         </Box>
       ) : null}
       {slashOpen && slashMatches.length > 0 ? (
         <Box flexDirection="column" paddingLeft={1} paddingBottom={0}>
           {slashMatches.slice(0, 8).map((m, i) => (
             <Text key={m.cmd} color={i === slashSel % slashMatches.length ? DEEP_SPACE.accent : DEEP_SPACE.muted}>
-              {i === slashSel % slashMatches.length ? '▸ ' : '  '}{m.cmd.padEnd(14)} {m.desc}
+              {i === slashSel % slashMatches.length ? glyphs().pointer + ' ' : '  '}{m.cmd.padEnd(14)} {m.desc}
             </Text>
           ))}
         </Box>
       ) : null}
       <Box paddingLeft={1}>
         <Text>
-          <Text color={symColor} bold>❯ </Text>
+          <Text color={symColor} bold>{glyphs().prompt} </Text>
           {value ? <Text>{value}</Text> : <Text color={DEEP_SPACE.dim}>{s.running ? PLACEHOLDER_BUSY : DEEP_SPACE.placeholders[s.placeholderIdx]!}</Text>}
-          <Text color={symColor}>▏</Text>
+          <Text color={symColor}>{glyphs().caret}</Text>
         </Text>
       </Box>
       <Box paddingLeft={1} gap={2}>

@@ -7,7 +7,7 @@ import { DEEP_SPACE } from '../theme.js'
 export function StatusBar({ state }: { state: TuiState }): React.ReactElement {
   const cwd = state.cwd.length > 24 ? `…${state.cwd.slice(-22)}` : state.cwd
   return (
-    <Box marginTop={0}>
+    <Box marginTop={0} flexDirection="column">
       <Text color={DEEP_SPACE.muted}>
         <Text color={DEEP_SPACE.accent}>[{state.mode}]</Text>
         {' '}
@@ -19,6 +19,7 @@ export function StatusBar({ state }: { state: TuiState }): React.ReactElement {
         {'  '}
         <Text color={DEEP_SPACE.dim}>{DEEP_SPACE.tips[state.tipIdx]!}</Text>
       </Text>
+      <Text color="#2a3050">{'─'.repeat(Math.max(0, (process.stdout.columns ?? 80) - 1))}</Text>
     </Box>
   )
 }
