@@ -161,6 +161,9 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <button data-s="understand">51 内容理解</button>
 <button data-s="network">52 下载与网络</button>
 <button data-s="index">53 命令全景索引</button>
+<div class="grp">配置命令</div>
+<button data-s="modelform">58 自定义接口表单</button>
+<button data-s="configswitch">59 配置切换交互</button>
 <div class="grp">落地保障</div>
 <button data-s="cmdsafe">55 cmd 可实现性</button>
 <button data-s="linkage">56 命令联动图谱</button>
@@ -1453,6 +1456,101 @@ code_challenge 校验。其余同意。</pre>
 </table>
 <div class="cap">57 —— 旅程剧场。8 幕自动轮播把孤立场景串成<b>真实使用流</b>——每幕的进入原因和退出去向即 56 号图谱的状态机实况验证。</div>
 </section>
+<section class="scene" id="sc-modelform">
+<p class="block"><b class="accent">◆ 添加自定义接口</b> <span class="dim">/model add（或 08 里 A 键）——任意 OpenAI 兼容端点五步表单</span></p>
+<div class="panel acc" style="max-width:720px">
+<p class="pt accent">自定义模型提供方 · 第 3/5 步 <span class="dim">· Tab 下一字段 · Shift+Tab 上一字段 · Esc 取消（无半保存态）</span></p>
+<table style="width:100%">
+<tr><th style="width:150px">字段</th><th>值</th><th style="width:210px">说明/验证</th></tr>
+<tr><td class="dim">接口名称</td><td class="ok">my-kimi ✓</td><td class="dim">唯一 · 2-20 字符</td></tr>
+<tr><td class="dim">Base URL</td><td class="ok">https://api.moonshot.cn/v1 ✓</td><td class="dim">https 强制（http 需 /perm 豁免）</td></tr>
+<tr><td class="accent">API Key</td><td><span class="muted">sk-••••••••••••••••••••</span><span class="caret"></span></td><td class="warn">粘贴即掩码 · AES-256-GCM 本机加密</td></tr>
+<tr><td class="dim">拉取模型列表</td><td><span class="violet" id="mf-fetch">◐ 测试连接中… 1.2s</span></td><td class="dim">GET /models 探测</td></tr>
+<tr><td class="dim">模型 ID</td><td class="dim">待选择（上一步成功后列出）</td><td class="dim">多选 · 首个设默认</td></tr>
+</table>
+<div class="keys" style="margin-top:12px">
+<span><kbd>Tab</kbd> 下一字段</span><span><kbd>Ctrl+T</kbd> 重新测试连接</span><span><kbd>Esc</kbd> 取消</span><span class="dim">密钥绝不进会话/日志/模型上下文</span>
+</div>
+</div>
+<div class="cols" style="max-width:720px">
+<div class="col">
+<h4>连接测试三态</h4>
+<pre><span class="violet">◐</span> 测试连接中… <span class="cm">超时 5s fail-closed</span>
+<span class="ok">✓</span> 连接成功 · 发现 4 模型
+  <span class="st">kimi-k2-0905-preview</span>
+  <span class="st">moonshot-v1-128k</span>  <span class="cm">↓↑ 选择 · 空格勾选</span>
+<span class="err">✗</span> 401 未授权——Key 校验失败
+  <span class="cm">检查 Key · 重试 R（key 不回显）</span></pre>
+</div>
+<div class="col">
+<h4>保存后联动（56 图谱）</h4>
+<ul class="cl">
+<li><b>→ 08 模型列表</b>新接口出现在列表（ violet 高亮 3s）</li>
+<li><b>→ 状态栏</b>模型名即变 ●（当前档切换）</li>
+<li><b>→ 密钥库</b>17 号保险库新增一行（加密态）</li>
+<li><b>→ /status</b>提供方计数 +1</li>
+<li><b>失败零残留</b>中途 Esc——半填信息全弃（无半保存态）</li>
+</ul>
+</div>
+</div>
+<div class="cap">58 —— 自定义接口表单。五步字段逐项验证（即时 ✓/✗）；Key 粘贴即掩码；连接测试三态 + 模型列表拉取勾选；保存后四处联动生效；Esc 零残留。</div>
+</section>
+
+<section class="scene" id="sc-configswitch">
+<p class="block"><b class="accent">◆ 配置切换交互</b> <span class="dim">/config —— 三种值控件 × 即时生效反馈（无「保存」按钮——改即存）</span></p>
+<div class="panel" style="max-width:720px">
+<table style="width:100%">
+<tr><th style="width:170px">配置项</th><th>当前值</th><th style="width:230px">控件</th></tr>
+<tr>
+  <td class="accent">▸ thinking 思维链</td>
+  <td><span class="ok" id="cs-thinking">on</span></td>
+  <td class="dim">toggle——<kbd>Enter</kbd> 翻转 on/off</td>
+</tr>
+<tr>
+  <td class="dim">mode 权限档</td>
+  <td><span class="muted" id="cs-mode">smart</span></td>
+  <td class="dim">循环——<kbd>Enter</kbd> smart→plan→manual→…（46 六档序）</td>
+</tr>
+<tr>
+  <td class="dim">contextLimit</td>
+  <td><span class="muted" id="cs-limit">64k</span></td>
+  <td class="dim">数字——直接键入 · <kbd>↑↓</kbd> 步进 8k</td>
+</tr>
+<tr>
+  <td class="dim">theme 主题</td>
+  <td class="muted">深空</td>
+  <td class="dim">选择——<kbd>Enter</kbd> 开 31 预览面板</td>
+</tr>
+<tr>
+  <td class="dim">lang 语言</td>
+  <td class="muted">zh-CN</td>
+  <td class="dim">选择——zh/en 即切（欢迎语同变）</td>
+</tr>
+</table>
+<div class="keys" style="margin-top:10px">
+<span><kbd>↑↓</kbd> 移动</span><span><kbd>Enter</kbd> 修改</span><span><kbd>Esc</kbd> 退出回对话</span><span class="dim">↑ 看顶部 thinking 行——Enter 切换试一下（本原型可交互）</span>
+</div>
+</div>
+<div class="cols" style="max-width:720px">
+<div class="col">
+<h4>即时生效反馈三件套</h4>
+<pre><span class="ok">✓</span> thinking → <span class="st">off</span> <span class="cm">已生效</span>
+<span class="cm">  · 状态栏徽章同步消失</span>
+<span class="cm">  · 下一回合系统提示即变</span>
+<span class="cm">  · settings 持久化（重启保留）</span></pre>
+</div>
+<div class="col">
+<h4>敏感项二次确认</h4>
+<ul class="cl">
+<li><b>yolo/afk 档</b>切换弹确认（46 危险档）</li>
+<li><b>approveForSession</b>提示可 /perm 撤销</li>
+<li><b>autoReview 开</b>明示预审接管范围</li>
+</ul>
+<div class="note i">i 普通项改即存零确认——防「保存按钮地狱」；仅危险/影响安全的项才拦</div>
+</div>
+</div>
+<div class="cap">59 —— 配置切换交互。三种控件（toggle 翻转/循环选择/数字步进）+ 即时反馈三件套（徽章同步·下回合生效·持久化）；改即存零保存按钮；敏感项才二次确认——本原型 thinking 行可真实点击切换。</div>
+</section>
 </main>
 </div>
 <script>
@@ -1943,5 +2041,40 @@ window.addEventListener('load',()=>{const act=document.querySelector('nav button
     if (window.__journeyToggle) window.__journeyToggle();
   });
 });</script>
+
+<script>
+/* 58/59 配置命令动态：表单测试连接三态轮换 + thinking 可点击切换 + mode 循环 */
+(function () {
+  const every = (ms, fn) => setInterval(fn, ms);
+  /* 58：测试连接 ◐ → ✓4模型 → ✗401 循环 */
+  const fetchEl = () => document.getElementById('mf-fetch');
+  let st = 0;
+  every(3800, () => {
+    const el = fetchEl(); if (!el) return;
+    st = (st + 1) % 3;
+    if (st === 0) el.outerHTML = '<span class="violet" id="mf-fetch">◐ 测试连接中… ' + (1 + Math.random()).toFixed(1) + 's</span>';
+    else if (st === 1) el.outerHTML = '<span class="ok" id="mf-fetch">✓ 连接成功 · 发现 4 模型</span>';
+    else el.outerHTML = '<span class="err" id="mf-fetch">✗ 401（演示重试轮换）</span>';
+  });
+  /* 59：thinking 行可点击切换 + mode Enter 循环演示 */
+  document.addEventListener('click', e => {
+    const tr = e.target.closest('#sc-configswitch tr');
+    if (!tr || !tr.textContent.includes('thinking')) return;
+    const v = document.getElementById('cs-thinking');
+    if (!v) return;
+    const on = v.textContent === 'on';
+    v.textContent = on ? 'off' : 'on';
+    v.className = on ? 'muted' : 'ok';
+  });
+  let modes = ['smart', 'plan', 'manual', 'yolo', 'afk', 'goal'], mi = 0;
+  every(2600, () => {
+    const m = document.getElementById('cs-mode');
+    if (!m) return;
+    mi = (mi + 1) % modes.length;
+    m.textContent = modes[mi];
+    m.className = (modes[mi] === 'yolo' || modes[mi] === 'afk') ? 'warn' : 'accent';
+  });
+})();
+</script>
 </body>
 </html>
