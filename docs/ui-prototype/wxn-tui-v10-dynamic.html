@@ -1524,7 +1524,7 @@ window.addEventListener('load',()=>{const act=document.querySelector('nav button
   const ANIMS = { idle: idleAnim, streaming: streamAnim, tools: toolsAnim, approval: approvalAnim,
     subagents: agentsAnim, longsession: ctxAnim, error: errorAnim, busy: busyAnim };
 
-  window.__playScene = function (name) {
+  window.__playLegacy = function (name) {
     stopAll();
     document.querySelectorAll('.g.violet').forEach(m => { if (m.dataset.orig) m.textContent = m.dataset.orig; });
     if (ANIMS[name]) ANIMS[name]();
@@ -1570,5 +1570,228 @@ window.addEventListener('load',()=>{const act=document.querySelector('nav button
   render();
 })();
 </script>
+
+<style>
+/* ── v10 全场动态层 ── */
+.scene.active [data-rv] { opacity: 0; animation: rv-in .3s ease forwards; }
+@keyframes rv-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.qlog-line { color: var(--muted); font-size: 12.5px; line-height: 1.8; }
+</style>
+<script>
+/* ── v10 全场动态引擎：逐行浮现 + 通用动画 + 场景定制 ── */
+(function () {
+  const timers = [];
+  const every = (ms, fn) => { fn(); timers.push(setInterval(fn, ms)); };
+  const stopAll = () => { while (timers.length) clearInterval(timers.pop()); };
+  const q = (sel, root) => (root || document).querySelector(sel);
+  const FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+
+  /* 1) 逐行浮现：场景激活时块级元素按序画入（ink 逐行渲染感） */
+  const reveal = (sc) => {
+    const blocks = sc.querySelectorAll('.msg, .t, pre, ul.cl, table, p, .panel, .note, .fold, .ag, .daysep, .keys, .status, .cols');
+    let i = 0;
+    blocks.forEach(b => {
+      b.removeAttribute('data-rv');
+      b.style.animation = 'none';
+      void b.offsetWidth;
+      b.style.animation = '';
+      b.setAttribute('data-rv', String(i));
+      b.style.animationDelay = (i * 45) + 'ms';
+      i++;
+    });
+  };
+
+  /* 2) 通用 spinner：场景内全部 ◐ 运行符 → braille 旋转 */
+  const spinAll = (sc) => {
+    const marks = sc.querySelectorAll('.g.violet');
+    if (!marks.length) return;
+    marks.forEach(m => { if (!m.dataset.orig) m.dataset.orig = m.textContent; });
+    every(100, () => {
+      const f = FRAMES[Math.floor(Date.now() / 100) % FRAMES.length];
+      marks.forEach(m => m.textContent = f);
+    });
+  };
+
+  /* 3) 通用进度条呼吸增长 */
+  const bars = (sc) => {
+    const els = sc.querySelectorAll('.bar-p i');
+    if (!els.length) return;
+    const st = [...els].map(e => parseInt(e.style.width) || 50);
+    every(600, () => els.forEach((e, k) => { st[k] = st[k] >= 98 ? 20 : st[k] + 1; e.style.width = st[k] + '%'; }));
+  };
+
+  /* ── 场景定制动画 ── */
+  const think = (sel) => {
+    const el = q(sel); if (!el) return;
+    let s = 23;
+    every(1000, () => { s++; el.textContent = el.textContent.replace(/·\s*\d+s/, '· ' + s + 's'); });
+  };
+
+  const CUSTOM = {
+    memory: (sc) => {  /* 检索命中逐条打出+相似度微调 */
+      const hits = sc.querySelectorAll('pre .fn');
+      let shown = 0;
+      every(700, () => {
+        shown = (shown % hits.length);
+        const h = hits[shown];
+        if (h) { h.style.opacity = '0'; setTimeout(() => h.style.opacity = '1', 180); }
+        shown++;
+      });
+    },
+    build: (sc) => {  /* 五阶段推进：◐3→✓3 ◐4→✓4→◐5→复位 */
+      const lis = sc.querySelectorAll('ul.cl li');
+      if (lis.length < 5) return;
+      let stage = 2;
+      every(1600, () => {
+        lis.forEach((li, i) => {
+          const b = li.querySelector('b');
+          if (!b) return;
+          if (i < stage) b.innerHTML = b.innerHTML.replace('◐', '✓').replace('·', '✓');
+          else if (i === stage) b.innerHTML = b.innerHTML.replace(/✓|·/, '◐').replace('✓', '◐');
+        });
+        stage = (stage + 1) % 5;
+      });
+    },
+    doctor: (sc) => {  /* 自检逐行扫描：行依次高亮 */
+      const lis = sc.querySelectorAll('ul.cl li');
+      let i = 0;
+      every(420, () => {
+        lis.forEach(li => li.style.background = '');
+        if (lis[i]) lis[i].style.background = 'rgba(124,158,255,.08)';
+        i = (i + 1) % lis.length;
+      });
+    },
+    usage: (sc) => {  /* 成本缓慢累积+命中率波动 */
+      const tot = [...sc.querySelectorAll('td')].find(td => td.textContent.includes('¥1.12'));
+      const hit = [...sc.querySelectorAll('p')].find(p => p.textContent.includes('命中率'));
+      let c = 1.12;
+      every(1500, () => {
+        c = +(c + 0.01).toFixed(2);
+        if (tot) tot.innerHTML = '<b>¥' + c + ' · 本月 ¥' + (23.7 + c).toFixed(2) + '</b>';
+        if (hit) hit.innerHTML = '缓存命中率 <span class="ok">' + (92 + Math.floor(Math.random() * 4)) + '.' + Math.floor(Math.random() * 9) + '%</span>（DSH-2 字节稳定三件套）';
+      });
+    },
+    swarm: (sc) => {  /* 黑板条数+builder进度 */
+      const stat = q('.status .dim', sc);
+      let n = 7, p = 68;
+      every(1000, () => { n = Math.min(12, n + 1); p = Math.min(97, p + 2);
+        if (stat) stat.textContent = 'swarm 3 蜂 · 黑板 ' + n + ' 条 · 冲突 0';
+        const bd = [...sc.querySelectorAll('.tree span')].find(s => s.textContent.includes('%'));
+        if (bd) bd.textContent = '  └ fs_edit core/v2.ts ' + p + '%';
+      });
+    },
+    cron: (sc) => {  /* 下次运行倒计时 */
+      const tds = sc.querySelectorAll('td');
+      let m = 13, s = 59;
+      every(1000, () => {
+        s--; if (s < 0) { s = 59; m = Math.max(0, m - 1); if (m === 0 && s === 0) { m = 13; s = 59; } }
+        for (const td of tds) if (td.textContent.includes('分钟后')) td.textContent = m + ' 分 ' + String(s).padStart(2, '0') + ' 秒';
+      });
+    },
+    voice: (sc) => {  /* 录音计时+波形 */
+      const rec = [...sc.querySelectorAll('pre')][0];
+      let sec = 12, tick = 0;
+      if (!rec) return;
+      const W = ['▂▃▅▂▇▃▂▅', '▃▅▇▃▂▅▂▇', '▅▂▃▇▅▃▂▂', '▂▇▅▃▂▇▅▃'];
+      every(200, () => {
+        tick++;
+        if (tick % 5 === 0) sec++;
+        const wave = W[tick % W.length];
+        rec.innerHTML = '<span class="err">●</span> 录音中 00:' + String(sec % 60).padStart(2, '0') + ' ' + wave + '
+<span class="cm">说话即录——波形实时 · Esc 取消 · Ctrl+V 停止并发送</span>';
+      });
+    },
+    network: (sc) => {  /* 下载进度 */
+      const bars_ = sc.querySelectorAll('.st');
+      let p = 34;
+      every(500, () => {
+        p = p >= 100 ? 34 : Math.min(100, p + 3);
+        for (const b of bars_) if (b.textContent.includes('░')) {
+          const on = Math.round(p / 10);
+          b.textContent = '█'.repeat(on) + '░'.repeat(10 - on) + ' ' + p + '%';
+        }
+      });
+    },
+    diag: (sc) => {  /* 日志滚动追加 */
+      const pre = sc.querySelector('pre');
+      if (!pre || pre.dataset.logArmed) return; pre.dataset.logArmed = '1';
+      const lines = [
+        '[09:15:02] <span class="ok">OK </span>  回合完成 · 8 工具 · ¥0.02',
+        '[09:15:31] <span class="warn">WRN</span>  记忆吸附 3 条（会话结束）',
+        '[09:16:04] <span class="ok">OK </span>  compact 预检 21.4k/64k 无需',
+        '[09:16:40] <span class="err">ERR</span>  mcp filesystem 心跳超时（重连 3）',
+        '[09:17:02] <span class="ok">OK </span>  mcp filesystem 重连成功',
+      ];
+      let i = 0;
+      every(1300, () => {
+        const base = pre.innerHTML.split('
+').slice(0, 4).join('
+');
+        pre.innerHTML = base + '
+' + lines[i % lines.length] + '
+' + lines[(i + 1) % lines.length];
+        i++;
+      });
+    },
+    learn: (sc) => {  /* 模式逐个 ✓ */
+      const marks = sc.querySelectorAll('.col:first-child .ok');
+      let i = 0;
+      every(900, () => { if (marks[i]) { marks[i].style.opacity = '0'; setTimeout(() => marks[i].style.opacity = '1', 200); } i = (i + 1) % 3; });
+    },
+    web: (sc) => {  /* 来源上标逐个点亮 */
+      const sup = sc.querySelectorAll('a.dim');
+      let i = 0;
+      if (!sup.length) return;
+      every(800, () => { sup.forEach(s => s.style.color = ''); if (sup[i]) sup[i].style.color = 'var(--accent)'; i = (i + 1) % sup.length; });
+    },
+    pipeline: (sc) => {  /* flow 步骤高亮推进 */
+      const steps = sc.querySelectorAll('.col pre .cm');
+      let i = 0;
+      every(700, () => {
+        sc.querySelectorAll('.col pre span').forEach(s => s.style.color = '');
+        const fl = [...sc.querySelectorAll('.col pre')].find(p => p.textContent.includes('flow'));
+        if (fl) { const spans = fl.querySelectorAll('span'); if (spans[i]) spans[i].style.color = 'var(--accent)'; }
+        i = (i + 1) % 5;
+      });
+    },
+    termtask: (sc) => {  /* 终端运行计时 */
+      const el = [...sc.querySelectorAll('.fn')][0];
+      let m = 4, s = 12;
+      every(1000, () => { s++; if (s >= 60) { s = 0; m++; }
+        if (el) el.textContent = 'term#1 npm run dev';
+        const st = el && el.nextElementSibling;
+        if (st) st.textContent = ' ● 运行 ' + m + 'm' + String(s).padStart(2, '0') + 's';
+      });
+    },
+    media: (sc) => {  /* 生成图切换 1/3→2/3→3/3 */
+      const el = [...sc.querySelectorAll('.t .sub')].find(x => x.textContent.includes('3 选 1'));
+      let i = 1;
+      every(1400, () => { i = i % 3 + 1; if (el) el.textContent = '图 ' + i + '/3 · Enter 下一张'; });
+    },
+    offline: (sc) => {  /* tok/s 波动 */
+      const el = [...sc.querySelectorAll('.status .dim')].find(x => x.textContent.includes('tok/s'));
+      every(1200, () => { if (el) el.textContent = (16 + Math.floor(Math.random() * 5)) + ' tok/s · 内存 3.' + (1 + Math.floor(Math.random() * 3)) + 'G'; });
+    },
+    serveface: (sc) => {  /* 连接数波动 */
+      const el = [...sc.querySelectorAll('td')].find(x => x.textContent.includes('连接'));
+      every(1700, () => { if (el) el.innerHTML = '<span class="ok">● 运行中</span> <span class="dim">:8437 · ' + (1 + Math.floor(Math.random() * 3)) + ' 连接</span>'; });
+    },
+  };
+
+  window.__playScene = function (name) {
+    stopAll();
+    document.querySelectorAll('.g.violet').forEach(m => { if (m.dataset.orig) m.textContent = m.dataset.orig; });
+    const sc = document.getElementById('sc-' + name);
+    if (!sc) return;
+    reveal(sc);
+    spinAll(sc);
+    bars(sc);
+    if (CUSTOM[name]) CUSTOM[name](sc);
+    /* 旧引擎场景（流式/审批/子代理等）保留兼容 */
+    if (window.__playLegacy) window.__playLegacy(name);
+  };
+})();
+</script>
+
 </body>
 </html>
