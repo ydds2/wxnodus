@@ -1,7 +1,7 @@
 // src/tui/index.ts — WxNodus 自研 TUI 装配入口（2026-08-29 用户裁决：基于 wxn-tui-LIVE.html
 // 原型制作，全自研——机制参考 kimi/crush/codex，代码与视觉原创；零 WS 零子进程，
 // React+@wxnodus/ink 进程内渲染；react 19.2.7+reconciler 0.33 钉死矩阵）。
-import { render } from '@wxnodus/ink'
+import { render } from 'ink'
 import { TuiStore } from './store.js'
 import { TuiRuntime } from './runtime.js'
 import { App } from './ui/App.js'
@@ -41,7 +41,7 @@ export interface WxnodusTuiHandle {
   unmount(): void
 }
 
-export async function createWxnodusTui(deps: WxnodusTuiDeps): Promise<WxnodusTuiHandle> {
+export function createWxnodusTui(deps: WxnodusTuiDeps): WxnodusTuiHandle {
   const store = new TuiStore()
   const runtime = new TuiRuntime({
     store,
@@ -53,7 +53,7 @@ export async function createWxnodusTui(deps: WxnodusTuiDeps): Promise<WxnodusTui
     gitBranch: deps.gitBranch,
     onRequestExit: deps.onRequestExit,
   })
-  const instance = await render(<App store={store} runtime={runtime} />, { exitOnCtrlC: false })
+  const instance = render(<App store={store} runtime={runtime} />, { exitOnCtrlC: false, patchConsole: false })
 
   const handle: WxnodusTuiHandle = {
     store,

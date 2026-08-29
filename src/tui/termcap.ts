@@ -55,7 +55,7 @@ export function detectTermTier(env: NodeJS.ProcessEnv = process.env): TermTier {
   if (env.WT_SESSION) return 'full'
   if (env.ConEmuANSI === 'ON' || env.ConEmuANSI === '1') return 'full'
   if (env.TERM_PROGRAM && ['vscode', 'cursor', 'windows-terminal'].includes(env.TERM_PROGRAM)) return 'full'
-  if ((env.CI || env.TERM === 'xterm-256color') && env.WXNODUS_FORCE_TERM !== 'basic') return 'full'
+  if (env.TERM === 'xterm-256color') return 'full'
   // 默认保守：cmd/conhost 无信号 → basic（用户可 WXNODUS_TUI_TERM=full 提升）
   return 'basic'
 }

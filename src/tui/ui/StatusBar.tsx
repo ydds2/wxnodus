@@ -1,6 +1,6 @@
 // src/tui/ui/StatusBar.tsx — 状态栏：模式(模型●) · cwd · git · tip 轮换（kimi 底栏机制，实现原创）
 import React from 'react'
-import { Box, Text } from '@wxnodus/ink'
+import { Box, Text } from 'ink'
 import type { TuiState } from '../store.js'
 import { DEEP_SPACE } from '../theme.js'
 

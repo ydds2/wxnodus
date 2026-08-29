@@ -1,16 +1,16 @@
 // src/tui/ui/Composer.tsx — 输入区：❯ 提示符 + 掩码/明文输入 + 双通道（Enter 发送/排队 · Ctrl+S steer）
 // + 斜杠命令菜单（双列过滤——kimi 自绘菜单机制，实现原创）
-import React, { useState, useSyncExternalStore } from 'react'
-import { Box, Text, useInput } from '@wxnodus/ink'
-import { TuiStore } from '../store.js'
+import React, { useState } from 'react'
+import { Box, Text, useInput } from 'ink'
+import type { TuiState } from '../store.js'
 import { TuiRuntime } from '../runtime.js'
 import { DEEP_SPACE } from '../theme.js'
 import { glyphs } from '../termcap.js'
+import { filterCommands } from '../commands.js'
 
 const PLACEHOLDER_BUSY = 'Prrrrr... Enter 排队 · Ctrl+S 即时注入 · Esc 中断'
 
-export function Composer({ store, runtime }: { store: TuiStore; runtime: TuiRuntime }): React.ReactElement {
-  const s = useSyncExternalStore(store.subscribe, store.getSnapshot)
+export function Composer({ runtime, s }: { runtime: TuiRuntime; s: TuiState }): React.ReactElement {
   const [value, setValue] = useState('')
   // 终端宽（静态帧——resize 重挂载场景由 ink 重建；与 HTML 原型 border-top 等价的无角细线）
   const cols = (process.stdout.columns ?? 80)
@@ -78,27 +78,4 @@ export function Composer({ store, runtime }: { store: TuiStore; runtime: TuiRunt
   )
 }
 
-/** 高频命令目录（完整 63 条走 /help——命令面映射：高频进菜单，长尾进帮助） */
-export const QUICK_COMMANDS: Array<{ cmd: string; desc: string }> = [
-  { cmd: '/help', desc: '命令手册（63 命令）' },
-  { cmd: '/model', desc: '模型目录与密钥' },
-  { cmd: '/build', desc: '需求编译全流程' },
-  { cmd: '/doctor', desc: '全组件自检' },
-  { cmd: '/memory', desc: '三层记忆管理' },
-  { cmd: '/hole', desc: '记忆语义检索' },
-  { cmd: '/perm', desc: '权限规则' },
-  { cmd: '/sessions', desc: '会话列表/恢复' },
-  { cmd: '/usage', desc: '用量与成本' },
-  { cmd: '/context', desc: '上下文水位' },
-  { cmd: '/offline', desc: '离线生存模式' },
-  { cmd: '/theme', desc: '主题切换' },
-  { cmd: '/undo', desc: '撤销上一回合' },
-  { cmd: '/new', desc: '新会话' },
-  { cmd: '/compact', desc: '上下文压缩' },
-  { cmd: '/perm rule list', desc: '规则清单' },
-]
 
-export function filterCommands(input: string): Array<{ cmd: string; desc: string }> {
-  const q = input.slice(1).toLowerCase()
-  return QUICK_COMMANDS.filter(c => c.cmd.toLowerCase().includes(q) || c.desc.includes(q)).slice(0, 8)
-}

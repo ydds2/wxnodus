@@ -1,7 +1,7 @@
 // src/tui/ui/Transcript.tsx — 转录流：左边条消息系（▎用户蓝/▎助手绿）+ 工具行 + 通知/错误
 // 降噪默认（原型 54 实证规则）：工具一行（名+关键参数+耗时）·详情折叠·thinking 只心跳
 import React from 'react'
-import { Box, Text } from '@wxnodus/ink'
+import { Box, Text } from 'ink'
 import type { ChatEntry, ToolEntry } from '../store.js'
 import { DEEP_SPACE } from '../theme.js'
 import { glyphs } from '../termcap.js'

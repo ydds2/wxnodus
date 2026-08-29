@@ -1,8 +1,8 @@
 // src/tui/ui/Overlays.tsx — 浮层：审批（黄框四级）/澄清/密钥（紫框掩码）/帮助页（原型 05/09/10/11）
 // 优先级栈（原型 56）：密钥 > 审批 > 澄清 > 帮助——同时至多一层。
-import React, { useState, useSyncExternalStore } from 'react'
-import { Box, Text, useInput } from '@wxnodus/ink'
-import { TuiStore } from '../store.js'
+import React, { useState } from 'react'
+import { Box, Text, useInput } from 'ink'
+import { TuiStore, type TuiState } from '../store.js'
 import { TuiRuntime } from '../runtime.js'
 import { DEEP_SPACE } from '../theme.js'
 import { glyphs } from '../termcap.js'
@@ -15,18 +15,17 @@ const panel = (color: string) => ({
   marginY: 1,
 })
 
-export function Overlays({ store, runtime }: { store: TuiStore; runtime: TuiRuntime }): React.ReactElement | null {
-  const s = useSyncExternalStore(store.subscribe, store.getSnapshot)
+export function Overlays({ store, runtime, s }: { store: TuiStore; runtime: TuiRuntime; s: TuiState }): React.ReactElement | null {
   const ov = s.overlay
 
   if (ov.kind === 'approval') {
-    return <ApprovalPanel store={store} />
+    return <ApprovalPanel store={store} s={s} />
   }
   if (ov.kind === 'clarify') {
-    return <ClarifyPanel store={store} />
+    return <ClarifyPanel store={store} s={s} />
   }
   if (ov.kind === 'secret') {
-    return <SecretPanel store={store} />
+    return <SecretPanel store={store} s={s} />
   }
   if (ov.kind === 'help') {
     return <HelpPanel runtime={runtime} />
@@ -34,8 +33,7 @@ export function Overlays({ store, runtime }: { store: TuiStore; runtime: TuiRunt
   return null
 }
 
-function ApprovalPanel({ store }: { store: TuiStore }): React.ReactElement {
-  const s = useSyncExternalStore(store.subscribe, store.getSnapshot)
+function ApprovalPanel({ store, s }: { store: TuiStore; s: TuiState }): React.ReactElement {
   const ov = s.overlay
   if (ov.kind !== 'approval') return <Box />
   const p = ov.pending
@@ -59,8 +57,7 @@ function ApprovalPanel({ store }: { store: TuiStore }): React.ReactElement {
   )
 }
 
-function ClarifyPanel({ store }: { store: TuiStore }): React.ReactElement {
-  const s = useSyncExternalStore(store.subscribe, store.getSnapshot)
+function ClarifyPanel({ store, s }: { store: TuiStore; s: TuiState }): React.ReactElement {
   const ov = s.overlay
   const [typed, setTyped] = useState('')
   if (ov.kind !== 'clarify') return <Box />
@@ -91,8 +88,7 @@ function ClarifyPanel({ store }: { store: TuiStore }): React.ReactElement {
   )
 }
 
-function SecretPanel({ store }: { store: TuiStore }): React.ReactElement {
-  const s = useSyncExternalStore(store.subscribe, store.getSnapshot)
+function SecretPanel({ store, s }: { store: TuiStore; s: TuiState }): React.ReactElement {
   const ov = s.overlay
   if (ov.kind !== 'secret') return <Box />
   const p = ov.pending

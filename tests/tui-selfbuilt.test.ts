@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { TuiStore, initialTuiState } from '../src/tui/store.js'
 import { TuiRuntime, clampOutput, toolSummary } from '../src/tui/runtime.js'
 import { DEEP_SPACE } from '../src/tui/theme.js'
-import { QUICK_COMMANDS, filterCommands } from '../src/tui/ui/Composer.js'
+import { QUICK_COMMANDS, filterCommands } from '../src/tui/commands.js'
 
 function fakeDeps(over: Record<string, unknown> = {}) {
   const events: Array<{ type: string; payload: any }> = []
@@ -222,7 +222,7 @@ describe('termcap 终端分档', () => {
   it('Windows Terminal / ConEmu / CI → full（完整字形）', () => {
     expect(detectTermTier({ WT_SESSION: 'x' } as never)).toBe('full')
     expect(detectTermTier({ ConEmuANSI: 'ON' } as never)).toBe('full')
-    expect(detectTermTier({ CI: '1', TERM: 'xterm-256color' } as never)).toBe('full')
+    expect(detectTermTier({ TERM: 'xterm-256color' } as never)).toBe('full')
   })
 
   it('裸 cmd（无信号）→ basic：豆腐高危字符（▎❯▏◐◷）零出现', () => {

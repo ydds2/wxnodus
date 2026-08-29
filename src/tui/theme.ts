@@ -4,14 +4,14 @@
 // 颜色为命名色档（cmd 传统 conhost 可渲染——原型场景 55 可实现性对照）。
 
 export const DEEP_SPACE = {
-  accent: 'ansi:cyanBright',
-  violet: 'ansi:magentaBright',
-  success: 'ansi:greenBright',
-  warn: 'ansi:yellow',
-  error: 'ansi:red',
-  fg: 'ansi:white',
-  muted: '#8b93ad',
-  dim: '#8b93ad',
+  accent: 'cyanBright',
+  violet: 'magentaBright',
+  success: 'greenBright',
+  warn: 'yellow',
+  error: 'red',
+  fg: 'white',
+  muted: 'gray',
+  dim: 'gray',
   spinnerFrames: ['◐', '◓', '◑', '◒'],
   placeholders: [
     '有问题尽管问，或直接派活 (Ready!)',

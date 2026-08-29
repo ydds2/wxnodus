@@ -1186,7 +1186,7 @@ if (pre.mode === 'error') {
   // bridges（onApproval/onClarify/onSecretRequest）经 let gateway 中介直连 TUI 浮层。
   const { createWxnodusTui } = await import('../tui/index.js');
   const { execSync } = await import('node:child_process');
-  const tui = await createWxnodusTui({
+  const tui = createWxnodusTui({
     bus, agent: agent as never,
     commandBus: commandBus as never,
     config: { get: (p: string) => config.get(p) },
