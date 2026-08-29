@@ -96,6 +96,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 </style>
 </head>
 <body>
+<div class="hint-dyn">◉ 动态演示已启用：03/04/05/23/26/12/13 有动画 · 折叠条可点击</div>
 <div class="frame">
 <nav>
 <h1>WxNodus TUI</h1>
@@ -169,7 +170,7 @@ ul.cl li b{color:var(--fg);font-weight:400;display:inline-block;min-width:132px}
 <section class="scene" id="sc-streaming">
 <div class="msg u"><i></i><div class="c">分析这个项目的内存泄漏点，给出修复方案</div></div>
 <p class="dim block" style="font-size:12.5px;font-style:italic">Thinking··· · 23s · 3.2k tokens · 41 tok/s</p>
-<div class="msg a"><i></i><div class="c">定位到两处泄漏：EventBus.ts:88 监听器未注销、curator.ts:210 定时器未清理。修复方案如<span class="caret"></span></div></div>
+<div class="msg a"><i></i><div class="c">定位到两处泄漏：EventBus.ts:88 监听器未注销、curator.ts:210 定时器未清理。修复方案如<span class="tk-caret"></span></div></div>
 <div class="t"><span class="g violet">◐</span><span class="accent">grep</span> setInterval|addEventListener 全仓<span class="sub">运行中 4.2s</span></div>
 <div class="fold"><span class="ch">⌛</span>已排队 1 条（运行完自动发 · ↑ 召回）<br><span class="muted" style="margin-left:20px">1. 顺便看看有没有同类问题</span></div>
 <div class="composer">
@@ -846,7 +847,182 @@ buttons.forEach(btn=>btn.addEventListener('click',()=>{
 buttons.forEach(b=>b.classList.remove('active'));
 btn.classList.add('active');
 scenes.forEach(sc=>sc.classList.toggle('active',sc.id==='sc-'+btn.dataset.s));
+if(window.__playScene)window.__playScene(btn.dataset.s);
 }));
+// 首屏场景自动播
+window.addEventListener('load',()=>{const act=document.querySelector('nav button.active');if(act&&window.__playScene)window.__playScene(act.dataset.s);});
 </script>
+
+<style>
+/* ── 动态效果层 ── */
+.braille { display:inline-block; width:1ch; color:var(--violet); }
+.tk-caret { display:inline-block; width:8px; height:14px; background:var(--accent); vertical-align:-2px; animation:blink 1.1s step-end infinite; }
+.fold-open { background:var(--bgsub); border-radius:6px; padding:10px 14px; margin:6px 0 6px 16px; font-size:12px; color:var(--muted); line-height:1.7; }
+.hint-dyn { position:fixed; right:18px; bottom:14px; font-size:10.5px; color:var(--dim); font-family:var(--mono); }
+</style>
+<script>
+/* ── 动态演示引擎：场景激活时启动对应动画，切走即清 ── */
+(function () {
+  const timers = [];
+  const every = (ms, fn) => { fn(); timers.push(setInterval(fn, ms)); };
+  const stopAll = () => { while (timers.length) clearInterval(timers.pop()); };
+  const set = (el, txt) => { if (el) el.textContent = txt; };
+
+  /* braille spinner：替换 ◐ */
+  const FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
+  const spin = () => {
+    const marks = document.querySelectorAll('.scene.active .g.violet');
+    every(90, () => {
+      const f = FRAMES[Math.floor(Date.now() / 90) % FRAMES.length];
+      marks.forEach(m => { if (m.dataset.dyn !== 'off') { m.dataset.orig ||= m.textContent; m.textContent = f; } });
+    });
+  };
+
+  /* 03 打字机 + thinking 心跳 */
+  const streamAnim = () => {
+    const body = document.querySelector('#sc-streaming .msg.a .c');
+    if (!body || body.dataset.armed) return;
+    body.dataset.armed = '1';
+    const FULL = '定位到两处泄漏：EventBus.ts:88 监听器未注销、curator.ts:210 定时器未清理。修复方案如下——先注销再重建，配泄漏回归测试…';
+    const caret = body.querySelector('.tk-caret') || body.querySelector('.caret');
+    const think = document.querySelector('#sc-streaming .block.dim');
+    every(70, () => {
+      const n = Math.min(FULL.length, (body.dataset.n | 0) + 1);
+      body.dataset.n = n;
+      const head = body.childNodes[0];
+      head.textContent = FULL.slice(0, n);
+      if (n >= FULL.length) { body.dataset.n = 0; }
+    });
+    let secs = 23, tok = 3.2;
+    every(1000, () => {
+      secs += 1; tok = Math.max(0.4, tok - 0.05);
+      if (think) think.textContent = 'Thinking··· · ' + secs + 's · 3.2k tokens · ' + (38 + Math.floor(Math.random() * 8)) + ' tok/s';
+    });
+    spin();
+  };
+
+  /* 04 耗时跳秒 */
+  const toolsAnim = () => {
+    const subs = document.querySelectorAll('#sc-tools .t .sub');
+    let a = 0.8, b = 2.3;
+    every(1000, () => { a += 1; b += 1;
+      if (subs[0]) subs[0].textContent = '运行中 ' + a.toFixed(1) + 's';
+      if (subs[1]) subs[1].textContent = '运行中 ' + b.toFixed(1) + 's · 工具面收窄（无写无 bash）';
+    });
+    spin();
+  };
+
+  /* 05 审批倒计时 */
+  const approvalAnim = () => {
+    const el = document.querySelector('#sc-approval .status .dim');
+    if (!el) return;
+    let left = 300;
+    every(1000, () => { left = Math.max(0, left - 1);
+      el.textContent = '超时 ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') + ' 自动拒绝';
+      if (left === 0) left = 300;
+    });
+  };
+
+  /* 23 子代理：进度增长 + S3 完成流转 */
+  const agentsAnim = () => {
+    const bars = document.querySelectorAll('#sc-subagents .bar-p i');
+    const sts = document.querySelectorAll('#sc-subagents .ag .h .st');
+    let p2 = 58, p3 = 31, t2 = 6, t3 = 3, done3 = false;
+    every(700, () => {
+      p2 = Math.min(96, p2 + 2); t2 = Math.min(10, t2 + (p2 % 3 === 0 ? 1 : 0));
+      if (!done3) { p3 = Math.min(100, p3 + 3); t3 = Math.min(10, t3 + 1); }
+      if (bars[0]) bars[0].style.width = p2 + '%';
+      if (bars[1]) bars[1].style.width = p3 + '%';
+      if (sts[1]) sts[1].textContent = 'turn ' + t2 + '/10 · ' + p2 + '%';
+      if (sts[2]) {
+        if (p3 >= 100 && !done3) {
+          done3 = true;
+          sts[2].innerHTML = '<span class="ok">完成 · 47s · 9 调用 · 2 中危</span>';
+          const card = sts[2].closest('.ag');
+          card.classList.remove('running'); card.classList.add('done');
+          sts[2].closest('.ag').querySelector('.h').firstElementChild.outerHTML = '<span class="ok">✓</span>';
+          if (bars[1]) bars[1].style.background = 'var(--green)';
+        } else if (!done3) {
+          sts[2].textContent = 'turn ' + t3 + '/10 · ' + p3 + '%';
+        }
+      }
+    });
+    spin();
+  };
+
+  /* 26 水位呼吸 */
+  const ctxAnim = () => {
+    const meter = document.querySelector('#sc-longsession .meter');
+    if (!meter) return;
+    let pct = 43, dir = 1;
+    every(1600, () => {
+      pct = Math.min(52, Math.max(43, pct + dir)); if (pct >= 52 || pct <= 43) dir = -dir;
+      const on = Math.round(pct / 100 * 32);
+      meter.innerHTML = '█'.repeat(on) + '<span class="rest">' + '░'.repeat(32 - on) + '</span>';
+      const label = meter.nextElementSibling;
+      if (label) label.textContent = (27.4 + (pct - 43) * 0.3).toFixed(1) + 'k / 64k · ' + pct + '%';
+    });
+  };
+
+  /* 12 重试倒计时 */
+  const errorAnim = () => {
+    const el = document.querySelector('#sc-error .status .dim');
+    if (!el) return;
+    let t = 8;
+    every(1000, () => { t = t - 1; if (t <= 0) t = 8; el.textContent = '重试 2/3 · 第 3 次 ' + t + 's'; });
+  };
+
+  /* 13 后台计时 */
+  const busyAnim = () => {
+    const el = document.querySelector('#sc-busy .cl li b');
+    if (!el) return;
+    let s = 192;
+    every(1000, () => { s += 1;
+      el.innerHTML = '<span class="ok">●</span> bash npm test<span style="display:inline"></span>';
+      el.parentElement.childNodes[1].textContent = '运行中 ' + Math.floor(s / 60) + 'm' + String(s % 60).padStart(2, '0') + 's · 完成自动回流通知';
+    });
+  };
+
+  /* 02 placeholder 轮换 */
+  const PH = ['有问题尽管问，或直接派活 (Ready!)', '描述任务，或 /build 直接编译需求', '试试 @src/ 引用文件', 'Ready for instructions…', '/doctor 先自检一下？'];
+  const idleAnim = () => {
+    const el = document.querySelector('#sc-idle .ph');
+    if (!el) return;
+    let i = 0;
+    every(3200, () => { i = (i + 1) % PH.length; el.textContent = PH[i]; });
+  };
+
+  /* 折叠条点击交互演示 */
+  const armFolds = () => {
+    document.querySelectorAll('.scene .fold').forEach(f => {
+      if (f.dataset.arm) return; f.dataset.arm = '1'; f.style.cursor = 'pointer';
+      f.addEventListener('click', () => {
+        let box = f.nextElementSibling;
+        if (box && box.classList.contains('fold-open')) { box.remove(); f.querySelector('.ch').textContent = '▸'; return; }
+        box = document.createElement('div'); box.className = 'fold-open';
+        box.textContent = '…展开预览（演示）· 共 8/3412 行——真实实现为分页 + 高亮定位
+' +
+          '├ audit v8.18.0 in 2s
+├ 1 moderate severity vulnerability
+├ esbuild <=0.28.2 dev-server DNS rebinding (GHSA-67mh)
+└ run npm audit fix for 1 fix; 0 breaking';
+        box.style.whiteSpace = 'pre';
+        f.after(box); f.querySelector('.ch').textContent = '▾';
+      });
+    });
+  };
+
+  const ANIMS = { idle: idleAnim, streaming: streamAnim, tools: toolsAnim, approval: approvalAnim,
+    subagents: agentsAnim, longsession: ctxAnim, error: errorAnim, busy: busyAnim };
+
+  window.__playScene = function (name) {
+    stopAll();
+    document.querySelectorAll('.g.violet').forEach(m => { if (m.dataset.orig) m.textContent = m.dataset.orig; });
+    if (ANIMS[name]) ANIMS[name]();
+    armFolds();
+  };
+})();
+</script>
+
 </body>
 </html>
