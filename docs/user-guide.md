@@ -154,7 +154,7 @@ wxnodus -p "/acp server"          # ACP stdio（Zed/JetBrains 接入）
 | `/eco` | Windows 生态依赖探测（状态与能力） |
 | `/gateway` | HTTP 网关 |
 | `/mcp` | MCP 服务器管理（list 在线/内存列 · status 真实探活 · idle 闲置自动下线） |
-| `/oasis` | OASIS 统一运行时门户（status 全栈组件注册表 · topo 依赖拓扑——跨语言 MCP/插件/任务/会话共存视图） |
+| `/oasis` | OASIS 统一运行时门户（status 注册表 · health 探活 · topo 拓扑 · bridge export→A2A card · trace 三源追踪 · panel→/panel） |
 | `/plugin` | 插件管理（list/install/remove/enable/disable） |
 | `/proxy` | 代理转发 |
 | `/remote` | 远程执行（ssh 通道 + exec-server：远端未沙盒/双机链路未真机验证，诚实口径） |
