@@ -28,8 +28,9 @@ vi.mock('../src/kernel/localVision.js', () => ({
   setLocalVisionCacheDir: vi.fn(),
   describeScreen: vi.fn(async () => ({ ok: true, text: 'VLM 本地描述' })),
   // L2 降级链入口（2026-09-04）：mock 档保底 backend——段摘要走智能描述
-  describeScreenSmart: vi.fn(async () => ({ ok: true, text: 'VLM 本地描述', backend: 'moondream', model: 'moondream2' })),
-  pickL2Backend: (b: string, ok: boolean) => (b === 'off' ? 'none' : ok ? 'ollama' : 'moondream'),
+  describeScreenSmart: vi.fn(async () => ({ ok: true, text: 'VLM 本地描述', backend: 'local', model: 'moondream2' })),
+  pickL2Backend: (b: string) => (b === 'off' ? { use: 'none', model: '' } : { use: 'local', model: 'moondream2' }),
+  warmupLocalVision: vi.fn(async () => ({ ok: true, detail: '已预热' })),
   probeLocalVision: () => ({ loaded: true, detail: 'ok' }),
 }))
 
@@ -347,10 +348,10 @@ describe('/watch 常驻屏幕视频流', () => {
     process.env.WXNODUS_FFMPEG_CMD = `node ${fakeFfmpeg(d)}`
     const { bus, db, close } = await makeBus(d)
     const r = (await bus.execute('/watch start --fps 5 --ring 30 --tier l2')).output
-    expect(r).toContain('l2（OCR + 本地 VLM auto——降级链 Ollama GPU→moondream CPU→仅 OCR）')
+    expect(r).toContain('l2（OCR + 自研进程内 VLM auto——模型常驻零外部服务，失败诚实降仅 OCR）')
     await sleep(1500)
     const full = (db.prepare(`SELECT content FROM messages WHERE session_id='sW' AND content LIKE '%屏幕观察%'`).all() as Array<{ content: string }>).map(x => x.content).join('\n')
-    expect(full).toContain('VLM[moondream moondream2]: VLM 本地描述')
+    expect(full).toContain('VLM[local moondream2]: VLM 本地描述')
     await bus.execute('/watch stop')
     // 默认 l1：VLM 不调用（Smart mock 计数归零后不再增长）
     const lv = await import('../src/kernel/localVision.js')

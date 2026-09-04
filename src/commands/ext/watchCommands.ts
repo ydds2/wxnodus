@@ -169,9 +169,9 @@ export function registerWatchCommands(bus: CommandBus, ctx: HandlerCtx): void {
       const backend = backendArg === 'ddagrab' || backendArg === 'gdigrab' ? backendArg : 'auto'
       const tierArg = args[args.indexOf('--tier') + 1]
       tier = tierArg === 'l2' ? 'l2' : 'l1'
-      // 本地 VLM 部署方案 §4.1（2026-09-04）：--vlm auto|ollama|moondream|off——L2 降级链 L2a→L2b→L2c
+      // 本地 VLM（2026-09-04 用户裁决：自研进程内——零外部推理服务）：--vlm auto|moondream|off
       const vlmArg = args[args.indexOf('--vlm') + 1]
-      const vlm: L2BackendSetting = vlmArg === 'ollama' || vlmArg === 'moondream' || vlmArg === 'off' ? vlmArg : 'auto'
+      const vlm: L2BackendSetting = vlmArg === 'moondream' || vlmArg === 'off' ? vlmArg : 'auto'
       if (tier === 'l2') setLocalVisionCacheDir(ctx.dataDir)
       const workDir = join(ctx.dataDir, 'watch')
       const newStream = createScreenStream({
@@ -218,9 +218,17 @@ export function registerWatchCommands(bus: CommandBus, ctx: HandlerCtx): void {
       const r = await newStream.start()
       if (!r.ok) return r.error
       stream = newStream
+      // 第二步提速（2026-09-04）：L2 档启动即后台预热模型（消除首帧 3-5s 冷启动）——不阻塞启动
+      if (tier === 'l2') {
+        void (async () => {
+          const { warmupLocalVision } = await import('../../kernel/localVision.js')
+          const w = await warmupLocalVision()
+          ctx.bus?.emit?.('system.notice', { text: w.ok ? `◉ ${w.detail}` : `◉ 本地视觉：${w.detail}` })
+        })()
+      }
       const st = newStream.status()
       return lines(' 屏幕视频流已启动 ', [
-        ` 捕捉：ffmpeg（${st.backend === 'ddagrab' ? 'ddagrab · Desktop Duplication API——WGC 同层，低开销，可抓 UWP' : 'gdigrab · GDI——抓不到安全窗口/DRM'}，实时视频流 ${fps}fps · 环缓冲 ${ring}s · 识别档 ${tier === 'l2' ? `l2（OCR + 本地 VLM ${vlm}——降级链 Ollama GPU→moondream CPU→仅 OCR）` : 'l1（OCR）'}）`,
+        ` 捕捉：ffmpeg（${st.backend === 'ddagrab' ? 'ddagrab · Desktop Duplication API——WGC 同层，低开销，可抓 UWP' : 'gdigrab · GDI——抓不到安全窗口/DRM'}，实时视频流 ${fps}fps · 环缓冲 ${ring}s · 识别档 ${tier === 'l2' ? `l2（OCR + 自研进程内 VLM ${vlm}——模型常驻零外部服务，失败诚实降仅 OCR）` : 'l1（OCR）'}）`,
         ` 事件：system.screen.watch（frame/segment/trigger/clip）· 段摘要入黑洞记忆（/hole 可召回）`,
         ` 任务链：/watch chain <task-chain.json>（MAA 式模板触发）· 回放：/watch clip 10 · 停止：/watch stop`,
       ])
