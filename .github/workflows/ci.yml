@@ -6,8 +6,10 @@ name: CI
 # 类型仅在自身 node_modules 中——根门禁扫描会因安装顺序而红，2026-08-18 首轮实测修复）。
 #
 # 效率演进（2026-08-18）：concurrency cancel-in-progress（只验最新 HEAD）+ paths-ignore（纯文档不跑）+
-# workflow_dispatch（手动兜底）+ 并行化拆分（vscode-ext ∥ gate 并行；test 三分片 needs gate 复用 dist/ink-dist
+# workflow_dispatch（手动兜底）+ 并行化拆分（vscode-ext ∥ gate 并行；test 三分片 needs gate 复用 dist
 # 工件——三片互并、串在 gate 后）——单轮 wall 由 ~14 分钟压到 ~8.5 分钟（实测 #32179602007）。
+# ink-dist 工件链已移除（2026-09-04）：TUI 定型官方 Ink 6 后 entry-exports.js 消费者已不存在，
+# 全新 checkout 上 packages/wxnodus-ink/dist 从未存在（本地构建产物不入库）——上传步骤必红。
 
 on:
   push:
@@ -80,13 +82,6 @@ jobs:
           path: dist
           if-no-files-found: error
 
-      - name: Upload ink dist artifact (ui 测试解析 packages/wxnodus-ink/dist/entry-exports.js)
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # ratchet:actions/upload-artifact@v5
-        with:
-          name: ink-dist
-          path: packages/wxnodus-ink/dist
-          if-no-files-found: error
-
   test:
     needs: gate
     runs-on: windows-latest
@@ -114,12 +109,6 @@ jobs:
         with:
           name: dist
           path: dist
-
-      - name: Download ink dist artifact
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # ratchet:actions/download-artifact@v5
-        with:
-          name: ink-dist
-          path: packages/wxnodus-ink/dist
 
       - name: Exempt Defender scanning (runner perf)
         shell: pwsh
