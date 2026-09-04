@@ -1,0 +1,12 @@
+{
+  "name": "watch-pack-demo",
+  "version": "1.0.0",
+  "targetWxnodus": ">=4.0.2",
+  "mods": [
+    {
+      "kind": "watch",
+      "id": "watch-pack-demo",
+      "dir": "."
+    }
+  ]
+}

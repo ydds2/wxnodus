@@ -1,0 +1,1 @@
+export default (a, seed) => { const r=[...a]; let s=seed>>>0; const rnd=()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296}; for(let i=r.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[r[i],r[j]]=[r[j],r[i]]} return r; };

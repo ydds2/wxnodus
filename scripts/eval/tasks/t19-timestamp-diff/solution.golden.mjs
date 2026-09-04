@@ -1,0 +1,1 @@
+export default (ms) => { const s = Math.floor(ms/1000); const m = Math.floor(s/60); const h = Math.floor(m/60); const d = Math.floor(h/24); return d > 0 ? d + 'd' : h > 0 ? h + 'h' : m > 0 ? m + 'm' : s + 's'; };

@@ -1,0 +1,12 @@
+{
+  "name": "watch-pack-demo（观测链示例）",
+  "minIntervalMs": 3000,
+  "triggers": [
+    {
+      "id": "demo-block",
+      "template": "templates/demo-block.png",
+      "threshold": 0.85,
+      "action": { "kind": "none" }
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+export default (s) => { const p = s.split('.'); if (p.length !== 4) return false; return p.every(x => { if (!/^\d{1,3}$/.test(x)) return false; const n = +x; if (n > 255) return false; if (x.length > 1 && x[0] === '0') return false; return true; }); };
