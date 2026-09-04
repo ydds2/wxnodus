@@ -441,7 +441,13 @@ export class TuiRuntime {
   }
 
   modelCatalog(): Array<{ id: string; name: string; provider: string }> {
-    return this.deps.modelCatalog?.() ?? []
+    // C4a：最近使用置顶（settings.recentModels——/model 切换时记录；master plan「复用切换缓存」口径）
+    const base = this.deps.modelCatalog?.() ?? []
+    const recent = (Array.isArray((this.deps.config.get('settings') ?? {} as Record<string, unknown>).recentModels)
+      ? (this.deps.config.get('settings') ?? {} as Record<string, unknown>).recentModels : []) as string[];
+    if (!recent.length) return base
+    const rank = new Map(recent.map((id, i) => [id.toLowerCase(), i]))
+    return [...base].sort((a, b) => (rank.get(a.id.toLowerCase()) ?? 99) - (rank.get(b.id.toLowerCase()) ?? 99))
   }
 
   // ── 模式档位（2026-09-03 用户裁决：全部由命令进入——单一选择器 /perm；热键不再切换档位）──

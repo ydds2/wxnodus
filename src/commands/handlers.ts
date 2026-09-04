@@ -134,6 +134,16 @@ import { lines } from './outputFormat.js';
 // -p 管道/测试环境 stdout 非 TTY → 纯文本（脚本与断言零污染）
 export const c = (s: string, code: string): string => (process.stdout.isTTY === true ? `\x1b[${code}m${s}\x1b[0m` : s);
 
+/** C4a（2026-09-04 第四批）：最近使用模型记录——切换即 unshift 去重截 5（settings.recentModels；
+ * 选择器置顶数据源——「复用 /model 切换缓存数据」master plan 口径） */
+function recordRecentModel(ctx: HandlerCtx, modelId: string): void {
+  try {
+    const prev = (Array.isArray(ctx.config.getKey('settings', 'recentModels')) ? ctx.config.getKey('settings', 'recentModels') : []) as unknown[];
+    const next = [modelId, ...prev.filter(m => m !== modelId)].slice(0, 5);
+    ctx.config.setKey('settings', 'recentModels', next);
+  } catch { /* 记录失败不阻断切换（诚实降级） */ }
+}
+
 export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // 对话
   bus.register('/help', (args) => {
@@ -491,6 +501,7 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
         if (pHit) {
           ctx.config.setKey('settings', 'activeProvider', pHit.id);
           ctx.setModel(clean, pHit.baseURL);
+          recordRecentModel(ctx, clean);
           return `已切换档案模型：${clean}（档案 ${pHit.id} · ${pHit.name}）
 ${MODEL_SWITCH_CACHE_NOTICE}`;
         }
@@ -506,6 +517,7 @@ ${MODEL_SWITCH_CACHE_NOTICE}`;
         return lines(' 模型目录 ', [`未找到「${q}」${filtered.length || profileRows.length ? '，相近模型：' : '，可用模型：'}`, ...list.map(m => ` ${m.name}（${m.provider}）${capabilityBadges(m.capabilities)}${priceSuffix(m.modelId)}`), ...profileRows.slice(0, 8)]);
       }
       ctx.setModel(hit.modelId, hit.baseURL);
+      recordRecentModel(ctx, hit.modelId);
       return `已切换模型：${hit.name}（${hit.provider}）${capabilityBadges(hit.capabilities)}
 ${MODEL_SWITCH_CACHE_NOTICE}`;
     }

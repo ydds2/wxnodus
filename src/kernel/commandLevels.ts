@@ -30,6 +30,7 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/plan': 'safe', '/perm': 'safe', '/perm rule list': 'safe',
   '/sandbox': 'safe', '/security': 'safe', '/security status': 'safe',
   '/theme': 'safe', '/brand': 'safe', '/lang': 'safe', '/config': 'safe', '/versions': 'safe',
+  '/panel': 'safe',
   '/skill list': 'safe', '/skill inspect': 'safe', '/fs': 'safe',
   '/checkpoint list': 'safe', '/snapshot list': 'safe', '/undo list': 'safe',
   '/usage range': 'safe', '/balance status': 'safe', '/warp': 'safe', '/eco': 'safe', '/config export': 'safe', '/cost': 'safe',

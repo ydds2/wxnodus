@@ -138,3 +138,47 @@ describe('模型切换缓存提示（P4-6）', () => {
     expect(r.output).toContain('缓存前缀失效');
   });
 });
+
+// C4a（2026-09-04 第四批）：最近使用模型记录——切换即 unshift 去重截 5（选择器置顶数据源）
+describe('C4a 最近使用模型记录（recordRecentModel）', () => {
+  it('/model 切换写入 settings.recentModels（unshift 去重截 5）', async () => {
+    const { createCommandBus } = await import('../src/app/CommandBus.js');
+    const { registerCoreHandlers } = await import('../src/commands/handlers.js');
+    const s: Record<string, unknown> = {};
+    const ctx = {
+      dataDir: process.cwd(),
+      cwd: process.cwd(),
+      db: { prepare: () => ({ get: () => undefined, all: () => [] }) },
+      config: { get: () => s, getKey: (_p: string, k: string) => s[k], setKey: (_p: string, k: string, v: unknown) => { s[k] = v } },
+      setModel: () => {},
+      openModelPicker: () => {},
+    } as any;
+    const bus = createCommandBus();
+    registerCoreHandlers(bus, ctx);
+    await bus.execute('/model deepseek-chat');
+    await bus.execute('/model kimi-k2.7');
+    await bus.execute('/model deepseek-chat'); // 重复使用 → 置顶去重
+    expect(s.recentModels).toEqual(['deepseek-chat', 'kimi-k2.7']);
+  });
+
+  it('TuiRuntime.modelCatalog：recentModels 命中项置顶（C4a 渲染面）', async () => {
+    const { TuiRuntime } = await import('../src/tui/runtime.js');
+    const deps = {
+      store: new (await import('../src/tui/store.js')).TuiStore(),
+      bus: { on: () => () => {} },
+      agent: { run: async () => ({ ok: true, text: '', turns: 0, interrupted: false }), abort() {}, steer: () => true },
+      commandBus: { execute: async () => ({ ok: true, output: '' }) },
+      config: { get: () => ({ recentModels: ['glm-4.7'] }) },
+      cwd: 'C:/proj',
+      modelCatalog: () => [
+        { id: 'deepseek-chat', name: 'DS', provider: 'p1' },
+        { id: 'glm-4.7', name: 'GLM', provider: 'p2' },
+      ],
+    } as any;
+    const rt = new TuiRuntime(deps);
+    const cat = rt.modelCatalog();
+    expect(cat[0]!.id).toBe('glm-4.7'); // 最近使用置顶
+    expect(cat[1]!.id).toBe('deepseek-chat');
+    expect(cat).toHaveLength(2);
+  });
+});
