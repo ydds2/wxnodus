@@ -27,3 +27,10 @@ export class EmergencyStopService {
     return { ok: true, value: undefined };
   }
 }
+
+// ⅩⅩⅨ（专项审计）：进程级单例——/computer estop 命令与 modern 管线共用同一实例
+// （此前每次调用 new 一个，停机态不可持续且无生产触发器能按下急停）。
+const globalEmergencyStop = new EmergencyStopService();
+export function getEmergencyStopService(): EmergencyStopService {
+  return globalEmergencyStop;
+}

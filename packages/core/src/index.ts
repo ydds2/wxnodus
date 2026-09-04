@@ -40,15 +40,15 @@ export type WxnodusEvent =
 async function buildDefaultKernel(opts: WxnodusAgentOptions): Promise<CoreKernel> {
   const cwd = opts.cwd ?? process.cwd();
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'wxn-core-'));
-  const { openDB } = await import('../../../src/store/db.js');
-  const { createEventBus } = await import('../../../src/kernel/events.js');
-  const { createMemory } = await import('../../../src/kernel/memory.js');
+  const { openDB } = await import('wxnodus/dist/store/db.js');
+  const { createEventBus } = await import('wxnodus/dist/kernel/events.js');
+  const { createMemory } = await import('wxnodus/dist/kernel/memory.js');
   const db = openDB(dataDir);
   const bus = createEventBus(dataDir);
   const mem = createMemory(db);
   const { createPipelineAgentLikeRunner } = await import('./runner.js');
   const runner = await createPipelineAgentLikeRunner({ db, dataDir, workspaceRoot: cwd });
-  const { createAgent } = await import('../../../src/kernel/agent.js');
+  const { createAgent } = await import('wxnodus/dist/kernel/agent.js');
   const agent = createAgent({
     db, bus, mem,
     sessionId: `core-${randomUUID().slice(0, 8)}`,
@@ -126,4 +126,4 @@ export class WxnodusAgent {
   }
 }
 
-export { PROTOCOL_VERSION as CORE_PROTOCOL_VERSION } from '../../../src/protocol/version.js';
+export { PROTOCOL_VERSION as CORE_PROTOCOL_VERSION } from 'wxnodus/dist/protocol/version.js';

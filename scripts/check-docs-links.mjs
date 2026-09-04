@@ -28,7 +28,10 @@ const mdFiles = ['README.md', 'AGENTS.md', ...readdirSync(join(ROOT, 'docs')).fi
 const broken = [];
 
 const check = (fromFile, rawPath, kind, resolveAgainstRoot) => {
-  let p = String(rawPath).split('#')[0].split(':')[0].trim();
+  const raw = String(rawPath).trim();
+  // 外部 URL 豁免必须先于 split(':') 判定（此前 https://x 被切成 'https' 后绕过豁免必报断链——门禁真 bug）
+  if (/^https?:\/\//.test(raw)) return;
+  let p = raw.split('#')[0].split(':')[0].trim();
   if (!p || p.includes(' ') || /^(https?:)?\/\//.test(p) || p.includes('<') || p.includes('*') || p.includes('{')) return;
   const base = resolveAgainstRoot ? ROOT : join(ROOT, dirname(fromFile));
   const abs = resolve(base, p);

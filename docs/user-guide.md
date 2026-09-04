@@ -1,6 +1,6 @@
 ﻿# wxnodus 用户手册（离线版）
 
-> 版本 4.0.0-rc.1 · 由命令注册表确定性生成（`npm run docs:user-guide`）· 气隙/内网机器零网可查。
+> 版本 4.0.2 · 由命令注册表确定性生成（`npm run docs:user-guide`）· 气隙/内网机器零网可查。
 
 ## 1. 快速开始
 
@@ -22,13 +22,14 @@ wxnodus -p "/acp server"          # ACP stdio（Zed/JetBrains 接入）
 
 | 命令 | 说明 |
 |---|---|
+| `/aliases` | 中文别名总览（/帮助 /体检 /密钥 /权限… → 规范命令——斜杠中文直达） |
 | `/balance` | 余额监控（auto-stop on/off——余额耗尽自动停，防烧钱） |
 | `/checkpoint` | 会话快照（save/list/compare/restore/clear，undo 前自动保存） |
 | `/clear` | 清空会话视图 |
 | `/context` | 上下文占用可视化 |
 | `/cost` | 成本估算（会话/今日/7天/30天；公开参考价目，未收录模型只报 token） |
 | `/fork` | 分支会话（复制当前会话为副本） |
-| `/help` | 查看帮助（/help <命令> 展开单个） |
+| `/help` | 查看帮助（默认全目录 126 · /help core 主干速览 · /help <命令> 展开单个） |
 | `/new` | 新建空会话并切换 |
 | `/quit` | 退出 |
 | `/resume` | 切换会话（真正加载历史并继续） |
@@ -45,7 +46,8 @@ wxnodus -p "/acp server"          # ACP stdio（Zed/JetBrains 接入）
 
 | 命令 | 说明 |
 |---|---|
-| `/doctor` | 健康体检 |
+| `/channel` | 更新渠道（release 稳定 / snapshot 快照——我的世界式版本列车；version manifest 双渠道选择） |
+| `/doctor` | 健康体检（含孤儿进程/心跳断档卡死自愈体检项） |
 | `/hooks` | 生命周期 Hooks（settings.hooks 本地命令） |
 | `/model` | 模型与密钥统一入口（选择器｜/model add 添加任意 OpenAI 兼容接口｜set-key 配置密钥｜key 查看状态） |
 | `/profile` | 接入档案管理（list/add/use/rm/set-key——多厂商/中转站档案） |
@@ -90,7 +92,7 @@ wxnodus -p "/acp server"          # ACP stdio（Zed/JetBrains 接入）
 | `/compliance` | 合规五项 |
 | `/consent` | 授权存证 |
 | `/encrypt` | 加密工具 |
-| `/perm` | 权限模式（smart 确认/auto 自动编辑/goal 循环/plan 计划/yolo 全放） |
+| `/perm` | 权限模式（裸 /perm 打开选择器；smart 确认/auto 自动编辑/manual 全量确认/plan 计划/goal 循环/yolo 完全访问） |
 | `/sandbox` | 分层沙盒（L0-L3） |
 | `/security` | 安全注入通道（sudo/secret，关闭即清缓存） |
 | `/yolo` | 完全访问开关（除硬红线全部放行） |
@@ -107,6 +109,7 @@ wxnodus -p "/acp server"          # ACP stdio（Zed/JetBrains 接入）
 |---|---|
 | `/backup` | 备份 |
 | `/bench` | 基准测试 |
+| `/brand` | 品牌命名/图标化（「独一无二」包装层——品牌行/欢迎语） |
 | `/config` | 配置中心 |
 | `/diff` | 文件快照差异查看 + 逐 hunk 选择性回滚 |
 | `/export` | 导出 |
@@ -115,6 +118,7 @@ wxnodus -p "/acp server"          # ACP stdio（Zed/JetBrains 接入）
 | `/lang` | 语言切换 |
 | `/logs` | 日志查看 |
 | `/migrate` | 用户产物迁移（升级兼容——自动备份+失败整体回滚） |
+| `/theme` | 主题切换（dark/light/预设/用户主题） |
 | `/vim` | vim 模态编辑开关（NORMAL/INSERT 双态） |
 | `/voice` | 语音模式（TUI 内 Ctrl+B/麦克风钮；status 查看组件） |
 | `/workspace` | 主工作区查看/设置（用户动态指定项目文件夹） |
@@ -128,11 +132,13 @@ wxnodus -p "/acp server"          # ACP stdio（Zed/JetBrains 接入）
 | `/render` | Markdown 排版预览 |
 | `/video` | 视频人工视觉分析（不下载） |
 | `/vision` | GLM 视觉理解（/vision <图片>） |
+| `/watch` | 常驻屏幕视频流（start/stop/status/clip/chain——实时捕捉 + 场景分段 + MAA 式模板任务链 + 回放证据 mp4） |
 
 ### ⚿
 
 | 命令 | 说明 |
 |---|---|
+| `/computer` | 桌面控制（Computer Use：截图/点击/键入/打开——robotjs 动作层 + GLM-4V 屏幕理解） |
 | `/input` | 动态内容表（多字段敏感输入——仅内存，不保存） |
 
 ### ⛭
@@ -143,11 +149,11 @@ wxnodus -p "/acp server"          # ACP stdio（Zed/JetBrains 接入）
 | `/acp` | ACP server |
 | `/browser` | 浏览器自动化（打开/点击/输入/截图，AI 可自主操作） |
 | `/claw` | 网页抓取（SSRF 防护） |
-| `/computer` | 桌面控制（Computer Use：截图/点击/键入/打开——robotjs 动作层 + GLM-4V 屏幕理解） |
 | `/download` | 下载文件到主工作区（SSRF 防护 + sha256 证据） |
 | `/eco` | Windows 生态依赖探测（状态与能力） |
 | `/gateway` | HTTP 网关 |
-| `/mcp` | MCP 服务器管理 |
+| `/mcp` | MCP 服务器管理（list 在线/内存列 · status 真实探活 · idle 闲置自动下线） |
+| `/oasis` | OASIS 统一运行时门户（status 全栈组件注册表 · topo 依赖拓扑——跨语言 MCP/插件/任务/会话共存视图） |
 | `/plugin` | 插件管理（list/install/remove/enable/disable） |
 | `/proxy` | 代理转发 |
 | `/remote` | 远程执行（ssh 通道 + exec-server：远端未沙盒/双机链路未真机验证，诚实口径） |
@@ -198,6 +204,7 @@ wxnodus -p "/acp server"          # ACP stdio（Zed/JetBrains 接入）
 | `/bundle` | 场景整合包（skill/MCP/插件/配置规整打包，一键安装/导入/导出/应用） |
 | `/map` | 仓库地图（aider repo-map 自研版——符号索引注入上下文，/map <预算>） |
 | `/market` | 开放生态目录（npm/GitHub 搜索 + 安装 MCP/技能） |
+| `/modpack` | Mod 整合包（modpack.json 清单：plugins+MCP 集合 · targetWxnodus 兼容矩阵 · install/list/export——一键安装/失败回滚/防篡改 sha256） |
 | `/reload-skills` | 重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini）并汇报 |
 | `/rewind` | 回滚到最近快照（Claude Code /rewind 同款，等价 /checkpoint restore） |
 | `/warp` | 本地演示动效（不执行外部副作用） |

@@ -4,7 +4,9 @@
 // invoke/select/coordinateFallback：接 src/kernel/computer/uia.ts 真实 PowerShell/UIAutomation 桥
 // （单能力端口——兜底裁决在驱动层按边界进行，桥不做跨模式回落）。
 // runtimeId 约定：<name>|<automationId>|<handle>（handle 可省——省则全桌面搜索 + 目标完整性按当前进程）。
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+const execFileAsync = promisify(execFile);
 import { uiaInvokeOnly, uiaSelectOnly, uiaMouseOnly } from '../../kernel/computer/uia.js';
 import type { UiaPorts } from './windowsUiaDriver.js';
 
@@ -101,19 +103,26 @@ export function parseBoundaryProbe(raw: string): BoundaryProbe {
   }
 }
 
-/** 真实会话边界探测（每动作重证；PowerShell 每次 ~100-300ms） */
-export function probeUiaBoundary(handle?: string): BoundaryProbe {
-  // args 赋值必须在探测体之前（BOUNDARY_PS 内含执行体，尾部追加会跑到 JSON 输出之后）
-  const ps = `$script:args = @('${String(handle ?? '').replace(/'/g, "''")}')\n${BOUNDARY_PS}`;
-  const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ps], {
-    encoding: 'utf8', timeout: 15000, windowsHide: true,
-  });
-  return parseBoundaryProbe(String(r.stdout ?? '').trim());
+/** 真实会话边界探测（每动作重证；PowerShell 每次 ~100-300ms）
+ * ⅩⅩⅨ（专项审计 C-5）：spawnSync → 异步——WindowsUiaDriver.act 每动作最多 3 次探测，
+ * 此前最坏 3×15s 同步冻结事件循环（TUI 卡死根因族；uia.ts 同病已先行修过）。
+ * 失败（超时/启动失败）按坏输出取最严边界——fail-closed 方向不变。 */
+export async function probeUiaBoundary(handle?: string): Promise<BoundaryProbe> {
+  const esc = String(handle ?? '').replace(/'/g, "''")
+  const ps = `$script:args = @('${esc})\n${BOUNDARY_PS}`
+  try {
+    const r = await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ps], {
+      encoding: 'utf8', timeout: 15000, windowsHide: true, maxBuffer: 4 * 1024 * 1024,
+    })
+    return parseBoundaryProbe(String(r.stdout ?? '').trim())
+  } catch {
+    return parseBoundaryProbe('') // 坏输出 → 最严边界（既有语义）
+  }
 }
 
 /** 装配真实端口（WindowsUiaDriver 生产实例）——UIA 工具与 Gate E 场景共用。
  *  probe 可注入（测试用）；缺省为真实 PowerShell 边界探测。 */
-export function createWindowsUiaPorts(probe: (handle?: string) => BoundaryProbe = probeUiaBoundary): UiaPorts {
+export function createWindowsUiaPorts(probe: (handle?: string) => BoundaryProbe | Promise<BoundaryProbe> = probeUiaBoundary): UiaPorts {
   const parse = (runtimeId: string) => {
     const [name = '', id = '', handle = ''] = String(runtimeId).split('|');
     return { name, id, handle };
@@ -123,7 +132,7 @@ export function createWindowsUiaPorts(probe: (handle?: string) => BoundaryProbe 
   return {
     async inspectBoundary(runtimeId: string) {
       const { handle } = parse(runtimeId);
-      const b = probe(handle);
+      const b = await probe(handle);
       // 目标完整性：探测失败（null=打不开令牌，受保护/系统进程）→ fail-closed 视 high
       const targetIntegrity: 'low' | 'medium' | 'high' | 'system' = b.targetElevated === false ? 'medium' : 'high';
       return {

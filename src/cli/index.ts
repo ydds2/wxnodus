@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// src/cli/index.ts — L6-2 CLI 入口（commander + WxNodus UI 装配）
-// 装配：data/config/db/mem/bus/agent → wxGateway（进程内桥接）→ @wxnodus/ink render App
+// src/cli/index.ts — L6-2 CLI 入口（commander + 组合根装配 + 进程内 TUI）
+// 装配：data/config/db/mem/bus/agent → KernelBridges → TUI/headless（官方 ink 6 render App）
 
 import { join, dirname, resolve } from 'node:path';
 import { mkdirSync, appendFileSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
@@ -8,15 +8,11 @@ import { format } from 'node:util';
 import { parseCronExpr, parseIntervalExpr, cronMatches } from '../kernel/cronExpr.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { resolveDataDir } from '../kernel/paths.js';
-import { appendAudit } from '../store/db.js';
 import { isSharedAgentReentrantCommand } from '../application/runs/internalCommandGuard.js';
 // W3-01：完成终态 → 退出码共享映射（failure 不藏在 exit 0 后面）
 import { processExitForCompletion } from '../protocol/completionTransport.js';
 // W3-02：wire 入口前端——事件流经纯投影管线，终态走共享 completionTransport（headless，无 React）
 import { createWireFrontend } from '../bootstrap/createWireFrontend.js';
-// A24 第三类修复：buildInfo system_prompt 数据源（kernel 实时构建；ESM 静态引用缓存）
-import { buildSystemPrompt as buildSystemPromptRef } from '../kernel/systemPrompt.js';
-import { hasImageIn as hasImageInRef } from '../kernel/providers.js';
 import { WXNODUS_VERSION } from '../kernel/version.js';
 
 // 版本单一事实源：package.json（kernel/version.ts 运行时读取——改版本只动 package.json）
@@ -177,15 +173,25 @@ if (pre.mode === 'error') {
             if (!p || !existsSync(resolve(startupCwd, p))) { process.stderr.write(`本地包不存在：${p}\n`); process.exit(2); }
             zipBuffer = readFileSync(resolve(startupCwd, p));
           } else {
-            const info = await fetchLatestRelease(feed, currentVersion);
+            const info = await fetchLatestRelease(feed, currentVersion, undefined, undefined, (settings.updateChannel as 'release' | 'snapshot') ?? 'release');
             if (!info.updateAvailable || !info.downloadUrl) {
               process.stdout.write(`无可升级版本（${info.notes ?? `当前 ${currentVersion} 已是最新`}）\n`);
               process.exit(0);
             }
             process.stdout.write(`下载 ${info.downloadUrl} …\n`);
-            const res = await fetch(info.downloadUrl, { signal: AbortSignal.timeout(300_000) });
+            // ⅩⅩⅨ（专项审计 D-2）：裸 fetch → 出站 fetch（env/系统代理 + 私网 SSRF fail-closed——
+            // feed 被投毒时 downloadUrl 不得指向内网）+ 300MB 上限（此前全内存无界）。
+            const { createOutboundFetch } = await import('../infrastructure/http/outboundFetch.js');
+            const { authorizeOutboundUrl } = await import('../infrastructure/http/outboundTargetPolicy.js');
+            const authz = await authorizeOutboundUrl(info.downloadUrl);
+            if (!authz.ok) { process.stderr.write(`下载地址被安全策略拒绝：${authz.error.code}\n`); process.exit(1); }
+            const res = await createOutboundFetch().fetch(info.downloadUrl, { signal: AbortSignal.timeout(300_000) });
             if (!res.ok) { process.stderr.write(`下载失败：HTTP ${res.status}\n`); process.exit(1); }
-            zipBuffer = Buffer.from(await res.arrayBuffer());
+            const lenHint = Number(res.headers.get('content-length') ?? 0);
+            if (lenHint > 300 * 1024 * 1024) { process.stderr.write('下载失败：超过 300MB 上限\n'); process.exit(1); }
+            const buf = Buffer.from(await res.arrayBuffer());
+            if (buf.length > 300 * 1024 * 1024) { process.stderr.write('下载失败：超过 300MB 上限\n'); process.exit(1); }
+            zipBuffer = buf;
             expectedSha256 = info.sha256;
             if (!expectedSha256) process.stdout.write('⚠ feed 未提供 sha256——将跳过完整性校验（私有通道文件请自行核对）\n');
           }
@@ -232,11 +238,12 @@ if (pre.mode === 'error') {
         }
       }
       // 默认/--check：诚实报告（渠道/版本/feed 比对/跳过状态）
-      const info = await fetchLatestRelease(feed, currentVersion);
+      const info = await fetchLatestRelease(feed, currentVersion, undefined, undefined, (settings.updateChannel as 'release' | 'snapshot') ?? 'release');
       const state = loadUpdateState(dataDir);
       const skippedNote = info.latest && state.skipped.includes(info.latest) ? `（已 --skip 跳过）` : '';
       process.stdout.write([
         `当前版本：wxnodus ${currentVersion}`,
+        `更新渠道：${(settings.updateChannel as string) === 'snapshot' ? 'snapshot（快照）' : 'release（稳定）'}`,
         `更新源：${feed ?? '未配置（settings.updateFeed 或 WXNODUS_UPDATE_FEED；气隙部署用 update --file <zip>）'}`,
         info.latest ? `远程最新：${info.latest}${skippedNote}` : `远程探测：${info.notes ?? '不可用'}`,
         info.updateAvailable && !skippedNote
@@ -279,22 +286,43 @@ if (pre.mode === 'error') {
     // 既有 CLI 子系统使用 cwd 命名；其值现在固定为本进程权威规范工作区。
     const cwd = workspaceRoot;
 
-    // 2026-08-19 卡死诊断探针（env 门控，默认关闭）：WXNODUS_HEARTBEAT=1 时每 2s 向
-    // dataDir/logs/heartbeat-<日期>.log 写心跳。cmd 冻结（conhost/QuickEdit 类）不产生
-    // JS 异常——error-*.log 看不到；心跳断档的时间点即卡死发生点。
-    // 配合 scripts/watch-wxnodus.mjs 或 PowerShell Get-Content -Wait 实时观察。
+    // 「独立艺术品」包装层（2026-08-29 接线——schema 早已就绪但 ConfigService 零实例化）：
+    // 用户级 user/config.json 品牌化（name/icon）→ TUI 品牌行/欢迎语；workspace 级覆盖用户级。
+    const { ConfigRepository } = await import('../infrastructure/config/configRepository.js');
+    const { ConfigService } = await import('../application/config/configService.js');
+    const configService = new ConfigService(new ConfigRepository({
+      userFile: join(dataDir, 'user', 'config.json'),
+      workspaceFile: join(cwd, '.wxnodus', 'config.yaml'),
+    }));
+    const brandingResolved = await configService.resolveBranding();
+    // T77 实例身份（「网络下载后独一无二」）：首启生成一次性 instanceId + 确定性代号。
+    // 自动层与手工层关系：用户未 /brand 命名（回退默认名）时，品牌行/欢迎语以实例代号示人；
+    // 一旦手工命名，用户名完全胜出（尊重手工层）。身份本身恒稳定（落盘 dataDir/instance.json）。
+    const { ensureInstanceIdentity } = await import('../kernel/instanceIdentity.js');
+    const identity = ensureInstanceIdentity(dataDir);
+    const userBranded = brandingResolved.ok && brandingResolved.value.name !== 'wxnodus';
+    const branding = userBranded
+      ? brandingResolved.value
+      : { name: identity.codename, icon: brandingResolved.ok ? brandingResolved.value.icon : null };
+    // 首启向导 locale（preBootstrap 持久化于 dataDir/config.json——TUI 语言回退源；读取失败静默中文）
+    let brandingLocale: string | undefined
+    try { brandingLocale = await readLocaleFile(join(dataDir, 'config.json')) } catch { brandingLocale = undefined }
+
+    // 2026-09-04 B1：卡死诊断探针默认开启（轻量版，2s 一写成本≈0；WXNODUS_NO_HEARTBEAT=1 显式关闭）。
+    // 每 2s 向 dataDir/logs/heartbeat-<日期>.log 写 `<ISO> alive pid=<pid>`。cmd 冻结
+    // （conhost/QuickEdit 类）不产生 JS 异常——error-*.log 看不到；心跳断档时间点即卡死发生点，
+    // /doctor「心跳探针」体检项自动关联存活进程定位断档（配合 scripts/watch-wxnodus.mjs 实时观察）。
     let heartbeatTimer: NodeJS.Timeout | undefined;
-    if (process.env.WXNODUS_HEARTBEAT === '1') {
+    if (process.env.WXNODUS_NO_HEARTBEAT !== '1') {
       const hbFile = () => join(dataDir, 'logs', `heartbeat-${new Date().toISOString().slice(0, 10)}.log`);
       heartbeatTimer = setInterval(() => {
-        try { appendFileSync(hbFile(), `${new Date().toISOString()} alive\n`); } catch { /* 落盘失败静默 */ }
+        try { appendFileSync(hbFile(), `${new Date().toISOString()} alive pid=${process.pid}\n`); } catch { /* 落盘失败静默 */ }
       }, 2000);
       heartbeatTimer.unref?.();
     }
 
-  const [{ createCommandBus }, { GatewayClient }, { createApprovalCache }] = await Promise.all([
+  const [{ createCommandBus }, { createApprovalCache }] = await Promise.all([
     import('../app/CommandBus.js'),
-    ({ GatewayClient: class { constructor(_args?: unknown) { } start(){} requestApproval(){ return Promise.resolve('deny') } requestClarify(){ return Promise.resolve('') } requestSecretInput(){ return Promise.resolve(null) } requestCredentialForm(){ return Promise.resolve(null) } kill(){} close(){} bindSession(){} } }),
     import('../kernel/permissions.js'),
   ]);
   const approvalCache = createApprovalCache();
@@ -313,7 +341,7 @@ if (pre.mode === 'error') {
     ? (async () => {
         try {
           const { fetchLatestRelease, loadUpdateState } = await import('../kernel/selfUpdate.js');
-          const info = await fetchLatestRelease(feedUrl, WXNODUS_VERSION, fetch, 4000);
+          const info = await fetchLatestRelease(feedUrl, WXNODUS_VERSION, fetch, 4000, (settings.updateChannel as 'release' | 'snapshot') ?? 'release');
           const skipped = info.latest && loadUpdateState(dataDir).skipped.includes(info.latest);
           if (info.updateAvailable && !skipped) {
             return `↻ 新版本 ${info.latest} 可用：wxnodus update --apply 升级（绝不自动安装）· update --skip ${info.latest} 跳过提示`;
@@ -545,6 +573,7 @@ if (pre.mode === 'error') {
   // + 证据原子落盘；destDir 边界由 service 经 pathBoundary 以 workspaceRoot 校验。
   const makeHandlerCtx = () => ({
     dataDir, cwd, db, mem, config, bus, commandBus, runInvocation, delegateManager,
+    configService,
     get liveDelegateHost() {
       return isLiveDelegateHost({
         serve: opts.serve,
@@ -567,10 +596,16 @@ if (pre.mode === 'error') {
     // W7-01：下载服务（destDir 固定主工作区 downloads/——文件名 sanitize 在 service 内）
     download: async (url: string, destDir: string, fileName?: string) =>
       downloadFile({ url, workspaceRoot: liveWorkspaceRoot, destDir, fileName }, {
-        authorizeUrl: checkUrlSafety,
-        fetchOnce: async (target) => {
-          const { fetch } = await import('undici');
-          const res = await fetch(target, { redirect: 'manual', signal: AbortSignal.timeout(120_000) });
+        // ⅩⅩⅨ（专项审计 D-3）：旧 checkUrlSafety 是 fail-open（DNS 失败放行）——换
+        // outboundTargetPolicy fail-closed（与 downloadService 头注释承诺一致）；undici 裸
+        // fetch 无代理——换出站 fetch（env/系统代理 + 私网直连红线）。
+        authorizeUrl: async (u: string) => {
+          const r = await (await import('../infrastructure/http/outboundTargetPolicy.js')).authorizeOutboundUrl(u);
+          return r.ok ? { ok: true as const } : { ok: false as const, reason: r.error.code };
+        },
+        fetchOnce: async (target: string) => {
+          const { createOutboundFetch } = await import('../infrastructure/http/outboundFetch.js');
+          const res = await createOutboundFetch().fetch(target, { redirect: 'manual', signal: AbortSignal.timeout(120_000) });
           return {
             status: res.status,
             headers: Object.fromEntries([...res.headers.entries()].map(([k, v]) => [k, String(v)])),
@@ -605,6 +640,7 @@ if (pre.mode === 'error') {
     openSessions: () => { /* WxNodus UI: /sessions 打开列表 */ },
     setThinking: (on: boolean) => { config.setKey('settings', 'thinking', on); },
     reloadMcp,
+    getMcpClients,
     getPlugins,
     reloadPlugins,
     secrets,
@@ -757,7 +793,7 @@ if (pre.mode === 'error') {
       responder: (method, params) => gateway.request(method, params),
     }, port, sdk ? {
       sdkHandshake: true,
-      onSdkHandshake: (info: { port: number; token: string; pid: number; version: string; protocolVersion: number }) => {
+      onSdkHandshake: (info: { port: number; token: string; pid: number; version: string; protocolVersion: number; instanceId?: string; codename?: string }) => {
         process.stdout.write(JSON.stringify({ 'wxnodus-sdk': 1, ...info }) + '\n');
       },
     } : {});
@@ -839,6 +875,20 @@ if (pre.mode === 'error') {
       // W3-02：wire 入口前端——gateway 事件流经纯投影管线，终态上报与共享表比对（漂移即 FRONTEND_COMPLETION_MISMATCH）
       const frontend = gateway ? createWireFrontend(gateway) : null;
       wireReady = true; // gateway + 前端 + 事件订阅全部装配完成——此时才接受 RPC 帧
+      // A1（2026-09-04）：wire 通道同语义——无密钥 emit agent.error + run.final(unconfigured) + agent.result，exit 3
+      const { resolveApiKey: resolveApiKeyWire } = await import('../kernel/providers.js');
+      const keyResWire = resolveApiKeyWire(settings as never);
+      if (!keyResWire.key && !process.env.WXNODUS_LEGACY_OFFLINE) {
+        const guidance = '当前未配置模型密钥，所有回答需要 AI 模型提供。请用 /model set-key <密钥> 配置后重试（配置类命令不受影响）。';
+        const now = Date.now();
+        console.log(JSON.stringify({ type: 'agent.error', id: randomUUID(), runId, correlationId, sessionId: invocationSessionId, code: 'NO_API_KEY', message: guidance }));
+        console.log(JSON.stringify({ type: 'run.final', id: randomUUID(), runId, correlationId, sessionId: invocationSessionId, status: 'unconfigured', admittedAt: now, startedAt: now, finishedAt: now, durationMs: 0 }));
+        console.log(JSON.stringify({ type: 'agent.result', runId, correlationId, sessionId: invocationSessionId, status: 'unconfigured', ok: false, error: { code: 'NO_API_KEY' }, text: guidance, turns: 0, interrupted: false, wireFinal: 'unconfigured' }));
+        for (const off of offs) off();
+        frontend?.dispose();
+        cleanupEphemeral();
+        await exitAfterShutdown(3, 'no-api-key-wire');
+      }
       const handle = runInvocation.invoke({
         kind: 'agent',
         prompt: text,
@@ -904,6 +954,21 @@ if (pre.mode === 'error') {
       console.log(routed.value);
     } else {
       try {
+        // A1（2026-09-04）：无密钥语义——chat 路由下无 key 即诚实「未配置」终态：
+        // 文本/JSON 均 exit 3；--json 输出 status:"unconfigured", ok:false, error:{code:"NO_API_KEY"}。
+        // 判定与 agent 内核同一谓词（resolveApiKey）——绝不重复定义密钥条件；legacy 离线开关下保持旧行为。
+        const { resolveApiKey } = await import('../kernel/providers.js');
+        const keyRes = resolveApiKey(settings as never);
+        if (!keyRes.key && !process.env.WXNODUS_LEGACY_OFFLINE) {
+          const guidance = '当前未配置模型密钥，所有回答需要 AI 模型提供。请用 /model set-key <密钥> 配置后重试（配置类命令不受影响）。';
+          if (opts.json) {
+            console.log(JSON.stringify({ status: 'unconfigured', ok: false, error: { code: 'NO_API_KEY', message: guidance }, text: guidance, turns: 0, interrupted: false, usage: 0 }));
+          } else {
+            console.log(guidance);
+          }
+          cleanupEphemeral();
+          await exitAfterShutdown(3, 'no-api-key');
+        }
         // @提及展开（与 TUI 同链路）：存在的 @path 读入内容块；不存在的原文保留
         let finalText = text;
         try {
@@ -1106,17 +1171,7 @@ if (pre.mode === 'error') {
     }
   }
 
-  // A24 第三类修复：落后上游提交数——git rev-list 真实计算（无 git/无 upstream → null）
-  // 启动时一次计算（buildInfo 高频读取，避免每次 spawn git）；纯本地引用对比，不发起网络
-  let updateBehind: number | null = null
-  try {
-    const { execFileSync: gitExec } = await import('node:child_process');
-    const branch = String(gitExec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf8', windowsHide: true, timeout: 5000 })).trim()
-    if (branch && branch !== 'HEAD') {
-      const ahead = gitExec('git', ['rev-list', '--count', `HEAD..origin/${branch}`], { cwd, encoding: 'utf8', windowsHide: true, timeout: 5000 })
-      updateBehind = Number(String(ahead).trim()) || null
-    }
-  } catch { /* 非 git 仓库/无 origin 时保持 null——诚实降级 */ }
+  // （A24 落后上游计数块随死接线清理移除——其唯一消费方是被空构造器短路的 GatewayClient 桩）
 
   // W3 TUI 第 1 步：组合路由决策——modern/required 在 WxGatewayKernel 收缩完成前 fail-closed
   {
@@ -1130,68 +1185,129 @@ if (pre.mode === 'error') {
   }
 
   // WxNodus UI 装配
-  // W3 TUI facade：presentation adapter——db/agent/memory 原始句柄留在组合根，UI 只经窄端口；
-  // ensureSession 接真实 session 生命周期（sessionStartService.ensure——工件先行，失败 fail-closed）
-  const { createTuiPresentationAdapter } = await import('../presentation/tui/tuiPresentationAdapter.js');
-  gateway = new GatewayClient({
-    bus, config, commandBus, runInvocation, taskRunner, delegateManager,
-    adapter: createTuiPresentationAdapter({
-      db, agent,
-      settings,
-      dataDir,
-      ensureSession: async (sid) => {
-        const r = await sessionStartService.ensure(sid);
-        return r.ok ? { ok: true as const } : { ok: false as const, code: r.error.code };
-      },
-    }),
-    dataDir, cwd, settings, reloadMcp, getPlugins, reloadPlugins, updateBehind,
-    // 审计回调（组合根注入——gateway 不直接访问 db；model.add/save_key 落审计）
-    audit: (event: any, payload: any) => {
-      try { appendAudit(db, event, payload); } catch { /* 审计表未就绪静默 */ }
-    },
-    // A24 第三类修复：MCP 服务器真实状态（连接/工具数/传输方式）——buildInfo 填充 mcp_servers
-    mcpStatus: () => getMcpClients().map(c => ({
-      connected: c.connected,
-      name: c.server.name,
-      tools: c.tools.length,
-      transport: c.server.url ? 'http' : 'stdio',
-    })),
-    // A24 第三类修复：当前系统提示词（kernel buildSystemPrompt 实时构建，外部 system.md 热生效）——buildInfo 填充 system_prompt
-    systemPrompt: () => {
-      try {
-        return buildSystemPromptRef({
-          mode: mode as any,
-          cwd,
-          model: model || settings.model || '',
-          hasImageIn: hasImageInRef(model || settings.model || ''),
-          sessionId: agent.getSessionId?.() ?? 'default',
-          lang: (settings as any).lang,
-          locale,
-          dataDir,
-          // KF-004：settings.personality 真实消费——persona 段进入系统提示
-          persona: (settings as any).personality,
-        });
-      } catch { return undefined; }
-    },
-    applyModel,
-    setMode: (m: string) => { mode = m; agent.setMode(m as any); config.setKey('settings', 'mode', m); },
-    setTheme: (t: string) => { themeName = t; config.setKey('settings', 'theme', t); },
-    setThinking: (on: boolean) => { config.setKey('settings', 'thinking', on); },
-    requestExit: () => { exitRequested = true; void shutdown('request-exit').finally(() => process.exit(0)); },
-  });
-  gateway.start();
-
-  // 自研 TUI（2026-08-29 用户裁决：基于 docs/ui-prototype/wxn-tui-LIVE.html 原型制作，全自研）。
-  // 进程内 React+@wxnodus/ink 渲染——零 WS 零子进程（hermes 子进程模式的版本矩阵教训）。
-  // bridges（onApproval/onClarify/onSecretRequest）经 let gateway 中介直连 TUI 浮层。
+  // 死接线清理（2026-08-29 深潜评估 N-E3）：此前的 GatewayClient 桩（恒-deny 空构造器）在此
+  // 接收完整 TUI 适配器却全部静默丢弃、随后又被 tui 覆写——「精心装配被空构造器短路」。
+  // 现直接以 TUI 句柄为 gateway（bridges 经 let gateway 中介直连 TUI 浮层——闭包惰性求值）。
   const { createWxnodusTui } = await import('../tui/index.js');
   const { execSync } = await import('node:child_process');
+  const { MODEL_CATALOG, maxContextFor } = await import('../kernel/providers.js');
+  const { COMMAND_DESC, COMMAND_CAT } = await import('../commands/registry.js');
   const tui = createWxnodusTui({
     bus, agent: agent as never,
     commandBus: commandBus as never,
     config: { get: (p: string) => config.get(p) },
+    // 批次ⅩⅩⅤ：首启向导 locale 回落（settings.lang 未设时 TUI 与向导语言一致）
+    localeFallback: brandingLocale,
     cwd,
-    gitBranch: () => { try { return execSync('git branch --show-current', { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null } catch { return null } },
+    gitBranch: () => { try { return execSync('git branch --show-current', { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 }).trim() || null } catch { return null } },
+    // 原型 08 模型选择器数据源：kernel 目录经窄端注入（选择 → /model <id> 走命令面模糊切换同链路）
+    modelCatalog: () => MODEL_CATALOG.map(m => ({ id: m.modelId, name: m.name, provider: m.provider })),
+    // 「独立艺术品」品牌化桥（2026-08-29 接线）：TUI 品牌行/欢迎语数据源（未配置回退默认名）
+    branding: () => branding,
+    // 原型 31 主题改即存：settings.tuiTheme 单一写路径（与 kernel theme 命令语义分离——TUI 色板独立命名空间）
+    setSetting: (key: string, value: string | boolean) => { config.setKey('settings', key, value); },
+    // 原型 29 输入历史落盘（G5）：dataDir 内 tui-history.json——跨会话 Ctrl+↑↓ 召回
+    historyFile: () => join(dataDir, 'tui-history.json'),
+    // 原型 26/32 上下文水位：usage_stats 实时 SUM + 模型 maxContext（TUI 不直连 DB——窄查询只读）
+    contextUsage: () => {
+      try {
+        const row = db.prepare(`SELECT COALESCE(SUM(input_tokens + output_tokens),0) t FROM usage_stats WHERE session_id=?`)
+          .get(agent.getSessionId?.() ?? 'default') as { t: number } | undefined
+        const limit = maxContextFor(String(model || settings.model || '')) ?? 65536
+        return { used: row?.t ?? 0, limit }
+      } catch { return null }
+    },
+    // 原型 53 命令全景索引：registry 单一事实来源（分类符号 → 分组渲染）
+    commandIndex: () => Object.entries(COMMAND_DESC).map(([cmd, desc]) => ({
+      cmd, desc: String(desc), cat: String((COMMAND_CAT as Record<string, string>)[cmd] ?? ''),
+    })),
+    // 原型 58 测试连接（G7）：GET /models + SSRF 三层防护（checkUrlSafety 重绑定/NAT64/私网直连）
+    // ——网络归 cli，TUI 零网络；6s 超时 fail-closed；401/403 诚实报「Key 校验失败」。
+    probeEndpoint: async (baseURL: string, apiKey: string) => {
+      try {
+        const base = String(baseURL).trim().replace(/\/+$/, '')
+        const url = `${base}/models`
+        const safety = await checkUrlSafety(url)
+        if (!safety.ok) return { ok: false, error: safety.reason ?? 'SSRF 拦截' }
+        const { safeFetchText } = await import('../kernel/ssrf.js')
+        const r = await safeFetchText(url, {
+          timeoutMs: 6_000,
+          headers: apiKey.trim() ? { Authorization: `Bearer ${apiKey.trim()}` } : {},
+        })
+        if ('error' in r) return { ok: false, error: r.error }
+        if (r.status === 401 || r.status === 403) return { ok: false, error: `HTTP ${r.status} 未授权——Key 校验失败` }
+        if (r.status >= 400) return { ok: false, error: `HTTP ${r.status}` }
+        try {
+          const parsed = JSON.parse(r.text) as { data?: Array<{ id?: unknown }> }
+          const models = (parsed.data ?? [])
+            .map(m => (typeof m?.id === 'string' ? m.id : null))
+            .filter((x): x is string => x !== null)
+            .slice(0, 8)
+          return { ok: true, models }
+        } catch { return { ok: true, models: [] } }
+      } catch (e: any) { return { ok: false, error: String(e?.message ?? e).slice(0, 120) } }
+    },
+    // 原型 28 回滚时间线：messages 表 user 消息（run_no 分组 · 新的在前）——TUI 不直连 DB
+    sessionMessages: () => {
+      try {
+        const sid = agent.getSessionId?.() ?? 'default'
+        const rows = db.prepare(
+          `SELECT run_no, MIN(ts) ts, MIN(id) id FROM messages WHERE session_id=? AND role='user' GROUP BY run_no ORDER BY run_no DESC LIMIT 20`,
+        ).all(sid) as Array<{ run_no: number; ts: number; id: number }>
+        return rows.map(r => {
+          const row = db.prepare(`SELECT content FROM messages WHERE id=?`).get(r.id) as { content: string } | undefined
+          return { runNo: r.run_no, ts: r.ts, preview: String(row?.content ?? '').replace(/\s+/g, ' ').trim().slice(0, 60) }
+        })
+      } catch { return [] }
+    },
+    // 会话切换视图同步（/resume 视图重建）：当前会话 id + 最近转录（user/assistant）——TUI 不直连 DB
+    sessionId: () => {
+      try { return agent.getSessionId?.() ?? 'default' } catch { return 'default' }
+    },
+    sessionTranscript: () => {
+      try {
+        const sid = agent.getSessionId?.() ?? 'default'
+        const rows = db.prepare(
+          `SELECT role, content FROM messages WHERE session_id=? AND role IN ('user','assistant') AND archived=0 ORDER BY id DESC LIMIT 40`,
+        ).all(sid) as Array<{ role: string; content: string }>
+        return rows.reverse().map(r => ({ role: String(r.role), text: String(r.content ?? '') }))
+      } catch { return [] }
+    },
+    // 原型 34 语音管线（G6 部分销项）：ffmpeg 采集 + whisper/SAPI 转写 + SAPI 播报——全链在 kernel，
+    // TUI 零媒体处理（录音句柄由 cli 持有；cancel 杀采集进程零残留）
+    voice: await (async () => {
+      let recording: { proc: { kill(): void } } | null = null
+      const voiceKernel = await import('../kernel/voice.js')
+      return {
+        available: () => {
+          try { return voiceKernel.checkVoice(settings, dataDir).sttAvailable } catch { return false }
+        },
+        start: async () => {
+          try {
+            const r = voiceKernel.startRecording(dataDir, settings)
+            if (!r.ok) return { ok: false as const, error: r.error }
+            recording = r.rec as unknown as { proc: { kill(): void } }
+            return { ok: true as const }
+          } catch (e: any) { return { ok: false as const, error: String(e?.message ?? e).slice(0, 120) } }
+        },
+        stop: async () => {
+          try {
+            if (!recording) return { ok: false as const, error: '无进行中的录音' }
+            const rec = recording as never
+            recording = null
+            const r = await voiceKernel.stopAndTranscribe(rec, dataDir, settings)
+            return r.ok ? { ok: true as const, text: r.text } : { ok: false as const, error: r.error }
+          } catch (e: any) { recording = null; return { ok: false as const, error: String(e?.message ?? e).slice(0, 120) } }
+        },
+        cancel: () => {
+          try { recording?.proc.kill(); } catch { /* 已退出 */ }
+          recording = null
+        },
+        speak: (text: string) => {
+          try { return voiceKernel.speakTts(text) } catch { return false }
+        },
+      }
+    })(),
     onRequestExit: () => { exitRequested = true; void shutdown('tui-exit').finally(() => process.exit(0)); },
   });
   gateway = tui as never;
@@ -1203,7 +1319,7 @@ if (pre.mode === 'error') {
   // Ctrl+C：运行中中断 / 空闲退出
   // B1/W2-03 统一退出清理：MCP 子进程 + DB + UI 全部回收（SIGINT/SIGTERM/requestExit 共用
   // main 顶部定义的共享幂等 shutdown——聚合全部 disposer 失败，不再各分支手写 process.exit）
-  disposers.push({ id: 'ui', dispose: () => { /* hermes 子进程自管理 */; } });
+  disposers.push({ id: 'ui', dispose: () => { /* TUI 进程内 ink 渲染——生命周期由 tui.unmount 托管（05274b34 起 hermes 子进程线已废弃） */; } });
   // W8-21：退出时 best-effort 恢复 conhost 输入模式（QuickEdit/行/回显）
   disposers.push({ id: 'console-restore', dispose: () => { consoleEnv.restore(); } });
 
@@ -1219,7 +1335,7 @@ if (pre.mode === 'error') {
       // 运行中第一次：只中断当前 Run（双 Esc 同族肌肉记忆——中断不退出）
       firstSigintAt = now;
       gateway.kill('SIGINT');
-      /* hermes 子进程自管理 */
+      /* TUI 进程内渲染——中断经 gateway 转发，无子进程需要级联 */
       console.log('\n已中断当前任务——再按 Ctrl+C 退出 wxnodus');
       return;
     }

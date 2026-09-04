@@ -14,6 +14,10 @@ export interface SdkHandshake {
   pid: number;
   version: string;
   protocolVersion: number;
+  /** T77 实例身份（可选新增字段=协议兼容）：本份 wxnodus 的一次性 UUID——区分「连的是哪一份」 */
+  instanceId?: string;
+  /** T77 实例代号（人类可读——「深空·织网者 7F3A」式） */
+  codename?: string;
 }
 
 export interface LaunchOptions {

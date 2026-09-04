@@ -5,8 +5,8 @@
   "license": "Apache-2.0",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/ydds2/wxnodus/releases/download/v4.0.0/wxnodus-4.0.0.zip",
-      "hash": "706EE81DE43FF8F565F1788512516F9A0BF6021B6B1697E7BB4E233664E4418E",
+      "url": "https://github.com/yyds2/wxnodus/releases/download/v4.0.2/wxnodus-4.0.2.zip",
+      "hash": "05B21CD3FB266D65B036ED378B2A98A5C5BDFCEC8DAD573899459172E6A7D9D0",
       "bin": ["wxnodus", "wxn"]
     }
   }

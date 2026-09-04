@@ -11,6 +11,7 @@ export default defineConfig({
     ],
     exclude: [
     'packages/hermes-*/**',
+    'packages/wxnodus-ink/**',
       'tests/known-failures/**',
       '**/node_modules/**',
       '**/dist/**',

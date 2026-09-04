@@ -20,6 +20,7 @@ import { resolveAlias } from '../kernel/commandLevels.js';
 import { evaluateCsrf } from '../presentation/http/csrfPolicy.js';
 import { renderFlowHtml, FLOW_CSP } from '../presentation/http/flowPage.js';
 import { WXNODUS_VERSION } from '../kernel/version.js';
+import { ensureInstanceIdentity } from '../kernel/instanceIdentity.js';
 
 export interface ServeKernel {
   dataDir: string;
@@ -87,7 +88,7 @@ export interface ServeSecurityOptions {
    */
   sdkHandshake?: boolean;
   /** SDK 握手回调（listening 后恰一次；cli 层负责写 stdout） */
-  onSdkHandshake?: (info: { port: number; token: string; pid: number; version: string; protocolVersion: number }) => void;
+  onSdkHandshake?: (info: { port: number; token: string; pid: number; version: string; protocolVersion: number; instanceId?: string; codename?: string }) => void;
   /** Runtime-only stable principal IDs mapped to plaintext bearer tokens. Tokens are never persisted. */
   principals?: Readonly<Record<string, string>>;
   /** CORS origin allowlist（默认 WXNODUS_SERVE_ORIGINS 逗号分隔） */
@@ -830,8 +831,22 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
             json(res, req, 200, { ok: true, sessions: rows }, allowlist);
             return;
           }
+          case 'identity': {
+            // T77：只读实例元数据（实例级公开信息，与 /health 同级——无会话授权需求）。
+            // SDK 私有化识别面：多份安装/多 dataDir 部署时区分「连的是哪一份」。
+            const identity = ensureInstanceIdentity(k.dataDir);
+            json(res, req, 200, {
+              ok: true,
+              instanceId: identity.instanceId,
+              codename: identity.codename,
+              serial: identity.serial,
+              createdAt: identity.createdAt,
+              version: WXNODUS_VERSION,
+            }, allowlist);
+            return;
+          }
           default:
-            json(res, req, 400, { ok: false, error: `未知 method：${method}（支持 chat/command/memory.search/memory.recall/sessions）` }, allowlist);
+            json(res, req, 400, { ok: false, error: `未知 method：${method}（支持 chat/command/memory.search/memory.recall/sessions/identity）` }, allowlist);
         }
         return;
       }
@@ -917,12 +932,16 @@ export function startServeServer(k: ServeKernel, port = 4789, opts: ServeSecurit
       const actualPort = typeof addr === 'object' && addr ? addr.port : port;
       listeningPort = actualPort;
       try {
+        // T77：握手回传实例身份（可选新增字段=协议兼容）——SDK 侧可识别「连的是哪一份 wxnodus」
+        const identity = ensureInstanceIdentity(k.dataDir);
         opts.onSdkHandshake!({
           port: actualPort,
           token: legacyToken,
           pid: process.pid,
           version: WXNODUS_VERSION,
           protocolVersion: PROTOCOL_VERSION,
+          instanceId: identity.instanceId,
+          codename: identity.codename,
         });
       } catch { /* 握手回调异常不阻断服务 */ }
     });

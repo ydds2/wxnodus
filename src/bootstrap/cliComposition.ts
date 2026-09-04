@@ -131,7 +131,7 @@ export async function createCliComposition(deps: CliCompositionDeps): Promise<Op
       const { createMemoryShadow } = await import('../application/memory/memoryShadow.js');
       const { createEventBus } = await import('../kernel/events.js');
       const { createHookRunner } = await import('../kernel/hooks.js');
-      const { connectAllMcp, mcpClientsToTools, closeAllMcp } = await import('../kernel/mcp.js');
+      const { connectAllMcp, mcpClientsToTools, closeAllMcp, mcpHealthSnapshot, selectIdleMcpServers, mcpInFlightNames } = await import('../kernel/mcp.js');
       const { loadAllPlugins, pluginToolsToExtra } = await import('../kernel/plugins.js');
       const { createSecretVault } = await import('../kernel/secrets.js');
       const { deriveReadonlyTools, setReadonlyTools } = await import('../kernel/permissions.js');
@@ -172,7 +172,16 @@ export async function createCliComposition(deps: CliCompositionDeps): Promise<Op
       // MCP 客户端（本地 stdio）：项目级 .mcp.json + 用户级 data/mcp.json 合并；
       // strictMcpConfig 开启时仅信任项目声明（生态对齐 Claude Code --strict-mcp-config）
       const mcpOpts = { cwd: workspaceRoot, strict: settings.strictMcpConfig === true || deps.mcpStrict === true };
+      // B3（2026-09-04）闲置下线簿记：连接时刻（从未调用的空闲起点）；在途豁免经 kernel mcpInFlightNames()
+      // （在途标记在工具调用出口单一事实源——含 lazy-respawn 换壳客户端）。
+      const mcpConnectedAt = new Map<string, number>();
+      const stampMcpConnected = (clients: McpClient[]) => {
+        const now = Date.now();
+        for (const c of clients) if (!mcpConnectedAt.has(c.server.name)) mcpConnectedAt.set(c.server.name, now);
+        for (const name of [...mcpConnectedAt.keys()]) if (!clients.some(c => c.server.name === name)) mcpConnectedAt.delete(name);
+      };
       mcpHolder.clients = await connectAllMcp(dataDir, mcpOpts);
+      stampMcpConnected(mcpHolder.clients);
 
       // 插件系统（P0）：data/plugins/*/ 加载 → 工具并入 extraTools（命令注册在 commandBus 创建后）
       const pluginLoadOptions = {
@@ -374,7 +383,7 @@ export async function createCliComposition(deps: CliCompositionDeps): Promise<Op
             synchronize: clients => {
               agent.updateTools(mcpClientsToTools([...clients]), { replaceNamespaces: ['mcp'] });
             },
-            publish: clients => { mcpHolder.clients = clients; },
+            publish: clients => { mcpHolder.clients = clients; stampMcpConnected(clients); },
           });
           const cleanup = reloaded.cleanupFailures > 0
             ? `；${reloaded.cleanupFailures} 个旧连接关闭失败`
@@ -385,6 +394,50 @@ export async function createCliComposition(deps: CliCompositionDeps): Promise<Op
         }
       };
 
+      // B3（2026-09-04）：MCP 闲置自动下线（可选开关 settings.mcpIdleTeardown {enabled, idleSeconds}——
+      // /mcp idle on|off 热切换，setKey 写穿透缓存同对象 → 本清扫每 15s 读最新即生效，无需重启）。
+      // 每次只断开一条事件内的候选批次：先摘除快照 → 真实回收进程 → 再同步工具表
+      // （进程回收优先于工具表面——回收完成绝不依赖工具表同步成功）；
+      // 阈值夹取 [30s, 1h]——15s 调用超时 × 2 余量 + 在途豁免，绝不误杀在途调用。
+      const sweepIdleMcp = async () => {
+        try {
+          const cfg = (config.get('settings') as Record<string, any>)?.mcpIdleTeardown;
+          if (!cfg || cfg.enabled !== true || !Number.isFinite(Number(cfg.idleSeconds))) return;
+          // 阈值夹取 [30s, 1h]（单位秒——夹取常量同为秒，再统一 ×1000）
+          const idleMs = Math.max(30, Math.min(Number(cfg.idleSeconds), 3600)) * 1000;
+          const now = Date.now();
+          const idle = selectIdleMcpServers({
+            servers: mcpHealthSnapshot(mcpHolder.clients).map(s => ({ name: s.server, lastCallMs: s.lastCallMs, connectedAtMs: mcpConnectedAt.get(s.server) })),
+            now,
+            idleMs,
+            inFlight: mcpInFlightNames(),
+          });
+          if (!idle.length) return;
+          console.error(`[mcp-idle-teardown] 闲置候选：${idle.join('、')}（阈值 ${Math.round(idleMs / 1000)}s）`);
+          const closing = mcpHolder.clients.filter(c => idle.includes(c.server.name));
+          mcpHolder.clients = mcpHolder.clients.filter(c => !idle.includes(c.server.name));
+          // 先真实回收进程再同步工具表——顺序保证：即使工具表同步失败，进程回收也已完成
+          // （绝不出现「列表已摘除、子进程还活着」的假回收）
+          for (const c of closing) {
+            try {
+              await c.close();
+              console.error(`[mcp-idle-teardown] 已回收 ${c.server.name}（pid ${c.process?.pid ?? '-'}）`);
+            } catch (cause) {
+              console.error(`[mcp-idle-teardown] 回收失败 ${c.server.name}：${String((cause as Error)?.message ?? cause).slice(0, 200)}`);
+            }
+          }
+          for (const name of idle) mcpConnectedAt.delete(name);
+          try {
+            agent.updateTools(mcpClientsToTools([...mcpHolder.clients]), { replaceNamespaces: ['mcp'] });
+          } catch { /* 工具表同步失败不掩盖已完成的回收（下轮/重载兜底） */ }
+        } catch (cause) {
+          // 诚实可观测：清扫异常不吞——写 error 日志面（绝不静默）
+          console.error(`[mcp-idle-teardown] 清扫异常：${String((cause as Error)?.message ?? cause).slice(0, 200)}`);
+        }
+      };
+      const mcpIdleTimer = setInterval(() => { void sweepIdleMcp(); }, 15_000);
+      mcpIdleTimer.unref?.();
+
       return {
         ok: true,
         value: {
@@ -394,6 +447,7 @@ export async function createCliComposition(deps: CliCompositionDeps): Promise<Op
           },
           resources: [
             { id: 'mcp', dispose: () => closeAllMcp(mcpHolder.clients) },
+            { id: 'mcp-idle-teardown', dispose: () => { clearInterval(mcpIdleTimer); } },
             { id: 'plugin-runtime', dispose: () => pluginRuntime.dispose() },
             { id: 'delegate-manager', dispose: (reason) => delegateManager.shutdown(reason) },
             { id: 'run-coordinator', dispose: (reason) => runCoordinator.shutdown(reason) },

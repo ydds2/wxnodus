@@ -1,8 +1,8 @@
 // scripts/watch-wxnodus.mjs — wxnodus 错误/心跳日志实时监听（诊断 cmd 卡死/报错用）
 // 用法：node scripts/watch-wxnodus.mjs   （每 3s 扫描一次，Ctrl+C 退出）
 // 监听：~/.wxnodus/logs/error-<日期>.log（未捕获异常/拒绝/console.error）
-//       ~/.wxnodus/logs/heartbeat-<日期>.log（需 WXNODUS_HEARTBEAT=1 启动 wxnodus——
-//       心跳断档 = 卡死发生点）
+//       ~/.wxnodus/logs/heartbeat-<日期>.log（B1：心跳默认开启 2s 一写；
+//       行尾 pid=<进程>——心跳断档 = 卡死发生点，/doctor「心跳探针」项自动关联存活进程）
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'

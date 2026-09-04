@@ -1,13 +1,14 @@
 {
   "name": "@wxnodus/sdk",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "wxnodus 官方 SDK——spawn-attach 本地网关（零云端：127.0.0.1 + stdout 握手随机 token）",
   "type": "module",
   "license": "Apache-2.0",
   "os": ["win32"],
   "engines": { "node": ">=22.7.0" },
-  "main": "src/index.ts",
-  "files": ["src", "README.md"],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "src", "README.md"],
   "repository": { "type": "git", "url": "https://example.invalid/placeholder" },
   "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
   "devDependencies": {

@@ -123,15 +123,9 @@ const collect = (dir: string, base: string) => {
 // staged tree：dist（candidate 冻结的入口所在运行时树）+ node_modules 生产依赖闭包
 // （闭包键相对 node_modules——必须还原 node_modules/ 前缀，否则依赖平铺到安装根目录、运行时解析失败）
 collect(join(ROOT, 'dist'), ROOT);
-// hermes TUI 子进程入口（2026-08-28 UI 迁移）：自包含 esbuild bundle（3.9MB，外部依赖仅 node: 内置）——
-// cli 经 import.meta.url 相对解析 <安装根>/packages/hermes-tui/dist/entry.js，zip 必须携带同布局
-const hermesTuiDist = join(ROOT, 'packages', 'hermes-tui', 'dist');
-if (existsSync(hermesTuiDist)) {
-  collect(hermesTuiDist, ROOT);
-} else {
-  console.error('HERMES_TUI_DIST_MISSING: packages/hermes-tui/dist（先构建 hermes-tui 包）');
-  process.exit(2);
-}
+// C-1（2026-08-30 止血）：hermes TUI 子进程入口停止随包分发——05274b34 用户裁决定型官方 ink 6
+// 后，运行时零处解析 <安装根>/packages/hermes-tui/dist/entry.js（全仓 grep 仅陈旧注释），
+// 此前强制携带 3.9MB 未运行 UI 且缺产物即打包失败（HERMES_TUI_DIST_MISSING 硬退出）属死重。
 // P2-16（2026-08-27）：离线用户手册随包分发（气隙机器零网可查——npm run docs:user-guide 生成）
 const userGuidePath = join(ROOT, 'docs', 'user-guide.md');
 if (existsSync(userGuidePath)) {

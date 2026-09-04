@@ -9,7 +9,6 @@ const repoRoot = rootArg === -1 ? workspaceRoot : resolve(process.argv[rootArg +
 const roots = [
   { path: 'tests', required: true },
   { path: 'src', required: true },
-  { path: 'packages/wxnodus-ink', required: true },
   { path: 'packages/vscode-ext', required: false },
 ];
 

@@ -3,23 +3,25 @@
   "version": "4.0.2",
   "type": "module",
   "workspaces": [
-    "packages/hermes-tui",
-    "packages/hermes-shared",
-    "packages/hermes-ink"
+    "packages/sdk",
+    "packages/core"
   ],
-  "description": "WxNodus V3 — Windows 本地 AI agent CLI（Node22 + TypeScript）",
+  "description": "WxNodus V4 — Windows 本地 AI agent CLI（Node22 + TypeScript）",
   "bin": {
     "wxnodus": "dist/cli/index.js",
     "wxn": "dist/cli/index.js"
   },
   "scripts": {
-    "build": "npm run clean && npm run build:ink && tsc",
-    "build:ink": "npm --prefix packages/wxnodus-ink run build",
+    "build": "npm run clean:next && tsc --outDir dist-next && npm run build:sdk && npm run build:core && node scripts/swap-dist.mjs",
+    "build:sdk": "tsc -p packages/sdk",
+    "clean:next": "node -e \"require('fs').rmSync('dist-next',{recursive:true,force:true})\"",
     "build:vscode-ext": "npm --prefix packages/vscode-ext run build",
     "test:vscode-ext": "npm --prefix packages/vscode-ext run typecheck && npm --prefix packages/vscode-ext run test",
     "package:vscode-ext": "npm --prefix packages/vscode-ext run package",
     "dev": "tsx src/cli/index.ts",
     "start": "tsx src/cli/index.ts",
+    "smoke:tui": "node scripts/tui-pty-smoke.mjs",
+    "e2e:tui": "npm run build && node scripts/tui-e2e-mock.mjs",
     "test": "npm run test:all",
     "ci": "npm run typecheck && npm run typecheck:tests && npm run build && npm run test:all && npm run test:known-failures && npm run check:test-discovery && npm run check:requirement-coverage && npm run lint && npm run check:cycles && npm run check:docs-links && npm run check:docs-encoding && npm run eval:tasks:selftest",
     "lint": "node scripts/lint.mjs",
@@ -111,15 +113,14 @@
     "eval:full": "node scripts/eval-report.mjs --full",
     "eval:tasks": "node scripts/eval/task-eval.mjs",
     "eval:tasks:selftest": "node scripts/eval/task-selftest.mjs",
-    "docs:user-guide": "npm exec -- tsx scripts/generate-user-guide.ts"
+    "docs:user-guide": "npm exec -- tsx scripts/generate-user-guide.ts",
+    "build:core": "tsc -p packages/core"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
-    "@types/ws": "^8.18.1",
-    "@wxnodus/ink": "file:packages/wxnodus-ink",
     "better-sqlite3": "^12.11.1",
     "ink": "^6.8.0",
     "mdast-util-from-markdown": "^2.0.3",
@@ -136,7 +137,6 @@
     "robotjs": "^0.9.1",
     "sqlite-vec": "^0.1.9",
     "undici": "^7.0.0",
-    "unicode-animations": "^1.0.3",
     "ws": "^8.21.3",
     "yaml": "2.8.1"
   },
@@ -151,7 +151,8 @@
     "postject": "^1.0.0-alpha.6",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "@types/ws": "^8.18.1"
   },
   "engines": {
     "node": ">=22.7.0"
@@ -162,21 +163,8 @@
   "license": "Apache-2.0",
   "files": [
     "dist",
-    "packages/wxnodus-ink/dist",
-    "packages/wxnodus-ink/index.js",
-    "packages/wxnodus-ink/index.d.ts",
-    "packages/wxnodus-ink/text-input.js",
-    "packages/wxnodus-ink/text-input.d.ts",
-    "packages/wxnodus-ink/package.json",
-    "packages/wxnodus-ink/LICENSE",
     "README.md",
     "LICENSE"
   ],
-  "bundledDependencies": [
-    "@wxnodus/ink"
-  ],
-  "prepack": "npm run build",
-  "bundleDependencies": [
-    "@wxnodus/ink"
-  ]
+  "prepack": "npm run build"
 }

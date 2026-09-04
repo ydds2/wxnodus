@@ -55,7 +55,4 @@ export function isTerminalEvent(ev: WireEvent): boolean {
   return ev.type === 'agent.result';
 }
 
-/** 危险工具集合（审批模态预置——与 CLI 语义一致：danger 工具必经审批链） */
-export const DANGER_TOOLS = new Set(['bash', 'fs_write', 'fs_edit', 'apply_patch', 'scaffold_build', 'wx_cmd']);
-
 export type WireChild = ChildProcessWithoutNullStreams;

@@ -81,7 +81,7 @@
 - ③ **退役命令豁免表（新发现第三类误报源）**：当前态文档存在合法的退役命令散文引用——实例：README:77「原 `/key` 已并入 `/model`」；豁免表显式登记（`/key → /model`）并注明去向，豁免表本身即文档；
 - 对账范围 = **当前态文档白名单**（README.md + docs/user-guide.md），断言「反引号 /cmd ∈ SLASH ∪ 豁免表」。
 
-**Q2 registry 审计正式化**：.tmp/ 三表对账逻辑（SLASH = handlers = TUI 菜单）迁为 `scripts/check-registry-consistency.mjs`；package.json 增 `check:registry-consistency` 并入 ci 链；ci.yml 与 npm run ci 同源同步。
+**Q2 registry 审计正式化**：.tmp/ 三表对账逻辑（SLASH = handlers = TUI 菜单）迁为 `scripts/check-registry-consistency.mjs`（本批待建产物）；package.json 增 `check:registry-consistency` 并入 ci 链；ci.yml 与 npm run ci 同源同步。
 
 **Q4 sdk/core typecheck**：package.json 增 `typecheck:core` / `typecheck:sdk`（tsc -p 对应 tsconfig）并入 ci 链与 ci.yml。
 

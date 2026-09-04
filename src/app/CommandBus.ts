@@ -86,6 +86,21 @@ export interface CommandBus {
   list(): string[];
 }
 
+/** 中断竞速：signal 中止时立即以 cancelled 收口——不再等 handler 跑完（TUI Esc 中断长命令等待即回）。
+ *  先挂接再查 aborted：handler 首段同步 abort 后抛错时，其 rejection 仍被消费（零未决拒绝） */
+function raceAbort<T>(p: Promise<T>, signal: AbortSignal | undefined, cancelled: () => T): Promise<T> {
+  if (!signal) return p
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => resolve(cancelled())
+    p.then(
+      v => { signal.removeEventListener('abort', onAbort); resolve(v) },
+      e => { signal.removeEventListener('abort', onAbort); reject(e) },
+    )
+    if (signal.aborted) onAbort()
+    else signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 export function createCommandBus(): CommandBus {
   const handlers = new Map<string, CommandHandler>();
 
@@ -135,7 +150,8 @@ export function createCommandBus(): CommandBus {
       if (!cmd) return { ok: false, error: `未知命令：${head}（/help 查看）`, completionStatus: 'failed' };
       const fn = handlers.get(cmd)!;
       try {
-        const out = await fn(argPrefix, trimmed, context);
+        // 中断竞速：abort 立即收口（cancelled）——长命令（/build 等）等待可被 Esc 打断
+        const out = await raceAbort(Promise.resolve(fn(argPrefix, trimmed, context)), context.signal, () => undefined);
         if (context.signal?.aborted) return { ok: false, error: '命令已取消', completionStatus: 'cancelled' };
         if (out && typeof out === 'object') {
           if (out.kind === 'completion') {

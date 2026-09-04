@@ -1,10 +1,10 @@
 // packages/core/src/runner.ts — 嵌入门面工具执行器：复用 tests/support/createPipelineAgent 同款生产管线
 // （canonical pipeline + fail-closed 审批缺省拒绝 + DEFAULT_TOOL_POLICY）——嵌入场景与 CLI 同一执行边界。
-import { createAgentApprovalBridge, createAgentToolSurface } from '../../../src/application/tools/agentToolSurface.js';
-import { DEFAULT_TOOL_BUDGET_LIMITS, DEFAULT_TOOL_POLICY } from '../../../src/application/tools/defaultToolPolicy.js';
-import { createProductionToolExecution } from '../../../src/application/tools/toolExecutionWiring.js';
-import { openMemoryRepository } from '../../../src/infrastructure/sqlite/memoryRepository.js';
-import { coreTools } from '../../../src/kernel/tools.js';
+import { createAgentApprovalBridge, createAgentToolSurface } from 'wxnodus/dist/application/tools/agentToolSurface.js';
+import { DEFAULT_TOOL_BUDGET_LIMITS, DEFAULT_TOOL_POLICY } from 'wxnodus/dist/application/tools/defaultToolPolicy.js';
+import { createProductionToolExecution } from 'wxnodus/dist/application/tools/toolExecutionWiring.js';
+import { openMemoryRepository } from 'wxnodus/dist/infrastructure/sqlite/memoryRepository.js';
+import { coreTools } from 'wxnodus/dist/kernel/tools.js';
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 

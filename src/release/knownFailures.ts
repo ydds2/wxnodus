@@ -88,6 +88,13 @@ export function validateKnownFailureRegistry(
           typeof row.timeoutMs !== 'number' || 'caseFile' in row || 'expectedFailureCode' in row) {
         issues.push(`KF_RESOLVED_SHAPE_INVALID:${id}`);
       }
+    } else if (row.status === 'retired') {
+      // retired：缺陷面随所属子系统退役（如 hermes UI 迁移）——只需 note 交代去向，
+      // 不带 caseFile/regressionFile（复检口径与 open/resolved 同严）
+      if (typeof row.note !== 'string' || row.note.length === 0 ||
+          'caseFile' in row || 'expectedFailureCode' in row || 'regressionFile' in row || 'resolvedBy' in row) {
+        issues.push(`KF_RETIRED_SHAPE_INVALID:${id}`);
+      }
     } else {
       issues.push(`KF_STATUS_INVALID:${id}`);
     }

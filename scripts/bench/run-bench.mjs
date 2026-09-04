@@ -17,7 +17,7 @@ const loadTs = async (entry) => {
   const out = buildSync({
     entryPoints: [join(root, entry)],
     bundle: true, platform: 'node', format: 'esm', write: false,
-    external: ['@wxnodus/ink', 'better-sqlite3', 'onnxruntime-node', '@huggingface/transformers', 'sharp', 'node-screenshots-win32-x64-msvc', 'robotjs'],
+    external: ['better-sqlite3', 'onnxruntime-node', '@huggingface/transformers', 'sharp', 'node-screenshots-win32-x64-msvc', 'robotjs'],
   }).outputFiles[0].text;
   const path = join(tmpDir, entry.replace(/[\\/.]/g, '_') + '.mjs');
   requireCjs('node:fs').mkdirSync(tmpDir, { recursive: true });

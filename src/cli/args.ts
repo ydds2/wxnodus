@@ -115,12 +115,12 @@ export function parseArgs(argv: string[]): CliOptions {
   return out;
 }
 
-export const USAGE = `WxNodus V3 — Windows 本地 AI agent CLI
+export const USAGE = `WxNodus V4 — Windows 本地 AI agent CLI
 
 用法：
   wxnodus                    交互 TUI
-  wxnodus -p "<需求>"        非交互单次执行
-  wxnodus -p "<需求>" --json  agent 结果 JSON
+  wxnodus -p "<需求>"        非交互单次执行（无密钥时 exit 3——脚本可判定未配置）
+  wxnodus -p "<需求>" --json  agent 结果 JSON（未配置：status:"unconfigured", ok:false）
   wxnodus -p "<需求>" --wire  总线事件流 JSONL
   cat 文件 | wxnodus -p "指令"  stdin 管道（stdin 为素材，-p 为指令；无 -p 时 stdin 即提问）
   wxnodus -C <目录>          指定工作目录
@@ -137,10 +137,14 @@ export const USAGE = `WxNodus V3 — Windows 本地 AI agent CLI
       --json           -p 模式下输出 JSON
       --wire           -p 模式下输出 JSONL 事件流
       --stream-json    --wire 别名（gemini/kimi 命名对齐）
+      --output-schema <json>  --json 输出结构校验（校验失败 exit 42）
       --strict-mcp-config 仅信任项目 .mcp.json 声明
       --mcp-server     incoming MCP stdio 服务器模式（需 WXNODUS_MCP_REQUEST_STATE_KEY）
       --serve          启动本地 AI 网关（--port 指定端口，默认 4789）
       --sdk             SDK 握手模式（配 --serve：随机端口+随机 token，stdout 单行 JSON 回传——@wxnodus/sdk 拉起专用）
+      --ephemeral      一次性会话（不落会话列表）
+      --data-dir <dir> 数据目录（单一事实源：配置/记忆/密钥/日志均在其下）
+      --workspace <dir> 主工作区根（优先级 cli > env > persisted > cwd）
   -C, --cwd <dir>      工作目录
   -s, --session <id>   会话 ID
       --lang <zh-CN|en> 系统语言（首次启动选择；优先级 cli > env > workspace > user）

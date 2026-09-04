@@ -49,16 +49,7 @@ for (const f of files) {
   if (/^\s*debugger\s*;?/m.test(text)) violations.push(`L1 debugger 残留：${rel}`);
   const inKernelLayer = /^src\/(kernel|infrastructure|domain)\//.test(rel);
   if (inKernelLayer && /process\.exit\s*\(/.test(text)) violations.push(`L2 分层红线（内核层不得 process.exit）：${rel}`);
-  // L4：UI 组件行数预算（ratchet——allowlist 文件行数增长即失败；新组件超 400 即失败）
-  if (rel.startsWith('src/wxnodus-ui/components/') && rel.endsWith('.tsx')) {
-    const lines = text.split('\n').length;
-    const ratchet = COMPONENT_RATCHET[rel];
-    if (ratchet !== undefined) {
-      if (lines > ratchet) violations.push(`L4 组件行数超 ratchet 预算：${rel} ${lines}>${ratchet}（只降不升；≤400 后移除条目）`);
-    } else if (lines > COMPONENT_LINE_BUDGET) {
-      violations.push(`L4 组件行数超 400 行预算：${rel} ${lines}（拆纯函数模块）`);
-    }
-  }
+  // [ⅩⅩⅩⅣ] L4 wxnodus-ui ratchet 已移除（目录已删——组件行数预算随 UI 退役）
   todoCount += (text.match(/\bTODO\b|\bFIXME\b/g) ?? []).length;
 }
 
