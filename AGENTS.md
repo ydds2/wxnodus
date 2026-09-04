@@ -58,7 +58,7 @@ wxnodus -p "帮我做一个待办系统"   # 非交互单次执行
 
 ## 技术栈
 
-Node 22 + TypeScript 严格 ESM · @wxnodus/ink 自研 TUI 渲染器 · better-sqlite3+sqlite-vec+FTS5 · robotjs+playwright-core（computer use）
+Node 22 + TypeScript 严格 ESM · 官方 Ink 6 + 自研组件层（TUI） · better-sqlite3+sqlite-vec+FTS5 · robotjs+playwright-core（computer use）
 
 
 ## 约定

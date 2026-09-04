@@ -13,7 +13,7 @@
 | A2 ink fork 死重 | packages/{hermes-ink,hermes-tui,wxnodus-ink,hermes-shared} 共 **106,229 行**；README.md:7-8 技术栈双重过时（「V4.0 已移除」/「V4.1 零 React/Ink 依赖」vs 实际官方 Ink 6）；AGENTS.md 技术栈摘要同漂移 | 步骤 1 删除 + 文案修正 |
 | A2-CI 联动（评审确认+锚点细化） | ci.yml 三处引用 ink-dist：:9 头注释、:83-88 gate 上传（`if-no-files-found: error`，路径 packages/wxnodus-ink/dist）、:121-122 test 分片下载。**该 dist 为本地 esbuild 产物、git 不跟踪**（fork 不在 workspaces——仅 sdk/core），且消费者 entry-exports.js 全仓零引用（:83 步骤注释过时）——删除 fork 后无测试面会红，仅需清 CI 工件链三处 + 过时注释 | 步骤 1 清理 |
 | A2 已知引用残留点位（二次复核） | vitest.config.ts:13-14（exclude 模式）、check-cycles.mjs:3/20（注释+过滤）——删除后成死配置需同步清理；w4-npm-boundary.test.ts:31/55、w4-build-boundary.test.ts:25 为 **not-contain 反向断言**——删除后更真，保留不动 | 步骤 1 清扫 |
-| A4 双组合根 | src/bootstrap/createApplication.ts 生产零调用（仅 tests/wave1/w1-02-bootstrap.test.ts 引用）；五个 bootstrap* 阶段文件为恒等桩；hermes-gateway 无生产调用 | 步骤 1 删除 |
+| A4 双组合根 | src/bootstrap/createApplication.ts 生产零调用（仅 tests/wave1/w1-02-bootstrap.test.ts 引用）；五个 bootstrap* 阶段文件为恒等桩；hermes-gateway 无生产调用 | 步骤 1 已删除 |
 | K2 版本解析 3 套 | selfUpdate.isNewerVersion 与 bundle.bundleVersionOk 各自实现解析；semverRange.parseVersion 生产未用（模块经 versionInRange 被 modpackCommands.ts:12 使用——报告「孤儿模块」说法不准确，但 parseVersion 出口未统一属实） | 步骤 2 统一出口 |
 | Q5 死测试 | tests/docs-links.test.ts:12 describe.skip（文件头 V4-M0 迁移注释在案） | 步骤 3 重写 |
 | A5 魔数漂移 | registry.ts:49 与 tui/commands.ts:6 硬编码「126」；handlersExt.ts:1 注释写死「108」 | 步骤 2 派生 + 测试锁 |
@@ -49,9 +49,9 @@
 6. `check:docs-links` / `check:release-surface` / `check:cycles` 兜底复扫。
 
 **A4 双组合根删除**：
-1. 删 `src/bootstrap/createApplication.ts` 与五个恒等桩阶段文件（删除前逐一确认零生产引用）；
-2. `tests/wave1/w1-02-bootstrap.test.ts`：仅测 createApplication 则整删；若混测 cliComposition 则保留后者断言；
-3. hermes-gateway：确认无生产调用后随批删除（knownFailures 台账留名条目同步核对）。
+1. 删 `src/bootstrap/createApplication.ts` 与五个恒等桩阶段文件（删除前逐一确认零生产引用）——已删除；
+2. `tests/wave1/w1-02-bootstrap.test.ts`：仅测 createApplication 则整删（已删除——实测仅测 createApplication）；若混测 cliComposition 则保留后者断言；
+3. hermes-gateway：确认无生产调用后随批删除（已删除——src/hermes-gateway/ + hermes-gateway-interactive.test.ts；knownFailures KF-002 为 retired 历史台账条目如实保留）。
 
 **验证**：typecheck + build + test:all + check:cycles + check:docs-links 全绿；`git diff --stat` 净删 ≈10.6 万行。
 

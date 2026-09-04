@@ -4,9 +4,9 @@ Windows 本地 AI agent CLI：数据主权本机（会话/记忆/密钥全本地
 
 > V4.0 变更（2026-08-21）：离线运行能力（离线模型/离线看图/无 key 确定性层）已裁撤——运行需网络与模型密钥，数据仍全部本地存储；临时续用设 `WXNODUS_LEGACY_OFFLINE=1`。语音与本地记忆向量保留。
 >
-> V4.0 变更（2026-08-22）：交互 TUI 已整体移除（含 @wxnodus/ink 渲染器）。
-> V4.1 变更（2026-08-27）：交互 TUI 以「薄层」形态重建（wire 事件流→ANSI 纯函数渲染，零 React/Ink 依赖；
-> 审批/澄清/密码复用 wire 网关契约）——`wxnodus`（TTY）进入交互模式；非交互入口（-p / stdin / --serve / --wire / --mcp-server / ACP）不变。
+> V4.0 变更（2026-08-22）：交互 TUI 曾整体移除（含旧自研 fork 渲染器）。
+> V4.2 变更（2026-09-03）：交互 TUI 定型 **官方 Ink 6 + 自研组件层**（App/Composer/Overlays/Transcript 等，
+> 三档终端字符自适应）——`wxnodus`（TTY）进入交互模式；非交互入口（-p / stdin / --serve / --wire / --mcp-server / ACP）不变。
 
 ## 快速开始
 
