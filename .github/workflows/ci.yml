@@ -65,9 +65,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run typecheck:tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run typecheck:sdk
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run typecheck:core
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run check:test-discovery
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run check:registry-consistency
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run check:requirement-coverage
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -81,6 +87,13 @@ jobs:
           name: dist
           path: dist
           if-no-files-found: error
+
+      # B4 阶段②（2026-09-04）：smoke:tui 观察位——PTY 时序（2.5s ConPTY 防抖 + 60s 启动预算）在
+      # 共享 runner 上存在 flake 风险，本地绿 ≠ CI 绿。观察期不阻塞（continue-on-error）；
+      # 升格条件：连续 ≥5 轮绿或观察一周 → 去掉 continue-on-error 并入 npm ci 链（硬门禁）。
+      - name: smoke:tui (observation)
+        continue-on-error: true
+        run: npm run smoke:tui
 
   test:
     needs: gate

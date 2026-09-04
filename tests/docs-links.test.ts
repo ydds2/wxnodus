@@ -1,63 +1,48 @@
-// tests/docs-links.test.ts — supremacy 2.3 用户文档三件套链接契约
-// 契约：README 引用三件套；三件套文件存在且互相引用；examples.md 中提到的命令全部真实注册
-//（文档不撒谎——命令契约与 SLASH 注册表对账）
-// V4.0 迁移暂缓（2026-08-21）：用户裁决「文档仅保留本会话产生的文档」，三件套未随迁。
-// V4-M0 任务：重写为 V4 文档集契约（docs/ 三份计划 + 输出 spec 的链接与命令对账）后恢复。
+// tests/docs-links.test.ts — V4 文档集命令对账契约（Q5 重写 2026-09-04，替换 V3 三件套 describe.skip）
+// 契约：当前态文档（白名单）中反引号包裹的 /cmd token 必须 ∈ SLASH ∪ 退役豁免表——文档不撒谎。
+// 三层豁免（与 scripts/check-docs-links.mjs HISTORICAL 先例同口径）：
+//   ① 历史快照文档（日期后缀评估/审计档案）不入对账——档案如实记录当时状态；
+//   ② token 口径收窄：仅反引号包裹（`/cmd`）——散文裸提及不抓；
+//   ③ 退役命令豁免表：当前态文档合法提及已退役命令（如 README「原 `/key` 已并入 `/model`」）——
+//      显式登记去向，豁免表自身即文档。
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { SLASH } from '../src/commands/registry.js';
 
 const read = (p: string) => { try { return readFileSync(p, 'utf8'); } catch { return ''; } };
 
-describe.skip('用户文档三件套（docs/getting-started|troubleshooting|examples）', () => {
-  const files = {
-    readme: read('README.md'),
-    gs: read('docs/getting-started.md'),
-    ts: read('docs/troubleshooting.md'),
-    ex: read('docs/examples.md'),
-  };
+/** 当前态对账白名单（V4 文档集——docs/ 日期后缀历史快照不入对账，见 scripts/check-docs-links.mjs HISTORICAL 先例） */
+const CURRENT_DOCS = ['README.md', 'docs/user-guide.md'] as const;
 
-  it('三件套文件存在且非空', () => {
-    for (const f of ['docs/getting-started.md', 'docs/troubleshooting.md', 'docs/examples.md']) {
-      expect(existsSync(join(process.cwd(), f)), f).toBe(true);
-      expect(readFileSync(f, 'utf8').length).toBeGreaterThan(500);
-    }
+/** 退役命令豁免表：当前态文档合法提及的退役命令 → 去向说明 */
+const RETIRED: Record<string, string> = {
+  '/key': '已并入 /model（/model set-key）',
+};
+
+describe('V4 文档集命令对账（反引号 /cmd ∈ SLASH ∪ 退役表）', () => {
+  it('README 引用的用户文档存在且非空', () => {
+    const guide = read('docs/user-guide.md');
+    expect(guide.length, 'docs/user-guide.md').toBeGreaterThan(500);
   });
 
-  it('README 引用三件套（链接契约）', () => {
-    for (const f of ['docs/getting-started.md', 'docs/troubleshooting.md', 'docs/examples.md']) {
-      expect(files.readme, f).toContain(f);
-    }
-  });
-
-  it('三件套互相引用（getting-started 指路另两件；另两件回指 getting-started）', () => {
-    expect(files.gs).toContain('docs/troubleshooting.md');
-    expect(files.gs).toContain('docs/examples.md');
-    expect(files.ts).toContain('docs/getting-started.md');
-    expect(files.ex).toContain('docs/getting-started.md');
-  });
-
-  it('文档中提到的命令全部真实注册（不撒谎契约——抽取 /xxx 与注册表对账）', () => {
-    const mentioned = new Set<string>();
-    for (const textRaw of [files.gs, files.ts, files.ex]) {
-      // 先剥离 docs/<名>.md 路径引用，再只匹配「后跟空格/标点/行尾」的命令形态
-      // ——排除 ssh://user@host、data/nodus.db 等非命令斜杠词
-      const text = textRaw.replace(/docs\/[a-z0-9-]+\.md/gi, '');
-      // 负向后顾排除包名/文件名/CJK 粘连片段（better-sqlite3/sqlite-vec、桌面端/IDE、examples/wire-events.mjs），
-      // 同时排除 URL 上下文（https://raw.githubusercontent.com/… 的 //raw、协议后的路径段——前导 / 或 : 即视为 URL），
-      // 前瞻限定命令形态（后跟空格/标点/行尾）
-      for (const m of text.matchAll(/(?<![a-z0-9-.\u4e00-\u9fff/:])\/[a-z][a-z0-9-]*(?=[\s"'`.,;:)|)])/gi)) {
-        const cmd = '/' + m[0].slice(1).toLowerCase();
-        if (cmd.startsWith('/<')) continue;
-        mentioned.add(cmd);
+  it('当前态文档反引号 /cmd 全部真实注册或显式退役', () => {
+    const registered = new Set(SLASH);
+    const violations: string[] = [];
+    for (const f of CURRENT_DOCS) {
+      const text = read(f);
+      expect(text.length, `${f} 缺失或为空`).toBeGreaterThan(0);
+      for (const m of text.matchAll(/`(\/[a-z][a-z0-9-]*)`/gi)) {
+        const cmd = m[1]!.toLowerCase();
+        if (registered.has(cmd) || RETIRED[cmd]) continue;
+        violations.push(`${f}: \`${cmd}\``);
       }
     }
-    // 白名单：文档行文中的非命令斜杠词（测试/示例文件名等）
-    const proseOnly = new Set(['/key', '/docs-links', '/wire-events', '/wire-approval-responder']);
-    for (const cmd of mentioned) {
-      if (proseOnly.has(cmd)) continue;
-      expect(SLASH, `文档提到的命令未注册: ${cmd}`).toContain(cmd);
+    expect(violations, `文档提到未注册且未豁免的命令:\n${violations.join('\n')}`).toEqual([]);
+  });
+
+  it('退役豁免表自身不撒谎（表内命令确实不在注册表——已复活即从表移除）', () => {
+    for (const cmd of Object.keys(RETIRED)) {
+      expect(SLASH, `${cmd} 已重新注册？请从豁免表移除`).not.toContain(cmd);
     }
   });
 });
