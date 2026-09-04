@@ -92,6 +92,8 @@ export const SETTINGS_KEYS = new Set([
   'strictMcpConfig', 'toolLazyLoad', 'budgetTokens', 'budgetStop', 'autoRepoMap',
   // B3（2026-09-04）：MCP 闲置自动下线（{enabled, idleSeconds}——/mcp idle 写入）
   'mcpIdleTeardown',
+  // 本地 VLM 部署方案 §4.1（2026-09-04）：L2 降级链配置（{backend, ollamaUrl, ollamaModel}）
+  'watchLocalVlm',
   // 开放兼容：实际读写的键全部入白名单（此前 lang/skin/curator 被误报未知键）
   'lang', 'skin', 'curator',
   // UI 显示配置（/busy /indicator /statusbar 持久化）

@@ -31,6 +31,59 @@ export function resetLocalVision(): void {
   generator = null
 }
 
+// ── L2 后端决策（2026-09-04 · 本地 VLM 部署方案 §4.1）：降级链 L2a(Ollama GPU) → L2b(moondream CPU) → L2c(仅 OCR) ──
+
+export type L2BackendSetting = 'auto' | 'ollama' | 'moondream' | 'off'
+
+export interface L2DescribeOptions {
+  backend?: L2BackendSetting
+  ollamaUrl?: string
+  ollamaModel?: string
+}
+
+export type L2Result =
+  | { ok: true; text: string; backend: 'ollama' | 'moondream'; model?: string }
+  | { ok: false; error: string; backend: 'none' }
+
+/**
+ * 降级链纯决策（可表驱动测试）：off→none；显式 ollama→探活定 ollama/none；
+ * auto→探活过走 ollama，否则 moondream。生成期失败（模型未拉取等）由 describeScreenSmart 再降级。
+ */
+export function pickL2Backend(backend: L2BackendSetting, ollamaReachable: boolean): 'ollama' | 'moondream' | 'none' {
+  if (backend === 'off') return 'none'
+  if (backend === 'moondream') return 'moondream'
+  if (backend === 'ollama') return ollamaReachable ? 'ollama' : 'none'
+  return ollamaReachable ? 'ollama' : 'moondream' // auto
+}
+
+/**
+ * L2 智能描述（降级链唯一入口）：
+ * auto → Ollama 探活通过走 L2a；失败落 L2b（moondream2 进程内）；再失败 L2c（ok:false——调用方标注「仅 OCR」）。
+ * 每级切换的原因都在返回/错误里——绝不静默假装理解屏幕。
+ */
+export async function describeScreenSmart(jpeg: Buffer, opts: L2DescribeOptions = {}): Promise<L2Result> {
+  const backend = opts.backend ?? 'auto'
+  if (backend === 'off') return { ok: false, backend: 'none', error: '本地视觉已关闭（--vlm off）' }
+  // L2a：Ollama（探活 + 生成）
+  if (backend === 'ollama' || backend === 'auto') {
+    const { probeOllamaVision, describeScreenOllama } = await import('./ollamaVision.js')
+    const probe = await probeOllamaVision(opts.ollamaUrl)
+    const picked = pickL2Backend(backend, probe.ok)
+    if (picked === 'ollama') {
+      const r = await describeScreenOllama(jpeg, { url: opts.ollamaUrl, model: opts.ollamaModel })
+      if (r.ok) return { ok: true, text: r.text, backend: 'ollama', model: r.model }
+      // auto 模式下 Ollama 在线但生成失败（模型未拉取等）→ 继续降级并如实携带原因；显式 ollama 直报
+      if (backend === 'ollama') return { ok: false, backend: 'none', error: `L2a 失败：${r.error}` }
+    } else if (backend === 'ollama') {
+      return { ok: false, backend: 'none', error: `L2a 失败：${probe.detail}` }
+    }
+  }
+  // L2b：moondream2（进程内）
+  const r = await describeScreen(jpeg)
+  if (r.ok) return { ok: true, text: r.text, backend: 'moondream', model: 'moondream2' }
+  return { ok: false, backend: 'none', error: `本地视觉不可用（L2a/L2b 均失败——最后原因：${r.error.slice(0, 100)}）` }
+}
+
 /**
  * 本地视觉描述（懒加载单例）。返回诚实结果：模型未下载/离线/加载失败均 ok:false + 原因。
  */

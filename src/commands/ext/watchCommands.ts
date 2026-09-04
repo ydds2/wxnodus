@@ -10,12 +10,13 @@ import type { HandlerCtx } from '../handlers.js'
 import type { CommandBus } from '../../app/CommandBus.js'
 import { createScreenStream, type ScreenStream } from '../../kernel/screenStream.js'
 import { matchTemplate, loadTemplateFile, type GrayImage, type MatchHit } from '../../kernel/screenMatch.js'
-import { describeScreen, setLocalVisionCacheDir } from '../../kernel/localVision.js'
+import { describeScreenSmart, setLocalVisionCacheDir, type L2BackendSetting } from '../../kernel/localVision.js'
 
 let stream: ScreenStream | null = null
 let lastSummary = ''
 let summaryCount = 0
 let tier: 'l1' | 'l2' = 'l1'
+let lastL2At = 0 // L2 段节流（5s 最小间隔——GPU 不被重复打扰）
 
 // ── P1：MAA 式任务链（声明式 JSON：triggers[模板+阈值+OCR 验证+动作]）──
 interface ChainTrigger {
@@ -168,6 +169,9 @@ export function registerWatchCommands(bus: CommandBus, ctx: HandlerCtx): void {
       const backend = backendArg === 'ddagrab' || backendArg === 'gdigrab' ? backendArg : 'auto'
       const tierArg = args[args.indexOf('--tier') + 1]
       tier = tierArg === 'l2' ? 'l2' : 'l1'
+      // 本地 VLM 部署方案 §4.1（2026-09-04）：--vlm auto|ollama|moondream|off——L2 降级链 L2a→L2b→L2c
+      const vlmArg = args[args.indexOf('--vlm') + 1]
+      const vlm: L2BackendSetting = vlmArg === 'ollama' || vlmArg === 'moondream' || vlmArg === 'off' ? vlmArg : 'auto'
       if (tier === 'l2') setLocalVisionCacheDir(ctx.dataDir)
       const workDir = join(ctx.dataDir, 'watch')
       const newStream = createScreenStream({
@@ -190,10 +194,14 @@ export function registerWatchCommands(bus: CommandBus, ctx: HandlerCtx): void {
                   const { ocrWindowsImage } = await import('../../kernel/computer/ocr.js')
                   const r = await ocrWindowsImage(kfFile)
                   let text = r.ok ? `「${r.text.slice(0, 80)}」` : `（OCR：${r.error.slice(0, 40)}）`
-                  // P2.1：本地视觉档（--tier l2）——moondream2 本机推理段摘要；失败诚实降级不阻断 OCR 摘要
-                  if (tier === 'l2') {
-                    const v = await describeScreen(kf.buf)
-                    text += v.ok ? ` · VLM: ${v.text.slice(0, 80)}` : ` · VLM 不可用：${v.error.slice(0, 60)}`
+                  // 本地视觉档（--tier l2，L2 降级链 L2a Ollama GPU → L2b moondream CPU → L2c 仅 OCR）；
+                  // 段节流：最小间隔 5s（场景没变不打扰 GPU——scene_score 分段之上的第二道闸）
+                  if (tier === 'l2' && Date.now() - lastL2At >= 5_000) {
+                    lastL2At = Date.now()
+                    const v = await describeScreenSmart(kf.buf, { backend: vlm })
+                    text += v.ok
+                      ? ` · VLM[${v.backend}${v.model ? ` ${v.model}` : ''}]: ${v.text.slice(0, 80)}`
+                      : ` · VLM 不可用：${v.error.slice(0, 60)}`
                   }
                   lastSummary = text
                   summaryCount++
@@ -212,7 +220,7 @@ export function registerWatchCommands(bus: CommandBus, ctx: HandlerCtx): void {
       stream = newStream
       const st = newStream.status()
       return lines(' 屏幕视频流已启动 ', [
-        ` 捕捉：ffmpeg（${st.backend === 'ddagrab' ? 'ddagrab · Desktop Duplication API——WGC 同层，低开销，可抓 UWP' : 'gdigrab · GDI——抓不到安全窗口/DRM'}，实时视频流 ${fps}fps · 环缓冲 ${ring}s · 识别档 ${tier === 'l2' ? 'l2（OCR + 本地 VLM moondream2）' : 'l1（OCR）'}）`,
+        ` 捕捉：ffmpeg（${st.backend === 'ddagrab' ? 'ddagrab · Desktop Duplication API——WGC 同层，低开销，可抓 UWP' : 'gdigrab · GDI——抓不到安全窗口/DRM'}，实时视频流 ${fps}fps · 环缓冲 ${ring}s · 识别档 ${tier === 'l2' ? `l2（OCR + 本地 VLM ${vlm}——降级链 Ollama GPU→moondream CPU→仅 OCR）` : 'l1（OCR）'}）`,
         ` 事件：system.screen.watch（frame/segment/trigger/clip）· 段摘要入黑洞记忆（/hole 可召回）`,
         ` 任务链：/watch chain <task-chain.json>（MAA 式模板触发）· 回放：/watch clip 10 · 停止：/watch stop`,
       ])
