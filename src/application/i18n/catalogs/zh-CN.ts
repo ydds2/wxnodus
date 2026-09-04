@@ -210,6 +210,7 @@ export const zhCN = {
   'tui.help.build.2': "证据链",
   'tui.help.build.3': "自检",
   'tui.help.build.4': "整包分发",
+  'tui.help.panel': '浏览器配置面板（命令全景/模式/插件中心）',
   'tui.help.system.1': "主题",
   'tui.help.system.2': "配置中心",
   'tui.help.system.3': "用量成本",

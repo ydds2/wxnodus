@@ -6,7 +6,7 @@ export const SLASH: string[] = [
   // 对话
   '/help', '/aliases', '/clear', '/undo', '/usage', '/cost', '/balance', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint', '/versions', '/snapshot', '/script', '/self-evolve',
   // 模型
-  '/model', '/profile', '/status', '/doctor', '/version', '/update', '/channel', '/thinking', '/hooks',
+  '/panel', '/model', '/profile', '/status', '/doctor', '/version', '/update', '/channel', '/thinking', '/hooks',
   // 记忆（黑洞引擎）
   '/memory', '/hole', '/compact', '/digest', '/curator',
   // 构建（需求编译）
@@ -31,7 +31,7 @@ export const COMMAND_CAT: Record<string, string> = {
   // 分类符号全部 BMP 宽字符（无 emoji 代理对）——旧终端字体/winpty 下不产生 � 乱码；
   // 每类唯一符号（/help 分组按符号聚合——此前模型/系统共用 ⚙、对话/协作共用 ◈ 导致组错乱合并）
   '/help': '◈', '/aliases': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/cost': '◈', '/balance': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈', '/versions': '◈', '/snapshot': '◈', '/script': '◈', '/self-evolve': '◈',
-  '/model': '⚙', '/profile': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/update': '⚙', '/channel': '⚙', '/thinking': '⚙', '/hooks': '⚙',
+  '/panel': '⚙', '/model': '⚙', '/profile': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/update': '⚙', '/channel': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆', '/assimilate': '◆',
   '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨', '/offline': '⬇',
@@ -72,6 +72,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/context': '上下文占用可视化',
   '/fork': '分支会话（复制当前会话为副本）',
   '/checkpoint': '会话快照（save/list/compare/restore/clear，undo 前自动保存）',
+  '/panel': 'HTML 配置面板（浏览器打开：命令全景搜索执行/动态确认 · 模式切换 smart~yolo · 插件中心 · 配置体检）',
   '/model': '模型与密钥统一入口（选择器｜/model add 添加任意 OpenAI 兼容接口｜set-key 配置密钥｜key 查看状态）',
   '/profile': '接入档案管理（list/add/use/rm/set-key——多厂商/中转站档案）',
   '/thinking': '推理显示开关（on/off）',

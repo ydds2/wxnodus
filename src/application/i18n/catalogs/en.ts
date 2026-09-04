@@ -210,6 +210,7 @@ Options:
   'tui.help.build.2': "evidence chain",
   'tui.help.build.3': "self-check",
   'tui.help.build.4': "bundle distribution",
+  'tui.help.panel': 'browser config panel (commands/modes/plugins)',
   'tui.help.system.1': "theme",
   'tui.help.system.2': "config hub",
   'tui.help.system.3': "usage & cost",

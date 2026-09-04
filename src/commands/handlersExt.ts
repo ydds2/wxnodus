@@ -18,6 +18,7 @@ import { registerSessionCommands } from './ext/sessionCommands.js';
 import { registerWebCommands } from './ext/webCommands.js';
 import { registerAgentFlowCommands } from './ext/agentFlowCommands.js';
 import { registerOasisCommands } from './ext/oasisCommands.js';
+import { registerPanelCommands } from './ext/panelCommands.js';
 import { registerWatchCommands } from './ext/watchCommands.js';
 import { registerModpackCommands } from './ext/modpackCommands.js';
 
@@ -1033,6 +1034,7 @@ export const commands = {
   registerAgentFlowCommands(bus, ctx);
   // —— OASIS 统一运行时门户（2026-09-03）：全栈异构组件注册表/拓扑（docs/oasis-integration-assessment）——
   registerOasisCommands(bus, ctx);
+  registerPanelCommands(bus, ctx);
   // —— 常驻屏幕视频流（2026-09-03 · P0）：/watch 实时捕捉/场景分段/回放证据（docs/screenwatch-localvlm-modpack-plan）——
   registerWatchCommands(bus, ctx);
   // —— Mod 整合包（2026-09-03 · P3b）：/modpack 清单/兼容矩阵/一键安装/导出（我的世界 modpack 语义）——

@@ -715,7 +715,7 @@ function HelpPanel({ runtime, rows = 24 }: { runtime: TuiRuntime; rows?: number 
     [tuiT('tui.help.g.memory'), [['/memory', tuiT('tui.help.memory.1')], ['/hole', tuiT('tui.help.memory.2')], ['/compact', tuiT('tui.help.memory.3')], ['/digest', tuiT('tui.help.memory.4')]]],
     [tuiT('tui.help.g.security'), [['/perm', tuiT('tui.help.security.1')], ['/sandbox', tuiT('tui.help.security.2')], ['/audit', tuiT('tui.help.security.3')], ['/security', tuiT('tui.help.security.4')]]],
     [tuiT('tui.help.g.build'), [['/build', tuiT('tui.help.build.1')], ['/evidence', tuiT('tui.help.build.2')], ['/doctor', tuiT('tui.help.build.3')], ['/bundle', tuiT('tui.help.build.4')]]],
-    [tuiT('tui.help.g.system'), [['/theme', tuiT('tui.help.system.1')], ['/config', tuiT('tui.help.system.2')], ['/usage', tuiT('tui.help.system.3')], ['/logs', tuiT('tui.help.system.4')]]],
+    [tuiT('tui.help.g.system'), [['/panel', tuiT('tui.help.panel')], ['/theme', tuiT('tui.help.system.1')], ['/config', tuiT('tui.help.system.2')], ['/usage', tuiT('tui.help.system.3')], ['/logs', tuiT('tui.help.system.4')]]],
   ]
 
   // 原型 56 联动图谱（状态机规格压缩为 7 主链——全部为已落地联动；未落地链如实标注 fence）

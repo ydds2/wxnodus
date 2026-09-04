@@ -51,6 +51,7 @@ wxnodus -p "/acp server"          # ACP stdio（Zed/JetBrains 接入）
 | `/hooks` | 生命周期 Hooks（settings.hooks 本地命令） |
 | `/model` | 模型与密钥统一入口（选择器｜/model add 添加任意 OpenAI 兼容接口｜set-key 配置密钥｜key 查看状态） |
 | `/profile` | 接入档案管理（list/add/use/rm/set-key——多厂商/中转站档案） |
+| `/panel` | HTML 配置面板（浏览器：命令全景/模式切换/插件中心/配置） |
 | `/status` | 系统状态 |
 | `/thinking` | 推理显示开关（on/off） |
 | `/update` | 更新检查（渠道探测 + 版本/仓库状态 + 更新命令；git 渠道 /update --yes 拉取重建） |
