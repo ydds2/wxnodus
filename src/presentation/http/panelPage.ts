@@ -142,6 +142,8 @@ export function renderPanelPage(opts: PanelPageOptions): string {
     <div class="row" style="display:flex;gap:8px;margin-bottom:10px">
       <button class="btn ghost" id="cfg-load">读取当前配置（/config export）</button>
       <button class="btn ghost" id="doctor">全组件体检（/doctor）</button>
+      <button class="btn ghost" id="selfupdate">自更新方案（30 天确认制）</button>
+      <button class="btn ghost" id="selfupdate-off" style="color:var(--warn)">关闭更新推送</button>
     </div>
     <pre class="out" id="cfgout" style="display:none"></pre>
   </section>
@@ -262,6 +264,14 @@ document.getElementById('pq').addEventListener('keydown', e => { if (e.key === '
 document.getElementById('plug-list').onclick = () => { const out = document.getElementById('pout'); out.style.display = 'block'; exec('/plugins', out, null, document.getElementById('plug-list')); };
 document.getElementById('cfg-load').onclick = () => { document.getElementById('cfgout').style.display = 'block'; exec('/config export', document.getElementById('cfgout'), null, null); };
 document.getElementById('doctor').onclick = () => { document.getElementById('cfgout').style.display = 'block'; exec('/doctor', document.getElementById('cfgout'), null, null); };
+// 自更新方案（用户裁决 2026-09-04）：方案 HTML 展示 + 30 天确认制 + 仅确认后执行 + 可关闭推送
+document.getElementById('selfupdate').onclick = () => { document.getElementById('cfgout').style.display = 'block'; exec('/update proposal', document.getElementById('cfgout'), null, null); };
+document.getElementById('selfupdate-off').onclick = () => {
+  ask('关闭更新推送', '关闭后不再提示自更新方案（/update proposal on 可随时重开；绝不自动安装的哲学不变）。', '/update proposal off', () => {
+    document.getElementById('cfgout').style.display = 'block';
+    exec('/update proposal off', document.getElementById('cfgout'), null, null);
+  });
+};
 
 // AI 助手：chat 直通（agent.run——全工具面自动编排；审批浮层在 TUI 照常）
 const AI_QUICK = ['全组件体检并总结问题', '梳理当前目录结构成表格', '搜索并安装一个文件系统 MCP 服务器'];

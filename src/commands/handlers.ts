@@ -377,6 +377,42 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // 更新检查（分发闭环 S0）：诚实报告安装渠道/版本/仓库状态与确切更新命令；
   // git 渠道在有 remote 且工作树干净时 --yes 执行 pull+build，其余渠道只给命令绝不代执行。
   bus.register('/update', async (args) => {
+    // 自更新方案确认制（2026-09-04 用户裁决）：30 天周期提示、方案 HTML 展示（/panel）、用户确认才执行、可关闭推送
+    if (args[0] === 'proposal') {
+      const action = args[1];
+      const { shouldPromptSelfUpdate } = await import('../kernel/selfUpdate.js');
+      const state = (ctx.config.getKey('settings', 'selfUpdateProposal') ?? {}) as { mode?: '30d' | 'off'; lastPromptAt?: number };
+      if (action === 'off' || action === 'on') {
+        const next = action === 'off'
+          ? { ...state, mode: 'off' as const }
+          : { mode: '30d' as const, lastPromptAt: 0 };
+        ctx.config.setKey('settings', 'selfUpdateProposal', next);
+        return action === 'off'
+          ? '自更新推送已关闭（不再提示方案——/update proposal on 随时重开）'
+          : '自更新推送已重开（周期 30 天——下次到达确认点将提示方案）';
+      }
+      const decision = shouldPromptSelfUpdate(state);
+      if (decision.prompt) {
+        ctx.config.setKey('settings', 'selfUpdateProposal', { ...state, mode: state.mode ?? '30d', lastPromptAt: Date.now() });
+      }
+      const feed = ctx.config.getKey('settings', 'updateFeed');
+      let remoteBit = ` 远程检查：${feed ? '（见下）' : '未配置 updateFeed（本地方案——/channel 或 /update 查看）'}`;
+      if (feed) {
+        const { fetchLatestRelease } = await import('../kernel/selfUpdate.js');
+        const { WXNODUS_VERSION } = await import('../kernel/version.js');
+        const r = await fetchLatestRelease(feed, WXNODUS_VERSION, undefined, 6000, 'release');
+        remoteBit = r.updateAvailable
+          ? ` 远程最新：${r.latest}（有新版——方案：确认后 /update --yes 或面板「配置→自更新方案」执行；不更新也是合法选择）`
+          : ` 远程最新：${r.latest ?? '未知'}（当前已是最新——方案：无需更新）`;
+      }
+      return lines(' 自更新方案（30 天确认制） ', [
+        ` 周期状态：${decision.reason}`,
+        remoteBit,
+        ' 方案展示：/panel（HTML 面板「配置」区——自更新方案按钮）',
+        ` 确认执行：仅你确认后（/update --yes）——绝不自动安装；${decision.prompt ? '本次提示已记账（下次 30 天后）' : ''}`,
+        ` 推送开关：/update proposal off 关闭｜ on 重开（当前 ${state.mode === 'off' ? '已关闭' : '30 天周期'}）`,
+      ]);
+    }
     const { buildUpdateReport, channelLabel } = await import('./updateCheck.js');
     const report = buildUpdateReport({ modulePath: import.meta.url, cwd: ctx.cwd ?? process.cwd() });
     const base = lines(' 更新检查 ', [

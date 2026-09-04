@@ -41,6 +41,25 @@ export function isNewerVersion(latest: string, current: string): boolean {
   return pa > pb;
 }
 
+// ── 自更新方案确认制（2026-09-04 用户裁决）：30 天周期提示一次，方案经 HTML 面板展示，用户确认才执行；可关闭推送 ──
+
+export type SelfUpdateProposalMode = '30d' | 'off';
+export interface SelfUpdateProposalState { mode?: SelfUpdateProposalMode; lastPromptAt?: number }
+
+export const SELF_UPDATE_PROPOSAL_INTERVAL_MS = 30 * 24 * 3_600_000;
+
+/** 周期决策（纯函数表驱动可测）：off→不提示；未到 30 天→不提示（附下次时间）；到点→提示 */
+export function shouldPromptSelfUpdate(
+  state: SelfUpdateProposalState | undefined,
+  now: number = Date.now(),
+): { prompt: boolean; reason: string; nextAt?: number } {
+  if (state?.mode === 'off') return { prompt: false, reason: '推送已关闭（/update proposal on 重开）' };
+  const last = state?.lastPromptAt ?? 0;
+  const nextAt = last + SELF_UPDATE_PROPOSAL_INTERVAL_MS;
+  if (now < nextAt) return { prompt: false, reason: `未到 30 天确认点（上次 ${last ? new Date(last).toLocaleDateString('zh-CN') : '从未'}，下次 ${new Date(nextAt).toLocaleDateString('zh-CN')}）`, nextAt };
+  return { prompt: true, reason: '已到 30 天确认点——方案就绪待确认（可更新/不更新/关闭推送）', nextAt };
+}
+
 /** 拉取 feed 并比对（feed 未配置 → 诚实 null 信息；网络失败 → updateAvailable:false + notes 说明） */
 export async function fetchLatestRelease(
   feedUrl: string | null | undefined,
