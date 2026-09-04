@@ -49,7 +49,7 @@ export type L2Result =
 
 /** 模型目录（自研进程内——模型名 → pipeline 配置；扩展只加一行） */
 const LOCAL_VLM_MODELS: Record<string, { task: string; id: string; opts: Record<string, unknown> }> = {
-  moondream2: { task: 'image-to-text', id: 'Xenova/moondream2', opts: { dtype: 'q4', device: 'cpu' } },
+  moondream2: { task: 'image-text-to-text', id: 'Xenova/moondream2', opts: { dtype: 'q4', device: 'cpu' } }, // 注：需 transformers>=3.5 的该 task——当前 v4.2 无此 task，真机验证后定去留
   'florence-2': { task: 'image-to-text', id: 'onnx-community/Florence-2-base-ft', opts: { dtype: 'fp32', device: 'cpu' } },
 }
 
@@ -60,8 +60,8 @@ export function listLocalVlmModels(): string[] {
 /** 降级链纯决策（表驱动可测）：off→none；未知模型名→回默认主档（诚实标注） */
 export function pickL2Backend(backend: L2BackendSetting, model: string | undefined): { use: 'local' | 'none'; model: string; note?: string } {
   if (backend === 'off') return { use: 'none', model: '' }
-  const want = model ?? 'moondream2'
-  if (!LOCAL_VLM_MODELS[want]) return { use: 'local', model: 'moondream2', note: `未知模型 ${want}——回默认 moondream2` }
+  const want = model ?? (backend === 'moondream' ? 'moondream2' : 'florence-2') // --vlm moondream = 显式选 moondream2
+  if (!LOCAL_VLM_MODELS[want]) return { use: 'local', model: 'florence-2', note: `未知模型 ${want}——回默认 florence-2` }
   return { use: 'local', model: want }
 }
 
@@ -118,7 +118,7 @@ const ONE_PX_JPEG = Buffer.from([
  * 本地视觉描述（懒加载常驻单例 · 多模型缓存）。返回诚实结果：
  * 模型未下载/离线/加载失败均 ok:false + 原因（绝不伪造描述）。
  */
-export async function describeScreen(jpeg: Buffer, model = 'moondream2'): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+export async function describeScreen(jpeg: Buffer, model = 'florence-2'): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   try {
     if (!generator || generatorModel !== model) {
       const t = await import('@huggingface/transformers')
@@ -130,7 +130,7 @@ export async function describeScreen(jpeg: Buffer, model = 'moondream2'): Promis
         if (process.env.WXNODUS_HF_ENDPOINT) env.remoteHost = process.env.WXNODUS_HF_ENDPOINT
       }
       const pipeline = (t as unknown as { pipeline(task: string, model: string, opts: Record<string, unknown>): Promise<Generator> }).pipeline
-      const spec = LOCAL_VLM_MODELS[model] ?? LOCAL_VLM_MODELS['moondream2']!
+      const spec = LOCAL_VLM_MODELS[model] ?? LOCAL_VLM_MODELS['florence-2']!
       generator = await pipeline(spec.task, spec.id, spec.opts)
       generatorModel = model
       loaded = true

@@ -29,7 +29,7 @@ describe('localVision（moondream2 本地视觉档）', () => {
     if (r.ok) expect(r.text).toContain('编辑器')
     const p1 = probeLocalVision()
     expect(p1.loaded).toBe(true)
-    expect(pipelineMock).toHaveBeenCalledWith('image-to-text', 'Xenova/moondream2', expect.objectContaining({ device: 'cpu' }))
+    expect(pipelineMock).toHaveBeenCalledWith('image-to-text', 'onnx-community/Florence-2-base-ft', expect.objectContaining({ device: 'cpu' }))
   })
 
   it('加载失败 → ok:false + 原因入 probe（绝不伪造描述）', async () => {

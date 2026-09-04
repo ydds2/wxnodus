@@ -7,11 +7,11 @@ describe('pickL2Backend 纯决策（自研降级链——离线锁死）', () =>
   it('off → none；默认/未知模型 → moondream2（未知回默认+诚实标注）', async () => {
     const { pickL2Backend } = await import('../src/kernel/localVision.js');
     expect(pickL2Backend('off', undefined)).toEqual({ use: 'none', model: '' });
-    expect(pickL2Backend('auto', undefined)).toEqual({ use: 'local', model: 'moondream2' });
+    expect(pickL2Backend('auto', undefined)).toEqual({ use: 'local', model: 'florence-2' });
     expect(pickL2Backend('moondream', undefined)).toEqual({ use: 'local', model: 'moondream2' });
     const unknown = pickL2Backend('auto', 'gpt-5-vision');
     expect(unknown.use).toBe('local');
-    expect(unknown.model).toBe('moondream2');
+    expect(unknown.model).toBe('florence-2');
     expect(unknown.note).toContain('未知模型');
   });
 
