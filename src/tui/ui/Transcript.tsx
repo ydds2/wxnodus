@@ -28,8 +28,11 @@ function segsOf(entry: ChatEntry, cols: number, bar: string): Line[] {
     lines = toolLines(entry.tool, cols)
   } else if (entry.kind === 'user' || entry.kind === 'assistant') {
     const color = entry.kind === 'user' ? DEEP_SPACE.accent : DEEP_SPACE.success
+    // 视觉评审 P1（2026-09-04 帧取证）：user/assistant 前缀均为 ▎ 无法辨角色——
+    // user 用 ❯（prompt 符·accent），assistant 保持 ▎（bar 符·success）——宽度等宽 1，行高预算不变
+    const lead = (entry.kind === 'user' ? glyphs().prompt : bar) + ' '
     const base = renderMarkdownLite(entry.text ?? '', cols - 2)
-    lines = base.map(l => ({ kind: l.kind, segs: [{ text: bar + ' ', color }, ...l.segs] }))
+    lines = base.map(l => ({ kind: l.kind, segs: [{ text: lead, color }, ...l.segs] }))
   } else if (entry.kind === 'notice') {
     lines = wrapText(entry.text ?? '', cols - 2).map(t => ({ kind: 'normal' as const, segs: [{ text: '· ' + t, color: DEEP_SPACE.dim }] }))
   } else if (entry.kind === 'error') {

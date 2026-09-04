@@ -29,7 +29,7 @@ export const TUI_THEMES: Record<string, { label: string; desc: string; tokens: T
       line: '#2a3050',
       spinnerFrames: ['◐', '◓', '◑', '◒'],
       placeholders: [
-        '有问题尽管问，或直接派活 (Ready!)',
+        '有问题尽管问，或直接派活',
         '描述任务，或 /build 直接编译需求',
         '试试 @src/ 引用文件',
         'Ready for instructions…',
@@ -58,7 +58,7 @@ export const TUI_THEMES: Record<string, { label: string; desc: string; tokens: T
       warn: 'yellowBright', error: 'redBright', fg: 'whiteBright', muted: 'white', dim: 'gray',
       line: '#5a6270',
       spinnerFrames: ['◐', '◓', '◑', '◒'],
-      placeholders: ['有问题尽管问，或直接派活 (Ready!)', '描述任务，或 /build 直接编译需求', '试试 @src/ 引用文件', 'Ready for instructions…', '/doctor 先自检一下？', 'Tab 补全命令 · /perm 切换模式', '/keys 键位速查 · Ctrl+↑↓ 翻历史'],
+      placeholders: ['有问题尽管问，或直接派活', '描述任务，或 /build 直接编译需求', '试试 @src/ 引用文件', 'Ready for instructions…', '/doctor 先自检一下？', 'Tab 补全命令 · /perm 切换模式', '/keys 键位速查 · Ctrl+↑↓ 翻历史'],
     },
   },
   mono: {
@@ -69,7 +69,7 @@ export const TUI_THEMES: Record<string, { label: string; desc: string; tokens: T
       warn: 'white', error: 'white', fg: 'white', muted: 'gray', dim: 'gray',
       line: '#808080',
       spinnerFrames: ['-', '\\', '|', '/'],
-      placeholders: ['有问题尽管问，或直接派活 (Ready!)', '描述任务，或 /build 直接编译需求', '试试 @src/ 引用文件', 'Ready for instructions…', '/doctor 先自检一下？', 'Tab 补全命令 · /perm 切换模式', '/keys 键位速查 · Ctrl+↑↓ 翻历史'],
+      placeholders: ['有问题尽管问，或直接派活', '描述任务，或 /build 直接编译需求', '试试 @src/ 引用文件', 'Ready for instructions…', '/doctor 先自检一下？', 'Tab 补全命令 · /perm 切换模式', '/keys 键位速查 · Ctrl+↑↓ 翻历史'],
     },
   },
 }

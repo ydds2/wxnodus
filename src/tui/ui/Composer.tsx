@@ -141,13 +141,13 @@ export function Composer({ runtime, s, cols }: { runtime: TuiRuntime; s: TuiStat
   // 安全边距（2026-09-03）：内容预算再收 2 列——↑↓/▏/CJK 等在真实终端字体渲染宽度可能大于
   // strWidth 估算，溢出会触发终端侧换行产生「第三行空行」。留边 + wrap=truncate 双保险：
   // 输入框结构恒为上沿+提示符行+键位行+下沿（两行内容），任何字体/宽度下绝不出现第三行。
-  const textW = Math.max(4, cols - 9) // 盒内预算：│(1) 空格(1) 提示符(2) … 内容+光标+填充(textW) 空格(1) │(1) ≤ cols-2
-  const innerW = Math.max(4, cols - 7)
+  const textW = Math.max(4, cols - 8) // 盒内预算（P2 对齐 2026-09-04：盒宽 = cols 与边线齐——此前 cols-1 右缘缺 1）：│(2) 提示符(2) … 内容+光标+填充(textW) 空格(1) │(2)
+  const innerW = Math.max(4, cols - 6)
   const promptLines = wrapText(value || '·', textW).slice(0, MAX_PROMPT_ROWS)
   const overflow = value ? Math.max(0, wrapText(value, textW).length - MAX_PROMPT_ROWS) : 0
   const attachments = attachLine(value)
   const b = glyphs().box
-  const boxH = b.h.repeat(Math.max(0, cols - 3))
+  const boxH = b.h.repeat(Math.max(0, cols - 2))
   const placeholderText = truncateTo(s.running ? tuiT('tui.composer.busyPlaceholder') : DEEP_SPACE.placeholders[s.placeholderIdx]!, textW)
   // 提示行内容硬截断到 textW——内容行永不超出盒宽（wrap=truncate 兜底：即使估算误差也只截尾不折行）
   const promptSafe = (line: string) => truncateTo(line, textW)
