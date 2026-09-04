@@ -9,13 +9,34 @@ import type { CommandBus } from '../../app/CommandBus.js';
 import { SLASH, COMMAND_DESC, COMMAND_CAT, CORE_COMMANDS } from '../registry.js';
 import { WXNODUS_VERSION } from '../../kernel/version.js';
 
-export function registerPanelCommands(bus: CommandBus, _ctx: HandlerCtx): void {
+export function registerPanelCommands(bus: CommandBus, ctx: HandlerCtx): void {
   bus.register('/panel', async () => {
     const { ensurePanelServer } = await import('../../presentation/http/panelServer.js');
+    // marketSearch：npm + GitHub 双源只读搜索（安装仍走 command /market install 保审计）
+    const marketSearch = async (query: string) => {
+      const { searchNpm, searchGithub } = await import('../../kernel/market.js');
+      const [npmItems, ghItems] = await Promise.all([
+        searchNpm(query, 'mcp', 8).catch(() => []),
+        searchGithub(query, 'mcp', 6).catch(() => []),
+      ]);
+      const map = (items: Array<Record<string, any>>, source: 'npm' | 'github') => items.map(i => ({
+        name: String(i.name ?? '?'),
+        description: String(i.description ?? ''),
+        type: String(i.type ?? 'unknown'),
+        source,
+        stars: typeof i.stars === 'number' ? i.stars : undefined,
+        installArg: String(i.install ?? i.name ?? ''),
+      }));
+      return [...map(npmItems, 'npm'), ...map(ghItems, 'github')];
+    };
     const panel = await ensurePanelServer({
       commandBus: { execute: (cmd, context) => bus.execute(cmd, context) },
       catalog: { slash: SLASH, desc: COMMAND_DESC, cat: COMMAND_CAT, core: [...CORE_COMMANDS] },
       version: WXNODUS_VERSION,
+      agent: ctx.agent
+        ? { run: (prompt: string) => ctx.agent!.run(prompt) }
+        : undefined,
+      marketSearch,
     });
     // 打开系统默认浏览器（Windows：cmd /c start——URL 含 token，仅本机回环可达）
     // VITEST 守卫：测试环境（command-runtime-smoke 全量执行 SLASH）不弹浏览器窗口

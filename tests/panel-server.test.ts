@@ -110,3 +110,57 @@ describe('/panel 命令注册面（三表由 check:registry-consistency 门禁�
     expect((html.match(/"/g)?.length ?? 0)).toBeGreaterThan(100); // 目录体量真实注入
   });
 });
+
+// 面板 2.0（2026-09-04）：market.search 只读搜索 + chat AI 直通——自动搜索下载闭环与智能自动化
+describe('面板 2.0：market.search 只读 + chat AI 直通', () => {
+  it('market.search：结构化结果往返（只读 RPC——安装不走此面）', async () => {
+    const handle = await startPanelServer({
+      commandBus: stubBus(),
+      catalog: CATALOG,
+      marketSearch: async q => [{ name: `fs-${q}`, description: '文件系统 MCP', type: 'mcp', source: 'npm', installArg: `fs-${q}` }],
+    });
+    try {
+      const r = await fetch(`http://127.0.0.1:${handle.port}/api/rpc`, {
+        method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${handle.token}` },
+        body: JSON.stringify({ method: 'market.search', query: 'server' }),
+      });
+      expect(r.status).toBe(200);
+      const j = await r.json() as { ok: boolean; items: Array<{ name: string; installArg: string }> };
+      expect(j.ok).toBe(true);
+      expect(j.items[0]!.name).toBe('fs-server');
+      expect(j.items[0]!.installArg).toBe('fs-server');
+      // 未装配 marketSearch → 400 诚实报（不假装搜索）
+    } finally { await handle.close(); }
+  }, 20_000);
+
+  it('chat：AI 直通往返（agent.run 结果原样回传）+ 未装配诚实 400', async () => {
+    const agent = { run: async (p: string) => ({ ok: true, text: `AI完成:${p}`, turns: 3, interrupted: false }) };
+    const handle = await startPanelServer({ commandBus: stubBus(), catalog: CATALOG, agent });
+    try {
+      const r = await fetch(`http://127.0.0.1:${handle.port}/api/rpc`, {
+        method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${handle.token}` },
+        body: JSON.stringify({ method: 'chat', prompt: '体检并总结' }),
+      });
+      expect(r.status).toBe(200);
+      const j = await r.json() as { ok: boolean; text: string; turns: number };
+      expect(j.ok).toBe(true);
+      expect(j.text).toBe('AI完成:体检并总结');
+      expect(j.turns).toBe(3);
+    } finally { await handle.close(); }
+    const bare = await startPanelServer({ commandBus: stubBus(), catalog: CATALOG });
+    try {
+      const r = await fetch(`http://127.0.0.1:${bare.port}/api/rpc`, {
+        method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${bare.token}` },
+        body: JSON.stringify({ method: 'chat', prompt: 'x' }),
+      });
+      expect(r.status).toBe(400); // 未装配 agent 诚实拒绝（不假装 AI 可用）
+    } finally { await bare.close(); }
+  }, 20_000);
+
+  it('面板 HTML 含 AI 助手区与插件市场卡片化 UI（2.0 形态）', () => {
+    const html = renderPanelPage({ catalog: CATALOG });
+    expect(html).toContain('AI 助手');
+    expect(html).toContain('market.search');
+    expect(html).toContain('一键安装');
+  });
+});

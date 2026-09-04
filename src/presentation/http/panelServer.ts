@@ -11,10 +11,23 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { resolveAlias } from '../../kernel/commandLevels.js';
 import { renderPanelPage, type PanelCatalog } from './panelPage.js';
 
+export interface PanelMarketItem {
+  name: string;
+  description: string;
+  type: string;
+  source: 'npm' | 'github';
+  stars?: number;
+  installArg: string;
+}
+
 export interface PanelServerDeps {
   commandBus: { execute(cmd: string, context?: { signal?: AbortSignal }): Promise<{ ok: boolean; output?: string; error?: string; completionStatus?: string }> };
   catalog: PanelCatalog;
   version?: string;
+  /** AI 助手直通（agent.run——模型经全工具面自动编排；审批/硬红线在内核装配面照常） */
+  agent?: { run(prompt: string): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean }> };
+  /** 插件市场只读搜索（searchNpm/searchGithub 直调——安装仍走 command /market install 保审计） */
+  marketSearch?: (query: string) => Promise<PanelMarketItem[]>;
 }
 
 export interface PanelServerHandle {
@@ -67,6 +80,36 @@ export function startPanelServer(deps: PanelServerDeps): Promise<PanelServerHand
         void (async () => {
           let parsed: { method?: string; command?: string };
           try { parsed = JSON.parse(body || '{}'); } catch { send(res, 400, JSON.stringify({ ok: false, error: { code: 'BAD_JSON' } }), 'application/json; charset=utf-8'); return; }
+          if (parsed.method === 'market.search') {
+            // 插件市场只读搜索（安装走 command——审计哈希链照常）
+            const q = String((parsed as { query?: unknown }).query ?? '').trim();
+            if (!q || !deps.marketSearch) {
+              send(res, 400, JSON.stringify({ ok: false, error: { code: q ? 'MARKET_SEARCH_UNAVAILABLE' : 'QUERY_REQUIRED' } }), 'application/json; charset=utf-8');
+              return;
+            }
+            try {
+              const items = await deps.marketSearch(q);
+              send(res, 200, JSON.stringify({ ok: true, items }), 'application/json; charset=utf-8');
+            } catch (e: unknown) {
+              send(res, 502, JSON.stringify({ ok: false, error: { code: 'MARKET_SEARCH_FAILED', message: String(e instanceof Error ? e.message : e).slice(0, 300) } }), 'application/json; charset=utf-8');
+            }
+            return;
+          }
+          if (parsed.method === 'chat') {
+            // AI 助手直通（agent.run——自然语言→全工具面自动编排；审批浮层在 TUI 装配面照常弹出）
+            const prompt = String((parsed as { prompt?: unknown }).prompt ?? '').trim();
+            if (!prompt || !deps.agent) {
+              send(res, 400, JSON.stringify({ ok: false, error: { code: prompt ? 'AGENT_UNAVAILABLE' : 'PROMPT_REQUIRED' } }), 'application/json; charset=utf-8');
+              return;
+            }
+            try {
+              const r = await deps.agent.run(prompt);
+              send(res, 200, JSON.stringify({ ok: r.ok, text: r.text ?? '', turns: r.turns ?? 0, interrupted: r.interrupted === true }), 'application/json; charset=utf-8');
+            } catch (e: unknown) {
+              send(res, 500, JSON.stringify({ ok: false, error: { code: 'AGENT_FAILED', message: String(e instanceof Error ? e.message : e).slice(0, 300) } }), 'application/json; charset=utf-8');
+            }
+            return;
+          }
           if (parsed.method !== 'command' || typeof parsed.command !== 'string' || !parsed.command.trim()) {
             send(res, 400, JSON.stringify({ ok: false, error: { code: 'COMMAND_REQUIRED' } }), 'application/json; charset=utf-8');
             return;

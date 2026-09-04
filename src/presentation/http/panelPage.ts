@@ -109,7 +109,8 @@ export function renderPanelPage(opts: PanelPageOptions): string {
 </header>
 <nav>
   <button data-tab="cmd" class="on">命令面板</button>
-  <button data-tab="plug">插件中心</button>
+  <button data-tab="plug">插件市场</button>
+  <button data-tab="ai">AI 助手</button>
   <button data-tab="cfg">配置</button>
 </nav>
 <main>
@@ -120,16 +121,26 @@ export function renderPanelPage(opts: PanelPageOptions): string {
   </section>
   <section id="tab-plug" style="display:none">
     <div class="row" style="display:flex;gap:8px">
-      <input class="search" id="pq" placeholder="搜索生态目录（npm/GitHub：MCP / 技能）…" style="margin-bottom:0">
+      <input class="search" id="pq" placeholder="搜索插件市场（npm/GitHub：MCP / 技能）…回车或点搜索" style="margin-bottom:0">
       <button class="btn" id="psearch">搜索</button>
+      <button class="btn ghost" id="plug-list">已装列表</button>
     </div>
-    <pre class="out plug-result" id="pout" style="display:none"></pre>
-    <p style="color:var(--dim);font-size:12px">安装/卸载在命令面板执行（/market install、/plugin uninstall——危险面二次确认）。</p>
+    <div class="cards" id="pcards" style="margin-top:12px"></div>
+    <pre class="out" id="pout" style="display:none;margin-top:10px"></pre>
+    <p style="color:var(--dim);font-size:12px">一键安装走 /market install（tarball 下载 → SRI 校验 → 落位；审计哈希链照常）。GitHub 源条目请在命令面板用 /market install github:owner/repo。</p>
+  </section>
+  <section id="tab-ai" style="display:none">
+    <p style="color:var(--dim);font-size:13px;margin-top:0">◉ 自然语言驱动——模型经全工具面（文件/命令/市场/computer use）自动编排多步任务；权限模式与硬红线照常裁决，审批弹 TUI 浮层。</p>
+    <div class="row" style="display:flex;gap:8px">
+      <input class="search" id="aiq" placeholder="例：体检全组件并总结问题 / 搜索并安装一个文件系统 MCP / 把当前项目结构梳理成表" style="margin-bottom:0">
+      <button class="btn" id="airun">执行</button>
+    </div>
+    <div class="row" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="aiquick"></div>
+    <pre class="out" id="aiout" style="display:none;margin-top:10px"></pre>
   </section>
   <section id="tab-cfg" style="display:none">
     <div class="row" style="display:flex;gap:8px;margin-bottom:10px">
       <button class="btn ghost" id="cfg-load">读取当前配置（/config export）</button>
-      <button class="btn ghost" id="plug-list">已装插件（/plugins）</button>
       <button class="btn ghost" id="doctor">全组件体检（/doctor）</button>
     </div>
     <pre class="out" id="cfgout" style="display:none"></pre>
@@ -218,19 +229,63 @@ function renderCards() {
 }
 document.getElementById('q').addEventListener('input', renderCards);
 
-// ── 插件中心 / 配置 ──
-document.getElementById('psearch').onclick = () => {
+// ── 插件市场（market.search 只读 RPC → 结构化卡片 + 一键安装走 command） / AI 助手（chat 直通）──
+const runSearch = () => {
   const q = document.getElementById('pq').value.trim();
   if (!q) { toast('请输入搜索词'); return; }
-  exec('/market search ' + q, document.getElementById('pout'), null, document.getElementById('psearch'));
-  document.getElementById('pout').style.display = 'block';
+  const cards = document.getElementById('pcards');
+  cards.innerHTML = '<p style="color:var(--dim)">搜索中…（npm + GitHub）</p>';
+  void (async () => {
+    try {
+      const j = await rpc('market.search', { query: q });
+      cards.innerHTML = '';
+      if (!j.ok || !j.items || !j.items.length) { cards.innerHTML = '<p style="color:var(--dim)">无结果' + (j.error ? '：' + (j.error.message || j.error.code) : '') + '</p>'; return; }
+      for (const it of j.items) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = '<div class="nm">' + esc(it.name) + ' <span style="color:var(--dim);font-size:11px">' + esc(it.type) + ' · ' + esc(it.source) + (it.stars != null ? ' · ★' + it.stars : '') + '</span></div>'
+          + '<div class="ds">' + esc((it.description || '').slice(0, 120)) + '</div>'
+          + '<div class="ex" style="display:block;margin-top:6px"><div class="row"><button class="btn" style="padding:3px 12px">安装</button><span class="res" style="color:var(--dim);font-size:12px"></span></div></div>';
+        const btn = card.querySelector('.btn');
+        btn.onclick = () => {
+          const cmd = '/market install ' + it.installArg;
+          const run = () => { const out = document.getElementById('pout'); out.style.display = 'block'; exec(cmd, out, card.querySelector('.res'), btn); };
+          ask('安装外部代码', '将下载并安装「' + it.name + '」（tarball → SRI 校验 → 落位）——外部代码进入本机，确认信任来源。', cmd, run);
+        };
+        cards.appendChild(card);
+      }
+    } catch (e) { cards.innerHTML = '<p class="err">搜索通道错误：' + esc(String(e && e.message || e)) + '</p>'; }
+  })();
 };
-document.getElementById('cfg-load').onclick = () => exec('/config export', document.getElementById('cfgout'), null, null) || (document.getElementById('cfgout').style.display = 'block');
-document.getElementById('plug-list').onclick = () => { document.getElementById('cfgout').style.display = 'block'; exec('/plugins', document.getElementById('cfgout'), null, null); };
+document.getElementById('psearch').onclick = runSearch;
+document.getElementById('pq').addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
+document.getElementById('plug-list').onclick = () => { const out = document.getElementById('pout'); out.style.display = 'block'; exec('/plugins', out, null, document.getElementById('plug-list')); };
+document.getElementById('cfg-load').onclick = () => { document.getElementById('cfgout').style.display = 'block'; exec('/config export', document.getElementById('cfgout'), null, null); };
 document.getElementById('doctor').onclick = () => { document.getElementById('cfgout').style.display = 'block'; exec('/doctor', document.getElementById('cfgout'), null, null); };
+
+// AI 助手：chat 直通（agent.run——全工具面自动编排；审批浮层在 TUI 照常）
+const AI_QUICK = ['全组件体检并总结问题', '梳理当前目录结构成表格', '搜索并安装一个文件系统 MCP 服务器'];
+const aiRun = (text) => {
+  const q = (text || document.getElementById('aiq').value || '').trim();
+  if (!q) { toast('请输入任务描述'); return; }
+  const out = document.getElementById('aiout'); const btn = document.getElementById('airun');
+  out.style.display = 'block'; out.className = 'out'; out.textContent = '◉ AI 执行中…（多步任务可能需要时间；审批会弹 TUI 浮层）';
+  btn.disabled = true;
+  void (async () => {
+    try {
+      const j = await rpc('chat', { prompt: q });
+      out.textContent = (j.ok ? j.text : '✗ ' + (j.error && (j.error.message || j.error.code) || '失败')) + (j.interrupted ? '\\n（已中断）' : '') + (j.turns ? '\\n—— ' + j.turns + ' 轮' : '');
+      out.className = 'out ' + (j.ok ? 'ok' : 'err');
+    } catch (e) { out.textContent = '✗ 通道错误：' + (e && e.message || e); out.className = 'out err'; }
+    finally { btn.disabled = false; }
+  })();
+};
+document.getElementById('airun').onclick = () => aiRun();
+document.getElementById('aiq').addEventListener('keydown', e => { if (e.key === 'Enter') aiRun(); });
+(() => { const box = document.getElementById('aiquick'); for (const t of AI_QUICK) { const b = document.createElement('span'); b.className = 'chip'; b.textContent = t; b.onclick = () => { document.getElementById('aiq').value = t; aiRun(t); }; box.appendChild(b); } })();
 for (const b of document.querySelectorAll('nav button')) b.onclick = () => {
   for (const x of document.querySelectorAll('nav button')) x.classList.toggle('on', x === b);
-  for (const s of ['cmd','plug','cfg']) document.getElementById('tab-' + s).style.display = b.dataset.tab === s ? '' : 'none';
+  for (const s of ['cmd','plug','ai','cfg']) document.getElementById('tab-' + s).style.display = b.dataset.tab === s ? '' : 'none';
 };
 
 // ── 通道 ──
