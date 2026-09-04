@@ -1564,44 +1564,48 @@ describe('V4 P2-3 压缩工程', () => {
   });
 
   it('N2 回归：micro 裁剪已降到阈值下 → 跳过全量压缩（不烧摘要调用）', async () => {
-    const sid = 'p203-n2-microskip';
-    seedHistory(sid, 2);
-    let call = 0;
-    const notices: string[] = [];
-    const off = bus.on('system.notice', (e: any) => notices.push(String(e?.payload?.text ?? '')));
+    // 封闭化（2026-09-04）：改读临时文件——原用例读仓库真实文件（package-lock.json/tsconfig 等），
+    // est 算术随 checkout 行尾漂移（CI Windows runner autocrlf=CRLF vs 本地 LF）而脆断。
+    // 临时文件单行无换行 → 字节数跨环境恒定，断言语义不变。
+    const d = mkdtempSync(join(tmpdir(), 'wx-p203-n2-'));
     try {
-      const agent = createPipelineAgent({
-        db, bus, mem, sessionId: sid,
-        config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
-        // ctx 算术（实证）：outReserve=min(20000, FALLBACK 66k×25%)=20000（cap）→
-        // ctxLimit=max(4000, 30000−20000)=10000 · 阈值 7500。大输出 est≈9100 在 t2 即越线，
-        // 但 msgs>10 门槛把首次压缩推迟到 t5（len 12——大输出@idx3 已入可裁区 idx<6）→
-        // micro 裁大输出（9100→125）回到阈值下 → 跳过全量；call7 文本收尾，摘要零调用。
-        maxContextTokens: 30_000,
-        callModel: async (): Promise<any> => {
-          call += 1;
-          // 编排（est 确定性）：call1 大输出（fs_read 20000 字上限 ≈ 5000 est + 底 ~300 = 5300，
-          // 未越 6225）；calls2-6 各异小文件（不同签名绕开重复守卫，每只 +50..375）把大输出
-          // 推出 keepRecent=6 保护窗并使 est 越线（t5 ≈ 6275 > 6225 且 msgs>10）→ micro 裁掉
-          // 大输出（5000→125）回到阈值下 → 跳过全量压缩；call7 文本收尾，摘要零调用。
-          if (call === 1) return { type: 'tool_call', name: 'fs_read', args: { path: 'package-lock.json' } };
-          if (call <= 6) {
-            const tiny: Array<{ path: string; offset?: number }> = [
-              { path: 'tsconfig.json' }, { path: 'vitest.config.ts' }, { path: 'tsconfig.tests.json' },
-              { path: '.gitignore' }, { path: 'tsconfig.json', offset: 5 },
-            ];
-            return { type: 'tool_call', name: 'fs_read', args: tiny[call - 2]! };
-          }
-          return { type: 'text', content: 'ok' };
-        },
-      });
-      const r = await agent.run('hi');
-      expect(r.text).toBe('ok');
-      // micro 生效：裁剪后降到阈值下 → 「跳过全量压缩」通知，且不走全量（无「自动压缩…」/摘要）
-      expect(notices.some(n => /跳过全量压缩/.test(n))).toBe(true);
-      expect(notices.some(n => /自动压缩…/.test(n))).toBe(false);
-      expect(call).toBe(7); // 1 大 + 5 小 + 1 文本 = 恰 7——摘要零调用（全量压缩会额外烧 callModel）
-    } finally { off(); }
+      // 大输出：单行 30000 字符 → fs_read 20000 字截断 → est 量级与原 package-lock.json 等价
+      writeFileSync(join(d, 'big.txt'), 'x'.repeat(30_000), 'utf8');
+      // 五个小文件（不同路径签名绕开重复守卫）——单行 4000 字符（est≈1000/只，纯字母 0.25/字）：
+      // 越线算术（阈值=ctxLimit 13500×0.75=10125）：base(系统提示+种子)≈3.2k + 大输出 5k + 小读累积
+      // → t5-t7 某轮越线触发；micro 裁大输出（20000→500 字，est−4875）回落 ≈8.5k ≤ 阈值 → 跳过全量
+      const tinyNames = ['a.txt', 'b.txt', 'c.txt', 'e.txt', 'f.txt'];
+      for (const n of tinyNames) writeFileSync(join(d, n), 'y'.repeat(4000), 'utf8');
+      const sid = 'p203-n2-microskip';
+      seedHistory(sid, 2);
+      let call = 0;
+      const notices: string[] = [];
+      const off = bus.on('system.notice', (e: any) => notices.push(String(e?.payload?.text ?? '')));
+      try {
+        const agent = createPipelineAgent({
+          db, bus, mem, sessionId: sid,
+          workspaceRoot: d, dataDir: d, // 临时目录即工作区——fs_read 只放行工作区内路径
+          config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+          // ctx 算术：outReserve=min(20000, FALLBACK 66k×25%)=20000（cap）→
+          // ctxLimit=max(4000, 30000−20000)=10000。大输出 est≈5300 未越阈值；五个小读
+          // 把大输出推出 keepRecent=6 保护窗并使 est 越线（且 msgs>10 门槛已过）→ micro 裁掉
+          // 大输出（≈5000→125）回到阈值下 → 跳过全量压缩；call7 文本收尾，摘要零调用。
+          maxContextTokens: 30_000,
+          callModel: async (): Promise<any> => {
+            call += 1;
+            if (call === 1) return { type: 'tool_call', name: 'fs_read', args: { path: join(d, 'big.txt') } };
+            if (call <= 6) return { type: 'tool_call', name: 'fs_read', args: { path: join(d, tinyNames[call - 2]!) } };
+            return { type: 'text', content: 'ok' };
+          },
+        });
+        const r = await agent.run('hi');
+        expect(r.text).toBe('ok');
+        // micro 生效：裁剪后降到阈值下 → 「跳过全量压缩」通知，且不走全量（无「自动压缩…」/摘要）
+        expect(notices.some(n => /跳过全量压缩/.test(n))).toBe(true);
+        expect(notices.some(n => /自动压缩…/.test(n))).toBe(false);
+        expect(call).toBe(7); // 1 大 + 5 小 + 1 文本 = 恰 7——摘要零调用（全量压缩会额外烧 callModel）
+      } finally { off(); }
+    } finally { try { rmSync(d, { recursive: true, force: true }); } catch { /* EBUSY */ } }
   });
 });
 
