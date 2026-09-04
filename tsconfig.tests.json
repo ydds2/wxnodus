@@ -5,6 +5,10 @@
     "rootDir": ".",
     "noUnusedLocals": false,
     "noUnusedParameters": false,
+    "baseUrl": ".",
+    "paths": {
+      "wxnodus/dist/*": ["src/*"]
+    },
     "types": [
       "node",
       "vitest/globals"
