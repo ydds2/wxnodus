@@ -483,8 +483,13 @@ describe('MCP cancellation and deterministic stdio cleanup', () => {
     const pending = client.callTool('wait', {}, controller.signal);
     controller.abort('user-stop');
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
-    for (let i = 0; i < 40 && !existsSync(log); i++) await new Promise(r => setTimeout(r, 10));
-    const notice = JSON.parse(readFileSync(log, 'utf8'));
+    // Q6 加固（2026-09-04）：existsSync 后内容可能尚未 flush（高负载竞态实测）——轮询至内容非空
+    let raw = '';
+    for (let i = 0; i < 40; i++) {
+      if (existsSync(log)) { raw = readFileSync(log, 'utf8'); if (raw.trim()) break; }
+      await new Promise(r => setTimeout(r, 10));
+    }
+    const notice = JSON.parse(raw);
     expect(notice).toMatchObject({ jsonrpc: '2.0', method: 'notifications/cancelled' });
     expect(typeof notice.params.requestId).toBe('number');
     await client.close();
