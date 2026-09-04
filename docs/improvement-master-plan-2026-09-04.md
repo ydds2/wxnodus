@@ -37,6 +37,8 @@
 | C5 | 黑洞召回时间衰减 | recallHybrid 命中排序加 recency 因子（session scope 不变） | 新旧记忆召回序实测 |
 | C6 | ACP 能力补全 | initialize 上报 `supportsEdit: true` 路径（现 false——Zed/JetBrains 编辑级集成差距） | ACP 握手实测 |
 
+> **第四批进度（2026-09-04）**：C5 ✅ 已落地（指数半衰期 7 天 × 地板 0.1 × 会话内不衰减——`memory.ts` recallHybrid；契约测试 `tests/kernel-memory-recency.test.ts` 4 用例：跨会话新旧序/半衰期数值 0.5^(14/7)≈0.25/一年地板 0.1/会话内分差为零）；C4(b) ✅ 表单保存后自动 probeEndpoint 恰一次（通过附模型数/失败如实标注不回滚——诚实降级不 fail-closed，测试锁定）；C4(a) 最近使用置顶待做；**C6 考证结论：如实推迟**——ACP `prompt` 响应现仅纯文本（acp.ts:168-173），无结构化 diff 块，翻 `supportsEdit: true` 即 overclaim（Zed 走 edit-resolution 路径必破坏）——需 ACP content-block 结构化输出专项后再翻；C1-C3 OASIS 收尾待做。
+
 ## D. 环境补验（条件触发，非代码缺陷）
 
 | # | 项 | 触发条件 | 补验命令 |

@@ -790,8 +790,21 @@ export class TuiRuntime {
       return
     }
     this.closeModelForm()
-    const keyPart = fields.key.trim() ? ` --key ${fields.key.trim()}` : ''
-    void this.runCommand(`/model add ${id} --base ${fields.baseURL.trim()}${keyPart}`)
+    // C4（2026-09-04 第四批）：保存后自动 probeEndpoint 一次——先保存（不因网络延迟阻塞），
+    // 探测结果独立通知：通过附模型数；未通过如实标注原因但不回滚（内网端点/稍后配 key 场景
+    // ——诚实降级，不 fail-closed；/doctor 可复查）
+    void (async () => {
+      const keyPart = fields.key.trim() ? ` --key ${fields.key.trim()}` : ''
+      await this.runCommand(`/model add ${id} --base ${fields.baseURL.trim()}${keyPart}`)
+      const probe = await this.probeEndpoint(fields.baseURL.trim(), fields.key.trim())
+        .catch((e: unknown): { ok: false; models?: string[]; error: string } => ({ ok: false, error: e instanceof Error ? e.message : String(e) }))
+      this.store.push({
+        kind: 'notice',
+        text: probe.ok
+          ? `端点探测通过${probe.models?.length ? `（${probe.models.length} 个模型）` : ''}——/model 可切换使用`
+          : `端点探测未通过：${probe.error || '未知原因'}——档案已保存（内网端点可稍后 /doctor 复查）`,
+      })
+    })()
   }
 
   /** steer：运行中即时注入（Ctrl+S——kimi 双通道第二通道） */

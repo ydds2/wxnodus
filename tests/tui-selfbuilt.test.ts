@@ -871,6 +871,27 @@ describe('确认桥/配置面板/表单/历史落盘（原型 46/59/58/29）', (
     expect(err?.errorHint).toContain('https://api.example.com')
   })
 
+  it('C4：submitModelForm 保存后自动 probeEndpoint 一次（通过附模型数 · 失败如实标注不回滚）', async () => {
+    const f = fakeDeps()
+    const executed: string[] = []
+    f.deps.commandBus = { execute: async (c: string) => { executed.push(c); return { ok: true, output: '已添加' } } }
+    let probeCalls = 0
+    f.deps.probeEndpoint = async () => { probeCalls++; return { ok: true, models: ['m-a', 'm-b'] } }
+    const rt = new TuiRuntime(f.deps)
+    rt.start()
+    rt.submitModelForm({ name: 'probe-ok', baseURL: 'https://api.example.com/v1', key: '' })
+    await new Promise(r => setTimeout(r, 50))
+    expect(probeCalls).toBe(1) // 恰一次
+    expect(rt.store.getSnapshot().entries.at(-1)?.text).toContain('端点探测通过（2 个模型）')
+    // 探测失败：档案仍已保存（executed 收到 add），notice 如实带原因——诚实降级不 fail-closed
+    f.deps.probeEndpoint = async () => ({ ok: false, error: 'ECONNREFUSED（进程起不来）' })
+    rt.submitModelForm({ name: 'probe-bad', baseURL: 'https://api.example.com/v1', key: '' })
+    await new Promise(r => setTimeout(r, 50))
+    expect(executed[1]).toBe('/model add probe-bad --base https://api.example.com/v1')
+    expect(rt.store.getSnapshot().entries.at(-1)?.text).toContain('端点探测未通过：ECONNREFUSED')
+    expect(rt.store.getSnapshot().entries.at(-1)?.text).toContain('已保存')
+  })
+
   it('输入历史落盘：提交防抖写文件 · 新实例跨会话召回（G5）', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'wxn-tui-hist-'))
     const file = join(dir, 'tui-history.json')

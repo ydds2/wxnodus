@@ -312,10 +312,19 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
     },
     async recallHybrid(query, opts = {}) {
       const limit = opts.limit ?? 10;
-      // F6 置顶加权：召回分 = FTS 命中分 × salience 倍率——置顶记忆（pin）分数放大，
-      // 淡化记忆（fade）自然沉底；相同权重按 FTS rank 顺序稳定
+      // C5（2026-09-04 第四批）：时间衰减——指数半衰期 7 天，地板 0.1（旧记忆让位不消失）；
+      // 会话内召回（opts.sessionId 给定）不衰减（同会话上下文时间权重无意义——master plan
+      // 约定「session scope 不变」）。ts 为 null（异常行）不惩罚。
+      const HALF_LIFE_DAYS = 7;
+      const recency = (ts: number | null | undefined): number => {
+        if (ts == null || opts.sessionId) return 1;
+        const ageDays = (Date.now() - ts) / 86_400_000;
+        return Math.max(0.1, 0.5 ** (ageDays / HALF_LIFE_DAYS));
+      };
+      // F6 置顶加权：召回分 = FTS 命中分 × salience 倍率 × recency（C5）——置顶记忆（pin）
+      // 分数放大，淡化记忆（fade）自然沉底；相同权重按 FTS rank 顺序稳定
       const fts = searchMessages(db, query, { limit: limit * 2, sessionId: opts.sessionId, since: opts.since })
-        .map(r => ({ id: r.id, content: r.content, score: 1 * Math.max(0.05, r.salience ?? 1), session_id: r.session_id, ts: r.ts }));
+        .map(r => ({ id: r.id, content: r.content, score: 1 * Math.max(0.05, r.salience ?? 1) * recency(r.ts), session_id: r.session_id, ts: r.ts }));
       const seen = new Set<number>();
       const out = fts.filter(h => {
         if (seen.has(h.id)) return false;
@@ -334,7 +343,7 @@ export function createMemory(db: Db, opts: { workingLimit?: number } = {}): Memo
               const row = db.prepare(`SELECT id, content, salience, session_id, ts FROM messages WHERE id=?`).get(k.id) as { id: number; content: string; salience: number; session_id: string; ts: number } | undefined;
               if (!row) continue;
               seen.add(row.id);
-              out.push({ id: row.id, content: row.content, score: 0.8 * Math.max(0.05, row.salience ?? 1), session_id: row.session_id, ts: row.ts });
+              out.push({ id: row.id, content: row.content, score: 0.8 * Math.max(0.05, row.salience ?? 1) * recency(row.ts), session_id: row.session_id, ts: row.ts });
               if (out.length >= limit) break;
             }
           } catch { /* 向量查询失败静默降级 */ }
