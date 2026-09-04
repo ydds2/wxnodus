@@ -67,9 +67,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run typecheck:sdk
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npm run typecheck:core
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # typecheck:core 依赖根包 dist（packages/core import 'wxnodus/dist/*'）——必须在 build 后
+          npm run typecheck:core
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run check:test-discovery
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

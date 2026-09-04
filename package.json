@@ -23,7 +23,7 @@
     "smoke:tui": "node scripts/tui-pty-smoke.mjs",
     "e2e:tui": "npm run build && node scripts/tui-e2e-mock.mjs",
     "test": "npm run test:all",
-    "ci": "npm run typecheck && npm run typecheck:tests && npm run typecheck:sdk && npm run typecheck:core && npm run build && npm run test:all && npm run test:known-failures && npm run check:test-discovery && npm run check:registry-consistency && npm run check:requirement-coverage && npm run lint && npm run check:cycles && npm run check:docs-links && npm run check:docs-encoding && npm run eval:tasks:selftest",
+    "ci": "npm run typecheck && npm run typecheck:tests && npm run typecheck:sdk && npm run build && npm run typecheck:core && npm run test:all && npm run test:known-failures && npm run check:test-discovery && npm run check:registry-consistency && npm run check:requirement-coverage && npm run lint && npm run check:cycles && npm run check:docs-links && npm run check:docs-encoding && npm run eval:tasks:selftest",
     "lint": "node scripts/lint.mjs",
     "check:cycles": "node scripts/check-cycles.mjs",
     "check:registry-consistency": "node scripts/check-registry-consistency.mjs",
