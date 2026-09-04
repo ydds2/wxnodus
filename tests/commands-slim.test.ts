@@ -42,7 +42,7 @@ describe('两层命令面（主干/扩展）', () => {
   });
 });
 
-describe('/help 渲染（默认主干 / all 全目录）', () => {
+describe('/help 渲染（默认全目录 / core 主干速览 / all 别名）', () => {
   const makeBus = async () => {
     const dir = tmp();
     const db = openDB(dir);
@@ -56,9 +56,17 @@ describe('/help 渲染（默认主干 / all 全目录）', () => {
     return { bus, close: () => closeDB(db) };
   };
 
-  it('默认：只列主干命令 + 扩展计数提示；不含扩展命令行', async () => {
+  it('默认：全目录渲染（2026-09-03 用户裁决——扩展命令行可见 + 主干速览提示）', async () => {
     const { bus, close } = await makeBus();
     const out = (await bus.execute('/help')).output;
+    expect(out).toContain('全目录');
+    expect(out).toContain('/bench');
+    expect(out).toContain('/help core');
+    close();
+  });
+  it('/help core：只列主干命令 + 扩展计数提示；不含扩展命令行', async () => {
+    const { bus, close } = await makeBus();
+    const out = (await bus.execute('/help core')).output;
     expect(out).toContain('主干 47 个');
     expect(out).toContain('扩展命令');
     expect(out).toContain('/help all 查看全部');
@@ -66,7 +74,7 @@ describe('/help 渲染（默认主干 / all 全目录）', () => {
     expect(out).not.toContain('      /bench'); // 扩展命令默认不渲染成行（计数提示除外）
     close();
   });
-  it('/help all：全目录渲染（扩展命令行可见）', async () => {
+  it('/help all：全目录别名（与默认一致）', async () => {
     const { bus, close } = await makeBus();
     const out = (await bus.execute('/help all')).output;
     expect(out).toContain('全目录');

@@ -11,7 +11,8 @@ artifacts/
 .wxnodus/wave3-config.json*
 .wxnodus/wave3-drill.db
 .wxnodus/*.db
-migrations/
+# 根锚定（2026-09-04 修正：无锚定 migrations/ 曾误吞源码目录 src/migrations——git add 静默跳过致 master CI 缺源码连红）
+/migrations/
 
 # fixture 构建产物（验收机现场构建——锁哈希核验，不入库）
 tests/fixtures/windows/uia/*/bin/
@@ -35,5 +36,6 @@ dist-installer/
 # 测试曾写仓库根目录的探针产物（kernel-agent 测试已改临时目录——防御性忽略防回归）
 lowrisk-target.txt
 review-target.txt
-release/
+# 根锚定（2026-09-04 修正：无锚定 release/ 同样会误吞 src/release/ 新文件——同 /migrations/ 陷阱）
+/release/
 release-candidate-*.json

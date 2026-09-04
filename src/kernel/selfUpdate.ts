@@ -4,13 +4,16 @@
 //   ① 绝不自动安装——新版本只提示（banner/命令），安装必须显式 --apply/--file；
 //   ② 失败保持旧版可运行——apply 前备份（N-1），失败自动回恢复；
 //   ③ 气隙/私有部署一等公民——--file 本地 zip 安装（复用官方安装链）。
-// feed 契约（双形态）：
+// feed 契约（三形态）：
 //   A. 自有 JSON：{ version: '4.0.1', url: 'https://…/wxnodus-4.0.1.zip', sha256?: '…', notes? }
 //   B. GitHub Release API：tag_name + assets[].browser_download_url（sha256 缺省时诚实降级不校验）
+//   C. 版本清单（P3a 我的世界式双渠道）：{ latest:{release,snapshot}, versions:[{id,type,url,sha256}] }
+//      —— channel 参数选择渠道（release 默认/snapshot 快照）
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { WXNODUS_VERSION } from './version.js';
+import { parseVersionManifest, selectVersion, type UpdateChannel } from './versionManifest.js';
 
 export interface UpdateFeedInfo {
   updateAvailable: boolean;
@@ -44,6 +47,7 @@ export async function fetchLatestRelease(
   currentVersion: string = WXNODUS_VERSION,
   fetchImpl?: typeof fetch,
   timeoutMs = 6000,
+  channel: UpdateChannel = 'release',
 ): Promise<UpdateFeedInfo> {
   if (!feedUrl) {
     return { updateAvailable: false, latest: null, downloadUrl: null, sha256: null, notes: '未配置更新源（settings.updateFeed 或 WXNODUS_UPDATE_FEED）' };
@@ -58,6 +62,21 @@ export async function fetchLatestRelease(
     raw = await res.json();
   } catch (e: any) {
     return { updateAvailable: false, latest: null, downloadUrl: null, sha256: null, notes: `更新源不可达（${String(e?.message ?? e).slice(0, 80)}）` };
+  }
+  // C. 版本清单（P3a 双渠道——优先于旧双形态判定）
+  const manifest = parseVersionManifest(raw)
+  if (manifest) {
+    const sel = selectVersion(manifest, channel)
+    if (!sel.entry) {
+      return { updateAvailable: false, latest: sel.latest, downloadUrl: null, sha256: null, notes: sel.notes };
+    }
+    return {
+      updateAvailable: isNewerVersion(sel.entry.id, currentVersion),
+      latest: sel.entry.id,
+      downloadUrl: sel.entry.url ?? null,
+      sha256: sel.entry.sha256 ?? null,
+      notes: sel.notes,
+    };
   }
   // B. GitHub Release API 形态
   if (raw && typeof raw.tag_name === 'string' && Array.isArray(raw.assets)) {

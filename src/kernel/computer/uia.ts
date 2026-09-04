@@ -125,8 +125,14 @@ if ($script:args[2] -and $script:args[2] -ne '') {
   $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
 }
 if ($win -eq $null) { $win = $root }
-$el = Find-ElementBy $win $script:args[1] $script:args[0]
-if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else { Get-ElementInfo $el | ConvertTo-Json -Compress -Depth 3 }
+# ⅩⅩⅩ（C-4）：等待动态 UI 就绪（最多 3s / 150ms 间）——此前单次精确匹配，未就绪即失败靠模型重调
+$el = $null
+$deadline = [DateTime]::UtcNow.AddSeconds(3)
+while ($el -eq $null -and [DateTime]::UtcNow -lt $deadline) {
+  $el = Find-ElementBy $win $script:args[1] $script:args[0]
+  if ($el -eq $null) { Start-Sleep -Milliseconds 150 }
+}
+if ($el -eq $null) { '{"ok":false,"reason":"element not found (waited 3s)"}' } else { Get-ElementInfo $el | ConvertTo-Json -Compress -Depth 3 }
 `.trim(),
   click: `
 $root = [System.Windows.Automation.AutomationElement]::RootElement
@@ -136,8 +142,13 @@ if ($script:args[2] -and $script:args[2] -ne '') {
   $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
 }
 if ($win -eq $null) { $win = $root }
-$el = Find-ElementBy $win $script:args[1] $script:args[0]
-if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
+$el = $null
+$deadline = [DateTime]::UtcNow.AddSeconds(3)
+while ($el -eq $null -and [DateTime]::UtcNow -lt $deadline) {
+  $el = Find-ElementBy $win $script:args[1] $script:args[0]
+  if ($el -eq $null) { Start-Sleep -Milliseconds 150 }
+}
+if ($el -eq $null) { '{"ok":false,"reason":"element not found (waited 3s)"}' } else {
   try {
     $invoke = $el.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
     $invoke.Invoke()
@@ -218,8 +229,13 @@ if ($script:args[2] -and $script:args[2] -ne '') {
   $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
 }
 if ($win -eq $null) { $win = $root }
-$el = Find-ElementBy $win $script:args[1] $script:args[0]
-if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
+$el = $null
+$deadline = [DateTime]::UtcNow.AddSeconds(3)
+while ($el -eq $null -and [DateTime]::UtcNow -lt $deadline) {
+  $el = Find-ElementBy $win $script:args[1] $script:args[0]
+  if ($el -eq $null) { Start-Sleep -Milliseconds 150 }
+}
+if ($el -eq $null) { '{"ok":false,"reason":"element not found (waited 3s)"}' } else {
   try {
     $invoke = $el.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
     $invoke.Invoke()
@@ -235,8 +251,13 @@ if ($script:args[2] -and $script:args[2] -ne '') {
   $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
 }
 if ($win -eq $null) { $win = $root }
-$el = Find-ElementBy $win $script:args[1] $script:args[0]
-if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
+$el = $null
+$deadline = [DateTime]::UtcNow.AddSeconds(3)
+while ($el -eq $null -and [DateTime]::UtcNow -lt $deadline) {
+  $el = Find-ElementBy $win $script:args[1] $script:args[0]
+  if ($el -eq $null) { Start-Sleep -Milliseconds 150 }
+}
+if ($el -eq $null) { '{"ok":false,"reason":"element not found (waited 3s)"}' } else {
   try {
     $sel = $el.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
     $sel.Select()
@@ -252,8 +273,13 @@ if ($script:args[2] -and $script:args[2] -ne '') {
   $win = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
 }
 if ($win -eq $null) { $win = $root }
-$el = Find-ElementBy $win $script:args[1] $script:args[0]
-if ($el -eq $null) { '{"ok":false,"reason":"element not found"}' } else {
+$el = $null
+$deadline = [DateTime]::UtcNow.AddSeconds(3)
+while ($el -eq $null -and [DateTime]::UtcNow -lt $deadline) {
+  $el = Find-ElementBy $win $script:args[1] $script:args[0]
+  if ($el -eq $null) { Start-Sleep -Milliseconds 150 }
+}
+if ($el -eq $null) { '{"ok":false,"reason":"element not found (waited 3s)"}' } else {
   $rect = $el.Current.BoundingRectangle
   $script:centerX = [int]($rect.X + $rect.Width / 2)
   $script:centerY = [int]($rect.Y + $rect.Height / 2)
@@ -365,4 +391,31 @@ export async function uiaRead(query: string, handle?: string): Promise<UiaResult
 /** 按 ControlType 找窗口下第一个元素（如 notepad 的 Edit——无 Name/Id 的宿主控件） */
 export async function uiaFindByCt(ct: string, handle?: string): Promise<UiaResult> {
   return runPs('findct', [String(ct ?? ''), handle ?? '']);
+}
+
+
+/** ⅩⅩⅪ：窗口边界 → 截屏区域（computer_observe tier=window 数据源） */
+export async function uiaGetWindowRect(handle: string): Promise<import('./index.js').CaptureRegion | null> {
+  try {
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const execFileAsync = promisify(execFile);
+    const ps = `
+Add-Type -AssemblyName UIAutomationClient
+$win = [System.Windows.Automation.AutomationElement]::FromHandle(${parseInt(handle, 10) || 0})
+if ($win -eq $null) { 'null' } else {
+  $r = $win.Current.BoundingRectangle
+  if ($r.IsEmpty -or $r.Width -le 0 -or $r.Height -le 0 -or [double]::IsInfinity($r.X) -or [double]::IsInfinity($r.Y)) { 'null' } else {
+    [math]::Floor($r.X), [math]::Floor($r.Y), [math]::Floor($r.Width), [math]::Floor($r.Height) -join ','
+  }
+}`;
+    const r = await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ps], {
+      encoding: 'utf8', timeout: 10_000, windowsHide: true,
+    });
+    const out = String(r.stdout ?? '').trim();
+    if (out === 'null' || !out) return null;
+    const [x, y, w, h] = out.split(',').map(Number);
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return null;
+    return { x, y, width: w, height: h };
+  } catch { return null; }
 }

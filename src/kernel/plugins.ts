@@ -1,4 +1,7 @@
 // src/kernel/plugins.ts — 插件系统（P0：补齐对比缺口——参考 kimi plugin.json 机制，本地优先）
+// [ⅩⅩⅩⅢ Gap3 如实记录] Legacy 路径 in-process import 无技术隔离：
+//   被信任插件拥有与宿主同权的 fs/网络。隔离依赖 trustedInProcessPlugins 白名单 + danger 确认门。
+//   Modern 路径（processIsolationSandbox）有真实子进程隔离但尚未成为缺省。设计限制非 bug。
 // 设计：
 //   data/plugins/<name>/plugin.json 声明元数据与工具签名
 //   data/plugins/<name>/index.js 实现（ESM/CJS 均可）导出 { tools, commands }
@@ -53,6 +56,14 @@ export interface PluginToolCtx {
   getConfig?: (partition: string, key?: string) => any;
   /** 插件日志：log(level, msg) → data/plugins/<name>/plugin.log 追加 */
   log?: (level: 'info' | 'warn' | 'error', msg: string) => void;
+  /** ⅩⅩⅩⅤ 权限作用域：插件可访问的 fs 路径前缀（缺省仅 dataPath；声明后加白） */
+  allowedPaths?: readonly string[];
+  /** ⅩⅩⅩⅤ 网络作用域：插件可访问的域名白名单（缺省拒绝全部——空数组=完全离线） */
+  allowedDomains?: readonly string[];
+  /** ⅩⅩⅩⅤ 网络代理 fetch：经 allowedDomains 白名单校验后的受控网络访问
+   *  （不经此通道的 require('node:http') 等不受限——legacy in-process 的已知限制，
+   *   modern 子进程沙盒有 OS 级阻断；本接口是「最佳实践通道」而非强制门） */
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>;
 }
 
 export interface LoadedPlugin {

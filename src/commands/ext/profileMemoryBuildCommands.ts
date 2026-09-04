@@ -750,7 +750,8 @@ export function registerProfileMemoryBuildCommands(bus: CommandBus, ctx: Handler
         return `sandbox.failOpen=${want ? 'true' : 'false'}——${want ? '沙盒不可用时显式降级裸跑（每次执行标注未沙盒）' : '沙盒不可用即拒绝执行（fail-closed，默认）'}（/sandbox os failopen on|off 切换）`;
       }
       if (['L0', 'L1', 'L2', 'L3', 'OFF'].includes(sub)) {
-        ctx.config.setKey('settings', 'sandbox', { profile: sub === 'OFF' ? 'off' : sub });
+        // ⅩⅩⅨ（专项审计 S-2）：spread 保留既有键——此前整对象替换会静默丢掉用户显式设置的 failOpen
+        ctx.config.setKey('settings', 'sandbox', { ...(ctx.config.getKey('settings', 'sandbox') ?? {}), profile: sub === 'OFF' ? 'off' : sub });
         if (sub === 'OFF') return 'OS 沙盒已关闭（settings.sandbox.profile=off）——bash 按普通方式执行（策略层审批链不变）';
         const { sandboxSpec } = await import('../../kernel/winSandbox.js');
         const spec = sandboxSpec(sub as 'L0' | 'L1' | 'L2' | 'L3');

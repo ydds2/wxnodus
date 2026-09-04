@@ -3,7 +3,7 @@
 //   桌面域：robotjs（鼠标/键盘/中文剪贴板）；浏览器域：playwright-core（CDP）
 //   截屏：node-screenshots（DPI 感知多显示器）
 import { ActionGuard } from './guards.js';
-import { validateAction, convertCoords, type CuAction } from './actionLayer.js';
+import { validateAction, type CuAction } from './actionLayer.js';
 import { createRequire } from 'node:module';
 
 // robotjs 为 CommonJS 包——ESM 下经 createRequire 加载（Node-API 预编译，Unicode 中文支持）
@@ -32,12 +32,13 @@ function getRobot(): any {
 // opts.region：用户所需切片界面信息——指定屏幕区域裁剪（x/y/width/height，
 // 物理像素坐标）；缺省全屏。敏感操作留证/界面切片分析共用此入口
 export interface CaptureRegion { x: number; y: number; width: number; height: number }
-export async function captureScreen(opts: { region?: CaptureRegion } = {}): Promise<ScreenShot | null> {
+export async function captureScreen(opts: { region?: CaptureRegion; monitor?: number } = {}): Promise<ScreenShot | null> {
   try {
     const { Monitor } = await import('node-screenshots');
     const monitors = await Monitor.all();
     if (!monitors.length) return null;
-    const m = monitors[0];
+    // ⅩⅩⅩ（C-2）：多显示器支持——monitor 索引可选（缺省主屏 0）
+    const m = monitors[Math.min(Math.max(opts.monitor ?? 0, 0), monitors.length - 1)]!;
     let img = m.captureImageSync();
     const scale = Number(m.scaleFactor()) || 1;
     // KF-007：Monitor 的 width/height 是方法不是属性——读属性拿到函数本身（→NaN）。
@@ -146,7 +147,7 @@ export class ComputerUse {
             if (!r) {
               const { nativeInput } = await import('./nativeInput.js');
               const fb = await nativeInput(a);
-              return fb.ok ? `已点击 (${a.x},${a.y})（系统 SendInput 兜底）` : `动作失败（robotjs 不可用且系统兜底失败）：${fb.error ?? ''}`;
+              return fb.ok ? `已点击 (${a.x},${a.y})（系统 SendInput 兜底）` : `[ERROR] 动作失败（robotjs 不可用且系统兜底失败）：${fb.error ?? ''}`;
             }
             r.moveMouse(a.x, a.y);
             // KF-008：robotjs mouseClick 无 'double' 按钮语义——双击走布尔第二参
@@ -159,7 +160,7 @@ export class ComputerUse {
             if (!r) {
               const { nativeInput } = await import('./nativeInput.js');
               const fb = await nativeInput(a);
-              return fb.ok ? `已输入 ${a.text.length} 字符（系统 SendInput 兜底）` : `动作失败（robotjs 不可用且系统兜底失败）：${fb.error ?? ''}`;
+              return fb.ok ? `已输入 ${a.text.length} 字符（系统 SendInput 兜底）` : `[ERROR] 动作失败（robotjs 不可用且系统兜底失败）：${fb.error ?? ''}`;
             }
             // 中文走剪贴板粘贴（调研结论：typeString 对 CJK 不可靠）
             if (/[\u4e00-\u9fff]/.test(a.text)) {
@@ -228,8 +229,11 @@ export class ComputerUse {
   }
 }
 
-// DPI 感知动作：截图坐标 → 换算 → 点击
-export async function clickOnScreen(x: number, y: number, shot: ScreenShot, cu: ComputerUse): Promise<string> {
-  const { x: lx, y: ly } = convertCoords(x, y, { scale: shot.scale });
-  return cu.act({ type: 'click', x: lx, y: ly });
+// ⅩⅩⅩ（专项审计 C-1）：截图坐标系 = 物理像素（node-screenshots 物理分辨率），
+// robotjs moveMouse / SetCursorPos 也是物理像素语义——此前 convertCoords（÷scale）把物理
+// 转逻辑再交给物理 API，DPI>1 时点击系统性偏向左上。修复：截图像素直接透传（单屏语义）。
+// 多屏负原点/混合 DPI 场景的正确变换层（virtualDesktop toPhysicalPoint）保留在
+// infrastructure 层——computer 工具链接入时启用（当前 captureScreen 仅主屏，坐标即主屏物理）。
+export async function clickOnScreen(x: number, y: number, _shot: ScreenShot, cu: ComputerUse): Promise<string> {
+  return cu.act({ type: 'click', x: Math.round(x), y: Math.round(y) });
 }

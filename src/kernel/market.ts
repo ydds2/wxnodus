@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 import { readBoundedBody } from '../infrastructure/http/boundedResponseReader.js';
@@ -37,6 +38,8 @@ export interface MarketItem {
 export interface MarketDeps {
   fetchImpl?: typeof fetch;
   safety?: (url: string) => Promise<{ ok: boolean; reason?: string }>;
+  /** npm install 执行器（测试注入；默认 execFileSync npm——MCP artifact 运行时依赖解析用） */
+  npmInstall?: (cwd: string) => { ok: boolean; error?: string };
 }
 
 export interface MarketProvenanceReceipt {
@@ -90,7 +93,10 @@ const fetchBounded = async (
   timeoutMs: number,
   deps: MarketDeps,
 ): Promise<{ bytes: Buffer; url: string }> => {
-  const fetchImpl = deps.fetchImpl ?? fetch;
+  // ⅩⅩⅨ（专项审计 D-4）：缺省下载器走出站 fetch——env/系统代理支持（企业代理环境市场整链
+  // 此前瘫痪）+ 私网直连红线；测试替身仍经 deps.fetchImpl 注入。
+  // ⅩⅩⅩ（D-8）：下载重试——fetchBounded 内部 1 次失败后 2s 退避重试 1 次（网络抖动/CDN 切换）
+  const fetchImpl = deps.fetchImpl ?? (((await import('../infrastructure/http/outboundFetch.js')).createOutboundFetch()).fetch as typeof fetch);
   let current = initialUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     await authorizeMarketUrl(current, deps);
@@ -208,7 +214,7 @@ export async function installMcpFromNpm(pkg: string, cwd: string, deps: MarketDe
       expectedDigest: dl.digestLabel,
       observedDigest: dl.digestLabel,
       timestamp: new Date().toISOString(),
-    });
+    }, deps);
     if (!installed.ok || !installed.entrypoint) return installed;
     const existing = loadProjectMcpConfig(cwd);
     if (existing.some(server => server.name === name)) return { ok: true, message: `MCP ${name} 已在 .mcp.json（无重复添加）` };
@@ -351,12 +357,26 @@ export const installSkillDir = (
   }
 };
 
+/** 默认 npm install 执行器（Windows npm.cmd / POSIX npm——build/gate.ts 同款先例；120s 超时 fail-closed） */
+const defaultNpmInstall = (cwd: string): { ok: boolean; error?: string } => {
+  try {
+    execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm',
+      ['install', '--omit=dev', '--no-audit', '--no-fund', '--loglevel=error'],
+      { cwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: 120_000, encoding: 'utf8' });
+    return { ok: true };
+  } catch (e: any) {
+    const head = String(e?.stderr || e?.message || e).split('\n')[0]?.slice(0, 160) ?? 'npm install 失败';
+    return { ok: false, error: head };
+  }
+};
+
 const installDownloadedMcp = async (
   archive: Buffer,
   cwd: string,
   pkg: string,
   version: string,
   receipt: MarketProvenanceReceipt,
+  deps: MarketDeps = {},
 ): Promise<{ ok: boolean; message: string; entrypoint?: string }> => {
   const root = join(cwd, MCP_ARTIFACT_ROOT);
   mkdirSync(root, { recursive: true });
@@ -373,10 +393,20 @@ const installDownloadedMcp = async (
     const entrypoint = join(packageRoot, main);
     if (!existsSync(entrypoint)) throw new Error('MCP artifact 缺少 package entrypoint');
     assertNoReparsePoints(extractedRoot);
+    // N-E2 修复（2026-08-29 深潜评估）：npm tarball 不含 node_modules——此前仅校验 package.json/entrypoint
+    // 即写 .mcp.json（假成功：依赖未解析，首次 tools/list 即 MODULE_NOT_FOUND）。
+    // 现在解包后真实解析运行时依赖（npm install --omit=dev），失败即整体失败（半成品不落盘）。
+    const depNames = Object.keys((manifest.dependencies ?? {}) as Record<string, unknown>);
+    if (depNames.length > 0) {
+      const ran = (deps.npmInstall ?? defaultNpmInstall)(packageRoot);
+      if (!ran.ok) {
+        throw new Error(`运行时依赖解析失败（${depNames.slice(0, 4).join(', ')}${depNames.length > 4 ? '…' : ''}）：${ran.error ?? 'npm install 未成功'}——该 artifact 未安装`);
+      }
+    }
     if (existsSync(target)) rmSync(target, { recursive: true, force: true });
     renameSync(packageRoot, target);
     writeReceipt(target, receipt);
-    return { ok: true, message: `已安装并固定 MCP artifact ${pkg}@${version} → ${target}`, entrypoint: join(target, main) };
+    return { ok: true, message: `已安装并固定 MCP artifact ${pkg}@${version}${depNames.length ? '（运行时依赖已解析）' : ''} → ${target}`, entrypoint: join(target, main) };
   } finally {
     try { rmSync(extraction, { recursive: true, force: true }); } catch { /* cleanup */ }
   }
@@ -439,7 +469,8 @@ export async function installSkillFromGithub(repo: string, dataDir: string, deps
     return await installDownloadedSkill(downloaded.bytes, dataDir, {
       source: `github:${normalized}`,
       resolvedIdentity: `${normalized}@${commit}`,
-      expectedDigest: `git:${commit}`,
+      // ⅩⅩⅩ（D-5）：expectedDigest 改为不可变锚（commit SHA 短缀）——安装后可独立校验
+      expectedDigest: `git:${commit.slice(0, 16)}→sha256:${digest.slice(0, 16)}`,
       observedDigest: `sha256:${digest}`,
       timestamp: new Date().toISOString(),
     });

@@ -12,6 +12,7 @@ import { salienceFlag, salienceFromMultiplier } from './memorySalience.js';
 import type { EventBus } from '../kernel/events.js';
 import type { CommandBus } from '../app/CommandBus.js';
 import { SLASH, COMMAND_CAT, COMMAND_DESC, COMMAND_MERGE, resolveAlias, CORE_COMMANDS } from './registry.js';
+import { ALIASES, classifyCommand, COMMAND_LEVEL_LABEL } from '../kernel/commandLevels.js';
 import { capabilityBadges, decryptKey, filterModels, maskKey, MODEL_CATALOG, resolveApiKey } from '../kernel/providers.js';
 import { resolveDefaultModel, resolveDefaultBaseURL } from '../kernel/defaults.js';
 import { parseModelAddArgs, addCustomModel, applyModelKey, MODEL_SWITCH_CACHE_NOTICE } from '../kernel/modelRegistry.js';
@@ -24,6 +25,7 @@ import { instantiate } from '../build/scaffold.js';
 import { writeEvidence, fingerprint } from '../build/evidence.js';
 import { runGate } from '../build/gate.js';
 import { searchMessages } from '../kernel/memory.js';
+import { ensureInstanceIdentity } from '../kernel/instanceIdentity.js';
 import { join, isAbsolute } from 'node:path';
 import { mkdirSync, existsSync, readdirSync, cpSync, writeFileSync } from 'node:fs';
 import { resolveWorkspaceRoot } from '../domain/config/workspaceRoot.js';
@@ -39,6 +41,11 @@ export interface HandlerCtx {
   mem: Memory;
   config: Config;
   bus: EventBus;
+  /** 「独立艺术品」品牌化服务（/brand 写入口——ConfigService；headless 语境缺省 undefined） */
+  configService?: {
+    setBranding(scope: 'user' | 'workspace', branding: unknown): Promise<{ ok: boolean }>;
+    resolveBranding(): Promise<{ ok: boolean; value?: { name: string; icon: string | null } }>;
+  };
   /** agent 实例（/delegate 派生子代理等）；已接纳命令的嵌套工作必须继承 signal，不再次顶层接纳。 */
   agent?: {
     run(prompt: string, opts?: { goalLoop?: boolean; signal?: AbortSignal }): Promise<{ ok: boolean; text: string; turns: number; interrupted: boolean; status?: string }>;
@@ -69,6 +76,8 @@ export interface HandlerCtx {
   setThinking: (on: boolean) => void;
   /** MCP 热重载（/mcp add/remove 后自动接通，无需重启） */
   reloadMcp?: () => Promise<{ ok: boolean; count: number; message: string }>;
+  /** 组合根持有的在线 MCP 客户端快照（/mcp list/status 在线状态与内存列的事实源） */
+  getMcpClients?: () => import('../kernel/mcp.js').McpClient[];
   /** 组合根持有的 legacy 插件 runtime；列表与变更必须读取同一快照。 */
   getPlugins?: () => import('../kernel/plugins.js').LoadedPlugin[];
   reloadPlugins?: () => Promise<import('../application/extensions/legacyPluginRuntime.js').PluginRuntimeResult>;
@@ -119,8 +128,7 @@ export interface HandlerCtx {
 // 2026-08-19 输出格式体系（docs/output-format-spec-2026.md）：命令输出 = 标题行
 // + 两格缩进条目（纯文本、无边框——对标 Claude Code / Gemini 斜杠命令输出的
 // plain 格式）；CJK 宽度对齐需求随边框一并移除
-const lines = (title: string, body: string[]): string =>
-  [title, ...body.map(l => `  ${l}`)].join('\n');
+import { lines } from './outputFormat.js';
 
 // TTY 门控 ANSI 着色（面板级样式）：TUI 交互输出彩色（slash 消息已支持 Ansi 渲染），
 // -p 管道/测试环境 stdout 非 TTY → 纯文本（脚本与断言零污染）
@@ -129,7 +137,7 @@ export const c = (s: string, code: string): string => (process.stdout.isTTY === 
 export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // 对话
   bus.register('/help', (args) => {
-    if (args[0] && args[0] !== 'all') {
+    if (args[0] && args[0] !== 'all' && args[0] !== 'core') {
       const cmd = resolveAlias('/' + args[0].replace(/^\//, ''));
       const merge = COMMAND_MERGE[cmd];
       // 审查修复：UI 本地命令（/details /copy /voice 等）不在内核注册表——此前返回
@@ -139,9 +147,9 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       }
       return `${cmd}：${COMMAND_DESC[cmd] ?? '无描述'}${merge ? `（已并入 ${merge}）` : ''}${!CORE_COMMANDS.has(cmd) && SLASH.includes(cmd) ? '（扩展命令——默认 /help 不列出，/help all 可见）' : ''}`;
     }
-    // supremacy 1.6：命令面瘦身——默认渲染主干层（47 条日常驾驶命令），
-    // /help all 渲染全目录（扩展层照常可用，零删除）
-    const showAll = args[0] === 'all';
+    // 2026-09-03 用户裁决：默认渲染全目录（「命令没有全部展示」两轮反馈）；/help core 看主干 47 速览；
+    // /help all 保留为全目录别名（既有脚本/肌肉记忆不破坏）。零删除契约不变。
+    const showAll = args[0] !== 'core';
     // 100% 重构：分组标题行 + 每命令一行两列（命令名 / 描述）——TTY 门控 ANSI 彩色，
     // TUI 彩色（slash 消息已支持 Ansi 渲染）、-p 管道/测试纯文本
     const catName: Record<string, string> = {
@@ -162,7 +170,9 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
       for (const cmd of cmds) {
         // A22 指令融合：合并命令标注「（=目标命令）」——同义命令不再重复心智负担
         const merge = COMMAND_MERGE[cmd];
-        rows.push(`    ${c(cmd.padEnd(26), '35')}${COMMAND_DESC[cmd] ?? ''}${merge ? c(`（=${merge}）`, '2') : ''}`);
+        // 2026-09-03 拓展：每行标注安全分级（安全/确认/危险/红线——与 AI 通道分级同一事实源）
+        const lvl = COMMAND_LEVEL_LABEL[classifyCommand(cmd)] ?? '确认'
+        rows.push(`    ${c(cmd.padEnd(26), '35')}${COMMAND_DESC[cmd] ?? ''}${merge ? c(`（=${merge}）`, '2') : ''}  ${c(`〔${lvl}〕`, '2')}`)
       }
     }
     const extCount = SLASH.length - CORE_COMMANDS.size;
@@ -171,9 +181,16 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     rows.push(`${c(' ◈ 离线手册', '1;33')}：docs/user-guide.md（随安装包分发——命令总览/退出码/权限模式/协议入口）`);
     if (!showAll && extCount > 0) {
       rows.push(`${c(` ◈ 扩展命令 ${extCount} 个（进阶/别名/低频——照常可用）——/help all 查看全部`, '2')}`);
+    } else if (showAll) {
+      rows.push(`${c(` ◈ 主干速览：/help core（${CORE_COMMANDS.size} 条日常驾驶命令）`, '2')}`);
     }
     const title = showAll ? ` 命令（全目录 ${SLASH.length} 个） ` : ` 命令（主干 ${CORE_COMMANDS.size} 个） `;
     return lines(title, rows);
+  });
+
+  bus.register('/aliases', () => {
+    const rows = Object.entries(ALIASES).map(([alias, target]) => ` ${alias.padEnd(8)} → ${target}`)
+    return lines(` 中文别名（${rows.length} 条 · 斜杠中文直达规范命令） `, rows)
   });
 
   bus.register('/clear', async () => { ctx.clearHistory(); return '已清空'; });
@@ -236,17 +253,20 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     const activeP = providers.find(p => p.id === s.activeProvider);
     const bm = (s.balanceMonitor ?? {}) as Record<string, any>;
     const sid = ctx.agent?.getSessionId?.() ?? 'default';
+    // T77 实例身份：本机唯一标识（首启生成——「网络下载后独一无二」的命令面透出）
+    const identity = ensureInstanceIdentity(ctx.dataDir);
     let costLine = '暂无 API 用量（真实对话后 /cost 估算）';
     const cq = sessionCost(ctx.db, sid, (ctx.config.get('settings') as Record<string, any>)?.costPrices);
     if (cq) costLine = `${costText(cq)}（估算，本会话）`;
     return lines(' 状态 ', [
+      ` 身份：${c(identity.codename, '36')}（${identity.instanceId.slice(0, 8)} · 本机唯一）`,
       ` 模型：${c(u.model || '未配置（/model set-key <密钥> 配置）', u.model ? '35' : '33')}`,
       ` 模式：${c(u.mode, '36')}`,
       ` 目录：${c(u.cwd, '36')}`,
       ` 命令：${c(`${SLASH.length} 个`, '36')}`,
       ` 档案：${activeP ? `${activeP.id}（${activeP.name}）` : providers.length ? '未切换（/profile use）' : '未配置（/profile add 接入任意端点）'}`,
       ` 余额监控：${bm.enabled === false ? '已关闭（/balance on）' : bm.url || activeP?.balanceUrl ? '已配置（状态栏 💰）' : '未配置（/balance set <余额URL>）'}`,
-      ` 成本：${costLine}（/cost 看区间）`,
+      ` 成本：${costLine.includes('/cost') ? costLine : `${costLine}（/cost 看区间）`}`,
       ` 智能：${[
         autoReview ? 'AI 预审' : null,
         sec.sudoInjection ? 'sudo 通道' : null,
@@ -288,6 +308,9 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
     return on ? 'afk 已开启：无人值守自动批准（ask_user/clarify 自动通过，硬红线仍拦截）' : 'afk 已关闭（回到 smart 更改前确认）';
   });
 
+  // 注：/undo 命令的规范实现位于 src/commands/ext/sessionCommands.ts（软归档回滚 + /undo fs 文件级 +
+  // 自动 checkpoint）——此处不得重复注册（重复注册会覆盖 ext 版，已由 e2e 真机测试捕获）。
+
   // 生命周期 Hooks（settings.hooks 本地命令）
   bus.register('/hooks', () => {
     const cfg = hooksFromConfig(ctx.config.get('settings'));
@@ -313,6 +336,33 @@ export function registerCoreHandlers(bus: CommandBus, ctx: HandlerCtx): void {
   // 已并入 /model：密钥配置 → /model set-key，密钥状态 → /model key（原 /key 命令移除）
 
   bus.register('/version', () => `WxNodus ${WXNODUS_VERSION}`);
+
+  // 更新渠道（P3a：我的世界式版本列车——snapshot/release 双渠道；/update 与启动 banner 按此取版本）
+  bus.register('/channel', async (args) => {
+    const target = args[0];
+    const current: 'release' | 'snapshot' = String(ctx.config.getKey?.('settings', 'updateChannel') ?? 'release') === 'snapshot' ? 'snapshot' : 'release';
+    if (target === 'release' || target === 'snapshot') {
+      ctx.config.setKey('settings', 'updateChannel', target);
+      return `更新渠道已切换：${target === 'snapshot' ? 'snapshot（快照——尝鲜/社区测，正式版=快照冻结）' : 'release（稳定——推荐）'}（立即生效：/update 与启动 banner 按此渠道取版本）`;
+    }
+    if (target) return '用法：/channel [release|snapshot]（无参查看当前渠道与远端双渠道版本）';
+    const base = [
+      ` 当前渠道：${current === 'snapshot' ? 'snapshot（快照）' : 'release（稳定）'}`,
+      ' 切换：/channel release ｜ /channel snapshot',
+    ];
+    const feed = String(ctx.config.getKey?.('settings', 'updateFeed') ?? process.env.WXNODUS_UPDATE_FEED ?? '');
+    if (!feed) return lines(' 更新渠道 ', [...base, ' 更新源：未配置（settings.updateFeed 或 WXNODUS_UPDATE_FEED——配置后显示双渠道最新版本）']);
+    const { fetchLatestRelease } = await import('../kernel/selfUpdate.js');
+    const [rel, snap] = await Promise.all([
+      fetchLatestRelease(feed, WXNODUS_VERSION, undefined, 6000, 'release'),
+      fetchLatestRelease(feed, WXNODUS_VERSION, undefined, 6000, 'snapshot'),
+    ]);
+    return lines(' 更新渠道 ', [
+      ...base,
+      ` release 最新：${rel.latest ?? '不可用'}${rel.updateAvailable ? '（可升级）' : ''}${rel.notes ? ` — ${rel.notes}` : ''}`,
+      ` snapshot 最新：${snap.latest ?? '不可用'}${snap.updateAvailable ? '（可升级）' : ''}${snap.notes ? ` — ${snap.notes}` : ''}`,
+    ]);
+  });
 
   // 更新检查（分发闭环 S0）：诚实报告安装渠道/版本/仓库状态与确切更新命令；
   // git 渠道在有 remote 且工作树干净时 --yes 执行 pull+build，其余渠道只给命令绝不代执行。
@@ -491,6 +541,36 @@ ${MODEL_SWITCH_CACHE_NOTICE}`;
     return `当前主题：${ctx.getThemeName?.() ?? 'default'}
 可选预设：dark / light / ${themePresetNames().filter(n => n !== 'dark' && n !== 'light').join(' / ')}${extras.length ? `
 用户主题：${extras.join(' / ')}` : ''}`;
+  });
+
+  // 「独立艺术品」包装层（2026-08-29 接线）：/brand 命名/图标化——每份 wxnodus 独一无二
+  // （user/config.json 持久化 · 重启生效；TUI 品牌行/欢迎语消费；workspace 级可项目覆盖）
+  bus.register('/brand', async (args) => {
+    const svc = ctx.configService;
+    if (!svc) return '品牌服务未接入（headless/精简装配）';
+    const sub = args[0];
+    // T77：未手工命名时，生效显示的是实例代号（首启生成——「网络下载后独一无二」自动层）
+    const identity = ensureInstanceIdentity(ctx.dataDir);
+    if (!sub || sub === 'show') {
+      const r = await svc.resolveBranding();
+      if (!r.ok || !r.value) return `当前品牌：实例代号「${identity.codename}」生效中（/brand set <名称> [图标] 自定义）`;
+      return r.value.name === 'wxnodus'
+        ? `当前品牌：实例代号「${identity.codename}」生效中（默认未命名——/brand set <名称> [图标] 自定义）`
+        : `当前品牌：${r.value.icon ? `${r.value.icon} ` : ''}${r.value.name}`;
+    }
+    if (sub === 'set') {
+      const name = args[1];
+      if (!name) return '用法：/brand set <名称> [图标]（名称 ≤40 字符；图标为短 emoji/文本）';
+      const icon = args[2];
+      const r = await svc.setBranding('user', icon ? { name, icon } : { name });
+      if (!r.ok) return `品牌设置失败（名称/图标非法——控制字符或超长）`;
+      return `品牌已设置：${icon ? `${icon} ` : ''}${name}——重启 wxnodus 生效（品牌行/欢迎语）`;
+    }
+    if (sub === 'reset') {
+      const r = await svc.setBranding('user', {});
+      return r.ok ? `品牌已重置——重启后回到实例代号「${identity.codename}」` : '品牌重置失败';
+    }
+    return '用法：/brand show｜set <名称> [图标]｜reset';
   });
 
   // W7-00：主工作区切换涉及 MCP/plugin/tool/Agent 整个 workspace scope。
@@ -995,8 +1075,18 @@ ${MODEL_SWITCH_CACHE_NOTICE}`;
 
 
   bus.register('/img', async (args) => {
-    const target = args[0];
-    if (!target) return '用法：/img <图片路径或URL>（多模态分析，/vision 同义）';
+    let target = args[0];
+    if (!target) return '用法：/img <图片路径或URL>（多模态分析，/vision 同义）· /img clipboard 剪贴板截图';
+    // 原型 33 附件通道：剪贴板截图（Ctrl+V 粘贴截图 → 落盘 → 视觉分析——数据不出机）
+    if (target === 'clipboard' || target === '粘贴') {
+      const { captureClipboardImage } = await import('../kernel/clipboardImage.js');
+      const cap = await captureClipboardImage(ctx.dataDir);
+      if (!cap.ok) return `剪贴板截图不可用：${cap.error}`;
+      target = cap.image.path;
+      ctx.bus.emit('system.notice', {
+        text: `▣ 已捕获剪贴板截图（${cap.image.width}×${cap.image.height} · ${(cap.image.bytes / 1024).toFixed(0)}KB）→ 视觉分析…（纯文本模型自动文本化——四层图片守卫）`,
+      });
+    }
     const { describeImageStatus } = await import('../kernel/vision.js');
     const settings = ctx.config.get('settings');
     const enc = ctx.config.getKey('settings', 'apiKeyEnc') as string | undefined;

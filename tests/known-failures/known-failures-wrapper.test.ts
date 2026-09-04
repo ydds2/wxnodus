@@ -53,6 +53,13 @@ describe('known V3 failure registry', () => {
         expect(report.failureId).toBe(failure.id);
         expect(report.failureCode).toBe(failure.expectedFailureCode);
       });
+    } else if (failure.status === 'retired') {
+      // retired：缺陷面随所属子系统退役——无回归文件可跑；断言磁盘上确无残留 case（闭环同 open 的闭包校验）
+      it(`${failure.id} retired: no stale case file on disk`, () => {
+        const retiredCasePrefix = `${failure.id.toLowerCase()}-`;
+        expect(readCasesDir()
+          .some(name => name.startsWith(retiredCasePrefix) && name.endsWith('.case.ts'))).toBe(false);
+      });
     } else {
       it(`${failure.id} resolved regression is an ordinary green test`, () => {
         expect(existsSync(resolve(repoRoot, failure.regressionFile))).toBe(true);

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { McpConfigError, loadMcpConfig, saveMcpConfig, saveProjectMcpConfig, loadProjectMcpConfig, connectMcp, connectMcpHttp, connectAllMcp, mcpClientsToTools, closeAllMcp, trustProjectMcpServer, type McpServerConfig } from '../src/kernel/mcp.js';
+import { McpConfigError, loadMcpConfig, saveMcpConfig, saveProjectMcpConfig, loadProjectMcpConfig, connectMcp, connectMcpHttp, connectAllMcp, mcpClientsToTools, closeAllMcp, trustProjectMcpServer, selectIdleMcpServers, trackMcpInFlight, mcpInFlightNames, type McpServerConfig } from '../src/kernel/mcp.js';
 
 let dir: string;
 
@@ -103,6 +103,8 @@ describe('connectMcp 握手与工具发现', () => {
     const client = await connectMcp({ name: 'mock', command: process.execPath, args: mockServerArgs() });
     expect(client.tools.map(t => t.name).sort()).toEqual(['add', 'echo']);
     expect(client.tools[0]!.server).toBe('mock');
+    // B3：stdio 子进程句柄在场（/mcp list 内存列事实源）
+    expect(client.process?.pid).toBeGreaterThan(0);
     client.close();
   });
   it('tools/call 真实调用并返回文本', async () => {
@@ -197,7 +199,7 @@ describe('MCP 工具链路', () => {
     expect(names).toContain('mcp__mock__echo');
     expect(names).toContain('mcp__mock__add');
     const addTool = tools['mcp__mock__add']!;
-    expect(addTool.danger).toBe(false); // MCP 工具默认非危险标记
+    expect(addTool.danger).toBe(true); // ⅩⅩⅩⅢ：MCP 工具默认 danger=true（fail-closed——外部工具保守视为危险）
     const out = await addTool.run({ a: 2, b: 3 }, { cwd: process.cwd(), dataDir: dir });
     expect(String(out)).toContain('SUM:5');
     const echoOut = await tools['mcp__mock__echo']!.run({ text: 'hi' }, { cwd: process.cwd(), dataDir: dir });
@@ -222,6 +224,41 @@ describe('MCP 工具链路', () => {
     const sleeper: any = { name: 'sleeper', command: 'node', args: ['-e', 'setTimeout(()=>{}, 60000)'] };
     await expect(connectMcp(sleeper)).rejects.toThrow(/超时/);
     expect(Date.now() - t0).toBeLessThan(20_000);
+  });
+});
+
+// ── B3（2026-09-04）：MCP 闲置下线判定 + 在途豁免（治理契约）──
+describe('B3 selectIdleMcpServers', () => {
+  it('空闲=最后调用/连接时刻起算；达阈值入围；在途一律豁免', () => {
+    const now = 1_000_000;
+    const idleMs = 60_000;
+    expect(selectIdleMcpServers({
+      servers: [
+        { name: 'a', lastCallMs: now - 10_000 },                    // 刚调用过——新鲜
+        { name: 'b', lastCallMs: now - 120_000 },                   // 断调用 2 分钟——入围
+        { name: 'c', connectedAtMs: now - 90_000 },                 // 从未调用按连接时刻——入围
+        { name: 'd', connectedAtMs: now - 10_000 },                 // 新连接——新鲜
+        { name: 'e' },                                              // 无任何时间（防御）——不入围
+      ],
+      now, idleMs, inFlight: new Set(['b']),
+    })).toEqual(['c']);
+  });
+  it('未配 inFlight 缺省空集不抛', () => {
+    const now = 1_000_000;
+    expect(selectIdleMcpServers({ servers: [{ name: 'x', lastCallMs: now - 999_999 }], now, idleMs: 60_000 })).toEqual(['x']);
+  });
+});
+
+describe('B3 trackMcpInFlight', () => {
+  it('进出成对（成功/抛错/取消都清账）', async () => {
+    await trackMcpInFlight('s1', async () => {});
+    expect(mcpInFlightNames().has('s1')).toBe(false);
+    await trackMcpInFlight('s2', async () => { throw new Error('boom'); }).catch(() => {});
+    expect(mcpInFlightNames().has('s2')).toBe(false);
+    const pending = trackMcpInFlight('s3', () => new Promise(() => {}));
+    expect(mcpInFlightNames().has('s3')).toBe(true);
+    // 清账不依赖该 promise 完成路径之外——此夹具仅验证在途可见性，挂起 promise 由进程退出回收
+    void pending;
   });
 });
 

@@ -11,7 +11,7 @@ import { createPipelineAgent } from './support/createPipelineAgent.js';
 // C1 接线回归（2026-08-27）：agent.ts 惰性 await import winSandbox——mock 掉原生模块，
 // 让「沙盒开启 + sandboxFastPath=true → 低危工作区写免审批」的接线真实生效可测
 // （kernel-eval 3-1：原 require() 死接线被绿测试掩盖，正是缺这条 agent 级接线测试）。
-vi.mock('../src/kernel/winSandbox.js', () => ({ sandboxEnabled: () => true }));
+vi.mock('../src/kernel/winSandbox.js', () => ({ sandboxEnabled: () => true, cachedProbe: () => ({ ok: true, detail: 'OK-ELEVATED', elevated: true }) }));
 
 let dir: string;
 let db: ReturnType<typeof openDB>;
@@ -303,6 +303,43 @@ describe('流式与思考模式', () => {
     expect(toolMsgs.length).toBe(2); // 两个结果按 tool_call_id 回填
     expect(toolMsgs[0].tool_call_id).toBe('c1');
     expect(toolMsgs[1].tool_call_id).toBe('c2');
+  });
+  it('N-1 回归：并行只读批次结局独立归属（per-call outcomeSlot——verified/failed 零串扰）', async () => {
+    const { createAgent } = await import('../src/kernel/agent.js');
+    const agent = createAgent({
+      db, bus, mem, sessionId: 't-n1',
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      mode: 'yolo',
+      // 注入确定性 runner：fs_read 失败、其余成功——构造并行批次混合结局（生产 pipeline 全优雅、无法天然产出 failed）
+      agentToolRunner: {
+        handles: () => true,
+        execute: async (name: string) => name === 'fs_read'
+          ? { ok: false, error: { code: 'TEST_FAIL', message: '注入失败' } }
+          : { ok: true, value: { output: `${name} 成功` } },
+      } as any,
+      callModel: async (req: any) => {
+        if (!req.messages.some((m: any) => m.role === 'assistant')) {
+          return {
+            type: 'tool_call', id: 'c1', name: 'ls', args: { path: '.' },
+            calls: [
+              { id: 'c1', name: 'ls', args: { path: '.' } },
+              { id: 'c2', name: 'fs_read', args: { path: 'x.txt' } },
+            ],
+          } as ToolCallMsg;
+        }
+        return { type: 'text', content: '完成' };
+      },
+    });
+    const r = await agent.run('任务');
+    expect(r.text).toContain('完成');
+    // 确定性结局落库：ls 成功（ok:true）· fs_read 失败（ok:false）——并行下互不串扰
+    const rows = db.prepare(`SELECT parts FROM messages WHERE session_id='t-n1' AND role='tool' ORDER BY id`).all() as Array<{ parts: string }>;
+    const oks = rows.map(row => {
+      const parts = JSON.parse(row.parts ?? '[]') as Array<{ kind: string; ok?: boolean }>;
+      const meta = parts.find(p => p.kind === 'tool');
+      return meta?.ok === false ? 'failed' : meta?.ok === true ? 'ok' : 'unknown';
+    });
+    expect(oks.sort()).toEqual(['failed', 'ok']);
   });
 });
 
@@ -759,10 +796,16 @@ describe('低危自动放行', () => {
     expect(count()).toBeGreaterThan(0);
   });
 
-  it('plan 模式：文件编辑仍走审批（plan 语义保持）', async () => {
+  it('plan 模式：零工具硬闸——幻觉 tool_call 零执行零审批；完成声明零副作用仍被 KF-023 拦截（诚实）', async () => {
     const { agent, count } = makeLowRiskAgent({ mode: 'plan' as any });
-    await agent.run('把 hello 写入文件');
-    expect(count()).toBeGreaterThan(0);
+    const r = await agent.run('把 hello 写入文件');
+    // V4 P5-5（2026-08-29）：plan 语义升级为「提案回合」——工具面为空 + executeTool 硬闸
+    // （原「plan 模式仍走审批」语义由原型 06 取代：批准前零副作用是内核保证，不再依赖审批弹窗）
+    expect(count()).toBe(0);
+    // mock 第二响应「完成」= 完成声明 + 零验证副作用 → KF-023 诚实判 incomplete
+    // （与 plan 语义正交：真实提案文本不触发——见 tests/kernel-plan-mode.test.ts ok=true 用例）
+    expect(r.ok).toBe(false);
+    expect(r.status).toBe('incomplete');
   });
 
   it('lowRiskAutoApprove:false 时恢复逐次审批', async () => {
@@ -1513,6 +1556,51 @@ describe('V4 P2-3 压缩工程', () => {
       const r = await agent.run('任务');
       expect(r.text).toContain('压缩后重发成功');
       expect(notices.some(n => /强制压缩/.test(n))).toBe(true);
+      // N3（批次ⅩⅩⅦ · kernel-eval）：重发成功的 res 不被 continue 丢弃——调用恰 5 次
+      // （1 tool_call → 2 水位摘要 → 3 抛 413 → 4 强压摘要 → 5 重发成功即终）。
+      // 原 bug：重发成功后 continue 重新调用（第 6 次）= 双份流式+双倍计费。
+      expect(call).toBe(5);
+    } finally { off(); }
+  });
+
+  it('N2 回归：micro 裁剪已降到阈值下 → 跳过全量压缩（不烧摘要调用）', async () => {
+    const sid = 'p203-n2-microskip';
+    seedHistory(sid, 2);
+    let call = 0;
+    const notices: string[] = [];
+    const off = bus.on('system.notice', (e: any) => notices.push(String(e?.payload?.text ?? '')));
+    try {
+      const agent = createPipelineAgent({
+        db, bus, mem, sessionId: sid,
+        config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+        // ctx 算术（实证）：outReserve=min(20000, FALLBACK 66k×25%)=20000（cap）→
+        // ctxLimit=max(4000, 30000−20000)=10000 · 阈值 7500。大输出 est≈9100 在 t2 即越线，
+        // 但 msgs>10 门槛把首次压缩推迟到 t5（len 12——大输出@idx3 已入可裁区 idx<6）→
+        // micro 裁大输出（9100→125）回到阈值下 → 跳过全量；call7 文本收尾，摘要零调用。
+        maxContextTokens: 30_000,
+        callModel: async (): Promise<any> => {
+          call += 1;
+          // 编排（est 确定性）：call1 大输出（fs_read 20000 字上限 ≈ 5000 est + 底 ~300 = 5300，
+          // 未越 6225）；calls2-6 各异小文件（不同签名绕开重复守卫，每只 +50..375）把大输出
+          // 推出 keepRecent=6 保护窗并使 est 越线（t5 ≈ 6275 > 6225 且 msgs>10）→ micro 裁掉
+          // 大输出（5000→125）回到阈值下 → 跳过全量压缩；call7 文本收尾，摘要零调用。
+          if (call === 1) return { type: 'tool_call', name: 'fs_read', args: { path: 'package-lock.json' } };
+          if (call <= 6) {
+            const tiny: Array<{ path: string; offset?: number }> = [
+              { path: 'tsconfig.json' }, { path: 'vitest.config.ts' }, { path: 'tsconfig.tests.json' },
+              { path: '.gitignore' }, { path: 'tsconfig.json', offset: 5 },
+            ];
+            return { type: 'tool_call', name: 'fs_read', args: tiny[call - 2]! };
+          }
+          return { type: 'text', content: 'ok' };
+        },
+      });
+      const r = await agent.run('hi');
+      expect(r.text).toBe('ok');
+      // micro 生效：裁剪后降到阈值下 → 「跳过全量压缩」通知，且不走全量（无「自动压缩…」/摘要）
+      expect(notices.some(n => /跳过全量压缩/.test(n))).toBe(true);
+      expect(notices.some(n => /自动压缩…/.test(n))).toBe(false);
+      expect(call).toBe(7); // 1 大 + 5 小 + 1 文本 = 恰 7——摘要零调用（全量压缩会额外烧 callModel）
     } finally { off(); }
   });
 });

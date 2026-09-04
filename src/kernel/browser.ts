@@ -10,7 +10,7 @@ const requireCjs = createRequire(import.meta.url);
 
 // KF-012：会话隔离——浏览器上下文按 sessionId 分槽（绝不模块级共享 browser/page 单例）；
 // 无 sessionId 传入时回退 'default' 槽（单会话调用兼容）。全部操作仍经串行链（操作互斥）。
-type BrowserSession = { browser: any; page: any };
+type BrowserSession = { browser: any; page: any; profileDir?: string };
 const sessions = new Map<string, BrowserSession>();
 let launchError: string | null = null;
 
@@ -92,15 +92,28 @@ async function ensureBrowser(sessionId = 'default'): Promise<{ ok: true } | { ok
   try {
     const { chromium } = requireCjs('playwright-core');
     const channel = probe.browser?.startsWith('chrome') ? 'chrome' : 'msedge';
+    // ⅩⅩⅩⅤ 浏览器沙盒强化：userDataDir 每会话独立（cookie/密码/历史不共享）+
+    // 安全启动参数（禁 PDF 自动打开/禁默认浏览器检查/禁后台化）——进程级隔离的第一步
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join: pathJoin } = await import('node:path');
+    const profileDir = mkdtempSync(pathJoin(tmpdir(), `wxn-browser-${sessionId}-`));
     const browser = await chromium.launch({
       channel,
       headless: false, // 有头模式：用户可见浏览器窗口（可交互；无头回退在失败时尝试）
-      args: ['--disable-blink-features=AutomationControlled'],
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        `--user-data-dir=${profileDir}`,       // ⅩⅩⅩⅤ：独立 profile
+        '--no-first-run',                       // 不弹首次运行向导
+        '--disable-default-apps',               // 不装默认应用
+        '--disable-pdf',                        // 禁 PDF 自动打开
+        '--disable-background-timer-throttling', // 后台标签不节流（自动化需要）
+      ],
     });
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     page.setDefaultTimeout(15000);
     armNavigationGuard(page, sessionId); // B-14：页面内跳转逐跳重检（含无头回退路径同款）
-    sessions.set(sessionId, { browser, page });
+    sessions.set(sessionId, { browser, page, profileDir });
     return { ok: true };
   } catch (e: any) {
     launchError = String(e?.message ?? e).slice(0, 300);
@@ -130,6 +143,10 @@ export function browserClose(sessionId = 'default'): Promise<string> {
     if (session) {
       try { await session.page.close(); } catch { /* 忽略 */ }
       try { await session.browser.close(); } catch { /* 忽略 */ }
+      // ⅩⅩⅩⅤ：清理独立 profile 目录（temp 目录下次 OS 清理兜底）
+      if (session.profileDir) {
+        try { (await import('node:fs')).rmSync(session.profileDir, { recursive: true, force: true }); } catch { /* OS 兜底 */ }
+      }
       sessions.delete(sessionId);
     }
     return '浏览器会话已关闭';
@@ -214,8 +231,11 @@ export function browserNavigate(url: string, sessionId = 'default'): Promise<Bro
   return serialized(async () => {
     const target = String(url ?? '').trim();
     if (!target) return { ok: false, text: '参数错误：url 必填' };
-    const safe = await checkUrlSafety(target);
-    if (!safe.ok) return { ok: false, text: `已拦截：${safe.reason}` };
+    // ⅩⅩⅩⅢ（缺口2）：checkUrlSafety（DNS 失败放行 fail-open）→ authorizeOutboundUrl
+    // （DNS 失败即拒 fail-closed）——浏览器面板与 /download/market 统一 fail-closed 口径
+    const { authorizeOutboundUrl } = await import('../infrastructure/http/outboundTargetPolicy.js');
+    const authz = await authorizeOutboundUrl(target);
+    if (!authz.ok) return { ok: false, text: `已拦截（fail-closed）：${authz.error.code}` };
     const boot = await ensureBrowser(sessionId);
     if (!boot.ok) return { ok: false, text: boot.error };
     const page = pageOf(sessionId);

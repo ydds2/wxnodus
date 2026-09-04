@@ -13,7 +13,7 @@ import {
   markDurableDone,
   markDurableRunning,
   pendingDurableCount,
-  recoverStalePrompts,
+  recoverStalePrompts, purgeDurableRows,
 } from '../src/kernel/durableQueue.js';
 import type { ModelCall, ToolCallMsg } from '../src/kernel/agent.js';
 
@@ -69,16 +69,41 @@ describe('durableQueue（P2-14）', () => {
     expect(pendingDurableCount(db, 'dq-agent-1')).toBe(0);
   });
 
-  it('子代理会话（<主>:sub）不入队——队列只保用户消息', async () => {
+  it('N1 回归：子代理（isSubagent 标志）不入队——真实豁免机制（原 :sub 后缀守卫是无生产者的死代码）', async () => {
+    // kernel-eval 2026-08-30 N1：原守卫 endsWith(':sub') 匹配不到真实子会话（sub- 前缀/父 id 透传）
     const agent = createPipelineAgent({
-      db, bus, mem, sessionId: 'dq-main:sub',
+      db, bus, mem, sessionId: 'sub-lx3k9a', // 真实子会话形态（spawnSub 缺省前缀）
+      isSubagent: true,
       config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
       callModel: async () => ({ type: 'text', content: 'ok' } as ModelCall),
     });
     const r = await agent.run('子代理目标');
     expect(r.ok).toBe(true);
-    expect(pendingDurableCount(db, 'dq-main:sub')).toBe(0);
-    const rows = db.prepare("SELECT COUNT(*) AS c FROM durable_prompts WHERE session_id='dq-main:sub'").get() as { c: number };
+    expect(pendingDurableCount(db, 'sub-lx3k9a')).toBe(0);
+    const rows = db.prepare("SELECT COUNT(*) AS c FROM durable_prompts WHERE session_id='sub-lx3k9a'").get() as { c: number };
     expect(rows.c).toBe(0);
+  });
+
+  it('N1 回归：父 id 透传的子代理（execution.sessionId=父）也不入队——标志豁免不依赖 id 形态', async () => {
+    const agent = createPipelineAgent({
+      db, bus, mem, sessionId: 'dq-main', // 父会话 id 被子代理复用（execution 透传形态）
+      isSubagent: true,
+      config: { settings: { apiKeyEnc: null as any, baseURL: 'https://mock', model: 'mock' } } as any,
+      callModel: async () => ({ type: 'text', content: 'ok' } as ModelCall),
+    });
+    await agent.run('子代理目标');
+    const rows = db.prepare("SELECT COUNT(*) AS c FROM durable_prompts WHERE session_id='dq-main' AND prompt='子代理目标'").get() as { c: number };
+    expect(rows.c).toBe(0);
+  });
+
+  it('N1 回归：孤儿行清扫——终态超期行被删除、未超期保留', () => {
+    const ts = Date.now();
+    db.prepare("INSERT INTO durable_prompts (session_id, prompt, status, run_id, created_at, updated_at) VALUES ('dq-old','旧完成','done',NULL,?,?)").run(ts - 8 * 24 * 3600_000, ts - 8 * 24 * 3600_000);
+    db.prepare("INSERT INTO durable_prompts (session_id, prompt, status, run_id, created_at, updated_at) VALUES ('dq-new','新完成','done',NULL,?,?)").run(ts, ts);
+    const purged = purgeDurableRows(db);
+    expect(purged).toBe(1);
+    const remain = db.prepare("SELECT prompt FROM durable_prompts WHERE status='done'").all() as Array<{ prompt: string }>;
+    expect(remain.some(r => r.prompt === '旧完成')).toBe(false);
+    expect(remain.some(r => r.prompt === '新完成')).toBe(true);
   });
 });

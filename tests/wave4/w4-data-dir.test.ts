@@ -43,7 +43,7 @@ describe('DX-01 --data-dir single parser', () => {
       const cwd = tmp();
       const cli = tmp();
       const env = tmp();
-      const r = await run(['-p', '算一下 1+1', '--data-dir', cli], cwd, { WXNODUS_DATA_DIR: env });
+      const r = await run(['-p', '算一下 1+1', '--data-dir', cli], cwd, { WXNODUS_DATA_DIR: env, WXNODUS_LEGACY_OFFLINE: '1' });
       expect(r).not.toBeInstanceOf(Error);
       expect(existsSync(dbAt(cli))).toBe(true);
       expect(existsSync(dbAt(join(cwd, 'data')))).toBe(false);
@@ -62,7 +62,7 @@ describe('DX-01 --data-dir single parser', () => {
     it('env WXNODUS_DATA_DIR beats cwd default when no flag', async () => {
       const cwd = tmp();
       const env = tmp();
-      const r = await run(['-p', '算一下 1+1'], cwd, { WXNODUS_DATA_DIR: env });
+      const r = await run(['-p', '算一下 1+1'], cwd, { WXNODUS_DATA_DIR: env, WXNODUS_LEGACY_OFFLINE: '1' });
       expect(r).not.toBeInstanceOf(Error);
       expect(existsSync(dbAt(env))).toBe(true);
       expect(existsSync(dbAt(join(cwd, 'data')))).toBe(false);
@@ -70,7 +70,7 @@ describe('DX-01 --data-dir single parser', () => {
 
     it('default is <cwd>/data', async () => {
       const cwd = tmp();
-      const r = await run(['-p', '算一下 1+1'], cwd, { WXNODUS_DATA_DIR: undefined });
+      const r = await run(['-p', '算一下 1+1'], cwd, { WXNODUS_DATA_DIR: undefined, WXNODUS_LEGACY_OFFLINE: '1' });
       expect(r).not.toBeInstanceOf(Error);
       expect(existsSync(dbAt(join(cwd, 'data')))).toBe(true);
     });

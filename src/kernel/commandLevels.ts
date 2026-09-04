@@ -29,10 +29,11 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/jobs list': 'safe', '/jobs show': 'safe', '/jobs logs': 'safe', '/jobs tree': 'safe',
   '/plan': 'safe', '/perm': 'safe', '/perm rule list': 'safe',
   '/sandbox': 'safe', '/security': 'safe', '/security status': 'safe',
-  '/theme': 'safe', '/lang': 'safe', '/config': 'safe', '/versions': 'safe',
+  '/theme': 'safe', '/brand': 'safe', '/lang': 'safe', '/config': 'safe', '/versions': 'safe',
   '/skill list': 'safe', '/skill inspect': 'safe', '/fs': 'safe',
   '/checkpoint list': 'safe', '/snapshot list': 'safe', '/undo list': 'safe',
   '/usage range': 'safe', '/balance status': 'safe', '/warp': 'safe', '/eco': 'safe', '/config export': 'safe', '/cost': 'safe',
+  '/aliases': 'safe', '/oasis': 'safe', '/modpack': 'safe', '/modpack export': 'safe', '/watch status': 'safe',
   '/computer': 'confirm', '/offline': 'confirm', '/voice': 'confirm', '/fortune': 'safe',
   // ── confirm：常规副作用，走现有模式确认链 ──
   '/clear': 'confirm', '/undo': 'confirm', '/resume': 'confirm', '/new': 'confirm', '/title': 'confirm',
@@ -60,6 +61,8 @@ export const COMMAND_LEVELS: Record<string, CommandLevel> = {
   '/rewind': 'confirm', '/reload-skills': 'confirm', '/script': 'confirm',
   '/market search': 'safe', '/market install': 'confirm', '/market': 'safe',
   '/bundle list': 'safe', '/bundle export': 'safe', '/bundle': 'safe', '/bundle install': 'confirm', '/bundle import': 'confirm', '/bundle use': 'confirm', '/bundle add': 'confirm', '/bundle create': 'confirm',
+  // 版本渠道切换（写 settings——保守 confirm；查看经 /versions）/ 直播屏幕分析（挂起 ffmpeg 采集进程——confirm）/ modpack 安装（写插件/MCP——confirm）
+  '/channel': 'confirm', '/watch': 'confirm', '/modpack install': 'confirm',
   '/script record': 'confirm', '/script stop': 'confirm', '/script watch': 'confirm',
   '/jobs retry': 'confirm', '/jobs pause': 'confirm', '/jobs resume': 'confirm', '/jobs clean': 'confirm',
   '/cron run': 'confirm',

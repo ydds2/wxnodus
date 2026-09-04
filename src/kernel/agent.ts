@@ -17,6 +17,8 @@ import type { EventBus } from './events.js';
 import type { Memory } from './memory.js';
 import { resolveDataDir } from './paths.js';
 import { estimateMessagesTokens, compactMessages, contentToText, COMPRESSOR_SYSTEM_PROMPT, summarizeOnce } from './memory.js';
+import { CORE_TOOL_NAMES, SUBAGENT_EXCLUDE, FALLBACK_CTX_TOKENS, MAX_TURNS, RETRY_DELAY_MS, MAX_CONSECUTIVE_FAIL, MAX_UNKNOWN_TOOL_ROUNDS, LOOP_REMIND_AT, LOOP_HARD_STOP_AT, LOOP_SIG_WINDOW, CHANT_REMIND_AT, CHANT_STOP_AT, TOOL_CACHE_SIZE, canonicalToolArgs, toolStageBrief } from './agentShared.js';
+export { CORE_TOOL_NAMES, canonicalToolArgs, toolStageBrief } from './agentShared.js';
 import { mergeAdjacentMessages } from './historyNormalize.js';
 import { coreTools, toolsToOpenAI, wrapDanger, type ToolCtx, type ToolDef } from './tools.js';
 import { labelTruncate } from './truncate.js';
@@ -28,7 +30,7 @@ import { trimToolsForModel } from './toolTrim.js';
 import { buildExecPolicyIndex, applyExecPolicy } from './execPolicy.js';
 import { modeVerdict, applyRules, type Mode, type ModeVerdictOpts } from './permissions.js';
 import { loadMergedPolicyRules } from '../infrastructure/policy/policyLayers.js';
-import { enqueueDurablePrompt, markDurableRunning, markDurableDone, recoverStalePrompts } from './durableQueue.js';
+import { enqueueDurablePrompt, markDurableRunning, markDurableDone, recoverStalePrompts, purgeDurableRows, recoverStaleWithReplay } from './durableQueue.js';
 import { isCompletionClaim, GOAL_DONE_MARK } from './completionClaim.js';
 import type { HookRunner } from './hooks.js';
 import { resolve, relative, isAbsolute } from 'node:path';
@@ -52,6 +54,9 @@ export interface AgentOptions {
   onApproval?: (tool: string, args: Record<string, any>) => Promise<boolean>;
   /** C6：文字提问回调（clarify 工具）——返回用户文本答案 */
   onClarify?: (question: string, choices?: string[]) => Promise<string>;
+  /** V4 P5-4（TUI 场景 32 · 压缩三选桥）——用户值守选择 micro/full/none/auto；
+   *  桥缺失/异常/超时回退当前默认行为（auto：micro + 全量压缩），行为不变 */
+  onCompactChoice?: (info: { used: number; ctxLimit: number; compactAt: number }) => Promise<'micro' | 'full' | 'none' | 'auto'>;
   maxTurns?: number;
   /** 生命周期 hooks（本地命令执行）；缺省关闭。Partial：子代理可只继承安全钩子（preToolUse） */
   hooks?: Partial<HookRunner> | null;
@@ -64,6 +69,10 @@ export interface AgentOptions {
   /** B：后台任务通知回流（jobs.complete → 模型上下文，kimi 通知投递机制对齐）。
    *  默认 true；子代理传 false——通知只进主线，防子代理上下文污染。 */
   backgroundNotify?: boolean;
+  /** N1（批次ⅩⅩⅦ）：子代理实例标志——spawnSub 置位；durable 队列豁免等语义按标志判定（不猜 id 形态） */
+  isSubagent?: boolean;
+  /** N5（批次ⅩⅩⅧ）：懒加载模式下随实例激活的工具名（spawnSub 白名单传递——写入本实例激活集） */
+  activateTools?: readonly string[];
   /** P0-2：自定义 agent 指令覆盖（.wxnodus/agents/*.md 定义）——存在时整体替换内置 system prompt */
   systemPromptOverride?: string;
   /** P3 安全注入通道：vault=内存保险库；sudoInjection/secretInjection=通道开关（/security 控制，默认关闭） */
@@ -109,6 +118,8 @@ export interface AgentRunOptions {
   goalLoop?: boolean;
   signal?: AbortSignal;
   runContext?: RunContext;
+  /** V4 P5-4：压缩三选桥（TUI 值守）；桥缺失/异常/超时回退默认行为 */
+  onCompactChoice?: (info: { used: number; ctxLimit: number; compactAt: number }) => Promise<'micro' | 'full' | 'none' | 'auto'>;
 }
 
 const agentRunContext = new AsyncLocalStorage<RunContext>();
@@ -123,42 +134,22 @@ export interface AgentResult {
   status?: 'succeeded' | 'failed' | 'incomplete' | 'cancelled';
 }
 
-const MAX_TURNS = 32;
+// [ⅩⅩⅪ] 已迁至 agentShared.ts
 // gap 硬编码修复（2026-08-18）：未知模型的保守上下文回退（不是压缩阈值本身——
 // 真实阈值由模型目录 maxContext 派生，见 loop 内 ctxLimit 计算）
-const FALLBACK_CTX_TOKENS = 64_000;
+// [ⅩⅩⅪ] FALLBACK_CTX_TOKENS 已迁至 agentShared.ts
 
-// ── A22：实时状态一句话——工具动词映射（动态短语，UI 状态行展示）──
-const TOOL_STAGE_VERBS: Record<string, string> = {
-  fs_read: '读取文件', fs_write: '写入文件', fs_edit: '编辑文件', apply_patch: '应用补丁', ls: '列出目录',
-  grep: '搜索文本', find_files: '查找文件', bash: '执行命令', http_get: '抓取网页',
-  http_request: '发送请求', memory_write: '写入记忆', memory_search: '检索记忆',
-  scaffold_build: '构建项目', delegate: '派发子代理', ask_user: '询问用户',
-  clarify: '请求澄清', todo: '更新任务清单', skill_load: '加载技能', repo_map: '扫描仓库',
-  cron_create: '创建定时任务', credential_form: '录入凭据', wx_cmd: '执行指令',
-  tool_search: '检索工具', command_search: '检索命令',
-  lsp_diagnostics: 'LSP 诊断', lsp_hover: 'LSP 悬停', lsp_definition: 'LSP 定义',
-};
-
-/** 工具实时状态短语：动词 + 关键参数摘要（path/url/pattern/command/query 等），动态变化。
- *  UI 侧实时任务清单（wxGateway turnTodos）复用同一动词表——一句话状态与清单标签同源。 */
-export function briefToolContext(name: string, args: Record<string, any> | undefined): string {
-  const verb = TOOL_STAGE_VERBS[name] ?? name;
-  const brief = (['path', 'url', 'pattern', 'command', 'query', 'file', 'goal', 'content'] as const)
-    .map(k => args?.[k])
-    .find((v): v is string => typeof v === 'string' && v.trim().length > 0 && v.trim().length < 60);
-  return brief ? `${verb} ${brief.trim()}` : verb;
-}
+// [ⅩⅩⅪ] TOOL_STAGE_VERBS + toolStageBrief + briefToolContext 已迁至 agentShared.ts
 // ── 循环防护默认值（gap 深化 2026-08-18：全部 settings 可覆盖，默认与既有行为一致）──
-const RETRY_DELAY_MS = 800;          // 瞬时失败退避间隔（settings.retryDelayMs）
-const MAX_CONSECUTIVE_FAIL = 5;      // 同工具连续失败终止阈值（settings.maxConsecutiveFail）
-const MAX_UNKNOWN_TOOL_ROUNDS = 3;   // 连续未知工具轮终止阈值（settings.maxUnknownToolRounds）
-const LOOP_REMIND_AT = 2;            // 重复签名 ≥N 注入策略提醒（gemini 分级：提醒→硬停）
-const LOOP_HARD_STOP_AT = 5;         // 重复签名 ≥N 硬停（原 3 次直停误杀合法轮询——见 gap P1-2）
-const LOOP_SIG_WINDOW = 8;           // 签名滑动窗口（settings.loopSigWindow）
-const CHANT_REMIND_AT = 3;           // goal 轮间相同结论 ≥N 注入换策略提醒
-const CHANT_STOP_AT = 5;             // goal 轮间相同结论 ≥N 终止（gemini 内容重复对齐）
-const TOOL_CACHE_SIZE = 32;          // 读工具结果缓存上限（settings.toolCacheSize）
+// [ⅩⅩⅪ] 已迁至 agentShared.ts          // 瞬时失败退避间隔（settings.retryDelayMs）
+// [ⅩⅩⅪ] 已迁至 agentShared.ts      // 同工具连续失败终止阈值（settings.maxConsecutiveFail）
+// [ⅩⅩⅪ] 已迁至 agentShared.ts   // 连续未知工具轮终止阈值（settings.maxUnknownToolRounds）
+// [ⅩⅩⅪ] 已迁至 agentShared.ts            // 重复签名 ≥N 注入策略提醒（gemini 分级：提醒→硬停）
+// [ⅩⅩⅪ] 已迁至 agentShared.ts         // 重复签名 ≥N 硬停（原 3 次直停误杀合法轮询——见 gap P1-2）
+// [ⅩⅩⅪ] 已迁至 agentShared.ts           // 签名滑动窗口（settings.loopSigWindow）
+// [ⅩⅩⅪ] 已迁至 agentShared.ts           // goal 轮间相同结论 ≥N 注入换策略提醒
+// [ⅩⅩⅪ] 已迁至 agentShared.ts             // goal 轮间相同结论 ≥N 终止（gemini 内容重复对齐）
+// [ⅩⅩⅪ] 已迁至 agentShared.ts          // 读工具结果缓存上限（settings.toolCacheSize）
 
 /** 数值设置解析（生产级：夹取防误配 + 非法值回退默认）——复用 toolOutput.clampInt 单一事实源；
  * 比例/浮点阈值用 clampFloat（R-1 修复：clampInt 的 floor 会把 0.8 这类档位静默回退默认） */
@@ -172,23 +163,8 @@ export { shortHash };
  *  机制参考 kimi `_canonical_tool_arguments`（toolset.py:184-202，JSON 值排序；实现原创）。
  *  三个消费点（提前执行池 / 回合缓存 / 批内去重）共用同一 canonical 形态：
  *  同语义不同键序的重复调用命中同一 key（此前键序敏感致纯读工具重复执行——kernel-eval 3-5）。 */
-const sortKeysDeep = (v: unknown): unknown => {
-  if (Array.isArray(v)) return v.map(sortKeysDeep);
-  if (v && typeof v === 'object' && !Buffer.isBuffer(v)) {
-    const out: Record<string, unknown> = {};
-    for (const k of Object.keys(v as Record<string, unknown>).sort()) {
-      out[k] = sortKeysDeep((v as Record<string, unknown>)[k]);
-    }
-    return out;
-  }
-  return v;
-};
-export const canonicalToolArgs = (args: unknown): string => {
-  try { return JSON.stringify(sortKeysDeep(args ?? {})); }
-  catch {
-    try { return JSON.stringify(args ?? {}); } catch { return String(args ?? ''); }
-  }
-};
+// [ⅩⅩⅪ] sortKeysDeep + canonicalToolArgs 已迁至 agentShared.ts
+
 
 
 
@@ -295,7 +271,7 @@ export function createAgent(opts: AgentOptions) {
   // 模型先看项目结构再动手、自主 skill_load，减少人工 /map 与 /skill list
   // V4 P3-6（B-2）：回合级标志按 sessionId Map 化——agent 经 setSessionId 复用切换会话后，
   // 旧实例级标志使会话 B 直接继承会话 A 的告警/硬停/水位状态（B 被误硬停或永无水位提示）
-  const sessionFlags = new Map<string, { autoInjectDone: boolean; budgetWarned: boolean; budgetExceeded: boolean; ctxWarned: boolean }>();
+  const sessionFlags = new Map<string, { autoInjectDone: boolean; budgetWarned: boolean; budgetExceeded: boolean; ctxWarned: boolean; compactionFailedOnce?: boolean }>();
   const flagsFor = (sid: string) => {
     let f = sessionFlags.get(sid);
     if (!f) {
@@ -447,10 +423,12 @@ export function createAgent(opts: AgentOptions) {
   // 默认模型调用：OpenAI 兼容真流式（SSE）——token 逐块推送总线（UI 实时显示）
   // 工具调用解析保留 tool_call id（严格格式：assistant.tool_calls + tool.tool_call_id 回填）
   // ── 工具延迟加载（P2）：核心工具常驻 + tool_search 检索激活高级工具 ──
-  const CORE_TOOL_NAMES = new Set(['fs_read', 'fs_write', 'fs_edit', 'bash', 'ls', 'grep', 'todo', 'clarify', 'ask_user', 'skill_load', 'tool_search', 'command_search']);
+  // [ⅩⅩⅪ] CORE_TOOL_NAMES 已迁至 agentShared.ts
   let activeToolNames: Set<string> | null = null; // null = 延迟加载关闭（全表注入）
   if (opts.toolLazyLoad) {
-    activeToolNames = new Set(CORE_TOOL_NAMES);
+    // N5（批次ⅩⅩⅧ · kernel-eval）：子代理白名单经 opts.activateTools 显式并入——
+    // 此前 spawnSub 把 def.tools 加进【父闭包】集合（子代理 schema 仍缺白名单工具 + 父集合被污染）。
+    activeToolNames = new Set([...CORE_TOOL_NAMES, ...(opts.activateTools ?? [])]);
   }
   // 检索函数：按名称/描述关键词打分（token 分词 + 子串），返回 top-k 工具描述
   function searchTools(query: string, all: Record<string, import('./tools.js').ToolDef>, limit = 5): Array<{ name: string; description: string }> {
@@ -606,7 +584,7 @@ export function createAgent(opts: AgentOptions) {
   // 工具集排除：写文件/执行/委派/记忆写入/外联/提问（只读探索）+ 全部 danger 工具——
   // 审查修复：extraTools（MCP/插件）此前不在名单内，MCP 默认 danger:false 却在 smart 下
   // 无确认执行任意副作用（与 delegate「只读工具集」描述不符）；现按 danger 标志动态剔除
-  const SUBAGENT_EXCLUDE = ['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate', 'memory_write', 'http_get', 'ask_user'];
+  // [ⅩⅩⅪ] SUBAGENT_EXCLUDE 已迁至 agentShared.ts
   const MAX_SUBAGENT_DEPTH = EFF.maxSubagentDepth; // settings.maxSubagentDepth（默认 3）
   // A24 第四类修复：委派暂停真实生效（delegation.pause → setDelegationPaused）——
   // 暂停后 delegate 工具/任务系统的新委派被拒绝（诚实返回原因，而非假装执行）
@@ -643,6 +621,8 @@ export function createAgent(opts: AgentOptions) {
       },
       sessionId: childSessionId,
       backgroundNotify: false, // B：后台通知只回流主线（子代理上下文防污染）
+      isSubagent: true, // N1（批次ⅩⅩⅦ）：显式子代理标志——durable 队列豁免不再依赖 id 形态猜测
+      activateTools: def?.tools, // N5（批次ⅩⅩⅧ）：子代理白名单工具并入【子】激活集（懒加载模式）
       onToolTableUpdate: undefined,
       maxTurns: Math.min(opts.maxTurns ?? MAX_TURNS_EFFECTIVE, 8),
       // P0-2：自定义 agent 定义生效——mode/指令覆盖/工具白名单（缺省保持只读子代理）
@@ -662,10 +642,7 @@ export function createAgent(opts: AgentOptions) {
       // 工具调用绕过用户配置的安全钩子；sessionStart 等主会话钩子仍不继承（子代理不触发）
       hooks: hooks ? { preToolUse: hooks.preToolUse } : null,
     });
-    // 白名单声明的工具在懒加载模式下也要激活（否则 schema 不可见）
-    if (def?.tools && activeToolNames) {
-      for (const t of def.tools) activeToolNames.add(t);
-    }
+    // N5：白名单激活改经 opts.activateTools（子代理自己的集合）——此前的父闭包写法已删（kernel-eval N5）
     const abortChild = () => sub.abort();
     if (execution?.signal?.aborted) abortChild();
     else execution?.signal?.addEventListener('abort', abortChild, { once: true });
@@ -712,8 +689,14 @@ export function createAgent(opts: AgentOptions) {
     const s = opts.config?.settings as Record<string, any> | undefined;
     if (s?.sandboxFastPath !== true) return undefined;
     try {
-      const { sandboxEnabled } = await import('./winSandbox.js');
+      const { sandboxEnabled, cachedProbe } = await import('./winSandbox.js');
+      // ⅩⅩⅩ（S-3）：沙盒配置开但探测结果为「不可用」时 fastPath 不生效——
+      // 「沙盒内即免审批」的前提是沙盒真实可用（此前只查开关不查实态）。
       if (!sandboxEnabled(s)) return undefined;
+      // ⅩⅩⅩ（S-3）：沙盒配置开但探测结果为「不可用」时 fastPath 不生效——
+      // 「沙盒内即免审批」的前提是沙盒真实可用（此前只查开关不查实态）
+      const probe = cachedProbe();
+      if (probe !== null && !probe.ok) return undefined;
       modeVerdictOpts = { sandboxFastPath: { cwd: ctxCwd } };
     } catch {
       // 加载失败静默降级——绝不阻塞工具执行；沙盒外强审批语义不变
@@ -814,11 +797,18 @@ export function createAgent(opts: AgentOptions) {
   }
 
   // KF-023/024：单次工具调用的确定性结局（loop 据此累计 verifiedEffects——成功侧记 verified，
-  // 拒绝/参数错/未知工具记 other，异常记 failed）；字符串启发式（「失败」/「异常」）仍用于模型回填
-  let lastToolOutcome: 'verified' | 'failed' | 'other' = 'other';
+  // 拒绝/参数错/未知工具记 other，异常记 failed）；字符串启发式（「失败」/「异常」）仍用于模型回填。
+  // N-1 修复（2026-08-29）：废除实例级共享变量 lastToolOutcome——并行只读批次下 A/B 两次调用
+  // 的结局会在读取前被对方改写（确定性结局串扰）。改 outcomeSlot 出参（per-call 对象，
+  // 与 imgSlot 同模式——并行安全）。
 
-  async function executeTool(name: string, args: Record<string, any>, imgOut?: { images: Array<{ type: 'image_url'; image_url: { url: string } }> | null }): Promise<string> {
-    lastToolOutcome = 'other';
+  async function executeTool(name: string, args: Record<string, any>, imgOut?: { images: Array<{ type: 'image_url'; image_url: { url: string } }> | null }, outcomeSlot?: { outcome: 'verified' | 'failed' | 'other' }): Promise<string> {
+    if (outcomeSlot) outcomeSlot.outcome = 'other';
+    // V4 P5-5（原型 06 计划模式）：批准前零副作用的内核硬闸——即使模型幻觉出 tool_call 也不执行
+    if (mode === 'plan') {
+      bus.emit('system.notice', { text: `计划模式：已拦截工具 ${name}（批准前零副作用——/perm smart 批准后执行）` });
+      return `[plan-mode blocked] 计划模式零工具执行：${name} 未运行。请输出执行计划文本（分步 + 预期产物），等待用户批准。`;
+    }
     // C3 修复：工具调用稳定 id（start/complete 同 id，UI 工具卡可正确闭合）
     const toolId = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     // A25：事件带 session_id 标记（子代理会话为 <主>:sub 后缀——gateway 据此
@@ -830,7 +820,7 @@ export function createAgent(opts: AgentOptions) {
       appendSessionEvent(agentDataDir, sessionId, { type: 'tool', name, phase: 'start', ts: Date.now() });
     } catch { /* 静默 */ }
     // A22：实时状态一句话——正在做什么（基于工具名/参数动态生成，UI 状态行显示）
-    const ctxBrief = briefToolContext(name, args);
+    const ctxBrief = toolStageBrief(name, args);
     bus.emit('agent.stage', { stage: `正在${ctxBrief}` });
     // 剧本录制钩子：/script record 期间每个工具调用进当前 step（跳过 AI 决策的确定性重放源）
     scriptRecorder?.(name, args);
@@ -968,21 +958,21 @@ export function createAgent(opts: AgentOptions) {
       if (!runner?.handles(name)) {
         bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId, session_id: sessionId });
         auditTool('tool.executed', { tool: name, ok: false, ms: Date.now() - t0, error: 'TOOL_PIPELINE_UNAVAILABLE', pipeline: false });
-        lastToolOutcome = 'failed';
+        if (outcomeSlot) outcomeSlot.outcome = 'failed';
         return `工具执行失败（TOOL_PIPELINE_UNAVAILABLE）：canonical pipeline 未注册 ${name}`;
       }
       const runContext = agentRunContext.getStore();
       if (!runContext) {
         bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId, session_id: sessionId });
         auditTool('tool.executed', { tool: name, ok: false, ms: Date.now() - t0, error: 'RUN_CONTEXT_UNAVAILABLE', pipeline: false });
-        lastToolOutcome = 'failed';
+        if (outcomeSlot) outcomeSlot.outcome = 'failed';
         return `工具执行失败（RUN_CONTEXT_UNAVAILABLE）：当前工具调用未绑定 RunContext`;
       }
       const pres = await runner.execute(name, args, toolCtx, runContext);
       if (!pres.ok) {
         bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId, session_id: sessionId });
         auditTool('tool.executed', { tool: name, ok: false, ms: Date.now() - t0, error: pres.error?.code, pipeline: true });
-        lastToolOutcome = 'failed';
+        if (outcomeSlot) outcomeSlot.outcome = 'failed';
         return `工具执行失败（${pres.error?.code ?? 'TOOL_EXECUTE_FAILED'}）：${pres.error?.message ?? ''}`;
       }
       const raw = pres.value.output;
@@ -1034,10 +1024,10 @@ export function createAgent(opts: AgentOptions) {
       // 回归重放期间的 fs_write 由 regressionRunning 守卫拦截，不会自我触发）
       if (name === 'fs_write' || name === 'fs_edit' || name === 'apply_patch') scheduleAutoRegression();
       // 文件变更不隐式 stage/commit。Git 历史属于独立高影响操作，只能由用户显式请求并经过工具审批。
-      lastToolOutcome = 'verified';
+      if (outcomeSlot) outcomeSlot.outcome = 'verified';
       return out;
     } catch (e: any) {
-      lastToolOutcome = 'failed';
+      if (outcomeSlot) outcomeSlot.outcome = 'failed';
       bus.emit('agent.tool', { name, phase: 'complete', ok: false, ms: Date.now() - t0, toolId, session_id: sessionId });
       auditTool('tool.executed', { tool: name, ok: false, ms: Date.now() - t0, error: String(e?.message ?? e).slice(0, 120) });
       return `工具执行异常：${e?.message?.slice(0, 300) ?? e}`;
@@ -1047,7 +1037,14 @@ export function createAgent(opts: AgentOptions) {
   /** KF-023/024：单次 run 的已验证工具副作用计数（跨 goal 轮次累计） */
   interface RunState { verifiedEffects: number }
 
-  async function loop(sessionId: string, prompt: string, opts2: { subagent?: boolean; images?: Array<{ dataUrl: string; mime: string }>; runState?: RunState; signal?: AbortSignal } = {}): Promise<AgentResult> {
+  async function loop(sessionId: string, prompt: string, opts2: {
+    subagent?: boolean
+    images?: Array<{ dataUrl: string; mime: string }>
+    runState?: RunState
+    signal?: AbortSignal
+    /** V4 P5-4：压缩三选桥（TUI 值守）；'auto' = 现默认行为（micro + 全量） */
+    onCompactChoice?: (info: { used: number; ctxLimit: number; compactAt: number }) => Promise<'micro' | 'full' | 'none' | 'auto'>
+  } = {}): Promise<AgentResult> {
     const rs = opts2.runState ?? { verifiedEffects: 0 };
     // 架构 P3：会话事件流（可重放/审计）——用户消息入流
     try {
@@ -1120,7 +1117,7 @@ export function createAgent(opts: AgentOptions) {
       // 修复 F3：abort 信号同时传入 fetch（真中断流式读取）与 race（吞 late rejection）
       // C5：onReasoning 实时转发思考分片（UI reasoning.delta）
       const racing = callModel({ ...req, messages: mergeAdjacentMessages(req.messages) }, {
-        onToken: (t) => bus.emit('agent.token', { text: t }),
+        onToken: (t) => bus.emit('agent.token', { text: t, session_id: sessionId }),
         // A25：reasoning 带 session_id 标记（子代理 → gateway 分流 subagent.thinking）
         onReasoning: (r) => bus.emit('reasoning.delta', { text: r, session_id: sessionId }),
         // 批次2：流式中途就绪信号透传（earlyDispatchHook 每次模型调用前重挂——见 loop）
@@ -1253,7 +1250,10 @@ export function createAgent(opts: AgentOptions) {
     const toolSource = activeToolNames
       ? Object.fromEntries([...activeToolNames].filter(n => tools[n]).map(n => [n, tools[n]!]))
       : tools;
-    const toolList = opts2.subagent ? toolsToOpenAI(Object.fromEntries(Object.entries(toolSource).filter(([n]) => !['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate'].includes(n)))) : toolsToOpenAI(toolSource);
+    // V4 P5-5（原型 06 计划模式）：零工具面——批准前零副作用（模型只出提案文本；执行闸在 executeTool）
+    const toolList = mode === 'plan'
+      ? []
+      : opts2.subagent ? toolsToOpenAI(Object.fromEntries(Object.entries(toolSource).filter(([n]) => !['fs_write', 'fs_edit', 'bash', 'scaffold_build', 'delegate'].includes(n)))) : toolsToOpenAI(toolSource);
     let turns = 0;
     let consecutiveFail = 0;
     let compactedThisTurn = false; // V4 P2-3：413 强压重发仅一次（防压缩后仍超限的循环）
@@ -1308,7 +1308,7 @@ export function createAgent(opts: AgentOptions) {
       while (steerQueue.length) {
         const s = steerQueue.shift()!;
         msgs.push({ role: 'user', content: s });
-        bus.emit('agent.token', { text: `\n[steer] ${s}\n` });
+        bus.emit('agent.token', { text: `\n[steer] ${s}\n`, session_id: sessionId });
       }
       // B：后台任务通知回流——与 steer 同位注入（模型下一次调用前可见；独立 user 消息，
       // 注入点在 tool 配对之后不破坏协议）。此后 mergeAdjacentMessages 会把它与相邻 user
@@ -1367,27 +1367,47 @@ export function createAgent(opts: AgentOptions) {
         flags.ctxWarned = true;
         bus.emit('system.notice', { text: `上下文已用 ${Math.round((used / ctxLimit) * 100)}%（${used.toLocaleString()} token${lastRealPromptTokens !== null ? ' · 真实用量' : ''}）——达到 ${Math.round(compactAt * 100)}% 将自动压缩，可提前 /compact 主动压缩` });
       }
-      if (used > ctxLimit * compactAt && msgs.length > 10) {
+      if (used > ctxLimit * compactAt && msgs.length > 10 && !flagsFor(sessionId).compactionFailedOnce) {
+        // V4 P5-4（TUI 场景 32 · 压缩三选）：桥存在时暂停回合征求用户选择；
+        // 桥缺失/异常/超时 → auto（现行为：micro + 全量压缩，行为不变）。
+        let compactChoice: 'auto' | 'micro' | 'full' | 'none' = 'auto';
+        if (opts2.onCompactChoice) {
+          try {
+            compactChoice = (await opts2.onCompactChoice({ used, ctxLimit, compactAt })) || 'auto';
+          } catch { compactChoice = 'auto'; }
+        }
         // V4 P2-3：micro-compaction 先行——旧工具结果裁剪（尾部 6 条消息外 tool 内容截断
         // 到 500 字；kimi 0.12 默认开启同族语义）。轻裁后若已降到阈值下，跳过全量压缩
         // （保近轮完整 + 省一次摘要 LLM 调用与前缀缓存）。
         let freed = 0;
+        let microSufficed = false; // N2（批次ⅩⅩⅦ · kernel-eval）：micro 已降到阈值下 → 跳过全量（兑现注释承诺）
         const keepRecent = 6;
-        for (let mi = 0; mi < msgs.length - keepRecent; mi++) {
-          const mm = msgs[mi] as { role?: string; content?: unknown };
-          if (mm?.role !== 'tool') continue;
-          const text = typeof mm.content === 'string' ? mm.content : '';
-          if (text.length > 800) {
-            mm.content = `${text.slice(0, 500)}\n[micro-compaction：旧工具结果已裁剪（原 ${text.length} 字）]`;
-            freed += text.length - 500;
+        if (compactChoice === 'auto' || compactChoice === 'micro') {
+          for (let mi = 0; mi < msgs.length - keepRecent; mi++) {
+            const mm = msgs[mi] as { role?: string; content?: unknown };
+            if (mm?.role !== 'tool') continue;
+            const text = typeof mm.content === 'string' ? mm.content : '';
+            if (text.length > 800) {
+              mm.content = `${text.slice(0, 500)}\n[micro-compaction：旧工具结果已裁剪（原 ${text.length} 字）]`;
+              freed += text.length - 500;
+            }
+          }
+          if (freed > 0) {
+            const afterMicro = estimateMessagesTokens(msgs);
+            if (afterMicro <= ctxLimit * compactAt) {
+              microSufficed = true;
+              bus.emit('system.notice', { text: `micro-compaction：裁剪旧工具结果腾出空间（${used} → ${afterMicro} token）——保留近轮完整，跳过全量压缩` });
+            }
           }
         }
-        if (freed > 0) {
-          const afterMicro = estimateMessagesTokens(msgs);
-          if (afterMicro <= ctxLimit * compactAt) {
-            bus.emit('system.notice', { text: `micro-compaction：裁剪旧工具结果腾出空间（${used} → ${afterMicro} token）——保留近轮完整，未触发全量压缩` });
-          }
-        }
+        if (compactChoice === 'none') {
+          bus.emit('system.notice', { text: `上下文已用 ${Math.round((used / ctxLimit) * 100)}%——已按选择跳过压缩（继续；413 超限仍会强制压缩救场）` });
+        } else if (compactChoice === 'micro') {
+          bus.emit('system.notice', { text: `micro-compaction 完成（按选择——不做全量压缩；/compact 可随时手动全量）` });
+        } else if (microSufficed) {
+          // N2：micro 已把水位降到阈值下——跳过全量压缩（省一次摘要 LLM 调用 + 保前缀缓存；
+          // 此前实现落入全量分支，与本块注释/notice 宣称矛盾——kernel-eval 2026-08-30 N2）
+        } else {
         // P1-1：preCompact hook 可阻止压缩（输出 BLOCK）
         if (await hooks?.preCompact?.(`auto: ${used}/${ctxLimit}`)) {
           bus.emit('system.notice', { text: '压缩被 hook 阻止（preCompact BLOCK）' });
@@ -1427,6 +1447,14 @@ export function createAgent(opts: AgentOptions) {
           }
         } catch { /* 忽略 */ }
         const nextTokens = estimateMessagesTokens(msgs);
+        // ⅩⅩⅫ：压缩失败护栏通知（gemini 语义——膨胀时一次性标记，本会话后续跳过自动压缩）
+        if (nextTokens >= used) {
+          const flags = flagsFor(sessionId);
+          if (!flags.compactionFailedOnce) {
+            flags.compactionFailedOnce = true;
+            bus.emit('system.notice', { text: `⚠ 压缩后 token 反而增大（${used} → ${nextTokens}）——本会话后续跳过自动压缩（原文已极精简）。/compact 手动强制可用` });
+          }
+        }
         // 架构 P3：压缩入事件流（时间线可审计）
         try {
           const { appendSessionEvent } = await import('./sessionStream.js');
@@ -1435,10 +1463,12 @@ export function createAgent(opts: AgentOptions) {
         bus.emit('system.notice', { text: `自动压缩完成（${used} → ${nextTokens} token）` });
         hooks?.postCompact?.(used, nextTokens);
         }
+        }
       }
       let res: ModelCall | ToolCallMsg | undefined;
       // A22：实时状态一句话——LLM 推理期（动态文本，UI 状态行显示）
       bus.emit('agent.stage', { stage: turns > 0 ? '正在推理下一步…' : '正在思考分析需求…' });
+      if (mode === 'plan') bus.emit('agent.stage', { stage: '计划模式：提案中（批准前零工具）' });
       // 批次2：本次模型调用的提前执行池——流式中途就绪的 cacheable 工具即刻执行，
       // runOneCall 命中直接复用（不重跑）。key = name:args（与批内去重同构）。
       const earlyRuns = new Map<string, Promise<string>>();
@@ -1453,6 +1483,9 @@ export function createAgent(opts: AgentOptions) {
           // 宣称，等流尾原路径执行；cacheable 保留（回合缓存语义成立：同查询→同命中→激活幂等）。
           if (name === 'tool_search') return;
           const args = safeJson(String(call?.arguments ?? '{}'));
+          // N6（批次ⅩⅩⅦ · kernel-eval）：坏 JSON 哨兵不提前执行（runOneCall 守卫同款——
+          // 此前哨兵对象被当真实参数跑只读工具：浪费 + 错误结果）
+          if (!args || (args as Record<string, unknown>).__wxnodus_args_parse_error__) return;
           const key = name + ':' + canonicalToolArgs(args);
           if (earlyRuns.has(key) || toolCache.has(key)) return; // 在途/已有缓存
           earlyDispatched++;
@@ -1479,31 +1512,39 @@ export function createAgent(opts: AgentOptions) {
             const { appendSessionEvent } = await import('./sessionStream.js');
             appendSessionEvent(agentDataDir, sessionId, { type: 'compact', summary: 'over-limit forced', before: used, after: estimateMessagesTokens(msgs), ts: Date.now() });
           } catch { /* 静默 */ }
-          try { res = await callWithAbort({ messages: msgs, tools: toolList }); } catch { /* 重发仍失败落入下方常规错误路径 */ }
-          if (res) { lastRealPromptTokens = res.usage?.promptTokens ?? lastRealPromptTokens; continue; }
+          try { res = await callWithAbort({ messages: msgs, tools: toolList, maxTokens: outputMaxTokens }); } catch { /* 重发仍失败落入下方常规错误路径 */ }
+          // N3（批次ⅩⅩⅦ · kernel-eval）：重发成功的 res 不再 continue 丢弃——落入下方正常处理
+          // （A-3 同款修法：此前 continue 重新发起全新调用 = text 双份流式输出+双倍计费；
+          // tool_call 批被整体静默丢弃）。仅记录真实 prompt token。
+          if (res) { lastRealPromptTokens = res.usage?.promptTokens ?? lastRealPromptTokens; }
         }
         // 4xx 确定性错误（密钥无效/模型不存在/请求非法等）：不重试，立即反馈——
         // 否则无效 key 会空转 ~6s（3 次退避重试）才显示错误，被误判为「卡死」。
         // 429 限流除外：mapHttpError 语义为稍后重试，保留退避重试。
-        if (typeof e?.status === 'number' && e.status >= 400 && e.status < 500 && e.status !== 429) {
-          bus.emit('agent.error', { message: String(e?.message ?? e) });
+        // N3：res 已成功（413 强压重发成功）时不再按旧 413 错误收口。
+        if (!res && typeof e?.status === 'number' && e.status >= 400 && e.status < 500 && e.status !== 429) {
+          bus.emit('agent.error', { session_id: sessionId, message: String(e?.message ?? e), code: 'PROVIDER_HTTP_4XX', retries: 0 });
           return finishEarly(`模型调用失败：${e?.message?.slice(0, 200)}`);
         }
         // 瞬时失败：800ms 退避重试（最多 3 次）
         let tried = 0;
         let lastErr = e;
         while (tried < 3) {
-          await new Promise(r => setTimeout(r, EFF.retryDelayMs * (tried + 1)));
+          const delayMs = EFF.retryDelayMs * (tried + 1);
+          // V4 P5-3（TUI 场景 12）：重试进度结构化事件——TUI 心跳行实时倒数
+          // （原型 12「◐ 重连上游… 第 n 次尝试」——机制参考 kimi 重连可见信号，实现原创）。
+          bus.emit('agent.retry', { attempt: tried + 1, max: 3, delayMs, session_id: sessionId, message: String(lastErr?.message ?? lastErr).slice(0, 160) });
+          await new Promise(r => setTimeout(r, delayMs));
           // V4 P0-9（A-4）：重发前发流重置信号——UI 清空失败尝试的半截输出再接收重试全文，
           // 杜绝「半截旧文 + 完整新文」拼接显示（gemini StreamEventType.RETRY 同语义）。
           // 语义增量已有 token 推到屏幕的场景同理适用（presentationReducer 按 reset 清空）。
-          bus.emit('agent.token', { text: '', reset: true });
-          try { res = await callWithAbort({ messages: msgs, tools: toolList }); break; }
+          bus.emit('agent.token', { text: '', reset: true, session_id: sessionId });
+          try { res = await callWithAbort({ messages: msgs, tools: toolList, maxTokens: outputMaxTokens }); break; }
           catch (e2: any) { if (st.aborted) { st.interrupted = true; break; } lastErr = e2; tried++; }
         }
         if (st.interrupted) break;
         if (tried >= 3) {
-          bus.emit('agent.error', { message: String(lastErr?.message ?? lastErr) });
+          bus.emit('agent.error', { session_id: sessionId, message: String(lastErr?.message ?? lastErr), code: 'PROVIDER_TRANSIENT', retries: 3 });
           return finishEarly(`模型调用失败：${lastErr?.message?.slice(0, 200)}`);
         }
         // V4 P0-9（A-3）：重试成功后不再 continue——此前 continue 丢弃已成功的 res 并
@@ -1571,8 +1612,8 @@ export function createAgent(opts: AgentOptions) {
             callOutcome = 'cached';
           } else if (earlyRuns.has(cacheKey)) {
             // 批次2：本调用在模型流式输出期间已提前执行——直接复用（不重跑）。
-            // 结局计量说明：executeTool 的 lastToolOutcome 无法在事后可靠归属（并发串扰），
-            // 记 'other'（不计 verified/fail——结果文本本身模型可见，诚实无欺）。
+            // 结局计量：提前执行未携带 outcomeSlot（N-1 出参）——记 'other'（不计 verified/fail，
+            // 结果文本本身模型可见，诚实无欺）。
             // C2 修复（2026-08-27，kernel-eval 3-2）：缓存入库的是裸结果——标注文案只加在
             // 本轮回填上，绝不随缓存传播（此前下一轮同参命中会叠加两条时序矛盾的标注）。
             const early = earlyRuns.get(cacheKey)!;
@@ -1589,8 +1630,9 @@ export function createAgent(opts: AgentOptions) {
             }
           } else {
             const imgSlot: { images: Array<{ type: 'image_url'; image_url: { url: string } }> | null } = { images: null };
-            out = await executeTool(c.name, c.args, imgSlot);
-            const outcome = lastToolOutcome; // 立即捕获本调用的确定性结局（并行下防串扰）
+            const outcomeSlot: { outcome: 'verified' | 'failed' | 'other' } = { outcome: 'other' };
+            out = await executeTool(c.name, c.args, imgSlot, outcomeSlot);
+            const outcome = outcomeSlot.outcome; // N-1：per-call 出参——并行批次下零串扰
             callOutcome = outcome;
             // ③ 波 1：图片输入通道——extractImages 在执行现场收集（imgOut 出参，并行安全）；
             // 仅视觉模型会话附加进 msgs（纯文本模型绝不收 dataUrl）
@@ -1671,23 +1713,23 @@ export function createAgent(opts: AgentOptions) {
         const batchHasUnknown = executed.some(e => !tools[e.name]);
         unknownRounds = batchHasUnknown ? unknownRounds + 1 : 0;
         if (unknownRounds >= EFF.maxUnknownToolRounds) {
-          bus.emit('agent.error', { message: `连续 ${EFF.maxUnknownToolRounds} 轮未知工具，终止` });
+          bus.emit('agent.error', { session_id: sessionId, message: `连续 ${EFF.maxUnknownToolRounds} 轮未知工具，终止` });
           return finishEarly('模型连续调用未知工具，已终止');
         }
         consecutiveFail = anyFail ? consecutiveFail + 1 : 0;
         if (consecutiveFail >= EFF.maxConsecutiveFail) {
-          bus.emit('agent.error', { message: `同工具连续失败 ${EFF.maxConsecutiveFail} 次，终止` });
+          bus.emit('agent.error', { session_id: sessionId, message: `同工具连续失败 ${EFF.maxConsecutiveFail} 次，终止` });
           return finishEarly(`同工具连续失败 ${EFF.maxConsecutiveFail} 次，已终止`);
         }
         // 深度：签名级循环检测（Cline loop-detection 对齐）——签名并入输出短哈希
         // （crush 思想：同参数不同输出的空转也漏不掉）；分级响应（gemini P1-2 落地）：
         // ≥loopRemindAt 注入换策略提醒（给合法轮询恢复机会）→ ≥loopHardStopAt 硬停
-        const sig = executed.map(e => `${e.name}:${JSON.stringify(e.args ?? {}).slice(0, 120)}:${shortHash(e.out)}`).join('|');
+        const sig = executed.map(e => `${e.name}:${canonicalToolArgs(e.args ?? {}).slice(0, 120)}:${shortHash(e.out)}`).join('|');
         recentToolSigs.push(sig);
         if (recentToolSigs.length > EFF.loopSigWindow) recentToolSigs.shift();
         const repeatCount = recentToolSigs.filter(s => s === sig).length;
         if (repeatCount >= EFF.loopHardStopAt) {
-          bus.emit('agent.error', { message: `检测到工具调用循环（相同调用重复 ${repeatCount} 次），终止` });
+          bus.emit('agent.error', { session_id: sessionId, message: `检测到工具调用循环（相同调用重复 ${repeatCount} 次），终止` });
           return finishEarly(`工具调用循环检测（相同调用重复 ${repeatCount} 次）——任务无进展，已终止；请换一种方式或拆分子任务`);
         }
         if (repeatCount >= EFF.loopRemindAt && !loopReminded) {
@@ -1700,10 +1742,22 @@ export function createAgent(opts: AgentOptions) {
             try {
               const last = executed.slice(-3).map(e => ({ name: e.name, args: JSON.stringify(e.args ?? {}), outputHead: e.out.slice(0, 300) }));
               verdict = await opts.loopJudge({ repeatCount, last });
+              // ⅩⅩⅫ：双模型确认（gemini loopDetectionService:683-688 语义）——
+              // 第一判定为 loop 时，二次独立判定确认（防单模型误判终止合法轮询）；
+              // 二次也是 loop 才真终局（两次一致 → 确信度高）；不一致 → 保守走 progress 路径。
+              if (verdict === 'loop') {
+                try {
+                  const second = await opts.loopJudge({ repeatCount, last });
+                  if (second !== 'loop') {
+                    verdict = 'progress';
+                    bus.emit('system.notice', { text: '双模型循环确认：二次判定不一致——保守视为合法重复继续' });
+                  }
+                } catch { /* 二次异常 → 维持 loop 判定（fail-safe 方向） */ }
+              }
             } catch { verdict = 'unknown'; }
           }
           if (verdict === 'loop') {
-            bus.emit('agent.error', { message: `LLM 判定重复调用无进展（${repeatCount} 次），提前终止` });
+            bus.emit('agent.error', { session_id: sessionId, message: `LLM 判定重复调用无进展（${repeatCount} 次），提前终止` });
             return finishEarly(`LLM 循环判定：相同工具调用重复 ${repeatCount} 次且无进展——已提前终止（比静态阈值更早止损）；请换一种方式或拆分子任务（/config set loopJudge false 可关闭辅助判定）`);
           }
           if (verdict === 'progress') {
@@ -1828,15 +1882,21 @@ export function createAgent(opts: AgentOptions) {
   // 模型自主规划/执行/自判完成（输出 [GOAL_DONE] 结束），直到完成或轮次上限；
   // 每轮 loop 独立回合（历史经 working 窗口延续上下文）
   const MAX_GOAL_ROUNDS = EFF.maxGoalRounds; // settings.maxGoalRounds（默认 10）
-  async function runWithGoalLoop(prompt: string, images?: Array<{ dataUrl: string; mime: string }>, goalLoop?: boolean, signal?: AbortSignal): Promise<AgentResult> {
+  async function runWithGoalLoop(
+    prompt: string,
+    images?: Array<{ dataUrl: string; mime: string }>,
+    goalLoop?: boolean,
+    signal?: AbortSignal,
+    onCompactChoice?: (info: { used: number; ctxLimit: number; compactAt: number }) => Promise<'micro' | 'full' | 'none' | 'auto'>,
+  ): Promise<AgentResult> {
     // goalLoop:false——命令层自循环（/goal）显式关闭内核 goal 模式，防内外层嵌套（默认行为不变）
-    if (mode !== 'goal' || goalLoop === false) return loop(sessionId, prompt, { images, signal });
+    if (mode !== 'goal' || goalLoop === false) return loop(sessionId, prompt, { images, signal, onCompactChoice });
     // KF-023：verifiedEffects 跨 goal 轮次累计——[GOAL_DONE] 声明须有 ≥1 个真实验证副作用才可 ok
     const rs = { verifiedEffects: 0 };
     const goalPrompt = `${prompt}\n\n（goal 模式：自主规划并持续执行直到目标全部完成。全部完成时回复末尾输出 ${GOAL_DONE_MARK}，未完成则继续执行。每轮都可以调用工具。）`;
     // A24：goal 进度实时上报（UI 后台面板「目标循环」区 + 状态行）
     bus.emit('agent.goal', { round: 1, maxRounds: MAX_GOAL_ROUNDS, done: false, text: prompt.slice(0, 80) });
-    let result = await loop(sessionId, goalPrompt, { images, runState: rs, signal });
+    let result = await loop(sessionId, goalPrompt, { images, runState: rs, signal, onCompactChoice });
     let rounds = 1;
     // gap P1-2（2026-08-18）：轮间结论重复检测（gemini 内容重复对齐）——相同最终文本
     // ≥chantRemindAt 注入换策略提醒、≥chantStopAt 终止（防 goal 模式空转烧 token）
@@ -1850,14 +1910,14 @@ export function createAgent(opts: AgentOptions) {
       chantRounds = t && t === prevText ? chantRounds + 1 : 0;
       prevText = t;
       if (chantRounds >= EFF.chantStopAt) {
-        bus.emit('agent.error', { message: `goal 循环连续 ${chantRounds} 轮结论相同——判定空转，终止` });
+        bus.emit('agent.error', { session_id: sessionId, message: `goal 循环连续 ${chantRounds} 轮结论相同——判定空转，终止` });
         bus.emit('agent.goal', { round: rounds, maxRounds: MAX_GOAL_ROUNDS, done: false, cancelled: true, text: t.slice(0, 80) });
         return { ...result, ok: false, text: `${t}\n（goal 循环连续 ${chantRounds} 轮输出相同结论——判定空转，已终止；请换一种方式或明确补充要求）` };
       }
       const chantNote = chantRounds >= EFF.chantRemindAt
         ? `（检测到你连续 ${chantRounds} 轮给出相同结论——请换一种策略或给出新进展，不要重复相同内容。）`
         : '';
-      result = await loop(sessionId, `（goal 模式第 ${rounds} 轮）继续执行直到目标全部完成，完成后输出 ${GOAL_DONE_MARK}。以上文历史为当前进度。${chantNote}`, { runState: rs, signal });
+      result = await loop(sessionId, `（goal 模式第 ${rounds} 轮）继续执行直到目标全部完成，完成后输出 ${GOAL_DONE_MARK}。以上文历史为当前进度。${chantNote}`, { runState: rs, signal, onCompactChoice });
     }
     const done = result.text.includes(GOAL_DONE_MARK);
     bus.emit('agent.goal', { round: rounds, maxRounds: MAX_GOAL_ROUNDS, done, cancelled: result.interrupted, text: result.text.slice(0, 80) });
@@ -1882,6 +1942,7 @@ export function createAgent(opts: AgentOptions) {
   const durableRecoveredNotified = new Set<string>();
   // 注意：run 方法的参数 opts（AgentRunOptions）遮蔽外层 AgentOptions——队列 DB 用外层捕获
   const agentDb = opts.db;
+  const agentOpts = opts; // N1：run() 参数遮蔽外层 opts——durable 豁免需外层 isSubagent 标志
 
   return {
     async run(prompt: string, opts?: AgentRunOptions): Promise<AgentResult> {
@@ -1893,7 +1954,10 @@ export function createAgent(opts: AgentOptions) {
       //   ③ 崩溃恢复——stale 行标记 interrupted + system.notice 如实告知（每会话一次）；
       //   ④ 子代理（会话 <主>:sub）不入队——队列只保用户消息（子代理目标属父上下文）。
       const db = agentDb;
-      const durableOn = settingsAny?.durableQueue !== false && !sessionId.endsWith(':sub');
+      // N1（批次ⅩⅩⅦ · kernel-eval）：原 `!sessionId.endsWith(':sub')` 是死守卫——真实子会话
+      // id 为 `sub-` 前缀或父 id 透传（全仓无 ':sub' 后缀生产者），子代理照常入队且孤儿行累积。
+      // 改为 spawnSub 显式 isSubagent 标志（id 形态不该承载语义）。
+      const durableOn = settingsAny?.durableQueue !== false && agentOpts.isSubagent !== true;
       let dqId: number | null = null;
       if (durableOn) {
         try {
@@ -1904,6 +1968,15 @@ export function createAgent(opts: AgentOptions) {
             if (durableRecoveredNotified.size > 256) durableRecoveredNotified.delete(durableRecoveredNotified.values().next().value!);
             bus.emit('system.notice', {
               text: `检测到上次中断的 ${recovered.length} 条未完成请求（已标记 interrupted——checkpoint 已保留上下文，/rewind 回滚或重新提问继续）`,
+            });
+          }
+          try { purgeDurableRows(db); } catch { /* 清扫失败不影响回合 */ }
+          // ⅩⅩⅪ rollout 重放钩子：stale 行 notice 里给出重投路径（不自动发送——用户确认制）
+          const recovered2 = recoverStaleWithReplay(db, sessionId);
+          if (recovered2.replayable.length > 1 && !durableRecoveredNotified.has(sessionId)) {
+            durableRecoveredNotified.add(sessionId);
+            bus.emit('system.notice', {
+              text: `上次有 ${recovered2.replayable.length} 条未完成请求（已标 interrupted）——最新一条原文已恢复，其余可用 Ctrl+↑ 召回重发`,
             });
           }
           dqId = enqueueDurablePrompt(db, sessionId, prompt, null);
@@ -1918,7 +1991,7 @@ export function createAgent(opts: AgentOptions) {
         });
         return await agentRunContext.run(context, () => agentSessionContext.run(
           { activeSessionId: context.sessionId },
-          () => runWithGoalLoop(prompt, opts?.images, opts?.goalLoop, opts?.signal),
+          () => runWithGoalLoop(prompt, opts?.images, opts?.goalLoop, opts?.signal, opts?.onCompactChoice),
         ));
       } finally {
         if (dqId !== null) {

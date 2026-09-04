@@ -26,8 +26,35 @@ export class WxError extends Error {
   }
 }
 
-/** 退出码协议（P1-2，对齐 Kimi 0/1/75）：0 成功｜1 不可重试｜75 可重试（429/5xx/网络/超时） */
+/** 退出码协议（P1-2，对齐 Kimi 0/1/75）：0 成功｜1 不可重试｜75 可重试（429/5xx/网络/超时）
+ * C-4（2026-08-30）结构化优先：WxError 数值码 / HTTP status / errno·undici code / cause 链（≤2 层）
+ * 先于消息文本嗅探——文本正则只作无结构化信息时的兜底（上游纯消息错误仍走原语义，行为不变）。
+ */
 export function exitCodeForError(e: unknown): number {
+  const seen = new Set<unknown>();
+  const structuredRetryable = (x: unknown, depth: number): boolean | null => {
+    if (!x || typeof x !== 'object' || depth > 2 || seen.has(x)) return null;
+    seen.add(x);
+    if (x instanceof WxError) {
+      return x.code === WX_ERR.RATE_LIMITED || x.code === WX_ERR.PROVIDER_ERROR || x.code === WX_ERR.NETWORK;
+    }
+    const o = x as Record<string, unknown>;
+    const status = o['status'] ?? o['statusCode'];
+    if (typeof status === 'number') {
+      if (status === 429 || status >= 500) return true;
+      if (status >= 400 && status < 500) return false;
+    }
+    const code = o['code'];
+    if (typeof code === 'string' && /^(ETIMEDOUT|ECONNRESET|ECONNREFUSED|EPIPE|EAI_AGAIN|UND_ERR_)/.test(code)) return true;
+    if (o['cause'] !== undefined) {
+      const nested = structuredRetryable(o['cause'], depth + 1);
+      if (nested !== null) return nested;
+    }
+    return null;
+  };
+  const structured = structuredRetryable(e, 0);
+  if (structured !== null) return structured ? 75 : 1;
+  // 文本兜底（无结构化信息的纯消息错误——语义与既有行为一致）
   const msg = String(e instanceof Error ? e.message : e);
   if (/429|限流|rate|too many/i.test(msg)) return 75;
   if (/5\d\d|500|502|503|504|服务暂不可用|模型服务端错误/i.test(msg)) return 75;

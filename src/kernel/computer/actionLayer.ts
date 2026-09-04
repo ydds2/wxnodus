@@ -28,7 +28,9 @@ export function inBounds(x: number, y: number, viewport: { width: number; height
   return x >= 0 && y >= 0 && x <= viewport.width && y <= viewport.height;
 }
 
-// 物理像素 → 逻辑像素（DPI 缩放：截图坐标系 → 动作坐标系）
+/** @deprecated ⅩⅩⅩ（C-1）：截图像素=物理像素=robotjs/SetCursorPos 像素——本转换在
+ *  clickOnScreen 中是多余的错误变换（DPI>1 偏向左上）；保留供 actionLayer 测试/单一屏幕
+ *  逻辑坐标计算场景，生产 click 链不再消费。 */
 export function convertCoords(x: number, y: number, dpi: { scale: number }): { x: number; y: number } {
   return { x: Math.round(x / dpi.scale), y: Math.round(y / dpi.scale) };
 }

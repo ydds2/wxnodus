@@ -5,13 +5,14 @@
 //   ③ 「未配置」是初始状态不是故障——密钥/模型/档案未配置记 info，不污染 exit code；
 //   ④ 网络项（端点探活/更新通道）默认并行 4s 预算，可 network:false 跳过（离线/`doctor local`）；
 //     更新通道不可达记 warn 不 fail（气隙部署是合法形态——诚实标注而非误报故障）。
-import { existsSync, statfsSync } from 'node:fs';
+import { existsSync, statfsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { resolveApiKey } from './providers.js';
 import { profileHealth } from './profiles.js';
 import { verifyAudit, type AuditDb } from './audit.js';
 import { resolveDefaultBaseURL } from './defaults.js';
+import { listProcesses, classifyOrphanProcesses, type ProcessInfo } from './processScan.js';
 
 export type DoctorStatus = 'ok' | 'warn' | 'fail' | 'info';
 export interface DoctorCheck { item: string; status: DoctorStatus; detail: string }
@@ -43,6 +44,79 @@ export interface DoctorInput {
   netTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
+  /** B1：进程枚举注入（测试隔离；缺省真实 PowerShell/ps 全表） */
+  processScan?: () => Promise<ProcessInfo[]>;
+  /** B1：心跳日志目录（缺省 dataDir/logs） */
+  heartbeatDir?: string;
+  /** B1：心跳日志夹具（测试隔离；缺省读 heartbeatDir） */
+  heartbeatLogs?: HeartbeatFileInfo[];
+  /** B1：心跳断档阈值 ms（缺省 15s=7 拍） */
+  heartbeatGapMs?: number;
+}
+
+// ── B1（2026-09-04）：心跳日志解析（纯函数，可单测） ──────────────────
+
+/** 心跳日志：每个 pid 保留最后一次心跳时间（同文件多会话交错——逐 pid 取最新才不误判） */
+export interface HeartbeatFileInfo { file: string; lastByPid: Map<number, number> }
+
+/** 心跳行：`<ISO> alive pid=<pid>`（旧格式无 pid 的行无法关联进程——诚实跳过） */
+export function parseHeartbeatLine(line: string): { pid: number; at: number } | null {
+  const m = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s+alive(?:\s+pid=(\d+))?/i);
+  if (!m) return null;
+  const pid = Number(m[2]);
+  if (!Number.isFinite(pid) || pid <= 0) return null;
+  const at = Date.parse(m[1]!);
+  if (!Number.isFinite(at)) return null;
+  return { pid, at };
+}
+
+export function parseHeartbeatLog(text: string, file: string): HeartbeatFileInfo {
+  const lastByPid = new Map<number, number>();
+  for (const line of text.split('\n')) {
+    const hit = parseHeartbeatLine(line.trim());
+    if (!hit) continue;
+    if (hit.at > (lastByPid.get(hit.pid) ?? 0)) lastByPid.set(hit.pid, hit.at);
+  }
+  return { file, lastByPid };
+}
+
+/** 读取日志目录全部 heartbeat-*.log（目录缺失/不可读 → 空表——心跳体检如实标 info） */
+export function readHeartbeatLogs(dir: string): HeartbeatFileInfo[] {
+  try {
+    return readdirSync(dir)
+      .filter(f => f.startsWith('heartbeat-') && f.endsWith('.log'))
+      .map(f => parseHeartbeatLog(readFileSync(join(dir, f), 'utf8'), f));
+  } catch {
+    return [];
+  }
+}
+
+export interface HeartbeatGapHit { pid: number; file: string; gapMs: number }
+
+/** 心跳断档判定：进程仍存活但最后心跳超过阈值（跨文件取每 pid 最新一拍——冻结窗口定位核心） */
+export function analyzeHeartbeatGaps(
+  logs: HeartbeatFileInfo[],
+  procs: ProcessInfo[],
+  now: number,
+  gapMs: number,
+  selfPid: number,
+): { frozen: HeartbeatGapHit[]; checked: number } {
+  const alive = new Set(procs.map(p => p.pid));
+  const latest = new Map<number, { at: number; file: string }>();
+  for (const log of logs) {
+    for (const [pid, at] of log.lastByPid) {
+      const cur = latest.get(pid);
+      if (!cur || at > cur.at) latest.set(pid, { at, file: log.file });
+    }
+  }
+  const frozen: HeartbeatGapHit[] = [];
+  for (const [pid, { at, file }] of latest) {
+    if (pid === selfPid || !alive.has(pid)) continue;
+    const gap = now - at;
+    if (gap > gapMs) frozen.push({ pid, file, gapMs: gap });
+  }
+  frozen.sort((a, b) => b.gapMs - a.gapMs);
+  return { frozen, checked: latest.size };
 }
 
 // ── 纯函数（可单测） ──────────────────────────────────────────────
@@ -205,6 +279,29 @@ export async function runDoctor(input: DoctorInput): Promise<DoctorReport> {
   // ⑪ 终端能力档位 + ⑫ 代理链路（环境报告，均 info）
   checks.push({ item: '终端档位', status: 'info', detail: detectTerminalTier(env, platform) });
   checks.push({ item: '代理链路', status: 'info', detail: describeProxy(env) });
+
+  // ⑫¼ B1（2026-09-04）：卡死自愈体检——孤儿进程 + 心跳断档（8/30 tmp-n2 孤儿事故教训）。
+  // 采集失败如实标 info（绝不伪造空表）；疑似孤儿只提示（warn）不判故障（多开会话是合法形态）。
+  const procs = await (input.processScan ?? (() => listProcesses()))().catch(() => null);
+  if (procs === null) {
+    checks.push({ item: '孤儿进程', status: 'info', detail: '无法探测（进程枚举不可用）' });
+  } else {
+    const orphans = classifyOrphanProcesses(procs, process.pid);
+    checks.push(orphans.length
+      ? { item: '孤儿进程', status: 'warn', detail: `发现 ${orphans.length} 个疑似遗留：${orphans.slice(0, 4).map(p => `${p.pid}(${p.name})`).join('、')}${orphans.length > 4 ? ' 等' : ''}——多开会话或卡死残留（/jobs、任务管理器复核；B2 进程树回收兜底）` }
+      : { item: '孤儿进程', status: 'ok', detail: '未发现（本会话进程树干净）' });
+  }
+  const hbLogs = input.heartbeatLogs ?? readHeartbeatLogs(input.heartbeatDir ?? join(input.dataDir, 'logs'));
+  const gap = analyzeHeartbeatGaps(hbLogs, procs ?? [], Date.now(), input.heartbeatGapMs ?? 15_000, process.pid);
+  if (!hbLogs.length) {
+    checks.push({ item: '心跳探针', status: 'info', detail: '无心跳日志（心跳默认开启 2s 一写，首次运行即生成；WXNODUS_NO_HEARTBEAT=1 关闭则属预期）' });
+  } else if (procs === null) {
+    checks.push({ item: '心跳探针', status: 'info', detail: `心跳日志 ${gap.checked} 条进程记录——断档判定跳过（进程枚举不可用）` });
+  } else if (gap.frozen.length) {
+    checks.push({ item: '心跳探针', status: 'warn', detail: `${gap.frozen.length} 个进程心跳断档：${gap.frozen.map(f => `pid ${f.pid}（${Math.round(f.gapMs / 1000)}s）`).join('、')}——疑似卡死（任务管理器复核）` });
+  } else {
+    checks.push({ item: '心跳探针', status: 'ok', detail: `心跳正常（${gap.checked} 个进程无断档）` });
+  }
 
   // ⑬⑭ 网络项（并行 4s 预算；network=false 时诚实跳过）
   if (input.network === false) {

@@ -12,7 +12,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join, relative, sep } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { resolveDataDir } from './paths.js';
 
@@ -351,6 +351,12 @@ export async function downloadOfflineModel(
   model: string,
   onProgress?: (p: OfflineDownloadProgress) => void,
 ): Promise<{ ok: boolean; message: string }> {
+  // ⅩⅩⅨ（专项审计 D-1）：V4 裁撤轨 D-1 同款门——离线推理 worker（offlineModelWorker.js）
+  // 未随发行打包，下载完成也无法加载；此前 download 路径无门：下完 30min 才报错且文案归因
+  // 「需要网络」不诚实。与 callOfflineLlm 同门：裁撤期拒绝下载，逃生口同 env。
+  if (process.env.WXNODUS_LEGACY_OFFLINE !== '1') {
+    return { ok: false, message: '离线模型下载已停用（V4.0 裁撤离线推理轨——worker 未随发行打包，下载后亦无法加载）。设 WXNODUS_LEGACY_OFFLINE=1 可临时续用（需自行确保 worker 与网络）' };
+  }
   const info = OFFLINE_MODELS[model];
   if (!info) return { ok: false, message: `未知离线模型：${model}` };
   const dataDir = resolveDataDir(process.cwd());
@@ -409,11 +415,6 @@ export function offlineCacheBytes(): number {
   }
 }
 
-export function offlineManifestName(): string {
-  return basename(MANIFEST_NAME);
-}
+// [ⅩⅩⅩⅣ] offlineManifestName 已删除（零引用）
 
-export function offlineManifestDirectory(model: string, dataDir = resolveDataDir(process.cwd())): string | null {
-  const root = modelDirectory(model, dataDir);
-  return root ? dirname(join(root, MANIFEST_NAME)) : null;
-}
+// [ⅩⅩⅩⅣ] offlineManifestDirectory 已删除（零引用）

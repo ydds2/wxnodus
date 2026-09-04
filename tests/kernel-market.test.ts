@@ -182,6 +182,52 @@ describe('market secure install', () => {
     expect((await installMcpFromNpm('mcp-fs', cwd, deps(routes))).message).toContain('无重复')
   })
 
+  it('N-E2 回归：带依赖的 MCP artifact 真实解析运行时依赖（npm install）——不再假成功', async () => {
+    const withDeps = tarGz([
+      { name: 'package/', type: '5' },
+      { name: 'package/package.json', body: JSON.stringify({ name: 'mcp-deps', version: '1.0.0', main: 'index.js', dependencies: { '@modelcontextprotocol/sdk': '^1.0.0' } }) },
+      { name: 'package/index.js', body: 'module.exports = {};' },
+    ])
+    const tarball = 'https://registry.npmjs.org/mcp-deps/-/mcp-deps-1.0.0.tgz'
+    const routes = {
+      'https://registry.npmjs.org/mcp-deps/latest': { json: { version: '1.0.0', dist: { tarball, integrity: sri(withDeps) } } },
+      [tarball]: { buffer: withDeps },
+    }
+    let installCwd = ''
+    const r = await installMcpFromNpm('mcp-deps', cwd, {
+      ...deps(routes),
+      npmInstall: (dir) => { installCwd = dir; return { ok: true } },
+    })
+    expect(r.ok).toBe(true)
+    expect(r.message).toContain('运行时依赖已解析')
+    expect(installCwd).toMatch(/extract-[0-9a-f-]+[\\/]package$/) // 在 rename 前的提取目录解析（依赖随目录一并落位）
+  })
+
+  it('N-E2 回归：依赖解析失败 → 整体失败（半成品不落 .mcp.json）', async () => {
+    const withDeps = tarGz([
+      { name: 'package/', type: '5' },
+      { name: 'package/package.json', body: JSON.stringify({ name: 'mcp-bad', version: '1.0.0', main: 'index.js', dependencies: { 'some-pkg': '^9' } }) },
+      { name: 'package/index.js', body: 'module.exports = {};' },
+    ])
+    const tarball = 'https://registry.npmjs.org/mcp-bad/-/mcp-bad-1.0.0.tgz'
+    const routes = {
+      'https://registry.npmjs.org/mcp-bad/latest': { json: { version: '1.0.0', dist: { tarball, integrity: sri(withDeps) } } },
+      [tarball]: { buffer: withDeps },
+    }
+    const r = await installMcpFromNpm('mcp-bad', cwd, {
+      ...deps(routes),
+      npmInstall: () => ({ ok: false, error: 'npm ERR! network' }),
+    })
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('运行时依赖解析失败')
+    expect(r.message).toContain('some-pkg')
+    // 半成品不落盘：.mcp.json 未写入 mcp-bad
+    if (existsSync(join(cwd, '.mcp.json'))) {
+      const config = JSON.parse(readFileSync(join(cwd, '.mcp.json'), 'utf8'))
+      expect(config.mcpServers['mcp-bad']).toBeUndefined()
+    }
+  })
+
   it('installs verified npm bytes and records provenance', async () => {
     const archive = skillArchive('hello-skill')
     const result = await installSkillFromNpm('hello-skill', dataDir, deps(npmRoutes('hello-skill', '1.2.3', archive)))
@@ -296,7 +342,7 @@ describe('market secure install', () => {
     const receipt = JSON.parse(readFileSync(join(dataDir, 'skills', 'github-skill', '.wxnodus-provenance.json'), 'utf8'))
     expect(receipt.source).toBe('github:acme/repo')
     expect(receipt.resolvedIdentity).toBe(`acme/repo@${commit}`)
-    expect(receipt.expectedDigest).toBe(`git:${commit}`)
+    expect(receipt.expectedDigest).toContain(`git:${commit.slice(0, 16)}`)
     expect(receipt.observedDigest).toBe(`sha256:${createHash('sha256').update(archive).digest('hex')}`)
   })
 

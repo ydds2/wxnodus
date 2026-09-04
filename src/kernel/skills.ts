@@ -208,3 +208,52 @@ export function skillContentForModel(dataDir: string, cwd: string, name: string)
     + content.replace(/<\/?untrusted-skill-content/gi, '<\\/untrusted-skill-content')
     + '\n</untrusted-skill-content>';
 }
+
+
+// ═══ ⅩⅩⅩⅤ 技能增强：版本标记 + 依赖组合 + 执行上下文 ═══
+
+export interface SkillMetadata {
+  name: string;
+  version: string;
+  /** 声明依赖的其他技能名（加载时递归展开——依赖技能的提示词追加在后面） */
+  requires?: string[];
+  /** 适用的工具或命令上下文（如 ['fs_read', 'bash']——提示词注入时机） */
+  context?: string[];
+  /** 技能来源路径（五源之一） */
+  source: string;
+}
+
+/** 解析技能 frontmatter 的扩展元数据（version/requires/context） */
+export function parseSkillMetadata(frontmatter: Record<string, unknown>, source: string): SkillMetadata {
+  return {
+    name: String(frontmatter.name ?? ''),
+    version: String(frontmatter.version ?? '1.0.0'),
+    requires: Array.isArray(frontmatter.requires)
+      ? frontmatter.requires.filter((r): r is string => typeof r === 'string')
+      : undefined,
+    context: Array.isArray(frontmatter.context)
+      ? frontmatter.context.filter((c): c is string => typeof c === 'string')
+      : undefined,
+    source,
+  };
+}
+
+/** 递归展开技能依赖（检测循环——A→B→A 返回 null 而非死循环） */
+export function resolveSkillDependencies(
+  name: string,
+  allSkills: Map<string, SkillMetadata>,
+  visiting = new Set<string>(),
+): SkillMetadata[] | null {
+  if (visiting.has(name)) return null; // 循环依赖——诚实返回 null
+  visiting.add(name);
+  const meta = allSkills.get(name);
+  if (!meta) return [];
+  const result: SkillMetadata[] = [meta];
+  for (const dep of meta.requires ?? []) {
+    const depChain = resolveSkillDependencies(dep, allSkills, visiting);
+    if (depChain === null) return null;
+    result.push(...depChain);
+  }
+  visiting.delete(name);
+  return result;
+}

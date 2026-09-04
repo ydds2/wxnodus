@@ -460,7 +460,14 @@ export function coreTools(): Record<string, ToolDef> {
           } else {
             try { rmSync(sandbox.result.outPath, { force: true }); rmSync(sandbox.result.errPath, { force: true }); } catch { /* 清理失败静默 */ }
           }
-          ctx.bus?.emit?.('system.notice', { text: `命令已在 OS 沙盒内执行（${sandboxProfile}）——受限令牌 + Job 遏制${sandboxProfile === 'L0' || sandboxProfile === 'L1' ? ' + 断网' : sandboxProfile === 'L2' ? ' + 限速 10KB/s' : ''}${sandboxProfile === 'L0' ? ' + 只读' : ''}` });
+          {
+          // ⅩⅩⅨ（专项审计 S-1）：按探测实态如实——标准用户下 L1-L3 无受限令牌（裸 Job），
+          // 此前恒称「受限令牌 + Job」对标准用户是 overclaim。
+          const { cachedProbe } = await import('./winSandbox.js');
+          const elevated = cachedProbe()?.elevated === true;
+          const tokenNote = elevated ? '受限令牌 + Job 遏制' : 'Job 遏制（标准用户会话——无受限令牌，L0 为 Low IL）';
+          ctx.bus?.emit?.('system.notice', { text: `命令已在 OS 沙盒内执行（${sandboxProfile}）——${tokenNote}${sandboxProfile === 'L0' || sandboxProfile === 'L1' ? ' + 断网' : sandboxProfile === 'L2' ? ' + 限速 10KB/s' : ''}${sandboxProfile === 'L0' ? ' + 只读' : ''}` });
+        }
         } else {
           // 普通路径（沙盒未开启/不适用）：spawn + 流式落盘（sink 保证完整输出可续读）
           // V4 P1-2：空闲超时——每次输出到达重置计时（npm install 间歇输出不误杀；静默挂死才杀），
@@ -1332,8 +1339,12 @@ export function coreTools(): Record<string, ToolDef> {
       const mod = await import('./computer/index.js');
       const shot = await mod.captureScreen();
       if (!shot) return { error: '桌面捕获不可用（无桌面环境或原生模块缺失）——/doctor 查看' };
-      if (!computerUseCache) {
-        const { ActionGuard } = await import('./computer/guards.js');
+      // ⅩⅩⅨ（专项审计 C-3）：每次截图刷新视口守卫——此前首帧冻结，分辨率/显示器变化后
+      // 越界检查基于陈旧视口（且副屏接入后仍按主屏首帧判定）。
+      const { ActionGuard } = await import('./computer/guards.js');
+      const stale = computerUseCache && (computerUseCache.width !== shot.width || computerUseCache.height !== shot.height);
+      if (!computerUseCache || stale) {
+        // 静默刷新（notice 会随显示器热插拔刷屏——守卫生效即可）
         computerUseCache = {
           cu: new mod.ComputerUse(new ActionGuard({ width: shot.width, height: shot.height })),
           width: shot.width, height: shot.height,
@@ -1345,7 +1356,7 @@ export function coreTools(): Record<string, ToolDef> {
     }
   };
   const computerScreenshot: ToolDef = {
-    schema: { type: 'function', function: { name: 'computer_screenshot', description: '截取当前屏幕保存为 PNG（返回文件路径；/img <路径> 或视觉模型分析后，按坐标用 computer_click 操作屏幕）。', parameters: { type: 'object', properties: {} } } },
+    schema: { type: 'function', function: { name: 'computer_screenshot', description: '截取当前屏幕保存为 PNG（返回文件路径；/img <路径> 或视觉模型分析后，按坐标用 computer_click 操作屏幕）。', parameters: { type: 'object', properties: { monitor: { type: 'number', description: '显示器索引（0=主屏默认，1=副屏…）' } } } } },
     danger: false,
     async run(_a, ctx) {
       const r = await getComputerUse();
@@ -1367,8 +1378,9 @@ export function coreTools(): Record<string, ToolDef> {
     async run({ x, y, button }, _ctx) {
       const r = await getComputerUse();
       if ('error' in r) return r.error;
-      const { convertCoords } = await import('./computer/actionLayer.js');
-      const { x: lx, y: ly } = convertCoords(Number(x), Number(y), { scale: r.shot.scale });
+      // ⅩⅩⅩⅣ：物理像素直通（C-1 修复——convertCoords @deprecated 后不应再调用）
+      const lx = Math.round(Number(x));
+      const ly = Math.round(Number(y));
       const btn = button === 'right' || button === 'double' ? button : 'left';
       return await r.cu.act({ type: 'click', x: lx, y: ly, button: btn });
     },
@@ -1392,25 +1404,53 @@ export function coreTools(): Record<string, ToolDef> {
     },
   };
   const computerObserve: ToolDef = {
-    schema: { type: 'function', function: { name: 'computer_observe', description: '理解当前屏幕：截图 + 视觉模型描述（可见文字/布局/元素及其位置线索）。操作屏幕前先观察——配合 computer_uia_tree 拿精确元素结构。', parameters: { type: 'object', properties: {} } } },
+    schema: { type: 'function', function: { name: 'computer_observe', description: '理解当前屏幕（分档）：截图 + 视觉模型描述。tier=full 全屏分析（缺省）；tier=region 区域分析（需 x/y/width/height 或 window 句柄）；tier=window 窗口分析（需 window 句柄——从 computer_uia_windows 获取）。操作屏幕前先观察。', parameters: { type: 'object', properties: { tier: { type: 'string', enum: ['full', 'region', 'window'], description: '观察档位：full=全屏（缺省）、region=指定区域、window=指定窗口' }, x: { type: 'number', description: 'region 档：区域左上角 X（物理像素）' }, y: { type: 'number', description: 'region 档：区域左上角 Y' }, width: { type: 'number', description: 'region 档：区域宽' }, height: { type: 'number', description: 'region 档：区域高' }, window: { type: 'string', description: 'window 档：窗口句柄（从 computer_uia_windows 获取）' }, monitor: { type: 'number', description: '显示器索引（0=主屏，1=副屏…）' } } } } },
     danger: false,
-    async run(_a, ctx) {
-      const r = await getComputerUse();
-      if ('error' in r) return r.error;
+    async run(a, ctx) {
       try {
+        // ⅩⅩⅪ：分档全域操控（参考分层语义——full/region/window 三档）
+        const tier = String(a?.tier ?? 'full');
+        const monitor = Number(a?.monitor) || 0;
+        let region: import('./computer/index.js').CaptureRegion | undefined;
+        let tierNote = '全屏';
+
+        if (tier === 'region') {
+          const x = Number(a?.x) || 0, y = Number(a?.y) || 0;
+          const w = Number(a?.width) || 0, h = Number(a?.height) || 0;
+          if (w <= 0 || h <= 0) return 'region 档需要 x/y/width/height 参数（物理像素坐标——先用 computer_observe full 或 computer_screenshot 看全屏再切区域）';
+          region = { x, y, width: w, height: h };
+          tierNote = `区域 (${x},${y} ${w}x${h})`;
+        } else if (tier === 'window') {
+          const handle = String(a?.window ?? '').trim();
+          if (!handle) return 'window 档需要 window 参数（窗口句柄——先用 computer_uia_windows 获取可见窗口列表）';
+          // 从 UIA 读窗口边界 → 转区域
+          try {
+            const { uiaGetWindowRect } = await import('./computer/uia.js');
+            const rect = await uiaGetWindowRect(handle);
+            if (rect) { region = rect; tierNote = `窗口 ${handle}（${rect.width}x${rect.height}）`; }
+            else { tierNote = `窗口 ${handle}（边界不可读——回退全屏）`; }
+          } catch { tierNote = `窗口 ${handle}（UIA 不可用——回退全屏）`; }
+        }
+
+        const shot = await (await import('./computer/index.js')).captureScreen({ region, monitor });
+        if (!shot) return '桌面捕获不可用（无桌面环境或原生模块缺失）——/doctor 查看';
+
         const { join } = await import('node:path');
         const { mkdirSync, writeFileSync } = await import('node:fs');
         const dir = join(ctx.dataDir, 'captures');
         mkdirSync(dir, { recursive: true });
-        const file = join(dir, `observe-${Date.now().toString(36)}.png`);
-        writeFileSync(file, r.shot.png);
+        const file = join(dir, `observe-${tier}-${Date.now().toString(36)}.png`);
+        writeFileSync(file, shot.png);
         // 开放视觉通道（settings/env 端点可换、本地 VLM 离线可用）
         const { describeImageStatus } = await import('./vision.js');
         const settings = ctx.getSettings?.();
         const enc = (settings as any)?.apiKeyEnc as string | undefined ?? null;
-        const vr = await describeImageStatus(file, enc, '描述当前屏幕内容：界面/窗口/按钮与输入框的名称与大致位置（用中文），以及屏幕上的可见文字。', settings);
+        const prompt = tier === 'full'
+          ? '描述当前屏幕内容：界面/窗口/按钮与输入框的名称与大致位置（用中文），以及屏幕上的可见文字。'
+          : `描述这个${tierNote}的内容：界面元素/文字/按钮与输入框的名称与位置（用中文）。`;
+        const vr = await describeImageStatus(file, enc, prompt, settings);
         const text = vr.ok ? (vr.text ?? '') : `（视觉不可用：${vr.reason}——已截图 ${file}，可用 /img 复查或 computer_uia_tree 读元素结构）`;
-        return `截图已保存：${file}（${r.shot.width}x${r.shot.height}）${vr.cached ? '\n（同屏缓存：10s 内相同画面未重新识别）' : ''}\n${labelTruncate(text, 1500, '视觉描述过长——computer_uia_tree 读精确元素结构')}`;
+        return `[${tierNote}] 截图已保存：${file}（${shot.width}x${shot.height}）${vr.cached ? '\n（同屏缓存）' : ''}\n${labelTruncate(text, 1500, '视觉描述过长——computer_uia_tree 读精确元素结构')}`;
       } catch (e: any) { return `观察失败：${String(e?.message ?? e).slice(0, 120)}`; }
     },
   };

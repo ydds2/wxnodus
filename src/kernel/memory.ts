@@ -153,9 +153,22 @@ export async function compactMessages(
     : midText;
   const summary = await summarize(feed).catch(() => '');
   if (summary) {
+    // ⅩⅩⅫ：压缩失败护栏（gemini chatCompressionService:461-469 语义）——
+    // 压缩后 ≥ 原文 80% → 不划算，放弃摘要走确定性降级（白烧 LLM 还把上下文变糟）
+    const originalTokens = estimateMessagesTokens(mid);
+    const compressedTokens = estimateMessagesTokens([{ role: 'system', content: summary }]);
+    // 仅当原文足够大（>2000 token）时护栏才有意义——极短中间段的摘要即使膨胀也远小于原文+尾部
+    if (originalTokens > 2000 && compressedTokens >= originalTokens * 0.8) {
+      return compactDeterministic(keepHead, mid, keepTail);
+    }
     return [...keepHead, { role: 'system', content: `（自动压缩摘要）\n${summary.slice(0, summaryCap)}` }, ...keepTail];
   }
   // LLM 摘要失败：确定性降级——每轮只留首行
+  return compactDeterministic(keepHead, mid, keepTail);
+}
+
+/** ⅩⅩⅫ：确定性降级压缩（LLM 失败/膨胀护栏共用——每轮首行 + 尾 10 条） */
+function compactDeterministic(keepHead: MemMsg[], mid: MemMsg[], keepTail: MemMsg[]): MemMsg[] {
   const condensed: MemMsg[] = [];
   let lastRole = '';
   for (const m of mid) {

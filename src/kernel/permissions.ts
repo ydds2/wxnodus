@@ -150,7 +150,7 @@ export function applyRules(tool: string, args: Record<string, any>, rules: PermR
     if (r.pattern) {
       if (tool === 'bash') {
         if (!cmdArg) continue;
-        const re = new RegExp('^' + r.pattern.split('*').map(escapeRe).join('.*'));
+        const re = globReCache(r.pattern, 'cmd'); // ⅩⅩⅩⅣ 预编译
         if (!re.test(cmdArg)) continue;
       } else {
         if (!pathArg) continue;
@@ -362,4 +362,20 @@ export function modeVerdict(mode: Mode, tool: string, args: Record<string, any>,
     default:
       return isDanger ? 'confirm' : 'approve';
   }
+}
+
+
+// ⅩⅩⅩⅣ 性能：glob→RegExp 预编译缓存（进程级——热路径每次工具调用不再重编译）
+const globReCacheMap = new Map<string, RegExp>();
+function globReCache(pattern: string, mode: 'cmd' | 'path'): RegExp {
+  const key = mode + ':' + pattern;
+  let re = globReCacheMap.get(key);
+  if (!re) {
+    re = mode === 'cmd'
+      ? new RegExp('^' + pattern.split('*').map(escapeRe).join('.*'))
+      : new RegExp('^' + pattern.split('*').map(escapeRe).join('.*') + '$', 'i');
+    globReCacheMap.set(key, re);
+    if (globReCacheMap.size > 256) globReCacheMap.delete(globReCacheMap.keys().next().value!);
+  }
+  return re;
 }

@@ -30,7 +30,7 @@ describe('workspace test discovery', () => {
       errorCode: string | null;
     };
 
-    expect(report.roots.map(root => root.path)).toEqual(['tests', 'src', 'packages/wxnodus-ink', 'packages/vscode-ext']);
+    expect(report.roots.map(root => root.path)).toEqual(['tests', 'src', 'packages/vscode-ext']);
     expect(report.vitestResolvedFiles).toEqual(report.diskRequiredFiles);
     expect(report.missingFiles).toEqual([]);
     expect(report.unexpectedFiles).toEqual([]);

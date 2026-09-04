@@ -71,7 +71,8 @@ const describeWithDist = hasDist ? describe : describe.skip;
 describeWithDist('stdin 管道真实进程', () => {
   it('无 -p：piped stdin 成为一次性提问（会话事件流留证）', async () => {
     const marker = '管道提问-独有标记-' + Date.now().toString(36);
-    const r = await runPipeCli(['--json'], `${marker}，请回答`);
+    // A1 无密钥 fail-closed（exit 3）不污染本契约——WXNODUS_LEGACY_OFFLINE 走确定性离线模型
+    const r = await runPipeCli(['--json'], `${marker}，请回答`, { ...process.env, WXNODUS_LEGACY_OFFLINE: '1' });
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('"ok":true');
     const events = sessionUserEvents(r.dataDir);
@@ -80,7 +81,7 @@ describeWithDist('stdin 管道真实进程', () => {
 
   it('有 -p：指令 + <stdin> 素材块注入（组合提问留证）', async () => {
     const marker = '管道素材-独有标记-' + Date.now().toString(36);
-    const r = await runPipeCli(['-p', '总结一下', '--json'], `这是素材：${marker}`);
+    const r = await runPipeCli(['-p', '总结一下', '--json'], `这是素材：${marker}`, { ...process.env, WXNODUS_LEGACY_OFFLINE: '1' });
     expect(r.code).toBe(0);
     const events = sessionUserEvents(r.dataDir);
     const hit = events.find(c => c.includes(marker));

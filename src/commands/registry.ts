@@ -4,9 +4,9 @@ import { classifyCommand, COMMAND_LEVEL_ICON, COMMAND_LEVEL_LABEL } from '../ker
 
 export const SLASH: string[] = [
   // 对话
-  '/help', '/clear', '/undo', '/usage', '/cost', '/balance', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint', '/versions', '/snapshot', '/script', '/self-evolve',
+  '/help', '/aliases', '/clear', '/undo', '/usage', '/cost', '/balance', '/quit', '/sessions', '/resume', '/new', '/title', '/context', '/fork', '/checkpoint', '/versions', '/snapshot', '/script', '/self-evolve',
   // 模型
-  '/model', '/profile', '/status', '/doctor', '/version', '/update', '/thinking', '/hooks',
+  '/model', '/profile', '/status', '/doctor', '/version', '/update', '/channel', '/thinking', '/hooks',
   // 记忆（黑洞引擎）
   '/memory', '/hole', '/compact', '/digest', '/curator',
   // 构建（需求编译）
@@ -14,39 +14,40 @@ export const SLASH: string[] = [
   // 安全（合规红线）
   '/perm', '/sandbox', '/compliance', '/consent', '/audit', '/encrypt', '/yolo', '/afk', '/security', '/offline',
   // 系统
-  '/backup', '/export', '/theme', '/lang', '/config', '/logs', '/bench', '/init', '/voice', '/fortune', '/workspace', '/vim', '/diff', '/migrate',
+  '/backup', '/export', '/theme', '/brand', '/lang', '/config', '/logs', '/bench', '/init', '/voice', '/fortune', '/workspace', '/vim', '/diff', '/migrate',
   // 视觉与媒体（可视化 AI 技能）
-  '/vision', '/img', '/video', '/render', '/capture', '/input', '/computer',
+  '/vision', '/img', '/video', '/render', '/capture', '/input', '/computer', '/watch',
   // 网络与集成
-  '/claw', '/web', '/search', '/browser', '/download', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp', '/remote', '/eco',
+  '/claw', '/web', '/search', '/browser', '/download', '/mcp', '/plugin', '/gateway', '/proxy', '/webhook', '/a2a', '/acp', '/remote', '/eco', '/oasis',
   // 协作
   '/swarm', '/duo', '/cron', '/jobs', '/term', '/task', '/delegate', '/agent', '/arena', '/review', '/understand', '/session-stream', '/goal', '/btw', '/share',
   // 工具（确定性）
   '/calc', '/hash', '/base64', '/uuid', '/rand', '/json', '/timer', '/sql', '/fs', '/units', '/csv',
   // 上下文工程（P3：repo map / 快照回滚 / 技能热重载）
-  '/map', '/warp', '/rewind', '/reload-skills', '/market', '/bundle',
+  '/map', '/warp', '/rewind', '/reload-skills', '/market', '/bundle', '/modpack',
 ];
 
 export const COMMAND_CAT: Record<string, string> = {
   // 分类符号全部 BMP 宽字符（无 emoji 代理对）——旧终端字体/winpty 下不产生 � 乱码；
   // 每类唯一符号（/help 分组按符号聚合——此前模型/系统共用 ⚙、对话/协作共用 ◈ 导致组错乱合并）
-  '/help': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/cost': '◈', '/balance': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈', '/versions': '◈', '/snapshot': '◈', '/script': '◈', '/self-evolve': '◈',
-  '/model': '⚙', '/profile': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/update': '⚙', '/thinking': '⚙', '/hooks': '⚙',
+  '/help': '◈', '/aliases': '◈', '/clear': '◈', '/undo': '◈', '/usage': '◈', '/cost': '◈', '/balance': '◈', '/quit': '◈', '/sessions': '◈', '/resume': '◈', '/new': '◈', '/title': '◈', '/context': '◈', '/fork': '◈', '/checkpoint': '◈', '/versions': '◈', '/snapshot': '◈', '/script': '◈', '/self-evolve': '◈',
+  '/model': '⚙', '/profile': '⚙', '/status': '⚙', '/doctor': '⚙', '/version': '⚙', '/update': '⚙', '/channel': '⚙', '/thinking': '⚙', '/hooks': '⚙',
   '/memory': '▤', '/hole': '▤', '/compact': '▤', '/digest': '▤', '/curator': '▤',
   '/build': '◆', '/deploy': '◆', '/forge': '◆', '/skill': '◆', '/learn': '◆', '/gate': '◆', '/fdr': '◆', '/evidence': '◆', '/plan': '◆', '/flow': '◆', '/import': '◆', '/assimilate': '◆',
   '/perm': '⛨', '/sandbox': '⛨', '/compliance': '⛨', '/consent': '⛨', '/audit': '⛨', '/encrypt': '⛨', '/yolo': '⛨', '/afk': '⛨', '/security': '⛨', '/offline': '⬇',
   '/migrate': '◉',
-  '/backup': '◉', '/export': '◉', '/theme': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉', '/voice': '◉', '/fortune': '◉', '/workspace': '◉', '/vim': '◉', '/diff': '◉',
-  '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿', '/computer': '⛭',
-  '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/download': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭', '/remote': '⛭', '/eco': '⛭',
+  '/backup': '◉', '/export': '◉', '/theme': '◉', '/brand': '◉', '/lang': '◉', '/config': '◉', '/logs': '◉', '/bench': '◉', '/init': '◉', '/voice': '◉', '/fortune': '◉', '/workspace': '◉', '/vim': '◉', '/diff': '◉',
+  '/vision': '❖', '/img': '❖', '/video': '❖', '/render': '❖', '/capture': '❖', '/input': '⚿', '/computer': '⚿', '/watch': '❖',
+  '/claw': '⛭', '/web': '⛭', '/search': '⛭', '/browser': '⛭', '/download': '⛭', '/mcp': '⛭', '/plugin': '⛭', '/gateway': '⛭', '/proxy': '⛭', '/webhook': '⛭', '/a2a': '⛭', '/acp': '⛭', '/remote': '⛭', '/eco': '⛭', '/oasis': '⛭',
   '/swarm': '◍', '/duo': '◍', '/cron': '◍', '/jobs': '◍', '/term': '◍', '/task': '◍', '/delegate': '◍', '/agent': '◍', '/arena': '◍', '/review': '◍', '/understand': '◍', '/session-stream': '◍', '/goal': '◍', '/btw': '◍', '/share': '◍',
   '/calc': '☆', '/hash': '☆', '/base64': '☆', '/uuid': '☆', '/rand': '☆', '/json': '☆', '/timer': '☆', '/sql': '☆', '/fs': '☆', '/units': '☆', '/csv': '☆',
-  '/map': '⬡', '/warp': '⬡', '/rewind': '⬡', '/market': '⬡', '/bundle': '⬡',
+  '/map': '⬡', '/warp': '⬡', '/rewind': '⬡', '/market': '⬡', '/bundle': '⬡', '/modpack': '⬡',
   '/reload-skills': '⬡',
 };
 
 export const COMMAND_DESC: Record<string, string> = {
-  '/help': '查看帮助（/help <命令> 展开单个）',
+  '/help': '查看帮助（默认全目录 126 · /help core 主干速览 · /help <命令> 展开单个）',
+  '/aliases': '中文别名总览（/帮助 /体检 /密钥 /权限… → 规范命令——斜杠中文直达）',
   '/clear': '清空会话视图',
   '/undo': '撤销最近 N 轮（/undo list 查看可撤销轮次）',
   '/versions': '文件时间机器（/versions <文件> 查看历史版本，restore 回滚）',
@@ -78,6 +79,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/doctor': '健康体检',
   '/version': '版本信息',
   '/update': '更新检查（渠道探测 + 版本/仓库状态 + 更新命令；git 渠道 /update --yes 拉取重建）',
+  '/channel': '更新渠道（release 稳定 / snapshot 快照——我的世界式版本列车；version manifest 双渠道选择）',
   '/hooks': '生命周期 Hooks（settings.hooks 本地命令）',
   '/memory': '记忆概览（三层）',
   '/hole': '黑洞引擎检索（自然语言直达）',
@@ -93,7 +95,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/gate': '统一质量门（五门：自测/健康/证据/合规/测试）',
   '/fdr': '生成部署后保障文档（FDR.md，AI 审对话或模板）',
   '/evidence': '证据链查看',
-  '/perm': '权限模式（smart 确认/auto 自动编辑/goal 循环/plan 计划/yolo 全放）',
+  '/perm': '权限模式（裸 /perm 打开选择器；smart 确认/auto 自动编辑/manual 全量确认/plan 计划/goal 循环/yolo 完全访问）',
   '/sandbox': '分层沙盒（L0-L3）',
   '/compliance': '合规五项',
   '/security': '安全注入通道（sudo/secret，关闭即清缓存）',
@@ -116,7 +118,9 @@ export const COMMAND_DESC: Record<string, string> = {
   '/rewind': '回滚到最近快照（Claude Code /rewind 同款，等价 /checkpoint restore）',
   '/market': '开放生态目录（npm/GitHub 搜索 + 安装 MCP/技能）',
   '/theme': '主题切换（dark/light/预设/用户主题）',
+  '/brand': '品牌命名/图标化（「独一无二」包装层——品牌行/欢迎语）',
   '/bundle': '场景整合包（skill/MCP/插件/配置规整打包，一键安装/导入/导出/应用）',
+  '/modpack': 'Mod 整合包（modpack.json 清单：plugins+MCP 集合 · targetWxnodus 兼容矩阵 · install/list/export——一键安装/失败回滚/防篡改 sha256）',
   '/reload-skills': '重扫技能目录（含跨品牌 .claude/.agents/.codex/.gemini）并汇报',
   '/init': '分析项目生成 AGENTS.md（本地扫描，--overwrite 覆盖）',
   '/voice': '语音模式（TUI 内 Ctrl+B/麦克风钮；status 查看组件）',
@@ -128,6 +132,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/render': 'Markdown 排版预览',
   '/capture': '屏幕截屏（当前界面留证）',
   '/computer': '桌面控制（Computer Use：截图/点击/键入/打开——robotjs 动作层 + GLM-4V 屏幕理解）',
+  '/watch': '常驻屏幕视频流（start/stop/status/clip/chain——实时捕捉 + 场景分段 + MAA 式模板任务链 + 回放证据 mp4）',
   '/claw': '网页抓取（SSRF 防护）',
   '/web': '抓取网页（/claw 别名）',
   '/search': '联网搜索（DuckDuckGo）',
@@ -141,6 +146,7 @@ export const COMMAND_DESC: Record<string, string> = {
   '/acp': 'ACP server',
   '/remote': '远程执行（ssh 通道 + exec-server：远端未沙盒/双机链路未真机验证，诚实口径）',
   '/eco': 'Windows 生态依赖探测（状态与能力）',
+  '/oasis': 'OASIS 统一运行时门户（status 全栈组件注册表 · topo 依赖拓扑——跨语言 MCP/插件/任务/会话共存视图）',
   '/swarm': '同种子代理多开',
   '/duo': '双脑协作',
   '/cron': '定时任务（add/list/del/pause 真实调度）',
@@ -192,7 +198,8 @@ export function isSlash(text: string): boolean {
 }
 
 // ── supremacy 1.6：命令面瘦身（A-01，对标 gemini 47）──────────────────
-// 两层命令面：主干（CORE_COMMANDS，47 条日常驾驶命令）与扩展（其余 63 条进阶命令）。
+// 两层命令面：主干（CORE_COMMANDS，47 条日常驾驶命令）与扩展（其余 SLASH 减主干——计数勿硬编码，
+// 由 extendedCommands() 动态推导）。
 // 原则：**零删除**——所有命令照常注册与分发（契约不变），只改「展示面」：
 //   /help 默认渲染主干层（一眼看完）＋尾部「扩展命令 N 个——/help all 查看全部」；
 //   command_search（AI 目录检索）主干命中优先排序（模型先拿日常主干，扩展标注 tier）。

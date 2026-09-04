@@ -409,6 +409,12 @@ export const SANDBOX_RUNNER_SCRIPT = PS_LINES.join('\n');
 // 进程级一次探测缓存（能力不因调用变化；/sandbox os probe 强制重探）
 let probeCache: { ok: boolean; detail: string } | null = null;
 
+/** ⅩⅩⅨ（S-1）：读取已缓存的探测结果（未探测时 null）——bash 沙盒提示按实态措辞 */
+export function cachedProbe(): { ok: boolean; detail: string; elevated: boolean } | null {
+  if (!probeCache) return null;
+  return { ...probeCache, elevated: probeCache.detail.includes('OK-ELEVATED') };
+}
+
 function runnerPath(dataDir: string): string {
   return join(dataDir, 'sandbox', 'sandbox-runner.ps1');
 }
@@ -478,7 +484,8 @@ export async function probeWinSandbox(dataDir: string, force = false): Promise<{
       finish({ ok: false, detail: String(e?.message ?? e) });
     }
   });
-  if (!force) probeCache = result;
+  // ⅩⅩⅩ（S-5）：成功才缓存——失败（超时/Add-Type 瞬时损）下次自动重探，不永久钉死
+  if (!force && result.ok) probeCache = result;
   return result;
 }
 

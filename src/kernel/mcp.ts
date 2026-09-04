@@ -76,6 +76,8 @@ export interface McpClient {
   tools: McpToolInfo[];
   /** 连接状态（connectAllMcp 失败降级时 false——真实状态，UI 状态栏可读） */
   connected: boolean;
+  /** 子进程句柄（stdio transport；HTTP 无）——健康快照可读 pid */
+  process?: { pid?: number; killed?: boolean };
   callTool(name: string, args: Record<string, any>, signal?: AbortSignal): Promise<string>;
   close(): void | Promise<void>;
 }
@@ -482,6 +484,8 @@ export function connectMcp(cfg: McpServerConfig): Promise<McpClient> {
           server: cfg,
           connected: true,
           tools: [...toolMap.values()],
+          // B3（2026-09-04）：stdio 子进程句柄（/mcp list 内存列的事实源——真实 spawn pid）
+          process: { pid: proc.pid ?? undefined, killed: false },
           async callTool(name, args, signal) {
             const r = await send('tools/call', { name, arguments: args ?? {} }, requestTimeoutMs, signal);
             const content = Array.isArray(r?.content) ? r.content.map((c: any) => c?.text ?? '').join('\n') : String(r?.content ?? '');
@@ -570,13 +574,15 @@ export function mcpClientsToTools(clients: McpClient[]): Record<string, ToolDef>
           function: {
             name: full,
             description: `[MCP ${c.server.name}] ${t.description || t.name}`,
-            parameters: (t.inputSchema && t.inputSchema.type === 'object' ? t.inputSchema : { type: 'object', properties: {}, required: [] }) as ToolDef['schema']['function']['parameters'],
+            parameters: sanitizeMcpSchema(t.inputSchema),
           },
         },
-        danger: c.server.toolDanger?.[t.name] === true,
+        danger: c.server.toolDanger?.[t.name] !== false, // ⅩⅩⅩⅢ：默认 danger=true（fail-closed）——外部工具保守视为危险
         canonical: { namespace: 'mcp', source: c.server.name },
         async run(args, ctx) {
-          return callToolWithRespawn(clientState, t.name, args, ctx.signal);
+          const result = await trackMcpInFlight(c.server.name, () => callToolWithRespawn(clientState, t.name, args, ctx.signal));
+          recordMcpCall(c.server.name, !String(result).includes('[MCP') || !String(result).includes('失败'));
+          return result;
         },
       };
     }
@@ -783,4 +789,90 @@ export async function connectMcpHttp(cfg: McpServerConfig & { url: string }, opt
       sessionId = null;
     },
   };
+}
+
+
+// ═══ ⅩⅩⅩⅤ MCP 增强：工具 schema 校验 + 健康监控 ═══
+
+/** MCP 工具 inputSchema 消毒：确保合法 JSON Schema object 形态（type/properties/required 键序稳定） */
+function sanitizeMcpSchema(schema: unknown): { type: 'object'; properties: Record<string, unknown>; required?: string[] } {
+  if (!schema || typeof schema !== 'object') return { type: 'object', properties: {} };
+  const s = schema as Record<string, unknown>;
+  // type 非 object → 强制 object（OpenAI function calling 契约）
+  const props = (s.properties && typeof s.properties === 'object' && !Array.isArray(s.properties))
+    ? s.properties as Record<string, unknown>
+    : {};
+  // required 必须是字符串数组（坏数据 → 空）
+  let required: string[] | undefined;
+  if (Array.isArray(s.required)) {
+    required = s.required.filter((r): r is string => typeof r === 'string');
+  }
+  return { type: 'object', properties: props, ...(required?.length ? { required } : {}) };
+}
+
+/** MCP 服务器健康状态快照（/mcp status 或 doctor 消费） */
+export interface McpHealthSnapshot {
+  server: string;
+  connected: boolean;
+  toolCount: number;
+  pid?: number;
+  lastCallMs?: number;
+  errorCount: number;
+}
+
+const mcpHealth = new Map<string, { errorCount: number; lastCallMs: number }>();
+/** B3：在途调用集合（闲置下线豁免——含 lazy-respawn 换壳后的新客户端，单一事实源在工具调用出口） */
+const mcpInFlight = new Set<string>();
+
+/** 记录 MCP 调用结果（成功/失败——健康面数据源） */
+export function recordMcpCall(server: string, ok: boolean): void {
+  const h = mcpHealth.get(server) ?? { errorCount: 0, lastCallMs: 0 };
+  h.lastCallMs = Date.now();
+  if (!ok) h.errorCount++;
+  mcpHealth.set(server, h);
+  if (mcpHealth.size > 32) mcpHealth.delete(mcpHealth.keys().next().value!); // 上限
+}
+
+/** 在途标记包装（调用进出成对；异常/取消也必然清账——finally） */
+export function trackMcpInFlight<T>(server: string, fn: () => Promise<T>): Promise<T> {
+  mcpInFlight.add(server);
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => { mcpInFlight.delete(server); });
+}
+
+/** 在途集合只读快照（cliComposition 闲置清扫消费） */
+export function mcpInFlightNames(): ReadonlySet<string> {
+  return mcpInFlight;
+}
+
+/** 生成全部 MCP 客户端的健康快照 */
+export function mcpHealthSnapshot(clients: McpClient[]): McpHealthSnapshot[] {
+  return clients.map(c => ({
+    server: c.server.name,
+    connected: c.connected,
+    toolCount: c.tools.length,
+    pid: c.process?.pid,
+    lastCallMs: mcpHealth.get(c.server.name)?.lastCallMs,
+    errorCount: mcpHealth.get(c.server.name)?.errorCount ?? 0,
+  }));
+}
+
+// ── B3（2026-09-04）：MCP 闲置自动下线（可选开关 settings.mcpIdleTeardown）──
+
+/** 下线候选判定（纯函数，可单测）：
+ *  ① 在途调用（inFlight）一律豁免——绝不误杀正在执行的工具；
+ *  ② 空闲 = now − (最后调用 ?? 连接时刻)；从未调用按连接时刻计（诚实起点）；
+ *  ③ 到达阈值才入围（组合根侧夹取最低 30s——15s 调用超时 × 2 余量，在途窗口天然安全）。 */
+export function selectIdleMcpServers(input: {
+  servers: Array<{ name: string; lastCallMs?: number; connectedAtMs?: number }>;
+  now: number;
+  idleMs: number;
+  inFlight?: ReadonlySet<string>;
+}): string[] {
+  const busy = input.inFlight ?? new Set<string>();
+  return input.servers
+    .filter(s => !busy.has(s.name))
+    .filter(s => input.now - (s.lastCallMs ?? s.connectedAtMs ?? input.now) >= input.idleMs)
+    .map(s => s.name);
 }

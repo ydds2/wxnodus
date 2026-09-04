@@ -49,8 +49,40 @@ export function recoverStalePrompts(db: AuditDb, sessionId: string, staleMs = 5 
   return rows as unknown as DurablePromptRow[];
 }
 
+/**
+ * N1（批次ⅩⅩⅦ · kernel-eval）孤儿行清扫：终态行（done/interrupted）超期删除——
+ * 子代理一次性会话 id 的遗留行（死守卫时期入队）与正常完成行都会累积，7 天足够
+ * 任何事后审计（audit 链才是审计事实源——本表只保「未完成用户消息」语义）。
+ */
+export function purgeDurableRows(db: AuditDb, olderThanMs = 7 * 24 * 60 * 60_000): number {
+  const cutoff = Date.now() - olderThanMs;
+  const info = db.prepare(`DELETE FROM durable_prompts WHERE status IN ('done','interrupted') AND updated_at < ?`).run(cutoff) as unknown as { changes?: number | bigint };
+  return Number(info?.changes ?? 0);
+}
+
 /** 未收口计数（doctor/恢复提示用） */
 export function pendingDurableCount(db: AuditDb, sessionId: string): number {
   const r = db.prepare(`SELECT COUNT(*) AS c FROM durable_prompts WHERE session_id=? AND status IN ('queued','running')`).get(sessionId) as { c: number };
   return Number(r.c);
+}
+
+
+/**
+ * ⅩⅩⅪ rollout 重放：stale 行自动重投（codex resume_thread_from_rollout 语义增量）。
+ * 与 recoverStalePrompts 的区别：后者只标 interrupted（保原文不自动重发——设计取舍），
+ * 本函数额外返回可重投的 prompt 列表（调用方可选择自动发送或展示给用户确认）。
+ * 返回的行已标 interrupted（状态语义不变——重投是新回合的 enqueue，不是恢复旧行）。
+ */
+export function recoverStaleWithReplay(
+  db: AuditDb,
+  sessionId: string,
+  staleMs = 5 * 60_000,
+): { recovered: DurablePromptRow[]; replayable: Array<{ prompt: string; ts: number }> } {
+  const recovered = recoverStalePrompts(db, sessionId, staleMs);
+  return {
+    recovered,
+    replayable: recovered
+      .filter(r => r.prompt.trim().length > 0)
+      .map(r => ({ prompt: r.prompt, ts: r.createdAt })),
+  };
 }

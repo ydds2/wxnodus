@@ -75,13 +75,26 @@ describeWithDist('DX-05 first-run process contract', () => {
     expect(out).toMatch(/^wxnodus \d+\.\d+\.\d+(-[\w.]+)?$/); // 预发布后缀（4.0.0-rc.1）容纳
   });
 
-  it('non-TTY first run never hangs and does not prompt', async () => {
+  it('non-TTY first run never hangs and does not prompt（命令类不受无密钥影响）', async () => {
     const cwd = tmp();
-    const r = await run(['-p', '算一下 1+1'], cwd);
+    const r = await run(['-p', '/calc 1+1'], cwd);
     expect(r).not.toBeInstanceOf(Error);
     const out = (r as { stdout: string }).stdout;
-    expect(out.length).toBeGreaterThan(0); // 有输出（不挂起/不交互等待）
-    // V4 M5 裁撤无 key 兜底层：未配密钥 → 诚实拒绝并给修复路径；已配密钥 → 真模型答案
-    expect(/2|未配置模型密钥|set-key/s.test(out)).toBe(true);
+    expect(out).toContain('2');
+  });
+
+  it('A1（2026-09-04）：无密钥 chat 语义——exit 3 + 诚实指引；--json status:"unconfigured"（脚本可判定未配置）', async () => {
+    const cwd = tmp();
+    const r = await run(['-p', '你好'], cwd);
+    expect(r).toBeInstanceOf(Error); // 非零退出（未配置——非错误路径的挂起/交互）
+    const e = r as NodeJS.ErrnoException & { stdout?: string; code?: unknown };
+    expect(e.code).toBe(3);
+    expect(String(e.stdout ?? '')).toContain('未配置模型密钥');
+    const j = await run(['-p', '你好', '--json'], cwd);
+    const je = j as NodeJS.ErrnoException & { stdout?: string };
+    const parsed = JSON.parse(String(je.stdout ?? '{}')) as { status?: string; ok?: boolean; error?: { code?: string } };
+    expect(parsed.status).toBe('unconfigured');
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error?.code).toBe('NO_API_KEY');
   });
 });
