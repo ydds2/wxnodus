@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { installMcpFromNpm, installSkillFromNpm, installSkillFromGithub, installSkillDir, type MarketDeps } from './market.js';
 import { mergeProjectSettings } from './projectConfig.js';
+import { parseVersion } from './semverRange.js';
 import { WXNODUS_VERSION } from './version.js';
 
 export interface BundleManifest {
@@ -226,13 +227,14 @@ export async function useBundle(
   return { ok: true, message: `场景「${manifest.name}」已应用：\n` + parts.map(p => ` · ${p}`).join('\n') };
 }
 
-/** V4 P5-3：当前 wxnodus 版本 ≥ 最低要求（x.y.z 数值比较；非法声明视为兼容——不误拒旧包） */
+/** V4 P5-3：当前 wxnodus 版本 ≥ 最低要求——主三段解析统一走 semverRange.parseVersion（K2 收敛 2026-09-04；
+ * 预发布后缀（-rc.1/-alpha）自动剥除按主三段比较（4.0.0-rc.1 ≥ 4.0.0 语义）。
+ * 非法声明视为兼容（fail-open——不误拒旧包）；与 selfUpdate.isNewerVersion 的 fail-closed
+ * 是业务语义差异（更新比对 vs 兼容门槛），非不一致。 */
 export function bundleVersionOk(minVersion: string, current: string = WXNODUS_VERSION): boolean {
-  // 预发布后缀（-rc.1/-alpha 等）剥除后按主三段比较（4.0.0-rc.1 ≥ 4.0.0 语义）
-  const seg = (v: string) => String(v).replace(/^[vV]/, '').split('-')[0]!.split('.').map(Number);
-  const a = seg(minVersion);
-  const b = seg(current);
-  if (a.some(n => !Number.isFinite(n)) || b.some(n => !Number.isFinite(n))) return true;
+  const a = parseVersion(String(minVersion).replace(/^[vV]/, ''));
+  const b = parseVersion(String(current).replace(/^[vV]/, ''));
+  if (!a || !b) return true;
   for (let i = 0; i < 3; i++) {
     if ((a[i] ?? 0) !== (b[i] ?? 0)) return (b[i] ?? 0) > (a[i] ?? 0);
   }

@@ -51,3 +51,14 @@ describe('CLI 表面文案防漂移（A5）', () => {
     expect(help!.desc).toContain(String(SLASH.length))
   })
 })
+
+  it('源码命令计数零硬编码（A5 收尾——registry/tui 源码不得出现命令数数字字面量）', () => {
+    const regSrc = read('src/commands/registry.ts')
+    const tuiSrc = read('src/tui/commands.ts')
+    // 命令计数只能来自 SLASH.length 派生——出现具体数字（如 126）即漂移回归
+    expect(regSrc).not.toMatch(/全目录\s*\d{2,3}/)
+    expect(tuiSrc).not.toMatch(/全目录\s*\d{2,3}/)
+    // 派生本身存在（防「删计数」式绕过）
+    expect(regSrc).toContain('${SLASH.length}')
+    expect(tuiSrc).toContain('${SLASH.length}')
+  })

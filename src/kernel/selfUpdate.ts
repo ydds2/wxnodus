@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { WXNODUS_VERSION } from './version.js';
+import { parseVersion } from './semverRange.js';
 import { parseVersionManifest, selectVersion, type UpdateChannel } from './versionManifest.js';
 
 export interface UpdateFeedInfo {
@@ -23,22 +24,21 @@ export interface UpdateFeedInfo {
   notes: string | null;
 }
 
-/** x.y.z[-pre] 数值比较（仅主三段；预发布段按字典序低于同号正式版） */
+/** x.y.z[-pre] 数值比较——主三段解析统一走 semverRange.parseVersion（K2 单一事实源收敛 2026-09-04，
+ * 替换自带独立正则；预发布段按字典序低于同号正式版；解析失败 fail-closed 返回 false） */
 export function isNewerVersion(latest: string, current: string): boolean {
-  const parse = (v: string) => {
-    const m = /^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/.exec(String(v).trim().replace(/^[vV]/, ''));
-    if (!m) return null;
-    return { major: +m[1]!, minor: +m[2]!, patch: +m[3]!, pre: m[4] ?? null };
-  };
-  const a = parse(latest), b = parse(current);
+  const pre = (v: string) => /^v?[\d.]+-(.+)$/.exec(String(v).trim())?.[1] ?? null;
+  const a = parseVersion(String(latest).replace(/^[vV]/, ''));
+  const b = parseVersion(String(current).replace(/^[vV]/, ''));
   if (!a || !b) return false;
-  for (const k of ['major', 'minor', 'patch'] as const) {
-    if (a[k] !== b[k]) return a[k] > b[k];
+  for (let i = 0; i < 3; i++) {
+    if (a[i]! !== b[i]!) return a[i]! > b[i]!;
   }
   // 同号：正式版 > 预发布；预发布之间字典序
-  if (a.pre === null) return b.pre !== null;
-  if (b.pre === null) return false;
-  return a.pre > b.pre;
+  const pa = pre(latest), pb = pre(current);
+  if (pa === null) return pb !== null;
+  if (pb === null) return false;
+  return pa > pb;
 }
 
 /** 拉取 feed 并比对（feed 未配置 → 诚实 null 信息；网络失败 → updateAvailable:false + notes 说明） */

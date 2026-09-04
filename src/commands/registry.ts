@@ -46,7 +46,7 @@ export const COMMAND_CAT: Record<string, string> = {
 };
 
 export const COMMAND_DESC: Record<string, string> = {
-  '/help': '查看帮助（默认全目录 126 · /help core 主干速览 · /help <命令> 展开单个）',
+  '/help': `查看帮助（默认全目录 ${SLASH.length} · /help core 主干速览 · /help <命令> 展开单个）`,
   '/aliases': '中文别名总览（/帮助 /体检 /密钥 /权限… → 规范命令——斜杠中文直达）',
   '/clear': '清空会话视图',
   '/undo': '撤销最近 N 轮（/undo list 查看可撤销轮次）',

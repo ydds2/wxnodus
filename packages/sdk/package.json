@@ -1,6 +1,6 @@
 {
   "name": "@wxnodus/sdk",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "description": "wxnodus 官方 SDK——spawn-attach 本地网关（零云端：127.0.0.1 + stdout 握手随机 token）",
   "type": "module",
   "license": "Apache-2.0",

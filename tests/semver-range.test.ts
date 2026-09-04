@@ -42,3 +42,40 @@ describe('versionInRange（兼容矩阵）', () => {
     expect(versionInRange('not-a-version', '>=4.0.0')).toBe(false)
   })
 })
+
+// K2（2026-09-04）：版本解析统一出口——两调用方与 parseVersion 的行为一致性契约。
+// selfUpdate.isNewerVersion / bundle.bundleVersionOk 主三段解析已切至 parseVersion；
+// 预发布/fail 方向差异是业务语义（更新比对 fail-closed vs 兼容门槛 fail-open），本表如实锚定。
+import { isNewerVersion } from '../src/kernel/selfUpdate.js'
+import { bundleVersionOk } from '../src/kernel/bundle.js'
+
+describe('K2 调用方一致性（parseVersion 单一出口）', () => {
+  it('主三段比较与 parseVersion 对齐（isNewerVersion）', () => {
+    expect(isNewerVersion('4.0.3', '4.0.2')).toBe(true)
+    expect(isNewerVersion('4.1.0', '4.0.9')).toBe(true)
+    expect(isNewerVersion('5.0.0', '4.99.99')).toBe(true)
+    expect(isNewerVersion('4.0.2', '4.0.2')).toBe(false)
+    expect(isNewerVersion('4.0.1', '4.0.2')).toBe(false)
+    expect(isNewerVersion('0.1.0', '0.0.9')).toBe(true) // 0.x 段无特判（数值比较——与旧实现一致）
+  })
+  it('v/V 前缀与预发布语义（正式 > 预发布；预发布字典序）', () => {
+    expect(isNewerVersion('v4.0.3', '4.0.2')).toBe(true)
+    expect(isNewerVersion('V4.0.3', '4.0.2')).toBe(true)
+    expect(isNewerVersion('4.0.3-rc.1', '4.0.3')).toBe(false) // 同号：预发布 < 正式
+    expect(isNewerVersion('4.0.3', '4.0.3-rc.1')).toBe(true)
+    expect(isNewerVersion('4.0.3-rc.2', '4.0.3-rc.1')).toBe(true) // 预发布字典序
+    expect(isNewerVersion('4.0.3-rc.1', '4.0.3-rc.2')).toBe(false)
+  })
+  it('非法输入 → isNewerVersion fail-closed false（parseVersion null 传播）', () => {
+    expect(isNewerVersion('not-a-version', '4.0.2')).toBe(false)
+    expect(isNewerVersion('4.0.3', 'oops')).toBe(false)
+  })
+  it('bundleVersionOk：剥预发布按主三段 + 非法 fail-open true（兼容门槛语义）', () => {
+    expect(bundleVersionOk('4.0.2', '4.0.2')).toBe(true)
+    expect(bundleVersionOk('4.0.2', '4.0.3')).toBe(true)
+    expect(bundleVersionOk('4.1.0', '4.0.9')).toBe(false)
+    expect(bundleVersionOk('4.0.0-rc.1', '4.0.0')).toBe(true) // 预发布剥除：4.0.0 ≥ 4.0.0
+    expect(bundleVersionOk('not-a-version', '4.0.2')).toBe(true) // fail-open——不误拒旧包
+    expect(bundleVersionOk('v4.0.2', 'V4.0.2')).toBe(true)
+  })
+})

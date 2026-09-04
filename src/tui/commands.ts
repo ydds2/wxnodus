@@ -1,9 +1,9 @@
 // src/tui/commands.ts — 高频命令目录（组件无关——painter/engine 共用；长尾走 /help 全景索引页）
 // 2026-09-03 美化：条目带分类符号（cat）——单一事实源取自 registry COMMAND_CAT（绝不手工复制第二份目录，
 // 63 命令漂移类缺陷从结构上杜绝）；菜单行渲染「◈ /help 命令手册」。
-import { COMMAND_CAT, CORE_COMMANDS } from '../commands/registry.js'
+import { COMMAND_CAT, CORE_COMMANDS, SLASH } from '../commands/registry.js'
 const QUICK_DEFS: Array<[cmd: string, desc: string]> = [
-  ['/help', '命令手册（全目录 126）'],
+  ['/help', `命令手册（全目录 ${SLASH.length}）`],
   ['/model', '模型目录与密钥'],
   ['/build', '需求编译全流程'],
   ['/doctor', '全组件自检'],

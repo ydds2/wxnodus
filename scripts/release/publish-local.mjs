@@ -51,6 +51,16 @@ if (JSON.parse(corePkgRaw).dependencies?.wxnodus === 'file:../..') {
   console.log(`→ packages/core 依赖改写 wxnodus: file:../.. -> ${rootVersion}（发布后自动还原）`);
 }
 
+// A7（2026-09-04）：三包版本一致性断言（fail-closed）——packages 与主仓版本漂移（如 4.0.1 vs 4.0.2）
+// 曾静默发生；发布前强校验，漂移即中止（主仓与 packages 同步 bump 后再发布）
+for (const pkg of PACKAGES) {
+  const meta = JSON.parse(readFileSync(resolve(pkg.dir, 'package.json'), 'utf8'));
+  if (meta.version !== rootVersion) {
+    console.error(`✗ 版本漂移：${pkg.name}@${meta.version} ≠ 主仓 wxnodus@${rootVersion}——请同步 bump 后再发布`);
+    process.exit(1);
+  }
+}
+
 let failures = 0;
 for (const pkg of PACKAGES) {
   const pkgJson = resolve(pkg.dir, 'package.json');
