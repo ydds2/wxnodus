@@ -46,8 +46,15 @@ describe('cross-process evidence writes', () => {
         .map(entry => entry.path.slice('records/'.length, -'.json'.length)).sort();
       expect(recordIds).toEqual(['record-a', 'record-b']);
 
-      const leftovers = (await readdir(root)).filter(name =>
-        name.includes('.lock') || name.endsWith('.tmp') || name.endsWith('.bak'));
+      // Q6 加固（2026-09-04 CI 实测竞态）：子进程退出后锁清理可能仍在一个 readdir 窗口内——
+      // 轮询至清理完成（≤5s）再断言；超时残留即真失败（fail-closed）
+      let leftovers: string[] = [];
+      for (let i = 0; i < 50; i++) {
+        leftovers = (await readdir(root)).filter(name =>
+          name.includes('.lock') || name.endsWith('.tmp') || name.endsWith('.bak'));
+        if (!leftovers.length) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
       expect(leftovers).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
