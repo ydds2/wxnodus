@@ -198,8 +198,8 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 const CLI = resolve(__dirname, '../dist/cli/index.js');
-const hasDist = existsSync(CLI);
-const describeWithDist = hasDist ? describe : describe.skip;
+// Q3（2026-09-04）：dist 门统一 support/distGate——缺 dist 显式红而非静默 skip（六天红同族治理）
+import { describeWithDist } from './support/distGate.js';
 
 describeWithDist('wxnodus update 子命令（进程级）', () => {
   const runCli = (args: string[]) => new Promise<{ code: number | null; stdout: string; dataDir: string }>((res, rej) => {

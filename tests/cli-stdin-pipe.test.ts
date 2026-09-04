@@ -11,7 +11,6 @@ import { join, resolve } from 'node:path';
 import { composePipePrompt } from '../src/cli/stdinPipe.js';
 
 const CLI = resolve(__dirname, '../dist/cli/index.js');
-const hasDist = existsSync(CLI);
 
 const tempDirs: string[] = [];
 afterAll(() => { for (const d of tempDirs) { try { rmSync(d, { recursive: true, force: true }); } catch { /* 静默 */ } } });
@@ -66,7 +65,8 @@ const sessionUserEvents = (dataDir: string): string[] => {
     .map(e => String(e.content ?? ''));
 };
 
-const describeWithDist = hasDist ? describe : describe.skip;
+// Q3（2026-09-04）：dist 门统一 support/distGate——缺 dist 显式红而非静默 skip（六天红同族治理）
+import { describeWithDist } from './support/distGate.js';
 
 describeWithDist('stdin 管道真实进程', () => {
   it('无 -p：piped stdin 成为一次性提问（会话事件流留证）', async () => {

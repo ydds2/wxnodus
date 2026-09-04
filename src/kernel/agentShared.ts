@@ -121,3 +121,54 @@ export function toolStageBrief(name: string, args?: Record<string, unknown>): st
     .find((v): v is string => typeof v === 'string' && v.trim().length > 0 && v.trim().length < 60);
   return brief ? `${verb} ${brief.trim()}` : verb;
 }
+
+// ── WxScript DSL 类型与工具函数（K4a 2026-09-04 自 agent.ts 尾部外移——2133 行单闭包第一刀机械拆分）──
+import { isAbsolute, relative, resolve } from 'node:path';
+
+export type WxStep =
+  | { prompt: string; tools: Array<{ name: string; args: Record<string, any> }>; expect?: string[] }
+  | { loop: { items: string[]; as?: string; do: WxStep[] } }
+  | { if: { outputContains: string; then: WxStep[]; else?: WxStep[] } }
+  | { parallel: WxStep[] }
+  | { task: { goal: string } };
+
+export type WxLogEntry = {
+  kind: 'prompt' | 'tool' | 'result' | 'loop' | 'if' | 'parallel' | 'task';
+  step: number;
+  text: string;
+  name?: string;
+};
+
+/** 模板变量替换：{{as}} → item（递归应用于 steps 的 prompt/args 字符串） */
+export function substituteVars(steps: WxStep[], varName: string, value: string): WxStep[] {
+  const sub = (s: string): string => s.split(`{{${varName}}}`).join(value);
+  const mapArgs = (args: Record<string, any>): Record<string, any> => {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(args)) out[k] = typeof v === 'string' ? sub(v) : v;
+    return out;
+  };
+  return steps.map(st => {
+    if ('loop' in st) return { loop: { ...st.loop, items: st.loop.items.map(sub), do: substituteVars(st.loop.do, varName, value) } };
+    if ('if' in st) return { if: { ...st.if, then: substituteVars(st.if.then, varName, value), else: st.if.else ? substituteVars(st.if.else, varName, value) : undefined } };
+    if ('parallel' in st) return { parallel: st.parallel.map(p => substituteVars([p], varName, value)[0]!) };
+    if ('task' in st) return { task: { goal: sub(st.task.goal) } };
+    return { prompt: sub(st.prompt), tools: st.tools.map(t => ({ name: t.name, args: mapArgs(t.args ?? {}) })), ...(st.expect ? { expect: st.expect } : {}) };
+  });
+}
+
+// 路径是否在工作目录内（低危自动放行的安全边界）
+export function isPathWithinCwd(p: string, cwd = process.cwd()): boolean {
+  try {
+    const rel = relative(resolve(cwd), resolve(cwd, p));
+    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  } catch { return false; }
+}
+
+// V4 P1-6：工具参数 JSON 坏的哨兵键——runOneCall 检测后不执行、错误回喂模型自纠
+// （opencode InvalidTool / codex RespondToModel 同族；此前静默吞 {} → 工具以空参执行
+// 报误导错误，模型收不到「我的 JSON 坏了」信号）
+export const ARGS_PARSE_ERROR_KEY = '__wxnodus_args_parse_error__';
+
+export function safeJson(s: string): Record<string, any> {
+  try { return JSON.parse(s); } catch { return { [ARGS_PARSE_ERROR_KEY]: String(s ?? '').slice(0, 120) }; }
+}

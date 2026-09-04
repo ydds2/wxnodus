@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { safeWorkspaceRead, safeWorkspaceWrite, workspaceSha256 } from '../infrastructure/fs/safeWorkspaceFs.js';
 import { validateWorkspaceTarget } from '../infrastructure/fs/pathBoundary.js';
 import { sanitizedEnv } from './env.js';
+import { killProcessTree } from './processTree.js';
 import { probeProcessAvailable } from './processProbe.js';
 import { labelTruncate, capNote } from './truncate.js';
 import { UNTRUSTED_WRAP_LIMIT_DEFAULT, clampInt, buildPowerShellArgs, createIncrementalUtf8 } from './toolOutput.js';
@@ -496,13 +497,22 @@ export function coreTools(): Record<string, ToolDef> {
             sinkPath = join(tmpDir, `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.log`);
             sinkFd = openSync(sinkPath, 'w');
           } catch { sinkPath = null; }
+          // B2（2026-09-04）：进程树终止——spawn({signal}) 只单杀直接子进程（powershell.exe），
+          // 孙进程树（npm→node→worker）泄漏成孤儿（8/30 事故族）。改为不传 signal，
+          // 监听 abort（用户中止/空闲超时/硬顶三路径共用 combined signal）→ killProcessTree
+          // 全树强杀（taskkill /T /F——taskRunner 同族范式，单一事实源 processTree.ts）
           const child = spawn(
             process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
             // V4 P1-1：-EncodedCommand（UTF-16LE base64）——-Command 直传 CJK 受 argv 编码影响
             // （hooks.ts:37-43 CI 实测：可能收到空/损坏命令并等待 stdin → 误判超时）
             process.platform === 'win32' ? buildPowerShellArgs(cmd) : ['-c', cmd],
-            { cwd: ctx.cwd, signal, stdio: ['pipe', 'pipe', 'pipe'], env: sanitizedEnv() },
+            { cwd: ctx.cwd, stdio: ['pipe', 'pipe', 'pipe'], env: sanitizedEnv() },
           );
+          const detachTreeKill = () => { if (child.pid) void killProcessTree(child.pid); };
+          signal.addEventListener('abort', detachTreeKill);
+          const unhookTreeKill = () => signal.removeEventListener('abort', detachTreeKill);
+          child.once('close', unhookTreeKill);
+          child.once('error', unhookTreeKill);
           if (stdinSecret) {
             child.stdin?.write(stdinSecret);
             child.stdin?.end();

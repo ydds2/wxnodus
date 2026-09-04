@@ -12,7 +12,6 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const CLI = resolve(__dirname, '../dist/cli/index.js');
-const hasDist = existsSync(CLI);
 
 const tempDirs: string[] = [];
 afterAll(() => { for (const d of tempDirs) { try { rmSync(d, { recursive: true, force: true }); } catch { /* 静默 */ } } });
@@ -67,7 +66,8 @@ const runWire = (args: string[]): Promise<{ code: number | null; lines: any[] }>
   });
 };
 
-const describeWithDist = hasDist ? describe : describe.skip;
+// Q3（2026-09-04）：dist 门统一 support/distGate——缺 dist 显式红而非静默 skip（六天红同族治理）
+import { describeWithDist } from './support/distGate.js';
 
 describeWithDist('--stream-json 别名（= --wire 事件流）', () => {
   it('stdout 全程 JSONL：agent.start 起、agent.result 终，退出码 0', async () => {
