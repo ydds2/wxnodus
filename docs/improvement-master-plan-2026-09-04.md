@@ -54,3 +54,21 @@
 5. B4/B5 随各批顺带；D 项条件具备即补验（每条一个命令）。
 
 > 总原则不变：每一项 = 数据源单一事实 + 诚实失败契约 + 契约测试锁定 + 真机证据；不做清单（离线能力恢复/第二套服务网格/云托管）维持既有裁决。
+
+## F. 清理插队批闭环（2026-09-04，docs/cleanup-batch-plan-2026-09-04.md）
+
+> 评估收尾版 §7 插队建议执行完毕。四步分组（存量→删除→收敛→门禁），净删 **108,133 行 / 548 文件**。
+
+| 项 | 落地 |
+|---|---|
+| 步骤 0 存量固化 + **修复 master CI** | 根因链三层：① `.gitignore` 无锚定 `migrations//release/` 静默吞源码（git add 跳过）→ 根锚定修复；② build 顺序（swap-dist 后置）在全新 checkout 必红 → 前移；③ typecheck:tests 经 core-facade 依赖构建产物 → paths 映射解耦。另修：新测试 TS 类型 3 处、tui-render 档位同源断言、N2 压缩回归封闭化（CI CRLF checkout 漂移根治）。**master CI 2026-08-29 起连红六天后转绿**（run 33834843578） |
+| A2 ink fork 死重 | 四目录 524 文件删除 + README/AGENTS 技术栈文案对齐（官方 Ink 6 + 自研组件层）+ ci.yml ink-dist 工件链三处移除 + vitest/check-cycles 死配置清理；lock 零 diff 核账（fork 不在依赖图证实） |
+| A4 双组合根 + hermes-gateway | createApplication + 5 桩 + w1-02 测试 + hermes-gateway/ + 其测试整删（KF-002 retired 台账如实留档） |
+| K2 版本解析统一 | selfUpdate/bundle 主三段解析切 semverRange.parseVersion 单一出口；调用方一致性契约锚定 fail 方向语义差异（更新 fail-closed vs 兼容 fail-open 是业务语义非不一致） |
+| A5 命令计数防漂移 | registry/tui 文案 SLASH.length 模板派生 + 源码零硬编码测试锁 |
+| A7 版本统一 | packages/{core,sdk} → 4.0.2 + publish-local 发布前版本一致性 fail-closed 断言（防再漂移） |
+| Q2 registry 审计 | scripts/check-registry-consistency.mjs（126=126=126=126 四表对账）挂 ci |
+| Q4 | typecheck:sdk / typecheck:core 入 ci 链 + ci.yml 同源 |
+| Q5 | docs-links 死测试复活：三层豁免（历史快照/反引号 token/退役表 /key→/model）对账契约 |
+| B4 smoke:tui | 阶段① 本地三连跑绿 ✓；阶段② ci.yml 观察位（continue-on-error）已挂——升格硬门禁条件：连续 ≥5 轮绿或观察一周 |
+| 会话副产 | git pushurl 切 SSH-443（本地 7897 代理已死，HTTPS 直连被断——SSH-443 恒通） |
